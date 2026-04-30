@@ -463,7 +463,14 @@ function normalizeStages(raw: any): SessionStage[] {
 
             const kind = s.kind ?? s.type ?? s.stage_kind ?? s.stageKind ?? s.blockKind;
             const title = s.title ?? s.name ?? s.label ?? s.displayName;
-            const color = s.color ?? s.stage_color ?? s.stageColor;
+            const color =
+                s.color ??
+                s.colour ??
+                s.bgColor ??
+                s.backgroundColor ??
+                s.background ??
+                s.stage_color ??
+                s.stageColor;
 
             const durationSeconds =
                 Number(s.durationSeconds) ||
@@ -530,7 +537,14 @@ function phasesToStages(phases: any[]): SessionStage[] {
             kind,
             title: title || undefined,
             name: title || undefined,
-            color: p?.color,
+            color:
+                p?.color ??
+                p?.colour ??
+                p?.bgColor ??
+                p?.backgroundColor ??
+                p?.background ??
+                p?.stage_color ??
+                p?.stageColor,
             durationSeconds,
             seconds: p?.seconds,
             duration_seconds: p?.duration_seconds,
@@ -1162,7 +1176,7 @@ const KIND_META: Record<StageKind, { label: string; color: string }> = {
     checkin: { label: "Check-in", color: "#38BDF8" },
     recap: { label: "Recap", color: "#A78BFA" },
     celebrate: { label: "Celebrate", color: "#F472B6" },
-    custom: { label: "Custom", color: "#6366F1" },
+    custom: { label: "Custom", color: "#F63135" },
 };
 
 function normKey(raw: any) {
@@ -1238,17 +1252,50 @@ function getDisplayName(stage: any, kind: StageKind) {
     return name || KIND_META[kind].label;
 }
 
+function getRawStageColor(stage: any): string {
+    return String(
+        stage?.color ??
+        stage?.colour ??
+        stage?.bgColor ??
+        stage?.backgroundColor ??
+        stage?.background ??
+        stage?.stageColor ??
+        stage?.stage_color ??
+        ""
+    ).trim();
+}
+
+function isValidCssColor(raw: unknown): boolean {
+    const s = String(raw || "").trim();
+    if (!s) return false;
+
+    if (/^#[0-9a-f]{3}$/i.test(s)) return true;
+    if (/^#[0-9a-f]{6}$/i.test(s)) return true;
+    if (/^#[0-9a-f]{8}$/i.test(s)) return true;
+    if (/^rgb\(/i.test(s)) return true;
+    if (/^rgba\(/i.test(s)) return true;
+    if (/^hsl\(/i.test(s)) return true;
+    if (/^hsla\(/i.test(s)) return true;
+    if (/^var\(--[a-z0-9-_]+\)$/i.test(s)) return true;
+    if (s.toLowerCase().includes("gradient(")) return true;
+
+    return false;
+}
+
 function resolveStageColor(stage: any, kind: StageKind) {
-    const raw = stage?.color;
+    const raw = getRawStageColor(stage);
     if (!raw) return KIND_META[kind].color;
+    if (!isValidCssColor(raw)) return KIND_META[kind].color;
 
-    const s = String(raw).trim().toLowerCase();
+    const s = raw.replace(/\s+/g, "").toLowerCase();
 
-    if (
+    const legacyBlue =
         s === "#4ca0ff" ||
         s === "rgb(76,160,255)" ||
-        s === "rgba(76,160,255,1)"
-    ) {
+        s === "rgba(76,160,255,1)" ||
+        s === "rgba(76,160,255,1.0)";
+
+    if (legacyBlue && kind !== "focus") {
         return KIND_META[kind].color;
     }
 
@@ -1398,12 +1445,75 @@ type StudioBlock = {
     title: string;
     note?: string;
     minutes: number;
+    color?: string;
 };
 
 function uid() {
     const c: any = (globalThis as any)?.crypto;
     if (c?.randomUUID) return c.randomUUID();
     return `b_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`;
+}
+
+const DEFAULT_CUSTOM_BLOCK_COLOR = "#F63135";
+
+const BLOCK_COLOR_PRESETS = [
+    "#F63135", // red
+    "#4CA0FF", // blue
+    "#80DF86", // green
+    "#F9ADA2", // coral
+    "#ADD3FF", // light blue
+    "#A78BFA", // violet
+    "#FBBF24", // amber
+    "#22C55E", // emerald
+    "#111827", // dark
+];
+
+function isValidHexColor(v: unknown) {
+    return /^#[0-9a-f]{6}$/i.test(String(v || "").trim());
+}
+
+function getDefaultBlockColor(kind: StudioBlockKind) {
+    switch (kind) {
+        case "welcome":
+            return "#80DF86";
+        case "intentions":
+            return "#ADD3FF";
+        case "focus":
+            return "#4CA0FF";
+        case "break":
+            return "#F9ADA2";
+        case "checkin":
+            return "#38BDF8";
+        case "recap":
+            return "#A78BFA";
+        case "celebrate":
+            return "#F472B6";
+        case "custom":
+        default:
+            return DEFAULT_CUSTOM_BLOCK_COLOR;
+    }
+}
+
+function getRawStudioBlockColor(block: any): string {
+    return String(
+        block?.color ??
+        block?.colour ??
+        block?.bgColor ??
+        block?.backgroundColor ??
+        block?.background ??
+        block?.stageColor ??
+        block?.stage_color ??
+        ""
+    ).trim();
+}
+
+function getBlockColor(block: Pick<StudioBlock, "kind" | "color"> | any) {
+    const raw = getRawStudioBlockColor(block);
+    return isValidHexColor(raw) ? raw : getDefaultBlockColor(block?.kind || "custom");
+}
+
+function blockColorStyle(block: StudioBlock) {
+    return { backgroundColor: getBlockColor(block) };
 }
 
 const STUDIO_LIBRARY: StudioBlock[] = [
@@ -1414,7 +1524,7 @@ const STUDIO_LIBRARY: StudioBlock[] = [
     { id: "lib_checkin", kind: "checkin", title: "Check-in", note: "Short accountability checkpoint", minutes: 3 },
     { id: "lib_recap", kind: "recap", title: "Recap", note: "What got done / what’s next", minutes: 5 },
     { id: "lib_celebrate", kind: "celebrate", title: "Celebrate", note: "Closure + positive finish", minutes: 3 },
-    { id: "lib_custom", kind: "custom", title: "Custom", note: "Any special block", minutes: 5 },
+    { id: "lib_custom", kind: "custom", title: "Custom", note: "Any special block", minutes: 5, color: DEFAULT_CUSTOM_BLOCK_COLOR },
 ];
 
 const QUICK_MINUTES = [3, 5, 10, 15, 25, 50];
@@ -1491,6 +1601,7 @@ function normalizeStudioBlocksFromSession(session: any): StudioBlock[] {
                     title,
                     note: String(s?.note || s?.description || "").trim() || undefined,
                     minutes,
+                    color: getBlockColor({ ...s, kind }),
                 } as StudioBlock;
             })
             .filter(Boolean) as StudioBlock[];
@@ -1516,6 +1627,7 @@ function normalizeStudioBlocksFromSession(session: any): StudioBlock[] {
                     title,
                     note: String(b?.note || b?.description || "").trim() || undefined,
                     minutes,
+                    color: getBlockColor({ ...b, kind }),
                 } as StudioBlock;
             })
             .filter(Boolean) as StudioBlock[];
@@ -1551,6 +1663,7 @@ function normalizeStudioBlocksFromSession(session: any): StudioBlock[] {
                     title,
                     note: String(b?.note || b?.description || "").trim() || undefined,
                     minutes,
+                    color: getBlockColor({ ...b, kind }),
                 } as StudioBlock;
             })
             .filter(Boolean) as StudioBlock[];
@@ -1566,6 +1679,7 @@ function normalizeStudioBlocksFromSession(session: any): StudioBlock[] {
                 kind: "focus",
                 title: "Focus",
                 minutes: Math.max(1, Math.round(durMin)),
+                color: getDefaultBlockColor("focus"),
             },
         ];
     }
@@ -1585,6 +1699,7 @@ function exportStudioToSchedule(blocks: StudioBlock[], preserveInfinite = false,
             title: String(b.title || "").trim() || defaultStudioTitle(b.kind),
             minutes: clamp(Number(b.minutes) || 1, 1, 24 * 60),
             note: String(b.note || "").trim() || null,
+            color: getBlockColor(b),
             order: index,
             v: 1,
         }))
@@ -1602,6 +1717,7 @@ function exportStudioToSchedule(blocks: StudioBlock[], preserveInfinite = false,
                     title: b.title,
                     minutes: b.minutes,
                     note: b.note,
+                    color: (b as any).color,
                     order: index,
                     v: 1,
                 })),
@@ -1636,27 +1752,6 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
         });
     }, [blocks]);
 
-    function kindBg(kind: StudioBlockKind) {
-        switch (kind) {
-            case "welcome":
-                return "bg-slate-200";
-            case "intentions":
-                return "bg-indigo-200";
-            case "focus":
-                return "bg-emerald-200";
-            case "break":
-                return "bg-amber-200";
-            case "checkin":
-                return "bg-cyan-200";
-            case "recap":
-                return "bg-violet-200";
-            case "celebrate":
-                return "bg-pink-200";
-            default:
-                return "bg-gray-200";
-        }
-    }
-
     return (
         <div className="mt-3">
             <div className="flex items-center justify-between">
@@ -1668,7 +1763,7 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
             </div>
 
             <div className="mt-2 border border-gray-200 rounded-[999px] overflow-hidden bg-gray-50">
-                <div className="flex h-3">
+                <div className="flex h-3 w-full">
                     {blocks.length === 0 ? (
                         <div className="w-full h-full flex items-center justify-center text-[12px] text-gray-500 font-inter">
                             Add blocks to build a timeline
@@ -1680,10 +1775,13 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
                             return (
                                 <div
                                     key={b.id}
-                                    className={`h-full ${kindBg(
-                                        b.kind
-                                    )} border-r border-white/70 flex items-center justify-center`}
-                                    style={{ flexGrow: mins, flexBasis: 0, minWidth: 6 }}
+                                    className="h-full min-w-0 border-r border-white/70 flex items-center justify-center"
+                                    style={{
+                                        flexGrow: mins,
+                                        flexBasis: 0,
+                                        minWidth: 0,
+                                        ...blockColorStyle(b),
+                                    }}
                                     title={`${b.title} • ${mins} min`}
                                 >
                                     {showText ? (
@@ -1711,7 +1809,10 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
                                 className="border border-gray-200 rounded-[14px] px-3 py-2 flex items-center justify-between gap-3"
                             >
                                 <div className="min-w-0 flex items-center gap-2">
-                                    <span className={`w-3 h-3 rounded-full ${kindBg(r.kind)}`} />
+                                    <span
+                                        className="w-3 h-3 rounded-full"
+                                        style={blockColorStyle(r)}
+                                    />
                                     <span className="text-[12px] font-inter text-brandBlack truncate">
                                         {r.title}
                                     </span>
@@ -1959,6 +2060,7 @@ function EditSessionStudioModal(props: {
                 title: b.title,
                 note: b.note,
                 minutes: b.minutes,
+                color: getBlockColor(b),
             },
         ]);
     }, []);
@@ -2457,6 +2559,56 @@ function EditSessionStudioModal(props: {
                                                             </button>
                                                         ))}
                                                     </div>
+
+                                                    {b.kind === "custom" && (
+                                                        <div
+                                                            className="mt-3 rounded-[14px] border border-gray-200 bg-white px-3 py-3"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            <div className="mb-2 flex items-center justify-between gap-3">
+                                                                <div>
+                                                                    <div className="font-inter text-[12px] font-semibold text-brandBlack">
+                                                                        Custom block color
+                                                                    </div>
+                                                                    <div className="font-inter text-[11px] text-gray-500">
+                                                                        This color will be used in the session timeline.
+                                                                    </div>
+                                                                </div>
+
+                                                                <input
+                                                                    type="color"
+                                                                    value={getBlockColor(b)}
+                                                                    onChange={(e) => updateBlock(b.id, { color: e.target.value })}
+                                                                    className="h-9 w-12 cursor-pointer rounded-lg border border-gray-200 bg-white p-1"
+                                                                    title="Custom block color"
+                                                                />
+                                                            </div>
+
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {BLOCK_COLOR_PRESETS.map((color) => {
+                                                                    const selected =
+                                                                        getBlockColor(b).toLowerCase() === color.toLowerCase();
+
+                                                                    return (
+                                                                        <button
+                                                                            key={`${b.id}-${color}`}
+                                                                            type="button"
+                                                                            onClick={() => updateBlock(b.id, { color })}
+                                                                            className={
+                                                                                "h-7 w-7 rounded-full border transition " +
+                                                                                (selected
+                                                                                    ? "border-brandBlack ring-2 ring-brandBlack/20"
+                                                                                    : "border-gray-200 hover:scale-105")
+                                                                            }
+                                                                            style={{ backgroundColor: color }}
+                                                                            title={color}
+                                                                            aria-label={`Set custom block color ${color}`}
+                                                                        />
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             );
                                         })}

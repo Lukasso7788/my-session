@@ -34,6 +34,7 @@ export type RoomTimelineBlock = {
     title: string;
     minutes: number;
     note?: string;
+    color?: string;
 };
 
 interface Props {
@@ -52,6 +53,70 @@ const END_DROP_ID = "__end__";
 const QUICK_MINUTES = [3, 5, 10, 15, 25, 50];
 const TIMELINE_MIN_SEGMENT_WIDTH = 6;
 const TIMELINE_RESIZE_PX_PER_MINUTE = 4;
+
+const DEFAULT_CUSTOM_BLOCK_COLOR = "#F63135";
+
+const BLOCK_COLOR_PRESETS = [
+    "#F63135", // red
+    "#4CA0FF", // blue
+    "#80DF86", // green
+    "#F9ADA2", // coral
+    "#ADD3FF", // light blue
+    "#A78BFA", // violet
+    "#FBBF24", // amber
+    "#22C55E", // emerald
+    "#111827", // dark
+];
+
+function isValidHexColor(v: unknown) {
+    return /^#[0-9a-f]{6}$/i.test(String(v || "").trim());
+}
+
+function getDefaultBlockColor(kind: RoomTimelineBlockKind) {
+    switch (kind) {
+        case "welcome":
+            return "#80DF86";
+        case "intentions":
+            return "#ADD3FF";
+        case "focus":
+            return "#4CA0FF";
+        case "break":
+            return "#F9ADA2";
+        case "checkin":
+            return "#38BDF8";
+        case "recap":
+            return "#A78BFA";
+        case "celebrate":
+            return "#F472B6";
+        case "outro":
+            return "#6EE7B7";
+        case "custom":
+        default:
+            return DEFAULT_CUSTOM_BLOCK_COLOR;
+    }
+}
+
+function getRawBlockColor(raw: any) {
+    return String(
+        raw?.color ??
+        raw?.colour ??
+        raw?.bgColor ??
+        raw?.backgroundColor ??
+        raw?.background ??
+        raw?.stageColor ??
+        raw?.stage_color ??
+        ""
+    ).trim();
+}
+
+function getBlockColor(block: Pick<RoomTimelineBlock, "kind" | "color">) {
+    const raw = String(block.color || "").trim();
+    return isValidHexColor(raw) ? raw : getDefaultBlockColor(block.kind);
+}
+
+function blockColorStyle(block: Pick<RoomTimelineBlock, "kind" | "color">) {
+    return { backgroundColor: getBlockColor(block) };
+}
 
 const KIND_OPTIONS: { value: RoomTimelineBlockKind; label: string }[] = [
     { value: "welcome", label: "Welcome" },
@@ -128,6 +193,7 @@ const LIBRARY: RoomTimelineBlock[] = [
         title: "Custom",
         minutes: 5,
         note: "Any special block",
+        color: DEFAULT_CUSTOM_BLOCK_COLOR,
     },
 ];
 
@@ -208,7 +274,7 @@ function unwrapScheduleBlocks(parsed: any): any {
 
 function normalizeInfinitePhases(
     anyPhases: any
-): { name: string; seconds: number; kind?: string; note?: string }[] {
+): { name: string; seconds: number; kind?: string; note?: string; color?: string }[] {
     if (!anyPhases) return [];
 
     const toSeconds = (raw: any): number => {
@@ -241,8 +307,9 @@ function normalizeInfinitePhases(
                 );
                 const kind = String(p?.kind || p?.type || "");
                 const note = String(p?.note || p?.description || "").trim() || undefined;
+                const color = getRawBlockColor(p) || undefined;
                 const seconds = toSeconds(p);
-                return { name, seconds, kind, note };
+                return { name, seconds, kind, note, color };
             })
             .filter((x) => x.seconds > 0);
     }
@@ -265,7 +332,10 @@ function normalizeInfinitePhases(
                         ? String(v?.note || v?.description || "").trim() || undefined
                         : undefined;
 
-                return { name: String(k || ""), seconds, kind, note };
+                const color =
+                    typeof v === "object" ? getRawBlockColor(v) || undefined : undefined;
+
+                return { name: String(k || ""), seconds, kind, note, color };
             })
             .filter((x) => x.seconds > 0);
     }
@@ -359,52 +429,6 @@ function minutesFromAny(raw: any) {
     }
 
     return 0;
-}
-
-function kindDot(kind: RoomTimelineBlockKind) {
-    switch (kind) {
-        case "welcome":
-            return "bg-emerald-300";
-        case "intentions":
-            return "bg-sky-300";
-        case "focus":
-            return "bg-blue-400";
-        case "break":
-            return "bg-rose-300";
-        case "checkin":
-            return "bg-cyan-300";
-        case "recap":
-            return "bg-violet-300";
-        case "celebrate":
-            return "bg-pink-300";
-        case "outro":
-            return "bg-emerald-400";
-        default:
-            return "bg-indigo-300";
-    }
-}
-
-function timelineBarBg(kind: RoomTimelineBlockKind) {
-    switch (kind) {
-        case "welcome":
-            return "#86EFAC";
-        case "intentions":
-            return "#7DD3FC";
-        case "focus":
-            return "#60A5FA";
-        case "break":
-            return "#FDA4AF";
-        case "checkin":
-            return "#67E8F9";
-        case "recap":
-            return "#C4B5FD";
-        case "celebrate":
-            return "#F9A8D4";
-        case "outro":
-            return "#6EE7B7";
-        default:
-            return "#A5B4FC";
-    }
 }
 
 function formatMinutes(min: number) {
@@ -520,12 +544,15 @@ export function timelineBlocksFromSchedule(rawSchedule: any): RoomTimelineBlock[
                 const minutes = minutesFromAny(b);
                 if (!minutes) return null;
 
+                const rawColor = getRawBlockColor(b);
+
                 return {
                     id: uid(),
                     kind,
                     title,
                     minutes,
                     note: String(b?.note || b?.description || "").trim() || undefined,
+                    color: isValidHexColor(rawColor) ? rawColor : getDefaultBlockColor(kind),
                 } as RoomTimelineBlock;
             })
             .filter(Boolean) as RoomTimelineBlock[];
@@ -561,6 +588,7 @@ export function timelineBlocksFromSchedule(rawSchedule: any): RoomTimelineBlock[
                     defaultTitleForKind(kind),
                 minutes: Math.max(1, Math.round((Number(p.seconds) || 0) / 60)),
                 note: p?.note,
+                color: isValidHexColor(p?.color) ? p.color : getDefaultBlockColor(kind),
             } as RoomTimelineBlock;
         });
     }
@@ -578,11 +606,16 @@ export function timelineBlocksToSchedulePayload(
             const minutes = clamp(Number(b.minutes) || 1, 1, 24 * 60);
             const title = String(b.title || "").trim() || defaultTitleForKind(kind);
 
+            const color = getBlockColor({ kind, color: b.color });
+
             return {
                 kind,
+                type: kind,
                 title,
+                name: title,
                 minutes,
                 note: String(b.note || "").trim() || null,
+                color,
                 order: index,
                 v: 1,
             };
@@ -601,6 +634,7 @@ export function timelineBlocksToSchedulePayload(
                     title: b.title,
                     minutes: b.minutes,
                     note: b.note,
+                    color: b.color,
                     order: index,
                     v: 1,
                 })),
@@ -711,6 +745,7 @@ function TimelinePreview({
                 kind: "focus",
                 title: "New block",
                 minutes: 25,
+                color: getDefaultBlockColor("focus"),
             };
             const copy = [...blocks];
             copy.splice(idx + 1, 0, nextBlock);
@@ -798,7 +833,7 @@ function TimelinePreview({
                                     flexGrow: mins,
                                     flexBasis: 0,
                                     minWidth: TIMELINE_MIN_SEGMENT_WIDTH,
-                                    background: timelineBarBg(b.kind),
+                                    ...blockColorStyle(b),
                                     boxShadow: isSelected
                                         ? isLight
                                             ? "inset 0 0 0 2px rgba(0,0,0,0.28)"
@@ -909,6 +944,7 @@ function TimelinePreview({
                                     title:
                                         String(selectedBlock.title || "").trim() ||
                                         defaultTitleForKind(nextKind),
+                                    color: getDefaultBlockColor(nextKind),
                                 });
                             }}
                             className={`w-full px-3 py-2.5 rounded-[14px] border text-[13px] font-inter ${inputBg}`}
@@ -977,6 +1013,56 @@ function TimelinePreview({
                             </button>
                         ))}
                     </div>
+
+                    {selectedBlock.kind === "custom" && (
+                        <div className={`mt-3 rounded-[14px] border p-3 ${isLight ? "border-black/10 bg-black/[0.02]" : "border-white/10 bg-white/[0.03]"}`}>
+                            <div className="mb-2 flex items-center justify-between gap-3">
+                                <div>
+                                    <div className="font-inter text-[12px] font-semibold">
+                                        Custom block color
+                                    </div>
+                                    <div className={`font-inter text-[11px] ${textMuted}`}>
+                                        This color will be saved into the room timeline.
+                                    </div>
+                                </div>
+
+                                <input
+                                    type="color"
+                                    value={getBlockColor(selectedBlock)}
+                                    onChange={(e) => update(selectedBlock.id, { color: e.target.value })}
+                                    className="h-9 w-12 cursor-pointer rounded-lg border border-black/10 bg-white p-1"
+                                    title="Custom block color"
+                                />
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                                {BLOCK_COLOR_PRESETS.map((color) => {
+                                    const selected = getBlockColor(selectedBlock).toLowerCase() === color.toLowerCase();
+
+                                    return (
+                                        <button
+                                            key={`${selectedBlock.id}-${color}`}
+                                            type="button"
+                                            onClick={() => update(selectedBlock.id, { color })}
+                                            className={
+                                                "h-7 w-7 rounded-full border transition " +
+                                                (selected
+                                                    ? isLight
+                                                        ? "border-black ring-2 ring-black/20"
+                                                        : "border-white ring-2 ring-white/25"
+                                                    : isLight
+                                                        ? "border-black/15 hover:scale-105"
+                                                        : "border-white/20 hover:scale-105")
+                                            }
+                                            style={{ backgroundColor: color }}
+                                            title={color}
+                                            aria-label={`Set custom block color ${color}`}
+                                        />
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>
@@ -1156,12 +1242,13 @@ export default function RoomTimelineEditor({
 
     const addFromLibrary = useCallback(
         (b: RoomTimelineBlock) => {
-            const nextBlock = {
+            const nextBlock: RoomTimelineBlock = {
                 id: uid(),
                 kind: b.kind,
                 title: b.title,
                 minutes: b.minutes,
                 note: b.note,
+                color: getBlockColor(b),
             };
 
             onChange([...blocks, nextBlock]);
@@ -1504,7 +1591,7 @@ export default function RoomTimelineEditor({
 
                                                 <div className="flex items-center justify-between gap-2">
                                                     <div className="flex items-center gap-2 min-w-0">
-                                                        <span className={`w-3 h-3 rounded-full ${kindDot(b.kind)}`} />
+                                                        <span className="w-3 h-3 rounded-full" style={blockColorStyle(b)} />
                                                         <span
                                                             className={`px-2 py-1 rounded-full border ${subtleBorder} text-[10px] font-inter ${mutedText}`}
                                                         >
@@ -1563,6 +1650,7 @@ export default function RoomTimelineEditor({
                                                                 title:
                                                                     String(b.title || "").trim() ||
                                                                     defaultTitleForKind(nextKind),
+                                                                color: getDefaultBlockColor(nextKind),
                                                             });
                                                         }}
                                                         className={`w-full px-3 py-2.5 rounded-[14px] border font-inter text-[13px] ${inputCls}`}
@@ -1652,6 +1740,60 @@ export default function RoomTimelineEditor({
                                                         </button>
                                                     ))}
                                                 </div>
+
+                                                {b.kind === "custom" && (
+                                                    <div
+                                                        className={`mt-3 rounded-[14px] border ${subtleBorder} ${softBg} px-3 py-3`}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        onMouseDown={(e) => e.stopPropagation()}
+                                                    >
+                                                        <div className="mb-2 flex items-center justify-between gap-3">
+                                                            <div>
+                                                                <div className="font-inter text-[12px] font-semibold">
+                                                                    Custom block color
+                                                                </div>
+                                                                <div className={`font-inter text-[11px] ${mutedText}`}>
+                                                                    This color will be used in the room timeline.
+                                                                </div>
+                                                            </div>
+
+                                                            <input
+                                                                type="color"
+                                                                value={getBlockColor(b)}
+                                                                onChange={(e) => updateBlock(b.id, { color: e.target.value })}
+                                                                className="h-9 w-12 cursor-pointer rounded-lg border border-black/10 bg-white p-1"
+                                                                title="Custom block color"
+                                                            />
+                                                        </div>
+
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {BLOCK_COLOR_PRESETS.map((color) => {
+                                                                const selected = getBlockColor(b).toLowerCase() === color.toLowerCase();
+
+                                                                return (
+                                                                    <button
+                                                                        key={`${b.id}-${color}`}
+                                                                        type="button"
+                                                                        onClick={() => updateBlock(b.id, { color })}
+                                                                        className={
+                                                                            "h-7 w-7 rounded-full border transition " +
+                                                                            (selected
+                                                                                ? isLight
+                                                                                    ? "border-black ring-2 ring-black/20"
+                                                                                    : "border-white ring-2 ring-white/25"
+                                                                                : isLight
+                                                                                    ? "border-black/15 hover:scale-105"
+                                                                                    : "border-white/20 hover:scale-105")
+                                                                        }
+                                                                        style={{ backgroundColor: color }}
+                                                                        title={color}
+                                                                        aria-label={`Set custom block color ${color}`}
+                                                                    />
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -1721,8 +1863,8 @@ export default function RoomTimelineEditor({
                             onClick={onSave}
                             disabled={saving || blocks.length === 0}
                             className={`px-4 py-2.5 rounded-xl text-[13px] font-semibold disabled:opacity-50 ${isLight
-                                    ? "bg-blue-600 hover:bg-blue-700 text-white"
-                                    : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                                ? "bg-blue-600 hover:bg-blue-700 text-white"
+                                : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
                                 }`}
                         >
                             {saving ? "Saving..." : "Save timeline"}
