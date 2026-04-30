@@ -274,11 +274,15 @@ function VideoTileInner({
         ? "bg-blue-500/15 text-blue-700 border-black/10"
         : "bg-emerald-500/80 text-[#02140B] border-white/10";
 
-    const namePillClass = isLight
-        ? "bg-white/92 border-black/10 text-neutral-900 shadow-sm"
-        : "bg-black/58 border-white/10 text-white shadow-sm";
+    const hasCameraOn = !!videoTrack;
 
-    const nameTextClass = isLight ? "text-neutral-900" : "text-white";
+    const namePillClass = hasCameraOn
+        ? "bg-black/58 border-white/10 text-white shadow-sm"
+        : isLight
+            ? "bg-white/92 border-black/10 text-neutral-900 shadow-sm"
+            : "bg-black/58 border-white/10 text-white shadow-sm";
+
+    const nameTextClass = hasCameraOn ? "!text-white" : isLight ? "text-neutral-900" : "text-white";
 
     const menuBtnClass = isLight
         ? "bg-white/92 border-black/10 text-black/85 hover:bg-white"
