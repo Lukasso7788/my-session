@@ -5,7 +5,7 @@
 // ✅ All sessions created with fixed EU domain: jitsi.mysession.club
 // ✅ Added host auto-booking after session creation
 // ✅ Added Session Studio multi-select + Ctrl/Cmd+C + Ctrl/Cmd+V duplication
-// ✅ Added sticky timeline + sticky block library
+// ✅ Added block library
 // ✅ NEW: Save current Session Studio script into "My templates"
 // ✅ NEW: Load and apply "My templates" inside modal
 // ✅ NEW: Load and apply "My previous sessions" inside modal
@@ -3335,7 +3335,7 @@ export function CreateSessionModal({
                 </div>
 
                 {studioEnabled && (
-                  <div className="sticky top-0 z-20 mt-4 mb-4 -mx-1 px-1 py-3 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80 border-b border-gray-100">
+                  <div className="mt-4 mb-4">
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="text-[12px] text-gray-600 font-inter">
                         {selectedBlockIds.length > 0 ? (
@@ -3347,7 +3347,7 @@ export function CreateSessionModal({
                             {" · "}Ctrl/Cmd+C to copy, Ctrl/Cmd+V to duplicate
                           </>
                         ) : (
-                          <>Timeline stays pinned while you scroll.</>
+                          <>Click a timeline segment to select and edit it.</>
                         )}
                       </div>
                     </div>
@@ -3404,7 +3404,7 @@ export function CreateSessionModal({
                       blocks.
                     </div>
 
-                    <div className="mt-24 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+                    <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
                       {/* Library */}
                       <div className="lg:sticky lg:top-16 self-start border border-gray-200 rounded-[18px] p-3 sm:p-4 bg-white">
                         <div>
