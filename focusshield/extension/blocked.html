@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Blocked by FocusShield</title>
+    <style>
+        body {
+            min-height: 100vh;
+            margin: 0;
+            display: grid;
+            place-items: center;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #0f172a;
+            color: white;
+        }
+
+        .card {
+            max-width: 520px;
+            padding: 32px;
+            border-radius: 24px;
+            background: rgba(255, 255, 255, 0.08);
+            text-align: center;
+        }
+
+        h1 {
+            margin-top: 0;
+            font-size: 32px;
+        }
+
+        .timer {
+            font-size: 42px;
+            font-weight: 700;
+            margin: 20px 0;
+        }
+
+        a {
+            color: white;
+        }
+    </style>
+</head>
+
+<body>
+    <main class="card">
+        <h1>🛡 Blocked by FocusShield</h1>
+        <p>This site is blocked during your focus session.</p>
+        <div id="timer" class="timer">--:--</div>
+        <p><a href="https://www.mysession.club">Back to MySession</a></p>
+    </main>
+
+    <script src="blocked.js"></script>
+</body>
+
+</html>
