@@ -244,6 +244,7 @@ type StudioBlock = {
   title: string;
   note?: string;
   minutes: number;
+  color?: string;
 };
 
 type UserSessionTemplateRow = {
@@ -409,6 +410,8 @@ function normalizeTemplateBlocks(rawBlocks: any): StudioBlock[] {
 
     const kind = inferStudioBlockKind(b);
 
+    const rawColor = String(b?.color || b?.colour || b?.bgColor || b?.backgroundColor || "").trim();
+
     return {
       id: uid(),
       kind,
@@ -420,6 +423,7 @@ function normalizeTemplateBlocks(rawBlocks: any): StudioBlock[] {
         ""
       ).trim() || undefined,
       minutes,
+      color: isValidHexColor(rawColor) ? rawColor : getDefaultBlockColor(kind),
     };
   });
 }
@@ -427,12 +431,62 @@ function normalizeTemplateBlocks(rawBlocks: any): StudioBlock[] {
 function exportStudioToSchedule(blocks: StudioBlock[]) {
   return blocks.map((b, idx) => ({
     kind: b.kind,
+    type: b.kind,
     title: b.title,
+    name: b.title,
     minutes: b.minutes,
     note: b.note || null,
+    color: getBlockColor(b),
     order: idx,
     v: 1,
   }));
+}
+
+const DEFAULT_CUSTOM_BLOCK_COLOR = "#F63135";
+
+const QUICK_MINUTES = [3, 5, 10, 15, 25, 50];
+
+const BLOCK_COLOR_PRESETS = [
+  "#F63135", // red
+  "#4CA0FF", // blue
+  "#80DF86", // green
+  "#F9ADA2", // coral
+  "#ADD3FF", // light blue
+  "#A78BFA", // violet
+  "#FBBF24", // amber
+  "#22C55E", // emerald
+  "#111827", // dark
+];
+
+function isValidHexColor(v: unknown) {
+  return /^#[0-9a-f]{6}$/i.test(String(v || "").trim());
+}
+
+function getDefaultBlockColor(kind: StudioBlockKind) {
+  switch (kind) {
+    case "welcome":
+      return "#80DF86";
+    case "intentions":
+      return "#ADD3FF";
+    case "focus":
+      return "#4CA0FF";
+    case "break":
+      return "#F9ADA2";
+    case "checkin":
+      return "#38BDF8";
+    case "recap":
+      return "#A78BFA";
+    case "celebrate":
+      return "#F472B6";
+    case "custom":
+    default:
+      return DEFAULT_CUSTOM_BLOCK_COLOR;
+  }
+}
+
+function getBlockColor(block: Pick<StudioBlock, "kind" | "color">) {
+  const raw = String(block.color || "").trim();
+  return isValidHexColor(raw) ? raw : getDefaultBlockColor(block.kind);
 }
 
 const STUDIO_LIBRARY: StudioBlock[] = [
@@ -491,10 +545,9 @@ const STUDIO_LIBRARY: StudioBlock[] = [
     title: "Custom",
     note: "Any special block",
     minutes: 5,
+    color: DEFAULT_CUSTOM_BLOCK_COLOR,
   },
 ];
-
-const QUICK_MINUTES = [3, 5, 10, 15, 25, 50];
 
 // ===============================
 // SESSION TIMELINE (visual)
@@ -518,6 +571,10 @@ function kindBg(kind: StudioBlockKind) {
     default:
       return "bg-gray-200";
   }
+}
+
+function blockColorStyle(block: StudioBlock) {
+  return { backgroundColor: getBlockColor(block) };
 }
 
 function formatMinutes(min: number) {
@@ -583,10 +640,8 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
               return (
                 <div
                   key={b.id}
-                  className={`h-full ${kindBg(
-                    b.kind
-                  )} border-r border-white/70 flex items-center justify-center`}
-                  style={{ flexGrow: mins, flexBasis: 0, minWidth: 6 }}
+                  className="h-full border-r border-white/70 flex items-center justify-center"
+                  style={blockColorStyle(b)}
                   title={`${b.title} • ${mins} min`}
                 >
                   {showText ? (
@@ -614,7 +669,10 @@ function SessionTimeline({ blocks }: { blocks: StudioBlock[] }) {
                 className="border border-gray-200 rounded-[14px] px-3 py-2 flex items-center justify-between gap-3"
               >
                 <div className="min-w-0 flex items-center gap-2">
-                  <span className={`w-3 h-3 rounded-full ${kindBg(r.kind)}`} />
+                  <span
+                    className="w-3 h-3 rounded-full"
+                    style={blockColorStyle(r)}
+                  />
                   <span className="text-[12px] font-inter text-brandBlack truncate">
                     {r.title}
                   </span>
@@ -955,6 +1013,7 @@ export function CreateSessionModal({
       title: b.title,
       note: b.note,
       minutes: b.minutes,
+      color: getBlockColor(b),
     };
     setStudioBlocks((prev) => [...prev, nextBlock]);
     setSelectedBlockIds([nextBlock.id]);
@@ -3291,6 +3350,57 @@ export function CreateSessionModal({
                                       </button>
                                     ))}
                                   </div>
+
+                                  {b.kind === "custom" && (
+                                    <div
+                                      className="mt-3 rounded-[14px] border border-gray-200 bg-white px-3 py-3"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <div className="mb-2 flex items-center justify-between gap-3">
+                                        <div>
+                                          <div className="font-inter text-[12px] font-semibold text-brandBlack">
+                                            Custom block color
+                                          </div>
+                                          <div className="font-inter text-[11px] text-gray-500">
+                                            This color will be used in the session timeline.
+                                          </div>
+                                        </div>
+
+                                        <input
+                                          type="color"
+                                          value={getBlockColor(b)}
+                                          onChange={(e) => updateBlock(b.id, { color: e.target.value })}
+                                          className="h-9 w-12 cursor-pointer rounded-lg border border-gray-200 bg-white p-1"
+                                          title="Custom block color"
+                                        />
+                                      </div>
+
+                                      <div className="flex flex-wrap gap-2">
+                                        {BLOCK_COLOR_PRESETS.map((color) => {
+                                          const selected =
+                                            getBlockColor(b).toLowerCase() === color.toLowerCase();
+
+                                          return (
+                                            <button
+                                              key={`${b.id}-${color}`}
+                                              type="button"
+                                              onClick={() => updateBlock(b.id, { color })}
+                                              className={
+                                                "h-7 w-7 rounded-full border transition " +
+                                                (selected
+                                                  ? "border-brandBlack ring-2 ring-brandBlack/20"
+                                                  : "border-gray-200 hover:scale-105")
+                                              }
+                                              style={{ backgroundColor: color }}
+                                              title={color}
+                                              aria-label={`Set custom block color ${color}`}
+                                            />
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                  
                                 </div>
                               );
                             })}
@@ -3331,6 +3441,7 @@ export function CreateSessionModal({
                               </div>
                             )}
                           </div>
+                          
                         )}
                       </div>
                     </div>

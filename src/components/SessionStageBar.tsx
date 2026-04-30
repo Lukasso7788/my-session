@@ -5,27 +5,11 @@ type RoomTheme = "dark" | "light";
 
 interface Props {
   stages: SessionStage[];
-  startTime: string; // ISO or unix (sec/ms) as string
+  startTime: string;
   onHoverStage?: (stage: SessionStage | null) => void;
   cycleSeconds?: number;
-
-  /**
-   * - "fill" = классическая заливка по времени
-   * - "tick" = заливка + движущийся marker tick
-   */
   progressStyle?: "fill" | "tick";
-
-  /**
-   * Таймер обновления (мс). По умолчанию 1000.
-   * Для infinite можно ставить 15000, чтобы не жрало ресурсы.
-   */
   tickEveryMs?: number;
-
-  /**
-   * Цвет движущегося индикатора:
-   * - dark -> белый
-   * - light -> dark gray
-   */
   theme?: RoomTheme;
 }
 
@@ -33,10 +17,6 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
-/**
- * Parse ISO / unix seconds / unix ms (number-like strings).
- * Returns ms timestamp or null.
- */
 function parseTimeMs(input: any): number | null {
   if (input == null) return null;
 
@@ -69,13 +49,6 @@ function parseTimeMs(input: any): number | null {
   return null;
 }
 
-/**
- * Robust duration resolver:
- * Supports:
- * - stage.durationSeconds / stage.seconds / stage.duration_seconds
- * - stage.duration as minutes (legacy)
- * - stage.minutes as minutes (legacy)
- */
 function getStageSeconds(stage: any): number {
   const s =
     Number(stage?.durationSeconds) ||
@@ -108,23 +81,15 @@ function formatStageDuration(stage: any): string {
     return mins > 0 ? `${mins} min` : "";
   }
 
-  if (totalSec < 60) {
-    return `${totalSec} sec`;
-  }
+  if (totalSec < 60) return `${totalSec} sec`;
 
   const mins = Math.floor(totalSec / 60);
   const sec = totalSec % 60;
 
-  if (sec === 0) {
-    return `${mins} min`;
-  }
-
+  if (sec === 0) return `${mins} min`;
   return `${mins} min ${sec} sec`;
 }
 
-// ===============================
-// Kind -> color + label mapping
-// ===============================
 export type StageKind =
   | "welcome"
   | "intentions"
@@ -145,7 +110,7 @@ const KIND_META: Record<StageKind, { label: string; color: string }> = {
   recap: { label: "Recap", color: "#A78BFA" },
   celebrate: { label: "Celebrate", color: "#F472B6" },
   farewell: { label: "Farewell", color: "#34D399" },
-  custom: { label: "Custom", color: "#6366F1" },
+  custom: { label: "Custom", color: "#F63135" },
 };
 
 function normalizeKind(raw: any): StageKind {
@@ -179,10 +144,6 @@ function normalizeKind(raw: any): StageKind {
   return "custom";
 }
 
-/**
- * Title-based inference.
- * "Celebrate and Farewell" => farewell
- */
 function inferKindFromText(textAny: any): StageKind | null {
   const s = String(textAny || "").trim().toLowerCase();
   if (!s) return null;
@@ -261,39 +222,76 @@ function getStageKind(stage: any): StageKind {
 
 function getDisplayName(stage: any, kind: StageKind) {
   const name = String(
-    stage?.title ??
-    stage?.label ??
-    stage?.displayName ??
-    stage?.name ??
-    ""
+    stage?.title ?? stage?.label ?? stage?.displayName ?? stage?.name ?? ""
   ).trim();
 
   return name || KIND_META[kind].label;
 }
 
+function isValidCssColor(raw: unknown): boolean {
+  const s = String(raw || "").trim();
+  if (!s) return false;
+
+  if (/^#[0-9a-f]{3}$/i.test(s)) return true;
+  if (/^#[0-9a-f]{6}$/i.test(s)) return true;
+  if (/^#[0-9a-f]{8}$/i.test(s)) return true;
+
+  if (/^rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)$/i.test(s)) return true;
+  if (/^rgba\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*(0|1|0?\.\d+)\s*\)$/i.test(s)) return true;
+
+  if (/^hsl\(/i.test(s)) return true;
+  if (/^hsla\(/i.test(s)) return true;
+  if (/^var\(--[a-z0-9-_]+\)$/i.test(s)) return true;
+
+  if (s.toLowerCase().includes("gradient(")) return true;
+
+  return false;
+}
+
+function getRawStageColor(stage: any): string {
+  return String(
+    stage?.color ??
+    stage?.colour ??
+    stage?.bgColor ??
+    stage?.backgroundColor ??
+    stage?.background ??
+    stage?.stageColor ??
+    stage?.stage_color ??
+    ""
+  ).trim();
+}
+
 function resolveStageColor(stage: any, kind: StageKind) {
-  const raw = stage?.color;
+  const raw = getRawStageColor(stage);
 
   if (!raw) return KIND_META[kind].color;
+  if (!isValidCssColor(raw)) return KIND_META[kind].color;
 
-  const s = String(raw).trim().toLowerCase();
+  const s = raw.replace(/\s+/g, "").toLowerCase();
 
-  if (
-    (s === "#4ca0ff" ||
-      s === "rgb(76,160,255)" ||
-      s === "rgba(76,160,255,1)") &&
-    kind !== "focus"
-  ) {
+  const legacyBlue =
+    s === "#4ca0ff" ||
+    s === "rgb(76,160,255)" ||
+    s === "rgba(76,160,255,1)" ||
+    s === "rgba(76,160,255,1.0)";
+
+  if (legacyBlue && kind !== "focus") {
     return KIND_META[kind].color;
   }
 
   return raw;
 }
 
-/**
- * Exported helper — чтобы SessionCard/Info показывали
- * ровно те же kind/colors, что и SessionStageBar.
- */
+function stageColorStyle(color: string): React.CSSProperties {
+  const c = String(color || "").trim();
+
+  if (c.toLowerCase().includes("gradient(")) {
+    return { background: c };
+  }
+
+  return { backgroundColor: c };
+}
+
 export function resolveStageVisual(stage: any): {
   kind: StageKind;
   name: string;
@@ -460,9 +458,7 @@ export function SessionStageBar({
               className="relative h-full cursor-pointer transition-all duration-300"
               style={{
                 width: `${width}%`,
-                ...(typeof bg === "string" && bg.toLowerCase().includes("gradient")
-                  ? { background: bg }
-                  : { backgroundColor: bg }),
+                ...stageColorStyle(bg),
                 opacity: isActive ? 1 : 0.84,
                 ...borderRadiusStyle,
               }}
@@ -489,11 +485,7 @@ export function SessionStageBar({
                     <div className="flex items-start gap-2">
                       <div
                         className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{
-                          ...(typeof bg === "string" && bg.toLowerCase().includes("gradient")
-                            ? { background: bg }
-                            : { backgroundColor: bg }),
-                        }}
+                        style={stageColorStyle(bg)}
                       />
                       <div className="min-w-0">
                         <div className="truncate text-[12px] font-semibold leading-4">
