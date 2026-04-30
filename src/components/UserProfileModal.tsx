@@ -46,10 +46,6 @@ function formatShortDate(raw?: string | null) {
 
 function formatSince(raw?: string | null) {
   if (!raw) return "—";
-
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return "—";
-
   return formatShortDate(raw);
 }
 
@@ -78,7 +74,7 @@ function getSessionDurationMinutes(session: SessionRow) {
       }, 0);
     }
   } catch {
-    // ignore
+    // ignore bad legacy schedule
   }
 
   return 0;
@@ -98,6 +94,19 @@ function getSessionStatus(session: SessionRow) {
   if (now < start) return "Upcoming";
   if (now >= start && now <= end) return "Live";
   return "Finished";
+}
+
+function getBadgeClass(status: string) {
+  switch (status) {
+    case "Upcoming":
+      return "bg-[#DBEAFE] text-[#1D4ED8]";
+    case "Live":
+      return "bg-[#DCFCE7] text-[#15803D]";
+    case "Finished":
+      return "bg-[#E5E7EB] text-[#374151]";
+    default:
+      return "bg-[#E5E7EB] text-[#374151]";
+  }
 }
 
 function getDisplaySessions(sessions: SessionRow[]) {
@@ -121,7 +130,7 @@ function getDisplaySessions(sessions: SessionRow[]) {
       return aStart - bStart;
     });
 
-  return currentAndUpcoming.slice(0, 2);
+  return currentAndUpcoming.slice(0, 1);
 }
 
 function getAvatarFallback(name: string) {
@@ -137,10 +146,7 @@ export function UserProfileModal({ user, onClose }: UserProfileModalProps) {
   const userId = String(user?.id || "").trim();
 
   const displayName = useMemo(() => {
-    return (
-      String(profile?.full_name || user?.full_name || "").trim() ||
-      "User"
-    );
+    return String(profile?.full_name || user?.full_name || "").trim() || "User";
   }, [profile?.full_name, user?.full_name]);
 
   const bio = useMemo(() => {
@@ -180,11 +186,13 @@ export function UserProfileModal({ user, onClose }: UserProfileModalProps) {
       setLoading(true);
 
       try {
-        const [
-          profileRes,
-          sessionsRes,
-          followersRes,
-        ] = await Promise.all([
+        const now = new Date();
+
+        // Берём чуть с запасом назад, чтобы live-сессия, которая уже началась,
+        // тоже могла попасть в Current & upcoming.
+        const currentWindowStart = new Date(now.getTime() - 12 * 60 * 60 * 1000).toISOString();
+
+        const [profileRes, sessionsRes, followersRes] = await Promise.all([
           supabase
             .from("profiles")
             .select("id, full_name, bio, avatar_url, created_at, attended_sessions_count")
@@ -195,8 +203,9 @@ export function UserProfileModal({ user, onClose }: UserProfileModalProps) {
             .from("sessions")
             .select("id, title, start_time, created_at, schedule")
             .eq("host_id", userId)
+            .gte("start_time", currentWindowStart)
             .order("start_time", { ascending: true })
-            .limit(10),
+            .limit(3),
 
           supabase
             .from("host_followers")
@@ -346,9 +355,9 @@ export function UserProfileModal({ user, onClose }: UserProfileModalProps) {
             Current & upcoming sessions:
           </h3>
 
-          <div className="mt-2 space-y-2">
+          <div className="mt-2">
             {loading ? (
-              <div className="h-[42px] rounded-[7px] bg-[#F7F7F7] px-4 py-3 text-center text-[13px] text-[#8A8A8A]">
+              <div className="flex h-[42px] items-center justify-center rounded-[7px] bg-[#F7F7F7] px-4 text-[13px] text-[#8A8A8A]">
                 Loading sessions...
               </div>
             ) : displaySessions.length > 0 ? (
@@ -363,8 +372,8 @@ export function UserProfileModal({ user, onClose }: UserProfileModalProps) {
                       window.open(`/room-livekit/${s.id}`, "_blank", "noopener,noreferrer");
                     }}
                     className="
-                      flex w-full items-center justify-between gap-3
-                      rounded-[7px] bg-[#F7F7F7] px-4 py-2.5
+                      grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3
+                      rounded-[7px] bg-[#F7F7F7] px-4 py-2
                       text-left transition hover:bg-[#EFEFEF]
                     "
                   >
@@ -382,14 +391,27 @@ export function UserProfileModal({ user, onClose }: UserProfileModalProps) {
                         />
                       </span>
 
-                      <span className="line-clamp-2 text-[14px] leading-[18px] text-[#2F2F2F]">
-                        {s.title || "Untitled session"}
+                      <span className="min-w-0 text-[14px] leading-[18px] text-[#2F2F2F]">
+                        <span className="line-clamp-2">
+                          {s.title || "Untitled session"}
+                        </span>
                       </span>
                     </div>
 
-                    <span className="shrink-0 text-[13px] text-[#3F3F3F]">
-                      {formatShortDate(s.start_time || s.created_at)}
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <span className="text-[13px] leading-none text-[#3F3F3F]">
+                        {formatShortDate(s.start_time || s.created_at)}
+                      </span>
+
+                      <span
+                        className={
+                          "rounded-full px-2 py-0.5 text-[10px] leading-none " +
+                          getBadgeClass(status)
+                        }
+                      >
+                        {status}
+                      </span>
+                    </div>
                   </button>
                 );
               })
