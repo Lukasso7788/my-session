@@ -19,7 +19,7 @@ function getOauthRedirectUrl() {
 
   const host = window.location.hostname.toLowerCase();
   const isLocalhost = host === "localhost" || host === "127.0.0.1";
-  const base = isLocalhost ? window.location.origin : "https://www.mysession.club";
+  const base = window.location.origin;
 
   return `${base}/auth/callback?redirect=%2Fsessions`;
 }
@@ -31,7 +31,7 @@ function getEmailSignupRedirectUrl() {
 
   const host = window.location.hostname.toLowerCase();
   const isLocalhost = host === "localhost" || host === "127.0.0.1";
-  const base = isLocalhost ? window.location.origin : "https://www.mysession.club";
+  const base = window.location.origin;
 
   return `${base}/auth/callback?redirect=%2Fsessions`;
 }

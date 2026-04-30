@@ -13,18 +13,9 @@ function isInAppBrowser() {
 }
 
 function getPasswordResetRedirectUrl() {
-  if (typeof window === "undefined") {
-    return "https://www.mysession.club/update-password";
-  }
+  if (typeof window === "undefined") return "";
 
-  const host = window.location.hostname.toLowerCase();
-  const isLocalhost = host === "localhost" || host === "127.0.0.1";
-
-  if (isLocalhost) {
-    return `${window.location.origin}/update-password`;
-  }
-
-  return "https://www.mysession.club/update-password";
+  return `${window.location.origin}/update-password`;
 }
 
 function getOauthRedirectUrl(redirectPath?: string) {
@@ -41,7 +32,7 @@ function getOauthRedirectUrl(redirectPath?: string) {
 
   const host = window.location.hostname.toLowerCase();
   const isLocalhost = host === "localhost" || host === "127.0.0.1";
-  const base = isLocalhost ? window.location.origin : "https://www.mysession.club";
+  const base = window.location.origin;
 
   return `${base}/auth/callback?redirect=${encodeURIComponent(safeRedirect)}`;
 }
