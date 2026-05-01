@@ -62,8 +62,13 @@ function computeCols(count: number, containerWidth: number) {
     // - на обычном desktop держим 3 колонки (как ты и хотел)
     // - только на очень широком desktop и только для 7–8 позволяем 4
     if (count >= 7 && count <= 9) {
-        if (!isDesktop) return 2;
-        if (count <= 8 && isUltraWideDesktop) return 4;
+        // 7–9 participants should stay in a stable 3-column grid
+        // on laptops and medium containers.
+        //
+        // Only collapse to 2 columns when the actual video container
+        // becomes genuinely narrow.
+        if (w < 760) return 2;
+
         return 3;
     }
 
