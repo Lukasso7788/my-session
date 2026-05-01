@@ -1529,6 +1529,72 @@ export function RoomPageLiveKit() {
     return window.matchMedia("(min-width: 1024px)").matches;
   });
 
+  const [viewportW, setViewportW] = useState<number>(() => {
+    if (typeof window === "undefined") return 1440;
+    return window.innerWidth || 1440;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let raf = 0;
+
+    const update = () => {
+      window.cancelAnimationFrame(raf);
+      raf = window.requestAnimationFrame(() => {
+        setViewportW(window.innerWidth || 1440);
+      });
+    };
+
+    update();
+
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, []);
+
+  const rightPanelWidthPx = useMemo(() => {
+    if (!rightPanelOpen || !isLgUp) return 0;
+
+    if (viewportW < 1100) return 320;
+    if (viewportW < 1280) return 340;
+    if (viewportW < 1440) return 360;
+    if (viewportW < 1680) return 390;
+
+    return 420;
+  }, [rightPanelOpen, isLgUp, viewportW]);
+
+  const roomGridTemplateColumns = useMemo(() => {
+    if (!rightPanelOpen || !isLgUp) return "minmax(0, 1fr)";
+    return `minmax(0, 1fr) ${rightPanelWidthPx}px`;
+  }, [rightPanelOpen, isLgUp, rightPanelWidthPx]);
+
+  const roomUiScale = useMemo(() => {
+    if (!isLgUp) return "lg";
+    if (viewportW < 1280) return "md";
+    return "lg";
+  }, [isLgUp, viewportW]);
+
+  const roomPanelPaddingClass =
+    roomUiScale === "md" ? "p-3" : "p-4";
+
+  const roomPanelHeaderClass =
+    roomUiScale === "md" ? "px-2.5 py-2" : "px-3 py-2";
+
+  const roomPanelTitleClass =
+    roomUiScale === "md" ? "text-[12px]" : "text-[13px]";
+
+  const roomPanelPillClass =
+    roomUiScale === "md" ? "h-7 px-2 text-[11px]" : "h-8 px-3 text-xs";
+
+  const roomPanelIconClass =
+    roomUiScale === "md" ? "w-3.5 h-3.5" : "w-4 h-4";
+
   const [rightTab, setRightTab] = useState<RightPanelTab>("intentions");
   const [chatViewMode, setChatViewMode] = useState<"general" | "host">("general");
   const [hostChatPeerIds, setHostChatPeerIds] = useState<string[]>([]);
@@ -6061,10 +6127,17 @@ export function RoomPageLiveKit() {
   const useFeaturedLayout =
     !!featuredTile &&
     !useVeryNarrowMode &&
-    effectiveW >= 900;
+    effectiveW >= (isLgUp && rightPanelOpen ? 980 : 900);
 
   const videoLayout = useFeaturedLayout ? (
-    <div className="h-full w-full min-w-0 min-h-0 grid grid-cols-[minmax(0,1fr),clamp(15rem,24vw,20rem)] gap-3 p-3 overflow-hidden">
+    <div
+      className="h-full w-full min-w-0 min-h-0 grid gap-2 sm:gap-3 p-2 sm:p-3 overflow-hidden"
+      style={{
+        gridTemplateColumns: isLgUp && rightPanelOpen
+          ? "minmax(0, 1fr) clamp(12rem, 20vw, 16rem)"
+          : "minmax(0, 1fr) clamp(14rem, 24vw, 20rem)",
+      }}
+    >
   <div className="min-w-0 min-h-0 flex items-center justify-center overflow-hidden">
     <div className="w-full min-w-0 min-h-0">
       {featuredTile ? renderTile(featuredTile) : null}
@@ -6133,7 +6206,7 @@ export function RoomPageLiveKit() {
                     items={layoutTilesForRender}
                     containerWidth={effectiveW}
                     containerHeight={effectiveH}
-                    forceThreeAsTwoPlusOne={rightPanelOpen}
+                      forceThreeAsTwoPlusOne={isLgUp && rightPanelOpen && effectiveW < 920}
                     renderItem={(t) => renderTile(t)}
                   />
                 </div>
@@ -6322,7 +6395,7 @@ export function RoomPageLiveKit() {
       {rightTab === "participants" && (
         <div className="h-full min-h-0 flex flex-col">
           <div
-            className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
+            className={`${roomPanelHeaderClass} border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"
               }`}
           >
             <div className="flex items-center gap-2 min-w-0">
@@ -7061,10 +7134,10 @@ export function RoomPageLiveKit() {
           />
 
           <div
-            className={
-              "relative grid grid-rows-1 gap-2 sm:gap-3 flex-1 min-h-0 h-full " +
-              (rightPanelOpen ? "lg:grid-cols-[minmax(0,1fr),420px]" : "grid-cols-1")
-            }
+            className="relative grid grid-rows-1 gap-2 sm:gap-3 flex-1 min-h-0 h-full"
+            style={{
+              gridTemplateColumns: isLgUp ? roomGridTemplateColumns : "minmax(0, 1fr)",
+            }}
           >
             <div
               ref={(el) => {
