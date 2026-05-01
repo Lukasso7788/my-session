@@ -611,7 +611,6 @@ async function ensureAuthReady(sb: SupabaseClient) {
     }
 }
 
-let _hasSessionStagesTable: boolean | null = null;
 const _stagesBySessionId = new Map<string, SessionStage[]>();
 const _stagesByTemplateId = new Map<string, SessionStage[]>();
 const _sessionExtrasById = new Map<string, any | null>();
@@ -777,22 +776,6 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
         return [];
     }
     await ensureAuthReady(sb);
-
-    if (_hasSessionStagesTable !== false && sessionId) {
-        const { data: ssData, error: ssErr } = await sb
-            .from("session_stages")
-            .select("*")
-            .eq("session_id", session.id);
-
-        if (ssErr) {
-            if (isNotFoundErr(ssErr)) _hasSessionStagesTable = false;
-        } else if (Array.isArray(ssData) && ssData.length) {
-            _hasSessionStagesTable = true;
-            const out = normalizeStages(sortStagesInClient(ssData));
-            _stagesBySessionId.set(sessionId, out);
-            return out;
-        }
-    }
 
     const templateId = getTemplateIdFromSession(session);
     if (templateId && _stagesByTemplateId.has(templateId)) {
@@ -3136,11 +3119,14 @@ export default function SessionCard({
     currentUser,
 }: SessionCardProps) {
     const navigate = useNavigate();
-    const isHost = session.host_id === userId;
+    const isHost = !!userId && session.host_id === userId;
 
     const initialIsBooked =
-        session.session_bookings?.some((b: any) => b.user_id === userId) ||
-        session?.is_booked === true;
+        !!userId &&
+        (
+            session.session_bookings?.some((b: any) => b.user_id === userId) ||
+            session?.is_booked === true
+        );
     const [isBookingConfirmed, setIsBookingConfirmed] = useState<boolean>(!!initialIsBooked);
 
     const [isHoveringCancel, setIsHoveringCancel] = useState(false);
@@ -3225,15 +3211,6 @@ export default function SessionCard({
             usage: entitlementState.usage,
         });
     }, [entitlementState]);
-
-    useEffect(() => {
-        console.log("[PAYWALL SessionCard DEBUG]", {
-            sessionId: session?.id,
-            PAYWALL_ENABLED,
-            entitlementState,
-            paywallDecision,
-        });
-    }, [session?.id, entitlementState, paywallDecision]);
 
     useEffect(() => setIsBookingConfirmed(!!initialIsBooked), [session.id, initialIsBooked]);
     useEffect(() => setBookers(initialBookers), [initialBookers]);
