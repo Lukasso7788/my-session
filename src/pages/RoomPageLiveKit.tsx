@@ -6206,7 +6206,7 @@ export function RoomPageLiveKit() {
                     items={layoutTilesForRender}
                     containerWidth={effectiveW}
                     containerHeight={effectiveH}
-                      forceThreeAsTwoPlusOne={isLgUp && rightPanelOpen && effectiveW < 920}
+                      forceThreeAsTwoPlusOne={isLgUp && rightPanelOpen && effectiveW < 1500}
                     renderItem={(t) => renderTile(t)}
                   />
                 </div>

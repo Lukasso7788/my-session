@@ -48,7 +48,11 @@ function computeCols(count: number, containerWidth: number) {
 
     if (count === 3) {
         if (!isDesktop) return 2;
-        return w >= 1280 ? 3 : 2;
+
+        // 3 participants in one row looks too small on laptops,
+        // especially when the right panel is open.
+        // Keep 2+1 until the actual video container is really wide.
+        return w >= 1500 ? 3 : 2;
     }
 
     if (count === 5) return w >= 900 ? 3 : 2;
