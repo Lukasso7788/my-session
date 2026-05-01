@@ -16,6 +16,9 @@ type BookingProfile = {
   id: string;
   full_name?: string | null;
   avatar_url?: string | null;
+};
+
+type CurrentProfile = BookingProfile & {
   email?: string | null;
 };
 
@@ -49,9 +52,11 @@ type SessionWithRelations = Session & {
 function toLocalYMDFromISO(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
+
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
+
   return `${y}-${m}-${day}`;
 }
 
@@ -59,6 +64,7 @@ function ymdFromLocalDate(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
+
   return `${y}-${m}-${day}`;
 }
 
@@ -78,8 +84,10 @@ function fromLocalYMD(ymd: string) {
     .map((n) => Number(n));
 
   if (!y || !m || !d) return null;
+
   const date = new Date(y, m - 1, d);
   if (Number.isNaN(date.getTime())) return null;
+
   return date;
 }
 
@@ -107,6 +115,7 @@ function getDateGroupMeta(ymd: string) {
   const tomorrow = tomorrowLocalYMD();
 
   let label = d.toLocaleDateString(undefined, { weekday: "long" });
+
   if (ymd === today) label = "Today";
   if (ymd === tomorrow) label = "Tomorrow";
 
@@ -120,6 +129,7 @@ function getDateGroupMeta(ymd: string) {
 
 function safeParseSchedule(raw: any) {
   if (!raw) return null;
+
   if (typeof raw === "string") {
     try {
       return JSON.parse(raw);
@@ -127,6 +137,7 @@ function safeParseSchedule(raw: any) {
       return null;
     }
   }
+
   return raw;
 }
 
@@ -165,6 +176,7 @@ function InfinityIcon({ className = "w-5 h-5" }: { className?: string }) {
     />
   );
 }
+
 function ClockIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
   return (
     <img
@@ -175,6 +187,7 @@ function ClockIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) 
     />
   );
 }
+
 function EyeIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
   return (
     <img
@@ -185,6 +198,7 @@ function EyeIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
     />
   );
 }
+
 function WorkflowIcon({
   className = "w-[27px] h-[27px]",
 }: {
@@ -199,6 +213,7 @@ function WorkflowIcon({
     />
   );
 }
+
 function RocketIcon({ className = "w-[27px] h-[27px]" }: { className?: string }) {
   return (
     <img
@@ -346,6 +361,7 @@ function combineLocalDateTimeToISO(dateYMD: string, timeHHMM: string) {
 
 function buildBodySchedule(duration: 25 | 50) {
   const kind = duration === 25 ? "pomodoro" : "deep_work";
+
   return {
     kind: "body_session",
     preset: kind,
@@ -367,27 +383,31 @@ export function SessionsPage() {
   const [sessionTypeTab, setSessionTypeTab] = useState<
     "group" | "infinite" | "body"
   >("group");
-  const [dateFilter, setDateFilter] = useState<string | null>(null);
 
-  const [currentProfile, setCurrentProfile] = useState<BookingProfile | null>(
+  const [dateFilter, setDateFilter] = useState<string | null>(null);
+  const [currentProfile, setCurrentProfile] = useState<CurrentProfile | null>(
     null
   );
-
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
   useEffect(() => {
     if (!howItWorksOpen) return;
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") setHowItWorksOpen(false);
     };
+
     window.addEventListener("keydown", onKeyDown);
+
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [howItWorksOpen]);
 
   useEffect(() => {
     const tab = (searchParams.get("tab") || "").toLowerCase();
+
     if (tab === "group" || tab === "infinite" || tab === "body") {
-      setSessionTypeTab(tab as any);
+      setSessionTypeTab(tab as "group" | "infinite" | "body");
+
       if (DEBUG) console.log("[DEBUG Sessions] Tab from query:", tab);
 
       if (tab === "body") setDateFilter((prev) => prev || todayLocalYMD());
@@ -396,7 +416,9 @@ export function SessionsPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (sessionTypeTab === "body" && !dateFilter) setDateFilter(todayLocalYMD());
+    if (sessionTypeTab === "body" && !dateFilter) {
+      setDateFilter(todayLocalYMD());
+    }
   }, [sessionTypeTab, dateFilter]);
 
   useEffect(() => {
@@ -414,20 +436,22 @@ export function SessionsPage() {
           .maybeSingle();
 
         if (error) throw error;
-        setCurrentProfile((data as any) || null);
+
+        setCurrentProfile((data as CurrentProfile) || null);
       } catch (e) {
         if (DEBUG) console.warn("[DEBUG Sessions] profile load failed:", e);
         setCurrentProfile(null);
       }
     };
 
-    run();
+    void run();
   }, [user?.id]);
 
   const fetchLiveCounts = useCallback(async (sessionIds: string[]) => {
     const ids = (sessionIds || []).filter(
       (x): x is string => typeof x === "string" && x.length > 0
     );
+
     if (!ids.length) return;
 
     try {
@@ -439,9 +463,11 @@ export function SessionsPage() {
       if (error) throw error;
 
       const map = new Map<string, number>();
+
       for (const row of (data || []) as any[]) {
-        if (row?.session_id)
+        if (row?.session_id) {
           map.set(String(row.session_id), Number(row.live_count) || 0);
+        }
       }
 
       if (DEBUG) {
@@ -454,7 +480,7 @@ export function SessionsPage() {
       setSessions((prev) =>
         prev.map((s) => ({
           ...s,
-          live_count: map.get(String(s.id)) ?? 0,
+          live_count: map.get(String(s.id)) ?? s.live_count ?? 0,
         }))
       );
     } catch (e) {
@@ -468,6 +494,12 @@ export function SessionsPage() {
     try {
       setIsLoading(true);
 
+      /**
+       * Public-safe query.
+       *
+       * Do NOT nested-select session_bookings/profiles/email here.
+       * If anon RLS blocks any nested relation, the whole session list can fail.
+       */
       const { data, error } = await supabase
         .from("sessions")
         .select(
@@ -486,16 +518,7 @@ export function SessionsPage() {
           schedule,
           session_format_type,
           is_silent,
-          max_participants,
-          session_bookings (
-            user_id,
-            profiles:profiles (
-              id,
-              full_name,
-              avatar_url,
-              email
-            )
-          )
+          max_participants
         `
         )
         .order("start_time", { ascending: true });
@@ -503,28 +526,88 @@ export function SessionsPage() {
       if (error) throw error;
 
       const rows = (data || []) as unknown as SessionWithRelations[];
-      if (DEBUG) console.log("[DEBUG Sessions] Loaded:", rows);
 
-      setSessions(rows);
+      if (DEBUG) console.log("[DEBUG Sessions] Loaded public sessions:", rows);
 
       const ids = rows
         .map((s) => String((s as any).id || ""))
         .filter((x) => x.length > 0);
 
+      /**
+       * Optional enrichment.
+       *
+       * If anon RLS blocks session_bookings/profiles, we do NOT fail the page.
+       * Session cards still render; booked avatars/count just won't be enriched.
+       */
+      let bookingsBySessionId = new Map<string, SessionBookingRow[]>();
+
+      if (ids.length) {
+        try {
+          const { data: bookingsData, error: bookingsError } = await supabase
+            .from("session_bookings")
+            .select(
+              `
+              session_id,
+              user_id,
+              profiles:profiles (
+                id,
+                full_name,
+                avatar_url
+              )
+            `
+            )
+            .in("session_id", ids);
+
+          if (bookingsError) throw bookingsError;
+
+          for (const row of (bookingsData || []) as any[]) {
+            const sid = String(row?.session_id || "");
+            if (!sid) continue;
+
+            const prev = bookingsBySessionId.get(sid) || [];
+
+            prev.push({
+              user_id: String(row?.user_id || ""),
+              profiles: row?.profiles || null,
+            });
+
+            bookingsBySessionId.set(sid, prev);
+          }
+        } catch (bookingsErr) {
+          if (DEBUG) {
+            console.warn(
+              "[DEBUG Sessions] Optional bookings load failed. Public sessions will still render:",
+              bookingsErr
+            );
+          }
+
+          bookingsBySessionId = new Map();
+        }
+      }
+
+      const hydratedRows = rows.map((s) => ({
+        ...s,
+        session_bookings: bookingsBySessionId.get(String(s.id)) || [],
+      }));
+
+      setSessions(hydratedRows);
+
       await fetchLiveCounts(ids);
     } catch (err) {
       console.error("[DEBUG Sessions] FAILED LOADING:", err);
+      setSessions([]);
     } finally {
       setIsLoading(false);
     }
   }, [fetchLiveCounts]);
 
   useEffect(() => {
-    fetchSessions();
+    void fetchSessions();
   }, [fetchSessions]);
 
   useEffect(() => {
     modal.setOnCreatedCallback(fetchSessions);
+
     if (DEBUG) console.log("[DEBUG Sessions] Modal callback set");
   }, [modal, fetchSessions]);
 
@@ -537,15 +620,21 @@ export function SessionsPage() {
   );
 
   useEffect(() => {
-    const t = window.setInterval(() => fetchLiveCounts(sessionIds), 10_000);
+    if (!sessionIds.length) return;
+
+    const t = window.setInterval(() => {
+      void fetchLiveCounts(sessionIds);
+    }, 10_000);
+
     return () => window.clearInterval(t);
   }, [sessionIds, fetchLiveCounts]);
 
   const isExpired = (s: SessionWithRelations) => {
     const type = resolveSessionType(s);
-    if (type === "infinite") return false;
 
+    if (type === "infinite") return false;
     if (!s.start_time) return false;
+
     const dur = Number(s.duration_minutes) || 0;
     if (dur <= 0) return false;
 
@@ -572,6 +661,7 @@ export function SessionsPage() {
 
     return typeFilteredSessions.filter((s) => {
       if (!s.start_time) return false;
+
       const ymd = toLocalYMDFromISO(s.start_time);
       return ymd === dateFilter;
     });
@@ -599,18 +689,28 @@ export function SessionsPage() {
   }, [visibleSessions, isAllDatesMode]);
 
   const join = (id: string) => {
-    if (!user) return navigate("/login");
-    navigate(`/room/${id}`);
+    const next = `/room-livekit/${id}`;
+
+    if (!user) {
+      return navigate(`/login?next=${encodeURIComponent(next)}`);
+    }
+
+    navigate(next);
   };
 
   const book = async (id: string) => {
-    if (!user) return navigate("/login");
+    if (!user) {
+      return navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+    }
+
     try {
       const { error } = await supabase.from("session_bookings").insert({
         session_id: id,
         user_id: user.id,
       });
+
       if (error) throw error;
+
       await fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Booking error:", err);
@@ -618,7 +718,10 @@ export function SessionsPage() {
   };
 
   const cancel = async (id: string) => {
-    if (!user) return navigate("/login");
+    if (!user) {
+      return navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+    }
+
     try {
       const { error } = await supabase
         .from("session_bookings")
@@ -627,6 +730,7 @@ export function SessionsPage() {
         .eq("user_id", user.id);
 
       if (error) throw error;
+
       await fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Cancel error:", err);
@@ -634,10 +738,15 @@ export function SessionsPage() {
   };
 
   const remove = async (id: string) => {
-    if (!user) return navigate("/login");
+    if (!user) {
+      return navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+    }
+
     try {
       const { error } = await supabase.from("sessions").delete().eq("id", id);
+
       if (error) throw error;
+
       setSessions((prev) => prev.filter((s) => s.id !== id));
     } catch (err) {
       console.error("[DEBUG Sessions] Delete error:", err);
@@ -656,7 +765,10 @@ export function SessionsPage() {
       duration_minutes?: number | null;
     }
   ) => {
-    if (!user) return navigate("/login");
+    if (!user) {
+      return navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+    }
+
     if (!updates || Object.keys(updates).length === 0) return;
 
     try {
@@ -666,6 +778,7 @@ export function SessionsPage() {
         .eq("id", sessionId);
 
       if (error) throw error;
+
       await fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Edit session error:", err);
@@ -683,7 +796,7 @@ export function SessionsPage() {
     const s = sessions.find((x) => x.id === sessionId);
     const title = s?.title || "MySession";
     const when = s?.start_time ? new Date(s.start_time).toLocaleString() : "";
-    const link = `${window.location.origin}/room-iframe/${sessionId}`;
+    const link = `${window.location.origin}/room-livekit/${sessionId}`;
 
     const subject = encodeURIComponent(`Invitation: ${title}`);
     const body = encodeURIComponent(
@@ -699,7 +812,10 @@ export function SessionsPage() {
   };
 
   const openCreate = () => {
-    if (!user) return navigate("/login");
+    if (!user) {
+      return navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+    }
+
     modal.open();
   };
 
@@ -708,7 +824,9 @@ export function SessionsPage() {
     dateYMD: string;
     timeHHMM: string;
   }) => {
-    if (!user?.id) return navigate("/login");
+    if (!user?.id) {
+      return navigate(`/login?next=${encodeURIComponent("/sessions?tab=body")}`);
+    }
 
     const iso = combineLocalDateTimeToISO(payload.dateYMD, payload.timeHHMM);
     if (!iso) throw new Error("Invalid date/time");
@@ -794,9 +912,11 @@ export function SessionsPage() {
               value={sessionTypeTab}
               onChange={(v) => {
                 setSessionTypeTab(v);
+
                 if (v === "infinite") setDateFilter(null);
-                if (v === "body")
+                if (v === "body") {
                   setDateFilter((prev) => prev || todayLocalYMD());
+                }
               }}
             />
           </div>
@@ -836,7 +956,9 @@ export function SessionsPage() {
                   <div className="p-2 text-center">
                     <p className="text-sm text-slate-600 mb-4">
                       No active sessions{" "}
-                      {dateFilter && !isAllDatesValue(dateFilter) && sessionTypeTab === "group"
+                      {dateFilter &&
+                        !isAllDatesValue(dateFilter) &&
+                        sessionTypeTab === "group"
                         ? "for this date"
                         : "available"}
                     </p>
@@ -921,6 +1043,7 @@ export function SessionsPage() {
             className="absolute inset-0 bg-black/40"
             onClick={() => setHowItWorksOpen(false)}
           />
+
           <div className="absolute inset-0 flex items-center justify-center p-4">
             <div
               className="
@@ -1006,8 +1129,8 @@ export function SessionsPage() {
                         optional.
                       </li>
                       <li>
-                        You’ll see the session flow: timer/stages (depending on
-                        room type).
+                        You’ll see the session flow: timer/stages depending on
+                        room type.
                       </li>
                     </ul>
                   </div>
@@ -1018,7 +1141,8 @@ export function SessionsPage() {
                     </div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
                       <li>
-                        Use stage prompts to stay aligned (check-in / intentions).
+                        Use stage prompts to stay aligned: check-in and
+                        intentions.
                       </li>
                       <li>
                         During <b>Focus</b>, work silently or lightly co-work.
@@ -1035,10 +1159,10 @@ export function SessionsPage() {
                     </div>
                     <ul className="text-[13px] text-[#111827]/80 leading-relaxed list-disc pl-5 space-y-2">
                       <li>
-                        Wrap up at the end (or anytime in 24/7 focus rooms).
+                        Wrap up at the end or anytime in 24/7 focus rooms.
                       </li>
                       <li>
-                        Quick self-reflection: what you did / what’s next.
+                        Quick self-reflection: what you did and what’s next.
                       </li>
                       <li>Leave the session — your work is done.</li>
                     </ul>
@@ -1049,10 +1173,10 @@ export function SessionsPage() {
 
                 <div className="flex items-center justify-between gap-4">
                   <h4 className="text-[14px] sm:text-[15px] font-semibold text-[#111827]">
-                    Stages glossary (what each block means)
+                    Stages glossary
                   </h4>
                   <span className="text-[12px] text-[#111827]/60">
-                    (Some rooms may hide stages — e.g. silent rooms)
+                    Some rooms may hide stages — e.g. silent rooms.
                   </span>
                 </div>
 
@@ -1062,7 +1186,8 @@ export function SessionsPage() {
                       Check-in
                     </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      Quick verbal sync: “What are you working on?” + “Any blockers?”. Short, supportive, no long stories.
+                      Quick verbal sync: what are you working on, and are there
+                      any blockers?
                     </p>
                   </div>
 
@@ -1071,7 +1196,8 @@ export function SessionsPage() {
                       Intentions
                     </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      You state your goal for the next focus block. Keep it specific: 1–3 concrete outcomes.
+                      You state your goal for the next focus block. Keep it
+                      specific: 1–3 concrete outcomes.
                     </p>
                   </div>
 
@@ -1080,7 +1206,8 @@ export function SessionsPage() {
                       Focus
                     </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      The working block. Usually quiet. Your only job: do the task.
+                      The working block. Usually quiet. Your only job is to do
+                      the task.
                     </p>
                   </div>
 
@@ -1089,7 +1216,8 @@ export function SessionsPage() {
                       Break
                     </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      Rest/reset: stand up, water, stretch. Avoid doom-scrolling if you can.
+                      Rest/reset: stand up, water, stretch. Avoid doom-scrolling
+                      if you can.
                     </p>
                   </div>
 
@@ -1098,7 +1226,8 @@ export function SessionsPage() {
                       Custom block
                     </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      A flexible stage you can name anything: “Reading”, “Planning”, “Admin”, etc. Use it however you want.
+                      A flexible stage you can name anything: Reading,
+                      Planning, Admin, etc.
                     </p>
                   </div>
 
@@ -1107,7 +1236,8 @@ export function SessionsPage() {
                       Outro / Wrap-up
                     </div>
                     <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                      Quick closure: what you finished, what’s next, and one takeaway.
+                      Quick closure: what you finished, what’s next, and one
+                      takeaway.
                     </p>
                   </div>
                 </div>
@@ -1117,7 +1247,8 @@ export function SessionsPage() {
                     Pro tip
                   </div>
                   <p className="text-[13px] text-[#111827]/80 leading-relaxed mt-2">
-                    If you’re joining a <b>Silent</b> room: keep mic off, use the stage timer as guidance, and focus. No pressure to talk.
+                    If you’re joining a <b>Silent</b> room: keep mic off, use
+                    the stage timer as guidance, and focus. No pressure to talk.
                   </p>
                 </div>
 
