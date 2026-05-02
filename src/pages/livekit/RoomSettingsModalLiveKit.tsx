@@ -289,6 +289,7 @@ function SoundTestSection(props: {
     const [speakerTestStatus, setSpeakerTestStatus] = React.useState("");
 
     const [micTesting, setMicTesting] = React.useState(false);
+    const [micRestarting, setMicRestarting] = React.useState(false);
     const [micLevel, setMicLevel] = React.useState(0);
     const [micTestError, setMicTestError] = React.useState("");
     const [micTestStatus, setMicTestStatus] = React.useState("");
@@ -307,50 +308,12 @@ function SoundTestSection(props: {
     const micMonitorAudioElRef = React.useRef<SinkAudioElement | null>(null);
     const micMonitorSourceRef = React.useRef<MediaStreamAudioSourceNode | null>(null);
 
-    const applyMicProcessingToActiveTestTrack = React.useCallback(
-        async (reason = "settings-change") => {
-            const stream = micStreamRef.current;
-            const track = stream?.getAudioTracks?.()[0];
+    const restartTimerRef = React.useRef<number | null>(null);
+    const restartSeqRef = React.useRef(0);
 
-            if (!track || track.readyState !== "live") return false;
+    const stopMicGraph = React.useCallback((opts?: { resetUi?: boolean }) => {
+        const resetUi = opts?.resetUi !== false;
 
-            if (typeof track.applyConstraints !== "function") {
-                setMicProcessingStatus("This browser cannot update mic processing while testing.");
-                return false;
-            }
-
-            try {
-                setMicProcessingStatus("Applying mic processing…");
-
-                await track.applyConstraints({
-                    echoCancellation: echoCancellationEnabled,
-                    noiseSuppression: noiseSuppressionEnabled,
-                    autoGainControl: autoGainControlEnabled,
-                } as MediaTrackConstraints);
-
-                const settings =
-                    typeof track.getSettings === "function"
-                        ? track.getSettings()
-                        : null;
-
-                setMicProcessingStatus(
-                    settings
-                        ? `Applied live: echo ${settings.echoCancellation ? "on" : "off"}, noise ${settings.noiseSuppression ? "on" : "off"}, gain ${settings.autoGainControl ? "on" : "off"}`
-                        : "Mic processing applied live."
-                );
-
-                return true;
-            } catch (err) {
-                const message = err instanceof Error ? err.message : "Could not apply mic processing live.";
-                setMicProcessingStatus(`Could not apply live mic processing: ${message}`);
-                console.warn("[RoomSettingsModalLiveKit] apply mic processing failed", reason, err);
-                return false;
-            }
-        },
-        [echoCancellationEnabled, noiseSuppressionEnabled, autoGainControlEnabled]
-    );
-
-    const stopMicTest = React.useCallback(() => {
         if (micFrameRef.current != null) {
             cancelAnimationFrame(micFrameRef.current);
             micFrameRef.current = null;
@@ -392,11 +355,25 @@ function SoundTestSection(props: {
         micMonitorAudioElRef.current = null;
         micMonitorSourceRef.current = null;
 
-        setMicTesting(false);
         setMicLevel(0);
-        setMicTestStatus("");
-        setMicProcessingStatus("");
+
+        if (resetUi) {
+            setMicTesting(false);
+            setMicRestarting(false);
+            setMicTestStatus("");
+            setMicProcessingStatus("");
+        }
     }, []);
+
+    const stopMicTest = React.useCallback(() => {
+        if (restartTimerRef.current != null) {
+            window.clearTimeout(restartTimerRef.current);
+            restartTimerRef.current = null;
+        }
+
+        restartSeqRef.current += 1;
+        stopMicGraph({ resetUi: true });
+    }, [stopMicGraph]);
 
     React.useEffect(() => {
         return () => {
@@ -404,67 +381,21 @@ function SoundTestSection(props: {
         };
     }, [stopMicTest]);
 
-    React.useEffect(() => {
-        if (!micTesting || !micStreamRef.current) return;
+    const createMicGraph = React.useCallback(
+        async (opts?: { restart?: boolean }) => {
+            const isRestart = opts?.restart === true;
+            const seq = restartSeqRef.current;
 
-        void applyMicProcessingToActiveTestTrack("processing-props-changed");
-    }, [
-        micTesting,
-        echoCancellationEnabled,
-        noiseSuppressionEnabled,
-        autoGainControlEnabled,
-        applyMicProcessingToActiveTestTrack,
-    ]);
-
-    React.useEffect(() => {
-        const gain = micMonitorGainRef.current;
-        if (!gain) return;
-
-        const next = Math.max(0, Math.min(1, micMonitorVolume / 100));
-
-        try {
-            if (micAudioContextRef.current) {
-                gain.gain.setTargetAtTime(next, micAudioContextRef.current.currentTime, 0.015);
+            if (isRestart) {
+                setMicRestarting(true);
+                setMicProcessingStatus("Restarting mic test with new processing…");
             } else {
-                gain.gain.value = next;
+                setMicTestError("");
+                setMicProcessingStatus("");
+                setMicTestStatus("Requesting microphone…");
             }
-        } catch { }
-    }, [micMonitorVolume]);
 
-    React.useEffect(() => {
-        const gain = micMonitorGainRef.current;
-        if (!gain) return;
-
-        const next = micMonitorEnabled ? Math.max(0, Math.min(1, micMonitorVolume / 100)) : 0;
-
-        try {
-            if (micAudioContextRef.current) {
-                gain.gain.setTargetAtTime(next, micAudioContextRef.current.currentTime, 0.015);
-            } else {
-                gain.gain.value = next;
-            }
-        } catch { }
-    }, [micMonitorEnabled, micMonitorVolume]);
-
-    React.useEffect(() => {
-        const audioEl = micMonitorAudioElRef.current;
-        if (!audioEl) return;
-
-        if (
-            selectedAudioOutputId &&
-            selectedAudioOutputId !== "default" &&
-            typeof audioEl.setSinkId === "function"
-        ) {
-            audioEl.setSinkId(selectedAudioOutputId).catch(() => { });
-        }
-    }, [selectedAudioOutputId]);
-
-    const startMicTest = React.useCallback(async () => {
-        try {
-            stopMicTest();
-            setMicTestError("");
-            setMicProcessingStatus("");
-            setMicTestStatus("Requesting microphone…");
+            stopMicGraph({ resetUi: false });
 
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
@@ -476,11 +407,21 @@ function SoundTestSection(props: {
                 video: false,
             });
 
+            if (seq !== restartSeqRef.current) {
+                try {
+                    stream.getTracks().forEach((t) => t.stop());
+                } catch { }
+                return;
+            }
+
             const AudioContextCtor =
                 window.AudioContext ||
                 (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 
             if (!AudioContextCtor) {
+                try {
+                    stream.getTracks().forEach((t) => t.stop());
+                } catch { }
                 throw new Error("AudioContext is not supported in this browser.");
             }
 
@@ -530,6 +471,12 @@ function SoundTestSection(props: {
                 micMonitorAudioElRef.current = audioEl;
             }
 
+            const track = stream.getAudioTracks()[0];
+            const settings =
+                track && typeof track.getSettings === "function"
+                    ? track.getSettings()
+                    : null;
+
             const data = new Uint8Array(analyser.fftSize);
 
             const tick = () => {
@@ -550,34 +497,115 @@ function SoundTestSection(props: {
             };
 
             setMicTesting(true);
+            setMicRestarting(false);
+            setMicTestError("");
             setMicTestStatus(
                 micMonitorEnabled
                     ? "Speak now. You should see the level and hear your own voice."
                     : "Speak now and watch the level."
             );
 
-            void applyMicProcessingToActiveTestTrack("start-mic-test");
+            setMicProcessingStatus(
+                settings
+                    ? `Active test stream: echo ${settings.echoCancellation ? "on" : "off"}, noise ${settings.noiseSuppression ? "on" : "off"}, gain ${settings.autoGainControl ? "on" : "off"}`
+                    : "Mic test stream started with current processing settings."
+            );
 
             tick();
+        },
+        [
+            autoGainControlEnabled,
+            echoCancellationEnabled,
+            noiseSuppressionEnabled,
+            selectedAudioInputId,
+            selectedAudioOutputId,
+            micMonitorEnabled,
+            micMonitorVolume,
+            stopMicGraph,
+        ]
+    );
+
+    const restartMicTestWithNewProcessing = React.useCallback(
+        (reason = "processing-change") => {
+            if (!micTesting && !micStreamRef.current) return;
+
+            if (restartTimerRef.current != null) {
+                window.clearTimeout(restartTimerRef.current);
+            }
+
+            setMicRestarting(true);
+            setMicProcessingStatus("Re-applying mic processing…");
+
+            restartTimerRef.current = window.setTimeout(() => {
+                restartTimerRef.current = null;
+                restartSeqRef.current += 1;
+
+                void createMicGraph({ restart: true }).catch((err) => {
+                    const message = err instanceof Error ? err.message : "Could not restart microphone test.";
+                    console.warn("[RoomSettingsModalLiveKit] mic test restart failed", reason, err);
+                    setMicTestError(message);
+                    setMicRestarting(false);
+                    setMicProcessingStatus(`Could not re-apply processing: ${message}`);
+                });
+            }, 80);
+        },
+        [createMicGraph, micTesting]
+    );
+
+    React.useEffect(() => {
+        if (!micTesting || !micStreamRef.current) return;
+
+        restartMicTestWithNewProcessing("processing-props-changed");
+    }, [
+        echoCancellationEnabled,
+        noiseSuppressionEnabled,
+        autoGainControlEnabled,
+        restartMicTestWithNewProcessing,
+        micTesting,
+    ]);
+
+    React.useEffect(() => {
+        const gain = micMonitorGainRef.current;
+        if (!gain) return;
+
+        const next = micMonitorEnabled ? Math.max(0, Math.min(1, micMonitorVolume / 100)) : 0;
+
+        try {
+            if (micAudioContextRef.current) {
+                gain.gain.setTargetAtTime(next, micAudioContextRef.current.currentTime, 0.015);
+            } else {
+                gain.gain.value = next;
+            }
+        } catch { }
+    }, [micMonitorEnabled, micMonitorVolume]);
+
+    React.useEffect(() => {
+        const audioEl = micMonitorAudioElRef.current;
+        if (!audioEl) return;
+
+        if (
+            selectedAudioOutputId &&
+            selectedAudioOutputId !== "default" &&
+            typeof audioEl.setSinkId === "function"
+        ) {
+            audioEl.setSinkId(selectedAudioOutputId).catch(() => { });
+        }
+    }, [selectedAudioOutputId]);
+
+    const startMicTest = React.useCallback(async () => {
+        try {
+            restartSeqRef.current += 1;
+            await createMicGraph({ restart: false });
         } catch (err) {
             const message = err instanceof Error ? err.message : "Could not start microphone test.";
             setMicTestError(message);
             setMicTesting(false);
+            setMicRestarting(false);
             setMicLevel(0);
             setMicTestStatus("");
             setMicProcessingStatus("");
         }
-    }, [
-        autoGainControlEnabled,
-        echoCancellationEnabled,
-        noiseSuppressionEnabled,
-        selectedAudioInputId,
-        selectedAudioOutputId,
-        micMonitorEnabled,
-        micMonitorVolume,
-        stopMicTest,
-        applyMicProcessingToActiveTestTrack,
-    ]);
+    }, [createMicGraph]);
 
     const playSpeakerTest = React.useCallback(async () => {
         let ctx: AudioContext | null = null;
@@ -723,7 +751,7 @@ function SoundTestSection(props: {
                         Test microphone
                     </div>
                     <div className={`mt-1 text-[12px] ${subtleText}`}>
-                        Uses your currently selected microphone and current mic-processing settings. Processing changes apply live while the test is running.
+                        Uses your selected microphone. Processing changes restart the test stream automatically while the test is running.
                     </div>
 
                     <div className="mt-4 flex flex-col gap-4">
@@ -767,6 +795,10 @@ function SoundTestSection(props: {
                                 Stop mic test
                             </button>
                         )}
+
+                        {micRestarting ? (
+                            <div className={`text-[12px] ${subtleText}`}>Restarting…</div>
+                        ) : null}
                     </div>
 
                     <div className="mt-4">
@@ -1047,7 +1079,7 @@ export function RoomSettingsModalLiveKit({
                                 <div className="flex flex-col gap-4">
                                     <ToggleRow
                                         label="Echo cancellation"
-                                        description="Reduce echo from speakers going back into the mic. If mic test is running, this applies live."
+                                        description="Reduce echo from speakers going back into the mic."
                                         checked={echoCancellationEnabled}
                                         onChange={(v) => {
                                             void onChangeEchoCancellation(v);
@@ -1057,7 +1089,7 @@ export function RoomSettingsModalLiveKit({
 
                                     <ToggleRow
                                         label="Noise suppression"
-                                        description="Reduce keyboard noise, fan noise and room hum. If mic test is running, this applies live."
+                                        description="Reduce keyboard noise, fan noise and room hum."
                                         checked={noiseSuppressionEnabled}
                                         onChange={(v) => {
                                             void onChangeNoiseSuppression(v);
@@ -1067,7 +1099,7 @@ export function RoomSettingsModalLiveKit({
 
                                     <ToggleRow
                                         label="Auto gain control"
-                                        description="Automatically normalize mic loudness. If mic test is running, this applies live."
+                                        description="Automatically normalize mic loudness."
                                         checked={autoGainControlEnabled}
                                         onChange={(v) => {
                                             void onChangeAutoGainControl(v);
