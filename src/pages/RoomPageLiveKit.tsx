@@ -770,7 +770,7 @@ function getStatusTone(status: unknown): string {
 const LK_TAB_PREFIX = "mysession_lk_tabs";
 const LK_TAB_TTL_MS = 18_000;
 const LK_TAB_HEARTBEAT_MS = 5_000;
-const LK_MAX_TABS_DEFAULT = 2;
+const LK_MAX_TABS_DEFAULT = 20;
 
 type TabPresence = { v: number; tabs: { id: string; ts: number }[] };
 
@@ -3706,7 +3706,10 @@ export function RoomPageLiveKit() {
   const tryAcquireTabGate = (sessionId: string, baseUserId: string) => {
     const maxTabs = Math.max(
       1,
-      Math.min(6, Number((import.meta as any)?.env?.VITE_LIVEKIT_MAX_TABS || LK_MAX_TABS_DEFAULT) || LK_MAX_TABS_DEFAULT)
+      Math.min(
+        20,
+        Number((import.meta as any)?.env?.VITE_LIVEKIT_MAX_TABS || LK_MAX_TABS_DEFAULT) || LK_MAX_TABS_DEFAULT
+      )
     );
     const key = makeTabPresenceKey(sessionId, baseUserId);
 
