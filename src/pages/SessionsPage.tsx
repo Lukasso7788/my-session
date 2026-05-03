@@ -1690,7 +1690,17 @@ export function SessionsPage() {
 
             <div className="px-6 pb-7 pt-7">
               <div className="flex flex-col items-center text-center">
-                <div className="h-[86px] w-[86px] overflow-hidden rounded-full bg-[#D9D9D9]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (postSessionPrompt.hostId) {
+                      window.open(`/profile/${postSessionPrompt.hostId}`, "_blank");
+                    }
+                  }}
+                  disabled={!postSessionPrompt.hostId}
+                  className="h-[86px] w-[86px] overflow-hidden rounded-full bg-[#D9D9D9] transition hover:scale-[1.02] disabled:cursor-default disabled:hover:scale-100"
+                  title={postSessionPrompt.hostId ? "Open host profile" : undefined}
+                >
                   {postSessionPrompt.hostAvatarUrl ? (
                     <img
                       src={postSessionPrompt.hostAvatarUrl}
@@ -1702,11 +1712,21 @@ export function SessionsPage() {
                       {getInitialLetter(postSessionPrompt.hostName)}
                     </div>
                   )}
-                </div>
+                </button>
 
-                <h2 className="mt-4 text-[19px] font-semibold leading-none text-[#2F2F2F]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (postSessionPrompt.hostId) {
+                      window.open(`/profile/${postSessionPrompt.hostId}`, "_blank");
+                    }
+                  }}
+                  disabled={!postSessionPrompt.hostId}
+                  className="mt-4 text-[19px] font-semibold leading-none text-[#2F2F2F] transition hover:opacity-70 disabled:cursor-default disabled:hover:opacity-100"
+                  title={postSessionPrompt.hostId ? "Open host profile" : undefined}
+                >
                   {postSessionPrompt.hostName}
-                </h2>
+                </button>
 
                 <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[13px] text-[#666666]">
                   <div className="flex items-center gap-1.5">
@@ -1735,7 +1755,7 @@ export function SessionsPage() {
 
                   <div className="flex items-center gap-1.5">
                     <img
-                      src="/icons/date-calendar.svg"
+                      src="/icons/date-profile.svg"
                       alt=""
                       className="h-[14px] w-[14px]"
                       draggable={false}
@@ -1746,8 +1766,26 @@ export function SessionsPage() {
               </div>
 
               <div className="mt-7">
-                <div className="text-[16px] font-semibold text-[#2F2F2F]">
-                  Thanks for joining
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[16px] font-semibold text-[#2F2F2F]">
+                    Thanks for joining
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void togglePostSessionFollowHost()}
+                    disabled={postSessionFollowBusy || postSessionPrompt.hostId === user?.id}
+                    className={`shrink-0 rounded-full border px-3.5 py-2 text-[12px] font-semibold transition disabled:opacity-60 ${postSessionFollowing
+                      ? "border-[#2F2F2F] bg-[#2F2F2F] text-white"
+                      : "border-[#CAC3C3] bg-white text-[#2F2F2F] hover:bg-[#F8F8F8]"
+                      }`}
+                  >
+                    {postSessionFollowBusy
+                      ? "Saving..."
+                      : postSessionFollowing
+                        ? "Following"
+                        : "Follow host"}
+                  </button>
                 </div>
 
                 <div className="mt-2 text-[14px] leading-[1.6] text-[#666666]">
@@ -1827,8 +1865,8 @@ export function SessionsPage() {
                       type="button"
                       onClick={() => setPostSessionRating(ratingValue)}
                       className={`h-10 w-10 rounded-full text-[20px] transition ${ratingValue <= postSessionRating
-                          ? "bg-[#2F2F2F] text-white"
-                          : "bg-white text-[#8B8B8B] border border-[#CAC3C3] hover:bg-[#F0F0F0]"
+                        ? "bg-[#2F2F2F] text-white"
+                        : "bg-white text-[#8B8B8B] border border-[#CAC3C3] hover:bg-[#F0F0F0]"
                         }`}
                     >
                       ★
@@ -1867,29 +1905,13 @@ export function SessionsPage() {
                       : "Submit feedback"}
                 </button>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => void togglePostSessionFollowHost()}
-                    disabled={postSessionFollowBusy || postSessionPrompt.hostId === user?.id}
-                    className="rounded-full border border-[#CAC3C3] bg-white px-4 py-3 text-[14px] font-medium text-[#2F2F2F] transition hover:bg-[#F8F8F8] disabled:opacity-60"
-                  >
-                    {postSessionFollowBusy
-                      ? "Saving..."
-                      : postSessionFollowing
-                        ? "Following"
-                        : "Follow host"}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => window.open(`/profile/${postSessionPrompt.hostId}`, "_blank")}
-                    disabled={!postSessionPrompt.hostId}
-                    className="rounded-full border border-[#CAC3C3] bg-white px-4 py-3 text-[14px] font-medium text-[#2F2F2F] transition hover:bg-[#F8F8F8] disabled:opacity-60"
-                  >
-                    See full profile
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={closePostSessionPrompt}
+                  className="w-full rounded-full border border-[#CAC3C3] bg-white px-6 py-3 text-[14px] font-medium text-[#2F2F2F] transition hover:bg-[#F8F8F8]"
+                >
+                  Skip for now
+                </button>
               </div>
             </div>
           </div>
