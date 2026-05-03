@@ -783,6 +783,7 @@ function randId(len = 10) {
   for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
   return out;
 }
+
 function getOrCreateTabId(storageKey = "mysession_lk_tab_id") {
   try {
     const existing = sessionStorage.getItem(storageKey);
@@ -802,6 +803,27 @@ function getOrCreateTabId(storageKey = "mysession_lk_tab_id") {
 
   return id;
 }
+
+function makeLiveKitPageTabId() {
+  let id = "";
+
+  try {
+    const c: any = crypto as any;
+    if (c?.randomUUID) {
+      id = String(c.randomUUID())
+        .replace(/[^a-z0-9]/gi, "")
+        .slice(0, 12)
+        .toLowerCase();
+    }
+  } catch { }
+
+  if (!id) {
+    id = `${randId(8)}${Date.now().toString(36).slice(-4)}`.slice(0, 12);
+  }
+
+  return id;
+}
+
 function readPresence(key: string): TabPresence {
   try {
     const raw = localStorage.getItem(key);
@@ -989,7 +1011,7 @@ export function RoomPageLiveKit() {
   const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
   const [paywallModalOpen, setPaywallModalOpen] = useState(false);
 
-  const tabId = useMemo(() => getOrCreateTabId("mysession_lk_tab_id"), []);
+  const tabId = useMemo(() => makeLiveKitPageTabId(), []);
   const devClones = useMemo(() => Math.max(0, Math.min(24, getQueryInt("devClones", 0))), []);
   useEffect(() => {
     let cancelled = false;
@@ -3764,6 +3786,13 @@ export function RoomPageLiveKit() {
 
       const identity = safeIdentity(`${baseUser}--${tabId}`);
       livekitIdentityRef.current = identity;
+
+      console.log("[LK TAB DEBUG]", {
+        sessionId: session.id,
+        baseUser,
+        tabId,
+        identity,
+      });
 
       if (!tabPresenceAcquiredRef.current) {
         const g = tryAcquireTabGate(session.id, baseUser);
