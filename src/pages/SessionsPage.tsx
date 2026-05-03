@@ -49,6 +49,29 @@ type SessionWithRelations = Session & {
   live_count?: number;
 };
 
+
+type PostSessionPromptState = {
+  open: boolean;
+  sessionId: string;
+  sessionTitle: string;
+  hostId: string;
+  hostName: string;
+  hostAvatarUrl?: string | null;
+  hostBio?: string | null;
+  minutesSpent: number;
+  followerCount?: number;
+  sessionsCount?: number;
+  joinedSince?: string | null;
+};
+
+type PostSessionSessionOption = {
+  id: string;
+  title?: string | null;
+  start_time?: string | null;
+  duration_minutes?: number | null;
+  host_id?: string | null;
+};
+
 function toLocalYMDFromISO(iso: string) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
@@ -125,6 +148,39 @@ function getDateGroupMeta(ymd: string) {
   });
 
   return { label, pretty };
+}
+
+function formatPostSessionTime(iso?: string | null) {
+  const value = String(iso || "").trim();
+  if (!value) return "Time TBD";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Time TBD";
+
+  return date.toLocaleDateString(undefined, {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+  });
+}
+
+function formatJoinedSince(iso?: string | null) {
+  const value = String(iso || "").trim();
+  if (!value) return "—";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleDateString(undefined, {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+  });
+}
+
+function getInitialLetter(name: string) {
+  const value = String(name || "").trim();
+  return (value[0] || "H").toUpperCase();
 }
 
 function safeParseSchedule(raw: any) {
@@ -390,6 +446,35 @@ export function SessionsPage() {
   );
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
+  const [postSessionPrompt, setPostSessionPrompt] =
+    useState<PostSessionPromptState>({
+      open: false,
+      sessionId: "",
+      sessionTitle: "",
+      hostId: "",
+      hostName: "Host",
+      hostAvatarUrl: "",
+      hostBio: "",
+      minutesSpent: 0,
+      followerCount: 0,
+      sessionsCount: 0,
+      joinedSince: null,
+    });
+
+  const [postSessionRating, setPostSessionRating] = useState(0);
+  const [postSessionFeedback, setPostSessionFeedback] = useState("");
+  const [postSessionTechFeedback, setPostSessionTechFeedback] = useState("");
+  const [postSessionSubmitting, setPostSessionSubmitting] = useState(false);
+  const [postSessionSubmitted, setPostSessionSubmitted] = useState(false);
+
+  const [postSessionFollowing, setPostSessionFollowing] = useState(false);
+  const [postSessionFollowBusy, setPostSessionFollowBusy] = useState(false);
+
+  const [postSessionNextSessions, setPostSessionNextSessions] = useState<
+    PostSessionSessionOption[]
+  >([]);
+  const [postSessionBookingBusyId, setPostSessionBookingBusyId] = useState("");
+
   useEffect(() => {
     if (!howItWorksOpen) return;
 
@@ -401,6 +486,45 @@ export function SessionsPage() {
 
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [howItWorksOpen]);
+
+  const closePostSessionPrompt = useCallback(() => {
+    setPostSessionPrompt({
+      open: false,
+      sessionId: "",
+      sessionTitle: "",
+      hostId: "",
+      hostName: "Host",
+      hostAvatarUrl: "",
+      hostBio: "",
+      minutesSpent: 0,
+      followerCount: 0,
+      sessionsCount: 0,
+      joinedSince: null,
+    });
+
+    setPostSessionRating(0);
+    setPostSessionFeedback("");
+    setPostSessionTechFeedback("");
+    setPostSessionSubmitting(false);
+    setPostSessionSubmitted(false);
+    setPostSessionFollowing(false);
+    setPostSessionFollowBusy(false);
+    setPostSessionNextSessions([]);
+    setPostSessionBookingBusyId("");
+
+    const clean = new URLSearchParams(searchParams);
+    clean.delete("postSession");
+    clean.delete("sessionId");
+    clean.delete("sessionTitle");
+    clean.delete("hostId");
+    clean.delete("hostName");
+    clean.delete("minutes");
+
+    const nextQuery = clean.toString();
+    navigate(nextQuery ? `/sessions?${nextQuery}` : "/sessions", {
+      replace: true,
+    });
+  }, [navigate, searchParams]);
 
   useEffect(() => {
     const tab = (searchParams.get("tab") || "").toLowerCase();
@@ -414,6 +538,145 @@ export function SessionsPage() {
       if (tab === "infinite") setDateFilter(null);
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (searchParams.get("postSession") !== "1") return;
+    if (!user?.id) return;
+
+    const sessionId = String(searchParams.get("sessionId") || "").trim();
+    const sessionTitle = String(searchParams.get("sessionTitle") || "").trim();
+    const hostId = String(searchParams.get("hostId") || "").trim();
+    const hostName = String(searchParams.get("hostName") || "").trim();
+    const minutesSpent = Math.max(0, Number(searchParams.get("minutes") || 0) || 0);
+
+    if (!sessionId) return;
+
+    let cancelled = false;
+
+    const run = async () => {
+      let finalTitle = sessionTitle || "Session";
+      let finalHostId = hostId;
+      let finalHostName = hostName || "Host";
+      let finalHostAvatarUrl = "";
+      let finalHostBio = "";
+      let finalFollowerCount = 0;
+      let finalSessionsCount = 0;
+      let finalJoinedSince: string | null = null;
+
+      try {
+        const { data, error } = await supabase
+          .from("sessions")
+          .select(
+            `
+            id,
+            title,
+            host_id,
+            host_name,
+            created_at,
+            host_profile:profiles!sessions_host_id_fkey (
+              id,
+              full_name,
+              avatar_url,
+              bio,
+              created_at
+            )
+          `
+          )
+          .eq("id", sessionId)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        const row = data as any;
+
+        if (row?.title) finalTitle = String(row.title);
+        if (row?.host_id) finalHostId = String(row.host_id);
+
+        const hp = row?.host_profile;
+        if (hp?.full_name) finalHostName = String(hp.full_name);
+        else if (row?.host_name) finalHostName = String(row.host_name);
+
+        if (hp?.avatar_url) finalHostAvatarUrl = String(hp.avatar_url);
+        if (hp?.bio) finalHostBio = String(hp.bio);
+        if (hp?.created_at) finalJoinedSince = String(hp.created_at);
+
+        if (finalHostId) {
+          const { count: followersCount } = await supabase
+            .from("host_followers")
+            .select("*", { count: "exact", head: true })
+            .eq("host_user_id", finalHostId);
+
+          finalFollowerCount = Number(followersCount || 0);
+
+          const { count: hostedCount } = await supabase
+            .from("sessions")
+            .select("*", { count: "exact", head: true })
+            .eq("host_id", finalHostId);
+
+          finalSessionsCount = Number(hostedCount || 0);
+        }
+      } catch (e) {
+        if (DEBUG) console.warn("[post-session] session/host load failed:", e);
+      }
+
+      if (!cancelled) {
+        setPostSessionPrompt({
+          open: true,
+          sessionId,
+          sessionTitle: finalTitle,
+          hostId: finalHostId,
+          hostName: finalHostName,
+          hostAvatarUrl: finalHostAvatarUrl,
+          hostBio: finalHostBio,
+          minutesSpent,
+          followerCount: finalFollowerCount,
+          sessionsCount: finalSessionsCount,
+          joinedSince: finalJoinedSince,
+        });
+      }
+
+      if (finalHostId && !cancelled) {
+        try {
+          const { data: followRow } = await supabase
+            .from("host_followers")
+            .select("host_user_id")
+            .eq("host_user_id", finalHostId)
+            .eq("follower_user_id", user.id)
+            .maybeSingle();
+
+          if (!cancelled) setPostSessionFollowing(!!followRow);
+        } catch (e) {
+          if (DEBUG) console.warn("[post-session] follow state load failed:", e);
+        }
+
+        try {
+          const { data: nextRows, error: nextErr } = await supabase
+            .from("sessions")
+            .select("id, title, start_time, duration_minutes, host_id")
+            .eq("host_id", finalHostId)
+            .gte("start_time", new Date().toISOString())
+            .order("start_time", { ascending: true })
+            .limit(3);
+
+          if (nextErr) throw nextErr;
+
+          const filtered = ((nextRows || []) as any[]).filter(
+            (sessionRow) => String(sessionRow.id) !== sessionId
+          );
+
+          if (!cancelled) setPostSessionNextSessions(filtered);
+        } catch (e) {
+          if (DEBUG) console.warn("[post-session] next sessions load failed:", e);
+        }
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, user?.id]);
 
   useEffect(() => {
     if (sessionTypeTab === "body" && !dateFilter) {
@@ -861,6 +1124,134 @@ export function SessionsPage() {
     await fetchSessions();
   };
 
+  const submitPostSessionFeedback = useCallback(async () => {
+    if (!user?.id) {
+      return navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+    }
+
+    if (!postSessionPrompt.sessionId) return;
+
+    setPostSessionSubmitting(true);
+
+    try {
+      const general = String(postSessionFeedback || "").trim();
+      const tech = String(postSessionTechFeedback || "").trim();
+
+      const combinedFeedback = [
+        general ? `Session feedback:\n${general}` : "",
+        tech ? `Technical feedback:\n${tech}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n");
+
+      const payload = {
+        session_id: postSessionPrompt.sessionId,
+        user_id: user.id,
+        host_id: postSessionPrompt.hostId || null,
+        rating: postSessionRating || null,
+        feedback_text: combinedFeedback,
+        minutes_in_room: Math.max(0, Number(postSessionPrompt.minutesSpent || 0)),
+      };
+
+      const { error } = await supabase.from("session_feedback").insert(payload);
+
+      if (error) throw error;
+
+      setPostSessionSubmitted(true);
+    } catch (e) {
+      console.error("[post-session] submit failed:", e);
+      alert("Failed to submit feedback. Please try again.");
+    } finally {
+      setPostSessionSubmitting(false);
+    }
+  }, [
+    navigate,
+    user?.id,
+    postSessionPrompt,
+    postSessionRating,
+    postSessionFeedback,
+    postSessionTechFeedback,
+  ]);
+
+  const togglePostSessionFollowHost = useCallback(async () => {
+    if (!user?.id) {
+      return navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+    }
+
+    const hostId = String(postSessionPrompt.hostId || "").trim();
+    if (!hostId || hostId === user.id) return;
+
+    setPostSessionFollowBusy(true);
+
+    try {
+      if (postSessionFollowing) {
+        const { error } = await supabase
+          .from("host_followers")
+          .delete()
+          .eq("host_user_id", hostId)
+          .eq("follower_user_id", user.id);
+
+        if (error) throw error;
+
+        setPostSessionFollowing(false);
+        setPostSessionPrompt((prev) => ({
+          ...prev,
+          followerCount: Math.max(0, Number(prev.followerCount || 0) - 1),
+        }));
+      } else {
+        const { error } = await supabase.from("host_followers").insert({
+          host_user_id: hostId,
+          follower_user_id: user.id,
+        });
+
+        if (error) throw error;
+
+        setPostSessionFollowing(true);
+        setPostSessionPrompt((prev) => ({
+          ...prev,
+          followerCount: Number(prev.followerCount || 0) + 1,
+        }));
+      }
+    } catch (e) {
+      console.error("[post-session] follow host failed:", e);
+      alert("Follow failed. Please try again.");
+    } finally {
+      setPostSessionFollowBusy(false);
+    }
+  }, [navigate, user?.id, postSessionPrompt.hostId, postSessionFollowing]);
+
+  const bookPostSessionNextSession = useCallback(
+    async (nextSessionId: string) => {
+      if (!user?.id) {
+        return navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+      }
+
+      const sid = String(nextSessionId || "").trim();
+      if (!sid) return;
+
+      setPostSessionBookingBusyId(sid);
+
+      try {
+        const { error } = await supabase.from("session_bookings").insert({
+          session_id: sid,
+          user_id: user.id,
+        });
+
+        if (error) throw error;
+
+        await fetchSessions();
+
+        setPostSessionNextSessions((prev) => prev.filter((sessionRow) => sessionRow.id !== sid));
+      } catch (e) {
+        console.error("[post-session] book next session failed:", e);
+        alert("Could not book this session. Maybe it is already booked.");
+      } finally {
+        setPostSessionBookingBusyId("");
+      }
+    },
+    [navigate, user?.id, fetchSessions]
+  );
+
   const topPad =
     sessionTypeTab === "group"
       ? "pt-[100px] pb-[50px]"
@@ -1265,6 +1656,238 @@ export function SessionsPage() {
                     "
                   >
                     Got it
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {postSessionPrompt.open && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center px-4 py-6">
+          <div
+            className="absolute inset-0 bg-black/45 backdrop-blur-[2px] animate-[fadeIn_180ms_ease-out]"
+            onClick={closePostSessionPrompt}
+          />
+
+          <div className="relative w-full max-w-[440px] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-[28px] bg-[#F5F5F5] text-[#2F2F2F] shadow-[0_24px_80px_rgba(0,0,0,0.28)] animate-[postSessionIn_220ms_ease-out]">
+            <button
+              type="button"
+              onClick={closePostSessionPrompt}
+              className="absolute right-5 top-5 z-10 text-[#6B7280] hover:text-[#2F2F2F] transition"
+              aria-label="Close"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M6 6L18 18M18 6L6 18"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+
+            <div className="px-6 pb-7 pt-7">
+              <div className="flex flex-col items-center text-center">
+                <div className="h-[86px] w-[86px] overflow-hidden rounded-full bg-[#D9D9D9]">
+                  {postSessionPrompt.hostAvatarUrl ? (
+                    <img
+                      src={postSessionPrompt.hostAvatarUrl}
+                      alt={postSessionPrompt.hostName}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-[28px] font-semibold text-[#2F2F2F]">
+                      {getInitialLetter(postSessionPrompt.hostName)}
+                    </div>
+                  )}
+                </div>
+
+                <h2 className="mt-4 text-[19px] font-semibold leading-none text-[#2F2F2F]">
+                  {postSessionPrompt.hostName}
+                </h2>
+
+                <div className="mt-4 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-[13px] text-[#666666]">
+                  <div className="flex items-center gap-1.5">
+                    <img
+                      src="/icons/session_count.svg"
+                      alt=""
+                      className="h-[14px] w-[14px]"
+                      draggable={false}
+                    />
+                    <span>{Number(postSessionPrompt.sessionsCount || 0)} sessions</span>
+                  </div>
+
+                  <span className="text-[#B8B8B8]">|</span>
+
+                  <div className="flex items-center gap-1.5">
+                    <img
+                      src="/icons/followers_profile.svg"
+                      alt=""
+                      className="h-[14px] w-[14px]"
+                      draggable={false}
+                    />
+                    <span>{Number(postSessionPrompt.followerCount || 0)} Followers</span>
+                  </div>
+
+                  <span className="text-[#B8B8B8]">|</span>
+
+                  <div className="flex items-center gap-1.5">
+                    <img
+                      src="/icons/date-calendar.svg"
+                      alt=""
+                      className="h-[14px] w-[14px]"
+                      draggable={false}
+                    />
+                    <span>Since {formatJoinedSince(postSessionPrompt.joinedSince)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-7">
+                <div className="text-[16px] font-semibold text-[#2F2F2F]">
+                  Thanks for joining
+                </div>
+
+                <div className="mt-2 text-[14px] leading-[1.6] text-[#666666]">
+                  You spent{" "}
+                  <span className="font-semibold text-[#2F2F2F]">
+                    {postSessionPrompt.minutesSpent || 0} minutes
+                  </span>{" "}
+                  in{" "}
+                  <span className="font-semibold text-[#2F2F2F]">
+                    {postSessionPrompt.sessionTitle || "this session"}
+                  </span>
+                  .
+                </div>
+              </div>
+
+              <div className="mt-7">
+                <div className="text-[16px] font-semibold text-[#2F2F2F]">
+                  Current & upcoming sessions:
+                </div>
+
+                <div className="mt-3 flex flex-col gap-3">
+                  {postSessionNextSessions.length > 0 ? (
+                    postSessionNextSessions.slice(0, 1).map((sessionRow) => (
+                      <div
+                        key={sessionRow.id}
+                        className="rounded-[12px] bg-[#ECECEC] px-4 py-3"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-[14px] leading-[1.35] text-[#3A3A3A]">
+                              {sessionRow.title || "Focus session"}
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 text-[14px] text-[#4B4B4B]">
+                            {formatPostSessionTime(sessionRow.start_time)}
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void bookPostSessionNextSession(sessionRow.id)}
+                            disabled={postSessionBookingBusyId === sessionRow.id}
+                            className="rounded-full bg-[#2F2F2F] px-4 py-2 text-[13px] font-medium text-white transition hover:opacity-90 disabled:opacity-60"
+                          >
+                            {postSessionBookingBusyId === sessionRow.id ? "Booking..." : "Book next"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => window.open(`/room-livekit/${sessionRow.id}`, "_blank")}
+                            className="rounded-full border border-[#CAC3C3] bg-white px-4 py-2 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#F7F7F7]"
+                          >
+                            Open
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-[12px] bg-[#ECECEC] px-4 py-4 text-[14px] text-[#666666]">
+                      No upcoming sessions yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-7">
+                <div className="text-[15px] font-semibold text-[#2F2F2F]">
+                  Rate this session
+                </div>
+
+                <div className="mt-3 flex justify-center gap-2">
+                  {[1, 2, 3, 4, 5].map((ratingValue) => (
+                    <button
+                      key={ratingValue}
+                      type="button"
+                      onClick={() => setPostSessionRating(ratingValue)}
+                      className={`h-10 w-10 rounded-full text-[20px] transition ${ratingValue <= postSessionRating
+                          ? "bg-[#2F2F2F] text-white"
+                          : "bg-white text-[#8B8B8B] border border-[#CAC3C3] hover:bg-[#F0F0F0]"
+                        }`}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <textarea
+                  value={postSessionFeedback}
+                  onChange={(e) => setPostSessionFeedback(e.target.value)}
+                  placeholder="Session feedback"
+                  className="min-h-[88px] w-full resize-none rounded-[14px] border border-[#CAC3C3] bg-white px-4 py-3 text-[14px] text-[#2F2F2F] outline-none placeholder:text-[#999999] focus:border-[#2F2F2F]"
+                />
+
+                <textarea
+                  value={postSessionTechFeedback}
+                  onChange={(e) => setPostSessionTechFeedback(e.target.value)}
+                  placeholder="Technical feedback (optional)"
+                  className="mt-3 min-h-[88px] w-full resize-none rounded-[14px] border border-[#CAC3C3] bg-white px-4 py-3 text-[14px] text-[#2F2F2F] outline-none placeholder:text-[#999999] focus:border-[#2F2F2F]"
+                />
+              </div>
+
+              <div className="mt-6 flex flex-col gap-3">
+                <button
+                  type="button"
+                  onClick={() => void submitPostSessionFeedback()}
+                  disabled={postSessionSubmitting || postSessionSubmitted}
+                  className="w-full rounded-full bg-[#2F2F2F] px-6 py-4 text-[18px] font-semibold text-white transition hover:opacity-95 disabled:opacity-60"
+                >
+                  {postSessionSubmitted
+                    ? "Feedback sent"
+                    : postSessionSubmitting
+                      ? "Sending..."
+                      : "Submit feedback"}
+                </button>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void togglePostSessionFollowHost()}
+                    disabled={postSessionFollowBusy || postSessionPrompt.hostId === user?.id}
+                    className="rounded-full border border-[#CAC3C3] bg-white px-4 py-3 text-[14px] font-medium text-[#2F2F2F] transition hover:bg-[#F8F8F8] disabled:opacity-60"
+                  >
+                    {postSessionFollowBusy
+                      ? "Saving..."
+                      : postSessionFollowing
+                        ? "Following"
+                        : "Follow host"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => window.open(`/profile/${postSessionPrompt.hostId}`, "_blank")}
+                    disabled={!postSessionPrompt.hostId}
+                    className="rounded-full border border-[#CAC3C3] bg-white px-4 py-3 text-[14px] font-medium text-[#2F2F2F] transition hover:bg-[#F8F8F8] disabled:opacity-60"
+                  >
+                    See full profile
                   </button>
                 </div>
               </div>

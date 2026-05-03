@@ -6,10 +6,12 @@
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 4px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
@@ -20,21 +22,25 @@
   src: url("/fonts/Inter-Regular.woff2") format("woff2");
   font-weight: 400;
 }
+
 @font-face {
   font-family: "Inter";
   src: url("/fonts/Inter-Medium.woff2") format("woff2");
   font-weight: 500;
 }
+
 @font-face {
   font-family: "Inter";
   src: url("/fonts/Inter-SemiBold.woff2") format("woff2");
   font-weight: 600;
 }
+
 @font-face {
   font-family: "Inter";
   src: url("/fonts/Inter-Bold.woff2") format("woff2");
   font-weight: 700;
 }
+
 @font-face {
   font-family: "Inter";
   src: url("/fonts/Inter-ExtraBold.woff2") format("woff2");
@@ -43,4 +49,26 @@
 
 body {
   font-family: "Inter", sans-serif;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes postSessionIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
