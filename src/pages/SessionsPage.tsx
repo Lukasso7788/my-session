@@ -807,18 +807,8 @@ export function SessionsPage() {
       if (ids.length) {
         try {
           const { data: bookingsData, error: bookingsError } = await supabase
-            .from("session_bookings")
-            .select(
-              `
-              session_id,
-              user_id,
-              profiles:profiles (
-                id,
-                full_name,
-                avatar_url
-              )
-            `
-            )
+            .from("public_session_bookings")
+            .select("session_id, user_id, full_name, avatar_url")
             .in("session_id", ids);
 
           if (bookingsError) throw bookingsError;
@@ -831,7 +821,11 @@ export function SessionsPage() {
 
             prev.push({
               user_id: String(row?.user_id || ""),
-              profiles: row?.profiles || null,
+              profiles: {
+                id: String(row?.user_id || ""),
+                full_name: row?.full_name || null,
+                avatar_url: row?.avatar_url || null,
+              },
             });
 
             bookingsBySessionId.set(sid, prev);
