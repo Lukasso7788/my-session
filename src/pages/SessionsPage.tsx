@@ -879,11 +879,25 @@ export function SessionsPage() {
   useEffect(() => {
     if (!sessionIds.length) return;
 
-    const t = window.setInterval(() => {
+    const run = () => {
+      if (document.visibilityState !== "visible") return;
       void fetchLiveCounts(sessionIds);
-    }, 10_000);
+    };
 
-    return () => window.clearInterval(t);
+    const t = window.setInterval(run, 60_000);
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        run();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      window.clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [sessionIds, fetchLiveCounts]);
 
   const isExpired = (s: SessionWithRelations) => {

@@ -3397,47 +3397,11 @@ export default function SessionCard({
         });
     }, [stages]);
 
-    const shouldPollLive = useMemo(() => {
-        if (!session?.id) return false;
-        if (isInfinite) return true;
-        if (liveNowCount > 0) return true;
-
-        const startMs = parseTimeMs(session?.start_time);
-        if (startMs == null) return false;
-
-        const diff = startMs - Date.now();
-        const beforeMs = 6 * 60 * 60 * 1000;
-        const afterMs = 12 * 60 * 60 * 1000;
-        return diff <= beforeMs && diff >= -afterMs;
-    }, [session?.id, isInfinite, liveNowCount, session?.start_time]);
+    const shouldPollLive = false;
 
     useEffect(() => {
-        if (!session?.id) return;
-
-        if (!shouldPollLive) {
-            setLiveUsers([]);
-            return;
-        }
-
-        let cancelled = false;
-
-        const run = async () => {
-            try {
-                const users = await fetchLiveUsers(String(session.id));
-                if (!cancelled) setLiveUsers(users || []);
-            } catch (e) {
-                console.error("[SessionCard] fetchLiveUsers failed:", e);
-                if (!cancelled) setLiveUsers([]);
-            }
-        };
-
-        run();
-        const timer = window.setInterval(run, isInfinite ? 15000 : 12000);
-        return () => {
-            cancelled = true;
-            window.clearInterval(timer);
-        };
-    }, [session?.id, shouldPollLive, isInfinite]);
+        setLiveUsers([]);
+    }, [session?.id]);
 
     useEffect(() => {
         if (!session?.id) return;
@@ -3447,6 +3411,8 @@ export default function SessionCard({
         let cancelled = false;
 
         const run = async () => {
+            if (document.visibilityState !== "visible") return;
+
             setIsLiveLoading(true);
             try {
                 const users = await fetchLiveUsers(String(session.id));
@@ -3461,14 +3427,13 @@ export default function SessionCard({
 
         run();
 
-        const every = isInfinite ? 15000 : 8000;
-        const timer = window.setInterval(run, every);
+        const timer = window.setInterval(run, 60_000);
 
         return () => {
             cancelled = true;
             window.clearInterval(timer);
         };
-    }, [session?.id, isBookersModalOpen, peopleTab, isInfinite]);
+    }, [session?.id, isBookersModalOpen, peopleTab]);
 
     useEffect(() => {
         if (peopleTabPinned) return;
