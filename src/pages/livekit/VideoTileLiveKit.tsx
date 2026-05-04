@@ -171,23 +171,27 @@ function MicBadgeWithBarVisualizer({
     audioTrack,
     audioLevel = 0,
     isLocal,
+    hasCameraOn,
 }: {
     theme: RoomTheme;
     micMuted?: boolean;
     audioTrack?: LocalAudioTrack | RemoteAudioTrack;
     audioLevel?: number;
     isLocal: boolean;
+    hasCameraOn: boolean;
 }) {
     const isLight = theme === "light";
     const isSelfMutedBadge = !!isLocal && !!micMuted;
 
     const badgeBaseClass = isSelfMutedBadge
         ? "bg-red-600 border-red-700/70 text-white shadow-sm"
-        : isLight
-            ? "bg-white/92 border-black/10 text-neutral-800 shadow-sm"
-            : "bg-black/58 border-white/10 text-white shadow-sm";
+        : hasCameraOn
+            ? "bg-black/58 border-white/10 text-white shadow-sm"
+            : isLight
+                ? "bg-white/92 border-black/10 text-neutral-800 shadow-sm"
+                : "bg-black/58 border-white/10 text-white shadow-sm";
 
-    const micIconTheme: RoomTheme = isSelfMutedBadge ? "dark" : isLight ? "light" : "dark";
+    const micIconTheme: RoomTheme = isSelfMutedBadge || hasCameraOn ? "dark" : isLight ? "light" : "dark";
 
     const safeAudioLevel = clamp(Number(audioLevel || 0), 0, 1);
     const speaking = !micMuted && safeAudioLevel > 0.04;
@@ -208,7 +212,7 @@ function MicBadgeWithBarVisualizer({
             {showVisualizer ? (
                 <>
                     <div
-                        className={`absolute inset-0 ${isLight ? "bg-black/[0.05]" : "bg-white/[0.07]"
+                        className={`absolute inset-0 ${hasCameraOn || !isLight ? "bg-white/[0.07]" : "bg-black/[0.05]"
                             }`}
                     />
 
@@ -222,9 +226,9 @@ function MicBadgeWithBarVisualizer({
                             <span
                                 className={
                                     "lk-audio-bar block h-full w-full rounded-none transition-all duration-75 " +
-                                    (isLight
-                                        ? "bg-[#4CA0FF]/18 data-[lk-highlighted=true]:bg-[#4CA0FF]/95"
-                                        : "bg-[#34D399]/18 data-[lk-highlighted=true]:bg-[#34D399]/95")
+                                    (hasCameraOn || !isLight
+                                        ? "bg-[#34D399]/18 data-[lk-highlighted=true]:bg-[#34D399]/95"
+                                        : "bg-[#4CA0FF]/18 data-[lk-highlighted=true]:bg-[#4CA0FF]/95")
                                 }
                             />
                         </BarVisualizer>
@@ -612,6 +616,7 @@ function VideoTileInner({
                     audioTrack={audioTrack}
                     audioLevel={audioLevel}
                     isLocal={isLocal}
+                    hasCameraOn={hasCameraOn}
                 />
             </div>
         </div>
