@@ -56,6 +56,18 @@ const FX_BG_PRESETS = [
     },
 ];
 
+function isFirefoxLike() {
+    if (typeof navigator === "undefined") return false;
+    return /firefox|fxios/i.test(String(navigator.userAgent || ""));
+}
+
+function normalizeBlurDraft(raw: number, firefoxSafe = false) {
+    const n = Math.max(4, Math.min(30, Math.round(Number(raw || 12))));
+    return firefoxSafe
+        ? Math.max(4, Math.min(28, Math.round(n / 4) * 4))
+        : Math.max(4, Math.min(30, Math.round(n / 2) * 2));
+}
+
 function ToggleRow(props: {
     label: string;
     description?: string;
@@ -955,9 +967,95 @@ export function RoomSettingsModalLiveKit({
 
     hideBackgroundFx?: boolean;
 }) {
+    const isLight = theme === "light";
+    const firefoxSafeUi = React.useMemo(() => isFirefoxLike(), []);
+
+    const isDesktopFx =
+        typeof window === "undefined" || !window.matchMedia
+            ? true
+            : window.matchMedia("(min-width: 1024px)").matches;
+
+    const disableFxControls = hideBackgroundFx || !isDesktopFx;
+
+    const [blurDraft, setBlurDraft] = React.useState(() =>
+        normalizeBlurDraft(blurStrength, firefoxSafeUi)
+    );
+    const [localFxApplying, setLocalFxApplying] = React.useState(false);
+    const applyModeInFlightRef = React.useRef(false);
+    const pendingApplyRef = React.useRef<{ mode: FxMode; reason: string } | null>(null);
+    const blurApplyTimerRef = React.useRef<number | null>(null);
+
+    const effectiveFxApplying = !!fxApplying || localFxApplying;
+
+    React.useEffect(() => {
+        setBlurDraft(normalizeBlurDraft(blurStrength, firefoxSafeUi));
+    }, [blurStrength, firefoxSafeUi]);
+
+    React.useEffect(() => {
+        return () => {
+            if (blurApplyTimerRef.current != null) {
+                window.clearTimeout(blurApplyTimerRef.current);
+                blurApplyTimerRef.current = null;
+            }
+        };
+    }, []);
+
+    const safeApplyMode = React.useCallback(
+        async (nextMode: FxMode, reason = "") => {
+            if (disableFxControls && nextMode !== "off") return;
+
+            if (applyModeInFlightRef.current) {
+                pendingApplyRef.current = { mode: nextMode, reason };
+                return;
+            }
+
+            applyModeInFlightRef.current = true;
+            setLocalFxApplying(true);
+
+            try {
+                await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+                await onApplyMode(nextMode);
+            } catch {
+                // Parent owns fxError/fxStatusText.
+            } finally {
+                applyModeInFlightRef.current = false;
+                setLocalFxApplying(false);
+
+                const pending = pendingApplyRef.current;
+                pendingApplyRef.current = null;
+
+                if (pending) {
+                    window.setTimeout(() => {
+                        void safeApplyMode(pending.mode, pending.reason);
+                    }, firefoxSafeUi ? 180 : 60);
+                }
+            }
+        },
+        [disableFxControls, onApplyMode, firefoxSafeUi]
+    );
+
+    const scheduleBlurChange = React.useCallback(
+        (raw: number) => {
+            const next = normalizeBlurDraft(raw, firefoxSafeUi);
+            setBlurDraft(next);
+            onBlurStrengthChange(next);
+
+            if (blurApplyTimerRef.current != null) {
+                window.clearTimeout(blurApplyTimerRef.current);
+            }
+
+            if (disableFxControls || mode !== "blur") return;
+
+            blurApplyTimerRef.current = window.setTimeout(() => {
+                blurApplyTimerRef.current = null;
+                void safeApplyMode("blur", "blur-slider");
+            }, firefoxSafeUi ? 700 : 300);
+        },
+        [disableFxControls, firefoxSafeUi, mode, onBlurStrengthChange, safeApplyMode]
+    );
+
     if (!open) return null;
 
-    const isLight = theme === "light";
     const isCustomBackground = !!bgImageUrl && !FX_BG_PRESETS.some((p) => p.url === bgImageUrl);
 
     const overlay =
@@ -1001,12 +1099,6 @@ export function RoomSettingsModalLiveKit({
         })),
     ];
 
-    const isDesktopFx =
-        typeof window === "undefined" || !window.matchMedia
-            ? true
-            : window.matchMedia("(min-width: 1024px)").matches;
-
-    const disableFxControls = hideBackgroundFx || !isDesktopFx;
     const effectivePreviewFilterCss = colorCorrectionEnabled ? (previewVideoFilterCss || "") : "";
 
     return (
@@ -1234,27 +1326,27 @@ export function RoomSettingsModalLiveKit({
 
                                         <div className="flex flex-wrap gap-2">
                                             <button
-                                                onClick={() => void onApplyMode("off")}
+                                                onClick={() => void safeApplyMode("off", "mode-button")}
                                                 className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "off" ? activeBtn : ghostBtn}`}
-                                                disabled={fxApplying}
+                                                disabled={effectiveFxApplying}
                                                 type="button"
                                             >
                                                 FX off
                                             </button>
 
                                             <button
-                                                onClick={() => void onApplyMode("blur")}
+                                                onClick={() => void safeApplyMode("blur", "mode-button")}
                                                 className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "blur" ? activeBtn : ghostBtn}`}
-                                                disabled={fxApplying}
+                                                disabled={effectiveFxApplying}
                                                 type="button"
                                             >
                                                 Blur
                                             </button>
 
                                             <button
-                                                onClick={() => void onApplyMode("bg")}
+                                                onClick={() => void safeApplyMode("bg", "mode-button")}
                                                 className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${mode === "bg" ? activeBtn : ghostBtn}`}
-                                                disabled={fxApplying}
+                                                disabled={effectiveFxApplying}
                                                 type="button"
                                             >
                                                 Background image
@@ -1262,7 +1354,7 @@ export function RoomSettingsModalLiveKit({
                                         </div>
 
                                         <div className={`mt-3 text-[12px] ${subtleText}`}>
-                                            {fxApplying ? "Applying effect…" : fxStatusText || "Ready"}
+                                            {effectiveFxApplying ? "Applying effect…" : fxStatusText || "Ready"}
                                         </div>
 
                                         {fxError ? <div className="mt-2 text-[12px] text-red-500 break-words">{fxError}</div> : null}
@@ -1274,10 +1366,12 @@ export function RoomSettingsModalLiveKit({
                                             description="Used when Blur mode is active."
                                             min={4}
                                             max={30}
-                                            step={1}
-                                            value={blurStrength}
-                                            onChange={onBlurStrengthChange}
+                                            step={firefoxSafeUi ? 4 : 2}
+                                            value={blurDraft}
+                                            onChange={scheduleBlurChange}
+                                            disabled={disableFxControls || mode !== "blur"}
                                             isLight={isLight}
+                                            valueSuffix="px"
                                         />
                                     </div>
 
@@ -1309,7 +1403,7 @@ export function RoomSettingsModalLiveKit({
                                                 <button
                                                     onClick={onResetBg}
                                                     className={`h-9 px-3 rounded-xl text-[12px] ${ghostBtn}`}
-                                                    disabled={fxApplying || !bgImageUrl}
+                                                    disabled={effectiveFxApplying || !bgImageUrl}
                                                     type="button"
                                                 >
                                                     Clear
@@ -1364,7 +1458,12 @@ export function RoomSettingsModalLiveKit({
                                                 return (
                                                     <button
                                                         key={p.id}
-                                                        onClick={() => onSetBgImageUrl(p.url)}
+                                                        onClick={() => {
+                                                            onSetBgImageUrl(p.url);
+                                                            if (mode === "bg") {
+                                                                void safeApplyMode("bg", "background-preset");
+                                                            }
+                                                        }}
                                                         className={
                                                             "rounded-2xl overflow-hidden border text-left " +
                                                             (selected
@@ -1376,7 +1475,7 @@ export function RoomSettingsModalLiveKit({
                                                                     : "border-white/10")
                                                         }
                                                         title={p.label}
-                                                        disabled={fxApplying}
+                                                        disabled={effectiveFxApplying}
                                                         type="button"
                                                     >
                                                         <div className="aspect-video w-full">

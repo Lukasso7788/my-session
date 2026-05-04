@@ -388,6 +388,23 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
+function isFirefoxLike() {
+  if (typeof navigator === "undefined") return false;
+  return /firefox|fxios/i.test(String(navigator.userAgent || ""));
+}
+
+function normalizeFxBlurStrength(raw: number, firefoxSafe = false) {
+  const n = Math.max(4, Math.min(30, Math.round(Number(raw || 12))));
+
+  // Firefox дешевле и стабильнее, если не пересоздавать processor
+  // на каждый 1px движения ползунка.
+  if (firefoxSafe) {
+    return Math.max(4, Math.min(28, Math.round(n / 4) * 4));
+  }
+
+  return Math.max(4, Math.min(30, Math.round(n / 2) * 2));
+}
+
 function normalizeMediaWarningMessage(raw: unknown) {
   const s = String(raw || "").trim();
   if (!s) return "A device action failed.";
@@ -2794,6 +2811,7 @@ export function RoomPageLiveKit() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPreviewVersion, setSettingsPreviewVersion] = useState(0);
   const [blurStrength, setBlurStrength] = useState<number>(12);
+  const firefoxSafeFx = useMemo(() => isFirefoxLike(), []);
   const [connected, setConnected] = useState(false);
   useEffect(() => {
     if (!connected) return;
@@ -2874,6 +2892,7 @@ export function RoomPageLiveKit() {
   const uploadedBgUrlRef = useRef<string | null>(null);
   const fxOpIdRef = useRef<number>(0);
   const lastPrejoinFxSignatureRef = useRef<string>("");
+  const activeFxSignatureRef = useRef<string>("");
 
   const ensureFxSupportedOrThrow = () => {
     if (!supportsBackgroundProcessors()) throw new Error("Background processors are not supported in this browser/device");
@@ -2884,7 +2903,11 @@ export function RoomPageLiveKit() {
 
   const makeProcessorForMode = (mode: FxMode, blur: number, bgUrl: string): any | null => {
     if (mode === "off") return null;
-    if (mode === "blur") return BackgroundBlur(Math.max(1, Math.min(30, Math.round(blur || 12)))) as any;
+
+    if (mode === "blur") {
+      return BackgroundBlur(normalizeFxBlurStrength(blur, firefoxSafeFx)) as any;
+    }
+
     return VirtualBackground(bgUrl || DEFAULT_BG_DATA_URL) as any;
   };
 
@@ -2894,8 +2917,24 @@ export function RoomPageLiveKit() {
     } catch { }
   };
 
-  const safeApplyProcessor = async (track: LocalVideoTrack, mode: FxMode, blur: number, bgUrl: string) => {
+  const safeApplyProcessor = async (
+    track: LocalVideoTrack,
+    mode: FxMode,
+    blur: number,
+    bgUrl: string
+  ) => {
     ensureFxSupportedOrThrow();
+
+    const normalizedBlur = normalizeFxBlurStrength(blur, firefoxSafeFx);
+    const signature =
+      mode === "off"
+        ? "off"
+        : mode === "blur"
+          ? `blur:${normalizedBlur}`
+          : `bg:${String(bgUrl || DEFAULT_BG_DATA_URL)}`;
+
+    // Самый важный фикс: не пересоздаём processor, если реально ничего не поменялось.
+    if (activeFxSignatureRef.current === signature) return;
 
     const opId = fxOpIdRef.current + 1;
     fxOpIdRef.current = opId;
@@ -2903,10 +2942,22 @@ export function RoomPageLiveKit() {
     await stopAnyProcessor(track);
     if (fxOpIdRef.current !== opId) return;
 
-    const proc = makeProcessorForMode(mode, blur, bgUrl);
-    if (!proc) return;
+    if (firefoxSafeFx) {
+      await delay(90);
+    }
+
+    const proc = makeProcessorForMode(mode, normalizedBlur, bgUrl);
+
+    if (!proc) {
+      activeFxSignatureRef.current = "off";
+      return;
+    }
 
     await (track as any).setProcessor(proc, true);
+
+    if (fxOpIdRef.current === opId) {
+      activeFxSignatureRef.current = signature;
+    }
   };
 
   // pre-join helpers
@@ -2914,6 +2965,7 @@ export function RoomPageLiveKit() {
     const t = prejoinPreparedVideoTrackRef.current as any;
     prejoinPreparedVideoTrackRef.current = null;
     lastPrejoinFxSignatureRef.current = "";
+    activeFxSignatureRef.current = "";
 
     if (!t) return;
 
