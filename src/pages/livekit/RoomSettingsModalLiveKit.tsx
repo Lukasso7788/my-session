@@ -6,6 +6,10 @@ type FxMode = "off" | "blur" | "bg";
 type SinkAudioElement = HTMLAudioElement & {
     setSinkId?: (sinkId: string) => Promise<void>;
     srcObject?: MediaStream | null;
+    // HTMLAudioElement supports the same inline-playback assignment at runtime on modern browsers,
+    // but some DOM typings only expose playsInline on HTMLVideoElement. Keep it optional here
+    // so hidden test audio elements do not trigger TypeScript errors.
+    playsInline?: boolean;
 };
 
 function makeBgPresetDataUrl(a: string, b: string, c: string, d: string) {
@@ -63,9 +67,16 @@ function isFirefoxLike() {
 
 function normalizeBlurDraft(raw: number, firefoxSafe = false) {
     const n = Math.max(4, Math.min(30, Math.round(Number(raw || 12))));
-    return firefoxSafe
-        ? Math.max(4, Math.min(28, Math.round(n / 4) * 4))
-        : Math.max(4, Math.min(30, Math.round(n / 2) * 2));
+
+    if (firefoxSafe) {
+        if (n <= 4) return 4;
+        if (n >= 30) return 30;
+        return Math.max(4, Math.min(30, Math.round(n / 4) * 4));
+    }
+
+    if (n <= 4) return 4;
+    if (n >= 30) return 30;
+    return Math.max(4, Math.min(30, Math.round(n / 2) * 2));
 }
 
 function ToggleRow(props: {
@@ -184,6 +195,190 @@ function SliderField(props: {
                 onChange={(e) => onChange(Number(e.target.value))}
                 className="w-full mt-3"
             />
+        </div>
+    );
+}
+
+
+type RecoveryGuideKey = "quick" | "camera" | "microphone" | "speakers" | "firefox";
+
+type RecoveryGuideContent = {
+    title: string;
+    eyebrow: string;
+    intro: string;
+    steps: string[];
+    note?: string;
+};
+
+const RECOVERY_GUIDES: Record<RecoveryGuideKey, RecoveryGuideContent> = {
+    quick: {
+        eyebrow: "Fast recovery",
+        title: "Quick rescue if audio or video feels broken",
+        intro: "Use this when something worked a minute ago, then camera, mic, or speaker output suddenly stopped.",
+        steps: [
+            "Check the lock icon near the address bar and make sure Camera and Microphone are allowed for MySession.",
+            "Choose a real camera and microphone from the dropdowns instead of leaving everything on Default.",
+            "Turn camera or mic off and on once from the room controls after changing a device.",
+            "Close Zoom, Google Meet, OBS, Discord, or any other app that may be using the camera or microphone.",
+            "If Firefox still looks stuck, reload the room once after permissions are allowed.",
+        ],
+        note: "You can stay in the room while fixing devices. A failed camera or mic should not force you to leave the session.",
+    },
+    camera: {
+        eyebrow: "Camera help",
+        title: "Camera is not turning on",
+        intro: "Most camera failures are permission, wrong-device, or camera-busy problems rather than a room failure.",
+        steps: [
+            "Click the browser lock icon and allow Camera for this site.",
+            "Pick the exact camera from the Camera dropdown. Avoid Default if Firefox keeps choosing the wrong one.",
+            "Close other video apps or browser tabs that may be using the same camera.",
+            "Turn camera off and on again from the bottom bar after changing the selected camera.",
+            "If the preview remains black, refresh devices or reload the room after permissions are allowed.",
+        ],
+        note: "On Firefox, permission labels may stay vague until the browser has been allowed to access the camera once.",
+    },
+    microphone: {
+        eyebrow: "Microphone help",
+        title: "Microphone is silent or not detected",
+        intro: "Use the mic test to confirm whether the browser can hear you before debugging LiveKit audio.",
+        steps: [
+            "Click the browser lock icon and allow Microphone for this site.",
+            "Pick the exact microphone from the Microphone dropdown, especially if you use Bluetooth or a headset.",
+            "Start the mic test and speak. The input level should move even if other people cannot hear you yet.",
+            "Try turning Noise suppression or Auto gain control off and on if your voice sounds heavily filtered.",
+            "After changing the mic, toggle the room microphone off and on once.",
+        ],
+        note: "If you see input level in the test, your browser is receiving mic audio. Then the next step is room mic toggle / selected device sync.",
+    },
+    speakers: {
+        eyebrow: "Speaker help",
+        title: "You cannot hear other people",
+        intro: "Speaker output depends on browser autoplay, selected output device, system volume, and whether the room audio was unlocked by a click.",
+        steps: [
+            "Click Play test sound. If you hear it, your selected output device works.",
+            "Select Default speakers first, then try your headset or external speakers again.",
+            "Check system volume, browser tab mute, and Bluetooth headset output mode.",
+            "Click anywhere in the room, then ask someone to speak again. Some browsers require a user gesture before audio plays.",
+            "If using Firefox, reload once after selecting the right output if sound routing feels stuck.",
+        ],
+        note: "Some browsers do not support choosing a specific output device. In that case, MySession must use the system default output.",
+    },
+    firefox: {
+        eyebrow: "Firefox-specific",
+        title: "Firefox camera / mic recovery",
+        intro: "Firefox is more sensitive to one-time permissions, device labels, and stale device IDs. This guide is for laptop users on Firefox.",
+        steps: [
+            "Click the lock icon in the address bar and remove old blocked camera/mic permissions if needed.",
+            "Allow Camera and Microphone again when Firefox asks.",
+            "Choose exact devices in Settings instead of Default.",
+            "Avoid changing blur/background repeatedly while debugging camera startup. First get raw camera working.",
+            "If Firefox still keeps a stale device, reload the room after selecting permissions and devices.",
+        ],
+        note: "The safest recovery order is: permissions → exact device → camera/mic toggle → reload only if still stuck.",
+    },
+};
+
+function HelpButton(props: {
+    children: React.ReactNode;
+    onClick: () => void;
+    isLight: boolean;
+    compact?: boolean;
+}) {
+    const { children, onClick, isLight, compact = false } = props;
+
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={[
+                "rounded-xl border font-semibold transition inline-flex items-center gap-1.5",
+                compact ? "h-8 px-2.5 text-[11px]" : "h-9 px-3 text-[12px]",
+                isLight
+                    ? "bg-white hover:bg-black/5 border-black/10 text-black/75"
+                    : "bg-white/5 hover:bg-white/10 border-white/10 text-white/80",
+            ].join(" ")}
+        >
+            <span aria-hidden="true">?</span>
+            <span>{children}</span>
+        </button>
+    );
+}
+
+function RecoveryGuideModal(props: {
+    guideKey: RecoveryGuideKey | null;
+    onClose: () => void;
+    isLight: boolean;
+}) {
+    const { guideKey, onClose, isLight } = props;
+    if (!guideKey) return null;
+
+    const guide = RECOVERY_GUIDES[guideKey];
+    const panelCls = isLight
+        ? "bg-white text-black border-black/10"
+        : "bg-[#06101f] text-white border-white/10";
+    const subtleText = isLight ? "text-black/60" : "text-white/60";
+    const stepCls = isLight ? "bg-black/[0.035] border-black/10" : "bg-white/[0.055] border-white/10";
+
+    return (
+        <div className="fixed inset-0 z-[1010] flex items-center justify-center px-4 py-6">
+            <div className="absolute inset-0 bg-black/55" onClick={onClose} />
+            <div className={`relative w-full max-w-[560px] rounded-3xl border shadow-2xl overflow-hidden ${panelCls}`}>
+                <div className={`px-5 py-4 border-b ${isLight ? "border-black/10" : "border-white/10"}`}>
+                    <div className="flex items-start justify-between gap-4">
+                        <div>
+                            <div className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${subtleText}`}>
+                                {guide.eyebrow}
+                            </div>
+                            <div className="mt-1 text-[17px] font-semibold">{guide.title}</div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className={[
+                                "w-9 h-9 rounded-2xl shrink-0 transition",
+                                isLight ? "bg-black/5 hover:bg-black/10" : "bg-white/5 hover:bg-white/10",
+                            ].join(" ")}
+                            title="Close guide"
+                        >
+                            ✕
+                        </button>
+                    </div>
+                    <div className={`mt-3 text-[13px] leading-5 ${subtleText}`}>{guide.intro}</div>
+                </div>
+
+                <div className="px-5 py-4 max-h-[70vh] overflow-y-auto">
+                    <div className="flex flex-col gap-2.5">
+                        {guide.steps.map((step, index) => (
+                            <div key={`${guideKey}-${index}`} className={`rounded-2xl border px-3.5 py-3 ${stepCls}`}>
+                                <div className="flex gap-3">
+                                    <div
+                                        className={[
+                                            "mt-0.5 w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-[12px] font-bold",
+                                            isLight ? "bg-blue-600 text-white" : "bg-emerald-400 text-[#04130b]",
+                                        ].join(" ")}
+                                    >
+                                        {index + 1}
+                                    </div>
+                                    <div className="text-[13px] leading-5">{step}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {guide.note ? (
+                        <div
+                            className={[
+                                "mt-4 rounded-2xl border px-4 py-3 text-[12px] leading-5",
+                                isLight
+                                    ? "bg-blue-50 border-blue-100 text-blue-900"
+                                    : "bg-emerald-400/10 border-emerald-300/15 text-emerald-50",
+                            ].join(" ")}
+                        >
+                            {guide.note}
+                        </div>
+                    ) : null}
+                </div>
+            </div>
         </div>
     );
 }
@@ -981,6 +1176,7 @@ export function RoomSettingsModalLiveKit({
         normalizeBlurDraft(blurStrength, firefoxSafeUi)
     );
     const [localFxApplying, setLocalFxApplying] = React.useState(false);
+    const [recoveryGuideOpen, setRecoveryGuideOpen] = React.useState<RecoveryGuideKey | null>(null);
     const applyModeInFlightRef = React.useRef(false);
     const pendingApplyRef = React.useRef<{ mode: FxMode; reason: string } | null>(null);
     const blurApplyTimerRef = React.useRef<number | null>(null);
@@ -1111,7 +1307,7 @@ export function RoomSettingsModalLiveKit({
                         <div>
                             <div className="font-semibold text-[16px]">Settings</div>
                             <div className={`text-[12px] mt-1 ${subtleText}`}>
-                                Camera, mic, speakers and room tools.
+                                Camera, mic, speakers and room tools. Use the recovery guides if audio or video gets stuck.
                             </div>
                         </div>
 
@@ -1127,10 +1323,36 @@ export function RoomSettingsModalLiveKit({
                 </div>
 
                 <div className="px-5 sm:px-6 py-4 sm:py-5 flex-1 overflow-y-auto overscroll-contain">
+                    <div className={`mb-5 rounded-2xl p-4 ${sectionCls}`}>
+                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                            <div className="min-w-0">
+                                <div className="text-[13px] font-semibold">Audio / video rescue</div>
+                                <div className={`mt-1 text-[12px] leading-5 ${subtleText}`}>
+                                    If a first-time user cannot start camera, mic, or sound, follow these guided recovery steps before leaving the room.
+                                </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <HelpButton isLight={isLight} onClick={() => setRecoveryGuideOpen("quick")}>Quick rescue</HelpButton>
+                                <HelpButton isLight={isLight} onClick={() => setRecoveryGuideOpen("camera")}>Camera</HelpButton>
+                                <HelpButton isLight={isLight} onClick={() => setRecoveryGuideOpen("microphone")}>Mic</HelpButton>
+                                <HelpButton isLight={isLight} onClick={() => setRecoveryGuideOpen("speakers")}>Sound</HelpButton>
+                                {firefoxSafeUi ? (
+                                    <HelpButton isLight={isLight} onClick={() => setRecoveryGuideOpen("firefox")}>Firefox</HelpButton>
+                                ) : null}
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-5 items-start">
                         <div className="flex flex-col gap-5 min-w-0">
                             <div className={`rounded-2xl p-4 ${sectionCls}`}>
-                                <div className="text-[13px] font-semibold mb-4">Devices</div>
+                                <div className="flex items-center justify-between gap-3 mb-4">
+                                    <div className="text-[13px] font-semibold">Devices</div>
+                                    <div className="flex items-center gap-2">
+                                        <HelpButton compact isLight={isLight} onClick={() => setRecoveryGuideOpen("camera")}>Camera</HelpButton>
+                                        <HelpButton compact isLight={isLight} onClick={() => setRecoveryGuideOpen("microphone")}>Mic</HelpButton>
+                                    </div>
+                                </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <SelectField
@@ -1165,8 +1387,25 @@ export function RoomSettingsModalLiveKit({
                                 </div>
                             </div>
 
+                            {firefoxSafeUi ? (
+                                <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                                    <div className="flex items-start justify-between gap-4">
+                                        <div className="min-w-0">
+                                            <div className="text-[13px] font-semibold">Firefox laptop tip</div>
+                                            <div className={`mt-1 text-[12px] leading-5 ${subtleText}`}>
+                                                If camera or mic does not start, allow permissions from the lock icon, choose exact devices, then toggle camera/mic once.
+                                            </div>
+                                        </div>
+                                        <HelpButton compact isLight={isLight} onClick={() => setRecoveryGuideOpen("firefox")}>Guide</HelpButton>
+                                    </div>
+                                </div>
+                            ) : null}
+
                             <div className={`rounded-2xl p-4 ${sectionCls}`}>
-                                <div className="text-[13px] font-semibold mb-4">Microphone processing</div>
+                                <div className="flex items-center justify-between gap-3 mb-4">
+                                    <div className="text-[13px] font-semibold">Microphone processing</div>
+                                    <HelpButton compact isLight={isLight} onClick={() => setRecoveryGuideOpen("microphone")}>Mic guide</HelpButton>
+                                </div>
 
                                 <div className="flex flex-col gap-4">
                                     <ToggleRow
@@ -1201,17 +1440,22 @@ export function RoomSettingsModalLiveKit({
                                 </div>
                             </div>
 
-                            <SoundTestSection
-                                isLight={isLight}
-                                sectionCls={sectionCls}
-                                ghostBtn={ghostBtn}
-                                subtleText={subtleText}
-                                selectedAudioInputId={selectedAudioInputId}
-                                selectedAudioOutputId={selectedAudioOutputId}
-                                echoCancellationEnabled={echoCancellationEnabled}
-                                noiseSuppressionEnabled={noiseSuppressionEnabled}
-                                autoGainControlEnabled={autoGainControlEnabled}
-                            />
+                            <div className="relative">
+                                <SoundTestSection
+                                    isLight={isLight}
+                                    sectionCls={sectionCls}
+                                    ghostBtn={ghostBtn}
+                                    subtleText={subtleText}
+                                    selectedAudioInputId={selectedAudioInputId}
+                                    selectedAudioOutputId={selectedAudioOutputId}
+                                    echoCancellationEnabled={echoCancellationEnabled}
+                                    noiseSuppressionEnabled={noiseSuppressionEnabled}
+                                    autoGainControlEnabled={autoGainControlEnabled}
+                                />
+                                <div className="absolute right-4 top-4 flex items-center gap-2">
+                                    <HelpButton compact isLight={isLight} onClick={() => setRecoveryGuideOpen("speakers")}>Sound guide</HelpButton>
+                                </div>
+                            </div>
 
                             <div className={`rounded-2xl p-4 ${sectionCls}`}>
                                 <div className="text-[13px] font-semibold mb-4">Room tools</div>
@@ -1366,7 +1610,7 @@ export function RoomSettingsModalLiveKit({
                                             description="Used when Blur mode is active."
                                             min={4}
                                             max={30}
-                                            step={firefoxSafeUi ? 4 : 2}
+                                            step={2}
                                             value={blurDraft}
                                             onChange={scheduleBlurChange}
                                             disabled={disableFxControls || mode !== "blur"}
@@ -1550,6 +1794,12 @@ export function RoomSettingsModalLiveKit({
                     </button>
                 </div>
             </div>
+
+            <RecoveryGuideModal
+                guideKey={recoveryGuideOpen}
+                onClose={() => setRecoveryGuideOpen(null)}
+                isLight={isLight}
+            />
         </div>
     );
 }

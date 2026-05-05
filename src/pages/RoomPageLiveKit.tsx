@@ -397,11 +397,15 @@ function normalizeFxBlurStrength(raw: number, firefoxSafe = false) {
   const n = Math.max(4, Math.min(30, Math.round(Number(raw || 12))));
 
   // Firefox дешевле и стабильнее, если не пересоздавать processor
-  // на каждый 1px движения ползунка.
+  // на каждый 1px движения ползунка, но max 30 должен быть достижим.
   if (firefoxSafe) {
-    return Math.max(4, Math.min(28, Math.round(n / 4) * 4));
+    if (n <= 4) return 4;
+    if (n >= 30) return 30;
+    return Math.max(4, Math.min(30, Math.round(n / 4) * 4));
   }
 
+  if (n <= 4) return 4;
+  if (n >= 30) return 30;
   return Math.max(4, Math.min(30, Math.round(n / 2) * 2));
 }
 
@@ -1071,7 +1075,7 @@ export function RoomPageLiveKit() {
       paywallBlocked,
     });
   }, [entitlementState, paywallDecision, paywallBlocked]);
-  
+
   useEffect(() => {
     console.log("[PAYWALL RoomPageLiveKit]", {
       entitlementState,
@@ -1264,7 +1268,7 @@ export function RoomPageLiveKit() {
       console.error("setMetadata failed", e);
     }
   };
-  
+
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string>("");
   const accessTokenRef = useRef<string>("");
   const sessionJoinStartedAtRef = useRef<number | null>(null);
@@ -2878,7 +2882,7 @@ export function RoomPageLiveKit() {
   const [remoteAudioHasAnyTracks, setRemoteAudioHasAnyTracks] = useState(false);
   const [audioResumeNonce, setAudioResumeNonce] = useState(0);
   const [audioResumeBusy, setAudioResumeBusy] = useState(false);
-  
+
 
   const [colorCorrection, setColorCorrection] = useState<ColorCorrectionState>({
     brightness: 100,
@@ -3882,7 +3886,7 @@ export function RoomPageLiveKit() {
   }, [connected, roomState, ensureRoomAudioPlaybackUnlocked]);
   const [clientError, setClientError] = useState<string>("");
   const [mediaWarning, setMediaWarning] = useState<string>("");
-  
+
   const connectInFlightRef = useRef(false);
   const connectAttemptIdRef = useRef(0);
 
@@ -4011,7 +4015,7 @@ export function RoomPageLiveKit() {
   const pipWindowRef = useRef<Window | null>(null);
   const [pipMountEl, setPipMountEl] = useState<HTMLElement | null>(null);
   const [pipOpen, setPipOpen] = useState(false);
-  
+
   const documentPipSupported =
     typeof window !== "undefined" &&
     typeof (window as WindowWithDocumentPiP).documentPictureInPicture !== "undefined";
@@ -4449,7 +4453,7 @@ export function RoomPageLiveKit() {
       if (Number.isFinite(pct)) {
         applyVolumeToRemoteParticipant(tileId, pct);
       }
-      
+
     });
 
     setTiles(next);
@@ -4643,7 +4647,7 @@ export function RoomPageLiveKit() {
     setMediaWarning("");
 
     await disconnectRoom();
-  
+
     try {
       const pj = prejoinRef.current;
 
@@ -4748,43 +4752,87 @@ export function RoomPageLiveKit() {
       await attendanceJoin();
       startAttendanceHeartbeat();
 
-      const shouldAutoStartCameraOnJoin =
-        pj.videoEnabled &&
-        !isMobileQuery &&
-        !isTabletQuery &&
-        deviceTier !== "weak";
-        
-      // cam
-      let usedPrepared = false;
+      const shouldAutoStartCameraOnJoin = !!pj.videoEnabled;
 
+      // Camera from prejoin. Important: weak laptops / Firefox should still TRY camera.
+      // Heavy FX can fail separately, but camera failure must not break room join.
       if (shouldAutoStartCameraOnJoin) {
-        const fxAllowed = videoFxMode !== "off";
-        let prepared = prejoinPreparedVideoTrackRef.current;
+        try {
+          const fxAllowed = videoFxMode !== "off" && !shouldDisableBackgroundFx;
+          let prepared = prejoinPreparedVideoTrackRef.current;
 
-        if (!prepared) {
-          prepared = await createPrejoinPreparedVideoTrack({ force: true });
+          if (!prepared) {
+            prepared = await createPrejoinPreparedVideoTrack({ force: true });
 
-          if (prepared && fxAllowed) {
-            try {
-              await safeApplyProcessor(prepared, videoFxMode, blurStrength, bgImageUrl);
-            } catch (e) {
-              console.warn("apply fx before publish failed:", e);
+            if (prepared && fxAllowed) {
+              try {
+                await safeApplyProcessor(prepared, videoFxMode, blurStrength, bgImageUrl);
+              } catch (e) {
+                console.warn("apply fx before publish failed:", e);
+              }
             }
           }
-        }
 
-        if (prepared) {
-          await r.localParticipant.publishTrack(prepared, { source: Track.Source.Camera } as any);
-          usedPrepared = true;
-          prejoinPreparedVideoTrackRef.current = null;
-          setCamOn(true);
-        } else {
-          await r.localParticipant.setCameraEnabled(false);
+          if (prepared) {
+            await r.localParticipant.publishTrack(prepared, { source: Track.Source.Camera } as any);
+            prejoinPreparedVideoTrackRef.current = null;
+            setCamOn(true);
+          } else {
+            await r.localParticipant.setCameraEnabled(true, {
+              deviceId: pj.videoInputId || selectedVideoInputId || undefined,
+              resolution: {
+                width: isMobileQuery || isTabletQuery ? 320 : capturePreset.width,
+                height: isMobileQuery || isTabletQuery ? 180 : capturePreset.height,
+              },
+              frameRate: isMobileQuery || isTabletQuery ? 8 : capturePreset.fps,
+            } as any);
+            setCamOn(true);
+          }
+
+          setDeviceError("");
+        } catch (e: any) {
+          console.warn("[join] camera enable failed:", e);
           setCamOn(false);
+
+          const msg = normalizeMediaWarningMessage(
+            e?.message || e?.name || e || "camera_enable_failed"
+          );
+
+          setDeviceError(msg);
+          setMediaWarning(
+            `${msg} You joined the room, but your camera is off. In Firefox, click the lock icon near the address bar, allow Camera, then choose the camera and try again.`
+          );
         }
       } else {
-        await r.localParticipant.setCameraEnabled(false);
+        try {
+          await r.localParticipant.setCameraEnabled(false);
+        } catch { }
         setCamOn(false);
+      }
+
+      // Microphone from prejoin. Failure should not kick user out of the room.
+      if (pj.audioEnabled) {
+        try {
+          await r.localParticipant.setMicrophoneEnabled(true, {
+            deviceId: pj.audioInputId || selectedAudioInputId || undefined,
+            echoCancellation: !!pj.echoCancellation,
+            noiseSuppression: !!pj.noiseSuppression,
+            autoGainControl: !!pj.autoGainControl,
+          } as any);
+          setMicOn(true);
+        } catch (e: any) {
+          console.warn("[join] microphone enable failed:", e);
+          setMicOn(false);
+
+          const msg = normalizeMediaWarningMessage(
+            e?.message || e?.name || e || "microphone_enable_failed"
+          );
+
+          setDeviceError(msg);
+          setMediaWarning(
+            `${msg} You joined the room, but your microphone is off. In Firefox, click the lock icon near the address bar, allow Microphone, then choose the microphone and try again.`
+          );
+        }
       }
 
       refresh();
@@ -4943,8 +4991,19 @@ export function RoomPageLiveKit() {
       window.setTimeout(() => {
         scheduleRebuildTiles();
       }, 120);
-    } catch (e) {
+    } catch (e: any) {
       console.error("toggleCam error:", e);
+
+      const msg = normalizeMediaWarningMessage(
+        e?.message || e?.name || e || "camera_toggle_failed"
+      );
+
+      setMediaWarning(
+        `${msg} Try allowing camera permissions, choosing another camera, or refreshing the room.`
+      );
+
+      setDeviceError(msg);
+      scheduleRebuildTiles();
     }
   };
 
@@ -6156,13 +6215,13 @@ export function RoomPageLiveKit() {
           : "minmax(0, 1fr) clamp(14rem, 24vw, 20rem)",
       }}
     >
-  <div className="min-w-0 min-h-0 flex items-center justify-center overflow-hidden">
-    <div className="w-full min-w-0 min-h-0">
-      {featuredTile ? renderTile(featuredTile) : null}
-    </div>
-  </div>
+      <div className="min-w-0 min-h-0 flex items-center justify-center overflow-hidden">
+        <div className="w-full min-w-0 min-h-0">
+          {featuredTile ? renderTile(featuredTile) : null}
+        </div>
+      </div>
 
-  <div className="min-w-0 min-h-0 overflow-y-auto overflow-x-hidden pr-1 flex flex-col gap-3">
+      <div className="min-w-0 min-h-0 overflow-y-auto overflow-x-hidden pr-1 flex flex-col gap-3">
         {sidebarTiles.length === 0 ? (
           <div
             className={`min-h-[160px] rounded-2xl border flex items-center justify-center ${isLight ? "border-black/10 bg-black/5 text-black/50" : "border-white/10 bg-white/5 text-white/55"
@@ -6187,48 +6246,48 @@ export function RoomPageLiveKit() {
         </div>
       ) : tileCount ? (
         useVeryNarrowMode ? (
-              tileCount <= 2 ? (
-                <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
-                  <MobileFillLayoutSizing<TileModel>
-                    items={layoutTilesForRender}
-                    containerWidth={effectiveW}
-                    containerHeight={effectiveH}
-                    paddingBottomPx={paddingBottomPx}
-                    renderItem={(t) => renderTile(t)}
-                  />
-                </div>
-              ) : (
-                  <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
-                    <MobileStackLayoutSizing<TileModel>
-                      items={layoutTilesForRender}
-                      containerWidth={effectiveW}
-                      containerHeight={effectiveH}
-                      paddingBottomPx={paddingBottomPx}
-                      renderItem={(t) => renderTile(t)}
-                    />
-                  </div>
+          tileCount <= 2 ? (
+            <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
+              <MobileFillLayoutSizing<TileModel>
+                items={layoutTilesForRender}
+                containerWidth={effectiveW}
+                containerHeight={effectiveH}
+                paddingBottomPx={paddingBottomPx}
+                renderItem={(t) => renderTile(t)}
+              />
+            </div>
+          ) : (
+            <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
+              <MobileStackLayoutSizing<TileModel>
+                items={layoutTilesForRender}
+                containerWidth={effectiveW}
+                containerHeight={effectiveH}
+                paddingBottomPx={paddingBottomPx}
+                renderItem={(t) => renderTile(t)}
+              />
+            </div>
           )
-            ) : tileCount <= 2 ? (
-              <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
-                <P2PLayoutSizing<TileModel>
-                  items={layoutTilesForRender}
-                  containerWidth={effectiveW}
-                  containerHeight={effectiveH}
-                  stack={stackTwoOnThisViewport}
-                  renderItem={(t) => renderTile(t)}
-                />
-              </div>
-            ) : (
-                <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
-                  <GridLayoutSizing<TileModel>
-                    items={layoutTilesForRender}
-                    containerWidth={effectiveW}
-                    containerHeight={effectiveH}
-                      forceThreeAsTwoPlusOne={isLgUp && rightPanelOpen && effectiveW < 1500}
-                    renderItem={(t) => renderTile(t)}
-                  />
-                </div>
-              )
+        ) : tileCount <= 2 ? (
+          <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
+            <P2PLayoutSizing<TileModel>
+              items={layoutTilesForRender}
+              containerWidth={effectiveW}
+              containerHeight={effectiveH}
+              stack={stackTwoOnThisViewport}
+              renderItem={(t) => renderTile(t)}
+            />
+          </div>
+        ) : (
+          <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
+            <GridLayoutSizing<TileModel>
+              items={layoutTilesForRender}
+              containerWidth={effectiveW}
+              containerHeight={effectiveH}
+              forceThreeAsTwoPlusOne={isLgUp && rightPanelOpen && effectiveW < 1500}
+              renderItem={(t) => renderTile(t)}
+            />
+          </div>
+        )
       ) : null}
     </>
   );
@@ -6550,24 +6609,24 @@ export function RoomPageLiveKit() {
                               {statusLabel ? (
                                 <span
                                   className={`shrink-0 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${statusTone === "yellow"
+                                    ? isLight
+                                      ? "bg-yellow-100 text-yellow-800 border-yellow-300/60"
+                                      : "bg-yellow-400/15 text-yellow-200 border-yellow-300/25"
+                                    : statusTone === "purple"
                                       ? isLight
-                                        ? "bg-yellow-100 text-yellow-800 border-yellow-300/60"
-                                        : "bg-yellow-400/15 text-yellow-200 border-yellow-300/25"
-                                      : statusTone === "purple"
+                                        ? "bg-purple-100 text-purple-800 border-purple-300/60"
+                                        : "bg-purple-400/15 text-purple-200 border-purple-300/25"
+                                      : statusTone === "blue"
                                         ? isLight
-                                          ? "bg-purple-100 text-purple-800 border-purple-300/60"
-                                          : "bg-purple-400/15 text-purple-200 border-purple-300/25"
-                                        : statusTone === "blue"
+                                          ? "bg-blue-100 text-blue-800 border-blue-300/60"
+                                          : "bg-blue-400/15 text-blue-200 border-blue-300/25"
+                                        : statusTone === "orange"
                                           ? isLight
-                                            ? "bg-blue-100 text-blue-800 border-blue-300/60"
-                                            : "bg-blue-400/15 text-blue-200 border-blue-300/25"
-                                          : statusTone === "orange"
-                                            ? isLight
-                                              ? "bg-orange-100 text-orange-800 border-orange-300/60"
-                                              : "bg-orange-400/15 text-orange-200 border-orange-300/25"
-                                            : isLight
-                                              ? "bg-neutral-100 text-neutral-700 border-neutral-300/60"
-                                              : "bg-white/10 text-white/80 border-white/10"
+                                            ? "bg-orange-100 text-orange-800 border-orange-300/60"
+                                            : "bg-orange-400/15 text-orange-200 border-orange-300/25"
+                                          : isLight
+                                            ? "bg-neutral-100 text-neutral-700 border-neutral-300/60"
+                                            : "bg-white/10 text-white/80 border-white/10"
                                     }`}
                                   title={statusLabel}
                                 >
@@ -6594,8 +6653,8 @@ export function RoomPageLiveKit() {
                               type="button"
                               onClick={() => setScreenSharePinned((prev) => !prev)}
                               className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
-                                  ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
-                                  : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
+                                ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
+                                : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
                                 }`}
                               title={screenSharePinned ? "Unpin shared screen" : "Pin shared screen"}
                               aria-label={screenSharePinned ? "Unpin shared screen" : "Pin shared screen"}
@@ -7075,6 +7134,7 @@ export function RoomPageLiveKit() {
         devices={devices}
         value={prejoin}
         onChange={setPrejoin}
+        deviceError={deviceError}
         hideBackgroundFx={shouldDisableBackgroundFx}
         onRefreshDevices={() => loadBrowserDevices().catch(() => { })}
         onCancel={() => {
@@ -7105,7 +7165,7 @@ export function RoomPageLiveKit() {
         onApplyVideoFx={applyPrejoinVideoFx}
         onBlurStrengthChange={setBlurStrength}
         onSetBgImageUrl={setBgImageUrl}
-        
+
         onUploadBg={(file: File) => {
           try {
             if (uploadedBgUrlRef.current) {
@@ -7175,8 +7235,8 @@ export function RoomPageLiveKit() {
               {mediaWarning && connected && (
                 <div
                   className={`rounded-2xl border px-3 py-2 text-sm ${isLight
-                      ? "border-amber-200 bg-amber-50 text-amber-800"
-                      : "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                    ? "border-amber-200 bg-amber-50 text-amber-800"
+                    : "border-amber-500/30 bg-amber-500/10 text-amber-200"
                     }`}
                 >
                   <div className="break-words">
@@ -7439,8 +7499,8 @@ export function RoomPageLiveKit() {
         {settingsOpen && deviceError ? (
           <div
             className={`fixed left-1/2 top-[88px] z-[91] -translate-x-1/2 rounded-xl px-3 py-2 text-[12px] shadow-lg ${isLight
-                ? "bg-red-50 border border-red-200 text-red-700"
-                : "bg-red-500/10 border border-red-500/20 text-red-200"
+              ? "bg-red-50 border border-red-200 text-red-700"
+              : "bg-red-500/10 border border-red-500/20 text-red-200"
               }`}
           >
             {deviceError}
@@ -7648,7 +7708,7 @@ export function RoomPageLiveKit() {
                 !targetTile.isLocal &&
                 !!targetIdentity &&
                 (isHost || isSelfModerator);
-                
+
 
               const participantVolumeKey = getParticipantVolumeKey(targetTile);
               const participantVolumePctRaw = volumePctByParticipantKey[participantVolumeKey];

@@ -64,6 +64,7 @@ type PreJoinModalProps = {
   onUploadBg: (file: File) => void;
   onResetBg: () => void;
 
+  deviceError?: string;
   hideBackgroundFx?: boolean;
 };
 
@@ -140,6 +141,7 @@ export function PreJoinModal({
   onUploadBg,
   onResetBg,
 
+  deviceError = "",
   hideBackgroundFx = false,
 }: PreJoinModalProps) {
   const isLight = theme === "light";
@@ -566,6 +568,21 @@ export function PreJoinModal({
                 </div>
               </div>
 
+              {deviceError ? (
+                <div
+                  className={`rounded-2xl px-4 py-3 text-[12px] ${isLight
+                      ? "bg-red-50 border border-red-200 text-red-700"
+                      : "bg-red-500/10 border border-red-500/20 text-red-200"
+                    }`}
+                >
+                  <div className="font-semibold">Camera or microphone needs attention</div>
+                  <div className="mt-1 break-words">{deviceError}</div>
+                  <div className="mt-2">
+                    Firefox tip: click the lock icon near the address bar, allow Camera/Microphone, then click Refresh devices.
+                  </div>
+                </div>
+              ) : null}
+
               {!hideBackgroundFx && (
                 <div className={`ms-desktop-only-fx rounded-3xl p-4 ${inputWrap}`}>
                   <div className="flex items-center justify-between gap-3">
@@ -632,9 +649,9 @@ export function PreJoinModal({
 
                       <input
                         type="range"
-                        min={2}
-                        max={22}
-                        step={1}
+                        min={4}
+                        max={30}
+                        step={2}
                         value={blurDraft}
                         onChange={(e) => {
                           const v = Number(e.target.value) || 0;
@@ -663,8 +680,8 @@ export function PreJoinModal({
                             disabled={!value.videoEnabled || fxApplying}
                             onClick={() => onSetBgImageUrl(p.url)}
                             className={`rounded-2xl overflow-hidden border text-left transition ${isLight
-                                ? "border-black/10 hover:border-black/20"
-                                : "border-white/10 hover:border-white/20"
+                              ? "border-black/10 hover:border-black/20"
+                              : "border-white/10 hover:border-white/20"
                               }`}
                             title={p.label}
                           >
@@ -912,8 +929,8 @@ export function PreJoinModal({
 
               <div
                 className={`rounded-2xl p-4 ${isLight
-                    ? "bg-blue-50 border border-blue-100"
-                    : "bg-white/5 border border-white/10"
+                  ? "bg-blue-50 border border-blue-100"
+                  : "bg-white/5 border border-white/10"
                   }`}
               >
                 <div
