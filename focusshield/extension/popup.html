@@ -6,31 +6,190 @@
     <title>FocusShield</title>
     <style>
         body {
-            width: 280px;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            width: 390px;
+            font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             padding: 14px;
+            color: #111827;
+            background: #ffffff;
         }
 
         h1 {
             font-size: 18px;
             margin: 0 0 10px;
+            color: #111827;
+            font-weight: 700;
+            letter-spacing: -0.02em;
         }
 
-        button,
-        select {
+        details {
+            border: 1px solid #d1d5db;
+            border-radius: 14px;
+            padding: 10px;
+            margin-top: 10px;
+            background: #ffffff;
+        }
+
+        summary {
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 650;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+            color: #111827;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        label.option {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 7px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 450;
+            cursor: pointer;
+            color: #111827;
+        }
+
+        label.option:hover {
+            background: #f3f4f6;
+        }
+
+        input[type="checkbox"] {
+            accent-color: #111827;
+        }
+
+        .tooltip {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            left: 18px;
+            right: 18px;
+            bottom: 14px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: #111827;
+            color: #ffffff;
+            font-size: 12px;
+            line-height: 1.35;
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.22);
+            pointer-events: none;
+        }
+
+        label.option:hover .tooltip {
+            display: block;
+        }
+
+        .tooltip strong {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 12px;
+            color: #ffffff;
+        }
+
+        .tooltip span {
+            color: #d1d5db;
+        }
+
+        textarea {
             width: 100%;
+            box-sizing: border-box;
+            min-height: 76px;
+            padding: 9px;
+            border-radius: 10px;
+            border: 1px solid #d1d5db;
+            background: #ffffff;
+            color: #111827;
+            font-family: inherit;
+            font-size: 13px;
+            resize: vertical;
+            margin-top: 8px;
+        }
+
+        textarea:focus,
+        select:focus {
+            outline: 2px solid #111827;
+            outline-offset: 1px;
+        }
+
+        select,
+        button {
+            width: 100%;
+            box-sizing: border-box;
             margin-top: 8px;
             padding: 9px;
+            border-radius: 10px;
+            border: 1px solid #d1d5db;
+            font-family: inherit;
+        }
+
+        button {
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        #start {
+            background: #111827;
+            color: #ffffff;
+            border-color: #111827;
+        }
+
+        #start:hover {
+            background: #1f2937;
+        }
+
+        #stop {
+            background: #ffffff;
+            color: #111827;
+            border-color: #d1d5db;
+        }
+
+        #stop:hover {
+            background: #f3f4f6;
         }
 
         .status {
             margin: 10px 0;
             font-size: 13px;
-            opacity: 0.8;
+            color: #4b5563;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: #6b7280;
+            line-height: 1.35;
+            margin-top: 6px;
         }
 
         .danger {
             color: #b91c1c;
+        }
+
+        .section-title {
+            font-size: 13px;
+            font-weight: 600;
+            margin: 14px 0 4px;
+            color: #111827;
+            letter-spacing: -0.01em;
+        }
+
+        .active-list {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #374151;
+            max-height: 90px;
+            overflow: auto;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 8px;
         }
     </style>
 </head>
@@ -40,26 +199,157 @@
 
     <div id="status" class="status">Loading...</div>
 
-    <select id="preset">
-        <option value="social">Social</option>
-        <option value="video">Video</option>
-        <option value="news">News</option>
-    </select>
+    <details open>
+        <summary>Common filters</summary>
+        <div class="grid">
+            <label class="option"><input type="checkbox" value="amazon" /> Amazon</label>
+            <label class="option"><input type="checkbox" value="apple_news" /> Apple News</label>
+            <label class="option"><input type="checkbox" value="discord" /> Discord</label>
+            <label class="option"><input type="checkbox" value="ebay" /> eBay</label>
+            <label class="option"><input type="checkbox" value="facebook" /> Facebook</label>
+            <label class="option"><input type="checkbox" value="gmail" /> Gmail</label>
+            <label class="option"><input type="checkbox" value="instagram" /> Instagram</label>
+            <label class="option"><input type="checkbox" value="linkedin" /> LinkedIn</label>
+            <label class="option"><input type="checkbox" value="netflix" /> Netflix</label>
+            <label class="option"><input type="checkbox" value="ny_times" /> NY Times</label>
+            <label class="option"><input type="checkbox" value="pinterest" /> Pinterest</label>
+            <label class="option"><input type="checkbox" value="reddit" /> Reddit</label>
+            <label class="option"><input type="checkbox" value="slack" /> Slack</label>
+            <label class="option"><input type="checkbox" value="snapchat" /> Snapchat</label>
+            <label class="option"><input type="checkbox" value="spotify" /> Spotify</label>
+            <label class="option"><input type="checkbox" value="telegram" /> Telegram</label>
+            <label class="option"><input type="checkbox" value="tiktok" /> TikTok</label>
+            <label class="option"><input type="checkbox" value="tumblr" /> Tumblr</label>
+            <label class="option"><input type="checkbox" value="twitter" /> Twitter / X</label>
+            <label class="option"><input type="checkbox" value="whatsapp" /> WhatsApp</label>
+            <label class="option"><input type="checkbox" value="youtube" /> YouTube</label>
+        </div>
+    </details>
+
+    <details>
+        <summary>Category filters</summary>
+        <div class="grid">
+            <label class="option">
+                <input type="checkbox" value="category_social" /> Social
+                <div class="tooltip"><strong>Social</strong><span>Facebook, Instagram, X/Twitter, Reddit, TikTok,
+                        Snapchat, Tumblr, Pinterest</span></div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_meta" /> Meta
+                <div class="tooltip"><strong>Meta</strong><span>Facebook, Instagram, Threads, Messenger</span></div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_messaging" /> Messaging
+                <div class="tooltip"><strong>Messaging</strong><span>Discord, Slack, Telegram Web, WhatsApp Web,
+                        Messenger</span></div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_search_engines" /> Search Engines
+                <div class="tooltip"><strong>Search Engines</strong><span>Google, Bing, DuckDuckGo, Yahoo</span></div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_news" /> News
+                <div class="tooltip"><strong>News</strong><span>CNN, BBC, NY Times, The Guardian, Washington Post,
+                        Reuters, AP News, Hacker News, Apple News</span></div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_politics" /> Politics
+                <div class="tooltip"><strong>Politics</strong><span>Politico, The Hill, Fox News, MSNBC</span></div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_shopping" /> Shopping
+                <div class="tooltip"><strong>Shopping</strong><span>Amazon, eBay, AliExpress, Etsy, Walmart,
+                        Target</span></div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_tv_video" /> TV / Video
+                <div class="tooltip"><strong>TV / Video</strong><span>YouTube, Netflix, Twitch, Hulu, Disney+, Prime
+                        Video</span></div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_sports" /> Sports
+                <div class="tooltip"><strong>Sports</strong><span>ESPN, NBA, NFL, MLB, NHL, Sky Sports</span></div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_blogs" /> Blogs
+                <div class="tooltip"><strong>Blogs</strong><span>Medium, Substack, Tumblr, Blogger</span></div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_food_delivery" /> Food Delivery
+                <div class="tooltip"><strong>Food Delivery</strong><span>Uber Eats, DoorDash, Grubhub, Deliveroo</span>
+                </div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_games" /> Games
+                <div class="tooltip"><strong>Games</strong><span>Steam, Epic Games, Roblox, Minecraft, Twitch</span>
+                </div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_time_wasters" /> Time Wasters
+                <div class="tooltip"><strong>Time Wasters</strong><span>YouTube, Reddit, X/Twitter, TikTok, Instagram,
+                        Facebook, 9GAG, BuzzFeed</span></div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_dating" /> Dating
+                <div class="tooltip"><strong>Dating</strong><span>Tinder, Bumble, Hinge, Match</span></div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_gambling" /> Gambling
+                <div class="tooltip"><strong>Gambling</strong><span>Stake, Bet365, DraftKings, FanDuel</span></div>
+            </label>
+
+            <label class="option">
+                <input type="checkbox" value="category_adult" /> Adult
+                <div class="tooltip"><strong>Adult</strong><span>Common adult websites</span></div>
+            </label>
+        </div>
+    </details>
+
+    <div class="section-title">Custom sites or pages</div>
+
+    <textarea id="customInput" placeholder="One per line:
+youtube.com
+reddit.com/r/all
+https://www.youtube.com/shorts
+https://example.com/specific-page"></textarea>
+
+    <div class="hint">
+        Domain = block the whole site. Full link/path = block only that page or section.
+    </div>
+
+    <div class="section-title">Duration</div>
 
     <select id="duration">
         <option value="25">25 minutes</option>
         <option value="50">50 minutes</option>
         <option value="90">90 minutes</option>
         <option value="120">2 hours</option>
+        <option value="240">4 hours</option>
     </select>
 
-    <label>
+    <label style="display:block; margin-top:10px; font-size:13px;">
         <input id="locked" type="checkbox" checked />
         Locked mode
     </label>
 
     <button id="start">Activate Shield</button>
     <button id="stop">Stop Shield</button>
+
+    <div id="activeList" class="active-list" style="display:none;"></div>
 
     <script src="popup.js"></script>
 </body>

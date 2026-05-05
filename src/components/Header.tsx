@@ -454,7 +454,7 @@ export default function Header() {
                                         </button>
 
                                         {showUserMenu && (
-                                            <div className="hidden sm:block absolute right-0 top-14 w-48 bg-white rounded-xl shadow-lg border border-borderGray z-40">
+                                            <div className="hidden sm:block absolute right-0 top-14 w-52 bg-white rounded-xl shadow-lg border border-borderGray z-40 overflow-hidden">
                                                 <button
                                                     onClick={() => {
                                                         navigate("/profile");
@@ -463,6 +463,16 @@ export default function Header() {
                                                     className="w-full text-left px-4 py-2 text-sm font-light hover:bg-slate-50"
                                                 >
                                                     Profile
+                                                </button>
+
+                                                <button
+                                                    onClick={() => {
+                                                        navigate("/focus-shield");
+                                                        setShowUserMenu(false);
+                                                    }}
+                                                    className="w-full text-left px-4 py-2 text-sm font-light hover:bg-slate-50"
+                                                >
+                                                    🛡 FocusShield
                                                 </button>
 
                                                 <button
@@ -549,6 +559,16 @@ export default function Header() {
                                     className="text-left"
                                 >
                                     Focus plan
+                                </button>
+
+                                <button
+                                    onClick={() => {
+                                        navigate("/focus-shield");
+                                        setMobileMenu(false);
+                                    }}
+                                    className="text-left"
+                                >
+                                    🛡 FocusShield
                                 </button>
 
                                 {user && (

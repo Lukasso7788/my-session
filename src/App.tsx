@@ -10,6 +10,7 @@ import RegisterPage from "./pages/RegisterPage";
 import UpdatePasswordPage from "./pages/UpdatePasswordPage";
 import ProfilePage from "./pages/ProfilePage";
 import FocusPlanPage from "./pages/FocusPlanPage";
+import FocusShieldPage from "./pages/FocusShieldPage";
 import PublicProfilePage from "./pages/PublicProfilePage";
 import AuthCallback from "./pages/AuthCallback";
 
@@ -144,6 +145,7 @@ export default function App() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/profile/:id" element={<PublicProfilePage />} />
           <Route path="/focus-plan" element={<FocusPlanPage />} />
+          <Route path="/focus-shield" element={<FocusShieldPage />} />
 
           {/* UI Playground */}
           <Route path="/ui-playground" element={<SessionCardsPlayground />} />
