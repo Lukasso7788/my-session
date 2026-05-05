@@ -59,18 +59,18 @@ function computeCols(count: number, containerWidth: number) {
     if (count === 6) return w >= 780 ? 3 : 2;
 
     // 7–8:
-    // - с открытым сайдбаром / на среднем контейнере держим 3 колонки
-    // - при выключенном сайдбаре контейнер становится шире, поэтому даём 4 колонки
+    // - с открытой правой панелью (Intentions / Participants / Chat) держим 3 колонки
+    // - 4 колонки включаем только когда правая панель закрыта и видео-зона реально широкая
     //   7 участников: 4 + 3
     //   8 участников: 4 + 4
+    //
+    // Important:
+    // On 1920x1080, the video container can still be around 1180–1350px
+    // with the right panel open, so 1180px is too low and wrongly enables 4 columns.
+    // 1500px is intentionally high: it targets the closed-right-panel layout.
     if (count >= 7 && count <= 8) {
-        // Narrow laptop / constrained room area.
         if (w < 760) return 2;
-
-        // Sidebar closed / enough real video width.
-        // This gives 7–8 participants a clean two-line 4-column layout.
-        if (isDesktop && w >= 1180) return 4;
-
+        if (isDesktop && w >= 1500) return 4;
         return 3;
     }
 
