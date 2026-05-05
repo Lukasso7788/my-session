@@ -470,9 +470,10 @@ export default function Header() {
                                                         navigate("/focus-shield");
                                                         setShowUserMenu(false);
                                                     }}
-                                                    className="w-full text-left px-4 py-2 text-sm font-light hover:bg-slate-50"
+                                                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm font-light hover:bg-slate-50"
                                                 >
-                                                    🛡 FocusShield
+                                                    <img src="/icons/focus-shield.svg" className="h-4 w-4" alt="" />
+                                                    <span>FocusShield</span>
                                                 </button>
 
                                                 <button
@@ -566,9 +567,10 @@ export default function Header() {
                                         navigate("/focus-shield");
                                         setMobileMenu(false);
                                     }}
-                                    className="text-left"
+                                    className="inline-flex items-center gap-3 text-left"
                                 >
-                                    🛡 FocusShield
+                                    <img src="/icons/focus-shield.svg" className="h-5 w-5" alt="" />
+                                    <span>FocusShield</span>
                                 </button>
 
                                 {user && (
