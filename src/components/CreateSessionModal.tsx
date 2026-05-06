@@ -475,7 +475,7 @@ function getDefaultBlockColor(kind: StudioBlockKind) {
     case "break":
       return "#F9ADA2";
     case "checkin":
-      return "#38BDF8";
+      return "#ADD3FF";
     case "recap":
       return "#A78BFA";
     case "celebrate":

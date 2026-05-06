@@ -103,10 +103,10 @@ export type StageKind =
 
 const KIND_META: Record<StageKind, { label: string; color: string }> = {
   welcome: { label: "Welcome", color: "#34D399" },
-  intentions: { label: "Intentions", color: "#38BDF8" },
+  intentions: { label: "Intentions", color: "#ADD3FF" },
   focus: { label: "Focus", color: "#3B82F6" },
   break: { label: "Break", color: "#FDA4AF" },
-  checkin: { label: "Check-in", color: "#38BDF8" },
+  checkin: { label: "Check-in", color: "#ADD3FF" },
   recap: { label: "Recap", color: "#A78BFA" },
   celebrate: { label: "Celebrate", color: "#F472B6" },
   farewell: { label: "Farewell", color: "#34D399" },
