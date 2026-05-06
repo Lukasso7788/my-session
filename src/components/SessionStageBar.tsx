@@ -262,6 +262,19 @@ function getRawStageColor(stage: any): string {
 }
 
 function resolveStageColor(stage: any, kind: StageKind) {
+  // Product rule:
+  // Check-in must visually match Intentions.
+  //
+  // Some older sessions can already have a different color saved inside
+  // sessions.schedule. If we read that raw stage.color first, old check-ins
+  // can keep showing a strange color forever.
+  //
+  // So check-in intentionally ignores saved stage.color and always uses the
+  // same fallback color as Intentions.
+  if (kind === "checkin") {
+    return KIND_META.intentions.color;
+  }
+
   const raw = getRawStageColor(stage);
 
   if (!raw) return KIND_META[kind].color;
@@ -501,8 +514,8 @@ export function SessionStageBar({
 
                     <div
                       className={`absolute left-1/2 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 ${theme === "light"
-                          ? "border-r border-b border-slate-200 bg-white/95"
-                          : "border-r border-b border-white/10 bg-slate-900/95"
+                        ? "border-r border-b border-slate-200 bg-white/95"
+                        : "border-r border-b border-white/10 bg-slate-900/95"
                         }`}
                     />
                   </div>
