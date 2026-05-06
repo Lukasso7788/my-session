@@ -4920,28 +4920,49 @@ export function RoomPageLiveKit() {
 
     const nextEnabled = !currentlyEnabled;
 
-    console.log("[mic-toggle] click", {
-      currentlyEnabled,
-      nextEnabled,
-      selectedAudioInputId,
-      prejoinAudioInputId: prejoinRef.current.audioInputId,
-      echoCancellationEnabled,
-      noiseSuppressionEnabled,
-      autoGainControlEnabled,
-      browser: navigator.userAgent,
-    });
+    const selectedMicId = String(selectedAudioInputId || prejoinRef.current.audioInputId || "").trim();
 
-    try {
-      setMediaWarning("");
+    const micConstraintsWithSelectedDevice = {
+      deviceId: selectedMicId || undefined,
+      echoCancellation: echoCancellationEnabled,
+      noiseSuppression: noiseSuppressionEnabled,
+      autoGainControl: autoGainControlEnabled,
+    } as any;
 
-      await lp.setMicrophoneEnabled(nextEnabled, {
-        deviceId: selectedAudioInputId || prejoinRef.current.audioInputId || undefined,
-        echoCancellation: echoCancellationEnabled,
-        noiseSuppression: noiseSuppressionEnabled,
-        autoGainControl: autoGainControlEnabled,
-      } as any);
+    const micConstraintsWithDefaultDevice = {
+      echoCancellation: echoCancellationEnabled,
+      noiseSuppression: noiseSuppressionEnabled,
+      autoGainControl: autoGainControlEnabled,
+    } as any;
 
+    const finishMicToggleSuccess = async (usedFallbackDefaultMic = false) => {
       setMicOn(nextEnabled);
+
+      if (nextEnabled) {
+        setDeviceError("");
+
+        if (usedFallbackDefaultMic) {
+          setSelectedAudioInputId("");
+          setPrejoin((prev) => ({
+            ...prev,
+            audioInputId: "",
+            audioEnabled: true,
+          }));
+          prejoinRef.current = {
+            ...prejoinRef.current,
+            audioInputId: "",
+            audioEnabled: true,
+          };
+
+          setMediaWarning(
+            "Your selected microphone did not start, so MySession switched to the default microphone. If this is not the right mic, open Settings and choose another microphone."
+          );
+        } else {
+          setMediaWarning("");
+        }
+      } else {
+        setMediaWarning("");
+      }
 
       await ensureRoomAudioPlaybackUnlocked("toggle-mic");
 
@@ -4955,23 +4976,114 @@ export function RoomPageLiveKit() {
         scheduleRebuildTiles();
       }, 120);
 
-      setRemoteAudioRecoveryTick((v) => v + 1);
+      window.setTimeout(() => {
+        scheduleRebuildTiles();
+      }, 420);
 
-      console.log("[mic-toggle] ok", { nextEnabled });
-    } catch (e: any) {
-      console.error("[mic-toggle] failed:", e);
+      setRemoteAudioRecoveryTick((v) => v + 1);
+    };
+
+    console.log("[mic-toggle] click", {
+      currentlyEnabled,
+      nextEnabled,
+      selectedAudioInputId,
+      prejoinAudioInputId: prejoinRef.current.audioInputId,
+      selectedMicId,
+      echoCancellationEnabled,
+      noiseSuppressionEnabled,
+      autoGainControlEnabled,
+      browser: navigator.userAgent,
+    });
+
+    try {
+      setMediaWarning("");
+
+      await lp.setMicrophoneEnabled(nextEnabled, micConstraintsWithSelectedDevice);
+
+      await finishMicToggleSuccess(false);
+
+      console.log("[mic-toggle] ok", {
+        nextEnabled,
+        usedFallbackDefaultMic: false,
+        selectedMicId,
+      });
+    } catch (firstError: any) {
+      console.error("[mic-toggle] first attempt failed:", firstError);
+
+      // Self-healing unmute:
+      // If a user is trying to unmute and the selected/exact microphone fails,
+      // try again with the browser default microphone. This helps Firefox,
+      // stale deviceId, Bluetooth/headset disconnects, and wrong-device cases.
+      if (nextEnabled && selectedMicId) {
+        try {
+          console.warn("[mic-toggle] retrying with default microphone", {
+            failedSelectedMicId: selectedMicId,
+            firstError,
+          });
+
+          try {
+            await lp.setMicrophoneEnabled(false);
+          } catch { }
+
+          await delay(120);
+
+          await lp.setMicrophoneEnabled(true, micConstraintsWithDefaultDevice);
+
+          await finishMicToggleSuccess(true);
+
+          console.log("[mic-toggle] ok after default microphone fallback", {
+            failedSelectedMicId: selectedMicId,
+          });
+
+          return;
+        } catch (fallbackError: any) {
+          console.error("[mic-toggle] default microphone fallback failed:", fallbackError);
+
+          setMicOn(currentlyEnabled);
+
+          const firstMsg = normalizeMediaWarningMessage(
+            firstError?.message || firstError?.name || firstError || "microphone_toggle_failed"
+          );
+          const fallbackMsg = normalizeMediaWarningMessage(
+            fallbackError?.message || fallbackError?.name || fallbackError || "default_microphone_failed"
+          );
+
+          const combinedMsg =
+            firstMsg === fallbackMsg
+              ? firstMsg
+              : `${firstMsg} Default microphone also failed: ${fallbackMsg}`;
+
+          setDeviceError(combinedMsg);
+          setMediaWarning(
+            `${combinedMsg} Check the browser lock icon, allow Microphone, close Zoom/Discord/Meet/OBS, then open Settings and choose Default microphone.`
+          );
+
+          scheduleRebuildTiles();
+
+          window.setTimeout(() => {
+            scheduleRebuildTiles();
+          }, 180);
+
+          return;
+        }
+      }
 
       setMicOn(currentlyEnabled);
 
       const msg = normalizeMediaWarningMessage(
-        e?.message || e?.name || e || "microphone_toggle_failed"
+        firstError?.message || firstError?.name || firstError || "microphone_toggle_failed"
       );
 
+      setDeviceError(msg);
       setMediaWarning(
-        `${msg} Try refreshing the room, re-allowing microphone permissions, or using Chrome.`
+        `${msg} Check the browser lock icon, allow Microphone, close Zoom/Discord/Meet/OBS, then open Settings and choose Default microphone.`
       );
 
       scheduleRebuildTiles();
+
+      window.setTimeout(() => {
+        scheduleRebuildTiles();
+      }, 180);
     }
   };
 
@@ -6279,14 +6391,14 @@ export function RoomPageLiveKit() {
           </div>
         ) : (
           <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
-                    <GridLayoutSizing<TileModel>
-                      items={layoutTilesForRender}
-                      containerWidth={effectiveW}
-                      containerHeight={effectiveH}
-                      rightPanelOpen={rightPanelOpen}
-                      forceThreeAsTwoPlusOne={isLgUp && rightPanelOpen && effectiveW < 1500}
-                      renderItem={(t) => renderTile(t)}
-                    />
+            <GridLayoutSizing<TileModel>
+              items={layoutTilesForRender}
+              containerWidth={effectiveW}
+              containerHeight={effectiveH}
+              rightPanelOpen={rightPanelOpen}
+              forceThreeAsTwoPlusOne={isLgUp && rightPanelOpen && effectiveW < 1500}
+              renderItem={(t) => renderTile(t)}
+            />
           </div>
         )
       ) : null}
