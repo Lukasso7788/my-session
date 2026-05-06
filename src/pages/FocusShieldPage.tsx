@@ -43,9 +43,13 @@ export default function FocusShieldPage() {
                                 </a>
                             </div>
 
-                            <p className="mt-3 text-xs leading-5 text-gray-500">
-                                Dev install: download the zip, unzip it, then open Chrome Extensions
-                                and click “Load unpacked”.
+                            <p className="mt-3 max-w-2xl text-xs leading-5 text-gray-500">
+                                Dev install: download the zip, unzip it, open Chrome Extensions,
+                                click “Load unpacked”, and select the nested{" "}
+                                <span className="font-mono font-semibold text-gray-700">
+                                    focusshield-extension/extension
+                                </span>{" "}
+                                folder — not the top-level unzipped folder.
                             </p>
                         </div>
 
@@ -86,10 +90,37 @@ export default function FocusShieldPage() {
                     <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm leading-6 text-gray-700">
                         <li>Click “Download Chrome / Edge Extension”.</li>
                         <li>Unzip the downloaded file.</li>
-                        <li>Open <span className="font-mono">chrome://extensions</span> or <span className="font-mono">edge://extensions</span>.</li>
+                        <li>
+                            Open{" "}
+                            <span className="font-mono">chrome://extensions</span>{" "}
+                            or <span className="font-mono">edge://extensions</span>.
+                        </li>
                         <li>Enable Developer mode.</li>
-                        <li>Click “Load unpacked” and select the unzipped FocusShield extension folder.</li>
+                        <li>Click “Load unpacked”.</li>
+                        <li>
+                            Select the nested{" "}
+                            <span className="font-mono font-semibold text-gray-950">
+                                focusshield-extension/extension
+                            </span>{" "}
+                            folder.
+                        </li>
+                        <li>
+                            Do not select the top-level unzipped folder. Chrome / Edge needs the
+                            folder that directly contains the extension files, including{" "}
+                            <span className="font-mono">manifest.json</span>.
+                        </li>
                     </ol>
+
+                    <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                        <div className="font-semibold">Important</div>
+                        <p className="mt-1">
+                            If “Load unpacked” does nothing or shows a manifest error, you probably
+                            selected the wrong folder. Go one level deeper and choose{" "}
+                            <span className="font-mono font-semibold">
+                                focusshield-extension/extension
+                            </span>.
+                        </p>
+                    </div>
                 </section>
             </div>
         </main>

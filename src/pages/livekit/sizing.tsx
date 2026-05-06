@@ -36,7 +36,7 @@ export function useElementSize<T extends HTMLElement>() {
     return { ref, width: size.width, height: size.height };
 }
 
-function computeCols(count: number, containerWidth: number) {
+function computeCols(count: number, containerWidth: number, rightPanelOpen = false) {
     const w = containerWidth || 1200;
     const isDesktop = w >= 1024;
     const isWideDesktop = w >= 1500;
@@ -59,18 +59,16 @@ function computeCols(count: number, containerWidth: number) {
     if (count === 6) return w >= 780 ? 3 : 2;
 
     // 7–8:
-    // - с открытой правой панелью (Intentions / Participants / Chat) держим 3 колонки
-    // - 4 колонки включаем только когда правая панель закрыта и видео-зона реально широкая
-    //   7 участников: 4 + 3
-    //   8 участников: 4 + 4
+    // Правильная логика не через угадывание ширины, а через состояние правой панели.
     //
-    // Important:
-    // On 1920x1080, the video container can still be around 1180–1350px
-    // with the right panel open, so 1180px is too low and wrongly enables 4 columns.
-    // 1500px is intentionally high: it targets the closed-right-panel layout.
+    // rightPanelOpen=true  → открыта Intentions / Participants / Chat panel → держим 3 колонки
+    // rightPanelOpen=false → правая панель закрыта → на desktop даём 4 колонки
+    //
+    // Это важно для 1366×768 / 1920×1080: один только width threshold врёт,
+    // потому что video container может быть достаточно широким даже с открытой панелью.
     if (count >= 7 && count <= 8) {
         if (w < 760) return 2;
-        if (isDesktop && w >= 1500) return 4;
+        if (isDesktop && !rightPanelOpen) return 4;
         return 3;
     }
 
@@ -150,17 +148,25 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
     containerWidth: number;
     containerHeight: number;
     forceThreeAsTwoPlusOne?: boolean;
+    rightPanelOpen?: boolean;
     renderItem: (t: T, idx: number) => React.ReactNode;
 }) {
-    const { items, containerWidth, containerHeight, forceThreeAsTwoPlusOne, renderItem } = props;
+    const {
+        items,
+        containerWidth,
+        containerHeight,
+        forceThreeAsTwoPlusOne,
+        rightPanelOpen = false,
+        renderItem,
+    } = props;
 
     const paddingPx = containerWidth && containerWidth < 520 ? 8 : 10;
     const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
 
     const cols = useMemo(() => {
         if (forceThreeAsTwoPlusOne && items.length === 3) return 2;
-        return computeCols(items.length, containerWidth || 1200);
-    }, [items.length, containerWidth, forceThreeAsTwoPlusOne]);
+        return computeCols(items.length, containerWidth || 1200, rightPanelOpen);
+    }, [items.length, containerWidth, rightPanelOpen, forceThreeAsTwoPlusOne]);
 
     const rows = useMemo(() => Math.ceil(items.length / cols), [items.length, cols]);
 

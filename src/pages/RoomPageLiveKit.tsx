@@ -6279,13 +6279,14 @@ export function RoomPageLiveKit() {
           </div>
         ) : (
           <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
-            <GridLayoutSizing<TileModel>
-              items={layoutTilesForRender}
-              containerWidth={effectiveW}
-              containerHeight={effectiveH}
-              forceThreeAsTwoPlusOne={isLgUp && rightPanelOpen && effectiveW < 1500}
-              renderItem={(t) => renderTile(t)}
-            />
+                    <GridLayoutSizing<TileModel>
+                      items={layoutTilesForRender}
+                      containerWidth={effectiveW}
+                      containerHeight={effectiveH}
+                      rightPanelOpen={rightPanelOpen}
+                      forceThreeAsTwoPlusOne={isLgUp && rightPanelOpen && effectiveW < 1500}
+                      renderItem={(t) => renderTile(t)}
+                    />
           </div>
         )
       ) : null}
