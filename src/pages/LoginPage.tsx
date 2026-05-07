@@ -47,7 +47,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
   const [resetSent, setResetSent] = useState("");
-  const [oauthLoading, setOauthLoading] = useState<null | "google" | "facebook">(null);
+  const [oauthLoading, setOauthLoading] = useState<null | "google" | "discord" | "facebook">(null);
 
   const inApp = useMemo(() => isInAppBrowser(), []);
 
@@ -156,6 +156,32 @@ export default function LoginPage() {
     } catch (error: any) {
       console.log("[auth] google oauth unexpected error:", error);
       alert(error?.message || "Failed to start Google login. Please try again.");
+    } finally {
+      setOauthLoading(null);
+    }
+  };
+
+  const loginWithDiscord = async () => {
+    try {
+      setOauthLoading("discord");
+
+      const redirectTo = getOauthRedirectUrl(redirectAfterLogin);
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "discord",
+        options: {
+          redirectTo,
+          scopes: "identify email",
+        },
+      });
+
+      if (error) {
+        console.log("[auth] discord oauth error:", error);
+        alert(error.message);
+      }
+    } catch (error: any) {
+      console.log("[auth] discord oauth unexpected error:", error);
+      alert(error?.message || "Failed to start Discord login. Please try again.");
     } finally {
       setOauthLoading(null);
     }
@@ -293,6 +319,22 @@ export default function LoginPage() {
               alt="Google icon"
             />
             {oauthLoading === "google" ? "Opening Google…" : "Continue with Google"}
+          </button>
+
+          <button
+            onClick={loginWithDiscord}
+            disabled={oauthLoading !== null}
+            className="mb-3 flex w-full items-center justify-center gap-3 rounded-[16px] bg-[#5865F2] py-3 text-[18px] font-semibold text-white transition hover:bg-[#4752C4] disabled:opacity-60"
+          >
+            <span
+              aria-hidden="true"
+              className="flex h-5 w-5 items-center justify-center rounded-md bg-white text-[13px] font-black text-[#5865F2]"
+            >
+              D
+            </span>
+            {oauthLoading === "discord"
+              ? "Opening Discord…"
+              : "Continue with Discord"}
           </button>
 
           <button
