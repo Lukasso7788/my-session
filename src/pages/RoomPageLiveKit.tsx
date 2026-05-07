@@ -1023,6 +1023,375 @@ type WindowWithDocumentPiP = Window & {
   documentPictureInPicture?: DocumentPiPApi;
 };
 
+function getRoomAuthCallbackUrl(redirectPath: string) {
+  const safeRedirect =
+    redirectPath && redirectPath.startsWith("/") && !redirectPath.startsWith("//")
+      ? redirectPath
+      : "/sessions";
+
+  if (typeof window === "undefined") {
+    return `https://www.mysession.club/auth/callback?redirect=${encodeURIComponent(safeRedirect)}`;
+  }
+
+  const url = new URL("/auth/callback", window.location.origin);
+  url.searchParams.set("redirect", safeRedirect);
+  return url.toString();
+}
+
+function RoomAuthModal({
+  open,
+  theme,
+  sessionTitle,
+  redirectPath,
+  onEmailAuthSuccess,
+}: {
+  open: boolean;
+  theme: RoomTheme;
+  sessionTitle: string;
+  redirectPath: string;
+  onEmailAuthSuccess: () => Promise<void>;
+}) {
+  const isLight = theme === "light";
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [oauthLoading, setOauthLoading] = useState<null | "google" | "discord" | "facebook">(null);
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  if (!open) return null;
+
+  const redirectTo = getRoomAuthCallbackUrl(redirectPath);
+
+  const startOAuth = async (provider: "google" | "discord" | "facebook") => {
+    try {
+      setError("");
+      setMessage("");
+      setOauthLoading(provider);
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo,
+          ...(provider === "discord" ? { scopes: "identify email" } : {}),
+        },
+      });
+
+      if (error) {
+        console.log(`[room-auth] ${provider} oauth error:`, error);
+        setError(error.message);
+        setOauthLoading(null);
+      }
+    } catch (e: any) {
+      console.log("[room-auth] oauth unexpected error:", e);
+      setError(e?.message || "Failed to start social login. Please try again.");
+      setOauthLoading(null);
+    }
+  };
+
+  const handleEmailLogin = async () => {
+    const cleanEmail = email.trim();
+
+    if (!cleanEmail || !password) {
+      setError("Please enter your email and password.");
+      return;
+    }
+
+    try {
+      setEmailLoading(true);
+      setError("");
+      setMessage("");
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password,
+      });
+
+      if (error) {
+        setError(error.message);
+        return;
+      }
+
+      await onEmailAuthSuccess();
+      setMessage("Signed in. Preparing your room…");
+    } catch (e: any) {
+      setError(e?.message || "Failed to sign in. Please try again.");
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  const handleEmailRegister = async () => {
+    const cleanFullName = fullName.trim();
+    const cleanEmail = email.trim();
+
+    if (!cleanFullName || !cleanEmail || !password) {
+      setError("Please enter your name, email, and password.");
+      return;
+    }
+
+    try {
+      setEmailLoading(true);
+      setError("");
+      setMessage("");
+
+      const { data, error } = await supabase.auth.signUp({
+        email: cleanEmail,
+        password,
+        options: {
+          emailRedirectTo: redirectTo,
+          data: { full_name: cleanFullName },
+        },
+      });
+
+      if (error) {
+        setError(error.message);
+        return;
+      }
+
+      if (data.user) {
+        try {
+          await supabase.from("profiles").upsert([
+            {
+              id: data.user.id,
+              full_name: cleanFullName,
+              avatar_url: null,
+              bio: "",
+            },
+          ]);
+        } catch (profileError) {
+          console.warn("[room-auth] profile upsert after signup failed:", profileError);
+        }
+      }
+
+      if (data.session) {
+        await onEmailAuthSuccess();
+        setMessage("Account created. Preparing your room…");
+        return;
+      }
+
+      setMessage(
+        "Account created. Check your email and open the newest MySession confirmation link. You’ll return to this room automatically."
+      );
+    } catch (e: any) {
+      setError(e?.message || "Failed to create account. Please try again.");
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  const inputClass = [
+    "w-full rounded-2xl border px-4 py-3 text-[14px] outline-none transition",
+    isLight
+      ? "border-black/10 bg-white text-black placeholder:text-black/35 focus:ring-2 focus:ring-black/15"
+      : "border-white/10 bg-white/[0.06] text-white placeholder:text-white/35 focus:ring-2 focus:ring-white/20",
+  ].join(" ");
+
+  const subtleText = isLight ? "text-black/55" : "text-white/55";
+  const cardClass = isLight
+    ? "border-black/10 bg-white text-black shadow-[0_24px_80px_rgba(15,23,42,0.22)]"
+    : "border-white/10 bg-[#0b1220] text-white shadow-[0_24px_80px_rgba(0,0,0,0.55)]";
+
+  return (
+    <div className="fixed inset-0 z-[140] flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-black/55 backdrop-blur-[3px]" />
+      <div className={`relative w-full max-w-[460px] rounded-[28px] border p-5 sm:p-6 ${cardClass}`}>
+        <div className="mb-4">
+          <div className={`text-[12px] font-semibold uppercase tracking-[0.16em] ${subtleText}`}>
+            Join this session
+          </div>
+          <div className="mt-2 text-[24px] font-bold leading-tight">
+            Sign in to enter the room
+          </div>
+          <div className={`mt-2 text-[14px] leading-6 ${subtleText}`}>
+            You’re opening <span className="font-semibold">{sessionTitle}</span>. Sign in here and you’ll continue directly to pre-join.
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2">
+          <button
+            type="button"
+            disabled={oauthLoading !== null || emailLoading}
+            onClick={() => void startOAuth("google")}
+            className={[
+              "flex h-12 w-full items-center justify-center gap-3 rounded-2xl border text-[15px] font-semibold transition disabled:opacity-60",
+              isLight
+                ? "border-black/10 bg-white hover:bg-black/[0.03]"
+                : "border-white/10 bg-white/[0.06] hover:bg-white/[0.1]",
+            ].join(" ")}
+          >
+            <img
+              src="https://www.svgrepo.com/show/475656/google-color.svg"
+              className="h-5 w-5"
+              alt=""
+            />
+            {oauthLoading === "google" ? "Opening Google…" : "Continue with Google"}
+          </button>
+
+          <button
+            type="button"
+            disabled={oauthLoading !== null || emailLoading}
+            onClick={() => void startOAuth("discord")}
+            className="flex h-12 w-full items-center justify-center gap-3 rounded-2xl bg-[#5865F2] text-[15px] font-semibold text-white transition hover:bg-[#4752C4] disabled:opacity-60"
+          >
+            <span
+              aria-hidden="true"
+              className="flex h-5 w-5 items-center justify-center rounded-md bg-white text-[13px] font-black text-[#5865F2]"
+            >
+              D
+            </span>
+            {oauthLoading === "discord" ? "Opening Discord…" : "Continue with Discord"}
+          </button>
+
+          <button
+            type="button"
+            disabled={oauthLoading !== null || emailLoading}
+            onClick={() => void startOAuth("facebook")}
+            className="flex h-12 w-full items-center justify-center gap-3 rounded-2xl bg-[#1877F2] text-[15px] font-semibold text-white transition hover:bg-[#0f66d3] disabled:opacity-60"
+          >
+            <img src="/icons/facebook.svg" className="h-5 w-5" alt="" />
+            {oauthLoading === "facebook" ? "Opening Facebook…" : "Continue with Facebook"}
+          </button>
+        </div>
+
+        <div className="my-5 flex items-center gap-3">
+          <div className={`h-px flex-1 ${isLight ? "bg-black/10" : "bg-white/10"}`} />
+          <div className={`text-[12px] ${subtleText}`}>or use email</div>
+          <div className={`h-px flex-1 ${isLight ? "bg-black/10" : "bg-white/10"}`} />
+        </div>
+
+        <div className={`mb-3 grid grid-cols-2 rounded-2xl p-1 ${isLight ? "bg-black/[0.04]" : "bg-white/[0.06]"}`}>
+          <button
+            type="button"
+            onClick={() => {
+              setMode("login");
+              setError("");
+              setMessage("");
+            }}
+            className={[
+              "h-9 rounded-xl text-[13px] font-semibold transition",
+              mode === "login"
+                ? isLight
+                  ? "bg-white text-black shadow-sm"
+                  : "bg-white text-black"
+                : subtleText,
+            ].join(" ")}
+          >
+            Log in
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMode("register");
+              setError("");
+              setMessage("");
+            }}
+            className={[
+              "h-9 rounded-xl text-[13px] font-semibold transition",
+              mode === "register"
+                ? isLight
+                  ? "bg-white text-black shadow-sm"
+                  : "bg-white text-black"
+                : subtleText,
+            ].join(" ")}
+          >
+            Create account
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {mode === "register" ? (
+            <input
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              className={inputClass}
+              placeholder="Your name"
+              autoComplete="name"
+            />
+          ) : null}
+
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={inputClass}
+            placeholder="Email address"
+            type="email"
+            autoComplete="email"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                if (mode === "login") void handleEmailLogin();
+                else void handleEmailRegister();
+              }
+            }}
+          />
+
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className={inputClass}
+            placeholder="Password"
+            type="password"
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                if (mode === "login") void handleEmailLogin();
+                else void handleEmailRegister();
+              }
+            }}
+          />
+
+          <button
+            type="button"
+            disabled={emailLoading || oauthLoading !== null}
+            onClick={() => {
+              if (mode === "login") void handleEmailLogin();
+              else void handleEmailRegister();
+            }}
+            className={[
+              "h-12 w-full rounded-2xl text-[15px] font-semibold transition disabled:opacity-60",
+              isLight
+                ? "bg-black text-white hover:bg-black/85"
+                : "bg-white text-black hover:bg-white/90",
+            ].join(" ")}
+          >
+            {emailLoading
+              ? mode === "login"
+                ? "Signing in…"
+                : "Creating account…"
+              : mode === "login"
+                ? "Log in and join"
+                : "Create account"}
+          </button>
+        </div>
+
+        {error ? (
+          <div className={`mt-4 rounded-2xl border px-4 py-3 text-[13px] leading-5 ${isLight
+            ? "border-red-200 bg-red-50 text-red-700"
+            : "border-red-500/20 bg-red-500/10 text-red-200"
+            }`}>
+            {error}
+          </div>
+        ) : null}
+
+        {message ? (
+          <div className={`mt-4 rounded-2xl border px-4 py-3 text-[13px] leading-5 ${isLight
+            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+            : "border-emerald-500/20 bg-emerald-500/10 text-emerald-200"
+            }`}>
+            {message}
+          </div>
+        ) : null}
+
+        <div className={`mt-4 text-center text-[12px] leading-5 ${subtleText}`}>
+          Social login may open a provider screen, then return you to this exact room.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function RoomPageLiveKit() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -1218,7 +1587,7 @@ export function RoomPageLiveKit() {
     setJoinGateBooked(booked);
   }, [(session as any)?.session_bookings, authUserId]);
   const [authReady, setAuthReady] = useState(false);
-  const [authGateStatus, setAuthGateStatus] = useState<"checking" | "authed" | "redirecting">("checking");
+  const [authGateStatus, setAuthGateStatus] = useState<"checking" | "authed" | "guest">("checking");
   const [userName, setUserName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const localRoomDisplayNameOverrideRef = useRef<string>("");
@@ -1276,8 +1645,23 @@ export function RoomPageLiveKit() {
   useEffect(() => {
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       accessTokenRef.current = String(session?.access_token || "").trim();
+
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+        const nextUserId = String(session?.user?.id || "").trim();
+        if (nextUserId) {
+          setAuthUserId(nextUserId);
+          setAuthGateStatus("authed");
+          setAuthReady(true);
+        }
+      }
+
+      if (event === "SIGNED_OUT") {
+        setAuthUserId(null);
+        setAuthGateStatus("guest");
+        setAuthReady(true);
+      }
     });
 
     return () => {
@@ -2536,48 +2920,54 @@ export function RoomPageLiveKit() {
     return () => window.clearInterval(timer);
   }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
-  useEffect(() => {
-    (async () => {
-      setAuthGateStatus("checking");
-      setAuthReady(false);
+  const refreshRoomAuth = useCallback(async () => {
+    setAuthGateStatus("checking");
+    setAuthReady(false);
 
-      try {
-        const { data: ud } = await supabase.auth.getUser();
-        const u = ud.user;
+    try {
+      const { data: ud } = await supabase.auth.getUser();
+      const u = ud.user;
 
-        if (!u) {
-          setAuthUserId(null);
-          accessTokenRef.current = "";
-          setAuthGateStatus("redirecting");
-          setAuthReady(true);
-
-          const redirect = encodeURIComponent(location.pathname + location.search);
-          navigate(`/login?redirect=${redirect}`, { replace: true });
-          return;
-        }
-
-        setAuthUserId(u.id || null);
-
-        try {
-          const { data: sd } = await supabase.auth.getSession();
-          accessTokenRef.current = String(sd.session?.access_token || "").trim();
-        } catch {
-          accessTokenRef.current = "";
-        }
-
-        setAuthGateStatus("authed");
-        setAuthReady(true);
-      } catch {
+      if (!u) {
         setAuthUserId(null);
         accessTokenRef.current = "";
-        setAuthGateStatus("redirecting");
+        setAuthGateStatus("guest");
         setAuthReady(true);
-
-        const redirect = encodeURIComponent(location.pathname + location.search);
-        navigate(`/login?redirect=${redirect}`, { replace: true });
+        return;
       }
-    })();
-  }, [navigate, location.pathname, location.search]);
+
+      setAuthUserId(u.id || null);
+
+      try {
+        const { data: sd } = await supabase.auth.getSession();
+        accessTokenRef.current = String(sd.session?.access_token || "").trim();
+      } catch {
+        accessTokenRef.current = "";
+      }
+
+      setAuthGateStatus("authed");
+      setAuthReady(true);
+    } catch (e) {
+      console.warn("[room-auth] auth check failed:", e);
+      setAuthUserId(null);
+      accessTokenRef.current = "";
+      setAuthGateStatus("guest");
+      setAuthReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshRoomAuth();
+  }, [refreshRoomAuth]);
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void refreshRoomAuth();
+    };
+
+    window.addEventListener("mysession-room-auth-refresh", onRefresh);
+    return () => window.removeEventListener("mysession-room-auth-refresh", onRefresh);
+  }, [refreshRoomAuth]);
 
   useEffect(() => {
     (async () => {
@@ -3144,6 +3534,8 @@ export function RoomPageLiveKit() {
     if (loading) return;
     if (!session) return;
     if (!sessionId) return;
+    if (!authReady) return;
+    if (!authUserId) return;
     if (joinRequested) return;
     if (joinFlowStartedRef.current) return;
     if (prejoinBootstrappedSessionIdRef.current === sessionId) return;
@@ -3174,7 +3566,7 @@ export function RoomPageLiveKit() {
     return () => {
       cancelled = true;
     };
-  }, [loading, session, sessionId, joinRequested, loadBrowserDevices, deviceTier]);
+  }, [loading, session, sessionId, authReady, authUserId, joinRequested, loadBrowserDevices, deviceTier]);
 
   useEffect(() => {
     if (!prejoinOpen) return;
@@ -3860,11 +4252,12 @@ export function RoomPageLiveKit() {
       if (!session) return;
       if (!joinRequested) return;
       if (!authReady) return;
+      if (!authUserId) return;
       if (lkToken) return;
       await requestToken();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, joinRequested, authReady, isHost, moderatorUserIds.join("|")]);
+  }, [session, joinRequested, authReady, authUserId, isHost, moderatorUserIds.join("|")]);
   useEffect(() => {
     if (!lkToken) return;
     setPrejoinOpen(false);
@@ -7022,7 +7415,7 @@ export function RoomPageLiveKit() {
     return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
   }
 
-  if (authGateStatus === "checking" || authGateStatus === "redirecting") {
+  if (authGateStatus === "checking") {
     return (
       <>
         <div className={`min-h-screen w-full flex items-center justify-center ${isLight ? "bg-[#f6f8fb]" : "bg-[#020617]"}`}>
@@ -7045,8 +7438,7 @@ export function RoomPageLiveKit() {
     if (!sessionId) return;
 
     if (!authUserId) {
-      const redirect = encodeURIComponent(location.pathname + location.search);
-      navigate(`/login?redirect=${redirect}`, { replace: true });
+      setMediaWarning("Sign in in this room first, then you can book this session.");
       return;
     }
 
@@ -7165,6 +7557,13 @@ export function RoomPageLiveKit() {
   }
 
   const onJoinGate = () => {
+    if (!authUserId) {
+      setPrejoinOpen(false);
+      setJoinRequested(false);
+      setMediaWarning("Sign in in this room first, then you can join.");
+      return;
+    }
+
     joinFlowStartedRef.current = true;
     connectingFromPrejoinRef.current = true;
     if (paywallBlocked) {
@@ -7241,8 +7640,16 @@ export function RoomPageLiveKit() {
         }
       `}</style>
 
+      <RoomAuthModal
+        open={authReady && !authUserId}
+        theme={theme}
+        sessionTitle={String(session?.title || "Session")}
+        redirectPath={`${location.pathname}${location.search}`}
+        onEmailAuthSuccess={refreshRoomAuth}
+      />
+
       <PreJoinModal
-        open={prejoinOpen}
+        open={prejoinOpen && !!authUserId}
         theme={theme}
         devices={devices}
         value={prejoin}
