@@ -1571,6 +1571,7 @@ export function RoomPageLiveKit() {
   // session
   const [session, setSession] = useState<SessionRow | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sessionLoadError, setSessionLoadError] = useState<string>("");
 
   const [joinGateBookingBusy, setJoinGateBookingBusy] = useState(false);
   const [joinGateBooked, setJoinGateBooked] = useState(false);
@@ -2412,25 +2413,89 @@ export function RoomPageLiveKit() {
   const joinBlocked = joinGateInfo.enabled && !joinGateInfo.canJoinNow;
 
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
-      if (!id) return;
-      setLoading(true);
+      const rawId = String(id || "").trim();
 
-      const { data, error } = await supabase
-        .from("sessions")
-        .select(SESSION_SELECT_STR)
-        .eq("id", id)
-        .single();
-
-      if (data && !error) {
-        const t = normalizeTemplates((data as any)?.session_templates);
-        const norm = { ...(data as any), session_templates: t };
-        setSession(norm as any);
+      if (!rawId) {
+        setSession(null);
+        setSessionLoadError("Missing session id.");
+        setLoading(false);
+        return;
       }
 
-      setLoading(false);
+      setLoading(true);
+      setSessionLoadError("");
+
+      try {
+        let data: any = null;
+        let error: any = null;
+
+        // Main path: normal room-livekit/:uuid.
+        if (looksLikeUuid(rawId)) {
+          const res = await supabase
+            .from("sessions")
+            .select(SESSION_SELECT_STR)
+            .eq("id", rawId)
+            .maybeSingle();
+
+          data = res.data;
+          error = res.error;
+        } else {
+          // Fallback path: if a route ever passes a slug/custom room param.
+          // This prevents the room from collapsing into the useless "Back" screen.
+          const res = await supabase
+            .from("sessions")
+            .select(SESSION_SELECT_STR)
+            .eq("custom_slug", rawId)
+            .maybeSingle();
+
+          data = res.data;
+          error = res.error;
+        }
+
+        if (cancelled) return;
+
+        if (data && !error) {
+          const t = normalizeTemplates((data as any)?.session_templates);
+          const norm = { ...(data as any), session_templates: t };
+          setSession(norm as any);
+          setSessionLoadError("");
+          return;
+        }
+
+        console.warn("[room-session] failed to load session", {
+          id: rawId,
+          authReady,
+          authUserId,
+          error,
+        });
+
+        setSession(null);
+        setSessionLoadError(
+          String(
+            error?.message ||
+            (authUserId
+              ? "Session was not found or is not available."
+              : "Sign in to load this session.")
+          )
+        );
+      } catch (e: any) {
+        if (cancelled) return;
+
+        console.warn("[room-session] unexpected load error", e);
+        setSession(null);
+        setSessionLoadError(String(e?.message || e || "Failed to load session."));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
-  }, [id]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, authReady, authUserId]);
 
   useEffect(() => {
     if (!session) return;
@@ -2922,11 +2987,10 @@ export function RoomPageLiveKit() {
   }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
   const refreshRoomAuth = useCallback(async () => {
-    // Important:
     // Room auth must never redirect logged-out users away from the room.
-    // It should only decide between:
-    // - guest  -> show in-room auth modal
-    // - authed -> open prejoin
+    // It only decides:
+    // - guest  -> render room shell + in-room auth modal
+    // - authed -> render prejoin / room flow
     setAuthGateStatus("checking");
     setAuthReady(false);
 
@@ -3568,20 +3632,6 @@ export function RoomPageLiveKit() {
       cancelled = true;
     };
   }, [loading, session, sessionId, authReady, authUserId, joinRequested, loadBrowserDevices, deviceTier]);
-
-  useEffect(() => {
-    if (!authUserId) return;
-    if (!authReady) return;
-    if (!sessionId) return;
-
-    // A successful in-room login should immediately move the user to prejoin.
-    // This also repairs cases where auth changed while the room was already mounted.
-    if (!joinRequested && !connected && !lkToken) {
-      setMediaWarning("");
-      setClientError("");
-    }
-  }, [authUserId, authReady, sessionId, joinRequested, connected, lkToken]);
-
 
   useEffect(() => {
     if (!prejoinOpen) return;
@@ -7430,9 +7480,8 @@ export function RoomPageLiveKit() {
     return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
   }
 
-  // Do not block the room on auth checking.
-  // If the user is logged out, the room should render and show RoomAuthModal.
-  // If the user is logged in, auth state will flip to authed and prejoin will open.
+  // Do not hard-block the room on auth checking.
+  // Logged-out users should see the in-room auth modal instead of a redirect/back screen.
 
   const handleBookFromJoinGate = async () => {
     const sessionId = String(session?.id || "").trim();
@@ -7550,10 +7599,52 @@ export function RoomPageLiveKit() {
   }
 
   if (!session) {
+    const showAuth = !authUserId && authGateStatus !== "authed";
+
     return (
-      <div className={`flex h-screen items-center justify-center ${pageBg}`}>
-        <button onClick={() => navigate("/sessions")}>Back</button>
-      </div>
+      <>
+        <div className={`min-h-screen w-full flex items-center justify-center px-4 ${pageBg}`}>
+          <div
+            className={`w-full max-w-[560px] rounded-[28px] border p-6 text-center shadow-2xl ${isLight
+              ? "border-black/10 bg-white text-black"
+              : "border-white/10 bg-[#0b1220] text-white"
+              }`}
+          >
+            <div className="text-[22px] font-bold">
+              {showAuth ? "Sign in to open this session" : "Session not found"}
+            </div>
+
+            <div className={`mt-3 text-[14px] leading-6 ${isLight ? "text-black/60" : "text-white/60"}`}>
+              {showAuth
+                ? "This room link is ready. Sign in here and MySession will bring you back to the room automatically."
+                : sessionLoadError || "We could not load this session. It may have been deleted or the link may be wrong."}
+            </div>
+
+            {!showAuth ? (
+              <button
+                type="button"
+                onClick={() => navigate("/sessions", { replace: true })}
+                className={`mt-6 h-11 rounded-full px-5 text-[14px] font-semibold transition ${isLight
+                  ? "bg-black text-white hover:bg-black/85"
+                  : "bg-white text-black hover:bg-white/90"
+                  }`}
+              >
+                Back to sessions
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <RoomAuthModal
+          open={showAuth}
+          theme={theme}
+          sessionTitle="this session"
+          redirectPath={`${location.pathname}${location.search}`}
+          onEmailAuthSuccess={refreshRoomAuth}
+        />
+
+        {pipPortal}
+      </>
     );
   }
 
