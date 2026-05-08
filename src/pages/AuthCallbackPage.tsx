@@ -10,6 +10,7 @@ function safeNextPath(raw: string | null) {
 
     // Не разрешаем external redirects.
     if (/^https?:\/\//i.test(next)) return fallback;
+    if (next.startsWith("//")) return fallback;
     if (!next.startsWith("/")) return fallback;
 
     return next;
@@ -23,12 +24,24 @@ export default function AuthCallbackPage() {
 
         const run = async () => {
             const url = new URL(window.location.href);
-            const next = safeNextPath(url.searchParams.get("next"));
+
+            // RoomPageLiveKit sends ?redirect=/room-livekit/:id
+            // Older auth flows may still send ?next=/sessions or ?next=/room-livekit/:id
+            // Support both so OAuth always returns users to the intended place.
+            const next = safeNextPath(
+                url.searchParams.get("redirect") || url.searchParams.get("next")
+            );
 
             try {
                 await supabase.auth.getSession();
             } catch (e) {
                 console.error("[auth-callback] getSession failed:", e);
+            }
+
+            try {
+                window.dispatchEvent(new Event("mysession-room-auth-refresh"));
+            } catch {
+                // ignore
             }
 
             if (!cancelled) {
