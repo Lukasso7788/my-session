@@ -157,11 +157,22 @@ function formatPostSessionTime(iso?: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Time TBD";
 
-  return date.toLocaleDateString(undefined, {
-    month: "2-digit",
-    day: "2-digit",
-    year: "numeric",
+  return date.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
   });
+}
+
+function getFocusRatingTone(value: number) {
+  const n = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+
+  if (n >= 80) return "Great focus";
+  if (n >= 55) return "Solid focus";
+  if (n >= 25) return "Some focus";
+  return "Low focus";
 }
 
 function formatJoinedSince(iso?: string | null) {
@@ -1156,7 +1167,7 @@ export function SessionsPage() {
         session_id: postSessionPrompt.sessionId,
         user_id: user.id,
         host_id: postSessionPrompt.hostId || null,
-        rating: postSessionRating || null,
+        rating: Math.max(0, Math.min(100, Math.round(Number(postSessionRating) || 0))),
         feedback_text: combinedFeedback,
         minutes_in_room: Math.max(0, Number(postSessionPrompt.minutesSpent || 0)),
       };
@@ -1828,8 +1839,13 @@ export function SessionsPage() {
                             </div>
                           </div>
 
-                          <div className="shrink-0 text-[14px] text-[#4B4B4B]">
-                            {formatPostSessionTime(sessionRow.start_time)}
+                          <div className="shrink-0 text-right text-[13px] leading-[1.35] text-[#4B4B4B]">
+                            <div className="text-[11px] uppercase tracking-[0.08em] text-[#888888]">
+                              Starts
+                            </div>
+                            <div className="font-semibold">
+                              {formatPostSessionTime(sessionRow.start_time)}
+                            </div>
                           </div>
                         </div>
 
@@ -1862,24 +1878,64 @@ export function SessionsPage() {
               </div>
 
               <div className="mt-7">
-                <div className="text-[15px] font-semibold text-[#2F2F2F]">
-                  Rate this session
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-[15px] font-semibold text-[#2F2F2F]">
+                      Rate your focus in this session
+                    </div>
+                    <div className="mt-1 text-[12px] leading-[1.5] text-[#777777]">
+                      Not the host, not the room — just your own focus.
+                    </div>
+                  </div>
+
+                  <div className="shrink-0 rounded-full bg-[#2F2F2F] px-3 py-1.5 text-[13px] font-bold text-white">
+                    {Math.max(0, Math.min(100, Math.round(Number(postSessionRating) || 0)))}%
+                  </div>
                 </div>
 
-                <div className="mt-3 flex justify-center gap-2">
-                  {[1, 2, 3, 4, 5].map((ratingValue) => (
-                    <button
-                      key={ratingValue}
-                      type="button"
-                      onClick={() => setPostSessionRating(ratingValue)}
-                      className={`h-10 w-10 rounded-full text-[20px] transition ${ratingValue <= postSessionRating
-                        ? "bg-[#2F2F2F] text-white"
-                        : "bg-white text-[#8B8B8B] border border-[#CAC3C3] hover:bg-[#F0F0F0]"
-                        }`}
-                    >
-                      ★
-                    </button>
-                  ))}
+                <div className="mt-4">
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={Math.max(0, Math.min(100, Math.round(Number(postSessionRating) || 0)))}
+                    onChange={(e) => {
+                      const next = Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0)));
+                      setPostSessionRating(next);
+                    }}
+                    className="w-full accent-[#2F2F2F]"
+                    aria-label="Rate your focus from 0 to 100 percent"
+                  />
+
+                  <div className="mt-2 flex items-center justify-between text-[12px] text-[#777777]">
+                    <span>0%</span>
+                    <span className="font-semibold text-[#2F2F2F]">
+                      {getFocusRatingTone(postSessionRating)}
+                    </span>
+                    <span>100%</span>
+                  </div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-5 gap-2">
+                  {[20, 40, 60, 80, 100].map((ratingValue) => {
+                    const active =
+                      Math.max(0, Math.min(100, Math.round(Number(postSessionRating) || 0))) === ratingValue;
+
+                    return (
+                      <button
+                        key={ratingValue}
+                        type="button"
+                        onClick={() => setPostSessionRating(ratingValue)}
+                        className={`h-9 rounded-full border text-[12px] font-semibold transition ${active
+                          ? "border-[#2F2F2F] bg-[#2F2F2F] text-white"
+                          : "border-[#CAC3C3] bg-white text-[#666666] hover:bg-[#F0F0F0]"
+                          }`}
+                      >
+                        {ratingValue}%
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
