@@ -27,7 +27,9 @@ import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
 import { loadEntitlementState, type EntitlementState } from "../lib/entitlements";
 import { getPaywallDecision } from "../lib/paywall";
+import { getCurrentUserActiveBan, type ActiveBan } from "../lib/bans";
 import PaywallModal from "../components/PaywallModal";
+import ActiveBanModal from "../components/ActiveBanModal";
 import { PAYWALL_ENABLED } from "../lib/flags";
 
 import ChatPanel from "../components/ChatPanel";
@@ -1714,6 +1716,8 @@ export function RoomPageLiveKit() {
     setJoinGateBooked(booked);
   }, [(session as any)?.session_bookings, authUserId]);
   const [authReady, setAuthReady] = useState(false);
+  const [activeBan, setActiveBan] = useState<ActiveBan | null>(null);
+  const [banLoading, setBanLoading] = useState(false);
   const [authGateStatus, setAuthGateStatus] = useState<"checking" | "authed" | "guest">("checking");
   const [userName, setUserName] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -2537,6 +2541,37 @@ export function RoomPageLiveKit() {
 
   const canJoinNow = joinGateInfo.canJoinNow;
   const joinBlocked = joinGateInfo.enabled && !joinGateInfo.canJoinNow;
+
+
+  const checkActiveBanForRoom = useCallback(async () => {
+    if (!authUserId || !authReady) {
+      setActiveBan(null);
+      return;
+    }
+
+    try {
+      setBanLoading(true);
+      const ban = await getCurrentUserActiveBan();
+      setActiveBan(ban);
+
+      if (ban) {
+        setPrejoinOpen(false);
+        setJoinRequested(false);
+        setLkToken("");
+        setClientError("");
+        setMediaWarning("");
+      }
+    } catch (e) {
+      console.warn("[ban] active ban check failed:", e);
+      setActiveBan(null);
+    } finally {
+      setBanLoading(false);
+    }
+  }, [authUserId, authReady]);
+
+  useEffect(() => {
+    void checkActiveBanForRoom();
+  }, [checkActiveBanForRoom]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3727,6 +3762,7 @@ export function RoomPageLiveKit() {
     if (!sessionId) return;
     if (!authReady) return;
     if (!authUserId) return;
+    if (activeBan) return;
     if (joinRequested) return;
     if (joinFlowStartedRef.current) return;
     if (prejoinBootstrappedSessionIdRef.current === sessionId) return;
@@ -3757,7 +3793,7 @@ export function RoomPageLiveKit() {
     return () => {
       cancelled = true;
     };
-  }, [loading, session, sessionId, authReady, authUserId, joinRequested, loadBrowserDevices, deviceTier]);
+  }, [loading, session, sessionId, authReady, authUserId, activeBan, joinRequested, loadBrowserDevices, deviceTier]);
 
   useEffect(() => {
     if (!prejoinOpen) return;
@@ -4444,11 +4480,12 @@ export function RoomPageLiveKit() {
       if (!joinRequested) return;
       if (!authReady) return;
       if (!authUserId) return;
+      if (activeBan) return;
       if (lkToken) return;
       await requestToken();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, joinRequested, authReady, authUserId, isHost, moderatorUserIds.join("|")]);
+  }, [session, joinRequested, authReady, authUserId, activeBan, isHost, moderatorUserIds.join("|")]);
   useEffect(() => {
     if (!lkToken) return;
     setPrejoinOpen(false);
@@ -7761,7 +7798,13 @@ export function RoomPageLiveKit() {
           </div>
         </div>
 
-        <RoomAuthModal
+        <ActiveBanModal
+        open={!!activeBan}
+        ban={activeBan}
+        onBackToSessions={() => navigate("/sessions", { replace: true })}
+      />
+
+      <RoomAuthModal
           open={showAuth}
           theme={theme}
           sessionTitle="this session"
@@ -7775,6 +7818,13 @@ export function RoomPageLiveKit() {
   }
 
   const onJoinGate = () => {
+    if (activeBan) {
+      setPrejoinOpen(false);
+      setJoinRequested(false);
+      setMediaWarning("You are banned from MySession and cannot join this room.");
+      return;
+    }
+
     if (!authUserId) {
       setPrejoinOpen(false);
       setJoinRequested(false);
@@ -7867,7 +7917,7 @@ export function RoomPageLiveKit() {
       />
 
       <PreJoinModal
-        open={prejoinOpen && !!authUserId}
+        open={prejoinOpen && !!authUserId && !activeBan}
         theme={theme}
         devices={devices}
         value={prejoin}

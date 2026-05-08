@@ -174,6 +174,38 @@ async function resolveAssignedServer(params: {
   };
 }
 
+async function getActiveBan(params: {
+  supabaseUrl: string;
+  serviceKey: string;
+  userId: string;
+}) {
+  const { supabaseUrl, serviceKey, userId } = params;
+
+  const sb = createClient(supabaseUrl, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const now = new Date().toISOString();
+
+  const { data, error } = await sb
+    .from("user_bans")
+    .select("id, banned_user_id, reason, starts_at, expires_at, revoked_at, created_at")
+    .eq("banned_user_id", userId)
+    .is("revoked_at", null)
+    .lte("starts_at", now)
+    .or(`expires_at.is.null,expires_at.gt.${now}`)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("token: failed to check active ban", error);
+    throw new Error("ban_check_failed");
+  }
+
+  return data || null;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     res.setHeader("Cache-Control", "no-store, max-age=0");
@@ -248,6 +280,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       role = resolved;
+
+      const activeBan = await getActiveBan({
+        supabaseUrl,
+        serviceKey,
+        userId: resolved.userId,
+      });
+
+      if (activeBan) {
+        return res.status(403).json({
+          error: "USER_BANNED",
+          reason: String((activeBan as any).reason || "You are banned from MySession."),
+          expires_at: (activeBan as any).expires_at || null,
+          starts_at: (activeBan as any).starts_at || null,
+          server_now: new Date().toISOString(),
+        });
+      }
     }
 
     let assignedServerId: string | null = null;
@@ -322,6 +370,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     if (msg === "session_not_found") {
       return res.status(404).json({ error: "session_not_found" });
+    }
+    if (msg === "ban_check_failed") {
+      return res.status(500).json({ error: "ban_check_failed" });
     }
 
     return res.status(500).json({ error: "token_generation_failed", message: msg });

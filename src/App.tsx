@@ -13,6 +13,7 @@ import FocusPlanPage from "./pages/FocusPlanPage";
 import FocusShieldPage from "./pages/FocusShieldPage";
 import PublicProfilePage from "./pages/PublicProfilePage";
 import AuthCallback from "./pages/AuthCallback";
+import AdminPage from "./pages/AdminPage";
 
 import PricingPage from "./pages/PricingPage";
 import PricingSuccessPage from "./pages/PricingSuccessPage";
@@ -144,6 +145,7 @@ export default function App() {
           <Route path="/updates" element={<UpdatesPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/profile/:id" element={<PublicProfilePage />} />
+          <Route path="/admin" element={<AdminPage />} />
           <Route path="/focus-plan" element={<FocusPlanPage />} />
           <Route path="/focus-shield" element={<FocusShieldPage />} />
 
