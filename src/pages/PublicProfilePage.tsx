@@ -21,8 +21,110 @@ type HostedSessionRow = {
   title: string;
   start_time: string | null;
   schedule: any | null;
+  duration_minutes?: number | null;
   created_at: string;
 };
+
+
+function getScheduleDurationMinutes(schedule: any): number {
+  if (!schedule) return 0;
+
+  try {
+    const parsed =
+      typeof schedule === "string" ? JSON.parse(schedule) : schedule;
+
+    if (Array.isArray(parsed)) {
+      return parsed.reduce((sum: number, block: any) => {
+        const minutes =
+          Number(block?.minutes) ||
+          Number(block?.duration_minutes) ||
+          Number(block?.durationMinutes) ||
+          (Number(block?.seconds) ? Number(block.seconds) / 60 : 0) ||
+          (Number(block?.duration_seconds) ? Number(block.duration_seconds) / 60 : 0) ||
+          (Number(block?.durationSeconds) ? Number(block.durationSeconds) / 60 : 0);
+
+        return sum + (Number.isFinite(minutes) ? minutes : 0);
+      }, 0);
+    }
+
+    const phases =
+      parsed?.timer?.phases ||
+      parsed?.timer?.timeline ||
+      parsed?.timer?.stages ||
+      parsed?.timer?.segments ||
+      parsed?.phases ||
+      parsed?.timeline ||
+      parsed?.stages ||
+      parsed?.segments ||
+      parsed?.blocks ||
+      [];
+
+    if (Array.isArray(phases)) {
+      return phases.reduce((sum: number, phase: any) => {
+        const minutes =
+          Number(phase?.minutes) ||
+          Number(phase?.duration_minutes) ||
+          Number(phase?.durationMinutes) ||
+          (Number(phase?.seconds) ? Number(phase.seconds) / 60 : 0) ||
+          (Number(phase?.duration_seconds) ? Number(phase.duration_seconds) / 60 : 0) ||
+          (Number(phase?.durationSeconds) ? Number(phase.durationSeconds) / 60 : 0);
+
+        return sum + (Number.isFinite(minutes) ? minutes : 0);
+      }, 0);
+    }
+  } catch {
+    return 0;
+  }
+
+  return 0;
+}
+
+function getSessionStartMs(session: any): number | null {
+  if (!session?.start_time) return null;
+
+  const start = new Date(session.start_time).getTime();
+  return Number.isFinite(start) ? start : null;
+}
+
+function getSessionEndMs(session: any): number | null {
+  const start = getSessionStartMs(session);
+  if (start == null) return null;
+
+  const durationMinutes =
+    Number(session?.duration_minutes) ||
+    getScheduleDurationMinutes(session?.schedule) ||
+    0;
+
+  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return start;
+
+  return start + durationMinutes * 60 * 1000;
+}
+
+function formatSessionDateTime(isoOrMs?: string | number | null) {
+  if (isoOrMs == null || isoOrMs === "") return "Time TBD";
+
+  const date = typeof isoOrMs === "number" ? new Date(isoOrMs) : new Date(isoOrMs);
+  if (Number.isNaN(date.getTime())) return "Time TBD";
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function sortUpcomingSessions(a: any, b: any) {
+  const aStart = getSessionStartMs(a) ?? Number.POSITIVE_INFINITY;
+  const bStart = getSessionStartMs(b) ?? Number.POSITIVE_INFINITY;
+  return aStart - bStart;
+}
+
+function sortHostedSessions(a: any, b: any) {
+  const aEnd = getSessionEndMs(a) ?? getSessionStartMs(a) ?? 0;
+  const bEnd = getSessionEndMs(b) ?? getSessionStartMs(b) ?? 0;
+  return bEnd - aEnd;
+}
 
 export default function PublicProfilePage() {
   const navigate = useNavigate();
@@ -58,6 +160,28 @@ export default function PublicProfilePage() {
   const isOwnProfile = !!currentUserId && !!id && currentUserId === id;
   const hasHostedSessions = sessions.length > 0;
 
+  const upcomingSessions = useMemo(() => {
+    const now = Date.now();
+
+    return [...sessions]
+      .filter((session) => {
+        const start = getSessionStartMs(session);
+        return start != null && start > now;
+      })
+      .sort(sortUpcomingSessions);
+  }, [sessions]);
+
+  const hostedSessions = useMemo(() => {
+    const now = Date.now();
+
+    return [...sessions]
+      .filter((session) => {
+        const start = getSessionStartMs(session);
+        return start == null || start <= now;
+      })
+      .sort(sortHostedSessions);
+  }, [sessions]);
+
   const nextSession = useMemo(() => {
     const now = Date.now();
 
@@ -90,22 +214,8 @@ export default function PublicProfilePage() {
     const now = Date.now();
     const start = new Date(session.start_time).getTime();
 
-    let durationMinutes = 0;
-
-    if (session.schedule) {
-      try {
-        const parsed =
-          typeof session.schedule === "string"
-            ? JSON.parse(session.schedule)
-            : session.schedule;
-
-        durationMinutes = (parsed || []).reduce(
-          (sum: number, block: any) => sum + (block?.minutes || 0),
-          0
-        );
-      } catch { }
-    }
-
+    const durationMinutes =
+      Number(session.duration_minutes) || getScheduleDurationMinutes(session.schedule);
     const end = start + durationMinutes * 60 * 1000;
 
     if (now < start) return "Upcoming";
@@ -184,7 +294,7 @@ export default function PublicProfilePage() {
             .single(),
           supabase
             .from("sessions")
-            .select("id, title, start_time, schedule, created_at")
+            .select("id, title, start_time, schedule, duration_minutes, created_at")
             .eq("host_id", id)
             .order("created_at", { ascending: false }),
           supabase
@@ -556,38 +666,109 @@ export default function PublicProfilePage() {
       <div className="mt-16 border-t border-gray-200" />
 
       <section className="mt-10">
-        <h2 className="text-xl font-bold mb-6 text-[#2F2F2F]">Hosted Sessions</h2>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-xl font-bold text-[#2F2F2F]">
+                Upcoming Sessions
+              </h2>
+              <span className="rounded-full bg-[#EFF6FF] px-3 py-1 text-[12px] font-semibold text-[#1D4ED8]">
+                {upcomingSessions.length}
+              </span>
+            </div>
 
-        {sessions.length === 0 ? (
-          <p className="text-slate-500 text-sm text-center">No sessions hosted yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {sessions.map((s) => {
-              const status = getSessionStatus(s);
+            {upcomingSessions.length === 0 ? (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-5 text-sm text-slate-500">
+                No upcoming sessions yet.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {upcomingSessions.map((s) => {
+                  const status = getSessionStatus(s);
 
-              return (
-                <div
-                  key={s.id}
-                  onClick={() => navigate(`/room-livekit/${s.id}`)}
-                  className="
-                    bg-gray-50 rounded-xl px-5 py-3
-                    flex items-center justify-between
-                    hover:bg-gray-100 transition cursor-pointer
-                  "
-                >
-                  <span className="text-[14px] text-gray-800">{s.title}</span>
+                  return (
+                    <div
+                      key={s.id}
+                      onClick={() => navigate(`/room-livekit/${s.id}`)}
+                      className="
+                        bg-gray-50 rounded-xl px-5 py-3
+                        flex items-center justify-between gap-4
+                        hover:bg-gray-100 transition cursor-pointer
+                      "
+                    >
+                      <span className="min-w-0 truncate text-[14px] text-gray-800">
+                        {s.title}
+                      </span>
 
-                  <div className="flex items-center gap-3">
-                    <span className="text-[12px] text-gray-500">
-                      {new Date(s.created_at).toLocaleDateString()}
-                    </span>
-                    {status && <span className={getBadgeClass(status)}>{status}</span>}
-                  </div>
-                </div>
-              );
-            })}
+                      <div className="flex shrink-0 items-center gap-3">
+                        <span className="text-right text-[12px] leading-snug text-gray-500">
+                          <span className="block text-[10px] uppercase tracking-[0.08em] text-gray-400">
+                            Starts
+                          </span>
+                          {formatSessionDateTime(s.start_time)}
+                        </span>
+
+                        {status && <span className={getBadgeClass(status)}>{status}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
+
+          <div>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-xl font-bold text-[#2F2F2F]">
+                Hosted Sessions
+              </h2>
+              <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-[12px] font-semibold text-[#374151]">
+                {hostedSessions.length}
+              </span>
+            </div>
+
+            {hostedSessions.length === 0 ? (
+              <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-5 text-sm text-slate-500">
+                No hosted sessions yet.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {hostedSessions.map((s) => {
+                  const status = getSessionStatus(s);
+                  const endMs = getSessionEndMs(s);
+                  const isLive = status === "Live";
+
+                  return (
+                    <div
+                      key={s.id}
+                      onClick={() => navigate(`/room-livekit/${s.id}`)}
+                      className="
+                        bg-gray-50 rounded-xl px-5 py-3
+                        flex items-center justify-between gap-4
+                        hover:bg-gray-100 transition cursor-pointer
+                      "
+                    >
+                      <span className="min-w-0 truncate text-[14px] text-gray-800">
+                        {s.title}
+                      </span>
+
+                      <div className="flex shrink-0 items-center gap-3">
+                        <span className="text-right text-[12px] leading-snug text-gray-500">
+                          <span className="block text-[10px] uppercase tracking-[0.08em] text-gray-400">
+                            {isLive ? "Started" : "Ended"}
+                          </span>
+                          {formatSessionDateTime(isLive ? s.start_time : endMs || s.start_time)}
+                        </span>
+
+                        {status && <span className={getBadgeClass(status)}>{status}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       </section>
     </main>
   );
