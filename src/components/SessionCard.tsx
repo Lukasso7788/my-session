@@ -3157,6 +3157,7 @@ export default function SessionCard({
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
     const [paywallOpen, setPaywallOpen] = useState(false);
+    const [sessionFullOpen, setSessionFullOpen] = useState(false);
 
     const [isOptionsOpen, setIsOptionsOpen] = useState(false);
     const optionsRef = useRef<HTMLDivElement | null>(null);
@@ -3291,6 +3292,28 @@ export default function SessionCard({
 
     const liveNowCount = Number.isFinite(liveNowDisplay) ? liveNowDisplay : 0;
     const hasLiveNow = liveNowCount > 0;
+
+    const maxParticipantsRaw = parseDbCount(
+        session?.max_participants ??
+        session?.maxParticipants ??
+        session?.participant_limit ??
+        session?.participantLimit ??
+        null
+    );
+
+    const maxParticipants =
+        maxParticipantsRaw != null && Number.isFinite(maxParticipantsRaw) && maxParticipantsRaw > 0
+            ? Math.max(1, Math.round(maxParticipantsRaw))
+            : null;
+
+    const isSessionFull =
+        maxParticipants != null &&
+        liveNowCount >= maxParticipants;
+
+    const sessionFullDescription =
+        maxParticipants != null
+            ? `This session is full right now (${liveNowCount}/${maxParticipants} in session). If someone leaves, you can try joining again.`
+            : "This session is full right now. If someone leaves, you can try joining again.";
 
     const hasStarted = useMemo(() => {
         if (isInfinite) return true;
@@ -3615,20 +3638,25 @@ export default function SessionCard({
 
         const nextPath = `/room-livekit/${roomParam}`;
 
-        if (!userId) {
-            navigate(buildLoginNext(nextPath));
+        // Capacity gate belongs on the card because it is useful before opening the room.
+        // Auth gate does NOT belong here anymore: logged-out users should be sent to the
+        // room and see the in-room auth modal there.
+        if (!isHost && isSessionFull) {
+            setSessionFullOpen(true);
             return;
         }
 
-        if (paywallDecision?.blocked) {
+        if (userId && paywallDecision?.blocked) {
             setPaywallOpen(true);
             return;
         }
 
-        try {
-            const idForJoin = session?.id ? String(session.id) : roomParam;
-            onJoin(idForJoin);
-        } catch { }
+        if (userId) {
+            try {
+                const idForJoin = session?.id ? String(session.id) : roomParam;
+                onJoin(idForJoin);
+            } catch { }
+        }
 
         navigate(nextPath);
     };
@@ -4274,6 +4302,49 @@ export default function SessionCard({
                     }}
                 />
             )}
+
+            <ModalShell
+                title="Session is full"
+                isOpen={sessionFullOpen}
+                onClose={() => setSessionFullOpen(false)}
+                widthClass="max-w-[460px]"
+            >
+                <div className="space-y-4">
+                    <div className="rounded-[18px] border border-[#FDE68A] bg-[#FFFBEB] px-4 py-3 text-[14px] leading-6 text-[#92400E]">
+                        <div className="font-bold text-[#78350F]">Participant limit reached</div>
+                        <div className="mt-1">{sessionFullDescription}</div>
+                    </div>
+
+                    <div className="rounded-[18px] border border-[#E5E7EB] bg-white px-4 py-3">
+                        <div className="text-[13px] font-semibold text-[#111827]">
+                            {String(session?.title || "This session")}
+                        </div>
+                        <div className="mt-1 text-[12px] leading-5 text-[#606060]">
+                            You can wait a little and try again, or choose another available session.
+                        </div>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setSessionFullOpen(false)}
+                            className="h-11 flex-1 rounded-full border border-[#111827] bg-white px-4 text-[14px] font-semibold text-[#111827] transition hover:bg-[#F3F4F6]"
+                        >
+                            Stay here
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setSessionFullOpen(false);
+                                navigate("/sessions");
+                            }}
+                            className="h-11 flex-1 rounded-full bg-[#111827] px-4 text-[14px] font-semibold text-white transition hover:bg-[#2F2F2F]"
+                        >
+                            Find another session
+                        </button>
+                    </div>
+                </div>
+            </ModalShell>
 
             <PaywallModal
                 open={paywallOpen}
