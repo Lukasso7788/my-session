@@ -1060,6 +1060,58 @@ function RoomAuthModal({
   const [emailLoading, setEmailLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const oauthPopupRef = useRef<Window | null>(null);
+  const oauthPollTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const cleanupPopupWatch = () => {
+      if (oauthPollTimerRef.current) {
+        window.clearInterval(oauthPollTimerRef.current);
+        oauthPollTimerRef.current = null;
+      }
+    };
+
+    const onMessage = async (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+
+      const payload = event.data as any;
+      if (!payload || payload.type !== "mysession-auth-callback") return;
+
+      cleanupPopupWatch();
+
+      try {
+        oauthPopupRef.current?.close?.();
+      } catch {
+        // ignore
+      }
+
+      oauthPopupRef.current = null;
+      setOauthLoading(null);
+      setError("");
+      setMessage("Signed in. Preparing your room…");
+
+      try {
+        await onEmailAuthSuccess();
+      } catch (e: any) {
+        setError(e?.message || "Signed in, but failed to refresh the room. Please reload.");
+      }
+    };
+
+    window.addEventListener("message", onMessage);
+
+    return () => {
+      window.removeEventListener("message", onMessage);
+      cleanupPopupWatch();
+      try {
+        oauthPopupRef.current?.close?.();
+      } catch {
+        // ignore
+      }
+      oauthPopupRef.current = null;
+    };
+  }, [open, onEmailAuthSuccess]);
 
   if (!open) return null;
 
@@ -1071,19 +1123,93 @@ function RoomAuthModal({
       setMessage("");
       setOauthLoading(provider);
 
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
           redirectTo,
+          skipBrowserRedirect: true,
           ...(provider === "discord" ? { scopes: "identify email" } : {}),
-        },
+        } as any,
       });
 
       if (error) {
         console.log(`[room-auth] ${provider} oauth error:`, error);
         setError(error.message);
         setOauthLoading(null);
+        return;
       }
+
+      const providerUrl = String((data as any)?.url || "").trim();
+
+      if (!providerUrl) {
+        setError("Could not start social login. Please try again.");
+        setOauthLoading(null);
+        return;
+      }
+
+      const popupWidth = 520;
+      const popupHeight = 720;
+      const left =
+        typeof window !== "undefined"
+          ? Math.max(0, Math.round(window.screenX + (window.outerWidth - popupWidth) / 2))
+          : 120;
+      const top =
+        typeof window !== "undefined"
+          ? Math.max(0, Math.round(window.screenY + (window.outerHeight - popupHeight) / 2))
+          : 80;
+
+      const popup = window.open(
+        providerUrl,
+        "mysession_oauth",
+        [
+          `width=${popupWidth}`,
+          `height=${popupHeight}`,
+          `left=${left}`,
+          `top=${top}`,
+          "resizable=yes",
+          "scrollbars=yes",
+          "status=no",
+          "toolbar=no",
+          "menubar=no",
+          "location=yes",
+        ].join(",")
+      );
+
+      // Popup can be blocked by the browser. In that case, fall back to a normal redirect.
+      if (!popup) {
+        window.location.assign(providerUrl);
+        return;
+      }
+
+      oauthPopupRef.current = popup;
+      try {
+        popup.focus();
+      } catch {
+        // ignore
+      }
+
+      setMessage("Finish signing in in the popup window. This room will stay open here.");
+
+      if (oauthPollTimerRef.current) {
+        window.clearInterval(oauthPollTimerRef.current);
+      }
+
+      oauthPollTimerRef.current = window.setInterval(() => {
+        const closed = !oauthPopupRef.current || oauthPopupRef.current.closed;
+
+        if (closed) {
+          if (oauthPollTimerRef.current) {
+            window.clearInterval(oauthPollTimerRef.current);
+            oauthPollTimerRef.current = null;
+          }
+
+          oauthPopupRef.current = null;
+          setOauthLoading(null);
+          setMessage((prev) =>
+            prev.includes("Signed in") ? prev : "Popup closed. You can try signing in again."
+          );
+        }
+      }, 600);
     } catch (e: any) {
       console.log("[room-auth] oauth unexpected error:", e);
       setError(e?.message || "Failed to start social login. Please try again.");
@@ -1385,7 +1511,7 @@ function RoomAuthModal({
         ) : null}
 
         <div className={`mt-4 text-center text-[12px] leading-5 ${subtleText}`}>
-          Social login may open a provider screen, then return you to this exact room.
+          Social login opens in a small popup. Keep this room open — it will continue automatically after sign-in.
         </div>
       </div>
     </div>

@@ -27,7 +27,6 @@ export default function AuthCallbackPage() {
 
             // RoomPageLiveKit sends ?redirect=/room-livekit/:id
             // Older auth flows may still send ?next=/sessions or ?next=/room-livekit/:id
-            // Support both so OAuth always returns users to the intended place.
             const next = safeNextPath(
                 url.searchParams.get("redirect") || url.searchParams.get("next")
             );
@@ -42,6 +41,32 @@ export default function AuthCallbackPage() {
                 window.dispatchEvent(new Event("mysession-room-auth-refresh"));
             } catch {
                 // ignore
+            }
+
+            // Popup OAuth flow:
+            // If this callback is opened in a popup, notify the original room tab and close.
+            try {
+                if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage(
+                        {
+                            type: "mysession-auth-callback",
+                            redirect: next,
+                        },
+                        window.location.origin
+                    );
+
+                    window.setTimeout(() => {
+                        try {
+                            window.close();
+                        } catch {
+                            // ignore
+                        }
+                    }, 150);
+
+                    return;
+                }
+            } catch {
+                // If opener access fails, use normal navigation fallback below.
             }
 
             if (!cancelled) {
