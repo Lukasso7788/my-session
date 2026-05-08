@@ -4,10 +4,12 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
+import ActiveBanModal from "../components/ActiveBanModal";
 import { SessionsDateFilter } from "../components/SessionsDateFilter";
 import BodyTriplingBody from "../components/body/BodyTriplingBody";
 import { BodyTriplingIntro } from "../components/body/BodyTriplingIntro";
 import { supabase } from "../lib/supabase";
+import { getCurrentUserActiveBan, type ActiveBan } from "../lib/bans";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
@@ -446,6 +448,8 @@ export function SessionsPage() {
 
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [activeBan, setActiveBan] = useState<ActiveBan | null>(null);
+  const [banChecking, setBanChecking] = useState(false);
 
   const [sessionTypeTab, setSessionTypeTab] = useState<
     "group" | "infinite" | "body"
@@ -485,6 +489,46 @@ export function SessionsPage() {
     PostSessionSessionOption[]
   >([]);
   const [postSessionBookingBusyId, setPostSessionBookingBusyId] = useState("");
+
+  const checkSessionsPageBan = useCallback(async () => {
+    if (!user?.id) {
+      setActiveBan(null);
+      return;
+    }
+
+    try {
+      setBanChecking(true);
+      const ban = await getCurrentUserActiveBan();
+      setActiveBan(ban);
+    } catch (e) {
+      if (DEBUG) console.warn("[sessions-ban] active ban check failed:", e);
+      setActiveBan(null);
+    } finally {
+      setBanChecking(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    void checkSessionsPageBan();
+  }, [checkSessionsPageBan]);
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void checkSessionsPageBan();
+    };
+
+    window.addEventListener("mysession-ban-refresh", onRefresh);
+    return () => window.removeEventListener("mysession-ban-refresh", onRefresh);
+  }, [checkSessionsPageBan]);
+
+  const showBanModal = useCallback(() => {
+    if (activeBan) {
+      return true;
+    }
+
+    void checkSessionsPageBan();
+    return false;
+  }, [activeBan, checkSessionsPageBan]);
 
   useEffect(() => {
     if (!howItWorksOpen) return;
@@ -973,14 +1017,19 @@ export function SessionsPage() {
   const join = (id: string) => {
     const next = `/room-livekit/${id}`;
 
+    if (showBanModal()) return;
+
     if (!user) {
-      return navigate(`/login?next=${encodeURIComponent(next)}`);
+      // RoomPageLiveKit now has in-room auth, so guests should go directly to the room.
+      return navigate(next);
     }
 
     navigate(next);
   };
 
   const book = async (id: string) => {
+    if (showBanModal()) return;
+
     if (!user) {
       return navigate(`/login?next=${encodeURIComponent("/sessions")}`);
     }
@@ -1094,6 +1143,8 @@ export function SessionsPage() {
   };
 
   const openCreate = () => {
+    if (showBanModal()) return;
+
     if (!user) {
       return navigate(`/login?next=${encodeURIComponent("/sessions")}`);
     }
@@ -1106,6 +1157,8 @@ export function SessionsPage() {
     dateYMD: string;
     timeHHMM: string;
   }) => {
+    if (showBanModal()) return;
+
     if (!user?.id) {
       return navigate(`/login?next=${encodeURIComponent("/sessions?tab=body")}`);
     }
@@ -1304,6 +1357,12 @@ export function SessionsPage() {
 
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
+      {activeBan ? (
+        <div className="mx-auto mt-4 max-w-[1180px] rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] font-medium text-red-800">
+          Access to joining sessions is restricted while your ban is active. Click any Join/Create action to view details.
+        </div>
+      ) : null}
+
       <main className="w-full px-3 md:px-6 lg:px-10 pb-12">
         <div className={`text-center ${topPad}`}>
           {sessionTypeTab === "group" && (
@@ -1682,6 +1741,12 @@ export function SessionsPage() {
           </div>
         </div>
       )}
+
+      <ActiveBanModal
+        open={!!activeBan}
+        ban={activeBan}
+        onBackToSessions={() => navigate("/sessions", { replace: true })}
+      />
 
       {postSessionPrompt.open && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center px-4 py-6">

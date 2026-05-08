@@ -4433,7 +4433,7 @@ export function RoomPageLiveKit() {
       if (!res.ok) {
         const code = String(json?.error || "").trim();
 
-        if (code === "USER_BANNED") {
+        if (code.toUpperCase() === "USER_BANNED") {
           const banFromToken: ActiveBan = {
             id: "token-ban",
             banned_user_id: String(authUserId || baseUser || ""),
