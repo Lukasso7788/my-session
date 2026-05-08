@@ -157,18 +157,16 @@ export async function getCurrentUserActiveBan(): Promise<ActiveBan | null> {
     .select("id, banned_user_id, banned_by_user_id, reason, internal_notes, starts_at, expires_at, revoked_at, created_at")
     .eq("banned_user_id", userId)
     .is("revoked_at", null)
-    .lte("starts_at", new Date().toISOString())
-    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(20);
 
   if (error) {
     console.warn("[bans] active ban load failed:", error);
     return null;
   }
 
-  return (data as ActiveBan) || null;
+  const active = ((data || []) as ActiveBan[]).find(isBanActive);
+  return active || null;
 }
 
 export async function createUserBan(params: {
@@ -215,32 +213,34 @@ export async function revokeUserBan(params: {
 
   if (!adminUserId) throw new Error("Admin auth required.");
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("user_bans")
     .update({
       revoked_at: new Date().toISOString(),
       revoked_by_user_id: adminUserId,
       revoked_reason: String(params.reason || "").trim() || null,
     })
-    .eq("id", params.banId);
+    .eq("id", params.banId)
+    .select("id, revoked_at")
+    .maybeSingle();
 
   if (error) throw error;
+  if (!data?.id) {
+    throw new Error("Ban was not revoked. Check that you are an admin and RLS policies were applied.");
+  }
 }
 
 export async function listActiveBans() {
-  const now = new Date().toISOString();
-
   const { data, error } = await supabase
     .from("user_bans")
     .select("*")
     .is("revoked_at", null)
-    .lte("starts_at", now)
-    .or(`expires_at.is.null,expires_at.gt.${now}`)
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(200);
 
   if (error) throw error;
-  return (data || []) as ActiveBan[];
+
+  return ((data || []) as ActiveBan[]).filter(isBanActive);
 }
 
 export async function searchAdminUsers(query: string) {

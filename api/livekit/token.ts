@@ -59,6 +59,12 @@ function deriveSessionId(roomName?: string): string {
   return "";
 }
 
+function extractBaseUserIdFromIdentity(identity?: string): string {
+  const raw = String(identity || "").trim().toLowerCase();
+  const first = raw.split("--")[0] || raw;
+  return looksLikeUuid(first) ? first : "";
+}
+
 async function resolveRole(params: {
   supabaseUrl: string;
   serviceKey: string;
@@ -249,11 +255,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     let role: ResolvedRole = { isHost: false, isModerator: false, userId: "" };
 
-    if (looksLikeUuid(String(identity))) {
+    // LiveKit identities in the app are usually "<supabase-user-id>--<tab-id>".
+    // The old check only handled a raw UUID identity, so banned users with tab identities
+    // could still receive tokens. Always validate the base user id when present.
+    const identityBaseUserId = extractBaseUserIdFromIdentity(String(identity));
+
+    if (identityBaseUserId) {
       if (!accessToken) {
         return res.status(401).json({
           error: "auth_required",
-          hint: "UUID identity requires Authorization: Bearer <supabase_access_token>",
+          hint: "Authenticated LiveKit identity requires Authorization: Bearer <supabase_access_token>",
         });
       }
 
@@ -271,11 +282,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         sessionId,
       });
 
-      const idn = String(identity).toLowerCase();
-      if (idn !== resolved.userId) {
+      if (identityBaseUserId !== resolved.userId) {
         return res.status(403).json({
           error: "identity_mismatch",
-          hint: "identity must equal authenticated user id",
+          hint: "identity base user id must equal authenticated user id",
         });
       }
 

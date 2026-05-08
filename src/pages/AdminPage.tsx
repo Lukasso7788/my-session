@@ -37,6 +37,7 @@ export default function AdminPage() {
 
   const [activeBans, setActiveBans] = useState<ActiveBan[]>([]);
   const [bansLoading, setBansLoading] = useState(false);
+  const [revokingBanId, setRevokingBanId] = useState<string>("");
   const [error, setError] = useState("");
 
   const cleanQuery = useMemo(() => query.trim(), [query]);
@@ -109,15 +110,19 @@ export default function AdminPage() {
   };
 
   const revoke = async (ban: ActiveBan) => {
-    const ok = window.confirm("Revoke this ban?");
-    if (!ok) return;
-
     try {
+      setRevokingBanId(ban.id);
+      setError("");
+
       await revokeUserBan({ banId: ban.id, reason: "Revoked from admin page." });
+
+      setActiveBans((prev) => prev.filter((b) => b.id !== ban.id));
       await loadBans();
     } catch (e: any) {
       console.error("[admin] revoke failed:", e);
       setError(String(e?.message || e || "Failed to revoke ban."));
+    } finally {
+      setRevokingBanId("");
     }
   };
 
@@ -289,10 +294,11 @@ export default function AdminPage() {
 
                     <button
                       type="button"
+                      disabled={revokingBanId === ban.id}
                       onClick={() => void revoke(ban)}
-                      className="rounded-full border border-red-600 px-4 py-2 text-[13px] font-semibold text-red-700 hover:bg-red-50"
+                      className="rounded-full border border-red-600 px-4 py-2 text-[13px] font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60 disabled:cursor-not-allowed"
                     >
-                      Revoke
+                      {revokingBanId === ban.id ? "Revoking..." : "Revoke ban"}
                     </button>
                   </div>
                 </div>

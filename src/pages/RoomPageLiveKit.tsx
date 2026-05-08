@@ -4431,6 +4431,28 @@ export function RoomPageLiveKit() {
       };
 
       if (!res.ok) {
+        const code = String(json?.error || "").trim();
+
+        if (code === "USER_BANNED") {
+          const banFromToken: ActiveBan = {
+            id: "token-ban",
+            banned_user_id: String(authUserId || baseUser || ""),
+            reason: String((json as any)?.reason || "You are banned from MySession."),
+            starts_at: String((json as any)?.starts_at || new Date().toISOString()),
+            expires_at: ((json as any)?.expires_at as string | null) || null,
+            revoked_at: null,
+          };
+
+          setActiveBan(banFromToken);
+          setTokenError("");
+          setTokenLoading(false);
+          setJoinRequested(false);
+          setPrejoinOpen(false);
+          joinFlowStartedRef.current = false;
+          connectingFromPrejoinRef.current = false;
+          return;
+        }
+
         const msg = String(
           json?.error || json?.message || `Token endpoint error: ${res.status}`
         ).trim();
@@ -7799,12 +7821,12 @@ export function RoomPageLiveKit() {
         </div>
 
         <ActiveBanModal
-        open={!!activeBan}
-        ban={activeBan}
-        onBackToSessions={() => navigate("/sessions", { replace: true })}
-      />
+          open={!!activeBan}
+          ban={activeBan}
+          onBackToSessions={() => navigate("/sessions", { replace: true })}
+        />
 
-      <RoomAuthModal
+        <RoomAuthModal
           open={showAuth}
           theme={theme}
           sessionTitle="this session"
