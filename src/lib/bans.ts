@@ -213,12 +213,14 @@ export async function revokeUserBan(params: {
 
   if (!adminUserId) throw new Error("Admin auth required.");
 
+  // Keep this update aligned with the minimal SQL schema.
+  // Do NOT write revoked_reason here: some deployed DBs do not have that optional column yet,
+  // and PostgREST rejects the whole update when an unknown column is present.
   const { data, error } = await supabase
     .from("user_bans")
     .update({
       revoked_at: new Date().toISOString(),
       revoked_by_user_id: adminUserId,
-      revoked_reason: String(params.reason || "").trim() || null,
     })
     .eq("id", params.banId)
     .select("id, revoked_at")
