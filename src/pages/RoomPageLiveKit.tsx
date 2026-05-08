@@ -1648,12 +1648,13 @@ export function RoomPageLiveKit() {
     } = supabase.auth.onAuthStateChange((event, session) => {
       accessTokenRef.current = String(session?.access_token || "").trim();
 
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED" || event === "INITIAL_SESSION") {
         const nextUserId = String(session?.user?.id || "").trim();
         if (nextUserId) {
           setAuthUserId(nextUserId);
           setAuthGateStatus("authed");
           setAuthReady(true);
+          return;
         }
       }
 
@@ -2921,12 +2922,18 @@ export function RoomPageLiveKit() {
   }, [stagebarStartTime, stages, isSilentRoom, isInfiniteRoom, stagebarCycleSeconds]);
 
   const refreshRoomAuth = useCallback(async () => {
+    // Important:
+    // Room auth must never redirect logged-out users away from the room.
+    // It should only decide between:
+    // - guest  -> show in-room auth modal
+    // - authed -> open prejoin
     setAuthGateStatus("checking");
     setAuthReady(false);
 
     try {
-      const { data: ud } = await supabase.auth.getUser();
-      const u = ud.user;
+      const { data: sessionData } = await supabase.auth.getSession();
+      const activeSession = sessionData?.session || null;
+      const u = activeSession?.user || null;
 
       if (!u) {
         setAuthUserId(null);
@@ -2937,13 +2944,7 @@ export function RoomPageLiveKit() {
       }
 
       setAuthUserId(u.id || null);
-
-      try {
-        const { data: sd } = await supabase.auth.getSession();
-        accessTokenRef.current = String(sd.session?.access_token || "").trim();
-      } catch {
-        accessTokenRef.current = "";
-      }
+      accessTokenRef.current = String(activeSession?.access_token || "").trim();
 
       setAuthGateStatus("authed");
       setAuthReady(true);
@@ -3567,6 +3568,20 @@ export function RoomPageLiveKit() {
       cancelled = true;
     };
   }, [loading, session, sessionId, authReady, authUserId, joinRequested, loadBrowserDevices, deviceTier]);
+
+  useEffect(() => {
+    if (!authUserId) return;
+    if (!authReady) return;
+    if (!sessionId) return;
+
+    // A successful in-room login should immediately move the user to prejoin.
+    // This also repairs cases where auth changed while the room was already mounted.
+    if (!joinRequested && !connected && !lkToken) {
+      setMediaWarning("");
+      setClientError("");
+    }
+  }, [authUserId, authReady, sessionId, joinRequested, connected, lkToken]);
+
 
   useEffect(() => {
     if (!prejoinOpen) return;
@@ -5016,7 +5031,7 @@ export function RoomPageLiveKit() {
   const connectRoom = async () => {
     if (!lkServerUrl || !lkToken) return;
     if (connectInFlightRef.current) return;
-    if (paywallBlocked) {
+    if (paywallBlocked && !!authUserId) {
       setPaywallModalOpen(true);
       return;
     }
@@ -7415,23 +7430,9 @@ export function RoomPageLiveKit() {
     return <div className={`flex h-screen items-center justify-center ${pageBg}`}>Loading session...</div>;
   }
 
-  if (authGateStatus === "checking") {
-    return (
-      <>
-        <div className={`min-h-screen w-full flex items-center justify-center ${isLight ? "bg-[#f6f8fb]" : "bg-[#020617]"}`}>
-          <div className={`w-[92%] max-w-[520px] rounded-3xl border shadow-2xl p-6 ${isLight ? "bg-white border-black/10" : "bg-[#0b1220] border-white/10"}`}>
-            <div className={`text-[18px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
-              Checking access…
-            </div>
-            <div className={`mt-2 text-[14px] ${isLight ? "text-black/55" : "text-white/55"}`}>
-              Please wait a moment.
-            </div>
-          </div>
-        </div>
-        {pipPortal}
-      </>
-    );
-  }
+  // Do not block the room on auth checking.
+  // If the user is logged out, the room should render and show RoomAuthModal.
+  // If the user is logged in, auth state will flip to authed and prejoin will open.
 
   const handleBookFromJoinGate = async () => {
     const sessionId = String(session?.id || "").trim();
@@ -7528,7 +7529,7 @@ export function RoomPageLiveKit() {
     );
   }
 
-  if (joinBlocked) {
+  if (joinBlocked && !!authUserId) {
     return (
       <JoinGateModal
         open={true}
@@ -7641,7 +7642,7 @@ export function RoomPageLiveKit() {
       `}</style>
 
       <RoomAuthModal
-        open={authReady && !authUserId}
+        open={!authUserId && authGateStatus !== "authed"}
         theme={theme}
         sessionTitle={String(session?.title || "Session")}
         redirectPath={`${location.pathname}${location.search}`}
