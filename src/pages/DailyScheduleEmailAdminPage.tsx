@@ -21,6 +21,8 @@ type PreviewSession = {
   } | null;
 };
 
+const DAILY_SCHEDULE_ADMIN_API = "/api/livekit/admin";
+
 function todayYMD() {
   const d = new Date();
   const y = d.getFullYear();
@@ -62,7 +64,7 @@ export default function DailyScheduleEmailAdminPage() {
   const sessions = useMemo<PreviewSession[]>(() => preview?.sessions || [], [preview]);
   const selected = useMemo<PreviewRecipient[]>(() => preview?.selected || [], [preview]);
 
-  const callAdmin = async (action: "daily_schedule_preview" | "daily_schedule_send") => {
+  const callEndpoint = async (action: "daily_schedule_preview" | "daily_schedule_send") => {
     const { data } = await supabase.auth.getSession();
     const token = String(data.session?.access_token || "").trim();
 
@@ -71,7 +73,7 @@ export default function DailyScheduleEmailAdminPage() {
       return null;
     }
 
-    const res = await fetch("/api/admin", {
+    const res = await fetch(DAILY_SCHEDULE_ADMIN_API, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -84,10 +86,25 @@ export default function DailyScheduleEmailAdminPage() {
       }),
     });
 
-    const json = await res.json().catch(() => ({}));
+    const rawText = await res.text();
+    let json: any = {};
+
+    try {
+      json = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      json = { message: rawText };
+    }
 
     if (!res.ok) {
-      throw new Error(json?.error || json?.message || json?.details || `Request failed: ${res.status}`);
+      const details =
+        json?.error ||
+        json?.message ||
+        json?.details ||
+        json?.details?.message ||
+        rawText ||
+        `Request failed: ${res.status}`;
+
+      throw new Error(`${details} (${res.status})`);
     }
 
     return json;
@@ -99,7 +116,7 @@ export default function DailyScheduleEmailAdminPage() {
       setError("");
       setLastSendResult(null);
 
-      const json = await callAdmin("daily_schedule_preview");
+      const json = await callEndpoint("daily_schedule_preview");
       if (json) setPreview(json);
     } catch (e: any) {
       console.error("[daily-schedule-email] preview failed:", e);
@@ -120,8 +137,8 @@ export default function DailyScheduleEmailAdminPage() {
       setSending(true);
       setError("");
 
-      const json = await callAdmin("daily_schedule_send");
-      setLastSendResult(json);
+      const json = await callEndpoint("daily_schedule_send");
+      if (json) setLastSendResult(json);
 
       await loadPreview();
     } catch (e: any) {
@@ -174,7 +191,9 @@ export default function DailyScheduleEmailAdminPage() {
                 min={1}
                 max={100}
                 value={limit}
-                onChange={(e) => setLimit(Math.max(1, Math.min(100, Math.round(Number(e.target.value) || 100))))}
+                onChange={(e) =>
+                  setLimit(Math.max(1, Math.min(100, Math.round(Number(e.target.value) || 100))))
+                }
                 className="mt-2 h-12 w-full rounded-2xl border border-black/10 bg-white px-4 text-[14px] outline-none focus:ring-2 focus:ring-black/15"
               />
             </label>
@@ -196,6 +215,11 @@ export default function DailyScheduleEmailAdminPage() {
             >
               {sending ? "Sending..." : "Send now"}
             </button>
+          </div>
+
+          <div className="mt-3 text-[12px] text-[#777]">
+            API endpoint: <code className="rounded bg-white px-1.5 py-0.5">{DAILY_SCHEDULE_ADMIN_API}</code>
+            <span className="ml-2">Actions: <code>daily_schedule_preview</code> / <code>daily_schedule_send</code></span>
           </div>
 
           {error ? (
