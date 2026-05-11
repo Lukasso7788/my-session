@@ -1,8 +1,9 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { Resend } from "resend";
 
-type AdminAction =
+type LiveKitAdminAction =
   | "mute_track"
   | "unmute_track"
   | "remove_participant"
@@ -13,6 +14,12 @@ type AdminAction =
   | "mute_microphone"
   | "unmute_microphone";
 
+type EmailAdminAction =
+  | "daily_schedule_preview"
+  | "daily_schedule_send";
+
+type AdminAction = LiveKitAdminAction | EmailAdminAction;
+
 type TrackKind = "camera" | "microphone" | "";
 
 type Body = {
@@ -22,6 +29,11 @@ type Body = {
   participantIdentity?: string;
   trackSid?: string;
   trackKind?: "camera" | "microphone" | "video" | "audio" | string;
+
+  // Daily schedule email actions
+  scheduleDate?: string;
+  limit?: number;
+  selectedUserIds?: string[];
 
   // deprecated / ignored for auth decisions
   isHost?: boolean;
@@ -54,8 +66,38 @@ type SessionContext = {
   usedLegacyFallback: boolean;
 };
 
+type DailyScheduleSessionRow = {
+  id: string;
+  title?: string | null;
+  start_time?: string | null;
+  duration_minutes?: number | null;
+  host_id?: string | null;
+  host_name?: string | null;
+  format?: string | null;
+  session_format_type?: string | null;
+  is_silent?: boolean | null;
+  host_profile?: {
+    id?: string | null;
+    full_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
+};
+
+type RecipientCandidate = {
+  userId: string;
+  email: string;
+  name: string;
+  score: number;
+  reasons: string[];
+  lastSentAt: string | null;
+  enabled: boolean;
+};
+
 const ACTOR_ROLE_CACHE_TTL_MS = 15_000;
 const SESSION_CONTEXT_CACHE_TTL_MS = 15_000;
+
+const DAILY_EMAIL_DEFAULT_LIMIT = 100;
+const DAILY_EMAIL_MAX_FREE_LIMIT = 100;
 
 const actorRoleCache = new Map<
   string,
@@ -129,6 +171,10 @@ function elapsedMs(start: number) {
   return Math.max(0, Date.now() - start);
 }
 
+function env(name: string) {
+  return String(process.env[name] || "").trim();
+}
+
 function parseBody(req: VercelRequest): Body {
   const raw = req.body as any;
   if (!raw) return {};
@@ -189,7 +235,7 @@ function deriveSessionId(roomName?: string): string {
   return "";
 }
 
-function normalizeAction(raw: unknown): AdminAction | "" {
+function normalizeLiveKitAction(raw: unknown): LiveKitAdminAction | "" {
   const a = String(raw || "").trim().toLowerCase();
 
   if (a === "mute_track") return "mute_track";
@@ -201,6 +247,15 @@ function normalizeAction(raw: unknown): AdminAction | "" {
 
   if (a === "mute_microphone") return "mute_microphone";
   if (a === "unmute_microphone") return "unmute_microphone";
+
+  return "";
+}
+
+function normalizeEmailAction(raw: unknown): EmailAdminAction | "" {
+  const a = String(raw || "").trim().toLowerCase();
+
+  if (a === "daily_schedule_preview") return "daily_schedule_preview";
+  if (a === "daily_schedule_send") return "daily_schedule_send";
 
   return "";
 }
@@ -263,6 +318,34 @@ function getSupabaseAdminClient(supabaseUrl: string, serviceKey: string) {
   });
 }
 
+async function assertAppAdmin(params: {
+  sb: SupabaseClient;
+  accessToken: string;
+}) {
+  const { sb, accessToken } = params;
+
+  const { data: uData, error: uErr } = await sb.auth.getUser(accessToken);
+  if (uErr || !uData?.user?.id) throw new Error("unauthorized");
+
+  const userId = String(uData.user.id || "").trim().toLowerCase();
+  if (!looksLikeUuid(userId)) throw new Error("unauthorized");
+
+  const { data: adminRow, error: adminErr } = await sb
+    .from("admin_users")
+    .select("user_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (adminErr) {
+    console.error("[admin] app admin check failed:", adminErr);
+    throw new Error("admin_check_failed");
+  }
+
+  if (!adminRow?.user_id) throw new Error("admin_required");
+
+  return { userId };
+}
+
 async function resolveSessionContext(params: {
   sb: SupabaseClient;
   sessionId: string;
@@ -285,7 +368,6 @@ async function resolveSessionContext(params: {
   const hostId = String(sessionRow.host_id || "").trim().toLowerCase();
   const assignedServerId = String(sessionRow.assigned_server_id || "").trim();
 
-  // Legacy fallback for old rooms that were created before assigned_server_id existed.
   if (!looksLikeUuid(assignedServerId)) {
     const legacyHost = getLegacyLiveKitHttpHost();
     if (!legacyHost) {
@@ -312,7 +394,6 @@ async function resolveSessionContext(params: {
     .single<LivekitServerRow>();
 
   if (serverErr || !serverRow?.id) {
-    // Soft fallback for old/main server mismatch cases.
     const legacyHost = getLegacyLiveKitHttpHost();
     if (!legacyHost) {
       throw new Error("livekit_server_not_found");
@@ -430,6 +511,508 @@ async function resolveTrackSidForKind(args: {
   return sid;
 }
 
+function clampDailyEmailLimit(raw: any) {
+  const n = Math.max(1, Math.min(DAILY_EMAIL_MAX_FREE_LIMIT, Math.round(Number(raw || DAILY_EMAIL_DEFAULT_LIMIT))));
+  return Number.isFinite(n) ? n : DAILY_EMAIL_DEFAULT_LIMIT;
+}
+
+function getAppUrl() {
+  return env("APP_URL") || env("VITE_APP_URL") || "https://www.mysession.club";
+}
+
+function ymd(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function parseScheduleDate(raw: any) {
+  const s = String(raw || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  return ymd(new Date());
+}
+
+function dayBounds(scheduleDate: string) {
+  const start = new Date(`${scheduleDate}T00:00:00`);
+  const end = new Date(`${scheduleDate}T00:00:00`);
+  end.setDate(end.getDate() + 1);
+
+  return {
+    startIso: start.toISOString(),
+    endIso: end.toISOString(),
+  };
+}
+
+function formatEmailTime(raw?: string | null) {
+  if (!raw) return "Time TBD";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "Time TBD";
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  }).format(d);
+}
+
+function formatDateForSubject(scheduleDate: string) {
+  const d = new Date(`${scheduleDate}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return scheduleDate;
+
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(d);
+}
+
+function escapeHtml(input: any) {
+  return String(input ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function getEmailSessionHostName(session: DailyScheduleSessionRow) {
+  return (
+    String(session.host_profile?.full_name || "").trim() ||
+    String(session.host_name || "").trim() ||
+    "Host"
+  );
+}
+
+function groupEmailSessionsByHost(sessions: DailyScheduleSessionRow[]) {
+  const map = new Map<string, DailyScheduleSessionRow[]>();
+
+  for (const session of sessions) {
+    const host = getEmailSessionHostName(session);
+    const prev = map.get(host) || [];
+    prev.push(session);
+    map.set(host, prev);
+  }
+
+  return Array.from(map.entries()).map(([hostName, items]) => ({
+    hostName,
+    sessions: items.sort((a, b) => {
+      const at = a.start_time ? new Date(a.start_time).getTime() : 0;
+      const bt = b.start_time ? new Date(b.start_time).getTime() : 0;
+      return at - bt;
+    }),
+  }));
+}
+
+function buildDailyScheduleEmail(params: {
+  scheduleDate: string;
+  sessions: DailyScheduleSessionRow[];
+  recipientName: string;
+}) {
+  const appUrl = getAppUrl();
+  const dateLabel = formatDateForSubject(params.scheduleDate);
+  const groups = groupEmailSessionsByHost(params.sessions);
+
+  const subject = `Today on MySession — ${dateLabel}`;
+
+  const sessionListText =
+    groups.length === 0
+      ? "No scheduled sessions today yet. Check the sessions page for updates."
+      : groups
+        .map((group) => {
+          const lines = group.sessions.map((s) => {
+            const title = String(s.title || "Focus session").trim();
+            return `- ${formatEmailTime(s.start_time)} — ${title}`;
+          });
+
+          return `${group.hostName} is hosting:\n${lines.join("\n")}`;
+        })
+        .join("\n\n");
+
+  const text = `Hey ${params.recipientName || "there"},
+
+Here is today's MySession schedule:
+
+${sessionListText}
+
+Join or book here:
+${appUrl}/sessions
+
+Tip: click "Book Session" — it helps increase attendance and attract more people to the session.
+
+— MySession`;
+
+  const htmlGroups =
+    groups.length === 0
+      ? `<p style="margin:0;color:#555;">No scheduled sessions today yet. Check the sessions page for updates.</p>`
+      : groups
+        .map((group) => {
+          const items = group.sessions
+            .map((s) => {
+              const title = escapeHtml(s.title || "Focus session");
+              const time = escapeHtml(formatEmailTime(s.start_time));
+              const link = `${appUrl}/room-livekit/${encodeURIComponent(String(s.id))}`;
+
+              return `
+                  <li style="margin:8px 0;">
+                    <strong>${time}</strong>
+                    <span style="color:#555;"> — </span>
+                    <a href="${link}" style="color:#111827;text-decoration:underline;">${title}</a>
+                  </li>
+                `;
+            })
+            .join("");
+
+          return `
+              <div style="margin:22px 0;padding:18px;border:1px solid #e5e7eb;border-radius:18px;background:#fafafa;">
+                <div style="font-weight:700;font-size:16px;margin-bottom:8px;">${escapeHtml(group.hostName)} is hosting:</div>
+                <ul style="padding-left:20px;margin:0;">${items}</ul>
+              </div>
+            `;
+        })
+        .join("");
+
+  const html = `
+    <div style="font-family:Inter,Arial,sans-serif;line-height:1.55;color:#111827;max-width:640px;margin:0 auto;padding:24px;">
+      <div style="font-size:13px;text-transform:uppercase;letter-spacing:0.12em;color:#6b7280;font-weight:700;">MySession</div>
+      <h1 style="font-size:28px;line-height:1.15;margin:10px 0 8px;">Today’s focus sessions</h1>
+      <p style="margin:0 0 22px;color:#555;">Hey ${escapeHtml(params.recipientName || "there")}, here’s today’s schedule for ${escapeHtml(dateLabel)}.</p>
+
+      ${htmlGroups}
+
+      <div style="margin-top:26px;">
+        <a href="${appUrl}/sessions" style="display:inline-block;background:#111827;color:white;text-decoration:none;border-radius:999px;padding:13px 20px;font-weight:700;">Join or book a session</a>
+      </div>
+
+      <p style="margin-top:22px;color:#555;font-size:14px;">
+        Tip: click <strong>Book Session</strong> — it helps increase attendance and attract more people to the session.
+      </p>
+
+      <hr style="border:none;border-top:1px solid #e5e7eb;margin:26px 0;" />
+      <p style="font-size:12px;color:#777;margin:0;">
+        You’re receiving this because you joined MySession. For now, reply to this email if you don’t want daily schedule emails.
+      </p>
+    </div>
+  `;
+
+  return { subject, text, html };
+}
+
+async function listAllAuthUsers(sb: SupabaseClient) {
+  const all: any[] = [];
+  let page = 1;
+  const perPage = 1000;
+
+  while (page < 20) {
+    const { data, error } = await (sb.auth.admin as any).listUsers({
+      page,
+      perPage,
+    });
+
+    if (error) throw error;
+
+    const users = data?.users || [];
+    all.push(...users);
+
+    if (users.length < perPage) break;
+    page += 1;
+  }
+
+  return all;
+}
+
+function scoreDailyEmailCandidate(params: {
+  user: any;
+  pref: any | null;
+  profile: any | null;
+  bookedToday: boolean;
+  sentToday: boolean;
+}) {
+  let score = 0;
+  const reasons: string[] = [];
+
+  if (params.pref?.enabled === false) {
+    return { score: -999999, reasons: ["disabled"] };
+  }
+
+  if (params.sentToday) {
+    return { score: -99999, reasons: ["already_sent_today"] };
+  }
+
+  const override = Number(params.pref?.priority_override || 0);
+  if (override) {
+    score += override;
+    reasons.push(`priority_override:${override}`);
+  }
+
+  if (params.bookedToday) {
+    score += 1000;
+    reasons.push("booked_today");
+  }
+
+  if (params.user?.email_confirmed_at || params.user?.confirmed_at) {
+    score += 80;
+    reasons.push("confirmed_email");
+  }
+
+  if (params.profile?.full_name) {
+    score += 20;
+    reasons.push("has_profile_name");
+  }
+
+  const lastSentAt = params.pref?.last_sent_at ? new Date(params.pref.last_sent_at).getTime() : 0;
+  if (!lastSentAt) {
+    score += 120;
+    reasons.push("never_sent");
+  } else {
+    const daysSince = Math.max(0, Math.floor((Date.now() - lastSentAt) / 86400000));
+    score += Math.min(90, daysSince * 10);
+    reasons.push(`days_since_sent:${daysSince}`);
+  }
+
+  const createdAt = params.user?.created_at ? new Date(params.user.created_at).getTime() : 0;
+  if (createdAt && Date.now() - createdAt < 30 * 86400000) {
+    score += 30;
+    reasons.push("newer_user");
+  }
+
+  return { score, reasons };
+}
+
+async function handleDailyScheduleEmailAction(params: {
+  req: VercelRequest;
+  res: VercelResponse;
+  sb: SupabaseClient;
+  accessToken: string;
+  body: Body;
+  action: EmailAdminAction;
+}) {
+  const { req, res, sb, accessToken, body, action } = params;
+
+  await assertAppAdmin({ sb, accessToken });
+
+  const dryRun = action === "daily_schedule_preview";
+  const scheduleDate = parseScheduleDate(body.scheduleDate);
+  const limit = clampDailyEmailLimit(body.limit);
+  const selectedUserIds = Array.isArray(body.selectedUserIds)
+    ? body.selectedUserIds.map((x) => String(x || "").trim()).filter(Boolean)
+    : [];
+
+  const { startIso, endIso } = dayBounds(scheduleDate);
+
+  const { data: sessionsData, error: sessionsError } = await sb
+    .from("sessions")
+    .select(`
+      id,
+      title,
+      start_time,
+      duration_minutes,
+      host_id,
+      host_name,
+      format,
+      session_format_type,
+      is_silent,
+      host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url)
+    `)
+    .gte("start_time", startIso)
+    .lt("start_time", endIso)
+    .order("start_time", { ascending: true });
+
+  if (sessionsError) {
+    return res.status(500).json({ error: "sessions_load_failed", details: sessionsError });
+  }
+
+  const sessions = (sessionsData || []) as DailyScheduleSessionRow[];
+  const sessionIds = sessions.map((s) => String(s.id)).filter(Boolean);
+
+  const { data: bookingsData } = sessionIds.length
+    ? await sb
+      .from("session_bookings")
+      .select("session_id, user_id")
+      .in("session_id", sessionIds)
+    : { data: [] as any[] };
+
+  const bookedTodaySet = new Set<string>((bookingsData || []).map((b: any) => String(b.user_id)));
+
+  const { data: prefsData } = await sb
+    .from("daily_schedule_email_preferences")
+    .select("*");
+
+  const prefsByUser = new Map<string, any>();
+  for (const p of prefsData || []) prefsByUser.set(String(p.user_id), p);
+
+  const { data: sendsToday } = await sb
+    .from("daily_schedule_email_sends")
+    .select("user_id,email,status")
+    .eq("schedule_date", scheduleDate)
+    .eq("status", "sent");
+
+  const sentTodayUserIds = new Set<string>((sendsToday || []).map((s: any) => String(s.user_id || "")));
+  const sentTodayEmails = new Set<string>((sendsToday || []).map((s: any) => String(s.email || "").toLowerCase()));
+
+  const users = await listAllAuthUsers(sb);
+  const userIds = users.map((u) => String(u.id)).filter(Boolean);
+
+  const { data: profilesData } = userIds.length
+    ? await sb
+      .from("profiles")
+      .select("id, full_name, avatar_url, email, created_at")
+      .in("id", userIds)
+    : { data: [] as any[] };
+
+  const profilesByUser = new Map<string, any>();
+  for (const p of profilesData || []) profilesByUser.set(String(p.id), p);
+
+  const candidates: RecipientCandidate[] = [];
+
+  for (const user of users) {
+    const userId = String(user.id || "").trim();
+    const email = String(user.email || "").trim().toLowerCase();
+    if (!userId || !email) continue;
+
+    if (selectedUserIds.length && !selectedUserIds.includes(userId)) continue;
+
+    const profile = profilesByUser.get(userId) || null;
+    const pref = prefsByUser.get(userId) || null;
+    const sentToday = sentTodayUserIds.has(userId) || sentTodayEmails.has(email);
+
+    const scored = scoreDailyEmailCandidate({
+      user,
+      pref,
+      profile,
+      bookedToday: bookedTodaySet.has(userId),
+      sentToday,
+    });
+
+    if (scored.score < -1000) continue;
+
+    candidates.push({
+      userId,
+      email,
+      name: String(profile?.full_name || user.user_metadata?.full_name || email.split("@")[0] || "there"),
+      score: scored.score,
+      reasons: scored.reasons,
+      lastSentAt: pref?.last_sent_at || null,
+      enabled: pref?.enabled !== false,
+    });
+  }
+
+  candidates.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.email.localeCompare(b.email);
+  });
+
+  const selected = candidates.slice(0, limit);
+
+  if (dryRun) {
+    return res.status(200).json({
+      ok: true,
+      dryRun: true,
+      scheduleDate,
+      limit,
+      sessions,
+      candidatesCount: candidates.length,
+      selectedCount: selected.length,
+      selected,
+    });
+  }
+
+  const resendKey = env("RESEND_API_KEY");
+  const fromEmail = env("RESEND_DAILY_SCHEDULE_FROM") || env("RESEND_FROM_EMAIL");
+  const replyTo = env("RESEND_REPLY_TO") || "support@mysession.club";
+
+  if (!resendKey || !fromEmail) {
+    return res.status(500).json({
+      error: "missing_resend_env",
+      required: ["RESEND_API_KEY", "RESEND_DAILY_SCHEDULE_FROM or RESEND_FROM_EMAIL"],
+    });
+  }
+
+  const resend = new Resend(resendKey);
+  const results: any[] = [];
+
+  for (let i = 0; i < selected.length; i += 1) {
+    const recipient = selected[i];
+    const email = buildDailyScheduleEmail({
+      scheduleDate,
+      sessions,
+      recipientName: recipient.name,
+    });
+
+    try {
+      const { data, error } = await resend.emails.send({
+        from: fromEmail,
+        to: [recipient.email],
+        replyTo,
+        subject: email.subject,
+        html: email.html,
+        text: email.text,
+        tags: [
+          { name: "type", value: "daily_schedule" },
+          { name: "schedule_date", value: scheduleDate.replaceAll("-", "_") },
+        ],
+      });
+
+      if (error) throw error;
+
+      await sb.from("daily_schedule_email_sends").insert({
+        user_id: recipient.userId,
+        email: recipient.email,
+        schedule_date: scheduleDate,
+        status: "sent",
+        selected_rank: i + 1,
+        resend_id: (data as any)?.id || null,
+      });
+
+      await sb
+        .from("daily_schedule_email_preferences")
+        .upsert({
+          user_id: recipient.userId,
+          email: recipient.email,
+          enabled: true,
+          last_sent_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+
+      results.push({
+        userId: recipient.userId,
+        email: recipient.email,
+        status: "sent",
+        resendId: (data as any)?.id || null,
+      });
+    } catch (e: any) {
+      const message = String(e?.message || JSON.stringify(e) || e || "send_failed");
+
+      await sb.from("daily_schedule_email_sends").insert({
+        user_id: recipient.userId,
+        email: recipient.email,
+        schedule_date: scheduleDate,
+        status: "failed",
+        selected_rank: i + 1,
+        error: message,
+      });
+
+      results.push({
+        userId: recipient.userId,
+        email: recipient.email,
+        status: "failed",
+        error: message,
+      });
+    }
+  }
+
+  return res.status(200).json({
+    ok: true,
+    dryRun: false,
+    scheduleDate,
+    requestedLimit: limit,
+    selectedCount: selected.length,
+    sentCount: results.filter((r) => r.status === "sent").length,
+    failedCount: results.filter((r) => r.status === "failed").length,
+    results,
+  });
+}
+
 function setCors(res: VercelResponse, req: VercelRequest) {
   const origin = String(req.headers.origin || "*");
   res.setHeader("Cache-Control", "no-store, max-age=0");
@@ -481,25 +1064,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const body = parseBody(req);
-    const action = normalizeAction(body.action);
-    const roomName = String(body.roomName || "").trim();
-    const participantIdentity = String(body.participantIdentity || "").trim();
-    let trackSid = String(body.trackSid || "").trim();
-
-    if (!action || !roomName) {
-      return res.status(400).json({ error: "action_and_roomName_required" });
-    }
-
-    const sessionId = String(body.sessionId || deriveSessionId(roomName))
-      .trim()
-      .toLowerCase();
-
-    if (!looksLikeUuid(sessionId)) {
-      return res.status(400).json({
-        error: "sessionId_required",
-        hint: "Pass sessionId or use roomName=session-<uuid>",
-      });
-    }
+    const rawEmailAction = normalizeEmailAction(body.action);
 
     const accessToken = getBearerToken(req);
     if (!accessToken) {
@@ -521,14 +1086,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    const sb = getSupabaseAdminClient(supabaseUrl, serviceKey);
+
+    if (rawEmailAction) {
+      return await handleDailyScheduleEmailAction({
+        req,
+        res,
+        sb,
+        accessToken,
+        body,
+        action: rawEmailAction,
+      });
+    }
+
+    const action = normalizeLiveKitAction(body.action);
+    const roomName = String(body.roomName || "").trim();
+    const participantIdentity = String(body.participantIdentity || "").trim();
+    let trackSid = String(body.trackSid || "").trim();
+
+    if (!action || !roomName) {
+      return res.status(400).json({ error: "action_and_roomName_required" });
+    }
+
+    const sessionId = String(body.sessionId || deriveSessionId(roomName))
+      .trim()
+      .toLowerCase();
+
+    if (!looksLikeUuid(sessionId)) {
+      return res.status(400).json({
+        error: "sessionId_required",
+        hint: "Pass sessionId or use roomName=session-<uuid>",
+      });
+    }
+
     const apiKey = String(process.env.LIVEKIT_API_KEY || "").trim();
     const apiSecret = String(process.env.LIVEKIT_API_SECRET || "").trim();
 
     if (!apiKey || !apiSecret) {
       return res.status(500).json({ error: "livekit_keys_missing" });
     }
-
-    const sb = getSupabaseAdminClient(supabaseUrl, serviceKey);
 
     const authStartedAt = nowMs();
     const sessionContext = await resolveSessionContext({
@@ -708,7 +1304,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     writeTimingHeaders(res, { totalMs, authMs, livekitMs, resolvedTrackMs });
 
     const message = String(e?.message || e || "admin_request_failed");
-    console.error("[livekit-admin] request failed", {
+    console.error("[admin] request failed", {
       message,
       authMs,
       resolvedTrackMs,
@@ -719,6 +1315,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (message === "unauthorized") {
       return res.status(401).json({
         error: "unauthorized",
+        timings: { authMs, resolvedTrackMs, livekitMs, totalMs },
+      });
+    }
+
+    if (message === "admin_required") {
+      return res.status(403).json({
+        error: "admin_required",
+        timings: { authMs, resolvedTrackMs, livekitMs, totalMs },
+      });
+    }
+
+    if (message === "admin_check_failed") {
+      return res.status(500).json({
+        error: "admin_check_failed",
         timings: { authMs, resolvedTrackMs, livekitMs, totalMs },
       });
     }

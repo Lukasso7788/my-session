@@ -14,6 +14,7 @@ import FocusShieldPage from "./pages/FocusShieldPage";
 import PublicProfilePage from "./pages/PublicProfilePage";
 import AuthCallback from "./pages/AuthCallback";
 import AdminPage from "./pages/AdminPage";
+import DailyScheduleEmailAdminPage from "./pages/DailyScheduleEmailAdminPage";
 
 import PricingPage from "./pages/PricingPage";
 import PricingSuccessPage from "./pages/PricingSuccessPage";
@@ -146,6 +147,10 @@ export default function App() {
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/profile/:id" element={<PublicProfilePage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route
+            path="/admin/daily-schedule-email"
+            element={<DailyScheduleEmailAdminPage />}
+          />
           <Route path="/focus-plan" element={<FocusPlanPage />} />
           <Route path="/focus-shield" element={<FocusShieldPage />} />
 
