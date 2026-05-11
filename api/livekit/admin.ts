@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { randomBytes, randomUUID } from "crypto";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
@@ -91,6 +92,7 @@ type RecipientCandidate = {
   reasons: string[];
   lastSentAt: string | null;
   enabled: boolean;
+  unsubscribeToken: string;
 };
 
 const ACTOR_ROLE_CACHE_TTL_MS = 15_000;
@@ -576,6 +578,53 @@ function escapeHtml(input: any) {
     .replaceAll("'", "&#039;");
 }
 
+function makeUnsubscribeToken() {
+  try {
+    return randomUUID().replaceAll("-", "");
+  } catch {
+    return randomBytes(24).toString("hex");
+  }
+}
+
+async function ensureUnsubscribeToken(params: {
+  sb: SupabaseClient;
+  userId: string;
+  email: string;
+  pref: any | null;
+}) {
+  const { sb, userId, email, pref } = params;
+
+  const existing = String(pref?.unsubscribe_token || "").trim();
+  if (existing) return existing;
+
+  const unsubscribeToken = makeUnsubscribeToken();
+
+  const { error } = await sb
+    .from("daily_schedule_email_preferences")
+    .upsert(
+      {
+        user_id: userId,
+        email,
+        enabled: pref?.enabled !== false,
+        priority_override: Number(pref?.priority_override || 0),
+        unsubscribe_token: unsubscribeToken,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" }
+    );
+
+  if (error) {
+    console.error("[daily-email] failed to upsert unsubscribe token", {
+      userId,
+      email,
+      error,
+    });
+    throw new Error("unsubscribe_token_upsert_failed");
+  }
+
+  return unsubscribeToken;
+}
+
 function getEmailSessionHostName(session: DailyScheduleSessionRow) {
   return (
     String(session.host_profile?.full_name || "").trim() ||
@@ -608,8 +657,10 @@ function buildDailyScheduleEmail(params: {
   scheduleDate: string;
   sessions: DailyScheduleSessionRow[];
   recipientName: string;
+  unsubscribeToken: string;
 }) {
   const appUrl = getAppUrl();
+  const unsubscribeUrl = `${appUrl}/email/unsubscribe?token=${encodeURIComponent(params.unsubscribeToken)}`;
   const dateLabel = formatDateForSubject(params.scheduleDate);
   const groups = groupEmailSessionsByHost(params.sessions);
 
@@ -639,6 +690,9 @@ Join or book here:
 ${appUrl}/sessions
 
 Tip: click "Book Session" — it helps increase attendance and attract more people to the session.
+
+Unsubscribe from daily schedule emails:
+${unsubscribeUrl}
 
 — MySession`;
 
@@ -690,7 +744,9 @@ Tip: click "Book Session" — it helps increase attendance and attract more peop
 
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:26px 0;" />
       <p style="font-size:12px;color:#777;margin:0;">
-        You’re receiving this because you joined MySession. For now, reply to this email if you don’t want daily schedule emails.
+        You’re receiving this because you joined MySession.
+        <br />
+        <a href="${unsubscribeUrl}" style="color:#777;text-decoration:underline;">Unsubscribe from daily schedule emails</a>
       </p>
     </div>
   `;
@@ -787,7 +843,7 @@ async function handleDailyScheduleEmailAction(params: {
   body: Body;
   action: EmailAdminAction;
 }) {
-  const { req, res, sb, accessToken, body, action } = params;
+  const { res, sb, accessToken, body, action } = params;
 
   await assertAppAdmin({ sb, accessToken });
 
@@ -886,6 +942,13 @@ async function handleDailyScheduleEmailAction(params: {
 
     if (scored.score < -1000) continue;
 
+    const unsubscribeToken = await ensureUnsubscribeToken({
+      sb,
+      userId,
+      email,
+      pref,
+    });
+
     candidates.push({
       userId,
       email,
@@ -894,6 +957,7 @@ async function handleDailyScheduleEmailAction(params: {
       reasons: scored.reasons,
       lastSentAt: pref?.last_sent_at || null,
       enabled: pref?.enabled !== false,
+      unsubscribeToken,
     });
   }
 
@@ -937,6 +1001,7 @@ async function handleDailyScheduleEmailAction(params: {
       scheduleDate,
       sessions,
       recipientName: recipient.name,
+      unsubscribeToken: recipient.unsubscribeToken,
     });
 
     try {
@@ -970,6 +1035,7 @@ async function handleDailyScheduleEmailAction(params: {
           user_id: recipient.userId,
           email: recipient.email,
           enabled: true,
+          unsubscribe_token: recipient.unsubscribeToken,
           last_sent_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         }, { onConflict: "user_id" });
@@ -1329,6 +1395,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (message === "admin_check_failed") {
       return res.status(500).json({
         error: "admin_check_failed",
+        timings: { authMs, resolvedTrackMs, livekitMs, totalMs },
+      });
+    }
+
+    if (message === "unsubscribe_token_upsert_failed") {
+      return res.status(500).json({
+        error: "unsubscribe_token_upsert_failed",
         timings: { authMs, resolvedTrackMs, livekitMs, totalMs },
       });
     }

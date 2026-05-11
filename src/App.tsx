@@ -15,6 +15,7 @@ import PublicProfilePage from "./pages/PublicProfilePage";
 import AuthCallback from "./pages/AuthCallback";
 import AdminPage from "./pages/AdminPage";
 import DailyScheduleEmailAdminPage from "./pages/DailyScheduleEmailAdminPage";
+import DailyScheduleUnsubscribePage from "./pages/DailyScheduleUnsubscribePage";
 
 import PricingPage from "./pages/PricingPage";
 import PricingSuccessPage from "./pages/PricingSuccessPage";
@@ -151,6 +152,7 @@ export default function App() {
             path="/admin/daily-schedule-email"
             element={<DailyScheduleEmailAdminPage />}
           />
+          <Route path="/email/unsubscribe" element={<DailyScheduleUnsubscribePage />} />
           <Route path="/focus-plan" element={<FocusPlanPage />} />
           <Route path="/focus-shield" element={<FocusShieldPage />} />
 
