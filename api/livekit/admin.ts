@@ -18,7 +18,9 @@ type LiveKitAdminAction =
 type EmailAdminAction =
   | "daily_schedule_preview"
   | "daily_schedule_send"
-  | "daily_schedule_all_users";
+  | "daily_schedule_all_users"
+  | "daily_schedule_saved_audience_get"
+  | "daily_schedule_saved_audience_set";
 
 type AdminAction = LiveKitAdminAction | EmailAdminAction;
 
@@ -36,6 +38,7 @@ type Body = {
   scheduleDate?: string;
   limit?: number;
   selectedUserIds?: string[];
+  audienceName?: string;
 
   // deprecated / ignored for auth decisions
   isHost?: boolean;
@@ -273,6 +276,8 @@ function normalizeEmailAction(raw: unknown): EmailAdminAction | "" {
   if (a === "daily_schedule_preview") return "daily_schedule_preview";
   if (a === "daily_schedule_send") return "daily_schedule_send";
   if (a === "daily_schedule_all_users") return "daily_schedule_all_users";
+  if (a === "daily_schedule_saved_audience_get") return "daily_schedule_saved_audience_get";
+  if (a === "daily_schedule_saved_audience_set") return "daily_schedule_saved_audience_set";
 
   return "";
 }
@@ -851,6 +856,168 @@ function scoreDailyEmailCandidate(params: {
 }
 
 
+
+function normalizeAudienceName(raw: any) {
+  const s = String(raw || "").trim();
+  return s || "default";
+}
+
+async function handleDailyScheduleSavedAudienceAction(params: {
+  res: VercelResponse;
+  sb: SupabaseClient;
+  accessToken: string;
+  body: Body;
+  action: EmailAdminAction;
+}) {
+  const { res, sb, accessToken, body, action } = params;
+
+  const admin = await assertAppAdmin({ sb, accessToken });
+  const audienceName = normalizeAudienceName(body.audienceName);
+
+  if (action === "daily_schedule_saved_audience_get") {
+    const { data, error } = await sb
+      .from("daily_schedule_email_audience_members")
+      .select(`
+        user_id,
+        email,
+        enabled,
+        created_at,
+        profiles:profiles!daily_schedule_email_audience_members_user_id_fkey(
+          id,
+          full_name,
+          avatar_url
+        )
+      `)
+      .eq("audience_name", audienceName)
+      .eq("enabled", true)
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      return res.status(500).json({
+        error: "saved_audience_load_failed",
+        details: error,
+      });
+    }
+
+    const members = (data || []).map((row: any) => {
+      const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+
+      return {
+        userId: String(row.user_id || ""),
+        email: String(row.email || ""),
+        name: String(profile?.full_name || row.email || "User"),
+        avatarUrl: String(profile?.avatar_url || "").trim() || null,
+        enabled: row.enabled !== false,
+        createdAt: row.created_at || null,
+      };
+    });
+
+    return res.status(200).json({
+      ok: true,
+      audienceName,
+      members,
+      selectedUserIds: members.map((m: any) => m.userId).filter(Boolean),
+      count: members.length,
+    });
+  }
+
+  if (action === "daily_schedule_saved_audience_set") {
+    const selectedUserIds = Array.isArray(body.selectedUserIds)
+      ? Array.from(
+        new Set(
+          body.selectedUserIds
+            .map((x) => String(x || "").trim())
+            .filter(Boolean)
+        )
+      )
+      : [];
+
+    if (selectedUserIds.length > DAILY_EMAIL_MAX_FREE_LIMIT) {
+      return res.status(400).json({
+        error: "saved_audience_too_large",
+        limit: DAILY_EMAIL_MAX_FREE_LIMIT,
+        count: selectedUserIds.length,
+      });
+    }
+
+    const { data: usersData, error: usersErr } = selectedUserIds.length
+      ? await (sb.auth.admin as any).listUsers({
+        page: 1,
+        perPage: 1000,
+      })
+      : { data: { users: [] }, error: null };
+
+    if (usersErr) {
+      return res.status(500).json({
+        error: "auth_users_load_failed",
+        details: usersErr,
+      });
+    }
+
+    const authUsers = new Map<string, any>();
+    for (const u of usersData?.users || []) {
+      authUsers.set(String(u.id), u);
+    }
+
+    const rows = selectedUserIds
+      .map((userId) => {
+        const u = authUsers.get(userId);
+        const email = String(u?.email || "").trim().toLowerCase();
+
+        if (!email) return null;
+
+        return {
+          audience_name: audienceName,
+          user_id: userId,
+          email,
+          enabled: true,
+          created_by: admin.userId,
+          updated_at: new Date().toISOString(),
+        };
+      })
+      .filter(Boolean);
+
+    const { error: disableErr } = await sb
+      .from("daily_schedule_email_audience_members")
+      .update({
+        enabled: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("audience_name", audienceName);
+
+    if (disableErr) {
+      return res.status(500).json({
+        error: "saved_audience_clear_failed",
+        details: disableErr,
+      });
+    }
+
+    if (rows.length > 0) {
+      const { error: upsertErr } = await sb
+        .from("daily_schedule_email_audience_members")
+        .upsert(rows as any[], {
+          onConflict: "audience_name,user_id",
+        });
+
+      if (upsertErr) {
+        return res.status(500).json({
+          error: "saved_audience_save_failed",
+          details: upsertErr,
+        });
+      }
+    }
+
+    return res.status(200).json({
+      ok: true,
+      audienceName,
+      savedCount: rows.length,
+      selectedUserIds,
+    });
+  }
+
+  return res.status(400).json({ error: "unsupported_saved_audience_action" });
+}
+
 async function handleDailyScheduleAllUsersAction(params: {
   res: VercelResponse;
   sb: SupabaseClient;
@@ -1242,6 +1409,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const sb = getSupabaseAdminClient(supabaseUrl, serviceKey);
+
+    if (
+      rawEmailAction === "daily_schedule_saved_audience_get" ||
+      rawEmailAction === "daily_schedule_saved_audience_set"
+    ) {
+      return await handleDailyScheduleSavedAudienceAction({
+        res,
+        sb,
+        accessToken,
+        body,
+        action: rawEmailAction,
+      });
+    }
 
     if (rawEmailAction === "daily_schedule_all_users") {
       return await handleDailyScheduleAllUsersAction({

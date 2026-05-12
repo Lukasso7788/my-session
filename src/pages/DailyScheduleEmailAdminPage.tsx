@@ -107,6 +107,9 @@ export default function DailyScheduleEmailAdminPage() {
   const [userSearch, setUserSearch] = useState("");
   const [columns, setColumns] = useState(4);
   const [showOnly, setShowOnly] = useState<"all" | "enabled" | "selected" | "unconfirmed">("all");
+  const [audienceSaving, setAudienceSaving] = useState(false);
+  const [audienceLoading, setAudienceLoading] = useState(false);
+  const [audienceMessage, setAudienceMessage] = useState("");
 
   const sessions = useMemo<PreviewSession[]>(() => preview?.sessions || [], [preview]);
   const selected = useMemo<PreviewRecipient[]>(() => preview?.selected || [], [preview]);
@@ -145,7 +148,7 @@ export default function DailyScheduleEmailAdminPage() {
       : `Send auto top ${limit}`;
 
   const callEndpoint = async (
-    action: "daily_schedule_preview" | "daily_schedule_send" | "daily_schedule_all_users",
+    action: "daily_schedule_preview" | "daily_schedule_send" | "daily_schedule_all_users" | "daily_schedule_saved_audience_get" | "daily_schedule_saved_audience_set",
     options?: {
       selectedUserIds?: string[];
       limitOverride?: number;
@@ -176,6 +179,7 @@ export default function DailyScheduleEmailAdminPage() {
         scheduleDate,
         limit: finalLimit,
         selectedUserIds: ids,
+        audienceName: "default",
       }),
     });
 
@@ -359,6 +363,77 @@ export default function DailyScheduleEmailAdminPage() {
     }
   };
 
+  const saveSelectedAsDailyAudience = async () => {
+    const ids = normalizeSelectedIds(selectedRecipientIds);
+
+    if (ids.length === 0) {
+      setError("Select at least one recipient before saving the daily audience.");
+      return;
+    }
+
+    if (ids.length > 100) {
+      setError("Free Resend safety: saved daily audience can be max 100 people.");
+      return;
+    }
+
+    const ok = window.confirm(
+      `Save ${ids.length} selected people as the repeating daily audience?`
+    );
+
+    if (!ok) return;
+
+    try {
+      setAudienceSaving(true);
+      setError("");
+      setAudienceMessage("");
+
+      const json = await callEndpoint("daily_schedule_saved_audience_set", {
+        selectedUserIds: ids,
+        limitOverride: ids.length,
+      });
+
+      if (json?.ok) {
+        setAudienceMessage(`Saved daily audience: ${json.savedCount || ids.length} people.`);
+      }
+    } catch (e: any) {
+      console.error("[daily-schedule-email] save audience failed:", e);
+      setError(String(e?.message || e || "Failed to save daily audience."));
+    } finally {
+      setAudienceSaving(false);
+    }
+  };
+
+  const loadSavedDailyAudience = async () => {
+    try {
+      setAudienceLoading(true);
+      setError("");
+      setAudienceMessage("");
+
+      const json = await callEndpoint("daily_schedule_saved_audience_get", {
+        limitOverride: 100,
+      });
+
+      const ids = normalizeSelectedIds(json?.selectedUserIds || []);
+
+      setSelectionMode("manual");
+      setSelectedRecipientIds(ids);
+      setAudienceMessage(`Loaded saved daily audience: ${ids.length} people.`);
+
+      if (ids.length > 0) {
+        const previewJson = await callEndpoint("daily_schedule_preview", {
+          selectedUserIds: ids,
+          limitOverride: ids.length,
+        });
+        if (previewJson) setPreview(previewJson);
+      }
+    } catch (e: any) {
+      console.error("[daily-schedule-email] load audience failed:", e);
+      setError(String(e?.message || e || "Failed to load saved daily audience."));
+    } finally {
+      setAudienceLoading(false);
+    }
+  };
+
   const sendNow = async () => {
     const ids =
       selectionMode === "manual" && selectedRecipientIds.length > 0
@@ -499,6 +574,14 @@ export default function DailyScheduleEmailAdminPage() {
               Clear selection
             </button>
 
+            <button type="button" disabled={audienceSaving || selectedRecipientIds.length === 0 || selectedRecipientIds.length > 100} onClick={() => void saveSelectedAsDailyAudience()} className="rounded-full border border-blue-600 bg-blue-50 px-4 py-2 text-[13px] font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-60">
+              {audienceSaving ? "Saving audience..." : "Save as daily audience"}
+            </button>
+
+            <button type="button" disabled={audienceLoading} onClick={() => void loadSavedDailyAudience()} className="rounded-full border border-blue-600 bg-white px-4 py-2 text-[13px] font-semibold text-blue-800 hover:bg-blue-50 disabled:opacity-60">
+              {audienceLoading ? "Loading audience..." : "Load saved audience"}
+            </button>
+
             <button type="button" disabled={loading || selectedRecipientIds.length === 0} onClick={() => void loadManualPreview()} className="rounded-full border border-black/10 bg-white px-4 py-2 text-[13px] font-semibold hover:bg-black/[0.04] disabled:opacity-60">
               Preview selected only
             </button>
@@ -529,6 +612,12 @@ export default function DailyScheduleEmailAdminPage() {
           {lastSendResult ? (
             <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-800">
               Sent: {lastSendResult.sentCount || 0}. Failed: {lastSendResult.failedCount || 0}.
+            </div>
+          ) : null}
+
+          {audienceMessage ? (
+            <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-[13px] text-blue-800">
+              {audienceMessage}
             </div>
           ) : null}
         </section>
