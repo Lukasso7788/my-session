@@ -17,7 +17,8 @@ type LiveKitAdminAction =
 
 type EmailAdminAction =
   | "daily_schedule_preview"
-  | "daily_schedule_send";
+  | "daily_schedule_send"
+  | "daily_schedule_all_users";
 
 type AdminAction = LiveKitAdminAction | EmailAdminAction;
 
@@ -92,6 +93,19 @@ type RecipientCandidate = {
   reasons: string[];
   lastSentAt: string | null;
   enabled: boolean;
+  unsubscribeToken: string;
+};
+
+type AdminEmailUser = {
+  userId: string;
+  email: string;
+  name: string;
+  avatarUrl: string | null;
+  createdAt: string | null;
+  emailConfirmed: boolean;
+  enabled: boolean;
+  lastSentAt: string | null;
+  priorityOverride: number;
   unsubscribeToken: string;
 };
 
@@ -258,6 +272,7 @@ function normalizeEmailAction(raw: unknown): EmailAdminAction | "" {
 
   if (a === "daily_schedule_preview") return "daily_schedule_preview";
   if (a === "daily_schedule_send") return "daily_schedule_send";
+  if (a === "daily_schedule_all_users") return "daily_schedule_all_users";
 
   return "";
 }
@@ -835,6 +850,80 @@ function scoreDailyEmailCandidate(params: {
   return { score, reasons };
 }
 
+
+async function handleDailyScheduleAllUsersAction(params: {
+  res: VercelResponse;
+  sb: SupabaseClient;
+  accessToken: string;
+}) {
+  const { res, sb, accessToken } = params;
+
+  await assertAppAdmin({ sb, accessToken });
+
+  const users = await listAllAuthUsers(sb);
+  const userIds = users.map((u) => String(u.id)).filter(Boolean);
+
+  const { data: profilesData } = userIds.length
+    ? await sb
+      .from("profiles")
+      .select("id, full_name, avatar_url, email, created_at")
+      .in("id", userIds)
+    : { data: [] as any[] };
+
+  const profilesByUser = new Map<string, any>();
+  for (const p of profilesData || []) profilesByUser.set(String(p.id), p);
+
+  const { data: prefsData } = await sb
+    .from("daily_schedule_email_preferences")
+    .select("*");
+
+  const prefsByUser = new Map<string, any>();
+  for (const p of prefsData || []) prefsByUser.set(String(p.user_id), p);
+
+  const rows: AdminEmailUser[] = [];
+
+  for (const user of users) {
+    const userId = String(user.id || "").trim();
+    const email = String(user.email || "").trim().toLowerCase();
+    if (!userId || !email) continue;
+
+    const profile = profilesByUser.get(userId) || null;
+    const pref = prefsByUser.get(userId) || null;
+
+    const unsubscribeToken = await ensureUnsubscribeToken({
+      sb,
+      userId,
+      email,
+      pref,
+    });
+
+    rows.push({
+      userId,
+      email,
+      name: String(profile?.full_name || user.user_metadata?.full_name || email.split("@")[0] || "User"),
+      avatarUrl: String(profile?.avatar_url || user.user_metadata?.avatar_url || "").trim() || null,
+      createdAt: String(user.created_at || profile?.created_at || "").trim() || null,
+      emailConfirmed: Boolean(user.email_confirmed_at || user.confirmed_at),
+      enabled: pref?.enabled !== false,
+      lastSentAt: pref?.last_sent_at || null,
+      priorityOverride: Number(pref?.priority_override || 0),
+      unsubscribeToken,
+    });
+  }
+
+  rows.sort((a, b) => {
+    const an = String(a.name || a.email).toLowerCase();
+    const bn = String(b.name || b.email).toLowerCase();
+    return an.localeCompare(bn);
+  });
+
+  return res.status(200).json({
+    ok: true,
+    users: rows,
+    count: rows.length,
+  });
+}
+
 async function handleDailyScheduleEmailAction(params: {
   req: VercelRequest;
   res: VercelResponse;
@@ -1153,6 +1242,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const sb = getSupabaseAdminClient(supabaseUrl, serviceKey);
+
+    if (rawEmailAction === "daily_schedule_all_users") {
+      return await handleDailyScheduleAllUsersAction({
+        res,
+        sb,
+        accessToken,
+      });
+    }
 
     if (rawEmailAction) {
       return await handleDailyScheduleEmailAction({
