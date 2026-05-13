@@ -1,0 +1,8 @@
+name = "mysession-discord-notifications"
+main = "src/index.ts"
+compatibility_date = "2026-05-13"
+
+[triggers]
+crons = [
+  "*/5 * * * *"
+]

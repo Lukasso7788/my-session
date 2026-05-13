@@ -1,0 +1,10 @@
+{
+  "name": "mysession-discord-notifications-worker",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "typescript": "latest",
+    "wrangler": "latest"
+  }
+}
