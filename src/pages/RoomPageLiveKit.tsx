@@ -1872,6 +1872,9 @@ export function RoomPageLiveKit() {
   // prejoin
   const [prejoinOpen, setPrejoinOpen] = useState(false);
   const [joinRequested, setJoinRequested] = useState(false);
+  useEffect(() => {
+    joinRequestedRef.current = joinRequested;
+  }, [joinRequested]);
   const prejoinBootstrappedSessionIdRef = useRef<string>("");
   const joinFlowStartedRef = useRef(false);
   const connectingFromPrejoinRef = useRef(false);
@@ -3433,6 +3436,14 @@ export function RoomPageLiveKit() {
   const [blurStrength, setBlurStrength] = useState<number>(12);
   const firefoxSafeFx = useMemo(() => isFirefoxLike(), []);
   const [connected, setConnected] = useState(false);
+  const [mobileMediaRestoreOpen, setMobileMediaRestoreOpen] = useState(false);
+  const [mobileMediaRestoreBusy, setMobileMediaRestoreBusy] = useState(false);
+  const [frozenLocalVideoFrame, setFrozenLocalVideoFrame] = useState<string>("");
+
+  useEffect(() => {
+    connectedRef.current = connected;
+  }, [connected]);
+
   useEffect(() => {
     if (!connected) return;
 
@@ -4054,6 +4065,14 @@ export function RoomPageLiveKit() {
   const leaveOnceRef = useRef(false);
   const leavePromiseRef = useRef<Promise<void> | null>(null);
 
+  // Mobile browser/app-switch recovery.
+  // Switching apps / backgrounding a mobile browser tab is NOT the same as clicking Leave.
+  const explicitLeaveRequestedRef = useRef(false);
+  const pageHiddenAtRef = useRef<number | null>(null);
+  const returningFromBackgroundRef = useRef(false);
+  const connectedRef = useRef(false);
+  const joinRequestedRef = useRef(false);
+
   const stopTabPresenceHeartbeat = () => {
     if (tabPresenceHeartbeatRef.current) {
       window.clearInterval(tabPresenceHeartbeatRef.current);
@@ -4093,22 +4112,50 @@ export function RoomPageLiveKit() {
   };
 
   useEffect(() => {
-    const onBeforeUnload = () => releaseTabPresence();
-    const onPageHide = () => releaseTabPresence();
+    const markMaybeBackgrounded = () => {
+      pageHiddenAtRef.current = Date.now();
+      returningFromBackgroundRef.current = true;
+
+      if ((connectedRef.current || joinRequestedRef.current) && (isMobileQuery || isTabletQuery)) {
+        setMobileMediaRestoreOpen(true);
+      }
+    };
+
+    const onBeforeUnload = () => {
+      explicitLeaveRequestedRef.current = true;
+      releaseTabPresence();
+    };
+
+    const onPageHide = () => {
+      if (explicitLeaveRequestedRef.current) {
+        releaseTabPresence();
+        return;
+      }
+
+      markMaybeBackgrounded();
+    };
+
     window.addEventListener("beforeunload", onBeforeUnload);
     window.addEventListener("pagehide", onPageHide);
     return () => {
       window.removeEventListener("beforeunload", onBeforeUnload);
       window.removeEventListener("pagehide", onPageHide);
     };
-  }, []);
+  }, [isMobileQuery, isTabletQuery]);
 
   useEffect(() => {
     const onBeforeUnload = () => {
+      explicitLeaveRequestedRef.current = true;
       void leaveAttendanceOnce({ keepalive: true });
     };
 
     const onPageHide = () => {
+      // App switching on mobile can look like pagehide. Keep attendance alive unless this was explicit leave/unload.
+      if (!explicitLeaveRequestedRef.current) {
+        void attendanceHeartbeat();
+        return;
+      }
+
       void leaveAttendanceOnce({ keepalive: true });
     };
 
@@ -4557,8 +4604,125 @@ export function RoomPageLiveKit() {
     }
   }
 
+  const captureLocalVideoFrame = async (): Promise<string> => {
+    try {
+      const track = getSettingsPreviewTrack();
+      if (!track) return "";
+
+      const video = document.createElement("video");
+      video.muted = true;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.style.position = "fixed";
+      video.style.left = "-99999px";
+      video.style.top = "-99999px";
+      video.style.width = "1px";
+      video.style.height = "1px";
+      video.style.opacity = "0";
+      video.setAttribute("playsinline", "true");
+      video.setAttribute("muted", "true");
+
+      document.body.appendChild(video);
+
+      try {
+        const attached = (track as any)?.attach?.(video) || video;
+        const targetVideo = attached instanceof HTMLVideoElement ? attached : video;
+
+        try {
+          await targetVideo.play();
+        } catch { }
+
+        if (!targetVideo.videoWidth || !targetVideo.videoHeight) {
+          await delay(120);
+        }
+
+        const width = targetVideo.videoWidth || 640;
+        const height = targetVideo.videoHeight || 360;
+        if (!width || !height) return "";
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return "";
+
+        ctx.drawImage(targetVideo, 0, 0, width, height);
+        return canvas.toDataURL("image/jpeg", 0.78);
+      } finally {
+        try {
+          (track as any)?.detach?.(video);
+        } catch { }
+
+        try {
+          video.remove();
+        } catch { }
+      }
+    } catch (e) {
+      console.warn("captureLocalVideoFrame failed:", e);
+      return "";
+    }
+  };
+
   const [tiles, setTiles] = useState<TileModel[]>([]);
   const [screenShareTiles, setScreenShareTiles] = useState<TileModel[]>([]);
+
+  useEffect(() => {
+    const shouldShowMobileRestore = () => {
+      return (isMobileQuery || isTabletQuery) && (connectedRef.current || joinRequestedRef.current);
+    };
+
+    const markHidden = () => {
+      pageHiddenAtRef.current = Date.now();
+      returningFromBackgroundRef.current = true;
+
+      if (!shouldShowMobileRestore()) return;
+
+      setMobileMediaRestoreOpen(true);
+
+      void captureLocalVideoFrame().then((frame) => {
+        if (frame) setFrozenLocalVideoFrame(frame);
+      });
+
+      try {
+        void attendanceHeartbeat();
+      } catch { }
+    };
+
+    const markVisible = () => {
+      if (!pageHiddenAtRef.current && !returningFromBackgroundRef.current) return;
+
+      if (shouldShowMobileRestore()) {
+        setMobileMediaRestoreOpen(true);
+        setPrejoinOpen(false);
+        setJoinRequested(true);
+        scheduleRebuildTiles();
+        window.setTimeout(() => scheduleRebuildTiles(), 120);
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        markHidden();
+        return;
+      }
+
+      if (document.visibilityState === "visible") {
+        markVisible();
+      }
+    };
+
+    const onPageShow = () => markVisible();
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pageshow", onPageShow);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [isMobileQuery, isTabletQuery]);
+
   const [adminBusyKey, setAdminBusyKey] = useState<string>("");
 
   const liveHostChatOptions = useMemo(() => {
@@ -5310,13 +5474,25 @@ export function RoomPageLiveKit() {
       });
 
       r.on(RoomEvent.Disconnected, () => {
-        void trackWeeklyUsageOnLeave();
+        const likelyBackgroundDisconnect =
+          !explicitLeaveRequestedRef.current &&
+          !kickedBySignalRef.current &&
+          (returningFromBackgroundRef.current || !!pageHiddenAtRef.current || document.visibilityState !== "visible");
 
         setConnected(false);
         setTiles([]);
         setScreenShareTiles([]);
         setOpenTileAdminMenuId(null);
 
+        if (likelyBackgroundDisconnect) {
+          setMobileMediaRestoreOpen(true);
+          setPrejoinOpen(false);
+          setJoinRequested(true);
+          setMediaWarning("Mobile browser paused the room while you were using another app. Tap Restore audio/video to continue.");
+          return;
+        }
+
+        void trackWeeklyUsageOnLeave();
         void leaveAttendanceOnce({ keepalive: false });
 
         if (!kickedBySignalRef.current && !kickRedirecting) {
@@ -5926,6 +6102,54 @@ export function RoomPageLiveKit() {
     closePictureInPicture().catch(() => { });
   }, [connected, pipOpen]);
 
+  const restoreMobileMediaFromBackground = async () => {
+    if (mobileMediaRestoreBusy) return;
+
+    try {
+      setMobileMediaRestoreBusy(true);
+      setClientError("");
+      setTokenError("");
+      setMediaWarning("");
+
+      returningFromBackgroundRef.current = false;
+      pageHiddenAtRef.current = null;
+
+      await loadBrowserDevices({ preserveSelection: true }).catch(() => { });
+      await attendanceHeartbeat().catch(() => { });
+
+      if (roomRef.current && connectedRef.current) {
+        await ensureRoomAudioPlaybackUnlocked("mobile-restore").catch(() => { });
+        scheduleRebuildTiles();
+        window.setTimeout(() => scheduleRebuildTiles(), 120);
+        window.setTimeout(() => scheduleRebuildTiles(), 360);
+        setMobileMediaRestoreOpen(false);
+        return;
+      }
+
+      setPrejoinOpen(false);
+      setJoinRequested(true);
+
+      if (lkToken && lkServerUrl) {
+        await connectRoom().catch((e) => {
+          console.warn("mobile restore reconnect failed:", e);
+          setClientError(String((e as any)?.message || e || "restore_reconnect_failed"));
+        });
+      } else {
+        await requestToken().catch((e) => {
+          console.warn("mobile restore token refresh failed:", e);
+          setTokenError(String((e as any)?.message || e || "restore_token_failed"));
+        });
+      }
+
+      await ensureRoomAudioPlaybackUnlocked("mobile-restore-after-reconnect").catch(() => { });
+      scheduleRebuildTiles();
+      window.setTimeout(() => scheduleRebuildTiles(), 160);
+      setMobileMediaRestoreOpen(false);
+    } finally {
+      setMobileMediaRestoreBusy(false);
+    }
+  };
+
   const toggleScreenShare = async () => {
     const r = roomRef.current;
     if (!r) return;
@@ -5940,6 +6164,8 @@ export function RoomPageLiveKit() {
   };
 
   const leave = async () => {
+    explicitLeaveRequestedRef.current = true;
+
     const startedAt = sessionJoinStartedAtRef.current;
     const minutesSpent =
       startedAt && Number.isFinite(startedAt)
@@ -8036,6 +8262,79 @@ export function RoomPageLiveKit() {
                 }`}
             >
               {videoContent}
+
+              {mobileMediaRestoreOpen && (
+                <div className="absolute inset-0 z-[55] flex items-center justify-center p-4">
+                  <div className="absolute inset-0 bg-black/45 backdrop-blur-[2px]" />
+
+                  {frozenLocalVideoFrame ? (
+                    <img
+                      src={frozenLocalVideoFrame}
+                      alt="Frozen local video preview"
+                      className="absolute inset-0 h-full w-full object-cover opacity-70 blur-[1px] scale-[1.02]"
+                      draggable={false}
+                    />
+                  ) : null}
+
+                  <div
+                    className={[
+                      "relative w-full max-w-[420px] rounded-[28px] border px-5 py-5 text-center shadow-2xl",
+                      isLight
+                        ? "border-black/10 bg-white/95 text-black"
+                        : "border-white/10 bg-[#071427]/95 text-white",
+                    ].join(" ")}
+                  >
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/15 text-[24px]">
+                      🟢
+                    </div>
+
+                    <div className="mt-3 text-[20px] font-bold leading-tight">
+                      You are still in the room
+                    </div>
+
+                    <div className={`mt-2 text-[13px] leading-5 ${isLight ? "text-black/60" : "text-white/65"}`}>
+                      Mobile browsers can pause camera, microphone, or room audio when you switch apps. Your room is still here.
+                    </div>
+
+                    {frozenLocalVideoFrame ? (
+                      <div className={`mt-3 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        Showing your last video frame while media restores.
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      disabled={mobileMediaRestoreBusy}
+                      onClick={() => void restoreMobileMediaFromBackground()}
+                      className={[
+                        "mt-4 h-11 w-full rounded-2xl text-[14px] font-semibold transition disabled:opacity-60",
+                        isLight
+                          ? "bg-black text-white hover:bg-black/85"
+                          : "bg-white text-black hover:bg-white/90",
+                      ].join(" ")}
+                    >
+                      {mobileMediaRestoreBusy ? "Restoring…" : "Tap to restore audio/video"}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={mobileMediaRestoreBusy}
+                      onClick={() => {
+                        setMobileMediaRestoreOpen(false);
+                        returningFromBackgroundRef.current = false;
+                        pageHiddenAtRef.current = null;
+                        scheduleRebuildTiles();
+                      }}
+                      className={`mt-2 h-9 w-full rounded-2xl text-[12px] font-semibold transition disabled:opacity-60 ${isLight
+                        ? "border border-black/10 bg-black/[0.03] text-black/65 hover:bg-black/[0.06]"
+                        : "border border-white/10 bg-white/[0.06] text-white/70 hover:bg-white/[0.1]"
+                        }`}
+                    >
+                      I can see/hear everything
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {lastErr && (
                 <div className="absolute top-4 left-4 text-xs bg-red-600 text-white px-3 py-2 rounded-lg shadow z-30 max-w-[80%] break-words">
