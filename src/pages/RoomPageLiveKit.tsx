@@ -1811,7 +1811,7 @@ export function RoomPageLiveKit() {
     portalDocument: Document | null;
   } | null>(null);
   const [openTileAdminMenuId, setOpenTileAdminMenuId] = useState<string | null>(null);
-  const [screenSharePinned, setScreenSharePinned] = useState(true);
+  const [screenSharePinned, setScreenSharePinned] = useState(false);
   const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
   const [timelineDraftBlocks, setTimelineDraftBlocks] = useState<RoomTimelineBlock[]>([]);
   const [timelineSaving, setTimelineSaving] = useState(false);
@@ -7125,7 +7125,9 @@ export function RoomPageLiveKit() {
 
   useEffect(() => {
     if (!activeScreenShareTile) {
-      setScreenSharePinned(true);
+      // Keep the next screen share unpinned by default.
+      // Screen share should behave like a normal video tile unless someone explicitly pins it.
+      setScreenSharePinned(false);
     }
   }, [activeScreenShareTile]);
 
