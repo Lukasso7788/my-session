@@ -1020,14 +1020,40 @@ function getChatRowModeText(row: ChatUnreadMessageRow) {
 }
 
 function getChatRowRecipientId(row: ChatUnreadMessageRow) {
+  // IMPORTANT:
+  // Do NOT fall back to host_user_id here.
+  // host_user_id is room/session metadata, not a DM recipient.
+  // Falling back to host_user_id makes unrelated DMs look "addressed" to normal users.
   return normalizeChatUserId(
     row.recipient_user_id ??
     row.receiver_user_id ??
     row.to_user_id ??
     row.target_user_id ??
+    row.dm_peer_user_id ??
     row.direct_peer_user_id ??
-    row.peer_user_id ??
-    row.host_user_id
+    row.peer_user_id
+  );
+}
+
+function chatRowHasDirectMarker(row: ChatUnreadMessageRow) {
+  const mode = getChatRowModeText(row);
+
+  if (
+    mode.includes("direct") ||
+    mode.includes("dm") ||
+    mode.includes("private")
+  ) {
+    return true;
+  }
+
+  return !!(
+    row.dm_peer_user_id ||
+    row.direct_peer_user_id ||
+    row.peer_user_id ||
+    row.to_user_id ||
+    row.recipient_user_id ||
+    row.receiver_user_id ||
+    row.target_user_id
   );
 }
 
@@ -1038,52 +1064,50 @@ function getChatRowDirectPeerId(row: ChatUnreadMessageRow, myUserId: string, hos
   const recipient = getChatRowRecipientId(row);
 
   const explicitPeer = normalizeChatUserId(
+    row.dm_peer_user_id ??
     row.direct_peer_user_id ??
     row.peer_user_id ??
-    row.dm_peer_user_id ??
     row.other_user_id
   );
 
-  if (explicitPeer && explicitPeer !== me) return explicitPeer;
-  if (recipient && recipient !== me) return recipient;
-  if (sender && sender !== me) return sender;
-  if (host && host !== me) return host;
+  if (!me) return "";
+
+  // Fallback for future schemas where there is a recipient, but host is not loaded yet.
+  if (!host) {
+    if (recipient === me && sender && sender !== me) return sender;
+    if (sender === me && recipient && recipient !== me) return recipient;
+    return "";
+  }
+
+  // Host view: count only DMs where the host is one side of the conversation.
+  // Peer = the non-host participant.
+  if (me === host) {
+    if (sender === host && recipient && recipient !== host) return recipient;
+    if (recipient === host && sender && sender !== host) return sender;
+
+    if (sender === host && explicitPeer && explicitPeer !== host) return explicitPeer;
+    if (recipient === host && explicitPeer && explicitPeer !== host) return explicitPeer;
+
+    return "";
+  }
+
+  // Normal participant view:
+  // Count ONLY direct messages between this user and the session host.
+  // Do not count other users' DMs with the host.
+  if (sender === host && recipient === me) return host;
+  if (sender === me && recipient === host) return host;
+
+  if (sender === host && explicitPeer === me) return host;
+  if (sender === me && explicitPeer === host) return host;
+
   return "";
 }
 
 function isChatRowDirectMessage(row: ChatUnreadMessageRow, myUserId: string, hostUserId: string) {
-  const mode = getChatRowModeText(row);
-  if (
-    mode.includes("direct") ||
-    mode.includes("dm") ||
-    mode.includes("private") ||
-    mode.includes("host")
-  ) {
-    return true;
-  }
-
-  const me = normalizeChatUserId(myUserId);
-  const host = normalizeChatUserId(hostUserId);
-  const sender = getChatRowSenderId(row);
-  const recipient = getChatRowRecipientId(row);
-
-  if (recipient && (recipient === me || sender === me || recipient === host || sender === host)) {
-    return true;
-  }
-
-  if (
-    row.direct_peer_user_id ||
-    row.peer_user_id ||
-    row.dm_peer_user_id ||
-    row.to_user_id ||
-    row.recipient_user_id ||
-    row.receiver_user_id ||
-    row.target_user_id
-  ) {
-    return true;
-  }
-
-  return false;
+  // This answers only: "is this row direct-like?"
+  // Whether it is addressed to the current user is decided by getChatRowDirectPeerId().
+  // That way unrelated DMs are skipped, not accidentally counted as general chat.
+  return chatRowHasDirectMarker(row);
 }
 
 function clampUnreadCount(n: number) {
@@ -1920,6 +1944,7 @@ export function RoomPageLiveKit() {
   } | null>(null);
   const [openTileAdminMenuId, setOpenTileAdminMenuId] = useState<string | null>(null);
   const [screenSharePinned, setScreenSharePinned] = useState(false);
+  const [pinnedScreenShareTileId, setPinnedScreenShareTileId] = useState<string | null>(null);
   const [timelineEditorOpen, setTimelineEditorOpen] = useState(false);
   const [timelineDraftBlocks, setTimelineDraftBlocks] = useState<RoomTimelineBlock[]>([]);
   const [timelineSaving, setTimelineSaving] = useState(false);
@@ -7373,26 +7398,53 @@ export function RoomPageLiveKit() {
     );
   };
 
+  const screenShareTilesForRender = useMemo(() => {
+    return screenShareTiles.filter((t) => !hiddenTileIds[t.id]);
+  }, [screenShareTiles, hiddenTileIds]);
+
+  const allTilesForRender = useMemo(() => {
+    // Multiple participants can share screens at the same time.
+    // Treat every screen share as its own normal tile by default.
+    // Camera tiles are still managed by tilesForRender; screen-share tiles are separate.
+    const screenIds = new Set(screenShareTilesForRender.map((t) => t.id));
+    const cameraTiles = tilesForRender.filter((t) => !screenIds.has(t.id));
+    return [...screenShareTilesForRender, ...cameraTiles];
+  }, [screenShareTilesForRender, tilesForRender]);
+
   const activeScreenShareTile = useMemo(() => {
-    return screenShareTiles.length ? screenShareTiles[0] : null;
-  }, [screenShareTiles]);
+    if (!screenShareTilesForRender.length) return null;
+
+    if (pinnedScreenShareTileId) {
+      const selected = screenShareTilesForRender.find((t) => t.id === pinnedScreenShareTileId);
+      if (selected) return selected;
+    }
+
+    return screenShareTilesForRender[0] || null;
+  }, [screenShareTilesForRender, pinnedScreenShareTileId]);
 
   useEffect(() => {
-    if (!activeScreenShareTile) {
+    if (!screenShareTilesForRender.length) {
       // Keep the next screen share unpinned by default.
       // Screen share should behave like a normal video tile unless someone explicitly pins it.
       setScreenSharePinned(false);
+      setPinnedScreenShareTileId(null);
+      return;
     }
-  }, [activeScreenShareTile]);
+
+    if (pinnedScreenShareTileId && !screenShareTilesForRender.some((t) => t.id === pinnedScreenShareTileId)) {
+      setPinnedScreenShareTileId(null);
+      setScreenSharePinned(false);
+    }
+  }, [screenShareTilesForRender, pinnedScreenShareTileId]);
 
   const layoutTilesForRender = useMemo(() => {
-    if (screenSharePinned) return tilesForRender;
+    if (screenSharePinned && activeScreenShareTile) {
+      const withoutDup = allTilesForRender.filter((t) => t.id !== activeScreenShareTile.id);
+      return [activeScreenShareTile, ...withoutDup];
+    }
 
-    if (!activeScreenShareTile) return tilesForRender;
-
-    const withoutDup = tilesForRender.filter((t) => t.id !== activeScreenShareTile.id);
-    return [activeScreenShareTile, ...withoutDup];
-  }, [tilesForRender, activeScreenShareTile, screenSharePinned]);
+    return allTilesForRender;
+  }, [allTilesForRender, activeScreenShareTile, screenSharePinned]);
 
   const pinnedParticipantTile = useMemo(() => {
     if (!pinnedTileId) return null;
@@ -7413,7 +7465,7 @@ export function RoomPageLiveKit() {
 
   const sidebarTiles = useMemo(() => {
     if (activeScreenShareTile && screenSharePinned) {
-      return tilesForRender;
+      return layoutTilesForRender.filter((t) => t.id !== activeScreenShareTile.id);
     }
 
     if (pinnedParticipantTile) {
@@ -7421,7 +7473,7 @@ export function RoomPageLiveKit() {
     }
 
     return layoutTilesForRender;
-  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, tilesForRender, layoutTilesForRender]);
+  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, layoutTilesForRender]);
 
   // Layout
   const tileCount = layoutTilesForRender.length;
@@ -7609,18 +7661,20 @@ export function RoomPageLiveKit() {
   }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, layoutTilesForRender]);
 
   const pipStripTiles = useMemo(() => {
-    if (activeScreenShareTile && screenSharePinned) return tilesForRender.slice(0, 4);
+    if (activeScreenShareTile && screenSharePinned) {
+      return layoutTilesForRender.filter((t) => t.id !== activeScreenShareTile.id).slice(0, 4);
+    }
 
     if (pinnedParticipantTile) {
       return layoutTilesForRender.filter((t) => t.id !== pinnedParticipantTile.id).slice(0, 4);
     }
 
     return layoutTilesForRender.slice(1, 5);
-  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, tilesForRender, layoutTilesForRender]);
+  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, layoutTilesForRender]);
 
   const pipGalleryTiles = useMemo(() => {
     if (activeScreenShareTile && screenSharePinned) {
-      const withoutDup = tilesForRender.filter((t) => t.id !== activeScreenShareTile.id);
+      const withoutDup = layoutTilesForRender.filter((t) => t.id !== activeScreenShareTile.id);
       return [activeScreenShareTile, ...withoutDup].slice(0, 9);
     }
 
@@ -7630,7 +7684,7 @@ export function RoomPageLiveKit() {
     }
 
     return layoutTilesForRender.slice(0, 9);
-  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, tilesForRender, layoutTilesForRender]);
+  }, [activeScreenShareTile, screenSharePinned, pinnedParticipantTile, layoutTilesForRender]);
 
   const pipGalleryColumns = useMemo(() => {
     const count = pipGalleryTiles.length;
@@ -7889,15 +7943,19 @@ export function RoomPageLiveKit() {
                           <>
                             <button
                               type="button"
-                              onClick={() => setScreenSharePinned((prev) => !prev)}
+                              onClick={() => {
+                                const isThisPinnedScreen = screenSharePinned && activeScreenShareTile?.id === p.id;
+                                setPinnedScreenShareTileId(isThisPinnedScreen ? null : p.id);
+                                setScreenSharePinned(!isThisPinnedScreen);
+                              }}
                               className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
                                 ? "border-black/10 bg-white hover:bg-black/5 text-black/80"
                                 : "border-white/10 bg-white/5 hover:bg-white/10 text-white/85"
                                 }`}
-                              title={screenSharePinned ? "Unpin shared screen" : "Pin shared screen"}
-                              aria-label={screenSharePinned ? "Unpin shared screen" : "Pin shared screen"}
+                              title={screenSharePinned && activeScreenShareTile?.id === p.id ? "Unpin shared screen" : "Pin shared screen"}
+                              aria-label={screenSharePinned && activeScreenShareTile?.id === p.id ? "Unpin shared screen" : "Pin shared screen"}
                             >
-                              {screenSharePinned ? "⇱" : "📌"}
+                              {screenSharePinned && activeScreenShareTile?.id === p.id ? "⇱" : "📌"}
                             </button>
                           </>
                         )}
@@ -9367,13 +9425,15 @@ export function RoomPageLiveKit() {
                       <button
                         type="button"
                         onClick={() => {
-                          setScreenSharePinned((prev) => !prev);
+                          const isThisPinnedScreen = screenSharePinned && activeScreenShareTile?.id === targetTile.id;
+                          setPinnedScreenShareTileId(isThisPinnedScreen ? null : targetTile.id);
+                          setScreenSharePinned(!isThisPinnedScreen);
                           closeTileMenu();
                         }}
                         className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-black/5" : "text-white/90 hover:bg-white/5"
                           }`}
                       >
-                        {screenSharePinned ? "Unpin shared screen" : "Pin shared screen"}
+                        {screenSharePinned && activeScreenShareTile?.id === targetTile.id ? "Unpin shared screen" : "Pin shared screen"}
                       </button>
                     </>
                   )}
