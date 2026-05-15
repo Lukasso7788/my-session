@@ -203,6 +203,14 @@ type ColorCorrectionState = {
   warmth: number;
 };
 
+type DirectChatPreview = {
+  peerUserId: string;
+  peerName: string;
+  message: string;
+  createdAt: string;
+  count: number;
+};
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
@@ -422,6 +430,137 @@ function normalizeMediaWarningMessage(raw: unknown) {
   }
 
   return s;
+}
+
+function pickFirstStringFromRecord(row: any, keys: string[]) {
+  if (!row || typeof row !== "object") return "";
+
+  for (const key of keys) {
+    const value = row[key];
+    const s = String(value || "").trim();
+    if (s) return s;
+  }
+
+  return "";
+}
+
+function normalizeChatText(raw: unknown) {
+  const s = String(raw || "").replace(/\s+/g, " ").trim();
+  if (!s) return "New message";
+  if (s.length <= 96) return s;
+  return `${s.slice(0, 95)}…`;
+}
+
+function getChatRowText(row: any) {
+  return normalizeChatText(
+    pickFirstStringFromRecord(row, [
+      "message",
+      "content",
+      "text",
+      "body",
+      "message_text",
+      "value",
+    ])
+  );
+}
+
+function getChatRowSenderId(row: any) {
+  return pickFirstStringFromRecord(row, [
+    "user_id",
+    "sender_user_id",
+    "sender_id",
+    "from_user_id",
+    "author_id",
+  ]).toLowerCase();
+}
+
+function getChatRowRecipientId(row: any) {
+  return pickFirstStringFromRecord(row, [
+    "recipient_user_id",
+    "receiver_user_id",
+    "target_user_id",
+    "to_user_id",
+    "direct_user_id",
+    "direct_peer_user_id",
+    "peer_user_id",
+  ]).toLowerCase();
+}
+
+function getChatRowMode(row: any) {
+  return pickFirstStringFromRecord(row, [
+    "mode",
+    "chat_mode",
+    "message_type",
+    "type",
+    "scope",
+    "channel",
+  ]).toLowerCase();
+}
+
+function getChatRowCreatedAt(row: any) {
+  const raw = pickFirstStringFromRecord(row, ["created_at", "inserted_at", "sent_at", "timestamp"]);
+  const ts = raw ? new Date(raw).getTime() : NaN;
+  return Number.isFinite(ts) ? new Date(ts).toISOString() : new Date().toISOString();
+}
+
+function getChatRowTimestampMs(row: any) {
+  const ts = new Date(getChatRowCreatedAt(row)).getTime();
+  return Number.isFinite(ts) ? ts : Date.now();
+}
+
+function isDirectChatRow(row: any) {
+  const mode = getChatRowMode(row);
+  if (mode.includes("direct") || mode.includes("dm") || mode.includes("host")) return true;
+
+  const recipientId = getChatRowRecipientId(row);
+  if (recipientId && looksLikeUuid(recipientId)) return true;
+
+  const directFlag = row?.is_direct ?? row?.is_dm ?? row?.direct ?? row?.private;
+  return directFlag === true || directFlag === "true" || directFlag === 1 || directFlag === "1";
+}
+
+function isDirectChatRowForUser(row: any, userIdRaw: string, hostIdRaw: string) {
+  const userId = String(userIdRaw || "").trim().toLowerCase();
+  const hostId = String(hostIdRaw || "").trim().toLowerCase();
+  if (!userId) return false;
+  if (!isDirectChatRow(row)) return false;
+
+  const senderId = getChatRowSenderId(row);
+  const recipientId = getChatRowRecipientId(row);
+
+  if (recipientId && recipientId === userId) return true;
+
+  // Current host DM implementation can store “host mode” without explicit recipient.
+  // In that case, any non-host message in host mode is meant for the host.
+  const mode = getChatRowMode(row);
+  if (hostId && userId === hostId && mode.includes("host") && senderId && senderId !== hostId) return true;
+
+  return false;
+}
+
+function isGeneralChatRow(row: any) {
+  return !isDirectChatRow(row);
+}
+
+function mergeDirectChatPreview(
+  prev: DirectChatPreview[],
+  incoming: DirectChatPreview,
+  maxItems = 10
+) {
+  const existing = prev.find((x) => x.peerUserId === incoming.peerUserId);
+  const without = prev.filter((x) => x.peerUserId !== incoming.peerUserId);
+
+  const merged: DirectChatPreview = existing
+    ? {
+      ...existing,
+      ...incoming,
+      count: Math.min(99, (existing.count || 0) + (incoming.count || 1)),
+    }
+    : incoming;
+
+  return [merged, ...without]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, maxItems);
 }
 
 function getPiPIconSrc(name: string, isLight: boolean) {
@@ -4810,8 +4949,12 @@ export function RoomPageLiveKit() {
 
   // chat unread
   const [unreadChat, setUnreadChat] = useState<number>(0);
+  const [unreadDirectChat, setUnreadDirectChat] = useState<number>(0);
+  const [directChatPreviews, setDirectChatPreviews] = useState<DirectChatPreview[]>([]);
   const chatVisibleRef = useRef<boolean>(false);
+  const directChatVisibleRef = useRef<boolean>(false);
   const lastChatReadAtRef = useRef<number>(0);
+  const lastDirectChatReadAtRef = useRef<number>(0);
 
   // reactions
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
@@ -6446,14 +6589,21 @@ export function RoomPageLiveKit() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bgImageUrl]);
 
-  // chat unread
+  // chat unread / DMs unread
   useEffect(() => {
-    chatVisibleRef.current = rightPanelOpen && rightTab === "chat";
-  }, [rightPanelOpen, rightTab]);
+    chatVisibleRef.current = rightPanelOpen && rightTab === "chat" && chatViewMode === "general";
+    directChatVisibleRef.current = rightPanelOpen && rightTab === "chat" && chatViewMode === "host";
+  }, [rightPanelOpen, rightTab, chatViewMode]);
 
   const chatReadKey = useMemo(() => {
     return session?.id ? `mysession_chat_last_read_at:${session.id}` : "";
   }, [session?.id]);
+
+  const directChatReadKey = useMemo(() => {
+    return session?.id && authUserId
+      ? `mysession_direct_chat_last_read_at:${session.id}:${authUserId}`
+      : "";
+  }, [session?.id, authUserId]);
 
   const markChatRead = (atMs?: number) => {
     if (!session?.id) return;
@@ -6468,10 +6618,25 @@ export function RoomPageLiveKit() {
     } catch { }
   };
 
+  const markDirectChatRead = (atMs?: number) => {
+    if (!session?.id) return;
+
+    const now = Number.isFinite(atMs as any) ? Number(atMs) : Date.now();
+    lastDirectChatReadAtRef.current = Math.max(lastDirectChatReadAtRef.current || 0, now);
+
+    setUnreadDirectChat(0);
+    setDirectChatPreviews([]);
+
+    try {
+      if (directChatReadKey) localStorage.setItem(directChatReadKey, String(lastDirectChatReadAtRef.current));
+    } catch { }
+  };
+
   useEffect(() => {
-    if (rightPanelOpen && rightTab === "chat") markChatRead();
+    if (rightPanelOpen && rightTab === "chat" && chatViewMode === "general") markChatRead();
+    if (rightPanelOpen && rightTab === "chat" && chatViewMode === "host") markDirectChatRead();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rightPanelOpen, rightTab, session?.id]);
+  }, [rightPanelOpen, rightTab, chatViewMode, session?.id]);
 
   useEffect(() => {
     if (!session?.id) return;
@@ -6479,8 +6644,57 @@ export function RoomPageLiveKit() {
 
     let cancelled = false;
 
+    const hostId = String(session?.host_id || "").trim().toLowerCase();
+    const me = String(authUserId || "").trim().toLowerCase();
+    const peerLabelForRow = (row: any, peerUserId: string) => {
+      const fromRow = pickFirstStringFromRecord(row, [
+        "user_name",
+        "sender_name",
+        "from_name",
+        "display_name",
+        "author_name",
+        "name",
+      ]);
+      if (fromRow) return fromRow;
+
+      const fromProfile = profilesById?.[peerUserId]?.full_name;
+      if (fromProfile) return fromProfile;
+
+      const liveOption = liveHostChatOptions.find((x) => x.userId === peerUserId)?.label;
+      if (liveOption) return liveOption;
+
+      return "Participant";
+    };
+
+    const addDirectUnreadRow = (row: any) => {
+      const senderId = getChatRowSenderId(row);
+      if (!senderId || senderId === me) return;
+
+      const msgMs = getChatRowTimestampMs(row);
+
+      if (directChatVisibleRef.current) {
+        markDirectChatRead(msgMs);
+        return;
+      }
+
+      if (msgMs <= (lastDirectChatReadAtRef.current || 0)) return;
+
+      const preview: DirectChatPreview = {
+        peerUserId: senderId,
+        peerName: peerLabelForRow(row, senderId),
+        message: getChatRowText(row),
+        createdAt: getChatRowCreatedAt(row),
+        count: 1,
+      };
+
+      setUnreadDirectChat((prev) => Math.min(99, prev + 1));
+      setDirectChatPreviews((prev) => mergeDirectChatPreview(prev, preview));
+    };
+
     (async () => {
       let lastRead = 0;
+      let lastDirectRead = 0;
+
       try {
         const raw = localStorage.getItem(chatReadKey);
         lastRead = raw ? Number(raw) : 0;
@@ -6488,29 +6702,74 @@ export function RoomPageLiveKit() {
       } catch {
         lastRead = 0;
       }
-      lastChatReadAtRef.current = lastRead;
 
       try {
-        const sinceIso =
-          lastRead > 0
-            ? new Date(lastRead).toISOString()
-            : "1970-01-01T00:00:00.000Z";
+        const raw = localStorage.getItem(directChatReadKey);
+        lastDirectRead = raw ? Number(raw) : 0;
+        if (!Number.isFinite(lastDirectRead)) lastDirectRead = 0;
+      } catch {
+        lastDirectRead = 0;
+      }
 
-        const { count } = await supabase
+      lastChatReadAtRef.current = lastRead;
+      lastDirectChatReadAtRef.current = lastDirectRead;
+
+      try {
+        const sinceIso = new Date(Math.max(lastRead || 0, lastDirectRead || 0, 0)).toISOString();
+
+        const { data, error } = await supabase
           .from(CHAT_MSG_TABLE)
-          .select("id", { count: "exact", head: true })
+          .select("*")
           .eq("session_id", session.id)
           .neq("user_id", authUserId)
-          .gt("created_at", sinceIso);
+          .gt("created_at", sinceIso)
+          .order("created_at", { ascending: true })
+          .limit(250);
 
-        if (!cancelled) setUnreadChat(Math.min(99, Math.max(0, Number(count || 0))));
+        if (error) throw error;
+        if (cancelled) return;
+
+        let nextGeneralUnread = 0;
+        let nextDirectUnread = 0;
+        let nextDirectPreviews: DirectChatPreview[] = [];
+
+        for (const row of data || []) {
+          const msgMs = getChatRowTimestampMs(row);
+
+          if (isDirectChatRowForUser(row, me, hostId)) {
+            if (msgMs > (lastDirectRead || 0)) {
+              nextDirectUnread += 1;
+
+              const senderId = getChatRowSenderId(row);
+              if (senderId) {
+                nextDirectPreviews = mergeDirectChatPreview(nextDirectPreviews, {
+                  peerUserId: senderId,
+                  peerName: peerLabelForRow(row, senderId),
+                  message: getChatRowText(row),
+                  createdAt: getChatRowCreatedAt(row),
+                  count: 1,
+                });
+              }
+            }
+          } else if (isGeneralChatRow(row) && msgMs > (lastRead || 0)) {
+            nextGeneralUnread += 1;
+          }
+        }
+
+        setUnreadChat(Math.min(99, Math.max(0, nextGeneralUnread)));
+        setUnreadDirectChat(Math.min(99, Math.max(0, nextDirectUnread)));
+        setDirectChatPreviews(nextDirectPreviews);
       } catch {
-        if (!cancelled) setUnreadChat(0);
+        if (!cancelled) {
+          setUnreadChat(0);
+          setUnreadDirectChat(0);
+          setDirectChatPreviews([]);
+        }
       }
     })();
 
     const ch = supabase
-      .channel(`chat-unread:${session.id}`)
+      .channel(`chat-unread:${session.id}:${authUserId}`)
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: CHAT_MSG_TABLE, filter: `session_id=eq.${session.id}` },
@@ -6518,12 +6777,18 @@ export function RoomPageLiveKit() {
           const row = payload?.new;
           if (!row) return;
 
-          const senderId = String(row.user_id || "");
+          const senderId = getChatRowSenderId(row);
           if (!senderId) return;
           if (senderId === authUserId) return;
 
-          const ts = new Date(row.created_at).getTime();
-          const msgMs = Number.isFinite(ts) ? ts : Date.now();
+          const msgMs = getChatRowTimestampMs(row);
+
+          if (isDirectChatRowForUser(row, me, hostId)) {
+            addDirectUnreadRow(row);
+            return;
+          }
+
+          if (!isGeneralChatRow(row)) return;
 
           if (chatVisibleRef.current) {
             markChatRead(msgMs);
@@ -6542,7 +6807,7 @@ export function RoomPageLiveKit() {
       safeRemoveRealtimeChannel(ch);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session?.id, authUserId, chatReadKey]);
+  }, [session?.id, session?.host_id, authUserId, chatReadKey, directChatReadKey, profilesById, liveHostChatOptions]);
 
   // reactions broadcast
   const pushFloatingReaction = (type: ReactionType, fromUserId: string, fromName: string) => {
@@ -7734,7 +7999,7 @@ export function RoomPageLiveKit() {
                 type="button"
                 onClick={() => setChatViewMode("general")}
                 className={
-                  "h-8 px-3 rounded-full text-xs font-medium transition border shrink-0 " +
+                  "relative h-8 px-3 rounded-full text-xs font-medium transition border shrink-0 " +
                   (chatViewMode === "general"
                     ? (isLight
                       ? "bg-[#111827] border-[#111827] text-white"
@@ -7745,13 +8010,18 @@ export function RoomPageLiveKit() {
                 }
               >
                 All
+                {unreadChat > 0 ? (
+                  <span className="ml-1 inline-flex min-w-[18px] h-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                    {unreadChat > 99 ? "99+" : unreadChat}
+                  </span>
+                ) : null}
               </button>
 
               <button
                 type="button"
                 onClick={() => setChatViewMode("host")}
                 className={
-                  "h-8 px-3 rounded-full text-xs font-medium transition border shrink-0 " +
+                  "relative h-8 px-3 rounded-full text-xs font-medium transition border shrink-0 " +
                   (chatViewMode === "host"
                     ? (isLight
                       ? "bg-[#111827] border-[#111827] text-white"
@@ -7762,6 +8032,11 @@ export function RoomPageLiveKit() {
                 }
               >
                 DMs
+                {unreadDirectChat > 0 ? (
+                  <span className="ml-1 inline-flex min-w-[18px] h-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                    {unreadDirectChat > 99 ? "99+" : unreadDirectChat}
+                  </span>
+                ) : null}
               </button>
             </div>
 
@@ -7821,6 +8096,44 @@ export function RoomPageLiveKit() {
               ✕
             </button>
           </div>
+
+          {chatViewMode === "host" && directChatPreviews.length > 0 ? (
+            <div className={"border-b px-3 py-2 " + (isLight ? "border-black/10 bg-amber-50/70" : "border-white/10 bg-amber-400/10")}>
+              <div className={"mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] " + (isLight ? "text-amber-800/80" : "text-amber-100/80")}>
+                New DMs
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {directChatPreviews.map((item) => (
+                  <button
+                    key={item.peerUserId}
+                    type="button"
+                    onClick={() => {
+                      setChatViewMode("host");
+                      setSelectedHostChatPeerId(item.peerUserId);
+                      markDirectChatRead();
+                    }}
+                    className={
+                      "max-w-[220px] shrink-0 rounded-2xl border px-3 py-2 text-left transition " +
+                      (isLight
+                        ? "border-amber-200 bg-white hover:bg-amber-50 text-black"
+                        : "border-amber-300/20 bg-white/8 hover:bg-white/12 text-white")
+                    }
+                    title={`${item.peerName}: ${item.message}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                        {item.count > 99 ? "99+" : item.count}
+                      </span>
+                      <span className="truncate text-[12px] font-bold">{item.peerName}</span>
+                    </div>
+                    <div className={"mt-1 truncate text-[11px] " + (isLight ? "text-black/60" : "text-white/65")}>
+                      {item.message}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           <ChatPanel
             sessionId={sessionId}
@@ -8443,7 +8756,7 @@ export function RoomPageLiveKit() {
           micOn={micOn}
           camOn={camOn}
           screenShareOn={screenShareOn}
-          unreadChat={unreadChat}
+          unreadChat={Math.min(99, unreadChat + unreadDirectChat)}
           showPiP={connected && pipSupported}
           pipActive={pipOpen}
           onTogglePiP={() => {
