@@ -860,6 +860,48 @@ export function ChatPanel({
         return `Direct messages with ${activeDirectPeerProfile?.full_name || "host"}`;
     }, [activeMode, subtitle, canUseDirect, activeDirectPeerId, isHost, activeDirectPeerProfile]);
 
+    const isReplyCompatibleWithActiveComposer = useCallback(
+        (message: Msg | null) => {
+            if (!message) return false;
+
+            const messageScope: ChatMode = message.scope === "direct" ? "direct" : "general";
+
+            // A quote from DMs must never be carried into All chat.
+            if (activeMode === "general") {
+                return messageScope === "general";
+            }
+
+            // A quote from All chat must never be carried into DMs.
+            if (messageScope !== "direct") return false;
+
+            if (!userId || !hostUserId || !activeDirectPeerId) return false;
+
+            const messageUserId = String(message.user_id || "").trim();
+            const messagePeerId = String(message.dm_peer_user_id || "").trim();
+
+            if (isHost) {
+                return (
+                    (messageUserId === hostUserId && messagePeerId === activeDirectPeerId) ||
+                    (messageUserId === activeDirectPeerId && messagePeerId === hostUserId)
+                );
+            }
+
+            return (
+                (messageUserId === userId && messagePeerId === hostUserId) ||
+                (messageUserId === hostUserId && messagePeerId === userId)
+            );
+        },
+        [activeMode, userId, hostUserId, activeDirectPeerId, isHost]
+    );
+
+    useEffect(() => {
+        if (!replyTo) return;
+
+        if (!isReplyCompatibleWithActiveComposer(replyTo)) {
+            setReplyTo(null);
+        }
+    }, [replyTo, isReplyCompatibleWithActiveComposer]);
+
 
     const isAtBottom = () => {
         const el = listRef.current;
@@ -1768,13 +1810,20 @@ export function ChatPanel({
         const raw = text.trim();
         if (!raw || !userId || !sessionId) return;
 
-        const replyQuote = replyTo ? quotePreviewForReply(replyTo.body, 240) : "";
-        const replyName = replyTo?.profile?.full_name || "Participant";
-        const replyHeader = replyTo ? `↪ [msg:${replyTo.id}] ${replyName}: ${replyQuote || "[message]"}` : null;
-        const composed = replyHeader ? `${replyHeader}\n\n${raw}` : raw;
-
         const outgoingScope: ChatMode = activeMode === "direct" ? "direct" : "general";
         const outgoingPeerId = outgoingScope === "direct" ? activeDirectPeerId : null;
+
+        const safeReplyTo = replyTo && isReplyCompatibleWithActiveComposer(replyTo) ? replyTo : null;
+
+        if (replyTo && !safeReplyTo) {
+            // Privacy guard: never leak a quoted DM into All chat, or a quote from one DM thread into another.
+            setReplyTo(null);
+        }
+
+        const replyQuote = safeReplyTo ? quotePreviewForReply(safeReplyTo.body, 240) : "";
+        const replyName = safeReplyTo?.profile?.full_name || "Participant";
+        const replyHeader = safeReplyTo ? `↪ [msg:${safeReplyTo.id}] ${replyName}: ${replyQuote || "[message]"}` : null;
+        const composed = replyHeader ? `${replyHeader}\n\n${raw}` : raw;
 
         if (outgoingScope === "direct" && !outgoingPeerId) {
             console.warn("[chat][send] blocked direct send: missing peer", {
