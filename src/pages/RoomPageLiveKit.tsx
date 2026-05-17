@@ -93,6 +93,7 @@ type SessionRow = {
   format?: string | null;
   start_time?: string | null;
   created_at?: string | null;
+  duration_minutes?: number | null;
   host_profile?: HostProfile | null;
   session_templates?: SessionTemplate | SessionTemplate[] | null;
   session_bookings?: Array<{
@@ -980,6 +981,7 @@ const SESSION_SELECT_STR =
   "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*), session_bookings(user_id)";
 
 const JOIN_EARLY_WINDOW_MINUTES = 10;
+const SESSION_CLOSE_GRACE_MINUTES = 10;
 const WEAK_DEVICE_PREVIEW_INIT_DELAY_MS = 450;
 
 
@@ -1139,6 +1141,63 @@ function formatCountdown(msUntil: number) {
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
+}
+
+function getFixedSessionTotalSecondsFromSchedule(rawSchedule: unknown): number {
+  const directInfinite = parse50505(rawSchedule);
+  if (directInfinite) return 0;
+
+  let parsed: unknown = safeParseJson(rawSchedule);
+  if (!parsed) return 0;
+
+  if (isRecord(parsed)) {
+    const kind = str((parsed as any).kind).toLowerCase();
+    if (kind.includes("infinite")) return 0;
+
+    if (
+      isRecord((parsed as any).timer) &&
+      (((parsed as any).timer as any).phases || ((parsed as any).timer as any).segments)
+    ) {
+      return 0;
+    }
+
+    if ((parsed as any).phases || (parsed as any).segments) return 0;
+
+    const maybeBlocks =
+      (parsed as any).blocks ||
+      (parsed as any).script ||
+      (parsed as any).agenda ||
+      (parsed as any).items ||
+      (parsed as any).stages;
+
+    if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
+  }
+
+  if (!Array.isArray(parsed)) return 0;
+
+  return parsed.reduce((acc, b) => {
+    const blk = isRecord(b) ? b : null;
+    if (!blk) return acc;
+
+    const seconds =
+      num((blk as any).seconds) ||
+      num((blk as any).durationSeconds) ||
+      num((blk as any).duration_seconds) ||
+      0;
+
+    if (seconds > 0) return acc + seconds;
+
+    const minutes =
+      num((blk as any).minutes) ||
+      num((blk as any).mins) ||
+      num((blk as any).duration_minutes) ||
+      num((blk as any).durationMinutes) ||
+      num((blk as any).durationMin) ||
+      num((blk as any).duration) ||
+      0;
+
+    return minutes > 0 ? acc + minutes * 60 : acc;
+  }, 0);
 }
 
 type DocumentPiPApi = {
@@ -2615,6 +2674,7 @@ export function RoomPageLiveKit() {
     pendingStageSoundRef.current = null;
     audioUnlockedRef.current = false;
     postSessionShownForSessionRef.current = "";
+    autoClosedSessionIdRef.current = "";
     setPrejoinOpen(false);
     setJoinRequested(false);
     setLkToken("");
@@ -2677,6 +2737,90 @@ export function RoomPageLiveKit() {
 
   const canJoinNow = joinGateInfo.canJoinNow;
   const joinBlocked = joinGateInfo.enabled && !joinGateInfo.canJoinNow;
+
+  const [sessionAccessTickMs, setSessionAccessTickMs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    if (!session?.id) return;
+
+    setSessionAccessTickMs(Date.now());
+    const t = window.setInterval(() => setSessionAccessTickMs(Date.now()), 1000);
+
+    return () => window.clearInterval(t);
+  }, [session?.id]);
+
+  const sessionCloseInfo = useMemo(() => {
+    if (!session || isInfiniteRoom) {
+      return {
+        enabled: false,
+        ended: false,
+        closed: false,
+        startMs: 0,
+        endMs: 0,
+        closeMs: 0,
+        msUntilClose: 0,
+      };
+    }
+
+    const startIso = String(stagebarStartTime || session.start_time || session.created_at || "").trim();
+    const startMs = new Date(startIso).getTime();
+
+    if (!Number.isFinite(startMs) || startMs <= 0) {
+      return {
+        enabled: false,
+        ended: false,
+        closed: false,
+        startMs: 0,
+        endMs: 0,
+        closeMs: 0,
+        msUntilClose: 0,
+      };
+    }
+
+    const stageTotalSeconds = stages.reduce((acc, s) => {
+      const sec = Number(s.durationSeconds || 0);
+      if (sec > 0) return acc + sec;
+
+      const mins = Number(s.duration || 0);
+      return mins > 0 ? acc + mins * 60 : acc;
+    }, 0);
+
+    const scheduleTotalSeconds = getFixedSessionTotalSecondsFromSchedule(session.schedule);
+    const fallbackDurationMinutes = Number((session as any).duration_minutes || 0);
+    const totalMs =
+      stageTotalSeconds > 0
+        ? stageTotalSeconds * 1000
+        : scheduleTotalSeconds > 0
+          ? scheduleTotalSeconds * 1000
+          : fallbackDurationMinutes > 0
+            ? fallbackDurationMinutes * 60 * 1000
+            : 0;
+
+    if (!Number.isFinite(totalMs) || totalMs <= 0) {
+      return {
+        enabled: false,
+        ended: false,
+        closed: false,
+        startMs,
+        endMs: 0,
+        closeMs: 0,
+        msUntilClose: 0,
+      };
+    }
+
+    const endMs = startMs + totalMs;
+    const closeMs = endMs + SESSION_CLOSE_GRACE_MINUTES * 60 * 1000;
+
+    return {
+      enabled: true,
+      ended: sessionAccessTickMs >= endMs,
+      closed: sessionAccessTickMs >= closeMs,
+      startMs,
+      endMs,
+      closeMs,
+      msUntilClose: Math.max(0, closeMs - sessionAccessTickMs),
+    };
+  }, [session, stages, stagebarStartTime, isInfiniteRoom, sessionAccessTickMs]);
 
 
   const checkActiveBanForRoom = useCallback(async () => {
@@ -4205,6 +4349,7 @@ export function RoomPageLiveKit() {
   const returningFromBackgroundRef = useRef(false);
   const connectedRef = useRef(false);
   const joinRequestedRef = useRef(false);
+  const autoClosedSessionIdRef = useRef<string>("");
 
   const stopTabPresenceHeartbeat = () => {
     if (tabPresenceHeartbeatRef.current) {
@@ -5453,6 +5598,37 @@ export function RoomPageLiveKit() {
       await closePictureInPicture().catch(() => { });
     }
   };
+
+  useEffect(() => {
+    if (!sessionId || !sessionCloseInfo.closed) return;
+
+    setPrejoinOpen(false);
+    setJoinRequested(false);
+    setTokenError("");
+    setClientError("");
+    setMediaWarning("");
+
+    if (autoClosedSessionIdRef.current === sessionId) return;
+    autoClosedSessionIdRef.current = sessionId;
+
+    const shouldDisconnect =
+      !!roomRef.current ||
+      connectedRef.current ||
+      joinRequestedRef.current ||
+      connectInFlightRef.current;
+
+    if (!shouldDisconnect) return;
+
+    explicitLeaveRequestedRef.current = true;
+
+    void disconnectRoom({
+      skipNavigate: true,
+      preserveKickNotice: true,
+    }).catch((e) => {
+      console.warn("[session-close] auto disconnect failed:", e);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, sessionCloseInfo.closed]);
 
   const syncLiveAudioInput = async (deviceId: string) => {
     const useId = pickExistingDeviceId(String(deviceId || ""), devices.audioInputs);
@@ -8336,6 +8512,51 @@ export function RoomPageLiveKit() {
     }
   };
 
+  if (sessionCloseInfo.closed) {
+    return (
+      <>
+        <div className={`min-h-screen w-full flex items-center justify-center px-4 ${pageBg}`}>
+          <div
+            className={`w-full max-w-[560px] rounded-[28px] border p-6 text-center shadow-2xl ${isLight
+              ? "border-black/10 bg-white text-black"
+              : "border-white/10 bg-[#0b1220] text-white"
+              }`}
+          >
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/10 text-[24px]">
+              ⏱️
+            </div>
+
+            <div className="text-[24px] font-bold tracking-[-0.02em]">
+              Session is no longer accessible
+            </div>
+
+            <div className={`mt-3 text-[14px] leading-6 ${isLight ? "text-black/60" : "text-white/60"}`}>
+              This session ended at {sessionCloseInfo.endMs ? formatLocalDateTime(sessionCloseInfo.endMs) : "its scheduled end time"}.
+              MySession keeps the room open for {SESSION_CLOSE_GRACE_MINUTES} minutes after the last block, then closes it automatically.
+            </div>
+
+            <button
+              type="button"
+              onClick={() => navigate("/sessions", { replace: true })}
+              className={`mt-6 h-11 rounded-full px-5 text-[14px] font-semibold transition ${isLight
+                ? "bg-black text-white hover:bg-black/85"
+                : "bg-white text-black hover:bg-white/90"
+                }`}
+            >
+              Return to sessions
+            </button>
+
+            <div className={`mt-3 text-[12px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+              Return to the sessions page to book or join another session.
+            </div>
+          </div>
+        </div>
+
+        {pipPortal}
+      </>
+    );
+  }
+
   if (paywallBlocked) {
     return (
       <>
@@ -8448,6 +8669,13 @@ export function RoomPageLiveKit() {
   }
 
   const onJoinGate = () => {
+    if (sessionCloseInfo.closed) {
+      setPrejoinOpen(false);
+      setJoinRequested(false);
+      setMediaWarning("This session is no longer accessible.");
+      return;
+    }
+
     if (activeBan) {
       setPrejoinOpen(false);
       setJoinRequested(false);
