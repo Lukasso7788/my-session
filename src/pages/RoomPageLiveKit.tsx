@@ -6409,9 +6409,20 @@ export function RoomPageLiveKit() {
 
   const openIntentionsFromPictureInPicture = useCallback(() => {
     closePictureInPicture().catch(() => { });
+
+    // Open the normal Intentions tab just long enough to ensure the component is mounted,
+    // then ask IntentionsPanel to open itself in its pinned/PiP overlay format.
     setRightTab("intentions");
     setRightPanelOpen(true);
-  }, []);
+
+    window.setTimeout(() => {
+      try {
+        window.dispatchEvent(new CustomEvent("mysession:intentions-open-pinned"));
+      } catch {
+        // ignore
+      }
+    }, 120);
+  }, [closePictureInPicture]);
 
   useEffect(() => {
     const pipWindow = pipWindowRef.current;

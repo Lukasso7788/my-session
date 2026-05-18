@@ -1031,6 +1031,18 @@ export function IntentionsPanel({
     };
   }, [closeOverlay]);
 
+  useEffect(() => {
+    const onOpenPinnedIntentions = () => {
+      void openOverlay();
+    };
+
+    window.addEventListener("mysession:intentions-open-pinned", onOpenPinnedIntentions);
+
+    return () => {
+      window.removeEventListener("mysession:intentions-open-pinned", onOpenPinnedIntentions);
+    };
+  }, [openOverlay]);
+
   const getPortalDocument = useCallback((): Document => {
     const o = overlayRef.current;
     const doc = o?.win?.document;
@@ -1121,6 +1133,19 @@ export function IntentionsPanel({
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    className={"h-9 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2 " + ghostBtn}
+                    onClick={() => {
+                      const sid = (rawSessionId || sessionId || "").trim();
+                      window.open(`/focus-plan?sessionId=${encodeURIComponent(sid)}`, "_blank", "noopener,noreferrer");
+                    }}
+                    title="Go to Focus Plan"
+                  >
+                    <ExternalLink size={14} />
+                    Go to Focus Plan
+                  </button>
+
                   <button
                     type="button"
                     className={"h-9 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2 " + ghostBtn}
@@ -1350,17 +1375,6 @@ export function IntentionsPanel({
               </IconButton>
             )}
 
-            <IconButton
-              theme={theme}
-              title="Open Focus plan"
-              onClick={(e) => {
-                e.preventDefault();
-                const sid = (rawSessionId || sessionId || "").trim();
-                window.open(`/focus-plan?sessionId=${encodeURIComponent(sid)}`, "_blank", "noopener,noreferrer");
-              }}
-            >
-              <ExternalLink size={16} />
-            </IconButton>
           </div>
         </div>
       </div>
