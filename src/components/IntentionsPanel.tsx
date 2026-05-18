@@ -70,6 +70,9 @@ type IntentionsPanelProps = {
   theme?: RoomTheme;
   timerText?: string;
   timerTextClassName?: string;
+  pictureInPictureSupported?: boolean;
+  pictureInPictureOpen?: boolean;
+  onOpenPictureInPicture?: () => void;
 };
 
 type ProfileMini = {
@@ -235,6 +238,9 @@ export function IntentionsPanel({
   theme = "dark",
   timerText: timerTextProp,
   timerTextClassName,
+  pictureInPictureSupported = false,
+  pictureInPictureOpen = false,
+  onOpenPictureInPicture,
 }: IntentionsPanelProps) {
   const { id: idOrSlugFromUrl } = useParams<{ id: string }>();
   const rawSessionId = (sessionIdProp || idOrSlugFromUrl || "").trim();
@@ -1306,6 +1312,19 @@ export function IntentionsPanel({
             >
               <ListPlus size={16} />
             </IconButton>
+
+            {pictureInPictureSupported && onOpenPictureInPicture ? (
+              <IconButton
+                theme={theme}
+                title={pictureInPictureOpen ? "Close Picture-in-Picture video" : "Open video Picture-in-Picture"}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onOpenPictureInPicture();
+                }}
+              >
+                <ExternalLink size={16} />
+              </IconButton>
+            ) : null}
 
             {!overlayOpen ? (
               <IconButton

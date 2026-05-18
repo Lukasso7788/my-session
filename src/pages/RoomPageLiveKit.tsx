@@ -4862,7 +4862,7 @@ export function RoomPageLiveKit() {
   const [camOn, setCamOn] = useState(false);
   const [screenShareOn, setScreenShareOn] = useState(false);
   const [remoteAudioRecoveryTick, setRemoteAudioRecoveryTick] = useState(0);
-  const [pipMode, setPipMode] = useState<PiPMode>("focus");
+  const [pipMode, setPipMode] = useState<PiPMode>("gallery");
 
   function getSettingsPreviewTrack(): LocalVideoTrack | null {
     if (prejoinPreparedVideoTrackRef.current) {
@@ -6324,6 +6324,8 @@ export function RoomPageLiveKit() {
   };
 
   const openPictureInPicture = async () => {
+    setPipMode("gallery");
+
     if (!pipSupported) {
       alert("Document Picture-in-Picture is not supported in this browser.");
       return;
@@ -6347,15 +6349,15 @@ export function RoomPageLiveKit() {
 
     if (pipApi) {
       pipWindow = await pipApi.requestWindow({
-        width: 480,
-        height: 320,
+        width: 560,
+        height: 420,
         preferInitialWindowPlacement: true,
       } as any);
     } else {
       pipWindow = window.open(
         "",
         "mysession-livekit-pip",
-        "popup=yes,width=480,height=320,resizable=yes,scrollbars=no"
+        "popup=yes,width=560,height=420,resizable=yes,scrollbars=no"
       );
 
       if (!pipWindow) {
@@ -6395,6 +6397,21 @@ export function RoomPageLiveKit() {
     setPipMountEl(mount);
     setPipOpen(true);
   };
+
+  const togglePictureInPicture = useCallback(async () => {
+    if (pipOpen) {
+      await closePictureInPicture();
+      return;
+    }
+
+    await openPictureInPicture();
+  }, [pipOpen, connected, pipSupported, theme, session?.title]);
+
+  const openIntentionsFromPictureInPicture = useCallback(() => {
+    closePictureInPicture().catch(() => { });
+    setRightTab("intentions");
+    setRightPanelOpen(true);
+  }, []);
 
   useEffect(() => {
     const pipWindow = pipWindowRef.current;
@@ -7548,6 +7565,7 @@ export function RoomPageLiveKit() {
           micMuted={micMuted}
           mirrorVideo={t.isLocal ? previewMirrored : false}
           audioLevel={t.audioLevel || 0}
+          density="compact"
           onToggleMenu={(tileId, anchorEl) => {
             if (!anchorEl) return;
 
@@ -7881,7 +7899,7 @@ export function RoomPageLiveKit() {
         sessionTitle={String(session?.title || "Session")}
         participantsCount={participantsCount}
         remainingTime={remainingTime}
-        pipMode={pipMode}
+        pipMode="gallery"
         pipFeaturedTile={pipFeaturedTile}
         pipStripTiles={pipStripTiles}
         pipGalleryTiles={pipGalleryTiles}
@@ -7902,7 +7920,8 @@ export function RoomPageLiveKit() {
         onSendReaction={(reactionType) => {
           sendReaction(reactionType);
         }}
-        onSetPipMode={setPipMode}
+        onSetPipMode={() => setPipMode("gallery")}
+        onOpenIntentionsPanel={openIntentionsFromPictureInPicture}
       />,
       pipMountEl
     )
@@ -8435,6 +8454,14 @@ export function RoomPageLiveKit() {
                       theme={theme}
                       sessionId={session.id}
                       timerText={remainingTime || "--:--"}
+                      pictureInPictureSupported={connected && pipSupported}
+                      pictureInPictureOpen={pipOpen}
+                      onOpenPictureInPicture={() => {
+                        togglePictureInPicture().catch((e) => {
+                          console.error("open Picture-in-Picture from intentions failed", e);
+                          alert(String((e as any)?.message || e || "pip_open_failed"));
+                        });
+                      }}
                     />
                   ) : null}
                 </div>
@@ -9055,14 +9082,10 @@ export function RoomPageLiveKit() {
           showPiP={connected && pipSupported}
           pipActive={pipOpen}
           onTogglePiP={() => {
-            if (pipOpen) {
-              closePictureInPicture().catch(() => { });
-            } else {
-              openPictureInPicture().catch((e) => {
-                console.error("openPictureInPicture failed", e);
-                alert(String((e as any)?.message || e || "pip_open_failed"));
-              });
-            }
+            togglePictureInPicture().catch((e) => {
+              console.error("togglePictureInPicture failed", e);
+              alert(String((e as any)?.message || e || "pip_toggle_failed"));
+            });
           }}
           onToggleMic={() => toggleMic().catch(() => { })}
           onToggleCam={() => toggleCam().catch(() => { })}

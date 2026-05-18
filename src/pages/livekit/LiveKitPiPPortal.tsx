@@ -26,6 +26,7 @@ export default function LiveKitPiPPortal({
     onToggleScreenShare,
     onSendReaction,
     onSetPipMode,
+    onOpenIntentionsPanel,
 }: {
     isLight: boolean;
     theme: RoomTheme;
@@ -46,6 +47,7 @@ export default function LiveKitPiPPortal({
     onToggleScreenShare: () => void;
     onSendReaction: (type: ReactionType) => void;
     onSetPipMode: (mode: "focus" | "gallery") => void;
+    onOpenIntentionsPanel?: () => void;
 }) {
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
 
@@ -77,32 +79,21 @@ export default function LiveKitPiPPortal({
 
     const reactionTypes = Object.keys(REACTION_EMOJI) as ReactionType[];
 
-    const galleryAspectRatio = useMemo(() => {
-        const count = pipGalleryTiles.length;
-        if (count <= 1) return "16 / 9";
-        if (count === 2) return "16 / 10";
-        if (count === 3) return "16 / 10";
-        if (count === 4) return "4 / 3";
-        return "16 / 9";
-    }, [pipGalleryTiles.length]);
 
     const resolvedGalleryColumns = useMemo(() => {
         const count = pipGalleryTiles.length;
         if (count <= 1) return 1;
         if (count === 2) return 2;
-        if (count === 3) return 2;
-        if (count === 4) return 2;
+        if (count <= 4) return 2;
         if (count <= 6) return 3;
         return Math.max(3, pipGalleryColumns || 3);
     }, [pipGalleryColumns, pipGalleryTiles.length]);
 
-    const focusStripWidth = useMemo(() => {
-        const count = pipStripTiles.length;
-        if (count <= 0) return "clamp(4.2rem,14vw,6.2rem)";
-        if (count === 1) return "clamp(4.4rem,15vw,6.5rem)";
-        if (count === 2) return "clamp(4.2rem,15vw,6.5rem)";
-        return "clamp(3.9rem,14vw,6rem)";
-    }, [pipStripTiles.length]);
+    const resolvedGalleryRows = useMemo(() => {
+        const count = Math.max(1, pipGalleryTiles.length);
+        return Math.max(1, Math.ceil(count / Math.max(1, resolvedGalleryColumns)));
+    }, [pipGalleryTiles.length, resolvedGalleryColumns]);
+
 
     return (
         <div className={`h-full w-full min-h-0 min-w-0 flex flex-col overflow-hidden ${shellBg}`}>
@@ -124,80 +115,51 @@ export default function LiveKitPiPPortal({
                     </div>
 
                     <div className="shrink-0 flex items-center gap-[0.35rem]">
-                        <button
-                            type="button"
-                            onClick={() => onSetPipMode("focus")}
-                            className={`rounded-xl px-[0.68rem] py-[0.42rem] text-[0.7rem] font-medium transition ${pipMode === "focus" ? pillActive : pillIdle
-                                }`}
-                        >
-                            Focus
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={() => onSetPipMode("gallery")}
-                            className={`rounded-xl px-[0.68rem] py-[0.42rem] text-[0.7rem] font-medium transition ${pipMode === "gallery" ? pillActive : pillIdle
-                                }`}
+                        <div
+                            className={`rounded-xl px-[0.68rem] py-[0.42rem] text-[0.7rem] font-medium ${pillActive}`}
+                            title="Picture-in-Picture now uses Gallery mode by default"
                         >
                             Gallery
-                        </button>
+                        </div>
+
+                        {onOpenIntentionsPanel ? (
+                            <button
+                                type="button"
+                                onClick={onOpenIntentionsPanel}
+                                className={`rounded-xl px-[0.68rem] py-[0.42rem] text-[0.7rem] font-medium transition ${pillIdle}`}
+                                title="Switch back to Intentions"
+                                aria-label="Switch back to Intentions"
+                            >
+                                Intentions
+                            </button>
+                        ) : null}
                     </div>
                 </div>
             </div>
 
-            <div className="flex-1 min-h-0 min-w-0 overflow-hidden">
-                {pipMode === "focus" ? (
+            <div className="flex-1 min-h-0 min-w-0 overflow-hidden p-[clamp(0.28rem,0.9vw,0.56rem)]">
+                {pipGalleryTiles.length ? (
                     <div
-                        className="grid h-full min-h-0 min-w-0 overflow-hidden p-[clamp(0.28rem,0.9vw,0.56rem)]"
+                        className="grid h-full w-full min-h-0 min-w-0 overflow-hidden"
                         style={{
-                            gridTemplateColumns: `minmax(0,1fr) ${focusStripWidth}`,
-                            gap: "clamp(0.28rem,0.85vw,0.55rem)",
+                            gridTemplateColumns: `repeat(${resolvedGalleryColumns}, minmax(0, 1fr))`,
+                            gridTemplateRows: `repeat(${resolvedGalleryRows}, minmax(0, 1fr))`,
+                            gap: "clamp(0.28rem,0.8vw,0.5rem)",
                         }}
                     >
-                        <div className="min-h-0 min-w-0 overflow-hidden">
-                            <div className="h-full w-full min-h-0 min-w-0 overflow-hidden">
-                                {pipFeaturedTile ? renderTile(pipFeaturedTile) : null}
+                        {pipGalleryTiles.map((t) => (
+                            <div
+                                key={`pip-gallery-${t.id}`}
+                                className="min-h-0 min-w-0 overflow-hidden rounded-2xl"
+                                style={{ minHeight: 0, minWidth: 0 }}
+                            >
+                                {renderTile(t)}
                             </div>
-                        </div>
-
-                        <div className="min-h-0 min-w-0 overflow-y-auto overflow-x-hidden pr-[clamp(0.12rem,0.45vw,0.28rem)]">
-                            <div className="flex min-h-0 min-w-0 flex-col gap-[clamp(0.28rem,0.8vw,0.48rem)]">
-                                {pipStripTiles.map((t) => (
-                                    <div
-                                        key={`pip-${t.id}`}
-                                        className="min-h-0 min-w-0 overflow-hidden"
-                                        style={{
-                                            aspectRatio: pipStripTiles.length <= 2 ? "4 / 5" : "3 / 4",
-                                        }}
-                                    >
-                                        {renderTile(t)}
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
+                        ))}
                     </div>
                 ) : (
-                    <div className="h-full min-h-0 min-w-0 overflow-hidden p-[clamp(0.28rem,0.9vw,0.56rem)]">
-                        <div
-                            className="grid h-full w-full min-h-0 min-w-0 content-start overflow-auto"
-                            style={{
-                                gridTemplateColumns: `repeat(${resolvedGalleryColumns}, minmax(0, 1fr))`,
-                                gridAutoRows: "minmax(0, 1fr)",
-                                gap: "clamp(0.28rem,0.8vw,0.5rem)",
-                            }}
-                        >
-                            {pipGalleryTiles.map((t) => (
-                                <div
-                                    key={`pip-gallery-${t.id}`}
-                                    className="min-h-0 min-w-0 overflow-hidden"
-                                    style={{
-                                        aspectRatio: galleryAspectRatio,
-                                    }}
-                                >
-                                    {renderTile(t)}
-                                </div>
-                            ))}
-                        </div>
+                    <div className={`flex h-full items-center justify-center text-[0.8rem] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        No video tiles yet
                     </div>
                 )}
             </div>
@@ -238,10 +200,10 @@ export default function LiveKitPiPPortal({
                         type="button"
                         onClick={onToggleScreenShare}
                         className={`${ctlBtnBase} ${screenShareOn
-                                ? isLight
-                                    ? "ring-2 ring-black/20"
-                                    : "ring-2 ring-white/20"
-                                : ""
+                            ? isLight
+                                ? "ring-2 ring-black/20"
+                                : "ring-2 ring-white/20"
+                            : ""
                             }`}
                         title={screenShareOn ? "Stop screen share" : "Start screen share"}
                         aria-label={screenShareOn ? "Stop screen share" : "Start screen share"}
@@ -281,8 +243,8 @@ export default function LiveKitPiPPortal({
                                                 onSendReaction(reactionType);
                                             }}
                                             className={`flex h-[2.85rem] items-center justify-center rounded-xl border text-[1.1rem] transition ${isLight
-                                                    ? "border-black/10 bg-black/5 hover:bg-black/10"
-                                                    : "border-white/10 bg-white/5 hover:bg-white/10"
+                                                ? "border-black/10 bg-black/5 hover:bg-black/10"
+                                                : "border-white/10 bg-white/5 hover:bg-white/10"
                                                 }`}
                                             title={reactionType}
                                             aria-label={reactionType}

@@ -163,6 +163,7 @@ type VideoTileProps = {
     onToggleMenu?: (tileId: string, anchorEl: HTMLElement | null) => void;
     onOpenProfile?: () => void;
     onEditName?: () => void;
+    density?: "normal" | "compact";
 };
 
 function MicBadgeWithBarVisualizer({
@@ -262,6 +263,7 @@ function VideoTileInner({
     mirrorVideo = true,
     audioLevel = 0,
     showMenuButton = false,
+    density = "normal",
     onToggleMenu,
     onOpenProfile,
 }: VideoTileProps) {
@@ -270,6 +272,7 @@ function VideoTileInner({
     const attachedElRef = useRef<HTMLElement | null>(null);
 
     const isLight = theme === "light";
+    const isCompact = density === "compact";
 
     const tileBgClass = isLight ? "bg-white/80" : "bg-[#071427]";
     const mediaBgColor = isLight ? "#FFFFFF" : "#071427";
@@ -434,7 +437,8 @@ function VideoTileInner({
         <div
             ref={wrapRef}
             className={
-                "group relative h-full w-full min-h-0 min-w-0 rounded-2xl overflow-hidden border " +
+                "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border " +
+                (isCompact ? "rounded-xl " : "rounded-2xl ") +
                 (isLight ? "border-black/10" : "border-white/10") +
                 " " +
                 tileBgClass
@@ -455,7 +459,7 @@ function VideoTileInner({
                             <img
                                 src={normalizedAvatarUrl}
                                 alt={label || "User"}
-                                className={`h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)] rounded-full object-cover border shadow-2xl ${isLight ? "border-black/10" : "border-white/10"
+                                className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)]"} rounded-full object-cover border shadow-2xl ${isLight ? "border-black/10" : "border-white/10"
                                     }`}
                                 referrerPolicy="no-referrer"
                                 onError={() => setAvatarBroken(true)}
@@ -463,7 +467,7 @@ function VideoTileInner({
                             />
                         ) : (
                             <div
-                                className={`h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)] rounded-full border flex items-center justify-center font-bold text-[clamp(1.1rem,3vw,1.45rem)] shadow-2xl ${initialsBgClass}`}
+                                className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)] text-[clamp(0.8rem,5vmin,1.05rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)] text-[clamp(1.1rem,3vw,1.45rem)]"} rounded-full border flex items-center justify-center font-bold shadow-2xl ${initialsBgClass}`}
                             >
                                 {initials}
                             </div>
@@ -586,14 +590,14 @@ function VideoTileInner({
                 />
             </div>
 
-            <div className="pointer-events-none absolute inset-x-[0.4rem] bottom-[0.4rem] z-[12] flex min-w-0 items-end justify-between gap-[0.35rem]">
+            <div className={`pointer-events-none absolute z-[12] flex min-w-0 items-end justify-between gap-[0.35rem] ${isCompact ? "inset-x-[0.28rem] bottom-[0.28rem]" : "inset-x-[0.4rem] bottom-[0.4rem]"}`}>
                 <div
-                    className={`pointer-events-auto min-w-0 max-w-full rounded-[12px] border px-2 py-1 backdrop-blur-md ${namePillClass}`}
+                    className={`pointer-events-auto min-w-0 max-w-full rounded-[12px] border backdrop-blur-md ${isCompact ? "px-1.5 py-0.5" : "px-2 py-1"} ${namePillClass}`}
                 >
                     <div className="flex min-w-0 items-center gap-[0.35rem]">
                         <>
                             <span
-                                className={`min-w-0 truncate text-[12px] font-medium leading-none ${nameTextClass}`}
+                                className={`min-w-0 truncate ${isCompact ? "text-[10px]" : "text-[12px]"} font-medium leading-none ${nameTextClass}`}
                             >
                                 {label || "User"}
                             </span>
@@ -638,6 +642,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.mirrorVideo === next.mirrorVideo &&
         prev.audioLevel === next.audioLevel &&
         prev.showMenuButton === next.showMenuButton &&
+        prev.density === next.density &&
         prev.onToggleMenu === next.onToggleMenu &&
         prev.onOpenProfile === next.onOpenProfile &&
         prev.hostActions?.canMuteMic === next.hostActions?.canMuteMic &&
