@@ -877,17 +877,7 @@ async function handleDailyScheduleSavedAudienceAction(params: {
   if (action === "daily_schedule_saved_audience_get") {
     const { data, error } = await sb
       .from("daily_schedule_email_audience_members")
-      .select(`
-        user_id,
-        email,
-        enabled,
-        created_at,
-        profiles:profiles!daily_schedule_email_audience_members_user_id_fkey(
-          id,
-          full_name,
-          avatar_url
-        )
-      `)
+      .select("audience_name,user_id,email,enabled,created_by,created_at,updated_at")
       .eq("audience_name", audienceName)
       .eq("enabled", true)
       .order("created_at", { ascending: true });
@@ -899,11 +889,27 @@ async function handleDailyScheduleSavedAudienceAction(params: {
       });
     }
 
-    const members = (data || []).map((row: any) => {
-      const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+    const rows = Array.isArray(data) ? data : [];
+    const userIds = rows.map((r: any) => String(r.user_id || "")).filter(Boolean);
+
+    const { data: profilesData } = userIds.length
+      ? await sb
+          .from("profiles")
+          .select("id,full_name,avatar_url")
+          .in("id", userIds)
+      : { data: [] as any[] };
+
+    const profilesByUser = new Map<string, any>();
+    for (const p of profilesData || []) {
+      profilesByUser.set(String(p.id), p);
+    }
+
+    const members = rows.map((row: any) => {
+      const userId = String(row.user_id || "");
+      const profile = profilesByUser.get(userId) || null;
 
       return {
-        userId: String(row.user_id || ""),
+        userId,
         email: String(row.email || ""),
         name: String(profile?.full_name || row.email || "User"),
         avatarUrl: String(profile?.avatar_url || "").trim() || null,
@@ -924,12 +930,12 @@ async function handleDailyScheduleSavedAudienceAction(params: {
   if (action === "daily_schedule_saved_audience_set") {
     const selectedUserIds = Array.isArray(body.selectedUserIds)
       ? Array.from(
-        new Set(
-          body.selectedUserIds
-            .map((x) => String(x || "").trim())
-            .filter(Boolean)
+          new Set(
+            body.selectedUserIds
+              .map((x) => String(x || "").trim())
+              .filter(Boolean)
+          )
         )
-      )
       : [];
 
     if (selectedUserIds.length > DAILY_EMAIL_MAX_FREE_LIMIT) {
@@ -942,9 +948,9 @@ async function handleDailyScheduleSavedAudienceAction(params: {
 
     const { data: usersData, error: usersErr } = selectedUserIds.length
       ? await (sb.auth.admin as any).listUsers({
-        page: 1,
-        perPage: 1000,
-      })
+          page: 1,
+          perPage: 1000,
+        })
       : { data: { users: [] }, error: null };
 
     if (usersErr) {
@@ -963,7 +969,6 @@ async function handleDailyScheduleSavedAudienceAction(params: {
       .map((userId) => {
         const u = authUsers.get(userId);
         const email = String(u?.email || "").trim().toLowerCase();
-
         if (!email) return null;
 
         return {
