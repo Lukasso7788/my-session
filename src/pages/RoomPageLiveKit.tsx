@@ -2643,18 +2643,9 @@ export function RoomPageLiveKit() {
     return false;
   }, [session]);
 
-  const isSilentRoom = useMemo(() => {
-    const fmt = str(session?.format).toLowerCase();
-    const title = str(session?.title).toLowerCase();
-
-    const tpl0 = getTemplateFirst(session?.session_templates ?? null);
-    const tplName = str(tpl0?.name || tpl0?.title).toLowerCase();
-    const tplKey = str(tpl0?.key || tpl0?.slug || tpl0?.type).toLowerCase();
-    const tplFmt = str(tpl0?.format).toLowerCase();
-
-    const hay = `${fmt} ${title} ${tplName} ${tplKey} ${tplFmt}`.toLowerCase();
-    return hay.includes("silent");
-  }, [session]);
+  // Timeline/stage bar must be driven only by the actual schedule/stages.
+  // Do not auto-hide or stop it based on session title/format/template text like "silent".
+  const isSilentRoom = false;
 
   useEffect(() => {
     console.log("[LK SERVER ROUTING]", {
