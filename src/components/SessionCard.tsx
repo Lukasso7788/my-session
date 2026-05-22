@@ -3221,7 +3221,9 @@ export default function SessionCard({
         PAYWALL_ENABLED || isPersonalPaywallForced(entitlementState);
 
     const paywallBlocked =
-        paywallRuntimeEnabled && !!paywallDecision?.blocked;
+        isPersonalPaywallForced(entitlementState)
+            ? true
+            : paywallRuntimeEnabled && !!paywallDecision?.blocked;
 
     useEffect(() => setIsBookingConfirmed(!!initialIsBooked), [session.id, initialIsBooked]);
     useEffect(() => setBookers(initialBookers), [initialBookers]);

@@ -1758,11 +1758,15 @@ export function RoomPageLiveKit() {
     });
   }, [entitlementState]);
 
-  const paywallBlocked = !!paywallDecision?.blocked;
-  const paywallRuntimeEnabled =
-    PAYWALL_ENABLED || isPersonalPaywallForced(entitlementState);
+  const forcePaywall = isPersonalPaywallForced(entitlementState);
 
-  const paywallRuntimeBlocked = paywallRuntimeEnabled && paywallBlocked;
+  const paywallBlocked = !!paywallDecision?.blocked;
+
+  const paywallRuntimeEnabled =
+    PAYWALL_ENABLED || forcePaywall;
+
+  const paywallRuntimeBlocked =
+    forcePaywall ? true : paywallRuntimeEnabled && paywallBlocked;
 
   useEffect(() => {
     console.log("[PAYWALL Room DEBUG]", {
