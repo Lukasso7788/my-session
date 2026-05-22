@@ -25,7 +25,11 @@ import {
 import { supabase } from "../lib/supabase";
 import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
-import { loadEntitlementState, type EntitlementState } from "../lib/entitlements";
+import {
+  loadEntitlementState,
+  isPersonalPaywallForced,
+  type EntitlementState,
+} from "../lib/entitlements";
 import { getPaywallDecision } from "../lib/paywall";
 import { getCurrentUserActiveBan, type ActiveBan } from "../lib/bans";
 import PaywallModal from "../components/PaywallModal";
@@ -1755,22 +1759,39 @@ export function RoomPageLiveKit() {
   }, [entitlementState]);
 
   const paywallBlocked = !!paywallDecision?.blocked;
+  const paywallRuntimeEnabled =
+    PAYWALL_ENABLED || isPersonalPaywallForced(entitlementState);
+
+  const paywallRuntimeBlocked = paywallRuntimeEnabled && paywallBlocked;
+
   useEffect(() => {
     console.log("[PAYWALL Room DEBUG]", {
       PAYWALL_ENABLED,
+      paywallRuntimeEnabled,
       entitlementState,
       paywallDecision,
       paywallBlocked,
+      paywallRuntimeBlocked,
     });
   }, [entitlementState, paywallDecision, paywallBlocked]);
 
   useEffect(() => {
     console.log("[PAYWALL RoomPageLiveKit]", {
+      PAYWALL_ENABLED,
+      paywallRuntimeEnabled,
       entitlementState,
       paywallDecision,
       paywallBlocked,
+      paywallRuntimeBlocked,
     });
-  }, [entitlementState, paywallDecision, paywallBlocked]);
+  }, [
+    PAYWALL_ENABLED,
+    paywallRuntimeEnabled,
+    entitlementState,
+    paywallDecision,
+    paywallBlocked,
+    paywallRuntimeBlocked,
+  ]);
 
   // theme
   const [theme, setTheme] = useState<RoomTheme>(() => {
@@ -5735,7 +5756,7 @@ export function RoomPageLiveKit() {
   const connectRoom = async () => {
     if (!lkServerUrl || !lkToken) return;
     if (connectInFlightRef.current) return;
-    if (paywallBlocked && !!authUserId) {
+    if (paywallRuntimeBlocked && !!authUserId) {
       setPaywallModalOpen(true);
       return;
     }
@@ -8586,7 +8607,7 @@ export function RoomPageLiveKit() {
     );
   }
 
-  if (paywallBlocked) {
+  if (paywallRuntimeBlocked) {
     return (
       <>
         <div className={`flex h-screen items-center justify-center ${pageBg}`}>
@@ -8721,7 +8742,7 @@ export function RoomPageLiveKit() {
 
     joinFlowStartedRef.current = true;
     connectingFromPrejoinRef.current = true;
-    if (paywallBlocked) {
+    if (paywallRuntimeBlocked) {
       setPaywallModalOpen(true);
       joinFlowStartedRef.current = false;
       connectingFromPrejoinRef.current = false;

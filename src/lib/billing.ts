@@ -16,6 +16,7 @@ export type UserEntitlement = {
   user_id: string;
   plan: BillingPlanCode;
   status: EntitlementStatus;
+  force_paywall?: boolean | null;
 
   trial_started_at: string | null;
   trial_ends_at: string | null;

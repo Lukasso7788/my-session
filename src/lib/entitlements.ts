@@ -25,6 +25,12 @@ export type EntitlementState = {
   weekly: ReturnType<typeof getWeeklyLimitState>;
 };
 
+export function isPersonalPaywallForced(
+  state: EntitlementState | null | undefined
+): boolean {
+  return state?.entitlement?.force_paywall === true;
+}
+
 function normalizeWeekStartForQuery(input: unknown): string {
   if (input instanceof Date) {
     return input.toISOString().slice(0, 10);

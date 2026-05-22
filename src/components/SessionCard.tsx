@@ -10,7 +10,11 @@ import { Link, useNavigate } from "react-router-dom";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser } from "lucide-react";
 import { SessionStageBar } from "./SessionStageBar";
-import { loadEntitlementState, type EntitlementState } from "../lib/entitlements";
+import {
+    loadEntitlementState,
+    isPersonalPaywallForced,
+    type EntitlementState,
+} from "../lib/entitlements";
 import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "./PaywallModal";
 import type { SessionStage } from "../SessionConfig";
@@ -3213,6 +3217,12 @@ export default function SessionCard({
         });
     }, [entitlementState]);
 
+    const paywallRuntimeEnabled =
+        PAYWALL_ENABLED || isPersonalPaywallForced(entitlementState);
+
+    const paywallBlocked =
+        paywallRuntimeEnabled && !!paywallDecision?.blocked;
+
     useEffect(() => setIsBookingConfirmed(!!initialIsBooked), [session.id, initialIsBooked]);
     useEffect(() => setBookers(initialBookers), [initialBookers]);
 
@@ -3646,7 +3656,7 @@ export default function SessionCard({
             return;
         }
 
-        if (userId && paywallDecision?.blocked) {
+        if (userId && paywallBlocked) {
             setPaywallOpen(true);
             return;
         }
