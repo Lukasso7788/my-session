@@ -6630,33 +6630,29 @@ export function RoomPageLiveKit() {
     closeTileMenu();
 
     optimisticMute(tileId);
-    scheduleRebuildTiles();
+    setAdminBusyKey("");
 
-    try {
-      await callAdmin({
-        action: "turn_off_camera",
-        trackKind: "camera",
-        roomName,
-        participantIdentity,
-        trackSid,
+    void callAdmin({
+      action: "mute_microphone",
+      trackKind: "microphone",
+      roomName,
+      participantIdentity,
+      trackSid,
+    })
+      .then(() => {
+        window.setTimeout(() => scheduleRebuildTiles(), 350);
+        window.setTimeout(() => scheduleRebuildTiles(), 900);
+      })
+      .catch((e: any) => {
+        console.error("mute mic failed:", e);
+        showSystemNotice({
+          kind: "error",
+          title: "Mic mute failed",
+          body: String(e?.message || e || "mute_failed"),
+        });
+        window.setTimeout(() => scheduleRebuildTiles(), 350);
       });
-
-      scheduleRebuildTiles();
-      window.setTimeout(() => scheduleRebuildTiles(), 80);
-      window.setTimeout(() => scheduleRebuildTiles(), 220);
-    } catch (e: any) {
-      console.error("mute mic failed:", e);
-      showSystemNotice({
-        kind: "error",
-        title: "Mic mute failed",
-        body: String(e?.message || e || "mute_failed"),
-      });
-      scheduleRebuildTiles();
-      window.setTimeout(() => scheduleRebuildTiles(), 80);
-      window.setTimeout(() => scheduleRebuildTiles(), 220);
-    } finally {
-      setAdminBusyKey("");
-    }
+    return;
   };
 
   const adminTurnOffRemoteCamera = async (
@@ -6672,32 +6668,30 @@ export function RoomPageLiveKit() {
     closeTileMenu();
 
     optimisticCameraOff(tileId);
-    scheduleRebuildTiles();
+    setAdminBusyKey("");
 
-    try {
-      await callAdmin({
-        action: "mute_track",
-        roomName,
-        participantIdentity,
-        trackSid,
+    void callAdmin({
+      action: "turn_off_camera",
+      trackKind: "camera",
+      roomName,
+      participantIdentity,
+      trackSid,
+    })
+      .then(() => {
+        window.setTimeout(() => scheduleRebuildTiles(), 350);
+        window.setTimeout(() => scheduleRebuildTiles(), 900);
+      })
+      .catch((e: any) => {
+        console.error("turn camera off failed:", e);
+        showSystemNotice({
+          kind: "error",
+          title: "Camera action failed",
+          body: String(e?.message || e || "camera_off_failed"),
+        });
+        window.setTimeout(() => scheduleRebuildTiles(), 350);
       });
 
-      scheduleRebuildTiles();
-      window.setTimeout(() => scheduleRebuildTiles(), 80);
-      window.setTimeout(() => scheduleRebuildTiles(), 220);
-    } catch (e: any) {
-      console.error("turn camera off failed:", e);
-      showSystemNotice({
-        kind: "error",
-        title: "Camera action failed",
-        body: String(e?.message || e || "camera_off_failed"),
-      });
-      scheduleRebuildTiles();
-      window.setTimeout(() => scheduleRebuildTiles(), 80);
-      window.setTimeout(() => scheduleRebuildTiles(), 220);
-    } finally {
-      setAdminBusyKey("");
-    }
+    return;
   };
 
   const adminKickParticipant = async (
