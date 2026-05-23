@@ -47,6 +47,8 @@ async function upsertEntitlement(params: {
         plan,
         status: "active",
         source,
+        force_paywall: false,
+        updated_at: nowIso,
         notes: `Activated via Stripe webhook at ${nowIso}`,
     };
 
