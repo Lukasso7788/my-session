@@ -39,6 +39,20 @@ function getPriceIdForPlan(plan: SupportedPlan): string {
   return priceId;
 }
 
+function getCheckoutDiscounts() {
+  const coupon = String(process.env.STRIPE_COUPON_100_OFF || "").trim();
+
+  if (!coupon) {
+    return undefined;
+  }
+
+  return [
+    {
+      coupon,
+    },
+  ];
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -73,13 +87,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const mode: "subscription" | "payment" =
       plan === "lifetime" ? "payment" : "subscription";
 
-    console.log("create-checkout-session LIVE", {
+    const discounts = getCheckoutDiscounts();
+
+    console.log("create-checkout-session", {
       userId: user.id,
       email: user.email,
       plan,
       mode,
       priceId,
       appUrl: APP_URL,
+      hasDiscount: !!discounts?.length,
     });
 
     const session = await stripe.checkout.sessions.create({
@@ -91,8 +108,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
       ],
 
-      // ❌ УБРАНО:
-      // discounts: [{ coupon: ... }]
+      discounts,
 
       success_url: `${APP_URL}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${APP_URL}/pricing?checkout=cancelled`,
