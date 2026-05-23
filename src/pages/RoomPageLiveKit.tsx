@@ -4258,6 +4258,20 @@ export function RoomPageLiveKit() {
   useEffect(() => {
     if (!session?.id) return;
 
+    const sessionId = session.id;
+
+    const timer = window.setInterval(() => {
+      void loadModerators(sessionId);
+    }, 3000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [session?.id]);
+
+  useEffect(() => {
+    if (!session?.id) return;
+
     const ch = supabase
       .channel(`session-role-assignments:${session.id}`)
       .on(
@@ -4297,6 +4311,7 @@ export function RoomPageLiveKit() {
       const { error } = await supabase.from("session_role_assignments").insert(payload as any);
       if (error) throw error;
       setModeratorUserIds((prev) => uniqStrings([...prev, uid]));
+      void loadModerators(session.id);
     } catch (e: any) {
       console.error("grantModerator failed:", e);
       setRolesError(String(e?.message || e || "grant_failed"));
@@ -4322,6 +4337,7 @@ export function RoomPageLiveKit() {
         .eq("role", "moderator");
       if (error) throw error;
       setModeratorUserIds((prev) => prev.filter((x) => x !== uid));
+      void loadModerators(session.id);
     } catch (e: any) {
       console.error("revokeModerator failed:", e);
       setRolesError(String(e?.message || e || "revoke_failed"));
@@ -6547,12 +6563,15 @@ export function RoomPageLiveKit() {
     navigate(`/sessions?${params.toString()}`, { replace: true });
   };
 
+  const controller = new AbortController();
+
   // admin endpoint
   const callAdmin = async (body: Record<string, unknown>) => {
     const token = await getFreshAccessToken();
 
     const res = await fetch(adminEndpoint, {
       method: "POST",
+      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
@@ -6564,6 +6583,9 @@ export function RoomPageLiveKit() {
         isModerator: !isHost && isSelfModerator,
       }),
     });
+
+    const timeoutId = window.setTimeout(() => controller.abort(), 8000);
+    window.clearTimeout(timeoutId);
 
     if (!res.ok) {
       const t = await res.text().catch(() => "");
@@ -6605,12 +6627,15 @@ export function RoomPageLiveKit() {
 
     const busyKey = `${participantIdentity}:${trackSid}:mute`;
     setAdminBusyKey(busyKey);
+    closeTileMenu();
 
     optimisticMute(tileId);
+    scheduleRebuildTiles();
 
     try {
       await callAdmin({
-        action: "mute_track",
+        action: "turn_off_camera",
+        trackKind: "camera",
         roomName,
         participantIdentity,
         trackSid,
@@ -6644,8 +6669,10 @@ export function RoomPageLiveKit() {
 
     const busyKey = `${participantIdentity}:${trackSid}:camera-off`;
     setAdminBusyKey(busyKey);
+    closeTileMenu();
 
     optimisticCameraOff(tileId);
+    scheduleRebuildTiles();
 
     try {
       await callAdmin({
