@@ -6,6 +6,7 @@ import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
 import ActiveBanModal from "../components/ActiveBanModal";
 import SupportMySessionModal from "../components/SupportMySessionModal";
+import HostSessionPromptModal, { type HostPromptKind } from "../components/HostSessionPromptModal";
 import { SessionsDateFilter } from "../components/SessionsDateFilter";
 import BodyTriplingBody from "../components/body/BodyTriplingBody";
 import { BodyTriplingIntro } from "../components/body/BodyTriplingIntro";
@@ -74,6 +75,11 @@ type PostSessionSessionOption = {
   start_time?: string | null;
   duration_minutes?: number | null;
   host_id?: string | null;
+};
+
+type HostPromptStats = {
+  hostedTotal: number;
+  upcomingHosted: number;
 };
 
 function toLocalYMDFromISO(iso: string) {
@@ -468,6 +474,12 @@ export function SessionsPage() {
   const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
   const [lifetimeSessionsCount, setLifetimeSessionsCount] = useState<number | null>(null);
   const [supportModalOpen, setSupportModalOpen] = useState(false);
+  const [hostPromptStats, setHostPromptStats] = useState<HostPromptStats>({
+    hostedTotal: 0,
+    upcomingHosted: 0,
+  });
+  const [hostPromptOpen, setHostPromptOpen] = useState(false);
+  const [hostPromptKind, setHostPromptKind] = useState<HostPromptKind>("never_hosted");
 
   const [postSessionPrompt, setPostSessionPrompt] =
     useState<PostSessionPromptState>({
@@ -525,19 +537,40 @@ export function SessionsPage() {
       setEntitlementState(null);
       setLifetimeSessionsCount(null);
       setSupportModalOpen(false);
+      setHostPromptStats({
+        hostedTotal: 0,
+        upcomingHosted: 0,
+      });
+      setHostPromptOpen(false);
       return;
     }
 
     let cancelled = false;
 
     const run = async () => {
+      const nowIso = new Date().toISOString();
+
       try {
-        const [stateResult, lifetimeCountResult] = await Promise.allSettled([
+        const [
+          stateResult,
+          lifetimeCountResult,
+          hostedTotalResult,
+          upcomingHostedResult,
+        ] = await Promise.allSettled([
           loadEntitlementState(),
           supabase
             .from("session_attendance")
             .select("session_id", { count: "exact", head: true })
             .eq("user_id", user.id),
+          supabase
+            .from("sessions")
+            .select("id", { count: "exact", head: true })
+            .eq("host_id", user.id),
+          supabase
+            .from("sessions")
+            .select("id", { count: "exact", head: true })
+            .eq("host_id", user.id)
+            .gte("start_time", nowIso),
         ]);
 
         if (cancelled) return;
@@ -577,11 +610,57 @@ export function SessionsPage() {
           }
           setLifetimeSessionsCount(null);
         }
+
+        let hostedTotal = 0;
+        let upcomingHosted = 0;
+
+        if (hostedTotalResult.status === "fulfilled") {
+          const { count, error } = hostedTotalResult.value;
+
+          if (error) {
+            if (DEBUG) {
+              console.warn("[sessions-host-prompt] hosted total count failed:", error);
+            }
+          } else {
+            hostedTotal = Number(count || 0);
+          }
+        } else if (DEBUG) {
+          console.warn(
+            "[sessions-host-prompt] hosted total count crashed:",
+            hostedTotalResult.reason
+          );
+        }
+
+        if (upcomingHostedResult.status === "fulfilled") {
+          const { count, error } = upcomingHostedResult.value;
+
+          if (error) {
+            if (DEBUG) {
+              console.warn("[sessions-host-prompt] upcoming hosted count failed:", error);
+            }
+          } else {
+            upcomingHosted = Number(count || 0);
+          }
+        } else if (DEBUG) {
+          console.warn(
+            "[sessions-host-prompt] upcoming hosted count crashed:",
+            upcomingHostedResult.reason
+          );
+        }
+
+        setHostPromptStats({
+          hostedTotal,
+          upcomingHosted,
+        });
       } catch (e) {
         if (DEBUG) console.warn("[sessions-support] load failed:", e);
         if (!cancelled) {
           setEntitlementState(null);
           setLifetimeSessionsCount(null);
+          setHostPromptStats({
+            hostedTotal: 0,
+            upcomingHosted: 0,
+          });
         }
       }
     };
@@ -615,6 +694,48 @@ export function SessionsPage() {
       window.clearTimeout(timer);
     };
   }, [user?.id, entitlementState, lifetimeSessionsCount]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (activeBan) return;
+    if (supportModalOpen) return;
+    if (postSessionPrompt.open) return;
+    if (howItWorksOpen) return;
+
+    const hostedTotal = Math.max(0, Number(hostPromptStats.hostedTotal || 0));
+    const upcomingHosted = Math.max(0, Number(hostPromptStats.upcomingHosted || 0));
+
+    // Active hosts already have supply on the schedule, so we do not nag them.
+    if (upcomingHosted > 0) return;
+
+    const kind: HostPromptKind =
+      hostedTotal <= 0 ? "never_hosted" : "inactive_host";
+
+    const key = `mysession_host_prompt_dismissed_at:${user.id}:${kind}`;
+    const lastDismissed = Number(localStorage.getItem(key) || 0);
+    const cooldownMs =
+      kind === "never_hosted"
+        ? 24 * 60 * 60 * 1000
+        : 3 * 24 * 60 * 60 * 1000;
+
+    if (lastDismissed && Date.now() - lastDismissed < cooldownMs) return;
+
+    const timer = window.setTimeout(() => {
+      setHostPromptKind(kind);
+      setHostPromptOpen(true);
+    }, 2200);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    user?.id,
+    activeBan,
+    supportModalOpen,
+    postSessionPrompt.open,
+    howItWorksOpen,
+    hostPromptStats,
+  ]);
 
   useEffect(() => {
     const onRefresh = () => {
@@ -1436,6 +1557,37 @@ export function SessionsPage() {
     setSupportModalOpen(false);
   }, []);
 
+  const closeHostPromptModal = useCallback(() => {
+    if (user?.id) {
+      localStorage.setItem(
+        `mysession_host_prompt_dismissed_at:${user.id}:${hostPromptKind}`,
+        Date.now().toString()
+      );
+    }
+
+    setHostPromptOpen(false);
+  }, [hostPromptKind, user?.id]);
+
+  const openCreateFromHostPrompt = useCallback(() => {
+    if (user?.id) {
+      localStorage.setItem(
+        `mysession_host_prompt_dismissed_at:${user.id}:${hostPromptKind}`,
+        Date.now().toString()
+      );
+    }
+
+    setHostPromptOpen(false);
+
+    if (showBanModal()) return;
+
+    if (!user) {
+      navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+      return;
+    }
+
+    modal.open();
+  }, [hostPromptKind, modal, navigate, showBanModal, user]);
+
 
   const topPad =
     sessionTypeTab === "group"
@@ -1858,6 +2010,13 @@ export function SessionsPage() {
       <SupportMySessionModal
         open={supportModalOpen}
         onClose={closeSupportModal}
+      />
+
+      <HostSessionPromptModal
+        open={hostPromptOpen}
+        kind={hostPromptKind}
+        onClose={closeHostPromptModal}
+        onHostSession={openCreateFromHostPrompt}
       />
 
       <ActiveBanModal
