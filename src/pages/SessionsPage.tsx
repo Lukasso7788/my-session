@@ -466,6 +466,7 @@ export function SessionsPage() {
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
   const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
+  const [lifetimeSessionsCount, setLifetimeSessionsCount] = useState<number | null>(null);
   const [supportModalOpen, setSupportModalOpen] = useState(false);
 
   const [postSessionPrompt, setPostSessionPrompt] =
@@ -522,6 +523,7 @@ export function SessionsPage() {
   useEffect(() => {
     if (!user?.id) {
       setEntitlementState(null);
+      setLifetimeSessionsCount(null);
       setSupportModalOpen(false);
       return;
     }
@@ -530,11 +532,57 @@ export function SessionsPage() {
 
     const run = async () => {
       try {
-        const state = await loadEntitlementState();
-        if (!cancelled) setEntitlementState(state);
+        const [stateResult, lifetimeCountResult] = await Promise.allSettled([
+          loadEntitlementState(),
+          supabase
+            .from("session_attendance")
+            .select("session_id", { count: "exact", head: true })
+            .eq("user_id", user.id),
+        ]);
+
+        if (cancelled) return;
+
+        if (stateResult.status === "fulfilled") {
+          setEntitlementState(stateResult.value);
+        } else {
+          if (DEBUG) {
+            console.warn(
+              "[sessions-support] entitlement load failed:",
+              stateResult.reason
+            );
+          }
+          setEntitlementState(null);
+        }
+
+        if (lifetimeCountResult.status === "fulfilled") {
+          const { count, error } = lifetimeCountResult.value;
+
+          if (error) {
+            if (DEBUG) {
+              console.warn(
+                "[sessions-support] lifetime session count failed:",
+                error
+              );
+            }
+            setLifetimeSessionsCount(null);
+          } else {
+            setLifetimeSessionsCount(Number(count || 0));
+          }
+        } else {
+          if (DEBUG) {
+            console.warn(
+              "[sessions-support] lifetime session count crashed:",
+              lifetimeCountResult.reason
+            );
+          }
+          setLifetimeSessionsCount(null);
+        }
       } catch (e) {
-        if (DEBUG) console.warn("[sessions-support] entitlement load failed:", e);
-        if (!cancelled) setEntitlementState(null);
+        if (DEBUG) console.warn("[sessions-support] load failed:", e);
+        if (!cancelled) {
+          setEntitlementState(null);
+          setLifetimeSessionsCount(null);
+        }
       }
     };
 
@@ -549,9 +597,9 @@ export function SessionsPage() {
     if (!user?.id) return;
     if (!entitlementState?.isLoggedIn) return;
     if (entitlementState.isUnlimited) return;
+    if (lifetimeSessionsCount === null) return;
 
-    const sessionsUsed = Number(entitlementState.usage?.sessions_count || 0);
-    if (sessionsUsed < 5) return;
+    if (lifetimeSessionsCount <= 5) return;
 
     const key = "mysession_support_modal_dismissed_at";
     const lastDismissed = Number(localStorage.getItem(key) || 0);
@@ -566,7 +614,7 @@ export function SessionsPage() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [user?.id, entitlementState]);
+  }, [user?.id, entitlementState, lifetimeSessionsCount]);
 
   useEffect(() => {
     const onRefresh = () => {
