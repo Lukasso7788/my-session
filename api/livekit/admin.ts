@@ -113,7 +113,7 @@ type AdminEmailUser = {
   unsubscribeToken: string;
 };
 
-const ACTOR_ROLE_CACHE_TTL_MS = 15_000;
+const ACTOR_ROLE_CACHE_TTL_MS = 2_000;
 const SESSION_CONTEXT_CACHE_TTL_MS = 15_000;
 
 const DAILY_EMAIL_DEFAULT_LIMIT = 100;
@@ -208,12 +208,6 @@ function parseBody(req: VercelRequest): Body {
   }
 
   return raw as Body;
-}
-
-function getQueryParam(req: VercelRequest, name: string) {
-  const raw = (req.query as any)?.[name];
-  if (Array.isArray(raw)) return String(raw[0] || "").trim();
-  return String(raw || "").trim();
 }
 
 function normalizeLiveKitHost(raw: string): string {
@@ -719,6 +713,14 @@ ${appUrl}/sessions
 
 Tip: click "Book Session" — it helps increase attendance and attract more people to the session.
 
+Don’t see a session that fits your time today?
+
+Consider creating your own session — it helps more people find a time that works, and others may join you too.
+
+You can create a session by clicking the "Create a session" button in the top right corner.
+
+${appUrl}/sessions
+
 Unsubscribe from daily schedule emails:
 ${unsubscribeUrl}
 
@@ -769,6 +771,31 @@ ${unsubscribeUrl}
       <p style="margin-top:22px;color:#555;font-size:14px;">
         Tip: click <strong>Book Session</strong> — it helps increase attendance and attract more people to the session.
       </p>
+
+            <div style="margin-top:18px;padding:16px;border:1px solid #e5e7eb;border-radius:18px;background:#f9fafb;">
+        <div style="font-weight:700;font-size:15px;color:#111827;">
+          Don’t see a session that fits your time?
+        </div>
+
+        <p style="margin:8px 0 0;color:#555;font-size:14px;line-height:1.5;">
+          Consider creating your own session — it helps more people find a time that works, and others may join you too.
+        </p>
+
+        <p style="margin:10px 0 0;color:#555;font-size:14px;line-height:1.5;">
+          You can create a session by clicking the
+          <strong>"Create a session"</strong>
+          button in the top right corner.
+        </p>
+
+        <div style="margin-top:14px;">
+          <a
+            href="${appUrl}/sessions"
+            style="display:inline-block;background:#111827;color:white;text-decoration:none;border-radius:999px;padding:10px 16px;font-weight:700;font-size:14px;"
+          >
+            Create a session
+          </a>
+        </div>
+      </div>
 
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:26px 0;" />
       <p style="font-size:12px;color:#777;margin:0;">
@@ -1351,6 +1378,12 @@ async function handleDailyScheduleEmailAction(params: {
   });
 }
 
+function getQueryParam(req: VercelRequest, name: string) {
+  const raw = (req.query as any)?.[name];
+  if (Array.isArray(raw)) return String(raw[0] || "").trim();
+  return String(raw || "").trim();
+}
+
 async function handleDailyScheduleSavedAudienceCronAction(params: {
   req: VercelRequest;
   res: VercelResponse;
@@ -1361,7 +1394,6 @@ async function handleDailyScheduleSavedAudienceCronAction(params: {
   const expectedSecret = env("DAILY_SCHEDULE_CRON_SECRET");
   const suppliedSecret = String(
     req.headers["x-cron-secret"] ||
-    req.headers["x-mysession-cron-secret"] ||
     getQueryParam(req, "secret") ||
     ""
   ).trim();
@@ -1374,38 +1406,21 @@ async function handleDailyScheduleSavedAudienceCronAction(params: {
   const scheduleDate = parseScheduleDate(getQueryParam(req, "scheduleDate"));
   const limit = clampDailyEmailLimit(getQueryParam(req, "limit") || DAILY_EMAIL_DEFAULT_LIMIT);
 
-  const { data: members, error: membersError } = await sb
+  const { data: members, error } = await sb
     .from("daily_schedule_email_audience_members")
-    .select("user_id,email,enabled,created_at")
+    .select("user_id")
     .eq("audience_name", audienceName)
     .eq("enabled", true)
     .order("created_at", { ascending: true });
 
-  if (membersError) {
-    return res.status(500).json({
-      error: "saved_audience_cron_load_failed",
-      details: membersError,
-    });
+  if (error) {
+    return res.status(500).json({ error: "saved_audience_cron_load_failed", details: error });
   }
 
   const selectedUserIds = (members || [])
     .map((m: any) => String(m.user_id || "").trim())
     .filter(Boolean)
     .slice(0, limit);
-
-  if (!selectedUserIds.length) {
-    return res.status(200).json({
-      ok: true,
-      dryRun: false,
-      scheduleDate,
-      audienceName,
-      requestedLimit: limit,
-      selectedCount: 0,
-      sentCount: 0,
-      failedCount: 0,
-      message: "No enabled saved audience members found.",
-    });
-  }
 
   return await handleDailyScheduleEmailAction({
     req,
@@ -1471,7 +1486,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(204).end();
     }
 
-    const body = req.method === "POST" ? parseBody(req) : {};
+        const body = req.method === "POST" ? parseBody(req) : {};
     const cronAction =
       req.method === "GET"
         ? normalizeEmailAction(getQueryParam(req, "cronAction"))
