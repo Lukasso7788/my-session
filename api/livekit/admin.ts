@@ -20,7 +20,8 @@ type EmailAdminAction =
   | "daily_schedule_send"
   | "daily_schedule_all_users"
   | "daily_schedule_saved_audience_get"
-  | "daily_schedule_saved_audience_set";
+  | "daily_schedule_saved_audience_set"
+  | "daily_schedule_send_saved_audience";
 
 type AdminAction = LiveKitAdminAction | EmailAdminAction;
 
@@ -209,6 +210,12 @@ function parseBody(req: VercelRequest): Body {
   return raw as Body;
 }
 
+function getQueryParam(req: VercelRequest, name: string) {
+  const raw = (req.query as any)?.[name];
+  if (Array.isArray(raw)) return String(raw[0] || "").trim();
+  return String(raw || "").trim();
+}
+
 function normalizeLiveKitHost(raw: string): string {
   let host = String(raw || "").trim();
   if (!host) return "";
@@ -278,6 +285,7 @@ function normalizeEmailAction(raw: unknown): EmailAdminAction | "" {
   if (a === "daily_schedule_all_users") return "daily_schedule_all_users";
   if (a === "daily_schedule_saved_audience_get") return "daily_schedule_saved_audience_get";
   if (a === "daily_schedule_saved_audience_set") return "daily_schedule_saved_audience_set";
+  if (a === "daily_schedule_send_saved_audience") return "daily_schedule_send_saved_audience";
 
   return "";
 }
@@ -1103,10 +1111,13 @@ async function handleDailyScheduleEmailAction(params: {
   accessToken: string;
   body: Body;
   action: EmailAdminAction;
+  skipAdminCheck?: boolean;
 }) {
-  const { res, sb, accessToken, body, action } = params;
+  const { res, sb, accessToken, body, action, skipAdminCheck } = params;
 
-  await assertAppAdmin({ sb, accessToken });
+  if (!skipAdminCheck) {
+    await assertAppAdmin({ sb, accessToken });
+  }
 
   const dryRun = action === "daily_schedule_preview";
   const scheduleDate = parseScheduleDate(body.scheduleDate);
@@ -1340,13 +1351,88 @@ async function handleDailyScheduleEmailAction(params: {
   });
 }
 
+async function handleDailyScheduleSavedAudienceCronAction(params: {
+  req: VercelRequest;
+  res: VercelResponse;
+  sb: SupabaseClient;
+}) {
+  const { req, res, sb } = params;
+
+  const expectedSecret = env("DAILY_SCHEDULE_CRON_SECRET");
+  const suppliedSecret = String(
+    req.headers["x-cron-secret"] ||
+    req.headers["x-mysession-cron-secret"] ||
+    getQueryParam(req, "secret") ||
+    ""
+  ).trim();
+
+  if (!expectedSecret || suppliedSecret !== expectedSecret) {
+    return res.status(401).json({ error: "cron_unauthorized" });
+  }
+
+  const audienceName = normalizeAudienceName(getQueryParam(req, "audienceName") || "default");
+  const scheduleDate = parseScheduleDate(getQueryParam(req, "scheduleDate"));
+  const limit = clampDailyEmailLimit(getQueryParam(req, "limit") || DAILY_EMAIL_DEFAULT_LIMIT);
+
+  const { data: members, error: membersError } = await sb
+    .from("daily_schedule_email_audience_members")
+    .select("user_id,email,enabled,created_at")
+    .eq("audience_name", audienceName)
+    .eq("enabled", true)
+    .order("created_at", { ascending: true });
+
+  if (membersError) {
+    return res.status(500).json({
+      error: "saved_audience_cron_load_failed",
+      details: membersError,
+    });
+  }
+
+  const selectedUserIds = (members || [])
+    .map((m: any) => String(m.user_id || "").trim())
+    .filter(Boolean)
+    .slice(0, limit);
+
+  if (!selectedUserIds.length) {
+    return res.status(200).json({
+      ok: true,
+      dryRun: false,
+      scheduleDate,
+      audienceName,
+      requestedLimit: limit,
+      selectedCount: 0,
+      sentCount: 0,
+      failedCount: 0,
+      message: "No enabled saved audience members found.",
+    });
+  }
+
+  return await handleDailyScheduleEmailAction({
+    req,
+    res,
+    sb,
+    accessToken: "",
+    body: {
+      action: "daily_schedule_send",
+      scheduleDate,
+      limit,
+      selectedUserIds,
+    },
+    action: "daily_schedule_send",
+    skipAdminCheck: true,
+  });
+}
+
 function setCors(res: VercelResponse, req: VercelRequest) {
   const origin = String(req.headers.origin || "*");
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Vary", "Origin");
-  res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-Cron-Secret, X-MySession-Cron-Secret"
+  );
 }
 
 function writeTimingHeaders(
@@ -1385,21 +1471,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(204).end();
     }
 
-    if (req.method !== "POST") {
-      res.setHeader("Allow", "POST, OPTIONS");
+    const body = req.method === "POST" ? parseBody(req) : {};
+    const cronAction =
+      req.method === "GET"
+        ? normalizeEmailAction(getQueryParam(req, "cronAction"))
+        : "";
+
+    const isDailyEmailCron =
+      req.method === "GET" && cronAction === "daily_schedule_send_saved_audience";
+
+    if (req.method !== "POST" && !isDailyEmailCron) {
+      res.setHeader("Allow", "GET, POST, OPTIONS");
       return res.status(405).json({ error: "method_not_allowed" });
     }
 
-    const body = parseBody(req);
-    const rawEmailAction = normalizeEmailAction(body.action);
-
-    const accessToken = getBearerToken(req);
-    if (!accessToken) {
-      return res.status(401).json({
-        error: "auth_required",
-        hint: "Send Authorization: Bearer <supabase_access_token>",
-      });
-    }
+    const rawEmailAction = cronAction || normalizeEmailAction(body.action);
 
     const supabaseUrl = String(
       process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ""
@@ -1414,6 +1500,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const sb = getSupabaseAdminClient(supabaseUrl, serviceKey);
+
+    if (isDailyEmailCron) {
+      return await handleDailyScheduleSavedAudienceCronAction({
+        req,
+        res,
+        sb,
+      });
+    }
+
+    const accessToken = getBearerToken(req);
+    if (!accessToken) {
+      return res.status(401).json({
+        error: "auth_required",
+        hint: "Send Authorization: Bearer <supabase_access_token>",
+      });
+    }
 
     if (
       rawEmailAction === "daily_schedule_saved_audience_get" ||
