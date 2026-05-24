@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
 import ActiveBanModal from "../components/ActiveBanModal";
+import SupportMySessionModal from "../components/SupportMySessionModal";
 import { SessionsDateFilter } from "../components/SessionsDateFilter";
 import BodyTriplingBody from "../components/body/BodyTriplingBody";
 import { BodyTriplingIntro } from "../components/body/BodyTriplingIntro";
@@ -442,94 +443,6 @@ function buildBodySchedule(duration: 25 | 50) {
 }
 
 
-type SupportMySessionModalProps = {
-  open: boolean;
-  onClose: () => void;
-  onSupport: () => void;
-};
-
-function SupportMySessionModal({
-  open,
-  onClose,
-  onSupport,
-}: SupportMySessionModalProps) {
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-[1200] flex items-center justify-center px-4 py-6">
-      <div
-        className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
-        onClick={onClose}
-      />
-
-      <div
-        className="
-          relative w-full max-w-[460px]
-          rounded-[28px]
-          bg-white
-          p-6 sm:p-7
-          text-[#2F2F2F]
-          shadow-[0_24px_80px_rgba(0,0,0,0.28)]
-        "
-        role="dialog"
-        aria-modal="true"
-        aria-label="Support MySession"
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-5 top-5 text-[#8A8A8A] transition hover:text-[#2F2F2F]"
-          aria-label="Close"
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M6 6L18 18M18 6L6 18"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-
-        <div className="pr-8">
-          <div className="inline-flex rounded-full bg-[#F2F2F2] px-3 py-1 text-[12px] font-semibold text-[#555555]">
-            Support the project
-          </div>
-
-          <h2 className="mt-4 text-[24px] font-bold leading-tight text-[#2F2F2F]">
-            Help keep MySession running
-          </h2>
-        </div>
-
-        <p className="mt-4 text-[15px] leading-6 text-[#666666]">
-          MySession is maintained by Yaroslav and supported by people who use it regularly.
-        </p>
-
-        <p className="mt-3 text-[15px] leading-6 text-[#666666]">
-          If this platform helps you focus, please consider subscribing. Your support helps cover hosting, video infrastructure, maintenance, and continued development.
-        </p>
-
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <button
-            type="button"
-            onClick={onSupport}
-            className="flex-1 rounded-full bg-[#2F2F2F] px-5 py-3.5 text-[15px] font-semibold text-white transition hover:opacity-90"
-          >
-            Support MySession
-          </button>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-[#CAC3C3] bg-white px-5 py-3.5 text-[15px] font-semibold text-[#2F2F2F] transition hover:bg-[#F8F8F8]"
-          >
-            Maybe later
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export function SessionsPage() {
   const navigate = useNavigate();
@@ -1475,14 +1388,6 @@ export function SessionsPage() {
     setSupportModalOpen(false);
   }, []);
 
-  const goToPricingFromSupportModal = useCallback(() => {
-    localStorage.setItem(
-      "mysession_support_modal_dismissed_at",
-      Date.now().toString()
-    );
-    setSupportModalOpen(false);
-    navigate("/pricing");
-  }, [navigate]);
 
   const topPad =
     sessionTypeTab === "group"
@@ -1905,7 +1810,6 @@ export function SessionsPage() {
       <SupportMySessionModal
         open={supportModalOpen}
         onClose={closeSupportModal}
-        onSupport={goToPricingFromSupportModal}
       />
 
       <ActiveBanModal
