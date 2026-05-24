@@ -21,14 +21,22 @@ function normalizePaidPlan(plan: string | undefined | null): PaidPlan | null {
   return null;
 }
 
+function getErrorDetails(error: unknown): string {
+  if (error instanceof Error) return error.message;
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 async function upsertEntitlement(params: {
   userId: string;
   plan: PaidPlan;
   source: string;
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string;
 }) {
-  const { userId, plan, source, stripeCustomerId, stripeSubscriptionId } = params;
+  const { userId, plan, source } = params;
 
   const nowIso = new Date().toISOString();
 
@@ -41,9 +49,6 @@ async function upsertEntitlement(params: {
     updated_at: nowIso,
     notes: `Activated via checkout confirmation at ${nowIso}`,
   };
-
-  if (stripeCustomerId) payload.stripe_customer_id = stripeCustomerId;
-  if (stripeSubscriptionId) payload.stripe_subscription_id = stripeSubscriptionId;
 
   if (plan === "pro_monthly") {
     payload.current_period_start = nowIso;
@@ -104,7 +109,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } = await supabaseAdmin.auth.getUser(token);
 
     if (authError || !user) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json({
+        error: "Unauthorized",
+        details: authError ? getErrorDetails(authError) : undefined,
+      });
     }
 
     const { sessionId } = (req.body || {}) as { sessionId?: string };
@@ -173,8 +181,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       userId: metadataUserId,
       plan: metadataPlan,
       source: "checkout_confirm",
-      stripeCustomerId,
-      stripeSubscriptionId,
     });
 
     return res.status(200).json({
@@ -193,7 +199,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.status(500).json({
       error: "Internal server error",
-      details: error instanceof Error ? error.message : "Unknown error",
+      details: getErrorDetails(error),
     });
   }
 }
