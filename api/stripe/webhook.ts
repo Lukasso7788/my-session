@@ -29,6 +29,14 @@ async function readRawBody(req: VercelRequest): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+function normalizePaidPlan(plan: string | undefined | null): PaidPlan | null {
+  if (plan === "india_upi_monthly") return "pro_monthly";
+  if (plan === "pro_monthly") return "pro_monthly";
+  if (plan === "pro_yearly") return "pro_yearly";
+  if (plan === "lifetime") return "lifetime";
+  return null;
+}
+
 async function upsertEntitlement(params: {
   userId: string;
   plan: PaidPlan;
@@ -115,15 +123,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
 
-      const metadataPlan = session.metadata?.plan;
+      const rawMetadataPlan =
+        session.metadata?.entitlement_plan || session.metadata?.plan;
+
+      const metadataPlan = normalizePaidPlan(rawMetadataPlan);
+
       const metadataUserId =
         session.metadata?.supabase_user_id || session.client_reference_id || "";
 
       if (!metadataPlan) {
-        console.error("Stripe webhook: missing metadata.plan", {
+        console.error("Stripe webhook: missing or invalid metadata plan", {
           sessionId: session.id,
+          rawMetadataPlan,
+          metadata: session.metadata,
         });
-        return res.status(400).send("Missing metadata.plan");
+        return res.status(400).send("Missing or invalid metadata plan");
       }
 
       if (!metadataUserId) {
@@ -133,18 +147,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           metadata: session.metadata,
         });
         return res.status(400).send("Missing user id metadata");
-      }
-
-      if (
-        metadataPlan !== "pro_monthly" &&
-        metadataPlan !== "pro_yearly" &&
-        metadataPlan !== "lifetime"
-      ) {
-        console.error("Stripe webhook: invalid metadata.plan", {
-          metadataPlan,
-          sessionId: session.id,
-        });
-        return res.status(400).send("Invalid metadata.plan");
       }
 
       const stripeCustomerId =
@@ -167,6 +169,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         sessionId: session.id,
         userId: metadataUserId,
         plan: metadataPlan,
+        rawMetadataPlan,
         stripeCustomerId,
         stripeSubscriptionId,
         force_paywall: payload.force_paywall,

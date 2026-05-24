@@ -4,13 +4,13 @@ import { PricingPlanCard } from "../components/PricingPlanCard";
 import { supabase } from "../lib/supabase";
 
 type BillingCycle = "monthly" | "yearly" | "lifetime";
-type CheckoutPlan = "pro_monthly" | "pro_yearly" | "lifetime";
+type CheckoutPlan = "pro_monthly" | "pro_yearly" | "lifetime" | "india_upi_monthly";
 
 export default function PricingPage() {
     const KOFI_URL = "https://ko-fi.com/mysession";
 
     const LIFETIME_TOTAL_SLOTS = 5;
-    const LIFETIME_LEFT_SLOTS = 5; // <- потом можно заменить на реальный счётчик из базы
+    const LIFETIME_LEFT_SLOTS = 5;
 
     const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
     const [checkingAuth, setCheckingAuth] = useState<boolean>(true);
@@ -104,19 +104,25 @@ export default function PricingPage() {
         }
     }, []);
 
-    const handleUpgrade = useCallback(async () => {
+    const ensureCanCheckout = useCallback(() => {
         setErrorMessage("");
         setStatusMessage("");
 
         if (checkingAuth) {
             setErrorMessage("Still checking your account. Try again in a second.");
-            return;
+            return false;
         }
 
         if (!isLoggedIn) {
             window.location.href = "/login?redirect=/pricing";
-            return;
+            return false;
         }
+
+        return true;
+    }, [checkingAuth, isLoggedIn]);
+
+    const handleUpgrade = useCallback(async () => {
+        if (!ensureCanCheckout()) return;
 
         if (billingCycle === "lifetime" && LIFETIME_LEFT_SLOTS <= 0) {
             setErrorMessage("Lifetime access is currently sold out.");
@@ -140,7 +146,22 @@ export default function PricingPage() {
         } finally {
             setIsUpgrading(false);
         }
-    }, [LIFETIME_LEFT_SLOTS, billingCycle, checkingAuth, isLoggedIn, startCheckout]);
+    }, [LIFETIME_LEFT_SLOTS, billingCycle, ensureCanCheckout, startCheckout]);
+
+    const handleIndiaUpiUpgrade = useCallback(async () => {
+        if (!ensureCanCheckout()) return;
+
+        setIsUpgrading(true);
+
+        try {
+            await startCheckout("india_upi_monthly");
+        } catch (err) {
+            console.error("Unexpected India UPI upgrade error:", err);
+            setErrorMessage("Unexpected error while starting India UPI checkout.");
+        } finally {
+            setIsUpgrading(false);
+        }
+    }, [ensureCanCheckout, startCheckout]);
 
     const activeCard = useMemo(() => {
         if (billingCycle === "monthly") {
@@ -216,6 +237,8 @@ export default function PricingPage() {
         };
     }, [LIFETIME_LEFT_SLOTS, billingCycle, checkingAuth, checkoutLoadingPlan, isUpgrading]);
 
+    const indiaUpiLoading = checkoutLoadingPlan === "india_upi_monthly";
+
     return (
         <div className="min-h-[calc(100vh-80px)] bg-transparent text-[#0B1220]">
             <main className="mx-auto w-full max-w-[1100px] px-4 py-10 sm:px-6">
@@ -287,17 +310,67 @@ export default function PricingPage() {
                         onCta={handleStartFree}
                     />
 
-                    <PricingPlanCard
-                        title={activeCard.title}
-                        price={activeCard.price}
-                        subtitle={activeCard.subtitle}
-                        badge={activeCard.badge}
-                        highlights={activeCard.highlights}
-                        ctaLabel={activeCard.ctaLabel}
-                        ctaVariant="primary"
-                        footnote={activeCard.footnote}
-                        onCta={handleUpgrade}
-                    />
+                    <div className="rounded-[28px] border border-black/10 bg-white p-6 shadow-sm">
+                        <PricingPlanCard
+                            title={activeCard.title}
+                            price={activeCard.price}
+                            subtitle={activeCard.subtitle}
+                            badge={activeCard.badge}
+                            highlights={activeCard.highlights}
+                            ctaLabel={activeCard.ctaLabel}
+                            ctaVariant="primary"
+                            footnote={activeCard.footnote}
+                            onCta={handleUpgrade}
+                        />
+
+                        {billingCycle === "monthly" ? (
+                            <div className="mt-4 rounded-[22px] border border-black/10 bg-black/[0.03] p-4">
+                                <div className="flex items-start gap-3">
+                                    <img
+                                        src="/icons/flag-india.svg"
+                                        alt="India"
+                                        className="mt-0.5 h-6 w-6 rounded-full object-cover"
+                                        onError={(event) => {
+                                            event.currentTarget.style.display = "none";
+                                        }}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                        <div className="text-sm font-semibold text-black/85">
+                                            India UPI option
+                                        </div>
+                                        <p className="mt-1 text-sm leading-relaxed text-black/60">
+                                            Pay in INR with UPI. Same Pro Monthly access.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    onClick={handleIndiaUpiUpgrade}
+                                    disabled={checkingAuth || isUpgrading || indiaUpiLoading}
+                                    className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-2xl border border-black/10 bg-white px-4 text-sm font-semibold text-black transition hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    <img
+                                        src="/icons/flag-india.svg"
+                                        alt=""
+                                        className="h-5 w-5 rounded-full object-cover"
+                                        onError={(event) => {
+                                            event.currentTarget.style.display = "none";
+                                        }}
+                                    />
+                                    {checkingAuth
+                                        ? "Checking account..."
+                                        : indiaUpiLoading
+                                            ? "Opening UPI checkout..."
+                                            : "Upgrade India — ₹958/month"}
+                                </button>
+
+                                <p className="mt-3 text-center text-xs text-black/45">
+                                    Best for users in India who prefer UPI payments.
+                                </p>
+                            </div>
+                        ) : null}
+                    </div>
                 </div>
 
                 {(statusMessage || errorMessage) && (
@@ -354,7 +427,8 @@ export default function PricingPage() {
                             <p className="mt-2">
                                 Payments for paid plans are processed online. Available payment
                                 methods are shown during checkout and may include bank card
-                                payments via supported payment providers.
+                                payments, UPI for eligible India payments, and other supported
+                                payment methods via supported payment providers.
                             </p>
                         </section>
 

@@ -13,7 +13,15 @@ const supabaseAdmin = createClient(
 
 const APP_URL = process.env.APP_URL || "http://localhost:5173";
 
-type SupportedPlan = "pro_monthly" | "pro_yearly" | "lifetime";
+type SupportedPlan = "pro_monthly" | "pro_yearly" | "lifetime" | "india_upi_monthly";
+type EntitlementPlan = "pro_monthly" | "pro_yearly" | "lifetime";
+
+const SUPPORTED_PLANS: SupportedPlan[] = [
+  "pro_monthly",
+  "pro_yearly",
+  "lifetime",
+  "india_upi_monthly",
+];
 
 function getPriceIdForPlan(plan: SupportedPlan): string {
   let priceId = "";
@@ -28,6 +36,9 @@ function getPriceIdForPlan(plan: SupportedPlan): string {
     case "lifetime":
       priceId = process.env.STRIPE_PRICE_LIFETIME || "";
       break;
+    case "india_upi_monthly":
+      priceId = process.env.STRIPE_PRICE_INDIA_UPI_MONTHLY || "";
+      break;
     default:
       throw new Error(`Unsupported plan: ${plan}`);
   }
@@ -39,7 +50,16 @@ function getPriceIdForPlan(plan: SupportedPlan): string {
   return priceId;
 }
 
-function getCheckoutDiscounts() {
+function getEntitlementPlan(plan: SupportedPlan): EntitlementPlan {
+  if (plan === "india_upi_monthly") return "pro_monthly";
+  return plan;
+}
+
+function getCheckoutDiscounts(plan: SupportedPlan) {
+  if (plan === "india_upi_monthly") {
+    return undefined;
+  }
+
   const coupon = String(process.env.STRIPE_COUPON_100_OFF || "").trim();
 
   if (!coupon) {
@@ -79,28 +99,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { plan } = (req.body || {}) as { plan?: SupportedPlan };
 
-    if (!plan || !["pro_monthly", "pro_yearly", "lifetime"].includes(plan)) {
+    if (!plan || !SUPPORTED_PLANS.includes(plan)) {
       return res.status(400).json({ error: "Invalid plan" });
     }
 
     const priceId = getPriceIdForPlan(plan);
+    const entitlementPlan = getEntitlementPlan(plan);
+    const isIndiaUpi = plan === "india_upi_monthly";
+
     const mode: "subscription" | "payment" =
       plan === "lifetime" ? "payment" : "subscription";
 
-    const discounts = getCheckoutDiscounts();
+    const discounts = getCheckoutDiscounts(plan);
 
     console.log("create-checkout-session", {
       userId: user.id,
       email: user.email,
       plan,
+      entitlementPlan,
       mode,
       priceId,
       appUrl: APP_URL,
+      isIndiaUpi,
       hasDiscount: !!discounts?.length,
     });
 
     const session = await stripe.checkout.sessions.create({
       mode,
+
+      payment_method_types: isIndiaUpi ? ["upi"] : ["card"],
+
       line_items: [
         {
           price: priceId,
@@ -118,7 +146,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       metadata: {
         plan,
+        entitlement_plan: entitlementPlan,
         supabase_user_id: user.id,
+        payment_region: isIndiaUpi ? "india" : "default",
+        payment_method_hint: isIndiaUpi ? "upi" : "card",
       },
 
       subscription_data:
@@ -126,7 +157,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           ? {
               metadata: {
                 plan,
+                entitlement_plan: entitlementPlan,
                 supabase_user_id: user.id,
+                payment_region: isIndiaUpi ? "india" : "default",
+                payment_method_hint: isIndiaUpi ? "upi" : "card",
               },
             }
           : undefined,
