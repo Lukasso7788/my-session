@@ -13,12 +13,22 @@ const supabaseAdmin = createClient(
 
 type PaidPlan = "pro_monthly" | "pro_yearly" | "lifetime";
 
+function normalizePaidPlan(plan: string | undefined | null): PaidPlan | null {
+  if (plan === "india_upi_monthly") return "pro_monthly";
+  if (plan === "pro_monthly") return "pro_monthly";
+  if (plan === "pro_yearly") return "pro_yearly";
+  if (plan === "lifetime") return "lifetime";
+  return null;
+}
+
 async function upsertEntitlement(params: {
   userId: string;
   plan: PaidPlan;
   source: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
 }) {
-  const { userId, plan, source } = params;
+  const { userId, plan, source, stripeCustomerId, stripeSubscriptionId } = params;
 
   const nowIso = new Date().toISOString();
 
@@ -31,6 +41,9 @@ async function upsertEntitlement(params: {
     updated_at: nowIso,
     notes: `Activated via checkout confirmation at ${nowIso}`,
   };
+
+  if (stripeCustomerId) payload.stripe_customer_id = stripeCustomerId;
+  if (stripeSubscriptionId) payload.stripe_subscription_id = stripeSubscriptionId;
 
   if (plan === "pro_monthly") {
     payload.current_period_start = nowIso;
@@ -102,40 +115,77 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
-    const metadataPlan = session.metadata?.plan;
+    const rawMetadataPlan =
+      session.metadata?.entitlement_plan || session.metadata?.plan || "";
+
+    const metadataPlan = normalizePaidPlan(rawMetadataPlan);
+
     const metadataUserId =
       session.metadata?.supabase_user_id || session.client_reference_id || "";
 
+    if (!rawMetadataPlan) {
+      return res.status(400).json({
+        error: "Missing metadata.plan on Stripe session",
+        metadata: session.metadata,
+      });
+    }
+
     if (!metadataPlan) {
-      return res.status(400).json({ error: "Missing metadata.plan on Stripe session" });
+      return res.status(400).json({
+        error: "Invalid metadata.plan on Stripe session",
+        rawMetadataPlan,
+        metadata: session.metadata,
+      });
     }
 
     if (!metadataUserId) {
-      return res.status(400).json({ error: "Missing supabase user id on Stripe session" });
+      return res.status(400).json({
+        error: "Missing supabase user id on Stripe session",
+        metadata: session.metadata,
+      });
     }
 
     if (metadataUserId !== user.id) {
-      return res.status(403).json({ error: "Session does not belong to current user" });
+      return res.status(403).json({
+        error: "Session does not belong to current user",
+      });
     }
 
-    if (
-      metadataPlan !== "pro_monthly" &&
-      metadataPlan !== "pro_yearly" &&
-      metadataPlan !== "lifetime"
-    ) {
-      return res.status(400).json({ error: "Invalid metadata.plan on Stripe session" });
+    if (session.payment_status !== "paid" && session.status !== "complete") {
+      return res.status(400).json({
+        error: "Checkout session is not completed yet",
+        sessionStatus: session.status,
+        paymentStatus: session.payment_status,
+      });
     }
+
+    const stripeCustomerId =
+      typeof session.customer === "string"
+        ? session.customer
+        : session.customer?.id || "";
+
+    const stripeSubscriptionId =
+      typeof session.subscription === "string"
+        ? session.subscription
+        : session.subscription?.id || "";
 
     const result = await upsertEntitlement({
       userId: metadataUserId,
       plan: metadataPlan,
       source: "checkout_confirm",
+      stripeCustomerId,
+      stripeSubscriptionId,
     });
 
     return res.status(200).json({
       ok: true,
       plan: metadataPlan,
+      rawPlan: rawMetadataPlan,
       userId: metadataUserId,
+      stripeCustomerId,
+      stripeSubscriptionId,
+      sessionStatus: session.status,
+      paymentStatus: session.payment_status,
       result,
     });
   } catch (error) {
