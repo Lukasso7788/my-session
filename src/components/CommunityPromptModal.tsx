@@ -29,7 +29,10 @@ export default function CommunityPromptModal({
         onClick={onClose}
       />
 
-      <div className="relative w-full max-w-[480px] rounded-[28px] bg-white p-6 text-[#2F2F2F] shadow-2xl">
+      <div
+        className="relative w-full max-w-[480px] rounded-[28px] bg-white p-6 text-[#2F2F2F] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           onClick={onClose}
@@ -94,6 +97,7 @@ export default function CommunityPromptModal({
           <input
             type="checkbox"
             className="mt-1 h-4 w-4 accent-[#2F2F2F]"
+            onClick={(e) => e.stopPropagation()}
             onChange={(e) => {
               if (e.target.checked) onJoinedCommunity();
             }}
