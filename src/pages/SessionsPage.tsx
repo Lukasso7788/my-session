@@ -474,10 +474,7 @@ export function SessionsPage() {
   const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
   const [lifetimeSessionsCount, setLifetimeSessionsCount] = useState<number | null>(null);
   const [supportModalOpen, setSupportModalOpen] = useState(false);
-  const [hostPromptStats, setHostPromptStats] = useState<HostPromptStats>({
-    hostedTotal: 0,
-    upcomingHosted: 0,
-  });
+  const [hostPromptStats, setHostPromptStats] = useState<HostPromptStats | null>(null);
   const [hostPromptOpen, setHostPromptOpen] = useState(false);
   const [hostPromptKind, setHostPromptKind] = useState<HostPromptKind>("never_hosted");
 
@@ -537,10 +534,7 @@ export function SessionsPage() {
       setEntitlementState(null);
       setLifetimeSessionsCount(null);
       setSupportModalOpen(false);
-      setHostPromptStats({
-        hostedTotal: 0,
-        upcomingHosted: 0,
-      });
+      setHostPromptStats(null);
       setHostPromptOpen(false);
       return;
     }
@@ -657,10 +651,7 @@ export function SessionsPage() {
         if (!cancelled) {
           setEntitlementState(null);
           setLifetimeSessionsCount(null);
-          setHostPromptStats({
-            hostedTotal: 0,
-            upcomingHosted: 0,
-          });
+          setHostPromptStats(null);
         }
       }
     };
@@ -702,8 +693,29 @@ export function SessionsPage() {
     if (postSessionPrompt.open) return;
     if (howItWorksOpen) return;
 
+    if (!hostPromptStats) return;
+
     const hostedTotal = Math.max(0, Number(hostPromptStats.hostedTotal || 0));
-    const upcomingHosted = Math.max(0, Number(hostPromptStats.upcomingHosted || 0));
+
+    const upcomingHostedFromStats = Math.max(
+      0,
+      Number(hostPromptStats.upcomingHosted || 0)
+    );
+
+    const upcomingHostedFromLoadedSessions = sessions.filter((s) => {
+      if (String(s.host_id || "") !== String(user.id)) return false;
+      if (!s.start_time) return false;
+
+      const startMs = new Date(s.start_time).getTime();
+      if (Number.isNaN(startMs)) return false;
+
+      return startMs >= Date.now();
+    }).length;
+
+    const upcomingHosted = Math.max(
+      upcomingHostedFromStats,
+      upcomingHostedFromLoadedSessions
+    );
 
     // Active hosts already have supply on the schedule, so we do not nag them.
     if (upcomingHosted > 0) return;
@@ -735,6 +747,7 @@ export function SessionsPage() {
     postSessionPrompt.open,
     howItWorksOpen,
     hostPromptStats,
+    sessions,
   ]);
 
   useEffect(() => {
