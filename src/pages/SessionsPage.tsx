@@ -7,6 +7,7 @@ import SessionCard from "../components/SessionCard";
 import ActiveBanModal from "../components/ActiveBanModal";
 import SupportMySessionModal from "../components/SupportMySessionModal";
 import HostSessionPromptModal, { type HostPromptKind } from "../components/HostSessionPromptModal";
+import CommunityPromptModal from "../components/CommunityPromptModal";
 import { SessionsDateFilter } from "../components/SessionsDateFilter";
 import BodyTriplingBody from "../components/body/BodyTriplingBody";
 import { BodyTriplingIntro } from "../components/body/BodyTriplingIntro";
@@ -81,6 +82,12 @@ type HostPromptStats = {
   hostedTotal: number;
   upcomingHosted: number;
 };
+
+const COMMUNITY_WHATSAPP_URL = "https://chat.whatsapp.com/JjoQhL64NOMITOi7mrG6EC";
+const COMMUNITY_DISCORD_URL = "https://discord.gg/j42NkFmmEj";
+
+const COMMUNITY_PROMPT_DISMISSED_KEY = "mysession_community_prompt_dismissed_at";
+const COMMUNITY_PROMPT_JOINED_KEY = "mysession_community_prompt_joined_at";
 
 function toLocalYMDFromISO(iso: string) {
   const d = new Date(iso);
@@ -477,6 +484,7 @@ export function SessionsPage() {
   const [hostPromptStats, setHostPromptStats] = useState<HostPromptStats | null>(null);
   const [hostPromptOpen, setHostPromptOpen] = useState(false);
   const [hostPromptKind, setHostPromptKind] = useState<HostPromptKind>("never_hosted");
+  const [communityPromptOpen, setCommunityPromptOpen] = useState(false);
 
   const [postSessionPrompt, setPostSessionPrompt] =
     useState<PostSessionPromptState>({
@@ -536,6 +544,7 @@ export function SessionsPage() {
       setSupportModalOpen(false);
       setHostPromptStats(null);
       setHostPromptOpen(false);
+      setCommunityPromptOpen(false);
       return;
     }
 
@@ -748,6 +757,42 @@ export function SessionsPage() {
     howItWorksOpen,
     hostPromptStats,
     sessions,
+  ]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (activeBan) return;
+    if (supportModalOpen) return;
+    if (hostPromptOpen) return;
+    if (postSessionPrompt.open) return;
+    if (howItWorksOpen) return;
+
+    const now = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+
+    const joinedAt = Number(localStorage.getItem(COMMUNITY_PROMPT_JOINED_KEY) || 0);
+    if (joinedAt && now - joinedAt < ninetyDaysMs) return;
+
+    const dismissedAt = Number(
+      localStorage.getItem(COMMUNITY_PROMPT_DISMISSED_KEY) || 0
+    );
+    if (dismissedAt && now - dismissedAt < sevenDaysMs) return;
+
+    const timer = window.setTimeout(() => {
+      setCommunityPromptOpen(true);
+    }, 3600);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    user?.id,
+    activeBan,
+    supportModalOpen,
+    hostPromptOpen,
+    postSessionPrompt.open,
+    howItWorksOpen,
   ]);
 
   useEffect(() => {
@@ -1601,6 +1646,22 @@ export function SessionsPage() {
     modal.open();
   }, [hostPromptKind, modal, navigate, showBanModal, user]);
 
+  const closeCommunityPromptModal = useCallback(() => {
+    localStorage.setItem(
+      COMMUNITY_PROMPT_DISMISSED_KEY,
+      Date.now().toString()
+    );
+    setCommunityPromptOpen(false);
+  }, []);
+
+  const markCommunityPromptJoined = useCallback(() => {
+    localStorage.setItem(
+      COMMUNITY_PROMPT_JOINED_KEY,
+      Date.now().toString()
+    );
+    setCommunityPromptOpen(false);
+  }, []);
+
 
   const topPad =
     sessionTypeTab === "group"
@@ -2030,6 +2091,14 @@ export function SessionsPage() {
         kind={hostPromptKind}
         onClose={closeHostPromptModal}
         onHostSession={openCreateFromHostPrompt}
+      />
+
+      <CommunityPromptModal
+        open={communityPromptOpen}
+        whatsappUrl={COMMUNITY_WHATSAPP_URL}
+        discordUrl={COMMUNITY_DISCORD_URL}
+        onClose={closeCommunityPromptModal}
+        onJoinedCommunity={markCommunityPromptJoined}
       />
 
       <ActiveBanModal

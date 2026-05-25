@@ -1,9 +1,7 @@
 import { Link } from "react-router-dom";
 
-const SUPPORT_EMAIL = "yaroslav@mysession.club"; // TODO: replace with your main support email
-const DISCORD_URL = "https://discord.com";
-const TELEGRAM_URL = "https://t.me";
-const TWITTER_URL = "https://twitter.com";
+const WHATSAPP_URL = "https://chat.whatsapp.com/JjoQhL64NOMITOi7mrG6EC";
+const DISCORD_URL = "https://discord.gg/j42NkFmmEj";
 
 export default function Footer() {
     return (
@@ -139,6 +137,24 @@ export default function Footer() {
                                 >
                                     Billing info
                                 </Link>
+
+                                <a
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    href={WHATSAPP_URL}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
+                                    WhatsApp community
+                                </a>
+
+                                <a
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    href={DISCORD_URL}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
+                                    Discord community
+                                </a>
                             </div>
                         </div>
                     </div>
@@ -152,11 +168,11 @@ export default function Footer() {
                         <div className="flex items-center gap-4">
                             <a
                                 className="text-[13px] text-[#606060] hover:text-[#2F2F2F]"
-                                href={TWITTER_URL}
+                                href={WHATSAPP_URL}
                                 target="_blank"
                                 rel="noreferrer"
                             >
-                                Twitter
+                                WhatsApp
                             </a>
 
                             <a
@@ -166,15 +182,6 @@ export default function Footer() {
                                 rel="noreferrer"
                             >
                                 Discord
-                            </a>
-
-                            <a
-                                className="text-[13px] text-[#606060] hover:text-[#2F2F2F]"
-                                href={TELEGRAM_URL}
-                                target="_blank"
-                                rel="noreferrer"
-                            >
-                                Telegram
                             </a>
                         </div>
                     </div>
