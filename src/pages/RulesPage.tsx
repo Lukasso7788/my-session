@@ -15,6 +15,7 @@ const shortRules: string[] = [
     "Do not share sexual, hateful, violent, or otherwise inappropriate content.",
     "Do not distract or disrupt other participants.",
     "Political arguments, discrimination, and justification of violence, aggression, or harm are not allowed.",
+    "MySession is not available for users based in Russia.",
     "Follow host instructions during hosted sessions.",
     "Do not record or share other users without permission.",
     "Do not spam, promote aggressively, or misuse the platform.",
