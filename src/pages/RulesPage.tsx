@@ -15,6 +15,7 @@ const shortRules: string[] = [
     "Do not share sexual, hateful, violent, or otherwise inappropriate content.",
     "Do not distract or disrupt other participants.",
     "Political arguments, discrimination, and justification of violence, aggression, or harm are not allowed.",
+    "Support for Russia’s aggression against Ukraine is not allowed.",
     "MySession is not available for users based in Russia.",
     "Follow host instructions during hosted sessions.",
     "Do not record or share other users without permission.",
@@ -47,7 +48,7 @@ const detailedRules: RuleItem[] = [
     {
         title: "5. No political arguments, discrimination, or justification of violence",
         body:
-            "MySession is a focus and coworking platform, not a place for political arguments. Political debates that disrupt sessions or community spaces, discriminatory harassment, and any justification of violence, aggression, war crimes, or harm towards other people are not allowed. If a host or moderator asks you to stop a topic, stop immediately.",
+            "MySession is a focus and coworking platform, not a place for political arguments. Political debates that disrupt sessions or community spaces, discriminatory harassment, and any justification of violence, aggression, war crimes, or harm towards other people are not allowed. Support for Russia’s aggression against Ukraine is not allowed. If a host or moderator asks you to stop a topic, stop immediately.",
     },
     {
         title: "6. Russia-based access restriction",
@@ -113,7 +114,7 @@ const faq = [
     },
     {
         q: "Can I talk about politics in sessions?",
-        a: "MySession is for focus and coworking, not political arguments. Political debates that disrupt sessions or community spaces, discriminatory harassment, and justification of violence, aggression, or harm are not allowed. If a host or moderator asks you to stop a topic, stop immediately.",
+        a: "MySession is for focus and coworking, not political arguments. Political debates that disrupt sessions or community spaces, discriminatory harassment, justification of violence, aggression, or harm, and support for Russia’s aggression against Ukraine are not allowed. If a host or moderator asks you to stop a topic, stop immediately.",
     },
     {
         q: "Can I promote my product or community in sessions?",
