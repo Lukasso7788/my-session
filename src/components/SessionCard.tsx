@@ -312,6 +312,20 @@ function IconTrash({ size = 16 }: { size?: number }) {
 }
 
 function IconInfo({ size = 16 }: { size?: number }) {
+    const [useFallback, setUseFallback] = useState(false);
+
+    if (!useFallback) {
+        return (
+            <img
+                src="/icons/session-info.svg"
+                alt=""
+                draggable={false}
+                onError={() => setUseFallback(true)}
+                style={{ width: size, height: size }}
+            />
+        );
+    }
+
     return (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" />
@@ -3868,14 +3882,16 @@ export default function SessionCard({
             <div
                 onMouseEnter={() => setIsHoveringCard(true)}
                 onMouseLeave={() => setIsHoveringCard(false)}
-                className="
+                className={`
+                    relative
                     border border-borderGray rounded-[42px] bg-white
                     transition-all duration-200
                     hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
                     p-6
                     flex flex-col
                     w-full gap-4
-                "
+                    ${isInfoOpen ? "z-[120]" : "z-0"}
+                `}
             >
                 <div className="flex flex-col xl:flex-row w-full gap-6">
                     <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 flex-1">
@@ -3966,14 +3982,15 @@ export default function SessionCard({
                                             <div
                                                 className="
                                                     absolute left-0 top-[38px]
-                                                    z-[250]
+                                                    z-[9990]
                                                     w-[420px] max-w-[85vw]
                                                     rounded-[18px]
                                                     border border-[#E5E7EB]
                                                     bg-white
                                                     shadow-xl
-                                                    overflow-hidden
+                                                    overflow-visible
                                                 "
+                                                onMouseDown={(e) => e.stopPropagation()}
                                             >
                                                 <div className="px-4 py-3 text-[12px] text-[#606060] border-b border-[#F3F4F6] flex items-center justify-between">
                                                     <span>Session info</span>
