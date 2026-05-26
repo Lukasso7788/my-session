@@ -14,6 +14,7 @@ const shortRules: string[] = [
     "Do not harass, insult, threaten, or intimidate others.",
     "Do not share sexual, hateful, violent, or otherwise inappropriate content.",
     "Do not distract or disrupt other participants.",
+    "Political arguments, discrimination, and justification of violence, aggression, or harm are not allowed.",
     "Follow host instructions during hosted sessions.",
     "Do not record or share other users without permission.",
     "Do not spam, promote aggressively, or misuse the platform.",
@@ -43,52 +44,62 @@ const detailedRules: RuleItem[] = [
             "Join sessions with the intention to participate respectfully. Do not intentionally distract others, derail the session, spam chat, blast audio, or behave in a way that interferes with people trying to work.",
     },
     {
-        title: "5. Follow host instructions",
+        title: "5. No political arguments, discrimination, or justification of violence",
         body:
-            "Some sessions are guided or moderated by a host. When joining a hosted session, follow the session format and reasonable instructions from the host.",
+            "MySession is a focus and coworking platform, not a place for political arguments. Political debates that disrupt sessions or community spaces, discriminatory harassment, and any justification of violence, aggression, war crimes, or harm towards other people are not allowed. If a host or moderator asks you to stop a topic, stop immediately.",
     },
     {
-        title: "6. No harassment or unwanted contact",
+        title: "6. Russia-based access restriction",
+        body:
+            "MySession is not available for users who live in Russia, are based in Russia, work from Russia, or regularly spend time in Russia. This is a safety and ethical policy related to Russia’s war against Ukraine. This policy is not open for debate inside the community.",
+    },
+    {
+        title: "7. Follow host and moderator instructions",
+        body:
+            "Some sessions are guided or moderated by a host. When joining a hosted session, follow the session format and reasonable instructions from the host or moderator. If a host or moderator asks you to stop a topic, stop immediately.",
+    },
+    {
+        title: "8. No harassment or unwanted contact",
         body:
             "Do not pressure, manipulate, stalk, or repeatedly contact other users after they have shown disinterest. Do not use MySession to pursue unwanted personal, romantic, or commercial contact.",
     },
     {
-        title: "7. Protect privacy",
+        title: "9. Protect privacy",
         body:
             "Do not record, screenshot, distribute, or share another person’s image, voice, messages, or session activity without their clear permission and without any consent required by law.",
     },
     {
-        title: "8. No impersonation or deception",
+        title: "10. No impersonation or deception",
         body:
             "Do not impersonate another person, misrepresent your identity, or create misleading accounts in order to deceive others.",
     },
     {
-        title: "9. No illegal, abusive, or harmful activity",
+        title: "11. No illegal, abusive, or harmful activity",
         body:
             "Do not use MySession for illegal activity, fraud, exploitation, hate speech, threats, doxxing, malware, or any other harmful conduct.",
     },
     {
-        title: "10. No platform abuse",
+        title: "12. No platform abuse",
         body:
             "Do not attempt to hack, scrape, overload, reverse engineer, bypass limits, or otherwise abuse the platform, rooms, systems, or data.",
     },
     {
-        title: "11. Commercial promotion must stay limited",
+        title: "13. Commercial promotion must stay limited",
         body:
             "Do not spam users with unsolicited promotions, links, offers, recruitment, or advertising. Reasonable sharing that is clearly relevant to a session may be allowed, but spam is not.",
     },
     {
-        title: "12. Report problems responsibly",
+        title: "14. Report problems responsibly",
         body:
             "If you experience harassment, abuse, inappropriate behavior, or serious rule violations, report it through the platform or contact support.",
     },
     {
-        title: "13. Enforcement",
+        title: "15. Enforcement",
         body:
             "We may remove content, end sessions, restrict features, suspend accounts, or permanently ban users who violate these rules or create risk for the platform or its users.",
     },
     {
-        title: "14. Use common sense",
+        title: "16. Use common sense",
         body:
             "Not every harmful behavior can be listed here. If something clearly undermines safety, trust, respect, or the purpose of MySession, we may still take action.",
     },
@@ -98,6 +109,10 @@ const faq = [
     {
         q: "Can I join without talking?",
         a: "Yes. Many sessions on MySession are silent by default. Respect the format of the room you join.",
+    },
+    {
+        q: "Can I talk about politics in sessions?",
+        a: "MySession is for focus and coworking, not political arguments. Political debates that disrupt sessions or community spaces, discriminatory harassment, and justification of violence, aggression, or harm are not allowed. If a host or moderator asks you to stop a topic, stop immediately.",
     },
     {
         q: "Can I promote my product or community in sessions?",
