@@ -4006,7 +4006,7 @@ export default function SessionCard({
                     p-6
                     flex flex-col
                     w-full gap-4
-                    ${isInfoOpen ? "z-[120]" : "z-0"}
+                    ${isInfoOpen || isOptionsOpen ? "z-[220]" : "z-0"}
                 `}
             >
                 <div className="flex flex-col xl:flex-row w-full gap-6">
@@ -4218,7 +4218,7 @@ export default function SessionCard({
                             Join session
                         </button>
 
-                        <div ref={optionsRef} className="relative w-full xl:w-auto">
+                        <div ref={optionsRef} className={`relative w-full xl:w-auto ${isOptionsOpen ? "z-[230]" : "z-0"}`}>
                             <button
                                 type="button"
                                 onClick={() => setIsOptionsOpen((v) => !v)}
@@ -4243,9 +4243,11 @@ export default function SessionCard({
 
                             {isOptionsOpen && (
                                 <div
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                    onClick={(e) => e.stopPropagation()}
                                     className="
                                         absolute right-0 top-[52px]
-                                        z-[200]
+                                        z-[9990]
                                         w-[260px]
                                         rounded-[18px]
                                         border border-[#E5E7EB]
