@@ -1715,10 +1715,23 @@ function RoomAuthModal({
   );
 }
 
-export function RoomPageLiveKit() {
-  const { id } = useParams<{ id: string }>();
+type RoomPageLiveKitProps = {
+  /**
+   * Lets pretty public URLs like /yaroslav render the real room without
+   * changing the browser address to /room-livekit/:id.
+   */
+  sessionIdOverride?: string | null;
+};
+
+export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitProps = {}) {
+  const { id: routeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+
+  const effectiveSessionParam = useMemo(
+    () => String(sessionIdOverride || routeId || "").trim(),
+    [sessionIdOverride, routeId]
+  );
 
   const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
   const [paywallModalOpen, setPaywallModalOpen] = useState(false);
@@ -2873,7 +2886,7 @@ export function RoomPageLiveKit() {
     let cancelled = false;
 
     (async () => {
-      const rawId = String(id || "").trim();
+      const rawId = String(effectiveSessionParam || "").trim();
 
       if (!rawId) {
         setSession(null);
@@ -2952,7 +2965,7 @@ export function RoomPageLiveKit() {
     return () => {
       cancelled = true;
     };
-  }, [id, authReady, authUserId]);
+  }, [effectiveSessionParam, authReady, authUserId]);
 
   useEffect(() => {
     if (!session) return;

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import RoomPageLiveKit from "./RoomPageLiveKit";
 
 type PublicSlugRow = {
   slug: string;
@@ -75,7 +76,6 @@ function getEndMs(session: SessionRow) {
 
 function pickBestHostSession(sessions: SessionRow[]) {
   const now = Date.now();
-
   const usable = (sessions || []).filter((s) => s?.id);
 
   const liveScheduled = usable
@@ -120,14 +120,15 @@ function pickBestHostSession(sessions: SessionRow[]) {
 }
 
 export default function PublicSlugRedirectPage() {
-  const navigate = useNavigate();
   const params = useParams();
   const slug = useMemo(() => normalizeSlug(params.slug), [params.slug]);
 
-  const [state, setState] = useState<"loading" | "not_found" | "no_session" | "error">("loading");
+  const [state, setState] = useState<"loading" | "ready" | "not_found" | "no_session" | "error">("loading");
+  const [resolvedSessionId, setResolvedSessionId] = useState<string>("");
 
   useEffect(() => {
     if (!slug) {
+      setResolvedSessionId("");
       setState("not_found");
       return;
     }
@@ -136,6 +137,7 @@ export default function PublicSlugRedirectPage() {
 
     const run = async () => {
       try {
+        setResolvedSessionId("");
         setState("loading");
 
         const { data: slugRow, error: slugError } = await supabase
@@ -158,7 +160,10 @@ export default function PublicSlugRedirectPage() {
             return;
           }
 
-          navigate(`/room-livekit/${row.owner_id}`, { replace: true });
+          if (!cancelled) {
+            setResolvedSessionId(row.owner_id);
+            setState("ready");
+          }
           return;
         }
 
@@ -184,7 +189,10 @@ export default function PublicSlugRedirectPage() {
             return;
           }
 
-          navigate(`/room-livekit/${best.id}`, { replace: true });
+          if (!cancelled) {
+            setResolvedSessionId(best.id);
+            setState("ready");
+          }
           return;
         }
 
@@ -200,7 +208,11 @@ export default function PublicSlugRedirectPage() {
     return () => {
       cancelled = true;
     };
-  }, [navigate, slug]);
+  }, [slug]);
+
+  if (state === "ready" && resolvedSessionId) {
+    return <RoomPageLiveKit sessionIdOverride={resolvedSessionId} />;
+  }
 
   return (
     <div className="min-h-screen bg-white px-4 py-16 text-[#2F2F2F] font-inter">
@@ -220,6 +232,16 @@ export default function PublicSlugRedirectPage() {
             </p>
             <Link className="mt-5 inline-flex rounded-full bg-[#2F2F2F] px-5 py-3 text-[14px] font-semibold text-white" to="/sessions">
               Browse sessions
+            </Link>
+          </>
+        ) : state === "error" ? (
+          <>
+            <div className="text-[20px] font-semibold">Could not open this link</div>
+            <p className="mt-2 text-[14px] leading-6 text-[#606060]">
+              Something went wrong while loading this MySession link.
+            </p>
+            <Link className="mt-5 inline-flex rounded-full bg-[#2F2F2F] px-5 py-3 text-[14px] font-semibold text-white" to="/sessions">
+              Go to sessions
             </Link>
           </>
         ) : (

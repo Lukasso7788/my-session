@@ -179,12 +179,12 @@ export default function App() {
           {/* Temporary AI assistant route */}
           <Route path="/ai-assistant" element={<SessionsPage />} />
 
-          {/* Public pretty slugs: mysession.club/:slug */}
-          <Route path="/:slug" element={<PublicSlugRedirectPage />} />
-
           {/* 404 for layout routes */}
           <Route path="*" element={<NotFoundPage />} />
         </Route>
+
+        {/* Public pretty slugs WITHOUT header/footer: mysession.club/:slug */}
+        <Route path="/:slug" element={<PublicSlugRedirectPage />} />
 
         {/* Routes WITHOUT header/footer */}
         <Route path="/room/:id" element={<RoomPage />} />
