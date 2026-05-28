@@ -8,7 +8,7 @@ import {
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser } from "lucide-react";
+import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck } from "lucide-react";
 import { SessionStageBar } from "./SessionStageBar";
 import {
     loadEntitlementState,
@@ -83,6 +83,8 @@ interface SessionCardProps {
             description?: string | null;
             schedule?: any;
             duration_minutes?: number | null;
+            host_id?: string | null;
+            host_name?: string | null;
         }
     ) => void | Promise<any>;
 
@@ -100,6 +102,13 @@ interface SessionCardProps {
 }
 
 type BookedUser = { id: string; full_name?: string; avatar_url?: string };
+type HostTransferCandidate = {
+    id: string;
+    full_name?: string | null;
+    avatar_url?: string | null;
+    email?: string | null;
+};
+
 
 function safeLower(x: any) {
     return String(x || "").toLowerCase();
@@ -1473,6 +1482,123 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
     }
 }
 
+function normalizeHostTransferCandidate(raw: any): HostTransferCandidate | null {
+    const id = String(raw?.id || raw?.user_id || raw?.userId || "").trim();
+    if (!id) return null;
+
+    const profile = raw?.profiles || raw?.profile || raw?.user || null;
+
+    return {
+        id,
+        full_name: raw?.full_name ?? raw?.name ?? profile?.full_name ?? profile?.name ?? null,
+        avatar_url: raw?.avatar_url ?? profile?.avatar_url ?? null,
+        email: raw?.email ?? profile?.email ?? null,
+    };
+}
+
+function uniqueHostTransferCandidates(items: HostTransferCandidate[]): HostTransferCandidate[] {
+    const seen = new Set<string>();
+    const out: HostTransferCandidate[] = [];
+
+    for (const item of items || []) {
+        const id = String(item?.id || "").trim();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        out.push(item);
+    }
+
+    return out;
+}
+
+async function searchHostTransferCandidates(query: string): Promise<HostTransferCandidate[]> {
+    const q = String(query || "").trim();
+    if (!q) return [];
+
+    const sb = getSupabase();
+    if (!sb) return [];
+
+    await ensureAuthReady(sb);
+
+    const looksLikeId = looksLikeUuid(q);
+
+    try {
+        let queryBuilder = sb
+            .from("profiles")
+            .select("id, full_name, avatar_url, email")
+            .limit(8);
+
+        if (looksLikeId) {
+            queryBuilder = queryBuilder.eq("id", q);
+        } else {
+            const safeQ = q.replace(/[%_,]/g, "");
+            queryBuilder = queryBuilder.or(
+                `full_name.ilike.%${safeQ}%,email.ilike.%${safeQ}%`
+            );
+        }
+
+        const { data, error } = await queryBuilder;
+        if (error) throw error;
+
+        return uniqueHostTransferCandidates(
+            (data || [])
+                .map(normalizeHostTransferCandidate)
+                .filter((x): x is HostTransferCandidate => !!x)
+        );
+    } catch (firstError: any) {
+        // Some profiles schemas do not expose an email column to the client.
+        try {
+            let queryBuilder = sb
+                .from("profiles")
+                .select("id, full_name, avatar_url")
+                .limit(8);
+
+            if (looksLikeId) {
+                queryBuilder = queryBuilder.eq("id", q);
+            } else {
+                const safeQ = q.replace(/[%_,]/g, "");
+                queryBuilder = queryBuilder.ilike("full_name", `%${safeQ}%`);
+            }
+
+            const { data, error } = await queryBuilder;
+            if (error) throw error;
+
+            return uniqueHostTransferCandidates(
+                (data || [])
+                    .map(normalizeHostTransferCandidate)
+                    .filter((x): x is HostTransferCandidate => !!x)
+            );
+        } catch (secondError) {
+            console.warn("[SessionCard] host transfer search failed:", firstError, secondError);
+            return [];
+        }
+    }
+}
+
+async function transferSessionHostRights(args: {
+    sessionId: string;
+    newHostId: string;
+}): Promise<void> {
+    const sessionId = String(args.sessionId || "").trim();
+    const newHostId = String(args.newHostId || "").trim();
+
+    if (!sessionId || !newHostId) {
+        throw new Error("Missing session or new host id.");
+    }
+
+    const sb = getSupabase();
+    if (!sb) throw new Error("Supabase is not configured.");
+
+    await ensureAuthReady(sb);
+
+    const { error } = await sb.rpc("transfer_session_host_rights", {
+        p_session_id: sessionId,
+        p_new_host_id: newHostId,
+    });
+
+    if (error) throw error;
+}
+
+
 /** =========================
  * ✅ Edit Session Studio (CreateSessionModal-like)
  * ========================= */
@@ -2300,10 +2426,23 @@ function EditSessionStudioModal(props: {
         description?: string | null;
         schedule?: any;
         duration_minutes?: number | null;
+        host_id?: string | null;
+        host_name?: string | null;
     }) => Promise<void> | void;
     session: any;
+    currentUserId?: string;
+    hostCandidates?: HostTransferCandidate[];
+    onHostTransferred?: (newHost: HostTransferCandidate) => void;
 }) {
-    const { isOpen, onClose, onSave, session } = props;
+    const {
+        isOpen,
+        onClose,
+        onSave,
+        session,
+        currentUserId,
+        hostCandidates = [],
+        onHostTransferred,
+    } = props;
 
     const [editTitle, setEditTitle] = useState<string>(session?.title || "");
     const [editDescription, setEditDescription] = useState<string>(
@@ -2321,6 +2460,12 @@ function EditSessionStudioModal(props: {
     const [dragOverId, setDragOverId] = useState<string | null>(null);
     const [dropEdge, setDropEdge] = useState<"before" | "after">("after");
     const [isSaving, setIsSaving] = useState(false);
+    const [transferQuery, setTransferQuery] = useState("");
+    const [transferResults, setTransferResults] = useState<HostTransferCandidate[]>([]);
+    const [isTransferSearching, setIsTransferSearching] = useState(false);
+    const [isTransferringHostId, setIsTransferringHostId] = useState<string | null>(null);
+    const [transferError, setTransferError] = useState<string | null>(null);
+    const [transferNotice, setTransferNotice] = useState<string | null>(null);
 
     const modalScrollRef = useRef<HTMLDivElement | null>(null);
     const autoScrollRafRef = useRef<number | null>(null);
@@ -2331,10 +2476,27 @@ function EditSessionStudioModal(props: {
     const flipArmedRef = useRef<boolean>(false);
 
     const isInfinite = resolveSessionType(session) === "infinite";
+    const currentHostId = String(session?.host_id || "").trim();
     const studioTotal = useMemo(
         () => studioBlocks.reduce((sum, b) => sum + (Number(b.minutes) || 0), 0),
         [studioBlocks]
     );
+
+    const suggestedHostCandidates = useMemo(() => {
+        return uniqueHostTransferCandidates(
+            (hostCandidates || [])
+                .map(normalizeHostTransferCandidate)
+                .filter((x): x is HostTransferCandidate => !!x)
+                .filter((x) => String(x.id) !== currentHostId)
+        ).slice(0, 8);
+    }, [hostCandidates, currentHostId]);
+
+    const visibleTransferCandidates = useMemo(() => {
+        return uniqueHostTransferCandidates([
+            ...(transferResults || []),
+            ...suggestedHostCandidates,
+        ]).filter((x) => String(x.id) !== currentHostId);
+    }, [transferResults, suggestedHostCandidates, currentHostId]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -2366,6 +2528,12 @@ function EditSessionStudioModal(props: {
         setDragOverId(null);
         setDropEdge("after");
         setIsSaving(false);
+        setTransferQuery("");
+        setTransferResults([]);
+        setIsTransferSearching(false);
+        setIsTransferringHostId(null);
+        setTransferError(null);
+        setTransferNotice(null);
     }, [isOpen, session?.id, session?.description, session?.title, session?.start_time, session?.max_participants]);
 
     useEffect(() => {
@@ -2585,6 +2753,82 @@ function EditSessionStudioModal(props: {
         [armFlip, focusBlock]
     );
 
+    useEffect(() => {
+        if (!isOpen) return;
+
+        const q = transferQuery.trim();
+
+        if (!q) {
+            setTransferResults([]);
+            setIsTransferSearching(false);
+            return;
+        }
+
+        setIsTransferSearching(true);
+        setTransferError(null);
+
+        const t = window.setTimeout(async () => {
+            try {
+                const results = await searchHostTransferCandidates(q);
+                setTransferResults(results);
+            } catch (e: any) {
+                setTransferResults([]);
+                setTransferError(e?.message || "Could not search users.");
+            } finally {
+                setIsTransferSearching(false);
+            }
+        }, 350);
+
+        return () => window.clearTimeout(t);
+    }, [isOpen, transferQuery]);
+
+    const handleTransferHost = useCallback(
+        async (candidate: HostTransferCandidate) => {
+            const newHostId = String(candidate?.id || "").trim();
+            if (!newHostId || !session?.id) return;
+
+            if (currentUserId && currentHostId && currentUserId !== currentHostId) {
+                setTransferError("Only the current host can transfer host rights.");
+                return;
+            }
+
+            if (newHostId === currentHostId) {
+                setTransferError("This user is already the host.");
+                return;
+            }
+
+            const label = String(candidate.full_name || candidate.email || candidate.id || "this user");
+            const ok = window.confirm(
+                `Transfer host rights for this session to ${label}?\n\nAfter this, they will become the session host.`
+            );
+
+            if (!ok) return;
+
+            setIsTransferringHostId(newHostId);
+            setTransferError(null);
+            setTransferNotice(null);
+
+            try {
+                await transferSessionHostRights({
+                    sessionId: String(session.id),
+                    newHostId,
+                });
+
+                setTransferNotice(`Host rights transferred to ${label}.`);
+                onHostTransferred?.(candidate);
+            } catch (e: any) {
+                console.error("[SessionCard] transfer host rights failed:", e);
+                setTransferError(
+                    e?.message ||
+                    "Could not transfer host rights. Check the SQL RPC/policies and try again."
+                );
+            } finally {
+                setIsTransferringHostId(null);
+            }
+        },
+        [session?.id, currentHostId, currentUserId, onHostTransferred]
+    );
+
     if (!isOpen) return null;
 
     return (
@@ -2667,6 +2911,111 @@ function EditSessionStudioModal(props: {
                             />
                             <span className="font-inter text-[12px] text-gray-600">people</span>
                         </div>
+                    </div>
+
+                    <div className="mt-4 border border-[#DBD8D8] rounded-[18px] bg-[#FAFAFA] p-3 sm:p-4">
+                        <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2 font-inter font-semibold text-[13px] text-brandBlack">
+                                    <Crown size={15} />
+                                    Transfer host rights
+                                </div>
+                                <div className="mt-1 font-inter text-[12px] leading-5 text-gray-500">
+                                    Move ownership and host controls for this session to another user.
+                                    Use this when someone else should run the room.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                            <div className="relative flex-1">
+                                <Search
+                                    size={15}
+                                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                                />
+                                <input
+                                    value={transferQuery}
+                                    onChange={(e) => setTransferQuery(e.target.value)}
+                                    placeholder="Search user by name, email, or user id…"
+                                    className="w-full rounded-[14px] border border-gray-300 bg-white py-2.5 pl-9 pr-3 font-inter text-[13px] text-brandBlack"
+                                />
+                            </div>
+                        </div>
+
+                        {isTransferSearching && (
+                            <div className="mt-2 font-inter text-[12px] text-gray-500">
+                                Searching users…
+                            </div>
+                        )}
+
+                        {transferError && (
+                            <div className="mt-2 rounded-[12px] border border-red-100 bg-red-50 px-3 py-2 font-inter text-[12px] text-red-600">
+                                {transferError}
+                            </div>
+                        )}
+
+                        {transferNotice && (
+                            <div className="mt-2 rounded-[12px] border border-emerald-100 bg-emerald-50 px-3 py-2 font-inter text-[12px] text-emerald-700">
+                                {transferNotice}
+                            </div>
+                        )}
+
+                        {visibleTransferCandidates.length > 0 ? (
+                            <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+                                {visibleTransferCandidates.map((candidate) => {
+                                    const label = String(candidate.full_name || candidate.email || candidate.id);
+                                    const sub = candidate.email && candidate.email !== label ? candidate.email : candidate.id;
+                                    const isBusy = isTransferringHostId === candidate.id;
+
+                                    return (
+                                        <button
+                                            key={candidate.id}
+                                            type="button"
+                                            disabled={!!isTransferringHostId}
+                                            onClick={() => handleTransferHost(candidate)}
+                                            className="flex items-center justify-between gap-3 rounded-[14px] border border-gray-200 bg-white px-3 py-2.5 text-left transition hover:border-brandBlack hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            <div className="flex min-w-0 items-center gap-2">
+                                                <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-gray-200 bg-white text-[11px] font-semibold text-brandBlack">
+                                                    {candidate.avatar_url ? (
+                                                        <img
+                                                            src={candidate.avatar_url}
+                                                            alt={label}
+                                                            className="h-full w-full object-cover"
+                                                            draggable={false}
+                                                        />
+                                                    ) : (
+                                                        getInitials(label)
+                                                    )}
+                                                </div>
+
+                                                <div className="min-w-0">
+                                                    <div className="truncate font-inter text-[13px] font-semibold text-brandBlack">
+                                                        {label}
+                                                    </div>
+                                                    <div className="truncate font-inter text-[11px] text-gray-500">
+                                                        {sub}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-gray-200 px-2.5 py-1 font-inter text-[11px] font-semibold text-gray-700">
+                                                <UserCheck size={13} />
+                                                {isBusy ? "Transferring…" : "Make host"}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        ) : transferQuery.trim() && !isTransferSearching ? (
+                            <div className="mt-2 font-inter text-[12px] text-gray-500">
+                                No matching users found.
+                            </div>
+                        ) : suggestedHostCandidates.length === 0 ? (
+                            <div className="mt-2 font-inter text-[12px] text-gray-500">
+                                Booked/live participants will appear here. You can also search manually above.
+                            </div>
+                        ) : null}
                     </div>
 
                     <SessionTimeline
@@ -3183,7 +3532,14 @@ export default function SessionCard({
     currentUser,
 }: SessionCardProps) {
     const navigate = useNavigate();
-    const isHost = !!userId && session.host_id === userId;
+    const [hostIdOverride, setHostIdOverride] = useState<string | null>(null);
+
+    useEffect(() => {
+        setHostIdOverride(null);
+    }, [session?.id, session?.host_id]);
+
+    const effectiveHostId = hostIdOverride || session.host_id;
+    const isHost = !!userId && effectiveHostId === userId;
 
     const initialIsBooked =
         !!userId &&
@@ -4455,7 +4811,35 @@ export default function SessionCard({
                     onClose={() => setIsEditModalOpen(false)}
                     session={{
                         ...session,
+                        host_id: effectiveHostId,
                         description: resolvedDescription,
+                    }}
+                    currentUserId={userId}
+                    hostCandidates={uniqueHostTransferCandidates([
+                        ...bookers.map((u) => ({
+                            id: u.id,
+                            full_name: u.full_name || null,
+                            avatar_url: u.avatar_url || null,
+                        })),
+                        ...liveUsers.map((u) => ({
+                            id: u.id,
+                            full_name: u.full_name || null,
+                            avatar_url: u.avatar_url || null,
+                        })),
+                        currentUser?.id
+                            ? {
+                                id: currentUser.id,
+                                full_name: currentUser.full_name || "You",
+                                avatar_url: currentUser.avatar_url || null,
+                                email: currentUser.email || null,
+                            }
+                            : null,
+                    ].filter(Boolean) as HostTransferCandidate[])}
+                    onHostTransferred={(newHost) => {
+                        setHostIdOverride(newHost.id);
+                        window.setTimeout(() => {
+                            setIsEditModalOpen(false);
+                        }, 650);
                     }}
                     onSave={async (updates) => {
                         await onEditSession(session.id, updates);
