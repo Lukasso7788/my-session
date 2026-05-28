@@ -184,7 +184,9 @@ const SLUG_MIN = 3;
 const SLUG_MAX = 40;
 
 function sanitizeSlug(input: string) {
-  const raw = String(input || "").trim().toLowerCase();
+  const raw = String(input || "")
+    .trim()
+    .toLowerCase();
   const spaced = raw.replace(/\s+/g, "-");
   const clean = spaced.replace(/[^a-z0-9-_]/g, "");
   return clean;
@@ -275,6 +277,14 @@ type PreviousSessionRow = {
   start_time: string | null;
 };
 
+type PublicSlugRow = {
+  slug: string;
+  owner_type: string | null;
+  owner_id: string | null;
+  host_user_id?: string | null;
+  updated_at?: string | null;
+};
+
 function uid() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const c: any = (globalThis as any)?.crypto;
@@ -304,7 +314,11 @@ function inferStudioBlockKind(raw: any): StudioBlockKind {
     raw?.name,
     raw?.label,
   ]
-    .map((v) => String(v || "").trim().toLowerCase())
+    .map((v) =>
+      String(v || "")
+        .trim()
+        .toLowerCase(),
+    )
     .filter(Boolean);
 
   const joined = candidates.join(" | ");
@@ -334,10 +348,7 @@ function inferStudioBlockKind(raw: any): StudioBlockKind {
     return "focus";
   }
 
-  if (
-    joined.includes("break") ||
-    joined.includes("rest")
-  ) {
+  if (joined.includes("break") || joined.includes("rest")) {
     return "break";
   }
 
@@ -394,7 +405,7 @@ function normalizeTemplateBlocks(rawBlocks: any): StudioBlock[] {
       b?.stage_name ||
       b?.kind ||
       b?.type ||
-      "Block"
+      "Block",
     ).trim();
 
     const minutesRaw =
@@ -410,18 +421,17 @@ function normalizeTemplateBlocks(rawBlocks: any): StudioBlock[] {
 
     const kind = inferStudioBlockKind(b);
 
-    const rawColor = String(b?.color || b?.colour || b?.bgColor || b?.backgroundColor || "").trim();
+    const rawColor = String(
+      b?.color || b?.colour || b?.bgColor || b?.backgroundColor || "",
+    ).trim();
 
     return {
       id: uid(),
       kind,
       title,
-      note: String(
-        b?.note ||
-        b?.description ||
-        b?.details ||
-        ""
-      ).trim() || undefined,
+      note:
+        String(b?.note || b?.description || b?.details || "").trim() ||
+        undefined,
       minutes,
       color: isValidHexColor(rawColor) ? rawColor : getDefaultBlockColor(kind),
     };
@@ -652,7 +662,7 @@ function SessionTimeline({
 
   const selectedBlock = useMemo(
     () => blocks.find((b) => b.id === selectedBlockId) || null,
-    [blocks, selectedBlockId]
+    [blocks, selectedBlockId],
   );
 
   const rows = useMemo(() => {
@@ -677,7 +687,7 @@ function SessionTimeline({
       onChange(copy);
       setSelectedBlockId(item.id);
     },
-    [blocks, onChange, setSelectedBlockId]
+    [blocks, onChange, setSelectedBlockId],
   );
 
   const moveByDelta = useCallback(
@@ -693,14 +703,14 @@ function SessionTimeline({
       onChange(copy);
       setSelectedBlockId(item.id);
     },
-    [blocks, onChange, setSelectedBlockId]
+    [blocks, onChange, setSelectedBlockId],
   );
 
   const update = useCallback(
     (id: string, patch: Partial<StudioBlock>) => {
       onChange(blocks.map((b) => (b.id === id ? { ...b, ...patch } : b)));
     },
-    [blocks, onChange]
+    [blocks, onChange],
   );
 
   const remove = useCallback(
@@ -714,7 +724,7 @@ function SessionTimeline({
       const next = copy[idx] || copy[idx - 1] || null;
       setSelectedBlockId(next ? next.id : null);
     },
-    [blocks, onChange, setSelectedBlockId]
+    [blocks, onChange, setSelectedBlockId],
   );
 
   const duplicate = useCallback(
@@ -732,7 +742,7 @@ function SessionTimeline({
       onChange(copy);
       setSelectedBlockId(clone.id);
     },
-    [blocks, onChange, setSelectedBlockId]
+    [blocks, onChange, setSelectedBlockId],
   );
 
   const insertAfter = useCallback(
@@ -754,7 +764,7 @@ function SessionTimeline({
       onChange(copy);
       setSelectedBlockId(nextBlock.id);
     },
-    [blocks, onChange, setSelectedBlockId]
+    [blocks, onChange, setSelectedBlockId],
   );
 
   return (
@@ -850,10 +860,11 @@ function SessionTimeline({
                         const deltaPx = ev.clientX - startX;
                         const next = clamp(
                           Math.round(
-                            startMinutes + deltaPx / TIMELINE_RESIZE_PX_PER_MINUTE
+                            startMinutes +
+                            deltaPx / TIMELINE_RESIZE_PX_PER_MINUTE,
                           ),
                           1,
-                          24 * 60
+                          24 * 60,
                         );
                         update(b.id, { minutes: next });
                       };
@@ -882,7 +893,8 @@ function SessionTimeline({
                 Edit selected block
               </div>
               <div className="mt-0.5 text-[11px] text-gray-500">
-                Click a segment to edit it. Drag to reorder. Pull the right edge to resize.
+                Click a segment to edit it. Drag to reorder. Pull the right edge
+                to resize.
               </div>
             </div>
 
@@ -952,7 +964,9 @@ function SessionTimeline({
 
             <input
               value={selectedBlock.title}
-              onChange={(e) => update(selectedBlock.id, { title: e.target.value })}
+              onChange={(e) =>
+                update(selectedBlock.id, { title: e.target.value })
+              }
               className="w-full px-3 py-2.5 rounded-[14px] border border-gray-200 bg-white text-[13px] font-inter text-brandBlack"
               placeholder="Block title…"
             />
@@ -965,7 +979,7 @@ function SessionTimeline({
                     minutes: clamp(
                       (Number(selectedBlock.minutes) || 1) - 1,
                       1,
-                      24 * 60
+                      24 * 60,
                     ),
                   })
                 }
@@ -992,7 +1006,7 @@ function SessionTimeline({
                     minutes: clamp(
                       (Number(selectedBlock.minutes) || 1) + 1,
                       1,
-                      24 * 60
+                      24 * 60,
                     ),
                   })
                 }
@@ -1117,7 +1131,6 @@ function SessionTimeline({
   );
 }
 
-
 export function CreateSessionModal({
   isOpen,
   onClose,
@@ -1145,25 +1158,34 @@ export function CreateSessionModal({
   const [customSlugInput, setCustomSlugInput] = useState("");
   const sanitizedSlug = useMemo(
     () => sanitizeSlug(customSlugInput),
-    [customSlugInput]
+    [customSlugInput],
   );
   const slugValid = useMemo(() => isValidSlug(sanitizedSlug), [sanitizedSlug]);
   const [slugStatus, setSlugStatus] = useState<
-    "idle" | "invalid" | "checking" | "taken" | "available"
+    "idle" | "invalid" | "checking" | "taken" | "available" | "owned"
   >("idle");
+  const [ownedPublicSlugs, setOwnedPublicSlugs] = useState<PublicSlugRow[]>([]);
 
   // ---------- SESSION STUDIO ----------
   const [studioEnabled, setStudioEnabled] = useState(false);
   const [studioBlocks, setStudioBlocks] = useState<StudioBlock[]>([]);
   const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
-  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
+  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(
+    null,
+  );
 
   // ---------- My templates / previous sessions ----------
-  const [userTemplates, setUserTemplates] = useState<UserSessionTemplateRow[]>([]);
-  const [previousSessions, setPreviousSessions] = useState<PreviousSessionRow[]>([]);
-  const [selectedUserTemplateId, setSelectedUserTemplateId] = useState<string>("");
-  const [selectedPreviousSessionId, setSelectedPreviousSessionId] = useState<string>("");
+  const [userTemplates, setUserTemplates] = useState<UserSessionTemplateRow[]>(
+    [],
+  );
+  const [previousSessions, setPreviousSessions] = useState<
+    PreviousSessionRow[]
+  >([]);
+  const [selectedUserTemplateId, setSelectedUserTemplateId] =
+    useState<string>("");
+  const [selectedPreviousSessionId, setSelectedPreviousSessionId] =
+    useState<string>("");
   const [saveTemplateName, setSaveTemplateName] = useState("");
   const [saveTemplateDescription, setSaveTemplateDescription] = useState("");
 
@@ -1174,7 +1196,7 @@ export function CreateSessionModal({
   const END_DROP_ID = "__end__";
 
   const [maxParticipants, setMaxParticipants] = useState<number>(
-    DEFAULT_MAX_PARTICIPANTS
+    DEFAULT_MAX_PARTICIPANTS,
   );
 
   // Scroll container ref (modal body)
@@ -1201,6 +1223,7 @@ export function CreateSessionModal({
     setTemplates([]);
     setUserTemplates([]);
     setPreviousSessions([]);
+    setOwnedPublicSlugs([]);
     setSelectedUserTemplateId("");
     setSelectedPreviousSessionId("");
     setSaveTemplateName("");
@@ -1274,7 +1297,7 @@ export function CreateSessionModal({
       try {
         const { data, error } = await supabase
           .from("public_url_slugs")
-          .select("slug")
+          .select("slug, owner_type, owner_id, host_user_id")
           .eq("slug", s)
           .limit(1);
 
@@ -1284,7 +1307,23 @@ export function CreateSessionModal({
           return;
         }
 
-        setSlugStatus(data && data.length > 0 ? "taken" : "available");
+        const existing = data?.[0] as PublicSlugRow | undefined;
+
+        if (!existing) {
+          setSlugStatus("available");
+          return;
+        }
+
+        if (
+          existing.host_user_id &&
+          profile?.id &&
+          existing.host_user_id === profile.id
+        ) {
+          setSlugStatus("owned");
+          return;
+        }
+
+        setSlugStatus("taken");
       } catch (e) {
         console.log("[slug] availability check exception:", e);
         setSlugStatus("idle");
@@ -1292,16 +1331,16 @@ export function CreateSessionModal({
     }, 450);
 
     return () => window.clearTimeout(t);
-  }, [sanitizedSlug, slugValid, isOpen, scheduleMode]);
+  }, [sanitizedSlug, slugValid, isOpen, scheduleMode, profile?.id]);
 
   const studioTotal = useMemo(
     () => studioBlocks.reduce((sum, b) => sum + (Number(b.minutes) || 0), 0),
-    [studioBlocks]
+    [studioBlocks],
   );
 
   const selectedTemplateObj = useMemo(
     () => templates.find((t) => t.id === selectedTemplate),
-    [templates, selectedTemplate]
+    [templates, selectedTemplate],
   );
 
   const templateNameById = useMemo(() => {
@@ -1452,9 +1491,9 @@ export function CreateSessionModal({
   const focusBlock = useCallback((id: string) => {
     if (!id) return;
     requestAnimationFrame(() => {
-      const el = document.getElementById(`studio-block-${id}`) as
-        | HTMLElement
-        | null;
+      const el = document.getElementById(
+        `studio-block-${id}`,
+      ) as HTMLElement | null;
       if (!el) return;
       el.focus();
       try {
@@ -1488,19 +1527,34 @@ export function CreateSessionModal({
         ? supabase
           .from("sessions")
           .select(
-            "id,title,description,template_id,format,schedule,duration_minutes,max_participants,created_at,start_time"
+            "id,title,description,template_id,format,schedule,duration_minutes,max_participants,created_at,start_time",
           )
           .eq("host_id", profile.id)
           .order("created_at", { ascending: false })
           .limit(24)
         : Promise.resolve({ data: [], error: null } as any);
 
-      const [globalTemplatesRes, userTemplatesRes, previousSessionsRes] =
-        await Promise.all([
-          globalTemplatesPromise,
-          userTemplatesPromise,
-          previousSessionsPromise,
-        ]);
+      const ownedSlugsPromise = profile?.id
+        ? supabase
+          .from("public_url_slugs")
+          .select("slug, owner_type, owner_id, host_user_id, updated_at")
+          .eq("owner_type", "session")
+          .eq("host_user_id", profile.id)
+          .order("updated_at", { ascending: false })
+          .limit(10)
+        : Promise.resolve({ data: [], error: null } as any);
+
+      const [
+        globalTemplatesRes,
+        userTemplatesRes,
+        previousSessionsRes,
+        ownedSlugsRes,
+      ] = await Promise.all([
+        globalTemplatesPromise,
+        userTemplatesPromise,
+        previousSessionsPromise,
+        ownedSlugsPromise,
+      ]);
 
       if (globalTemplatesRes.error) {
         console.error("❌ Error loading templates:", globalTemplatesRes.error);
@@ -1510,17 +1564,37 @@ export function CreateSessionModal({
       }
 
       if (userTemplatesRes?.error) {
-        console.error("❌ Error loading user templates:", userTemplatesRes.error);
+        console.error(
+          "❌ Error loading user templates:",
+          userTemplatesRes.error,
+        );
       } else {
-        setUserTemplates((userTemplatesRes?.data || []) as UserSessionTemplateRow[]);
+        setUserTemplates(
+          (userTemplatesRes?.data || []) as UserSessionTemplateRow[],
+        );
       }
 
       if (previousSessionsRes?.error) {
-        console.error("❌ Error loading previous sessions:", previousSessionsRes.error);
+        console.error(
+          "❌ Error loading previous sessions:",
+          previousSessionsRes.error,
+        );
       } else {
         setPreviousSessions(
-          (previousSessionsRes?.data || []) as PreviousSessionRow[]
+          (previousSessionsRes?.data || []) as PreviousSessionRow[],
         );
+      }
+
+      if (ownedSlugsRes?.error) {
+        console.error(
+          "❌ Error loading reusable public links:",
+          ownedSlugsRes.error,
+        );
+      } else {
+        const rows = ((ownedSlugsRes?.data || []) as PublicSlugRow[])
+          .filter((r) => String(r?.slug || "").trim())
+          .slice(0, 1);
+        setOwnedPublicSlugs(rows);
       }
     } catch (e) {
       console.error("❌ Error loading modal data:", e);
@@ -1549,7 +1623,7 @@ export function CreateSessionModal({
       const nextMax = clamp(
         Number(tpl.default_max_participants) || DEFAULT_MAX_PARTICIPANTS,
         MIN_PARTICIPANTS,
-        MAX_PARTICIPANTS
+        MAX_PARTICIPANTS,
       );
       setMaxParticipants(nextMax);
 
@@ -1566,7 +1640,7 @@ export function CreateSessionModal({
       setNotice(`Loaded template: ${tpl.name}`);
       window.setTimeout(() => setNotice(null), 1600);
     },
-    [applyStudioBlocks, clearStudio, templates]
+    [applyStudioBlocks, clearStudio, templates],
   );
 
   const applyPreviousSession = useCallback(
@@ -1588,7 +1662,7 @@ export function CreateSessionModal({
       const nextMax = clamp(
         Number(row.max_participants) || DEFAULT_MAX_PARTICIPANTS,
         MIN_PARTICIPANTS,
-        MAX_PARTICIPANTS
+        MAX_PARTICIPANTS,
       );
       setMaxParticipants(nextMax);
 
@@ -1608,7 +1682,7 @@ export function CreateSessionModal({
       setNotice("Loaded previous session");
       window.setTimeout(() => setNotice(null), 1600);
     },
-    [applyStudioBlocks, clearStudio, templates]
+    [applyStudioBlocks, clearStudio, templates],
   );
 
   const handleSaveCurrentAsUserTemplate = useCallback(async () => {
@@ -1645,7 +1719,7 @@ export function CreateSessionModal({
         default_max_participants: clamp(
           Number(maxParticipants) || DEFAULT_MAX_PARTICIPANTS,
           MIN_PARTICIPANTS,
-          MAX_PARTICIPANTS
+          MAX_PARTICIPANTS,
         ),
       };
 
@@ -1690,7 +1764,7 @@ export function CreateSessionModal({
     if (tag === "button") return true;
     if (t.isContentEditable) return true;
     const closest = t.closest?.(
-      "input,textarea,select,button,[contenteditable='true']"
+      "input,textarea,select,button,[contenteditable='true']",
     );
     return !!closest;
   };
@@ -1708,9 +1782,7 @@ export function CreateSessionModal({
 
   const orderedSelectedIds = useMemo(() => {
     const selectedSet = new Set(selectedBlockIds);
-    return studioBlocks
-      .map((b) => b.id)
-      .filter((id) => selectedSet.has(id));
+    return studioBlocks.map((b) => b.id).filter((id) => selectedSet.has(id));
   }, [studioBlocks, selectedBlockIds]);
 
   const orderedSelectedBlocks = useMemo(() => {
@@ -1756,7 +1828,7 @@ export function CreateSessionModal({
       setActiveBlockId(id);
       setSelectionAnchorId(anchor);
     },
-    [studioBlocks, selectionAnchorId, activeBlockId, selectSingleBlock]
+    [studioBlocks, selectionAnchorId, activeBlockId, selectSingleBlock],
   );
 
   const handleBlockSurfaceClick = useCallback(
@@ -1776,7 +1848,7 @@ export function CreateSessionModal({
       selectSingleBlock(id);
       focusBlock(id);
     },
-    [focusBlock, selectRangeToBlock, selectSingleBlock, toggleBlockSelection]
+    [focusBlock, selectRangeToBlock, selectSingleBlock, toggleBlockSelection],
   );
 
   const copySelectedBlocks = useCallback(() => {
@@ -1807,10 +1879,7 @@ export function CreateSessionModal({
 
       const insertIndex =
         lastSelectedId != null
-          ? Math.max(
-            0,
-            prev.findIndex((b) => b.id === lastSelectedId) + 1
-          )
+          ? Math.max(0, prev.findIndex((b) => b.id === lastSelectedId) + 1)
           : prev.length;
 
       const next = [...prev];
@@ -1901,9 +1970,9 @@ export function CreateSessionModal({
   const armFlip = useCallback(() => {
     const tops: Record<string, number> = {};
     for (const b of studioBlocks) {
-      const el = document.getElementById(`studio-block-${b.id}`) as
-        | HTMLElement
-        | null;
+      const el = document.getElementById(
+        `studio-block-${b.id}`,
+      ) as HTMLElement | null;
       if (!el) continue;
       tops[b.id] = el.getBoundingClientRect().top;
     }
@@ -1918,9 +1987,9 @@ export function CreateSessionModal({
     flipArmedRef.current = false;
 
     for (const b of studioBlocks) {
-      const el = document.getElementById(`studio-block-${b.id}`) as
-        | HTMLElement
-        | null;
+      const el = document.getElementById(
+        `studio-block-${b.id}`,
+      ) as HTMLElement | null;
       if (!el) continue;
 
       const prevTop = prev[b.id];
@@ -1940,7 +2009,7 @@ export function CreateSessionModal({
           {
             duration: 180,
             easing: "cubic-bezier(0.2, 0, 0, 1)",
-          }
+          },
         );
       } catch {
         // ignore
@@ -1968,7 +2037,7 @@ export function CreateSessionModal({
       if (!selectedBlockIds.includes(id)) setSelectedBlockIds([id]);
       focusBlock(id);
     },
-    [armFlip, focusBlock, selectedBlockIds]
+    [armFlip, focusBlock, selectedBlockIds],
   );
 
   const moveBlockTo = useCallback(
@@ -2008,12 +2077,12 @@ export function CreateSessionModal({
       if (!selectedBlockIds.includes(dragId)) setSelectedBlockIds([dragId]);
       focusBlock(dragId);
     },
-    [armFlip, focusBlock, selectedBlockIds]
+    [armFlip, focusBlock, selectedBlockIds],
   );
 
   const updateBlock = useCallback((id: string, patch: Partial<StudioBlock>) => {
     setStudioBlocks((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, ...patch } : b))
+      prev.map((b) => (b.id === id ? { ...b, ...patch } : b)),
     );
   }, []);
 
@@ -2032,7 +2101,7 @@ export function CreateSessionModal({
       setActiveBlockId((cur) => (cur === id ? null : cur));
       setSelectionAnchorId((cur) => (cur === id ? null : cur));
     },
-    [deleteSelectedBlocks, selectedBlockIds]
+    [deleteSelectedBlocks, selectedBlockIds],
   );
 
   useEffect(() => {
@@ -2046,8 +2115,10 @@ export function CreateSessionModal({
 
     if (studioBlocks.length === 0) {
       const hasTplBlocks =
-        normalizeTemplateBlocks((selectedTemplateObj as any)?.blocks).length > 0 ||
-        normalizeTemplateBlocks((selectedTemplateObj as any)?.schedule).length > 0;
+        normalizeTemplateBlocks((selectedTemplateObj as any)?.blocks).length >
+        0 ||
+        normalizeTemplateBlocks((selectedTemplateObj as any)?.schedule).length >
+        0;
       if (hasTplBlocks) importFromTemplate();
       else resetDefaultStudio();
     }
@@ -2061,7 +2132,7 @@ export function CreateSessionModal({
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       const isInteractive = !!target?.closest?.(
-        "input,textarea,select,button,[contenteditable='true']"
+        "input,textarea,select,button,[contenteditable='true']",
       );
 
       const mod = e.metaKey || e.ctrlKey;
@@ -2225,7 +2296,7 @@ export function CreateSessionModal({
 
     if (studioEnabled && studioBlocks.length === 0) {
       setError(
-        "Session Studio is enabled, but your script is empty. Add at least one block."
+        "Session Studio is enabled, but your script is empty. Add at least one block.",
       );
       return;
     }
@@ -2243,14 +2314,16 @@ export function CreateSessionModal({
     const baseSlug = sanitizedSlug;
     if (baseSlug && !isValidSlug(baseSlug)) {
       setError(
-        `Custom link is invalid. Use ${SLUG_MIN}-${SLUG_MAX} chars: a-z, 0-9, - or _.`
+        `Custom link is invalid. Use ${SLUG_MIN}-${SLUG_MAX} chars: a-z, 0-9, - or _.`,
       );
       return;
     }
 
     if (scheduleMode === "single") {
       if (baseSlug && slugStatus === "taken") {
-        setError("This custom link is already taken. Pick another one.");
+        setError(
+          "This custom link is already taken by another host. Pick another one.",
+        );
         return;
       }
       if (baseSlug && slugStatus === "checking") {
@@ -2260,11 +2333,11 @@ export function CreateSessionModal({
     }
 
     const baseTemplateId =
-      selectedTemplate || (studioEnabled ? templates[0]?.id ?? "" : "");
+      selectedTemplate || (studioEnabled ? (templates[0]?.id ?? "") : "");
 
     if (studioEnabled && !baseTemplateId) {
       setError(
-        "No templates found in database. Create at least one template first."
+        "No templates found in database. Create at least one template first.",
       );
       return;
     }
@@ -2273,7 +2346,7 @@ export function CreateSessionModal({
       ? clamp(
         Number(maxParticipants) || DEFAULT_MAX_PARTICIPANTS,
         MIN_PARTICIPANTS,
-        MAX_PARTICIPANTS
+        MAX_PARTICIPANTS,
       )
       : DEFAULT_MAX_PARTICIPANTS;
 
@@ -2293,7 +2366,7 @@ export function CreateSessionModal({
 
       const durationMinutes = studioEnabled
         ? studioTotal
-        : (template as any)?.total_duration ?? 60;
+        : ((template as any)?.total_duration ?? 60);
 
       const schedulePayload = studioEnabled
         ? exportStudioToSchedule(studioBlocks)
@@ -2318,7 +2391,7 @@ export function CreateSessionModal({
 
       if (datesLocal.length !== occurrencesCount) {
         throw new Error(
-          `Unable to create ${occurrencesCount} occurrence(s) inside the ${MAX_ADVANCE_DAYS}-day scheduling window.`
+          `Unable to create ${occurrencesCount} occurrence(s) inside the ${MAX_ADVANCE_DAYS}-day scheduling window.`,
         );
       }
 
@@ -2343,11 +2416,65 @@ export function CreateSessionModal({
             console.log("[slug] series collision check error:", takenErr);
           } else if (taken && taken.length > 0) {
             setError(
-              "Some custom links for the series are already taken. Try a different base link."
+              "Some custom links for the series are already taken. Try a different base link.",
             );
             setIsCreating(false);
             return;
           }
+        }
+      }
+
+      if (!isSeries && baseSlug) {
+        const { data: existingSlugRows, error: existingSlugError } =
+          await supabase
+            .from("public_url_slugs")
+            .select("slug, owner_type, owner_id, host_user_id")
+            .eq("slug", baseSlug)
+            .limit(1);
+
+        if (existingSlugError) {
+          console.log("[slug] ownership check error:", existingSlugError);
+        }
+
+        const existingSlug = existingSlugRows?.[0] as PublicSlugRow | undefined;
+        if (
+          existingSlug?.host_user_id &&
+          existingSlug.host_user_id !== profile.id
+        ) {
+          setError(
+            "This custom link is already taken by another host. Pick another one.",
+          );
+          setIsCreating(false);
+          return;
+        }
+
+        // One reusable public link per host: detach it from old sessions first,
+        // then attach the same slug to the newly created session below.
+        const { error: clearOldSessionSlugError } = await supabase
+          .from("sessions")
+          .update({ custom_slug: null })
+          .eq("host_id", profile.id)
+          .not("custom_slug", "is", null);
+
+        if (clearOldSessionSlugError) {
+          console.log(
+            "[slug] old session slug cleanup error:",
+            clearOldSessionSlugError,
+          );
+        }
+
+        const { error: clearOldPublicSlugError } = await supabase
+          .from("public_url_slugs")
+          .delete()
+          .eq("owner_type", "session")
+          .eq("host_user_id", profile.id)
+          .neq("slug", baseSlug);
+
+        if (clearOldPublicSlugError) {
+          console.log(
+            "[slug] old public slug cleanup error:",
+            clearOldPublicSlugError,
+          );
         }
       }
 
@@ -2420,6 +2547,26 @@ export function CreateSessionModal({
         throw new Error("Sessions were created, but no rows were returned.");
       }
 
+      const publicSlugRows = insertedSessions
+        .filter((s: any) => String(s?.custom_slug || "").trim())
+        .map((s: any) => ({
+          slug: String(s.custom_slug).trim(),
+          owner_type: "session",
+          owner_id: s.id,
+          host_user_id: profile.id,
+          updated_at: new Date().toISOString(),
+        }));
+
+      if (publicSlugRows.length > 0) {
+        const { error: publicSlugError } = await supabase
+          .from("public_url_slugs")
+          .upsert(publicSlugRows, { onConflict: "slug" });
+
+        if (publicSlugError) throw publicSlugError;
+
+        setOwnedPublicSlugs(publicSlugRows.slice(0, 1));
+      }
+
       const bookingRows = insertedSessions
         .filter((s: any) => s?.id && (s?.host_id || profile.id))
         .map((s: any) => ({
@@ -2444,11 +2591,14 @@ export function CreateSessionModal({
               await supabase.from("sessions").delete().in("id", insertedIds);
             }
           } catch (rollbackErr) {
-            console.error("❌ Rollback failed after auto-booking error:", rollbackErr);
+            console.error(
+              "❌ Rollback failed after auto-booking error:",
+              rollbackErr,
+            );
           }
 
           throw new Error(
-            "Failed to auto-book the host into the created session(s). Creation was rolled back."
+            "Failed to auto-book the host into the created session(s). Creation was rolled back.",
           );
         }
       }
@@ -2470,8 +2620,8 @@ export function CreateSessionModal({
                     Authorization: `Bearer ${token}`,
                   },
                   body: JSON.stringify({ sessionId }),
-                })
-              )
+                }),
+              ),
           );
         }
       } catch (pushErr) {
@@ -2507,8 +2657,12 @@ export function CreateSessionModal({
 
       const msg = String(err?.message || "");
       if (
-        (msg.toLowerCase().includes("custom_slug") || msg.toLowerCase().includes("public_url_slugs") || msg.toLowerCase().includes("public_url_slugs_pkey")) &&
-        (msg.toLowerCase().includes("duplicate") || msg.toLowerCase().includes("already exists") || msg.toLowerCase().includes("conflict"))
+        (msg.toLowerCase().includes("custom_slug") ||
+          msg.toLowerCase().includes("public_url_slugs") ||
+          msg.toLowerCase().includes("public_url_slugs_pkey")) &&
+        (msg.toLowerCase().includes("duplicate") ||
+          msg.toLowerCase().includes("already exists") ||
+          msg.toLowerCase().includes("conflict"))
       ) {
         setError("This custom link is already taken. Pick another one.");
       } else {
@@ -2535,13 +2689,25 @@ export function CreateSessionModal({
     ? isSeries
       ? `${origin}/${makeDatedSlug(
         sanitizedSlug,
-        new Date(scheduledAt || Date.now())
+        new Date(scheduledAt || Date.now()),
       )} …`
       : `${origin}/${sanitizedSlug}`
     : `${origin}/<your-link>`;
 
+  const ownedSlugValues = ownedPublicSlugs
+    .map((r) => String(r.slug || "").trim())
+    .filter(Boolean);
+
+  const ownedSlugSelectValue = sanitizedSlug
+    ? ownedSlugValues.includes(sanitizedSlug)
+      ? sanitizedSlug
+      : "__custom__"
+    : "";
+
   const slugHint = !customSlugInput
-    ? "Optional. Your own public link: mysession.club/your-link."
+    ? ownedSlugValues.length > 0
+      ? "Optional. Reuse your existing public link or type a new one. You can keep one active public link at a time."
+      : "Optional. Your reusable public link: mysession.club/your-link."
     : !slugValid
       ? `Invalid. Use ${SLUG_MIN}-${SLUG_MAX} chars: a-z, 0-9, - or _.`
       : isSeries
@@ -2549,15 +2715,17 @@ export function CreateSessionModal({
         : slugStatus === "checking"
           ? "Checking availability…"
           : slugStatus === "taken"
-            ? "Taken. Pick another."
-            : slugStatus === "available"
-              ? "Available ✓"
-              : "";
+            ? "Taken by another host. Pick another."
+            : slugStatus === "owned"
+              ? "This is your reusable link. It will move to this new session ✓"
+              : slugStatus === "available"
+                ? "Available ✓"
+                : "";
 
   const slugHintColor =
     !slugValid || slugStatus === "taken"
       ? "text-red-600"
-      : slugStatus === "available"
+      : slugStatus === "available" || slugStatus === "owned"
         ? "text-emerald-600"
         : "text-gray-500";
 
@@ -2760,7 +2928,7 @@ export function CreateSessionModal({
                                 {clamp(
                                   Number(weeklyCount) || 1,
                                   1,
-                                  dynamicMaxOccurrences
+                                  dynamicMaxOccurrences,
                                 )}
                               </span>
                             </div>
@@ -2773,15 +2941,15 @@ export function CreateSessionModal({
                             value={clamp(
                               Number(weeklyCount) || 1,
                               1,
-                              dynamicMaxOccurrences
+                              dynamicMaxOccurrences,
                             )}
                             onChange={(e) =>
                               setWeeklyCount(
                                 clamp(
                                   Number(e.target.value) || 1,
                                   1,
-                                  dynamicMaxOccurrences
-                                )
+                                  dynamicMaxOccurrences,
+                                ),
                               )
                             }
                             className="mt-3 w-full"
@@ -2821,7 +2989,7 @@ export function CreateSessionModal({
                                 {clamp(
                                   Number(dailyDays) || 1,
                                   1,
-                                  dynamicMaxOccurrences
+                                  dynamicMaxOccurrences,
                                 )}
                               </span>
                             </div>
@@ -2834,15 +3002,15 @@ export function CreateSessionModal({
                             value={clamp(
                               Number(dailyDays) || 1,
                               1,
-                              dynamicMaxOccurrences
+                              dynamicMaxOccurrences,
                             )}
                             onChange={(e) =>
                               setDailyDays(
                                 clamp(
                                   Number(e.target.value) || 1,
                                   1,
-                                  dynamicMaxOccurrences
-                                )
+                                  dynamicMaxOccurrences,
+                                ),
                               )
                             }
                             className="mt-3 w-full"
@@ -2853,7 +3021,9 @@ export function CreateSessionModal({
                               <input
                                 type="checkbox"
                                 checked={dailyWeekdaysOnly}
-                                onChange={(e) => setDailyWeekdaysOnly(e.target.checked)}
+                                onChange={(e) =>
+                                  setDailyWeekdaysOnly(e.target.checked)
+                                }
                                 className="w-4 h-4"
                               />
                               <span className="text-[12px] font-inter text-brandBlack">
@@ -2862,7 +3032,9 @@ export function CreateSessionModal({
                             </label>
 
                             <div className="text-[12px] font-inter text-gray-500">
-                              {dailyWeekdaysOnly ? "Skips Saturday and Sunday." : "Same time each day."}
+                              {dailyWeekdaysOnly
+                                ? "Skips Saturday and Sunday."
+                                : "Same time each day."}
                             </div>
                           </div>
                         </div>
@@ -2871,7 +3043,11 @@ export function CreateSessionModal({
                       {occurrencesPreview.length > 1 && (
                         <div className="mt-3 border border-gray-200 rounded-[14px] p-3 bg-gray-50">
                           <div className="text-[12px] font-inter text-gray-600">
-                            Will create{scheduleMode === "daily" && dailyWeekdaysOnly ? " (weekdays only)" : ""}:
+                            Will create
+                            {scheduleMode === "daily" && dailyWeekdaysOnly
+                              ? " (weekdays only)"
+                              : ""}
+                            :
                           </div>
                           <div className="mt-1 text-[12px] font-inter text-gray-800 space-y-1">
                             {occurrencesPreview.slice(0, 5).map((p, i) => (
@@ -2907,6 +3083,42 @@ export function CreateSessionModal({
                       </div>
 
                       <div className="mt-3 min-w-0">
+                        {ownedSlugValues.length > 0 && !isSeries && (
+                          <div className="mb-3">
+                            <label className="mb-1 block text-[12px] font-inter font-semibold text-gray-700">
+                              Reusable public link
+                            </label>
+                            <select
+                              value={ownedSlugSelectValue}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (!v) {
+                                  setCustomSlugInput("");
+                                  setSlugStatus("idle");
+                                  return;
+                                }
+                                if (v === "__custom__") return;
+                                setCustomSlugInput(v);
+                                setSlugStatus("owned");
+                              }}
+                              className="w-full px-3 py-3 border border-gray-300 rounded-[16px] bg-white font-inter text-[13px]"
+                            >
+                              <option value="">No custom link</option>
+                              {ownedSlugValues.map((slug) => (
+                                <option key={slug} value={slug}>
+                                  Reuse mysession.club/{slug}
+                                </option>
+                              ))}
+                              {sanitizedSlug &&
+                                !ownedSlugValues.includes(sanitizedSlug) && (
+                                  <option value="__custom__">
+                                    New/custom: mysession.club/{sanitizedSlug}
+                                  </option>
+                                )}
+                            </select>
+                          </div>
+                        )}
+
                         <input
                           value={customSlugInput}
                           onChange={(e) => setCustomSlugInput(e.target.value)}
@@ -2979,7 +3191,8 @@ export function CreateSessionModal({
                         />
 
                         <span className="text-[16px] text-brandBlack font-inter">
-                          {String(t.name || "Template")} ({(t as any).total_duration} min)
+                          {String(t.name || "Template")} (
+                          {(t as any).total_duration} min)
                         </span>
                       </label>
                     ))
@@ -3020,7 +3233,9 @@ export function CreateSessionModal({
                   <div className="mt-3 space-y-2 max-h-72 overflow-y-auto pr-1">
                     {userTemplates.length > 0 ? (
                       userTemplates.map((tpl) => {
-                        const blocksCount = normalizeTemplateBlocks(tpl.blocks).length;
+                        const blocksCount = normalizeTemplateBlocks(
+                          tpl.blocks,
+                        ).length;
                         const isActive = selectedUserTemplateId === tpl.id;
 
                         return (
@@ -3041,7 +3256,9 @@ export function CreateSessionModal({
                                   {tpl.name}
                                 </div>
                                 <div className="mt-1 font-inter text-[12px] text-gray-500 line-clamp-2">
-                                  {tpl.description || tpl.default_description || "No description"}
+                                  {tpl.description ||
+                                    tpl.default_description ||
+                                    "No description"}
                                 </div>
                               </div>
 
@@ -3052,9 +3269,10 @@ export function CreateSessionModal({
                                 <div className="text-[11px] font-inter text-gray-500">
                                   {formatMinutes(
                                     normalizeTemplateBlocks(tpl.blocks).reduce(
-                                      (sum, b) => sum + (Number(b.minutes) || 0),
-                                      0
-                                    )
+                                      (sum, b) =>
+                                        sum + (Number(b.minutes) || 0),
+                                      0,
+                                    ),
                                   )}
                                 </div>
                               </div>
@@ -3065,7 +3283,9 @@ export function CreateSessionModal({
                                 Base format:{" "}
                                 <span className="text-brandBlack font-medium">
                                   {tpl.base_template_id
-                                    ? templateNameById.get(tpl.base_template_id) || "Unknown"
+                                    ? templateNameById.get(
+                                      tpl.base_template_id,
+                                    ) || "Unknown"
                                     : "None"}
                                 </span>
                               </div>
@@ -3079,7 +3299,8 @@ export function CreateSessionModal({
                       })
                     ) : (
                       <div className="text-[12px] text-gray-500 font-inter">
-                        No saved templates yet. Build a Session Studio script and save it below.
+                        No saved templates yet. Build a Session Studio script
+                        and save it below.
                       </div>
                     )}
                   </div>
@@ -3106,7 +3327,9 @@ export function CreateSessionModal({
                     {previousSessions.length > 0 ? (
                       previousSessions.map((row) => {
                         const isActive = selectedPreviousSessionId === row.id;
-                        const blocksCount = normalizeTemplateBlocks(row.schedule).length;
+                        const blocksCount = normalizeTemplateBlocks(
+                          row.schedule,
+                        ).length;
 
                         return (
                           <button
@@ -3126,7 +3349,9 @@ export function CreateSessionModal({
                                   {row.title}
                                 </div>
                                 <div className="mt-1 font-inter text-[12px] text-gray-500 line-clamp-2">
-                                  {row.description || row.format || "Previous session"}
+                                  {row.description ||
+                                    row.format ||
+                                    "Previous session"}
                                 </div>
                               </div>
 
@@ -3135,7 +3360,9 @@ export function CreateSessionModal({
                                   {Number(row.duration_minutes) || 0}m
                                 </div>
                                 <div className="text-[11px] font-inter text-gray-500">
-                                  {blocksCount > 0 ? `${blocksCount} blocks` : "No blocks"}
+                                  {blocksCount > 0
+                                    ? `${blocksCount} blocks`
+                                    : "No blocks"}
                                 </div>
                               </div>
                             </div>
@@ -3147,7 +3374,9 @@ export function CreateSessionModal({
                                   : row.format || "Custom"}
                               </div>
                               <div className="text-[11px] font-inter text-gray-500">
-                                {formatShortDate(row.start_time || row.created_at)}
+                                {formatShortDate(
+                                  row.start_time || row.created_at,
+                                )}
                               </div>
                             </div>
                           </button>
@@ -3252,7 +3481,9 @@ export function CreateSessionModal({
                         </label>
                         <input
                           value={saveTemplateDescription}
-                          onChange={(e) => setSaveTemplateDescription(e.target.value)}
+                          onChange={(e) =>
+                            setSaveTemplateDescription(e.target.value)
+                          }
                           placeholder="Optional"
                           className="w-full px-3 py-3 border border-gray-300 rounded-[14px] font-inter"
                         />
@@ -3261,7 +3492,8 @@ export function CreateSessionModal({
 
                     <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
                       <div className="text-[12px] font-inter text-gray-500">
-                        This saves blocks + default title + description + participant limit.
+                        This saves blocks + default title + description +
+                        participant limit.
                       </div>
 
                       <button
@@ -3276,7 +3508,9 @@ export function CreateSessionModal({
                         className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brandBlack text-white text-[12px] font-inter hover:bg-black disabled:bg-gray-300 transition"
                       >
                         <Save size={14} />
-                        {isSavingUserTemplate ? "Saving..." : "Save to My templates"}
+                        {isSavingUserTemplate
+                          ? "Saving..."
+                          : "Save to My templates"}
                       </button>
                     </div>
                   </div>
@@ -3311,8 +3545,8 @@ export function CreateSessionModal({
                           clamp(
                             Number(e.target.value) || DEFAULT_MAX_PARTICIPANTS,
                             MIN_PARTICIPANTS,
-                            MAX_PARTICIPANTS
-                          )
+                            MAX_PARTICIPANTS,
+                          ),
                         )
                       }
                       className={
@@ -3328,7 +3562,8 @@ export function CreateSessionModal({
 
                     {!studioEnabled && (
                       <span className="ml-auto font-inter text-[12px] text-gray-500">
-                        (Locked at {DEFAULT_MAX_PARTICIPANTS} when Studio is off)
+                        (Locked at {DEFAULT_MAX_PARTICIPANTS} when Studio is
+                        off)
                       </span>
                     )}
                   </div>
@@ -3399,9 +3634,9 @@ export function CreateSessionModal({
                     </div>
 
                     <div className="mt-2 text-[12px] text-gray-500 font-inter">
-                      Tip: Ctrl/Cmd-click for multi-select. Shift-click for range
-                      selection. Ctrl/Cmd+C and Ctrl/Cmd+V duplicate selected
-                      blocks.
+                      Tip: Ctrl/Cmd-click for multi-select. Shift-click for
+                      range selection. Ctrl/Cmd+C and Ctrl/Cmd+V duplicate
+                      selected blocks.
                     </div>
 
                     <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
@@ -3493,7 +3728,9 @@ export function CreateSessionModal({
                                   id={`studio-block-${b.id}`}
                                   tabIndex={0}
                                   draggable
-                                  onClick={(e) => handleBlockSurfaceClick(e, b.id)}
+                                  onClick={(e) =>
+                                    handleBlockSurfaceClick(e, b.id)
+                                  }
                                   onFocus={() => {
                                     setActiveBlockId(b.id);
                                     if (!selectedBlockIds.includes(b.id)) {
@@ -3502,7 +3739,10 @@ export function CreateSessionModal({
                                     }
                                   }}
                                   onKeyDown={(e) => {
-                                    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "c") {
+                                    if (
+                                      (e.metaKey || e.ctrlKey) &&
+                                      e.key.toLowerCase() === "c"
+                                    ) {
                                       if (!isInteractiveEl(e.target)) {
                                         e.preventDefault();
                                         copySelectedBlocks();
@@ -3510,7 +3750,10 @@ export function CreateSessionModal({
                                       return;
                                     }
 
-                                    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "v") {
+                                    if (
+                                      (e.metaKey || e.ctrlKey) &&
+                                      e.key.toLowerCase() === "v"
+                                    ) {
                                       if (!isInteractiveEl(e.target)) {
                                         e.preventDefault();
                                         pasteCopiedBlocks();
@@ -3518,10 +3761,15 @@ export function CreateSessionModal({
                                       return;
                                     }
 
-                                    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
+                                    if (
+                                      (e.metaKey || e.ctrlKey) &&
+                                      e.key.toLowerCase() === "a"
+                                    ) {
                                       if (!isInteractiveEl(e.target)) {
                                         e.preventDefault();
-                                        const allIds = studioBlocks.map((x) => x.id);
+                                        const allIds = studioBlocks.map(
+                                          (x) => x.id,
+                                        );
                                         setSelectedBlockIds(allIds);
                                         setActiveBlockId(allIds[0] || null);
                                         setSelectionAnchorId(allIds[0] || null);
@@ -3541,7 +3789,10 @@ export function CreateSessionModal({
                                     ) {
                                       if (!isInteractiveEl(e.target)) {
                                         e.preventDefault();
-                                        if (selectedBlockIds.length > 1 && selectedBlockIds.includes(b.id)) {
+                                        if (
+                                          selectedBlockIds.length > 1 &&
+                                          selectedBlockIds.includes(b.id)
+                                        ) {
                                           deleteSelectedBlocks();
                                         } else {
                                           removeBlock(b.id);
@@ -3569,7 +3820,7 @@ export function CreateSessionModal({
                                       e.dataTransfer.effectAllowed = "move";
                                       e.dataTransfer.setData(
                                         "text/plain",
-                                        b.id
+                                        b.id,
                                       );
                                       setTransparentDragImage(e.dataTransfer);
                                     } catch {
@@ -3591,7 +3842,8 @@ export function CreateSessionModal({
                                     const edge: "before" | "after" =
                                       e.clientY < mid ? "before" : "after";
 
-                                    if (dragOverId !== b.id) setDragOverId(b.id);
+                                    if (dragOverId !== b.id)
+                                      setDragOverId(b.id);
                                     if (dropEdge !== edge) setDropEdge(edge);
                                   }}
                                   onDrop={(e) => {
@@ -3600,8 +3852,9 @@ export function CreateSessionModal({
                                     const dragIdFromData = (() => {
                                       try {
                                         return (
-                                          e.dataTransfer.getData("text/plain") ||
-                                          ""
+                                          e.dataTransfer.getData(
+                                            "text/plain",
+                                          ) || ""
                                         );
                                       } catch {
                                         return "";
@@ -3670,7 +3923,9 @@ export function CreateSessionModal({
                                           e.stopPropagation();
                                           moveBlock(b.id, 1);
                                         }}
-                                        disabled={idx === studioBlocks.length - 1}
+                                        disabled={
+                                          idx === studioBlocks.length - 1
+                                        }
                                         className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center disabled:opacity-40 hover:bg-gray-50 transition"
                                         type="button"
                                         title="Move down"
@@ -3696,7 +3951,9 @@ export function CreateSessionModal({
                                     <input
                                       value={b.title}
                                       onChange={(e) =>
-                                        updateBlock(b.id, { title: e.target.value })
+                                        updateBlock(b.id, {
+                                          title: e.target.value,
+                                        })
                                       }
                                       className="w-full px-3 py-2.5 border border-gray-200 rounded-[14px] text-[13px] font-inter"
                                       placeholder="Block title…"
@@ -3724,7 +3981,11 @@ export function CreateSessionModal({
                                         type="button"
                                         onClick={() =>
                                           updateBlock(b.id, {
-                                            minutes: clamp(b.minutes - 1, 1, 24 * 60),
+                                            minutes: clamp(
+                                              b.minutes - 1,
+                                              1,
+                                              24 * 60,
+                                            ),
                                           })
                                         }
                                         className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
@@ -3740,14 +4001,16 @@ export function CreateSessionModal({
                                             minutes: clamp(
                                               Number(e.target.value) || 1,
                                               1,
-                                              24 * 60
+                                              24 * 60,
                                             ),
                                           })
                                         }
                                         className="w-14 sm:w-16 h-8 sm:h-9 px-2 border border-gray-200 rounded-[12px] text-[13px] font-inter text-center"
                                         onFocus={() => {
                                           setActiveBlockId(b.id);
-                                          if (!selectedBlockIds.includes(b.id)) {
+                                          if (
+                                            !selectedBlockIds.includes(b.id)
+                                          ) {
                                             setSelectedBlockIds([b.id]);
                                             setSelectionAnchorId(b.id);
                                           }
@@ -3758,7 +4021,11 @@ export function CreateSessionModal({
                                         type="button"
                                         onClick={() =>
                                           updateBlock(b.id, {
-                                            minutes: clamp(b.minutes + 1, 1, 24 * 60),
+                                            minutes: clamp(
+                                              b.minutes + 1,
+                                              1,
+                                              24 * 60,
+                                            ),
                                           })
                                         }
                                         className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
@@ -3780,7 +4047,9 @@ export function CreateSessionModal({
                                       <button
                                         key={m}
                                         type="button"
-                                        onClick={() => updateBlock(b.id, { minutes: m })}
+                                        onClick={() =>
+                                          updateBlock(b.id, { minutes: m })
+                                        }
                                         className="px-2.5 py-1.5 rounded-full border border-gray-200 text-[11px] sm:text-[12px] font-inter hover:bg-gray-50 transition"
                                       >
                                         {m}m
@@ -3799,14 +4068,19 @@ export function CreateSessionModal({
                                             Custom block color
                                           </div>
                                           <div className="font-inter text-[11px] text-gray-500">
-                                            This color will be used in the session timeline.
+                                            This color will be used in the
+                                            session timeline.
                                           </div>
                                         </div>
 
                                         <input
                                           type="color"
                                           value={getBlockColor(b)}
-                                          onChange={(e) => updateBlock(b.id, { color: e.target.value })}
+                                          onChange={(e) =>
+                                            updateBlock(b.id, {
+                                              color: e.target.value,
+                                            })
+                                          }
                                           className="h-9 w-12 cursor-pointer rounded-lg border border-gray-200 bg-white p-1"
                                           title="Custom block color"
                                         />
@@ -3815,13 +4089,16 @@ export function CreateSessionModal({
                                       <div className="flex flex-wrap gap-2">
                                         {BLOCK_COLOR_PRESETS.map((color) => {
                                           const selected =
-                                            getBlockColor(b).toLowerCase() === color.toLowerCase();
+                                            getBlockColor(b).toLowerCase() ===
+                                            color.toLowerCase();
 
                                           return (
                                             <button
                                               key={`${b.id}-${color}`}
                                               type="button"
-                                              onClick={() => updateBlock(b.id, { color })}
+                                              onClick={() =>
+                                                updateBlock(b.id, { color })
+                                              }
                                               className={
                                                 "h-7 w-7 rounded-full border transition " +
                                                 (selected
@@ -3837,7 +4114,6 @@ export function CreateSessionModal({
                                       </div>
                                     </div>
                                   )}
-
                                 </div>
                               );
                             })}
@@ -3850,21 +4126,24 @@ export function CreateSessionModal({
                                   updateAutoScrollFromClientY(e.clientY);
                                   if (dragOverId !== END_DROP_ID)
                                     setDragOverId(END_DROP_ID);
-                                  if (dropEdge !== "after") setDropEdge("after");
+                                  if (dropEdge !== "after")
+                                    setDropEdge("after");
                                 }}
                                 onDrop={(e) => {
                                   e.preventDefault();
                                   const dragIdFromData = (() => {
                                     try {
                                       return (
-                                        e.dataTransfer.getData("text/plain") || ""
+                                        e.dataTransfer.getData("text/plain") ||
+                                        ""
                                       );
                                     } catch {
                                       return "";
                                     }
                                   })();
                                   const dragId = draggingId || dragIdFromData;
-                                  if (dragId) moveBlockTo(dragId, END_DROP_ID, "after");
+                                  if (dragId)
+                                    moveBlockTo(dragId, END_DROP_ID, "after");
 
                                   setDraggingId(null);
                                   setDragOverId(null);
@@ -3878,14 +4157,17 @@ export function CreateSessionModal({
                               </div>
                             )}
                           </div>
-
                         )}
                       </div>
                     </div>
                   </div>
                 )}
 
-                {error && <p className="text-red-600 text-sm font-inter mt-4">{error}</p>}
+                {error && (
+                  <p className="text-red-600 text-sm font-inter mt-4">
+                    {error}
+                  </p>
+                )}
               </div>
             </div>
           )}
