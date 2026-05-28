@@ -1392,8 +1392,14 @@ function buildLoginNext(urlPath: string): string {
 }
 
 function buildSessionInvitePath(session: any): string {
+    const sessionSlug = getSessionPublicSlug(session);
+
+    if (sessionSlug) {
+        return `/${sessionSlug}`;
+    }
+
     const roomParam = getRoomParam(session);
-    return roomParam ? `/room-/${roomParam}` : "/sessions";
+    return roomParam ? `/room-livekit/${roomParam}` : "/sessions";
 }
 
 function getSessionPublicSlug(session: any): string {
@@ -3764,7 +3770,7 @@ export default function SessionCard({
         const roomParam = getRoomParam(session);
         if (!roomParam) return;
 
-        const nextPath = `/room-livekit/${roomParam}`;
+        const nextPath = buildSessionInvitePath(session);
 
         // Capacity gate belongs on the card because it is useful before opening the room.
         // Auth gate does NOT belong here anymore: logged-out users should be sent to the
@@ -3803,6 +3809,8 @@ export default function SessionCard({
 
     const hasPrettySessionSlug = !!getSessionPublicSlug(session);
     const hasHostSlug = !!String(resolvedHostSlug || "").trim();
+    const publicSessionUrl = buildPrettySessionUrl(session, resolvedHostSlug);
+    const publicSessionUrlLabel = publicSessionUrl.replace(/^https?:\/\//i, "");
 
     const copyInviteLabel =
         copyInviteState === "copied"
@@ -4286,6 +4294,18 @@ export default function SessionCard({
                                                 onClick={handleCopyHostLink}
                                             />
                                         )}
+
+                                        <div className="mt-1 rounded-[12px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2">
+                                            <div className="text-[10px] font-semibold uppercase tracking-wide text-[#9CA3AF]">
+                                                Public link
+                                            </div>
+                                            <div
+                                                className="mt-1 truncate font-mono text-[12px] text-[#111827]"
+                                                title={publicSessionUrl}
+                                            >
+                                                {publicSessionUrlLabel}
+                                            </div>
+                                        </div>
 
                                         {canEdit && (
                                             <MenuItem
