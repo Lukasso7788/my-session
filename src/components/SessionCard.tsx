@@ -1396,6 +1396,46 @@ function buildSessionInvitePath(session: any): string {
     return roomParam ? `/room-/${roomParam}` : "/sessions";
 }
 
+function getSessionPublicSlug(session: any): string {
+    return String(session?.custom_slug || "").trim();
+}
+
+function getEmbeddedHostSlug(session: any): string {
+    return String(
+        session?.host_slug ||
+        session?.host_profile?.host_slug ||
+        session?.host_profile?.public_slug ||
+        session?.profiles?.host_slug ||
+        ""
+    ).trim();
+}
+
+function buildPrettySessionUrl(session: any, hostSlug?: string | null): string {
+    const origin =
+        typeof window !== "undefined" && window.location?.origin
+            ? window.location.origin
+            : "https://mysession.club";
+
+    const sessionSlug = getSessionPublicSlug(session);
+    if (sessionSlug) return `${origin}/${sessionSlug}`;
+
+    const hs = String(hostSlug || "").trim() || getEmbeddedHostSlug(session);
+    if (hs) return `${origin}/${hs}`;
+
+    const roomParam = getRoomParam(session);
+    return roomParam ? `${origin}/room-livekit/${roomParam}` : `${origin}/sessions`;
+}
+
+function buildPrettyHostUrl(hostSlug?: string | null): string {
+    const origin =
+        typeof window !== "undefined" && window.location?.origin
+            ? window.location.origin
+            : "https://mysession.club";
+
+    const hs = String(hostSlug || "").trim();
+    return hs ? `${origin}/${hs}` : "";
+}
+
 async function copyTextToClipboard(text: string): Promise<boolean> {
     try {
         if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
@@ -3196,7 +3236,10 @@ export default function SessionCard({
     } | null>(null);
 
     const [copyInviteState, setCopyInviteState] = useState<"idle" | "copied" | "error">("idle");
+    const [copyHostState, setCopyHostState] = useState<"idle" | "copied" | "error">("idle");
+    const [resolvedHostSlug, setResolvedHostSlug] = useState<string>(() => getEmbeddedHostSlug(session));
     const copyInviteTimerRef = useRef<number | null>(null);
+    const copyHostTimerRef = useRef<number | null>(null);
     useEffect(() => {
         let cancelled = false;
 
@@ -3253,8 +3296,53 @@ export default function SessionCard({
             if (copyInviteTimerRef.current) {
                 window.clearTimeout(copyInviteTimerRef.current);
             }
+            if (copyHostTimerRef.current) {
+                window.clearTimeout(copyHostTimerRef.current);
+            }
         };
     }, []);
+
+    useEffect(() => {
+        const embedded = getEmbeddedHostSlug(session);
+        if (embedded) {
+            setResolvedHostSlug(embedded);
+            return;
+        }
+
+        const hostId = String(session?.host_id || "").trim();
+        if (!hostId) {
+            setResolvedHostSlug("");
+            return;
+        }
+
+        let cancelled = false;
+
+        const run = async () => {
+            try {
+                const sb = getSupabase();
+                if (!sb) return;
+                await ensureAuthReady(sb);
+
+                const { data, error } = await sb
+                    .from("profiles")
+                    .select("host_slug")
+                    .eq("id", hostId)
+                    .maybeSingle();
+
+                if (error) throw error;
+                if (!cancelled) setResolvedHostSlug(String((data as any)?.host_slug || "").trim());
+            } catch (e) {
+                if (!cancelled) setResolvedHostSlug("");
+                console.warn("[SessionCard] host slug load failed:", e);
+            }
+        };
+
+        void run();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [session?.host_id, session?.host_slug, session?.host_profile?.host_slug]);
 
     useEffect(() => {
         function onDocClick(e: globalThis.MouseEvent) {
@@ -3625,13 +3713,7 @@ export default function SessionCard({
     };
 
     const handleCopyInviteLink = async () => {
-        const roomParam = getRoomParam(session);
-        const path = roomParam ? `/room-livekit/${roomParam}` : "/sessions";
-        const origin =
-            typeof window !== "undefined" && window.location?.origin
-                ? window.location.origin
-                : "https://mysession.club";
-        const url = `${origin}${path}`;
+        const url = buildPrettySessionUrl(session, resolvedHostSlug);
 
         const ok = await copyTextToClipboard(url);
 
@@ -3643,6 +3725,26 @@ export default function SessionCard({
 
         copyInviteTimerRef.current = window.setTimeout(() => {
             setCopyInviteState("idle");
+        }, ok ? 2200 : 2600);
+    };
+
+    const handleCopyHostLink = async () => {
+        const url = buildPrettyHostUrl(resolvedHostSlug);
+        if (!url) {
+            setCopyHostState("error");
+            return;
+        }
+
+        const ok = await copyTextToClipboard(url);
+
+        setCopyHostState(ok ? "copied" : "error");
+
+        if (copyHostTimerRef.current) {
+            window.clearTimeout(copyHostTimerRef.current);
+        }
+
+        copyHostTimerRef.current = window.setTimeout(() => {
+            setCopyHostState("idle");
         }, ok ? 2200 : 2600);
     };
 
@@ -3699,12 +3801,26 @@ export default function SessionCard({
     const canCancelBooking = !!isBookingConfirmed;
     const canCancelSession = isHost;
 
+    const hasPrettySessionSlug = !!getSessionPublicSlug(session);
+    const hasHostSlug = !!String(resolvedHostSlug || "").trim();
+
     const copyInviteLabel =
         copyInviteState === "copied"
             ? "Copied!"
             : copyInviteState === "error"
                 ? "Copy failed"
-                : "Copy invite link";
+                : hasPrettySessionSlug
+                    ? "Copy session link"
+                    : hasHostSlug
+                        ? "Copy host link"
+                        : "Copy invite link";
+
+    const copyHostLabel =
+        copyHostState === "copied"
+            ? "Host link copied!"
+            : copyHostState === "error"
+                ? "Copy failed"
+                : "Copy host link";
 
     const peopleInline = (
         <div className="inline-flex items-center gap-3">
@@ -4154,6 +4270,20 @@ export default function SessionCard({
                                             success={copyInviteState === "copied"}
                                             onClick={handleCopyInviteLink}
                                         />
+
+                                        {hasPrettySessionSlug && hasHostSlug && (
+                                            <MenuItem
+                                                icon={
+                                                    copyHostState === "copied"
+                                                        ? <IconCheckSuccess />
+                                                        : <IconCopy />
+                                                }
+                                                label={copyHostLabel}
+                                                outlined
+                                                success={copyHostState === "copied"}
+                                                onClick={handleCopyHostLink}
+                                            />
+                                        )}
 
                                         {canEdit && (
                                             <MenuItem

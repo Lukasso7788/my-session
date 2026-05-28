@@ -1273,9 +1273,9 @@ export function CreateSessionModal({
     const t = window.setTimeout(async () => {
       try {
         const { data, error } = await supabase
-          .from("sessions")
-          .select("id")
-          .eq("custom_slug", s)
+          .from("public_url_slugs")
+          .select("slug")
+          .eq("slug", s)
           .limit(1);
 
         if (error) {
@@ -2334,9 +2334,9 @@ export function CreateSessionModal({
         const checkList = slugsForInsert.filter(Boolean);
         if (checkList.length) {
           const { data: taken, error: takenErr } = await supabase
-            .from("sessions")
-            .select("custom_slug")
-            .in("custom_slug", checkList)
+            .from("public_url_slugs")
+            .select("slug")
+            .in("slug", checkList)
             .limit(checkList.length);
 
           if (takenErr) {
@@ -2412,7 +2412,7 @@ export function CreateSessionModal({
       const { data: insertedSessions, error: insertError } = await supabase
         .from("sessions")
         .insert(rows)
-        .select("id, host_id");
+        .select("id, host_id, custom_slug");
 
       if (insertError) throw insertError;
 
@@ -2507,8 +2507,8 @@ export function CreateSessionModal({
 
       const msg = String(err?.message || "");
       if (
-        msg.toLowerCase().includes("custom_slug") &&
-        msg.toLowerCase().includes("duplicate")
+        (msg.toLowerCase().includes("custom_slug") || msg.toLowerCase().includes("public_url_slugs") || msg.toLowerCase().includes("public_url_slugs_pkey")) &&
+        (msg.toLowerCase().includes("duplicate") || msg.toLowerCase().includes("already exists") || msg.toLowerCase().includes("conflict"))
       ) {
         setError("This custom link is already taken. Pick another one.");
       } else {
@@ -2533,15 +2533,15 @@ export function CreateSessionModal({
 
   const linkPreview = sanitizedSlug
     ? isSeries
-      ? `${origin}/room/${makeDatedSlug(
+      ? `${origin}/${makeDatedSlug(
         sanitizedSlug,
         new Date(scheduledAt || Date.now())
       )} …`
-      : `${origin}/room/${sanitizedSlug}`
-    : `${origin}/room/<your-link>`;
+      : `${origin}/${sanitizedSlug}`
+    : `${origin}/<your-link>`;
 
   const slugHint = !customSlugInput
-    ? "Optional. Your own short link instead of UUID."
+    ? "Optional. Your own public link: mysession.club/your-link."
     : !slugValid
       ? `Invalid. Use ${SLUG_MIN}-${SLUG_MAX} chars: a-z, 0-9, - or _.`
       : isSeries
@@ -2903,7 +2903,7 @@ export function CreateSessionModal({
                       </div>
                       <div className="font-inter text-[12px] text-gray-500">
                         {slugHint ||
-                          "Optional. Your own short link instead of UUID."}
+                          "Optional. Your own public link: mysession.club/your-link."}
                       </div>
 
                       <div className="mt-3 min-w-0">

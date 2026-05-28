@@ -12,6 +12,7 @@ import ProfilePage from "./pages/ProfilePage";
 import FocusPlanPage from "./pages/FocusPlanPage";
 import FocusShieldPage from "./pages/FocusShieldPage";
 import PublicProfilePage from "./pages/PublicProfilePage";
+import PublicSlugRedirectPage from "./pages/PublicSlugRedirectPage";
 import AuthCallback from "./pages/AuthCallback";
 import AdminPage from "./pages/AdminPage";
 import DailyScheduleEmailAdminPage from "./pages/DailyScheduleEmailAdminPage";
@@ -44,12 +45,6 @@ import NotFoundPage from "./pages/NotFoundPage";
 // ✅ UI playground (local testing page)
 import SessionCardsPlayground from "./SessionCardsPlayground";
 
-/**
- * TEMP blog pages to keep deploy green.
- * Later you can replace these with:
- * import BlogIndex from "./pages/BlogIndex";
- * import BlogPost from "./pages/BlogPost";
- */
 function BlogIndexPlaceholder() {
   return (
     <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
@@ -183,6 +178,9 @@ export default function App() {
 
           {/* Temporary AI assistant route */}
           <Route path="/ai-assistant" element={<SessionsPage />} />
+
+          {/* Public pretty slugs: mysession.club/:slug */}
+          <Route path="/:slug" element={<PublicSlugRedirectPage />} />
 
           {/* 404 for layout routes */}
           <Route path="*" element={<NotFoundPage />} />
