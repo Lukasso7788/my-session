@@ -25,7 +25,6 @@ type HostedSessionRow = {
   created_at: string;
 };
 
-
 function getScheduleDurationMinutes(schedule: any): number {
   if (!schedule) return 0;
 
@@ -150,6 +149,12 @@ export default function PublicProfilePage() {
   const [pushPermission, setPushPermission] = useState<string>("default");
   const [pushBusy, setPushBusy] = useState(false);
   const [pushError, setPushError] = useState("");
+
+  const [supportEnabled, setSupportEnabled] = useState(false);
+  const [supportModalOpen, setSupportModalOpen] = useState(false);
+  const [supportAmountUsd, setSupportAmountUsd] = useState<number>(5);
+  const [supportBusy, setSupportBusy] = useState(false);
+  const [supportError, setSupportError] = useState("");
 
   const displayName = useMemo(() => fullName || "User", [fullName]);
 
@@ -280,12 +285,14 @@ export default function PublicProfilePage() {
 
       setLoading(true);
       setNotFound(false);
+      setSupportEnabled(false);
 
       try {
         const [
           { data: p, error: pErr },
           { data: s, error: sErr },
           { count: followerCount, error: followerCountErr },
+          { data: monetization, error: monetizationErr },
         ] = await Promise.all([
           supabase
             .from("profiles")
@@ -301,6 +308,11 @@ export default function PublicProfilePage() {
             .from("host_followers")
             .select("id", { count: "exact", head: true })
             .eq("host_user_id", id),
+          supabase
+            .from("host_monetization_profiles")
+            .select("status, support_enabled")
+            .eq("host_user_id", id)
+            .maybeSingle(),
         ]);
 
         if (pErr || !p) {
@@ -332,6 +344,16 @@ export default function PublicProfilePage() {
           setFollowersCount(0);
         } else {
           setFollowersCount(followerCount || 0);
+        }
+
+        if (monetizationErr) {
+          console.warn("Failed to load host monetization:", monetizationErr);
+          setSupportEnabled(false);
+        } else {
+          setSupportEnabled(
+            (monetization as any)?.status === "active" &&
+            (monetization as any)?.support_enabled === true
+          );
         }
       } catch (e) {
         console.error("Public profile fetch error:", e);
@@ -449,8 +471,63 @@ export default function PublicProfilePage() {
   };
 
   const handleSupportHost = () => {
-    if (!hasHostedSessions || isOwnProfile) return;
-    alert("Tip host checkout comes next.");
+    if (!hasHostedSessions || isOwnProfile || !supportEnabled) return;
+
+    if (!currentUserId) {
+      navigate("/login", { replace: false });
+      return;
+    }
+
+    setSupportError("");
+    setSupportAmountUsd(5);
+    setSupportModalOpen(true);
+  };
+
+  const handleCreateSupportCheckout = async () => {
+    if (!id) return;
+
+    setSupportBusy(true);
+    setSupportError("");
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      if (!token) {
+        navigate("/login", { replace: false });
+        return;
+      }
+
+      const res = await fetch("/api/billing/create-host-support-checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          hostUserId: id,
+          sessionId: nextSession?.id || null,
+          amountUsd: supportAmountUsd,
+        }),
+      });
+
+      const json = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(json?.error || "Failed to create support checkout.");
+      }
+
+      if (!json?.url) {
+        throw new Error("Checkout URL missing.");
+      }
+
+      window.location.assign(json.url);
+    } catch (e: any) {
+      console.error("Support checkout failed:", e);
+      setSupportError(String(e?.message || e || "Failed to start checkout."));
+    } finally {
+      setSupportBusy(false);
+    }
   };
 
   if (loading) {
@@ -527,7 +604,6 @@ export default function PublicProfilePage() {
         </div>
       </div>
 
-      {/* Host actions */}
       {hasHostedSessions && (
         <section className="mt-10">
           <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-5">
@@ -539,6 +615,12 @@ export default function PublicProfilePage() {
                     ? `This is your public host surface. You currently have ${followersCount} follower${followersCount === 1 ? "" : "s"}.`
                     : `Follow this host, check their upcoming sessions, or support them directly. ${displayName} currently has ${followersCount} follower${followersCount === 1 ? "" : "s"}.`}
                 </p>
+
+                {!isOwnProfile && !supportEnabled && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    Host support is not enabled for this host yet.
+                  </p>
+                )}
 
                 {isFollowing && pushError && (
                   <p className="mt-2 text-xs text-red-600">
@@ -620,18 +702,20 @@ export default function PublicProfilePage() {
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={handleSupportHost}
-                    className="
-                      inline-flex items-center justify-center rounded-full
-                      bg-[#2F2F2F] px-5 py-2.5
-                      text-[14px] text-white
-                      hover:opacity-90 transition
-                    "
-                  >
-                    Support host
-                  </button>
+                  {supportEnabled && (
+                    <button
+                      type="button"
+                      onClick={handleSupportHost}
+                      className="
+                        inline-flex items-center justify-center rounded-full
+                        bg-[#2F2F2F] px-5 py-2.5
+                        text-[14px] text-white
+                        hover:opacity-90 transition
+                      "
+                    >
+                      Support host
+                    </button>
+                  )}
 
                   {nextSession && (
                     <button
@@ -770,6 +854,96 @@ export default function PublicProfilePage() {
           </div>
         </div>
       </section>
+
+      {supportModalOpen && (
+        <div className="fixed inset-0 z-[260] flex items-center justify-center px-4">
+          <div
+            className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+            onClick={() => {
+              if (!supportBusy) setSupportModalOpen(false);
+            }}
+          />
+
+          <div className="relative w-full max-w-[460px] rounded-[28px] bg-white p-6 text-[#2F2F2F] shadow-2xl">
+            <button
+              type="button"
+              onClick={() => {
+                if (!supportBusy) setSupportModalOpen(false);
+              }}
+              disabled={supportBusy}
+              className="absolute right-5 top-5 text-gray-400 transition hover:text-gray-700 disabled:opacity-50"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+
+            <div className="pr-8">
+              <div className="inline-flex rounded-full border border-[#DBD8D8] bg-[#F8F8F8] px-3 py-1 text-[12px] font-semibold text-[#606060]">
+                Support host
+              </div>
+
+              <h2 className="mt-4 text-[24px] font-bold leading-tight text-[#2F2F2F]">
+                Support {displayName}
+              </h2>
+
+              <p className="mt-3 text-[15px] leading-6 text-[#606060]">
+                Your support helps reward hosts who create focused, structured sessions on MySession.
+              </p>
+            </div>
+
+            <div className="mt-5 grid grid-cols-3 gap-2">
+              {[2, 5, 10].map((amount) => (
+                <button
+                  key={amount}
+                  type="button"
+                  onClick={() => setSupportAmountUsd(amount)}
+                  disabled={supportBusy}
+                  className={`
+                    rounded-2xl border px-4 py-3 text-[15px] font-semibold transition
+                    ${supportAmountUsd === amount
+                      ? "border-[#2F2F2F] bg-[#2F2F2F] text-white"
+                      : "border-[#DBD8D8] bg-white text-[#2F2F2F] hover:bg-[#F8F8F8]"
+                    }
+                    disabled:opacity-60
+                  `}
+                >
+                  ${amount}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-[#F8F8F8] p-4 text-[13px] leading-5 text-[#606060]">
+              90% goes to the host. 10% helps MySession cover payment and platform costs.
+            </div>
+
+            {supportError && (
+              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
+                {supportError}
+              </div>
+            )}
+
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setSupportModalOpen(false)}
+                disabled={supportBusy}
+                className="rounded-full border border-[#CAC3C3] bg-white px-5 py-2.5 text-[13px] font-semibold text-[#2F2F2F] transition hover:bg-[#F8F8F8] disabled:opacity-60"
+              >
+                Maybe later
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCreateSupportCheckout}
+                disabled={supportBusy}
+                className="flex-1 rounded-full bg-[#2F2F2F] px-5 py-2.5 text-[13px] font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
+              >
+                {supportBusy ? "Opening checkout..." : `Support $${supportAmountUsd}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
