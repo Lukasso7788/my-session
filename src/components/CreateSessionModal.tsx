@@ -2623,26 +2623,9 @@ export function CreateSessionModal({
         throw new Error("Sessions were created, but no rows were returned.");
       }
 
-      const publicSlugRows = insertedSessions
-        .filter((s: any) => String(s?.custom_slug || "").trim())
-        .map((s: any) => ({
-          slug: String(s.custom_slug).trim(),
-          owner_type: "session",
-          owner_id: s.id,
-          host_user_id: profile.id,
-          updated_at: new Date().toISOString(),
-        }));
-
-      if (publicSlugRows.length > 0) {
-        const { error: publicSlugError } = await supabase
-          .from("public_url_slugs")
-          .upsert(publicSlugRows, { onConflict: "slug" });
-
-        if (publicSlugError) throw publicSlugError;
-
-        setOwnedPublicSlugs(publicSlugRows.slice(0, 1));
-      }
-
+      // ✅ CRITICAL: host auto-booking must happen BEFORE public slug registry work.
+      // Public slug registry can hit RLS/unique-index edge cases, but it must never block
+      // the host from being booked into a successfully created session.
       const bookingRows = insertedSessions
         .filter((s: any) => s?.id && (s?.host_id || profile.id))
         .map((s: any) => ({
@@ -2675,6 +2658,88 @@ export function CreateSessionModal({
 
           throw new Error(
             "Failed to auto-book the host into the created session(s). Creation was rolled back.",
+          );
+        }
+      }
+
+      const publicSlugRows = insertedSessions
+        .filter((s: any) => String(s?.custom_slug || "").trim())
+        .map((s: any) => ({
+          slug: String(s.custom_slug).trim(),
+          owner_type: "session",
+          owner_id: s.id,
+          host_user_id: profile.id,
+          updated_at: new Date().toISOString(),
+        }));
+
+      if (publicSlugRows.length > 0) {
+        const reusableSlugRow = publicSlugRows[0];
+
+        try {
+          // One reusable public link per host. Clean other registry rows first.
+          const { error: deleteOtherSlugsError } = await supabase
+            .from("public_url_slugs")
+            .delete()
+            .eq("owner_type", "session")
+            .eq("host_user_id", profile.id)
+            .neq("slug", reusableSlugRow.slug);
+
+          if (deleteOtherSlugsError) {
+            console.warn(
+              "⚠️ Could not delete older public slug rows before upsert:",
+              deleteOtherSlugsError,
+            );
+          }
+
+          // Re-point the existing reusable slug to the newly created session.
+          // If the slug already exists, this updates owner_id. If it does not, it inserts.
+          const { error: publicSlugError } = await supabase
+            .from("public_url_slugs")
+            .upsert(reusableSlugRow, { onConflict: "slug" });
+
+          if (publicSlugError) {
+            console.warn(
+              "⚠️ Public slug upsert failed, retrying after host cleanup:",
+              publicSlugError,
+            );
+
+            // Retry path for partial legacy state: delete all session-slug rows for this host,
+            // then insert the current reusable slug again.
+            const { error: deleteAllHostSlugsError } = await supabase
+              .from("public_url_slugs")
+              .delete()
+              .eq("owner_type", "session")
+              .eq("host_user_id", profile.id);
+
+            if (deleteAllHostSlugsError) {
+              console.warn(
+                "⚠️ Could not delete host public slug rows during retry:",
+                deleteAllHostSlugsError,
+              );
+            }
+
+            const { error: retryPublicSlugError } = await supabase
+              .from("public_url_slugs")
+              .insert(reusableSlugRow);
+
+            if (retryPublicSlugError) {
+              // Do not throw here. The session was created and host was booked.
+              // The session.custom_slug remains stored, and the registry can be repaired later.
+              console.warn(
+                "⚠️ Public slug registry update failed after retry. Session creation will still finish:",
+                retryPublicSlugError,
+              );
+            } else {
+              setOwnedPublicSlugs([reusableSlugRow]);
+            }
+          } else {
+            setOwnedPublicSlugs([reusableSlugRow]);
+          }
+        } catch (publicSlugUnexpectedError) {
+          // Do not block successful creation/booking because of public_url_slugs registry issues.
+          console.warn(
+            "⚠️ Unexpected public slug registry error. Session creation will still finish:",
+            publicSlugUnexpectedError,
           );
         }
       }
