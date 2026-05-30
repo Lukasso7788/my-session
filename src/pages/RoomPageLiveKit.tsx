@@ -505,9 +505,9 @@ function detectDeviceTier(args: {
 function getCapturePresetForTier(tier: DeviceTier) {
   if (tier === "weak") {
     return {
-      width: 480,
-      height: 270,
-      fps: 12,
+      width: 320,
+      height: 180,
+      fps: 10,
     };
   }
 
@@ -2130,12 +2130,19 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const capturePreset = useMemo(() => getCapturePresetForTier(deviceTier), [deviceTier]);
 
   const isChromeOS = useMemo(() => isChromeOSLike(), []);
+
+  // Mobile/tablet browsers are the unstable path. ChromeOS is NOT treated as tablet here,
+  // because Chromebooks should keep background upload/FX available in pre-join.
+  const lowPowerMobileMode = useMemo(() => {
+    return (isMobileQuery || isTabletQuery) && !isChromeOS;
+  }, [isMobileQuery, isTabletQuery, isChromeOS]);
+
   const shouldDisableBackgroundFx = useMemo(() => {
-    return isMobileQuery || isTabletQuery;
-  }, [isMobileQuery, isTabletQuery]);
+    return lowPowerMobileMode;
+  }, [lowPowerMobileMode]);
 
   const prejoinPreviewPreset = useMemo(() => {
-    if (isMobileQuery || isTabletQuery) {
+    if (lowPowerMobileMode) {
       return {
         width: 320,
         height: 180,
@@ -2164,7 +2171,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       height: capturePreset.height,
       fps: capturePreset.fps,
     };
-  }, [isMobileQuery, isTabletQuery, isChromeOS, deviceTier, capturePreset]);
+  }, [lowPowerMobileMode, isChromeOS, deviceTier, capturePreset]);
 
   const [prejoin, setPrejoin] = useState<PreJoinSettings>(() => ({
     displayName: "",
@@ -4992,7 +4999,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
   useEffect(() => {
     const shouldShowMobileRestore = () => {
-      return (isMobileQuery || isTabletQuery) && (connectedRef.current || joinRequestedRef.current);
+      return lowPowerMobileMode && (connectedRef.current || joinRequestedRef.current);
     };
 
     const markHidden = () => {
@@ -5006,6 +5013,16 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       void captureLocalVideoFrame().then((frame) => {
         if (frame) setFrozenLocalVideoFrame(frame);
       });
+
+      // Android/tablet browsers often kill long camera sessions in background.
+      // Turn local camera off before the browser does it brutally; user can restore on return.
+      try {
+        const room = roomRef.current;
+        if (room?.localParticipant) {
+          void room.localParticipant.setCameraEnabled(false).catch(() => { });
+          setCamOn(false);
+        }
+      } catch { }
 
       try {
         void attendanceHeartbeat();
@@ -5044,7 +5061,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pageshow", onPageShow);
     };
-  }, [isMobileQuery, isTabletQuery]);
+  }, [lowPowerMobileMode]);
 
   const [adminBusyKey, setAdminBusyKey] = useState<string>("");
 
@@ -5820,6 +5837,11 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       const r = new Room({
         adaptiveStream: true,
         dynacast: true,
+        disconnectOnPageLeave: false,
+        publishDefaults: {
+          simulcast: !lowPowerMobileMode,
+          videoCodec: "vp8",
+        } as any,
       });
 
       roomRef.current = r;
@@ -5959,10 +5981,10 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
             await r.localParticipant.setCameraEnabled(true, {
               deviceId: pj.videoInputId || selectedVideoInputId || undefined,
               resolution: {
-                width: isMobileQuery || isTabletQuery ? 320 : capturePreset.width,
-                height: isMobileQuery || isTabletQuery ? 180 : capturePreset.height,
+                width: lowPowerMobileMode ? 320 : capturePreset.width,
+                height: lowPowerMobileMode ? 180 : capturePreset.height,
               },
-              frameRate: isMobileQuery || isTabletQuery ? 8 : capturePreset.fps,
+              frameRate: lowPowerMobileMode ? 8 : capturePreset.fps,
             } as any);
             setCamOn(true);
           }
