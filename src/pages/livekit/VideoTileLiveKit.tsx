@@ -187,7 +187,7 @@ function MicBadgeWithBarVisualizer({
     const badgeBaseClass = isSelfMutedBadge
         ? "bg-red-600 border-red-700/70 text-white shadow-sm"
         : hasCameraOn
-            ? "bg-black/68 border-white/15 text-white shadow-[0_8px_22px_rgba(0,0,0,0.28)]"
+            ? "bg-black/58 border-white/10 text-white shadow-sm"
             : isLight
                 ? "bg-white/92 border-black/10 text-neutral-800 shadow-sm"
                 : "bg-black/58 border-white/10 text-white shadow-sm";
@@ -284,16 +284,12 @@ function VideoTileInner({
     const hasCameraOn = !!videoTrack;
 
     const namePillClass = hasCameraOn
-        ? "bg-black/68 border-white/15 text-white shadow-[0_8px_22px_rgba(0,0,0,0.28)]"
+        ? "bg-black/45 border-white/10 text-white shadow-sm"
         : isLight
             ? "bg-white/92 border-black/10 text-neutral-900 shadow-sm"
-            : "bg-black/58 border-white/10 text-white shadow-sm";
+            : "bg-black/45 border-white/10 text-white shadow-sm";
 
     const nameTextClass = hasCameraOn ? "!text-white" : isLight ? "text-neutral-900" : "text-white";
-
-    const nameTextStyle = hasCameraOn
-        ? { textShadow: "0 1px 2px rgba(0,0,0,0.55)" }
-        : undefined;
 
     const menuBtnClass = isLight
         ? "bg-white/92 border-black/10 text-black/85 hover:bg-white"
@@ -602,7 +598,6 @@ function VideoTileInner({
                         <>
                             <span
                                 className={`min-w-0 truncate ${isCompact ? "text-[10px]" : "text-[12px]"} font-medium leading-none ${nameTextClass}`}
-                                style={nameTextStyle}
                             >
                                 {label || "User"}
                             </span>
