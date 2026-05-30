@@ -4805,6 +4805,9 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
         assignedServerId?: string | null;
         error?: string;
         message?: string;
+        opensAt?: string | null;
+        bookedCount?: number | null;
+        maxParticipants?: number | null;
       };
 
       if (!res.ok) {
@@ -4830,8 +4833,39 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           return;
         }
 
+        if (
+          code === "BOOKED_GRACE_WINDOW_ACTIVE" ||
+          code === "ROOM_RESERVED_FOR_BOOKED_USERS"
+        ) {
+          const opensAtRaw = String(json?.opensAt || "").trim();
+          const opensAtLabel = opensAtRaw
+            ? new Date(opensAtRaw).toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+            : "";
+
+          const msg = String(
+            json?.message ||
+            (opensAtLabel
+              ? `This session is reserved for booked participants until ${opensAtLabel}. Unclaimed seats open 3 minutes after the session starts.`
+              : "This session is currently reserved for booked participants. Unclaimed seats open 3 minutes after the session starts.")
+          ).trim();
+
+          console.warn("[LK admission blocked]", json);
+          setTokenError(msg);
+          setMediaWarning(msg);
+          setTokenLoading(false);
+
+          joinFlowStartedRef.current = false;
+          connectingFromPrejoinRef.current = false;
+          setJoinRequested(false);
+          setPrejoinOpen(true);
+          return;
+        }
+
         const msg = String(
-          json?.error || json?.message || `Token endpoint error: ${res.status}`
+          json?.message || json?.error || `Token endpoint error: ${res.status}`
         ).trim();
         console.error(msg, json);
         setTokenError(msg);
