@@ -38,6 +38,7 @@ import {
 import { supabase } from "../lib/supabase";
 import { assignServerForSession } from "../lib/livekitPlacement";
 import { useAuth } from "../context/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 interface CreateSessionModalProps {
   isOpen: boolean;
@@ -1137,6 +1138,7 @@ export function CreateSessionModal({
   onSessionCreated,
 }: CreateSessionModalProps) {
   const { user, profile, loading } = useAuth();
+  const navigate = useNavigate();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -1321,6 +1323,25 @@ export function CreateSessionModal({
         ) {
           setSlugStatus("owned");
           return;
+        }
+
+        // Backward compatibility: older registry rows may not have host_user_id.
+        // If the registry points to a session owned by this host, treat the slug as reusable/owned.
+        if (
+          existing.owner_type === "session" &&
+          existing.owner_id &&
+          profile?.id
+        ) {
+          const { data: sessionOwner } = await supabase
+            .from("sessions")
+            .select("id, host_id")
+            .eq("id", existing.owner_id)
+            .maybeSingle();
+
+          if (sessionOwner?.host_id === profile.id) {
+            setSlugStatus("owned");
+            return;
+          }
         }
 
         setSlugStatus("taken");
@@ -1544,16 +1565,31 @@ export function CreateSessionModal({
           .limit(10)
         : Promise.resolve({ data: [], error: null } as any);
 
+      // Fallback source of truth for reusable links:
+      // older public_url_slugs rows may not have host_user_id populated yet,
+      // but sessions.custom_slug still tells us which public link belongs to this host.
+      const ownedSessionSlugsPromise = profile?.id
+        ? supabase
+          .from("sessions")
+          .select("id, custom_slug, created_at")
+          .eq("host_id", profile.id)
+          .not("custom_slug", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(10)
+        : Promise.resolve({ data: [], error: null } as any);
+
       const [
         globalTemplatesRes,
         userTemplatesRes,
         previousSessionsRes,
         ownedSlugsRes,
+        ownedSessionSlugsRes,
       ] = await Promise.all([
         globalTemplatesPromise,
         userTemplatesPromise,
         previousSessionsPromise,
         ownedSlugsPromise,
+        ownedSessionSlugsPromise,
       ]);
 
       if (globalTemplatesRes.error) {
@@ -1590,12 +1626,39 @@ export function CreateSessionModal({
           "❌ Error loading reusable public links:",
           ownedSlugsRes.error,
         );
-      } else {
-        const rows = ((ownedSlugsRes?.data || []) as PublicSlugRow[])
-          .filter((r) => String(r?.slug || "").trim())
-          .slice(0, 1);
-        setOwnedPublicSlugs(rows);
       }
+
+      if (ownedSessionSlugsRes?.error) {
+        console.error(
+          "❌ Error loading session custom links:",
+          ownedSessionSlugsRes.error,
+        );
+      }
+
+      const fromRegistry = ((ownedSlugsRes?.data || []) as PublicSlugRow[])
+        .filter((r) => String(r?.slug || "").trim());
+
+      const fromSessions = ((ownedSessionSlugsRes?.data || []) as any[])
+        .map((r) => ({
+          slug: String(r?.custom_slug || "").trim(),
+          owner_type: "session",
+          owner_id: String(r?.id || "").trim() || null,
+          host_user_id: profile?.id || null,
+          updated_at: String(r?.created_at || "").trim() || null,
+        }))
+        .filter((r) => r.slug);
+
+      const seenSlugs = new Set<string>();
+      const mergedOwnedSlugs: PublicSlugRow[] = [];
+
+      for (const row of [...fromRegistry, ...fromSessions]) {
+        const slug = String(row?.slug || "").trim();
+        if (!slug || seenSlugs.has(slug)) continue;
+        seenSlugs.add(slug);
+        mergedOwnedSlugs.push(row);
+      }
+
+      setOwnedPublicSlugs(mergedOwnedSlugs.slice(0, 1));
     } catch (e) {
       console.error("❌ Error loading modal data:", e);
       setError("Failed to load session data.");
@@ -2437,15 +2500,28 @@ export function CreateSessionModal({
         }
 
         const existingSlug = existingSlugRows?.[0] as PublicSlugRow | undefined;
-        if (
-          existingSlug?.host_user_id &&
-          existingSlug.host_user_id !== profile.id
-        ) {
-          setError(
-            "This custom link is already taken by another host. Pick another one.",
-          );
-          setIsCreating(false);
-          return;
+        if (existingSlug) {
+          let belongsToCurrentHost = false;
+
+          if (existingSlug.host_user_id) {
+            belongsToCurrentHost = existingSlug.host_user_id === profile.id;
+          } else if (existingSlug.owner_type === "session" && existingSlug.owner_id) {
+            const { data: sessionOwner } = await supabase
+              .from("sessions")
+              .select("id, host_id")
+              .eq("id", existingSlug.owner_id)
+              .maybeSingle();
+
+            belongsToCurrentHost = sessionOwner?.host_id === profile.id;
+          }
+
+          if (!belongsToCurrentHost) {
+            setError(
+              "This custom link is already taken by another host. Pick another one.",
+            );
+            setIsCreating(false);
+            return;
+          }
         }
 
         // One reusable public link per host: detach it from old sessions first,
@@ -2577,7 +2653,7 @@ export function CreateSessionModal({
       if (bookingRows.length > 0) {
         const { error: bookingError } = await supabase
           .from("session_bookings")
-          .insert(bookingRows);
+          .upsert(bookingRows, { onConflict: "session_id,user_id" });
 
         if (bookingError) {
           console.error("❌ Host auto-booking failed:", bookingError);
@@ -2652,6 +2728,16 @@ export function CreateSessionModal({
 
       onSessionCreated();
       onClose();
+
+      // Keep the user on the canonical sessions listing after successful creation.
+      // This also guarantees the modal disappears even if parent state refresh is slow.
+      try {
+        navigate("/sessions");
+      } catch {
+        if (typeof window !== "undefined") {
+          window.location.assign("/sessions");
+        }
+      }
     } catch (err: any) {
       console.error("❌ Error creating session(s):", err);
 
