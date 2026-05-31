@@ -498,13 +498,14 @@ export default function PublicProfilePage() {
         return;
       }
 
-      const res = await fetch("/api/billing/create-host-support-checkout", {
+      const res = await fetch("/api/billing/create-checkout-session", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
+          checkoutKind: "host_support",
           hostUserId: id,
           sessionId: nextSession?.id || null,
           amountUsd: supportAmountUsd,
