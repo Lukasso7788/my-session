@@ -125,6 +125,12 @@ function sortHostedSessions(a: any, b: any) {
   return bEnd - aEnd;
 }
 
+function normalizeSupportAmount(value: unknown): number {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return 0;
+  return Math.round(amount * 100) / 100;
+}
+
 export default function PublicProfilePage() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
@@ -153,6 +159,7 @@ export default function PublicProfilePage() {
   const [supportEnabled, setSupportEnabled] = useState(false);
   const [supportModalOpen, setSupportModalOpen] = useState(false);
   const [supportAmountUsd, setSupportAmountUsd] = useState<number>(5);
+  const [customSupportAmount, setCustomSupportAmount] = useState("");
   const [supportBusy, setSupportBusy] = useState(false);
   const [supportError, setSupportError] = useState("");
 
@@ -164,6 +171,11 @@ export default function PublicProfilePage() {
 
   const isOwnProfile = !!currentUserId && !!id && currentUserId === id;
   const hasHostedSessions = sessions.length > 0;
+
+  const effectiveSupportAmount = useMemo(() => {
+    const custom = normalizeSupportAmount(customSupportAmount);
+    return custom >= 2 ? custom : supportAmountUsd;
+  }, [customSupportAmount, supportAmountUsd]);
 
   const upcomingSessions = useMemo(() => {
     const now = Date.now();
@@ -480,11 +492,19 @@ export default function PublicProfilePage() {
 
     setSupportError("");
     setSupportAmountUsd(5);
+    setCustomSupportAmount("");
     setSupportModalOpen(true);
   };
 
   const handleCreateSupportCheckout = async () => {
     if (!id) return;
+
+    const amount = normalizeSupportAmount(effectiveSupportAmount);
+
+    if (!Number.isFinite(amount) || amount < 2) {
+      setSupportError("Minimum support amount is $2.");
+      return;
+    }
 
     setSupportBusy(true);
     setSupportError("");
@@ -508,7 +528,7 @@ export default function PublicProfilePage() {
           checkoutKind: "host_support",
           hostUserId: id,
           sessionId: nextSession?.id || null,
-          amountUsd: supportAmountUsd,
+          amountUsd: amount,
         }),
       });
 
@@ -865,7 +885,7 @@ export default function PublicProfilePage() {
             }}
           />
 
-          <div className="relative w-full max-w-[460px] rounded-[28px] bg-white p-6 text-[#2F2F2F] shadow-2xl">
+          <div className="relative w-full max-w-[480px] rounded-[28px] bg-white p-6 text-[#2F2F2F] shadow-2xl">
             <button
               type="button"
               onClick={() => {
@@ -897,11 +917,15 @@ export default function PublicProfilePage() {
                 <button
                   key={amount}
                   type="button"
-                  onClick={() => setSupportAmountUsd(amount)}
+                  onClick={() => {
+                    setSupportAmountUsd(amount);
+                    setCustomSupportAmount("");
+                    setSupportError("");
+                  }}
                   disabled={supportBusy}
                   className={`
                     rounded-2xl border px-4 py-3 text-[15px] font-semibold transition
-                    ${supportAmountUsd === amount
+                    ${customSupportAmount === "" && supportAmountUsd === amount
                       ? "border-[#2F2F2F] bg-[#2F2F2F] text-white"
                       : "border-[#DBD8D8] bg-white text-[#2F2F2F] hover:bg-[#F8F8F8]"
                     }
@@ -911,6 +935,33 @@ export default function PublicProfilePage() {
                   ${amount}
                 </button>
               ))}
+            </div>
+
+            <div className="mt-3">
+              <label className="mb-2 block text-[12px] font-semibold text-[#606060]">
+                Custom amount
+              </label>
+
+              <div className="flex items-center rounded-2xl border border-[#DBD8D8] bg-white px-4 py-3">
+                <span className="mr-2 text-[15px] font-semibold text-[#606060]">$</span>
+                <input
+                  type="number"
+                  min={2}
+                  step="0.01"
+                  value={customSupportAmount}
+                  onChange={(e) => {
+                    setCustomSupportAmount(e.target.value);
+                    setSupportError("");
+                  }}
+                  disabled={supportBusy}
+                  placeholder="Enter any amount"
+                  className="w-full bg-transparent text-[15px] font-semibold text-[#2F2F2F] outline-none placeholder:text-[#A0A0A0] disabled:opacity-60"
+                />
+              </div>
+
+              <p className="mt-2 text-[12px] text-[#606060]">
+                Minimum support amount is $2. No maximum limit.
+              </p>
             </div>
 
             <div className="mt-4 rounded-2xl bg-[#F8F8F8] p-4 text-[13px] leading-5 text-[#606060]">
@@ -939,7 +990,9 @@ export default function PublicProfilePage() {
                 disabled={supportBusy}
                 className="flex-1 rounded-full bg-[#2F2F2F] px-5 py-2.5 text-[13px] font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
               >
-                {supportBusy ? "Opening checkout..." : `Support $${supportAmountUsd}`}
+                {supportBusy
+                  ? "Opening checkout..."
+                  : `Support $${effectiveSupportAmount}`}
               </button>
             </div>
           </div>
