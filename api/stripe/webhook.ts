@@ -62,9 +62,7 @@ async function upsertEntitlement(params: {
 
   if (plan === "pro_monthly") {
     payload.current_period_start = nowIso;
-    payload.current_period_end = new Date(
-      Date.now() + 30 * 24 * 60 * 60 * 1000
-    ).toISOString();
+    payload.current_period_end = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
     payload.trial_started_at = null;
     payload.trial_ends_at = null;
     payload.lifetime_granted_at = null;
@@ -73,9 +71,7 @@ async function upsertEntitlement(params: {
 
   if (plan === "pro_yearly") {
     payload.current_period_start = nowIso;
-    payload.current_period_end = new Date(
-      Date.now() + 365 * 24 * 60 * 60 * 1000
-    ).toISOString();
+    payload.current_period_end = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
     payload.trial_started_at = null;
     payload.trial_ends_at = null;
     payload.lifetime_granted_at = null;
@@ -100,6 +96,75 @@ async function upsertEntitlement(params: {
   return payload;
 }
 
+async function markHostSupportPaymentAvailable(session: Stripe.Checkout.Session) {
+  const metadata = session.metadata || {};
+
+  const supportPaymentId = String(metadata.supportPaymentId || "").trim();
+
+  if (!supportPaymentId) {
+    console.error("Stripe webhook: missing supportPaymentId for host support", {
+      sessionId: session.id,
+      metadata,
+    });
+    throw new Error("missing_support_payment_id");
+  }
+
+  const paymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : session.payment_intent?.id || "";
+
+  const nowIso = new Date().toISOString();
+
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from("host_support_payments")
+    .select("id, status")
+    .eq("id", supportPaymentId)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+
+  if (!existing?.id) {
+    console.error("Stripe webhook: host support payment row not found", {
+      sessionId: session.id,
+      supportPaymentId,
+      metadata,
+    });
+    throw new Error("host_support_payment_not_found");
+  }
+
+  if (existing.status === "available" || existing.status === "paid_out") {
+    console.log("Stripe webhook: host support already processed", {
+      sessionId: session.id,
+      supportPaymentId,
+      status: existing.status,
+    });
+    return;
+  }
+
+  const { error: updateError } = await supabaseAdmin
+    .from("host_support_payments")
+    .update({
+      status: "available",
+      stripe_payment_intent_id: paymentIntentId || null,
+      available_at: nowIso,
+      updated_at: nowIso,
+    })
+    .eq("id", supportPaymentId);
+
+  if (updateError) throw updateError;
+
+  console.log("Stripe webhook host support marked available", {
+    sessionId: session.id,
+    supportPaymentId,
+    paymentIntentId,
+    hostUserId: metadata.hostUserId,
+    supporterUserId: metadata.supporterUserId,
+    grossAmountUsd: metadata.grossAmountUsd,
+    hostAmountUsd: metadata.hostAmountUsd,
+  });
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     return res.status(405).send("Method not allowed");
@@ -122,6 +187,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (event.type === "checkout.session.completed") {
       const session = event.data.object as Stripe.Checkout.Session;
+      const checkoutKind = String(session.metadata?.checkout_kind || session.metadata?.kind || "").trim();
+
+      if (checkoutKind === "host_support") {
+        await markHostSupportPaymentAvailable(session);
+        return res.status(200).json({ received: true, kind: "host_support" });
+      }
 
       const rawMetadataPlan =
         session.metadata?.entitlement_plan || session.metadata?.plan;
