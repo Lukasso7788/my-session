@@ -4443,11 +4443,16 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
   useEffect(() => {
     const markMaybeBackgrounded = () => {
+      // Mobile/tablet app switching can fire pagehide without a real tab close.
+      // Do NOT release tab presence and do NOT show restore immediately here:
+      // if LiveKit survives, the user should return without a forced reconnect.
       pageHiddenAtRef.current = Date.now();
       returningFromBackgroundRef.current = true;
 
-      if ((connectedRef.current || joinRequestedRef.current) && (isMobileQuery || isTabletQuery)) {
-        setMobileMediaRestoreOpen(true);
+      try {
+        void attendanceHeartbeat();
+      } catch {
+        // ignore
       }
     };
 
@@ -5032,44 +5037,56 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const [screenShareTiles, setScreenShareTiles] = useState<TileModel[]>([]);
 
   useEffect(() => {
+    const roomLooksConnected = () => {
+      const room: any = roomRef.current as any;
+      const state = String(room?.state || "").toLowerCase();
+      return !!room && (connectedRef.current || state === "connected");
+    };
+
     const shouldShowMobileRestore = () => {
-      return lowPowerMobileMode && (connectedRef.current || joinRequestedRef.current);
+      if (!lowPowerMobileMode) return false;
+      if (roomLooksConnected()) return false;
+      return joinRequestedRef.current || returningFromBackgroundRef.current;
     };
 
     const markHidden = () => {
       pageHiddenAtRef.current = Date.now();
       returningFromBackgroundRef.current = true;
 
-      if (!shouldShowMobileRestore()) return;
+      try {
+        void attendanceHeartbeat();
+      } catch {
+        // ignore
+      }
 
-      setMobileMediaRestoreOpen(true);
+      // Keep camera/microphone tracks alive while the browser allows it.
+      // Older code turned the camera off here, which forced a visible tile reload
+      // every time the user returned from another tab/app.
+      if (!lowPowerMobileMode) return;
 
       void captureLocalVideoFrame().then((frame) => {
         if (frame) setFrozenLocalVideoFrame(frame);
       });
-
-      // Android/tablet browsers often kill long camera sessions in background.
-      // Turn local camera off before the browser does it brutally; user can restore on return.
-      try {
-        const room = roomRef.current;
-        if (room?.localParticipant) {
-          void room.localParticipant.setCameraEnabled(false).catch(() => { });
-          setCamOn(false);
-        }
-      } catch { }
-
-      try {
-        void attendanceHeartbeat();
-      } catch { }
     };
 
     const markVisible = () => {
       if (!pageHiddenAtRef.current && !returningFromBackgroundRef.current) return;
 
+      if (roomLooksConnected()) {
+        setMobileMediaRestoreOpen(false);
+        setMediaWarning("");
+        void ensureRoomAudioPlaybackUnlocked("mobile-visible").catch(() => { });
+        scheduleRebuildTiles();
+        window.setTimeout(() => scheduleRebuildTiles(), 120);
+        window.setTimeout(() => scheduleRebuildTiles(), 420);
+        pageHiddenAtRef.current = null;
+        returningFromBackgroundRef.current = false;
+        return;
+      }
+
       if (shouldShowMobileRestore()) {
         setMobileMediaRestoreOpen(true);
         setPrejoinOpen(false);
-        setJoinRequested(true);
         scheduleRebuildTiles();
         window.setTimeout(() => scheduleRebuildTiles(), 120);
       }
@@ -5840,6 +5857,28 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const connectRoom = async () => {
     if (!lkServerUrl || !lkToken) return;
     if (connectInFlightRef.current) return;
+
+    const existingRoom: any = roomRef.current as any;
+    const existingState = String(existingRoom?.state || "").toLowerCase();
+
+    // Important for mobile/tablet tab switching:
+    // returning to the tab can re-trigger joinRequested/effects while the original
+    // LiveKit room is still connected. Do NOT disconnect/reconnect in that case,
+    // because that causes the visible local video tile reload.
+    if (existingRoom && (connectedRef.current || existingState === "connected")) {
+      setConnected(true);
+      setPrejoinOpen(false);
+      setMobileMediaRestoreOpen(false);
+      setMediaWarning("");
+      scheduleRebuildTiles();
+      window.setTimeout(() => scheduleRebuildTiles(), 120);
+      return;
+    }
+
+    if (existingRoom && (existingState === "connecting" || existingState === "reconnecting")) {
+      return;
+    }
+
     if (paywallRuntimeBlocked && !!authUserId) {
       setPaywallModalOpen(true);
       return;
@@ -5902,7 +5941,6 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
         if (likelyBackgroundDisconnect) {
           setMobileMediaRestoreOpen(true);
           setPrejoinOpen(false);
-          setJoinRequested(true);
           setMediaWarning("Mobile browser paused the room while you were using another app. Tap Restore audio/video to continue.");
           return;
         }
