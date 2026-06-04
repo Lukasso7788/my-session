@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import {
   formatBanEnd,
@@ -10,6 +10,8 @@ import {
   type ActiveBan,
 } from "../lib/bans";
 import BanUserModal from "../components/BanUserModal";
+
+type AnyRow = Record<string, any>;
 
 type AdminUserRow = {
   id: string;
@@ -83,6 +85,7 @@ type AdminStats = {
 
   availableHostBalanceUsd: number;
   pendingPayoutUsd: number;
+  openPayoutRequests: number;
 };
 
 type ChartPoint = {
@@ -98,48 +101,34 @@ type ChartPoint = {
   attendedSessions: number;
   avgAttendeesPerSession: number;
   supportUsd: number;
+  pendingPayoutUsd: number;
+  openPayoutRequests: number;
 };
 
-type ChartKey =
-  | "registrations"
-  | "sessionsCreated"
-  | "sessionsHosted"
-  | "activeHosts"
-  | "bookedUsers"
-  | "attendanceRecords"
-  | "uniqueAttendees"
-  | "attendedSessions"
-  | "avgAttendeesPerSession"
-  | "supportUsd";
-
-type AnyRow = Record<string, any>;
+type ChartKey = keyof Omit<ChartPoint, "label" | "dateKey">;
 
 function getInitial(name: string) {
   return (String(name || "").trim()[0] || "U").toUpperCase();
 }
 
 function formatMoney(value: number) {
-  const safe = Number.isFinite(value) ? value : 0;
-
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(safe);
+  }).format(Number.isFinite(value) ? value : 0);
 }
 
 function formatNumber(value: number, digits = 0) {
-  const safe = Number.isFinite(value) ? value : 0;
   return new Intl.NumberFormat("en-US", {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
-  }).format(safe);
+  }).format(Number.isFinite(value) ? value : 0);
 }
 
 function formatPercent(value: number) {
-  const safe = Number.isFinite(value) ? value : 0;
-  return `${formatNumber(safe, 1)}%`;
+  return `${formatNumber(value, 1)}%`;
 }
 
 function formatDateTime(value?: string | null) {
@@ -155,14 +144,20 @@ function formatDateTime(value?: string | null) {
   }).format(date);
 }
 
-function startOfDayIso() {
-  const d = new Date();
+function startOfLocalDay(date = new Date()) {
+  const d = new Date(date);
   d.setHours(0, 0, 0, 0);
-  return d.toISOString();
+  return d;
+}
+
+function startOfDayIso() {
+  return startOfLocalDay().toISOString();
 }
 
 function daysAgoIso(days: number) {
-  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString();
 }
 
 function toMs(value?: string | null) {
@@ -171,21 +166,31 @@ function toMs(value?: string | null) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-function toDateKey(value?: string | null) {
+function toLocalDateKey(value?: string | null) {
   const ms = toMs(value);
   if (!ms) return "";
-  return new Date(ms).toISOString().slice(0, 10);
+
+  const d = new Date(ms);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+
+  return `${y}-${m}-${day}`;
 }
 
 function makeLastDays(days: number) {
   return Array.from({ length: days }, (_, i) => {
-    const d = new Date();
+    const d = startOfLocalDay();
     d.setDate(d.getDate() - (days - 1 - i));
-    const key = d.toISOString().slice(0, 10);
+
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    const key = `${y}-${m}-${day}`;
 
     return {
       key,
-      label: key.slice(5),
+      label: `${m}-${day}`,
     };
   });
 }
@@ -194,12 +199,15 @@ function getRowTimestamp(row: AnyRow): string {
   return String(
     row.created_at ||
     row.joined_at ||
+    row.join_time ||
     row.started_at ||
     row.entered_at ||
     row.first_seen_at ||
     row.last_seen_at ||
     row.updated_at ||
     row.left_at ||
+    row.checked_in_at ||
+    row.attended_at ||
     ""
   );
 }
@@ -207,20 +215,38 @@ function getRowTimestamp(row: AnyRow): string {
 function getAttendanceUserId(row: AnyRow): string {
   return String(
     row.user_id ||
-    row.participant_user_id ||
     row.attendee_user_id ||
+    row.participant_user_id ||
     row.profile_id ||
     row.member_user_id ||
+    row.userId ||
+    row.attendeeId ||
+    row.participantId ||
+    row.identity ||
+    row.participant_identity ||
     ""
   ).trim();
 }
 
 function getAttendanceSessionId(row: AnyRow): string {
-  return String(row.session_id || row.room_session_id || row.session || "").trim();
+  return String(
+    row.session_id ||
+    row.room_session_id ||
+    row.sessionId ||
+    row.session ||
+    row.room_id ||
+    ""
+  ).trim();
 }
 
 function getBookingUserId(row: AnyRow): string {
-  return String(row.user_id || row.booked_user_id || row.profile_id || "").trim();
+  return String(
+    row.user_id ||
+    row.booked_user_id ||
+    row.profile_id ||
+    row.userId ||
+    ""
+  ).trim();
 }
 
 function getPaymentBadgeClass(status: string | null) {
@@ -252,10 +278,6 @@ function uniqueCountSince(rows: AnyRow[], fromIso: string, getId: (row: AnyRow) 
   return set.size;
 }
 
-function countDistinctAttendanceSessionsSince(rows: AnyRow[], fromIso: string) {
-  return uniqueCountSince(rows, fromIso, getAttendanceSessionId);
-}
-
 async function safeCount(
   table: string,
   column: string,
@@ -267,9 +289,7 @@ async function safeCount(
     .select("id", { count: "exact", head: true })
     .gte(column, fromIso);
 
-  if (extra?.lteNow) {
-    q = q.lte(column, new Date().toISOString());
-  }
+  if (extra?.lteNow) q = q.lte(column, new Date().toISOString());
 
   const { count, error } = await q;
 
@@ -282,20 +302,26 @@ async function safeCount(
 }
 
 async function loadRecentRows(table: string, fromIso: string, preferredColumn: string) {
-  const attempts = [preferredColumn, "created_at", "joined_at", "started_at", "entered_at", "updated_at"];
+  const attempts = [
+    preferredColumn,
+    "created_at",
+    "joined_at",
+    "join_time",
+    "started_at",
+    "entered_at",
+    "checked_in_at",
+    "attended_at",
+    "updated_at",
+  ];
 
   for (const column of Array.from(new Set(attempts))) {
-    try {
-      const { data, error } = await supabase
-        .from(table)
-        .select("*")
-        .gte(column, fromIso)
-        .limit(10000);
+    const { data, error } = await supabase
+      .from(table)
+      .select("*")
+      .gte(column, fromIso)
+      .limit(10000);
 
-      if (!error) return (data as AnyRow[]) || [];
-    } catch {
-      // try next
-    }
+    if (!error) return (data as AnyRow[]) || [];
   }
 
   const { data, error } = await supabase.from(table).select("*").limit(10000);
@@ -309,9 +335,7 @@ async function loadRecentRows(table: string, fromIso: string, preferredColumn: s
   return ((data as AnyRow[]) || []).filter((row) => toMs(getRowTimestamp(row)) >= fromMs);
 }
 
-function InteractiveLineChart({
-  title,
-  description,
+function MiniMetricChart({
   data,
   dataKey,
   color,
@@ -319,8 +343,6 @@ function InteractiveLineChart({
   percent = false,
   decimals = 0,
 }: {
-  title: string;
-  description: string;
   data: ChartPoint[];
   dataKey: ChartKey;
   color: string;
@@ -332,23 +354,17 @@ function InteractiveLineChart({
 
   const values = data.map((d) => Number(d[dataKey] || 0));
   const max = Math.max(...values, 1);
-  const total = values.reduce((sum, value) => sum + value, 0);
-
-  const chartWidth = 100;
-  const topPad = 5;
-  const bottomPad = 36;
-  const usableHeight = bottomPad - topPad;
+  const activeIndex = hoverIndex ?? Math.max(0, data.length - 1);
 
   const getX = (index: number) =>
-    values.length <= 1 ? 0 : (index / (values.length - 1)) * chartWidth;
+    values.length <= 1 ? 0 : (index / (values.length - 1)) * 100;
 
-  const getY = (value: number) => bottomPad - (value / max) * usableHeight;
+  const getY = (value: number) => 34 - (value / max) * 28;
 
   const points = values.map((value, index) => `${getX(index)},${getY(value)}`).join(" ");
 
-  const activeIndex = hoverIndex ?? Math.max(0, values.length - 1);
-  const activePoint = data[activeIndex];
   const activeValue = values[activeIndex] || 0;
+  const activePoint = data[activeIndex];
   const activeX = getX(activeIndex);
   const activeY = getY(activeValue);
 
@@ -358,150 +374,158 @@ function InteractiveLineChart({
       ? formatPercent(activeValue)
       : formatNumber(activeValue, decimals);
 
-  const totalValue = money
-    ? formatMoney(total)
-    : percent
-      ? formatPercent(total / Math.max(data.length, 1))
-      : formatNumber(total, decimals);
-
   return (
-    <div className="rounded-[22px] border border-black/10 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-[14px] font-bold text-[#2F2F2F]">{title}</h3>
-          <p className="mt-1 text-[12px] text-[#777]">{description}</p>
-        </div>
-
-        <div className="shrink-0 text-right">
-          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#999]">
-            {percent ? "14d avg" : "14d total"}
-          </div>
-          <div className="text-[18px] font-bold text-[#2F2F2F]">{totalValue}</div>
-        </div>
+    <div className="mt-4">
+      <div className="mb-2 flex items-center justify-between rounded-xl bg-white/70 px-3 py-2 text-[11px]">
+        <span className="font-semibold text-[#777]">
+          {activePoint?.dateKey || "—"}
+        </span>
+        <span className="font-bold" style={{ color }}>
+          {displayValue}
+        </span>
       </div>
 
-      <div className="mt-3 rounded-2xl bg-gray-50 px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#777]">
-              Hovered day
-            </div>
-            <div className="mt-1 text-[14px] font-bold text-[#2F2F2F]">
-              {activePoint?.dateKey || "—"}
-            </div>
-          </div>
+      <svg viewBox="0 0 100 40" className="h-20 w-full overflow-visible">
+        <line x1="0" y1="34" x2="100" y2="34" stroke="rgba(0,0,0,0.12)" />
+        <line x1="0" y1="20" x2="100" y2="20" stroke="rgba(0,0,0,0.06)" />
+        <line x1="0" y1="6" x2="100" y2="6" stroke="rgba(0,0,0,0.06)" />
 
-          <div className="text-right">
-            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#777]">
-              Value
-            </div>
-            <div className="mt-1 text-[18px] font-bold" style={{ color }}>
-              {displayValue}
-            </div>
-          </div>
-        </div>
-      </div>
+        <polyline
+          fill="none"
+          stroke={color}
+          strokeWidth="8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          points={points}
+          opacity="0.12"
+        />
 
-      <div className="relative mt-4">
-        <svg viewBox="0 0 100 46" className="h-28 w-full overflow-visible">
-          <line x1="0" y1="36" x2="100" y2="36" stroke="rgba(0,0,0,0.12)" strokeWidth="1" />
-          <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(0,0,0,0.06)" strokeWidth="1" />
-          <line x1="0" y1="14" x2="100" y2="14" stroke="rgba(0,0,0,0.06)" strokeWidth="1" />
-          <line x1="0" y1="5" x2="100" y2="5" stroke="rgba(0,0,0,0.06)" strokeWidth="1" />
+        <polyline
+          fill="none"
+          stroke={color}
+          strokeWidth="2.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          points={points}
+        />
 
-          {hoverIndex !== null && (
-            <line
-              x1={activeX}
-              y1="4"
-              x2={activeX}
-              y2="38"
-              stroke={color}
-              strokeWidth="0.8"
-              strokeDasharray="2 2"
-              opacity="0.75"
-            />
-          )}
-
-          <polyline
-            fill="none"
+        {hoverIndex !== null && (
+          <line
+            x1={activeX}
+            y1="4"
+            x2={activeX}
+            y2="36"
             stroke={color}
-            strokeWidth="9"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            points={points}
-            opacity="0.12"
+            strokeWidth="0.8"
+            strokeDasharray="2 2"
           />
+        )}
 
-          <polyline
-            fill="none"
-            stroke={color}
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            points={points}
-          />
+        {values.map((value, index) => {
+          const x = getX(index);
+          const y = getY(value);
+          const active = index === activeIndex;
 
-          {values.map((value, index) => {
-            const x = getX(index);
-            const y = getY(value);
-            const active = index === activeIndex;
-
-            return (
-              <g key={`${title}-${index}`}>
-                <circle
-                  cx={x}
-                  cy={y}
-                  r={active ? "3.7" : "2.3"}
-                  fill="white"
-                  stroke={color}
-                  strokeWidth={active ? "2.4" : "1.8"}
-                />
-
-                <rect
-                  x={x - 4}
-                  y="0"
-                  width="8"
-                  height="44"
-                  fill="transparent"
-                  onMouseEnter={() => setHoverIndex(index)}
-                  onMouseLeave={() => setHoverIndex(null)}
-                  className="cursor-crosshair"
-                />
-              </g>
-            );
-          })}
-
-          {hoverIndex !== null && (
-            <g>
-              <rect
-                x={Math.min(Math.max(activeX - 16, 0), 68)}
-                y={Math.max(activeY - 15, 1)}
-                width="32"
-                height="10"
-                rx="3"
+          return (
+            <g key={`${String(dataKey)}-${index}`}>
+              <circle
+                cx={x}
+                cy={y}
+                r={active ? 3.4 : 2.2}
                 fill="white"
                 stroke={color}
-                strokeWidth="0.8"
+                strokeWidth={active ? 2.4 : 1.7}
               />
-              <text
-                x={Math.min(Math.max(activeX, 16), 84)}
-                y={Math.max(activeY - 8, 8)}
-                textAnchor="middle"
-                fontSize="3.5"
-                fontWeight="700"
-                fill={color}
-              >
-                {displayValue}
-              </text>
-            </g>
-          )}
-        </svg>
 
-        <div className="mt-1 flex justify-between text-[10px] text-[#999]">
-          <span>{data[0]?.label || "—"}</span>
-          <span>{data[data.length - 1]?.label || "—"}</span>
-        </div>
+              <rect
+                x={x - 4}
+                y="0"
+                width="8"
+                height="40"
+                fill="transparent"
+                className="cursor-crosshair"
+                onMouseEnter={() => setHoverIndex(index)}
+                onMouseLeave={() => setHoverIndex(null)}
+              />
+            </g>
+          );
+        })}
+
+        {hoverIndex !== null && (
+          <g>
+            <rect
+              x={Math.min(Math.max(activeX - 15, 0), 70)}
+              y={Math.max(activeY - 14, 1)}
+              width="30"
+              height="9"
+              rx="3"
+              fill="white"
+              stroke={color}
+              strokeWidth="0.8"
+            />
+            <text
+              x={Math.min(Math.max(activeX, 15), 85)}
+              y={Math.max(activeY - 8, 8)}
+              textAnchor="middle"
+              fontSize="3.2"
+              fontWeight="700"
+              fill={color}
+            >
+              {displayValue}
+            </text>
+          </g>
+        )}
+      </svg>
+
+      <div className="mt-1 flex justify-between text-[10px] text-[#999]">
+        <span>{data[0]?.label || "—"}</span>
+        <span>{data[data.length - 1]?.label || "—"}</span>
       </div>
+    </div>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  hint,
+  data,
+  dataKey,
+  color,
+  money,
+  percent,
+  decimals,
+}: {
+  label: string;
+  value: string | number;
+  hint: string;
+  data: ChartPoint[];
+  dataKey: ChartKey;
+  color: string;
+  money?: boolean;
+  percent?: boolean;
+  decimals?: number;
+}) {
+  return (
+    <div className="rounded-[24px] border border-black/10 bg-gray-50 p-5 shadow-sm">
+      <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
+        {label}
+      </div>
+
+      <div className="mt-2 text-[30px] font-bold text-[#2F2F2F]">
+        {value}
+      </div>
+
+      <p className="mt-1 text-[12px] leading-5 text-[#777]">{hint}</p>
+
+      <MiniMetricChart
+        data={data}
+        dataKey={dataKey}
+        color={color}
+        money={money}
+        percent={percent}
+        decimals={decimals}
+      />
     </div>
   );
 }
@@ -534,37 +558,30 @@ export default function AdminPage() {
     registrationsToday: 0,
     registrationsWeek: 0,
     registrationsMonth: 0,
-
     sessionsCreatedToday: 0,
     sessionsCreatedWeek: 0,
     sessionsCreatedMonth: 0,
-
     sessionsHostedToday: 0,
     sessionsHostedWeek: 0,
     sessionsHostedMonth: 0,
-
     attendanceRecordsToday: 0,
     attendanceRecordsWeek: 0,
     attendanceRecordsMonth: 0,
-
     uniqueAttendeesToday: 0,
     uniqueAttendeesWeek: 0,
     uniqueAttendeesMonth: 0,
-
     attendedSessionsToday: 0,
     attendedSessionsWeek: 0,
     attendedSessionsMonth: 0,
-
     uniqueBookedUsersToday: 0,
     uniqueBookedUsersWeek: 0,
     uniqueBookedUsersMonth: 0,
-
     activeHostsWeek: 0,
     avgAttendeesPerHostedSessionWeek: 0,
     bookedToAttendedConversionWeek: 0,
-
     availableHostBalanceUsd: 0,
     pendingPayoutUsd: 0,
+    openPayoutRequests: 0,
   });
 
   const cleanQuery = useMemo(() => query.trim(), [query]);
@@ -572,13 +589,6 @@ export default function AdminPage() {
   const unreadNotifications = useMemo(() => {
     return notifications.filter((n) => !n.read_at).length;
   }, [notifications]);
-
-  const requestedPayouts = useMemo(() => {
-    return payoutRequests.filter((p) => {
-      const status = String(p.status || "").toLowerCase();
-      return status === "requested" || status === "processing";
-    });
-  }, [payoutRequests]);
 
   const loadBans = async () => {
     try {
@@ -608,15 +618,12 @@ export default function AdminPage() {
         registrationsToday,
         registrationsWeek,
         registrationsMonth,
-
         sessionsCreatedToday,
         sessionsCreatedWeek,
         sessionsCreatedMonth,
-
         sessionsHostedToday,
         sessionsHostedWeek,
         sessionsHostedMonth,
-
         notificationsResult,
         payoutsResult,
         paymentsResult,
@@ -661,13 +668,11 @@ export default function AdminPage() {
 
         supabase.from("profiles").select("id, created_at").gte("created_at", chartIso),
         supabase.from("sessions").select("id, host_id, created_at").gte("created_at", chartIso),
-
         supabase
           .from("sessions")
           .select("id, host_id, start_time")
           .gte("start_time", chartIso)
           .lte("start_time", nowIso),
-
         supabase
           .from("host_support_payments")
           .select("host_amount_usd, status, created_at")
@@ -701,9 +706,10 @@ export default function AdminPage() {
         return sum + Number(p.amount_usd || 0);
       }, 0);
 
-      const weeklyHosts = new Set(
-        ((weeklySessionsResult.data as AnyRow[]) || []).map((s) => s.host_id).filter(Boolean)
-      );
+      const openPayoutRequests = payoutRows.filter((p) => {
+        const status = String(p.status || "").toLowerCase();
+        return status === "requested" || status === "processing";
+      }).length;
 
       const attendanceRecordsToday = countRowsSince(attendanceRows, todayIso);
       const attendanceRecordsWeek = countRowsSince(attendanceRows, weekIso);
@@ -713,16 +719,20 @@ export default function AdminPage() {
       const uniqueAttendeesWeek = uniqueCountSince(attendanceRows, weekIso, getAttendanceUserId);
       const uniqueAttendeesMonth = uniqueCountSince(attendanceRows, monthIso, getAttendanceUserId);
 
-      const attendedSessionsToday = countDistinctAttendanceSessionsSince(attendanceRows, todayIso);
-      const attendedSessionsWeek = countDistinctAttendanceSessionsSince(attendanceRows, weekIso);
-      const attendedSessionsMonth = countDistinctAttendanceSessionsSince(attendanceRows, monthIso);
+      const attendedSessionsToday = uniqueCountSince(attendanceRows, todayIso, getAttendanceSessionId);
+      const attendedSessionsWeek = uniqueCountSince(attendanceRows, weekIso, getAttendanceSessionId);
+      const attendedSessionsMonth = uniqueCountSince(attendanceRows, monthIso, getAttendanceSessionId);
 
       const uniqueBookedUsersToday = uniqueCountSince(bookingRows, todayIso, getBookingUserId);
       const uniqueBookedUsersWeek = uniqueCountSince(bookingRows, weekIso, getBookingUserId);
       const uniqueBookedUsersMonth = uniqueCountSince(bookingRows, monthIso, getBookingUserId);
 
+      const weeklyHosts = new Set(
+        ((weeklySessionsResult.data as AnyRow[]) || []).map((s) => s.host_id).filter(Boolean)
+      );
+
       const avgAttendeesPerHostedSessionWeek =
-        sessionsHostedWeek > 0 ? uniqueAttendeesWeek / sessionsHostedWeek : 0;
+        attendedSessionsWeek > 0 ? uniqueAttendeesWeek / attendedSessionsWeek : 0;
 
       const bookedToAttendedConversionWeek =
         uniqueBookedUsersWeek > 0 ? (uniqueAttendeesWeek / uniqueBookedUsersWeek) * 100 : 0;
@@ -739,7 +749,7 @@ export default function AdminPage() {
       const attendedSessionsByDay = new Map<string, Set<string>>();
       const supportByDay = new Map<string, number>();
 
-      for (const day of days) {
+      days.forEach((day) => {
         registrationsByDay.set(day.key, 0);
         sessionsCreatedByDay.set(day.key, 0);
         sessionsHostedByDay.set(day.key, 0);
@@ -749,38 +759,38 @@ export default function AdminPage() {
         uniqueAttendeesByDay.set(day.key, new Set());
         attendedSessionsByDay.set(day.key, new Set());
         supportByDay.set(day.key, 0);
-      }
+      });
 
-      for (const row of ((registrationsChartResult.data as AnyRow[]) || [])) {
-        const key = toDateKey(row.created_at);
-        if (!key || !registrationsByDay.has(key)) continue;
+      ((registrationsChartResult.data as AnyRow[]) || []).forEach((row) => {
+        const key = toLocalDateKey(row.created_at);
+        if (!key || !registrationsByDay.has(key)) return;
         registrationsByDay.set(key, (registrationsByDay.get(key) || 0) + 1);
-      }
+      });
 
-      for (const row of ((sessionsCreatedChartResult.data as AnyRow[]) || [])) {
-        const key = toDateKey(row.created_at);
-        if (!key || !sessionsCreatedByDay.has(key)) continue;
+      ((sessionsCreatedChartResult.data as AnyRow[]) || []).forEach((row) => {
+        const key = toLocalDateKey(row.created_at);
+        if (!key || !sessionsCreatedByDay.has(key)) return;
         sessionsCreatedByDay.set(key, (sessionsCreatedByDay.get(key) || 0) + 1);
         if (row.host_id) activeHostsByDay.get(key)?.add(row.host_id);
-      }
+      });
 
-      for (const row of ((sessionsHostedChartResult.data as AnyRow[]) || [])) {
-        const key = toDateKey(row.start_time);
-        if (!key || !sessionsHostedByDay.has(key)) continue;
+      ((sessionsHostedChartResult.data as AnyRow[]) || []).forEach((row) => {
+        const key = toLocalDateKey(row.start_time);
+        if (!key || !sessionsHostedByDay.has(key)) return;
         sessionsHostedByDay.set(key, (sessionsHostedByDay.get(key) || 0) + 1);
         if (row.host_id) activeHostsByDay.get(key)?.add(row.host_id);
-      }
+      });
 
-      for (const row of bookingRows) {
-        const key = toDateKey(getRowTimestamp(row));
+      bookingRows.forEach((row) => {
+        const key = toLocalDateKey(getRowTimestamp(row));
         const userId = getBookingUserId(row);
-        if (!key || !userId || !bookedUsersByDay.has(key)) continue;
+        if (!key || !userId || !bookedUsersByDay.has(key)) return;
         bookedUsersByDay.get(key)?.add(userId);
-      }
+      });
 
-      for (const row of attendanceRows) {
-        const key = toDateKey(getRowTimestamp(row));
-        if (!key || !attendanceRecordsByDay.has(key)) continue;
+      attendanceRows.forEach((row) => {
+        const key = toLocalDateKey(getRowTimestamp(row));
+        if (!key || !attendanceRecordsByDay.has(key)) return;
 
         attendanceRecordsByDay.set(key, (attendanceRecordsByDay.get(key) || 0) + 1);
 
@@ -789,20 +799,42 @@ export default function AdminPage() {
 
         if (userId) uniqueAttendeesByDay.get(key)?.add(userId);
         if (sessionId) attendedSessionsByDay.get(key)?.add(sessionId);
-      }
+      });
 
-      for (const row of ((paymentsChartResult.data as AnyRow[]) || [])) {
-        const key = toDateKey(row.created_at);
-        if (!key || !supportByDay.has(key)) continue;
+      ((paymentsChartResult.data as AnyRow[]) || []).forEach((row) => {
+        const key = toLocalDateKey(row.created_at);
+        if (!key || !supportByDay.has(key)) return;
 
         const status = String(row.status || "").toLowerCase();
-        if (status !== "available" && status !== "paid_out") continue;
+        if (status !== "available" && status !== "paid_out") return;
 
         supportByDay.set(
           key,
           (supportByDay.get(key) || 0) + Number(row.host_amount_usd || 0)
         );
-      }
+      });
+
+      const openPayoutRequestsByDay = new Map<string, number>();
+      const pendingPayoutUsdByDay = new Map<string, number>();
+
+      days.forEach((day) => {
+        openPayoutRequestsByDay.set(day.key, 0);
+        pendingPayoutUsdByDay.set(day.key, 0);
+      });
+
+      payoutRows.forEach((row) => {
+        const key = toLocalDateKey(row.created_at || row.requested_at);
+        if (!key || !openPayoutRequestsByDay.has(key)) return;
+
+        const status = String(row.status || "").toLowerCase();
+        if (status !== "requested" && status !== "processing") return;
+
+        openPayoutRequestsByDay.set(key, (openPayoutRequestsByDay.get(key) || 0) + 1);
+        pendingPayoutUsdByDay.set(
+          key,
+          (pendingPayoutUsdByDay.get(key) || 0) + Number(row.amount_usd || 0)
+        );
+      });
 
       setChartData(
         days.map((day) => {
@@ -823,6 +855,8 @@ export default function AdminPage() {
             avgAttendeesPerSession:
               attendedSessions > 0 ? Number((uniqueAttendees / attendedSessions).toFixed(2)) : 0,
             supportUsd: Number((supportByDay.get(day.key) || 0).toFixed(2)),
+            pendingPayoutUsd: Number((pendingPayoutUsdByDay.get(day.key) || 0).toFixed(2)),
+            openPayoutRequests: openPayoutRequestsByDay.get(day.key) || 0,
           };
         })
       );
@@ -862,6 +896,7 @@ export default function AdminPage() {
 
         availableHostBalanceUsd,
         pendingPayoutUsd,
+        openPayoutRequests,
       });
     } catch (e: any) {
       console.error("[admin] dashboard load failed:", e);
@@ -889,10 +924,7 @@ export default function AdminPage() {
 
         if (!cancelled) {
           setIsAdmin(ok);
-
-          if (ok) {
-            await Promise.all([loadDashboard(), loadBans()]);
-          }
+          if (ok) await Promise.all([loadDashboard(), loadBans()]);
         }
       } catch (e: any) {
         console.error("[admin] init failed:", e);
@@ -979,10 +1011,7 @@ export default function AdminPage() {
         updated_at: nowIso,
       };
 
-      if (nextStatus === "paid" || nextStatus === "rejected") {
-        payload.resolved_at = nowIso;
-      }
-
+      if (nextStatus === "paid" || nextStatus === "rejected") payload.resolved_at = nowIso;
       if (nextStatus === "paid") payload.admin_note = "Marked as paid from admin dashboard.";
       if (nextStatus === "rejected") payload.admin_note = "Rejected from admin dashboard.";
 
@@ -996,10 +1025,7 @@ export default function AdminPage() {
       if (nextStatus === "paid") {
         const { error: paymentsError } = await supabase
           .from("host_support_payments")
-          .update({
-            status: "paid_out",
-            updated_at: nowIso,
-          })
+          .update({ status: "paid_out", updated_at: nowIso })
           .eq("host_user_id", payout.host_user_id)
           .eq("status", "available");
 
@@ -1075,7 +1101,7 @@ export default function AdminPage() {
             </h1>
 
             <p className="mt-2 max-w-3xl text-[14px] leading-6 text-[#666]">
-              Attendance now uses <b>session_attendance</b>. Attendance records = all rows. Unique attendees = distinct users. Attended sessions = distinct sessions with attendance.
+              Attendance uses <b>session_attendance</b>. Unique attendees are distinct user-like IDs from attendance rows.
             </p>
           </div>
 
@@ -1102,6 +1128,13 @@ export default function AdminPage() {
               Moderation
             </button>
 
+            <Link
+              to="/admin/daily-schedule-email"
+              className="rounded-full border border-[#5286F6] px-5 py-2.5 text-[14px] font-semibold text-[#2F2F2F] hover:bg-[#5286F6] hover:text-white"
+            >
+              Scheduled emails
+            </Link>
+
             <button
               type="button"
               onClick={() => navigate("/sessions")}
@@ -1120,83 +1153,40 @@ export default function AdminPage() {
 
         {tab === "dashboard" && (
           <>
-            <section className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {[
-                ["Registrations today", stats.registrationsToday],
-                ["Registrations 7d", stats.registrationsWeek],
-                ["Registrations 30d", stats.registrationsMonth],
+            <div className="mt-8 flex justify-end">
+              <button
+                type="button"
+                onClick={() => void loadDashboard()}
+                className="rounded-full border border-black/10 px-4 py-2 text-[13px] font-semibold hover:bg-black/[0.04]"
+              >
+                {dashboardLoading ? "Refreshing..." : "Refresh dashboard"}
+              </button>
+            </div>
 
-                ["Sessions created today", stats.sessionsCreatedToday],
-                ["Sessions created 7d", stats.sessionsCreatedWeek],
-                ["Sessions created 30d", stats.sessionsCreatedMonth],
+            <section className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <MetricCard label="Registrations today" value={stats.registrationsToday} hint="New profiles created today." data={chartData} dataKey="registrations" color="#2563EB" />
+              <MetricCard label="Registrations 7d" value={stats.registrationsWeek} hint="New profiles in the last 7 days." data={chartData} dataKey="registrations" color="#2563EB" />
+              <MetricCard label="Registrations 30d" value={stats.registrationsMonth} hint="New profiles in the last 30 days." data={chartData} dataKey="registrations" color="#2563EB" />
 
-                ["Sessions hosted today", stats.sessionsHostedToday],
-                ["Sessions hosted 7d", stats.sessionsHostedWeek],
-                ["Sessions hosted 30d", stats.sessionsHostedMonth],
+              <MetricCard label="Sessions created today" value={stats.sessionsCreatedToday} hint="Rows created in sessions table today." data={chartData} dataKey="sessionsCreated" color="#7C3AED" />
+              <MetricCard label="Sessions hosted today" value={stats.sessionsHostedToday} hint="Sessions whose start_time already happened today." data={chartData} dataKey="sessionsHosted" color="#059669" />
+              <MetricCard label="Active hosts 7d" value={stats.activeHostsWeek} hint="Unique hosts who created sessions in 7 days." data={chartData} dataKey="activeHosts" color="#EA580C" />
 
-                ["Attendance records today", stats.attendanceRecordsToday],
-                ["Attendance records 7d", stats.attendanceRecordsWeek],
-                ["Attendance records 30d", stats.attendanceRecordsMonth],
+              <MetricCard label="Unique attendees today" value={stats.uniqueAttendeesToday} hint="Distinct user IDs from session_attendance today." data={chartData} dataKey="uniqueAttendees" color="#BE123C" />
+              <MetricCard label="Attendance records today" value={stats.attendanceRecordsToday} hint="All session_attendance rows today." data={chartData} dataKey="attendanceRecords" color="#DC2626" />
+              <MetricCard label="Attended sessions today" value={stats.attendedSessionsToday} hint="Distinct session IDs from session_attendance today." data={chartData} dataKey="attendedSessions" color="#4338CA" />
 
-                ["Unique attendees today", stats.uniqueAttendeesToday],
-                ["Unique attendees 7d", stats.uniqueAttendeesWeek],
-                ["Unique attendees 30d", stats.uniqueAttendeesMonth],
+              <MetricCard label="Unique attendees 7d" value={stats.uniqueAttendeesWeek} hint="Distinct users from session_attendance in 7 days." data={chartData} dataKey="uniqueAttendees" color="#BE123C" />
+              <MetricCard label="Booked users 7d" value={stats.uniqueBookedUsersWeek} hint="Distinct users from session_bookings in 7 days." data={chartData} dataKey="bookedUsers" color="#0891B2" />
+              <MetricCard label="Booked → attended 7d" value={formatPercent(stats.bookedToAttendedConversionWeek)} hint="Unique attendees divided by booked users." data={chartData} dataKey="avgAttendeesPerSession" color="#C2410C" percent />
 
-                ["Attended sessions today", stats.attendedSessionsToday],
-                ["Attended sessions 7d", stats.attendedSessionsWeek],
-                ["Attended sessions 30d", stats.attendedSessionsMonth],
+              <MetricCard label="Avg attendees/session 7d" value={formatNumber(stats.avgAttendeesPerHostedSessionWeek, 2)} hint="Unique attendees divided by attended sessions." data={chartData} dataKey="avgAttendeesPerSession" color="#C2410C" decimals={2} />
+              <MetricCard label="Available host balance" value={formatMoney(stats.availableHostBalanceUsd)} hint="Available host support balance." data={chartData} dataKey="supportUsd" color="#16A34A" money />
+              <MetricCard label="Pending payouts" value={formatMoney(stats.pendingPayoutUsd)} hint="Requested or processing payouts." data={chartData} dataKey="pendingPayoutUsd" color="#CA8A04" money />
 
-                ["Booked users today", stats.uniqueBookedUsersToday],
-                ["Booked users 7d", stats.uniqueBookedUsersWeek],
-                ["Booked users 30d", stats.uniqueBookedUsersMonth],
-
-                ["Active hosts 7d", stats.activeHostsWeek],
-                ["Avg attendees/session 7d", formatNumber(stats.avgAttendeesPerHostedSessionWeek, 2)],
-                ["Booked → attended 7d", formatPercent(stats.bookedToAttendedConversionWeek)],
-
-                ["Available host balance", formatMoney(stats.availableHostBalanceUsd)],
-                ["Pending payouts", formatMoney(stats.pendingPayoutUsd)],
-                ["Open payout requests", requestedPayouts.length],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-[22px] border border-black/10 bg-gray-50 p-5">
-                  <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
-                    {label}
-                  </div>
-                  <div className="mt-2 text-[28px] font-bold text-[#2F2F2F]">{value}</div>
-                </div>
-              ))}
-            </section>
-
-            <section className="mt-8">
-              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <h2 className="text-[20px] font-bold">Growth charts</h2>
-                  <p className="mt-1 text-[13px] text-[#666]">
-                    Hover points to inspect exact daily values.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => void loadDashboard()}
-                  className="rounded-full border border-black/10 px-4 py-2 text-[13px] font-semibold hover:bg-black/[0.04]"
-                >
-                  {dashboardLoading ? "Refreshing..." : "Refresh charts"}
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <InteractiveLineChart title="New registrations" description="New profile rows created per day." data={chartData} dataKey="registrations" color="#2563EB" />
-                <InteractiveLineChart title="Sessions created" description="New sessions created per day." data={chartData} dataKey="sessionsCreated" color="#7C3AED" />
-                <InteractiveLineChart title="Sessions hosted" description="Sessions whose start_time has already happened." data={chartData} dataKey="sessionsHosted" color="#059669" />
-                <InteractiveLineChart title="Active hosts" description="Unique hosts creating or hosting sessions per day." data={chartData} dataKey="activeHosts" color="#EA580C" />
-                <InteractiveLineChart title="Unique booked users" description="Unique users booking sessions per day." data={chartData} dataKey="bookedUsers" color="#0891B2" />
-                <InteractiveLineChart title="Attendance records" description="All rows from session_attendance per day." data={chartData} dataKey="attendanceRecords" color="#DC2626" />
-                <InteractiveLineChart title="Unique attendees" description="Distinct users from session_attendance per day." data={chartData} dataKey="uniqueAttendees" color="#BE123C" />
-                <InteractiveLineChart title="Attended sessions" description="Distinct session_id values from session_attendance per day." data={chartData} dataKey="attendedSessions" color="#4338CA" />
-                <InteractiveLineChart title="Avg attendees/session" description="Unique attendees divided by attended sessions." data={chartData} dataKey="avgAttendeesPerSession" color="#C2410C" decimals={2} />
-                <InteractiveLineChart title="Host support received" description="Available or paid-out host support per day." data={chartData} dataKey="supportUsd" color="#16A34A" money />
-              </div>
+              <MetricCard label="Open payout requests" value={stats.openPayoutRequests} hint="Requested or processing payout requests." data={chartData} dataKey="openPayoutRequests" color="#0F766E" />
+              <MetricCard label="Sessions created 30d" value={stats.sessionsCreatedMonth} hint="Rows created in sessions table in 30 days." data={chartData} dataKey="sessionsCreated" color="#7C3AED" />
+              <MetricCard label="Sessions hosted 30d" value={stats.sessionsHostedMonth} hint="Sessions started in the last 30 days." data={chartData} dataKey="sessionsHosted" color="#059669" />
             </section>
 
             <section className="mt-8 rounded-[28px] border border-black/10 bg-white p-5">
@@ -1207,14 +1197,6 @@ export default function AdminPage() {
                     Manual payout queue for approved hosts.
                   </p>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => void loadDashboard()}
-                  className="rounded-full border border-black/10 px-4 py-2 text-[13px] font-semibold hover:bg-black/[0.04]"
-                >
-                  {dashboardLoading ? "Refreshing..." : "Refresh"}
-                </button>
               </div>
 
               <div className="mt-5 space-y-3">
