@@ -3,6 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 
+type HostSupportPaymentRow = {
+  id: string;
+  host_amount_usd: number | null;
+  gross_amount_usd: number | null;
+  platform_fee_usd: number | null;
+  status: string | null;
+  created_at: string | null;
+};
 
 function getScheduleDurationMinutes(schedule: any): number {
   if (!schedule) return 0;
@@ -92,6 +100,17 @@ function formatSessionDateTime(isoOrMs?: string | number | null) {
   }).format(date);
 }
 
+function formatMoney(value: number) {
+  const safe = Number.isFinite(value) ? value : 0;
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(safe);
+}
+
 function sortUpcomingSessions(a: any, b: any) {
   const aStart = getSessionStartMs(a) ?? Number.POSITIVE_INFINITY;
   const bStart = getSessionStartMs(b) ?? Number.POSITIVE_INFINITY;
@@ -111,22 +130,20 @@ export default function ProfilePage() {
   const [fullName, setFullName] = useState("");
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
-
-  // ✅ Since: Month + Year
   const [createdAt, setCreatedAt] = useState<string>("—");
 
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-
   const [editButtonHover, setEditButtonHover] = useState(false);
 
-  // Sessions hosted by this user
   const [sessions, setSessions] = useState<any[]>([]);
-
-  // ✅ comes from `profiles.attended_sessions_count`
   const [attendedCount, setAttendedCount] = useState<number>(0);
   const [followersCount, setFollowersCount] = useState<number>(0);
+
+  const [hostSupportApproved, setHostSupportApproved] = useState(false);
+  const [hostSupportLoading, setHostSupportLoading] = useState(false);
+  const [hostSupportPayments, setHostSupportPayments] = useState<HostSupportPaymentRow[]>([]);
 
   const displayName = useMemo(() => fullName || "User", [fullName]);
 
@@ -135,6 +152,41 @@ export default function ProfilePage() {
   }, [displayName]);
 
   const hasHostedSessions = sessions.length > 0;
+
+  const hostBalance = useMemo(() => {
+    return hostSupportPayments.reduce(
+      (acc, payment) => {
+        const hostAmount = Number(payment.host_amount_usd || 0);
+        const grossAmount = Number(payment.gross_amount_usd || 0);
+        const status = String(payment.status || "").toLowerCase();
+
+        if (status === "available") {
+          acc.availableUsd += hostAmount;
+          acc.totalReceivedUsd += hostAmount;
+          acc.totalGrossUsd += grossAmount;
+        } else if (status === "pending") {
+          acc.pendingUsd += hostAmount;
+        } else if (status === "paid_out") {
+          acc.paidOutUsd += hostAmount;
+          acc.totalReceivedUsd += hostAmount;
+          acc.totalGrossUsd += grossAmount;
+        }
+
+        return acc;
+      },
+      {
+        availableUsd: 0,
+        pendingUsd: 0,
+        paidOutUsd: 0,
+        totalReceivedUsd: 0,
+        totalGrossUsd: 0,
+      }
+    );
+  }, [hostSupportPayments]);
+
+  const recentSupportPayments = useMemo(() => {
+    return hostSupportPayments.slice(0, 5);
+  }, [hostSupportPayments]);
 
   const upcomingSessions = useMemo(() => {
     const now = Date.now();
@@ -158,14 +210,14 @@ export default function ProfilePage() {
       .sort(sortHostedSessions);
   }, [sessions]);
 
-  // === STATUS BADGES ===
   const getSessionStatus = (session: any) => {
     if (!session.start_time) return null;
 
     const now = Date.now();
     const start = new Date(session.start_time).getTime();
 
-    const durationMinutes = getScheduleDurationMinutes(session.schedule);
+    const durationMinutes =
+      Number(session.duration_minutes) || getScheduleDurationMinutes(session.schedule);
     const end = start + durationMinutes * 60 * 1000;
 
     if (now < start) return "Upcoming";
@@ -186,7 +238,24 @@ export default function ProfilePage() {
     }
   };
 
-  // ✅ Month Year formatter (English UI)
+  const getPaymentBadgeClass = (status: string | null) => {
+    const normalized = String(status || "").toLowerCase();
+
+    if (normalized === "available") {
+      return "bg-[#DCFCE7] text-[#15803D]";
+    }
+
+    if (normalized === "pending") {
+      return "bg-[#FEF3C7] text-[#92400E]";
+    }
+
+    if (normalized === "paid_out") {
+      return "bg-[#DBEAFE] text-[#1D4ED8]";
+    }
+
+    return "bg-[#E5E7EB] text-[#374151]";
+  };
+
   const formatSince = (iso: string) => {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "—";
@@ -196,12 +265,10 @@ export default function ProfilePage() {
     }).format(d);
   };
 
-  // Redirect
   useEffect(() => {
     if (!loading && !user) navigate("/login", { replace: true });
   }, [loading, user, navigate]);
 
-  // ✅ Prefill quickly from context (if exists)
   useEffect(() => {
     if (!profile) return;
 
@@ -210,18 +277,15 @@ export default function ProfilePage() {
 
     const p: any = profile as any;
 
-    // ✅ correct column name
     if (typeof p.attended_sessions_count === "number") {
       setAttendedCount(p.attended_sessions_count);
     }
 
-    // optional: if your context already has created_at
     if (typeof p.created_at === "string" && p.created_at) {
       setCreatedAt(formatSince(p.created_at));
     }
   }, [profile]);
 
-  // ✅ Load profile fields from supabase (BIO + attendedCount + created_at)
   useEffect(() => {
     if (!user) return;
 
@@ -243,14 +307,12 @@ export default function ProfilePage() {
       setBio(data.bio || "");
       setAvatarUrl(data.avatar_url || null);
 
-      // ✅ attended_sessions_count from profiles
       if (typeof (data as any).attended_sessions_count === "number") {
         setAttendedCount((data as any).attended_sessions_count);
       } else {
         setAttendedCount(0);
       }
 
-      // ✅ created_at from profiles -> Month Year
       if (data.created_at) setCreatedAt(formatSince(data.created_at));
       else setCreatedAt("—");
     };
@@ -258,7 +320,6 @@ export default function ProfilePage() {
     loadProfile();
   }, [user]);
 
-  // Load hosted sessions
   useEffect(() => {
     if (!user?.id) return;
 
@@ -275,7 +336,6 @@ export default function ProfilePage() {
     loadSessions();
   }, [user?.id]);
 
-  // Load follower count for this host profile
   useEffect(() => {
     if (!user?.id) return;
 
@@ -303,7 +363,69 @@ export default function ProfilePage() {
     };
   }, [user?.id]);
 
-  // Upload avatar
+  useEffect(() => {
+    if (!user?.id) return;
+
+    let cancelled = false;
+
+    const loadHostSupportBalance = async () => {
+      setHostSupportLoading(true);
+
+      try {
+        const { data: monetization, error: monetizationError } = await supabase
+          .from("host_monetization_profiles")
+          .select("status, support_enabled")
+          .eq("host_user_id", user.id)
+          .maybeSingle();
+
+        if (cancelled) return;
+
+        if (monetizationError) {
+          console.warn("Failed to load host monetization profile:", monetizationError);
+          setHostSupportApproved(false);
+          setHostSupportPayments([]);
+          return;
+        }
+
+        const approved =
+          (monetization as any)?.status === "active" &&
+          (monetization as any)?.support_enabled === true;
+
+        setHostSupportApproved(approved);
+
+        if (!approved) {
+          setHostSupportPayments([]);
+          return;
+        }
+
+        const { data: payments, error: paymentsError } = await supabase
+          .from("host_support_payments")
+          .select("id, host_amount_usd, gross_amount_usd, platform_fee_usd, status, created_at")
+          .eq("host_user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        if (cancelled) return;
+
+        if (paymentsError) {
+          console.warn("Failed to load host support payments:", paymentsError);
+          setHostSupportPayments([]);
+          return;
+        }
+
+        setHostSupportPayments((payments as HostSupportPaymentRow[]) || []);
+      } finally {
+        if (!cancelled) setHostSupportLoading(false);
+      }
+    };
+
+    loadHostSupportBalance();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
       const file = e.target.files?.[0];
@@ -344,7 +466,6 @@ export default function ProfilePage() {
     }
   };
 
-  // Save profile (НЕ трогаем attended_sessions_count и created_at)
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
@@ -374,7 +495,6 @@ export default function ProfilePage() {
     }
   };
 
-  // Loading state
   if (loading) {
     return (
       <div className="flex justify-center pt-20">
@@ -401,7 +521,6 @@ export default function ProfilePage() {
 
   return (
     <main className="w-full px-8 pt-10 pb-24 font-inter text-gray-900">
-      {/* Header buttons */}
       <div className="flex items-center justify-between mb-10">
         <button
           onClick={() => navigate(-1)}
@@ -464,7 +583,6 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Avatar + Name */}
       <div className="flex flex-col items-center">
         <div className="relative">
           <img
@@ -549,10 +667,8 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* Divider */}
       <div className="mt-10 border-t border-gray-200" />
 
-      {/* BIO */}
       <section className="mt-8">
         <h2 className="font-semibold mb-2">Bio:</h2>
 
@@ -576,10 +692,8 @@ export default function ProfilePage() {
         )}
       </section>
 
-      {/* Divider */}
       <div className="mt-16 border-t border-gray-200" />
 
-      {/* Host block */}
       <section className="mt-10">
         <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -623,7 +737,122 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      {/* Upcoming + Hosted Sessions */}
+      {hostSupportApproved && (
+        <section className="mt-8">
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <div className="flex flex-col gap-3 border-b border-gray-200 bg-gray-50 px-6 py-5 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-xl font-bold text-[#2F2F2F]">Host balance</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Support received through your public host profile.
+                </p>
+              </div>
+
+              {hostSupportLoading && (
+                <span className="text-sm text-gray-500">Loading balance…</span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 px-6 py-5 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+                  Available
+                </div>
+                <div className="mt-2 text-2xl font-bold text-[#15803D]">
+                  {formatMoney(hostBalance.availableUsd)}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+                  Pending
+                </div>
+                <div className="mt-2 text-2xl font-bold text-[#92400E]">
+                  {formatMoney(hostBalance.pendingUsd)}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+                  Paid out
+                </div>
+                <div className="mt-2 text-2xl font-bold text-[#1D4ED8]">
+                  {formatMoney(hostBalance.paidOutUsd)}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">
+                  Total received
+                </div>
+                <div className="mt-2 text-2xl font-bold text-[#2F2F2F]">
+                  {formatMoney(hostBalance.totalReceivedUsd)}
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-200 px-6 py-5">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-[15px] font-bold text-[#2F2F2F]">
+                  Recent support
+                </h3>
+
+                <span className="text-[12px] text-gray-500">
+                  Showing latest {recentSupportPayments.length}
+                </span>
+              </div>
+
+              {recentSupportPayments.length === 0 ? (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-5 text-sm text-slate-500">
+                  No support payments yet.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {recentSupportPayments.map((payment) => {
+                    const status = String(payment.status || "unknown");
+                    return (
+                      <div
+                        key={payment.id}
+                        className="flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3"
+                      >
+                        <div>
+                          <div className="text-[14px] font-semibold text-[#2F2F2F]">
+                            {formatMoney(Number(payment.host_amount_usd || 0))}
+                          </div>
+                          <div className="mt-0.5 text-[12px] text-gray-500">
+                            Gross {formatMoney(Number(payment.gross_amount_usd || 0))} · Fee{" "}
+                            {formatMoney(Number(payment.platform_fee_usd || 0))}
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-3">
+                          <span className="text-right text-[12px] text-gray-500">
+                            {formatSessionDateTime(payment.created_at)}
+                          </span>
+
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${getPaymentBadgeClass(
+                              status
+                            )}`}
+                          >
+                            {status}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <p className="mt-4 text-[12px] leading-5 text-gray-500">
+                Payouts are currently handled manually. Available balance means the payment
+                succeeded and is recorded for host payout.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="mt-10">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div>
