@@ -80,6 +80,15 @@ type ChartPoint = {
   supportUsd: number;
 };
 
+type ChartKey =
+  | "registrations"
+  | "sessionsCreated"
+  | "sessionsHosted"
+  | "activeHosts"
+  | "bookedUsers"
+  | "attendees"
+  | "supportUsd";
+
 function getInitial(name: string) {
   return (String(name || "").trim()[0] || "U").toUpperCase();
 }
@@ -138,83 +147,6 @@ function makeLastDays(days: number) {
   });
 }
 
-function MiniLineChart({
-  title,
-  description,
-  data,
-  dataKey,
-  money = false,
-}: {
-  title: string;
-  description: string;
-  data: ChartPoint[];
-  dataKey: keyof ChartPoint;
-  money?: boolean;
-}) {
-  const values = data.map((d) => Number(d[dataKey] || 0));
-  const max = Math.max(...values, 1);
-  const total = values.reduce((sum, value) => sum + value, 0);
-
-  const points = values
-    .map((value, index) => {
-      const x = values.length <= 1 ? 0 : (index / (values.length - 1)) * 100;
-      const y = 38 - (value / max) * 34;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <div className="rounded-[22px] border border-black/10 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-[14px] font-bold text-[#2F2F2F]">{title}</h3>
-          <p className="mt-1 text-[12px] text-[#777]">{description}</p>
-        </div>
-
-        <div className="shrink-0 text-right text-[18px] font-bold text-[#2F2F2F]">
-          {money ? formatMoney(total) : total}
-        </div>
-      </div>
-
-      <svg viewBox="0 0 100 42" className="mt-4 h-24 w-full overflow-visible">
-        <line x1="0" y1="38" x2="100" y2="38" className="stroke-black/10" strokeWidth="1" />
-        <line x1="0" y1="21" x2="100" y2="21" className="stroke-black/5" strokeWidth="1" />
-        <line x1="0" y1="4" x2="100" y2="4" className="stroke-black/5" strokeWidth="1" />
-
-        <polyline
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          points={points}
-          className="text-[#2F2F2F]"
-        />
-
-        {values.map((value, index) => {
-          const x = values.length <= 1 ? 0 : (index / (values.length - 1)) * 100;
-          const y = 38 - (value / max) * 34;
-
-          return (
-            <circle
-              key={`${title}-${index}`}
-              cx={x}
-              cy={y}
-              r="1.8"
-              className="fill-[#2F2F2F]"
-            />
-          );
-        })}
-      </svg>
-
-      <div className="mt-2 flex justify-between text-[10px] text-[#999]">
-        <span>{data[0]?.label || "—"}</span>
-        <span>{data[data.length - 1]?.label || "—"}</span>
-      </div>
-    </div>
-  );
-}
-
 function getPaymentBadgeClass(status: string | null) {
   const normalized = String(status || "").toLowerCase();
 
@@ -224,6 +156,193 @@ function getPaymentBadgeClass(status: string | null) {
   if (normalized === "rejected") return "bg-red-100 text-red-700";
 
   return "bg-[#E5E7EB] text-[#374151]";
+}
+
+function InteractiveLineChart({
+  title,
+  description,
+  data,
+  dataKey,
+  color,
+  money = false,
+}: {
+  title: string;
+  description: string;
+  data: ChartPoint[];
+  dataKey: ChartKey;
+  color: string;
+  money?: boolean;
+}) {
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
+  const values = data.map((d) => Number(d[dataKey] || 0));
+  const max = Math.max(...values, 1);
+  const total = values.reduce((sum, value) => sum + value, 0);
+
+  const chartWidth = 100;
+  const chartHeight = 44;
+  const topPad = 5;
+  const bottomPad = 36;
+  const usableHeight = bottomPad - topPad;
+
+  const getX = (index: number) =>
+    values.length <= 1 ? 0 : (index / (values.length - 1)) * chartWidth;
+
+  const getY = (value: number) => bottomPad - (value / max) * usableHeight;
+
+  const points = values
+    .map((value, index) => `${getX(index)},${getY(value)}`)
+    .join(" ");
+
+  const activeIndex = hoverIndex ?? values.length - 1;
+  const activePoint = data[activeIndex];
+  const activeValue = values[activeIndex] || 0;
+  const activeX = getX(activeIndex);
+  const activeY = getY(activeValue);
+
+  const displayValue = money ? formatMoney(activeValue) : String(activeValue);
+  const totalValue = money ? formatMoney(total) : String(total);
+
+  return (
+    <div className="rounded-[22px] border border-black/10 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-[14px] font-bold text-[#2F2F2F]">{title}</h3>
+          <p className="mt-1 text-[12px] text-[#777]">{description}</p>
+        </div>
+
+        <div className="shrink-0 text-right">
+          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#999]">
+            14d total
+          </div>
+          <div className="text-[18px] font-bold text-[#2F2F2F]">{totalValue}</div>
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-2xl bg-gray-50 px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#777]">
+              Hovered day
+            </div>
+            <div className="mt-1 text-[14px] font-bold text-[#2F2F2F]">
+              {activePoint?.dateKey || "—"}
+            </div>
+          </div>
+
+          <div className="text-right">
+            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#777]">
+              Value
+            </div>
+            <div className="mt-1 text-[18px] font-bold" style={{ color }}>
+              {displayValue}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="relative mt-4">
+        <svg viewBox="0 0 100 46" className="h-28 w-full overflow-visible">
+          <line x1="0" y1="36" x2="100" y2="36" stroke="rgba(0,0,0,0.12)" strokeWidth="1" />
+          <line x1="0" y1="25" x2="100" y2="25" stroke="rgba(0,0,0,0.06)" strokeWidth="1" />
+          <line x1="0" y1="14" x2="100" y2="14" stroke="rgba(0,0,0,0.06)" strokeWidth="1" />
+          <line x1="0" y1="5" x2="100" y2="5" stroke="rgba(0,0,0,0.06)" strokeWidth="1" />
+
+          {hoverIndex !== null && (
+            <line
+              x1={activeX}
+              y1="4"
+              x2={activeX}
+              y2="38"
+              stroke={color}
+              strokeWidth="0.8"
+              strokeDasharray="2 2"
+              opacity="0.75"
+            />
+          )}
+
+          <polyline
+            fill="none"
+            stroke={color}
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            points={points}
+          />
+
+          <polyline
+            fill="none"
+            stroke={color}
+            strokeWidth="9"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            points={points}
+            opacity="0.12"
+          />
+
+          {values.map((value, index) => {
+            const x = getX(index);
+            const y = getY(value);
+            const active = index === activeIndex;
+
+            return (
+              <g key={`${title}-${index}`}>
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={active ? "3.7" : "2.3"}
+                  fill="white"
+                  stroke={color}
+                  strokeWidth={active ? "2.4" : "1.8"}
+                />
+
+                <rect
+                  x={x - 4}
+                  y="0"
+                  width="8"
+                  height="44"
+                  fill="transparent"
+                  onMouseEnter={() => setHoverIndex(index)}
+                  onMouseLeave={() => setHoverIndex(null)}
+                  className="cursor-crosshair"
+                />
+              </g>
+            );
+          })}
+
+          {hoverIndex !== null && (
+            <g>
+              <rect
+                x={Math.min(Math.max(activeX - 16, 0), 68)}
+                y={Math.max(activeY - 15, 1)}
+                width="32"
+                height="10"
+                rx="3"
+                fill="white"
+                stroke={color}
+                strokeWidth="0.8"
+              />
+              <text
+                x={Math.min(Math.max(activeX, 16), 84)}
+                y={Math.max(activeY - 8, 8)}
+                textAnchor="middle"
+                fontSize="3.5"
+                fontWeight="700"
+                fill={color}
+              >
+                {displayValue}
+              </text>
+            </g>
+          )}
+        </svg>
+
+        <div className="mt-1 flex justify-between text-[10px] text-[#999]">
+          <span>{data[0]?.label || "—"}</span>
+          <span>{data[data.length - 1]?.label || "—"}</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function AdminPage() {
@@ -297,8 +416,16 @@ export default function AdminPage() {
     }
   };
 
-  const safeCount = async (table: string, column: string, fromIso: string, extra?: { lteNow?: boolean }) => {
-    let q = supabase.from(table).select("id", { count: "exact", head: true }).gte(column, fromIso);
+  const safeCount = async (
+    table: string,
+    column: string,
+    fromIso: string,
+    extra?: { lteNow?: boolean }
+  ) => {
+    let q = supabase
+      .from(table)
+      .select("id", { count: "exact", head: true })
+      .gte(column, fromIso);
 
     if (extra?.lteNow) {
       q = q.lte(column, new Date().toISOString());
@@ -376,34 +503,17 @@ export default function AdminPage() {
           .order("created_at", { ascending: false })
           .limit(50),
 
-        supabase
-          .from("host_support_payments")
-          .select("host_amount_usd, status"),
+        supabase.from("host_support_payments").select("host_amount_usd, status"),
 
-        supabase
-          .from("session_bookings")
-          .select("user_id")
-          .gte("created_at", weekIso),
+        supabase.from("session_bookings").select("user_id").gte("created_at", weekIso),
 
-        supabase
-          .from("session_attendance")
-          .select("user_id")
-          .gte("created_at", weekIso),
+        supabase.from("session_attendance").select("user_id").gte("created_at", weekIso),
 
-        supabase
-          .from("sessions")
-          .select("host_id")
-          .gte("created_at", weekIso),
+        supabase.from("sessions").select("host_id").gte("created_at", weekIso),
 
-        supabase
-          .from("profiles")
-          .select("id, created_at")
-          .gte("created_at", chartIso),
+        supabase.from("profiles").select("id, created_at").gte("created_at", chartIso),
 
-        supabase
-          .from("sessions")
-          .select("id, host_id, created_at")
-          .gte("created_at", chartIso),
+        supabase.from("sessions").select("id, host_id, created_at").gte("created_at", chartIso),
 
         supabase
           .from("sessions")
@@ -411,15 +521,9 @@ export default function AdminPage() {
           .gte("start_time", chartIso)
           .lte("start_time", nowIso),
 
-        supabase
-          .from("session_bookings")
-          .select("user_id, created_at")
-          .gte("created_at", chartIso),
+        supabase.from("session_bookings").select("user_id, created_at").gte("created_at", chartIso),
 
-        supabase
-          .from("session_attendance")
-          .select("user_id, created_at")
-          .gte("created_at", chartIso),
+        supabase.from("session_attendance").select("user_id, created_at").gte("created_at", chartIso),
 
         supabase
           .from("host_support_payments")
@@ -457,9 +561,11 @@ export default function AdminPage() {
       const weeklyHosts = new Set(
         ((weeklySessionsResult.data as any[]) || []).map((s) => s.host_id).filter(Boolean)
       );
+
       const weeklyBookedUsers = new Set(
         ((bookingsResult.data as any[]) || []).map((b) => b.user_id).filter(Boolean)
       );
+
       const weeklyAttendees = new Set(
         ((attendanceResult.data as any[]) || []).map((a) => a.user_id).filter(Boolean)
       );
@@ -852,9 +958,7 @@ export default function AdminPage() {
                   <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
                     {label}
                   </div>
-                  <div className="mt-2 text-[28px] font-bold text-[#2F2F2F]">
-                    {value}
-                  </div>
+                  <div className="mt-2 text-[28px] font-bold text-[#2F2F2F]">{value}</div>
                 </div>
               ))}
             </section>
@@ -878,53 +982,60 @@ export default function AdminPage() {
               </div>
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <MiniLineChart
+                <InteractiveLineChart
                   title="New registrations"
                   description="New profile rows created per day."
                   data={chartData}
                   dataKey="registrations"
+                  color="#2563EB"
                 />
 
-                <MiniLineChart
+                <InteractiveLineChart
                   title="Sessions created"
                   description="New sessions created per day."
                   data={chartData}
                   dataKey="sessionsCreated"
+                  color="#7C3AED"
                 />
 
-                <MiniLineChart
+                <InteractiveLineChart
                   title="Sessions hosted"
                   description="Sessions whose start time has already happened."
                   data={chartData}
                   dataKey="sessionsHosted"
+                  color="#059669"
                 />
 
-                <MiniLineChart
+                <InteractiveLineChart
                   title="Active hosts"
                   description="Unique hosts creating or hosting sessions per day."
                   data={chartData}
                   dataKey="activeHosts"
+                  color="#EA580C"
                 />
 
-                <MiniLineChart
+                <InteractiveLineChart
                   title="Unique booked users"
                   description="Unique users booking sessions per day."
                   data={chartData}
                   dataKey="bookedUsers"
+                  color="#0891B2"
                 />
 
-                <MiniLineChart
+                <InteractiveLineChart
                   title="Unique attendees"
                   description="Unique users appearing in attendance per day."
                   data={chartData}
                   dataKey="attendees"
+                  color="#DC2626"
                 />
 
-                <MiniLineChart
+                <InteractiveLineChart
                   title="Host support received"
                   description="Available or paid-out host support per day."
                   data={chartData}
                   dataKey="supportUsd"
+                  color="#16A34A"
                   money
                 />
               </div>
@@ -967,7 +1078,9 @@ export default function AdminPage() {
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <div className="text-[15px] font-bold">{formatMoney(Number(payout.amount_usd || 0))}</div>
+                              <div className="text-[15px] font-bold">
+                                {formatMoney(Number(payout.amount_usd || 0))}
+                              </div>
                               <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${getPaymentBadgeClass(status)}`}>
                                 {status}
                               </span>
@@ -981,9 +1094,7 @@ export default function AdminPage() {
                               Requested: {formatDateTime(payout.requested_at || payout.created_at)}
                             </div>
 
-                            {payout.note ? (
-                              <div className="mt-2 text-[13px] text-[#666]">{payout.note}</div>
-                            ) : null}
+                            {payout.note ? <div className="mt-2 text-[13px] text-[#666]">{payout.note}</div> : null}
                           </div>
 
                           <div className="flex flex-wrap gap-2">
@@ -1039,17 +1150,13 @@ export default function AdminPage() {
                   notifications.map((notification) => (
                     <div
                       key={notification.id}
-                      className={`rounded-2xl border px-4 py-4 ${notification.read_at
-                          ? "border-black/10 bg-gray-50"
-                          : "border-blue-200 bg-blue-50"
+                      className={`rounded-2xl border px-4 py-4 ${notification.read_at ? "border-black/10 bg-gray-50" : "border-blue-200 bg-blue-50"
                         }`}
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
                           <div className="text-[14px] font-bold">{notification.title}</div>
-                          {notification.body ? (
-                            <div className="mt-1 text-[13px] text-[#666]">{notification.body}</div>
-                          ) : null}
+                          {notification.body ? <div className="mt-1 text-[13px] text-[#666]">{notification.body}</div> : null}
                           <div className="mt-2 text-[12px] text-[#777]">
                             {notification.type} · {formatDateTime(notification.created_at)}
                           </div>
@@ -1171,9 +1278,7 @@ export default function AdminPage() {
                           <div className="text-[13px] font-bold text-[#2F2F2F]">
                             User: {ban.banned_user_id}
                           </div>
-                          <div className="mt-1 text-[13px] leading-5 text-[#666]">
-                            {ban.reason}
-                          </div>
+                          <div className="mt-1 text-[13px] leading-5 text-[#666]">{ban.reason}</div>
                           <div className="mt-2 text-[12px] text-[#777]">
                             Ends: <span className="font-semibold">{formatBanEnd(ban.expires_at || null)}</span>
                           </div>
