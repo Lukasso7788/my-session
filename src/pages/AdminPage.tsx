@@ -61,9 +61,26 @@ type AdminStats = {
   sessionsHostedWeek: number;
   sessionsHostedMonth: number;
 
-  activeHostsWeek: number;
-  uniqueBookedUsersWeek: number;
+  attendanceRecordsToday: number;
+  attendanceRecordsWeek: number;
+  attendanceRecordsMonth: number;
+
+  uniqueAttendeesToday: number;
   uniqueAttendeesWeek: number;
+  uniqueAttendeesMonth: number;
+
+  attendedSessionsToday: number;
+  attendedSessionsWeek: number;
+  attendedSessionsMonth: number;
+
+  uniqueBookedUsersToday: number;
+  uniqueBookedUsersWeek: number;
+  uniqueBookedUsersMonth: number;
+
+  activeHostsWeek: number;
+  avgAttendeesPerHostedSessionWeek: number;
+  bookedToAttendedConversionWeek: number;
+
   availableHostBalanceUsd: number;
   pendingPayoutUsd: number;
 };
@@ -76,7 +93,10 @@ type ChartPoint = {
   sessionsHosted: number;
   activeHosts: number;
   bookedUsers: number;
-  attendees: number;
+  attendanceRecords: number;
+  uniqueAttendees: number;
+  attendedSessions: number;
+  avgAttendeesPerSession: number;
   supportUsd: number;
 };
 
@@ -86,8 +106,13 @@ type ChartKey =
   | "sessionsHosted"
   | "activeHosts"
   | "bookedUsers"
-  | "attendees"
+  | "attendanceRecords"
+  | "uniqueAttendees"
+  | "attendedSessions"
+  | "avgAttendeesPerSession"
   | "supportUsd";
+
+type AnyRow = Record<string, any>;
 
 function getInitial(name: string) {
   return (String(name || "").trim()[0] || "U").toUpperCase();
@@ -102,6 +127,19 @@ function formatMoney(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(safe);
+}
+
+function formatNumber(value: number, digits = 0) {
+  const safe = Number.isFinite(value) ? value : 0;
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(safe);
+}
+
+function formatPercent(value: number) {
+  const safe = Number.isFinite(value) ? value : 0;
+  return `${formatNumber(safe, 1)}%`;
 }
 
 function formatDateTime(value?: string | null) {
@@ -127,11 +165,16 @@ function daysAgoIso(days: number) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
+function toMs(value?: string | null) {
+  if (!value) return 0;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
 function toDateKey(value?: string | null) {
-  if (!value) return "";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toISOString().slice(0, 10);
+  const ms = toMs(value);
+  if (!ms) return "";
+  return new Date(ms).toISOString().slice(0, 10);
 }
 
 function makeLastDays(days: number) {
@@ -147,6 +190,39 @@ function makeLastDays(days: number) {
   });
 }
 
+function getRowTimestamp(row: AnyRow): string {
+  return String(
+    row.created_at ||
+    row.joined_at ||
+    row.started_at ||
+    row.entered_at ||
+    row.first_seen_at ||
+    row.last_seen_at ||
+    row.updated_at ||
+    row.left_at ||
+    ""
+  );
+}
+
+function getAttendanceUserId(row: AnyRow): string {
+  return String(
+    row.user_id ||
+    row.participant_user_id ||
+    row.attendee_user_id ||
+    row.profile_id ||
+    row.member_user_id ||
+    ""
+  ).trim();
+}
+
+function getAttendanceSessionId(row: AnyRow): string {
+  return String(row.session_id || row.room_session_id || row.session || "").trim();
+}
+
+function getBookingUserId(row: AnyRow): string {
+  return String(row.user_id || row.booked_user_id || row.profile_id || "").trim();
+}
+
 function getPaymentBadgeClass(status: string | null) {
   const normalized = String(status || "").toLowerCase();
 
@@ -158,6 +234,81 @@ function getPaymentBadgeClass(status: string | null) {
   return "bg-[#E5E7EB] text-[#374151]";
 }
 
+function countRowsSince(rows: AnyRow[], fromIso: string) {
+  const fromMs = toMs(fromIso);
+  return rows.filter((row) => toMs(getRowTimestamp(row)) >= fromMs).length;
+}
+
+function uniqueCountSince(rows: AnyRow[], fromIso: string, getId: (row: AnyRow) => string) {
+  const fromMs = toMs(fromIso);
+  const set = new Set<string>();
+
+  rows.forEach((row) => {
+    if (toMs(getRowTimestamp(row)) < fromMs) return;
+    const id = getId(row);
+    if (id) set.add(id);
+  });
+
+  return set.size;
+}
+
+function countDistinctAttendanceSessionsSince(rows: AnyRow[], fromIso: string) {
+  return uniqueCountSince(rows, fromIso, getAttendanceSessionId);
+}
+
+async function safeCount(
+  table: string,
+  column: string,
+  fromIso: string,
+  extra?: { lteNow?: boolean }
+) {
+  let q = supabase
+    .from(table)
+    .select("id", { count: "exact", head: true })
+    .gte(column, fromIso);
+
+  if (extra?.lteNow) {
+    q = q.lte(column, new Date().toISOString());
+  }
+
+  const { count, error } = await q;
+
+  if (error) {
+    console.warn(`[admin] count failed: ${table}.${column}`, error);
+    return 0;
+  }
+
+  return count || 0;
+}
+
+async function loadRecentRows(table: string, fromIso: string, preferredColumn: string) {
+  const attempts = [preferredColumn, "created_at", "joined_at", "started_at", "entered_at", "updated_at"];
+
+  for (const column of Array.from(new Set(attempts))) {
+    try {
+      const { data, error } = await supabase
+        .from(table)
+        .select("*")
+        .gte(column, fromIso)
+        .limit(10000);
+
+      if (!error) return (data as AnyRow[]) || [];
+    } catch {
+      // try next
+    }
+  }
+
+  const { data, error } = await supabase.from(table).select("*").limit(10000);
+
+  if (error) {
+    console.warn(`[admin] fallback row load failed: ${table}`, error);
+    return [];
+  }
+
+  const fromMs = toMs(fromIso);
+  return ((data as AnyRow[]) || []).filter((row) => toMs(getRowTimestamp(row)) >= fromMs);
+}
+
 function InteractiveLineChart({
   title,
   description,
@@ -165,6 +316,8 @@ function InteractiveLineChart({
   dataKey,
   color,
   money = false,
+  percent = false,
+  decimals = 0,
 }: {
   title: string;
   description: string;
@@ -172,6 +325,8 @@ function InteractiveLineChart({
   dataKey: ChartKey;
   color: string;
   money?: boolean;
+  percent?: boolean;
+  decimals?: number;
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
@@ -180,7 +335,6 @@ function InteractiveLineChart({
   const total = values.reduce((sum, value) => sum + value, 0);
 
   const chartWidth = 100;
-  const chartHeight = 44;
   const topPad = 5;
   const bottomPad = 36;
   const usableHeight = bottomPad - topPad;
@@ -190,18 +344,25 @@ function InteractiveLineChart({
 
   const getY = (value: number) => bottomPad - (value / max) * usableHeight;
 
-  const points = values
-    .map((value, index) => `${getX(index)},${getY(value)}`)
-    .join(" ");
+  const points = values.map((value, index) => `${getX(index)},${getY(value)}`).join(" ");
 
-  const activeIndex = hoverIndex ?? values.length - 1;
+  const activeIndex = hoverIndex ?? Math.max(0, values.length - 1);
   const activePoint = data[activeIndex];
   const activeValue = values[activeIndex] || 0;
   const activeX = getX(activeIndex);
   const activeY = getY(activeValue);
 
-  const displayValue = money ? formatMoney(activeValue) : String(activeValue);
-  const totalValue = money ? formatMoney(total) : String(total);
+  const displayValue = money
+    ? formatMoney(activeValue)
+    : percent
+      ? formatPercent(activeValue)
+      : formatNumber(activeValue, decimals);
+
+  const totalValue = money
+    ? formatMoney(total)
+    : percent
+      ? formatPercent(total / Math.max(data.length, 1))
+      : formatNumber(total, decimals);
 
   return (
     <div className="rounded-[22px] border border-black/10 bg-white p-5 shadow-sm">
@@ -213,7 +374,7 @@ function InteractiveLineChart({
 
         <div className="shrink-0 text-right">
           <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#999]">
-            14d total
+            {percent ? "14d avg" : "14d total"}
           </div>
           <div className="text-[18px] font-bold text-[#2F2F2F]">{totalValue}</div>
         </div>
@@ -264,20 +425,20 @@ function InteractiveLineChart({
           <polyline
             fill="none"
             stroke={color}
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            points={points}
-          />
-
-          <polyline
-            fill="none"
-            stroke={color}
             strokeWidth="9"
             strokeLinecap="round"
             strokeLinejoin="round"
             points={points}
             opacity="0.12"
+          />
+
+          <polyline
+            fill="none"
+            stroke={color}
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            points={points}
           />
 
           {values.map((value, index) => {
@@ -367,6 +528,7 @@ export default function AdminPage() {
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [processingPayoutId, setProcessingPayoutId] = useState("");
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
+  const [error, setError] = useState("");
 
   const [stats, setStats] = useState<AdminStats>({
     registrationsToday: 0,
@@ -381,14 +543,29 @@ export default function AdminPage() {
     sessionsHostedWeek: 0,
     sessionsHostedMonth: 0,
 
-    activeHostsWeek: 0,
-    uniqueBookedUsersWeek: 0,
+    attendanceRecordsToday: 0,
+    attendanceRecordsWeek: 0,
+    attendanceRecordsMonth: 0,
+
+    uniqueAttendeesToday: 0,
     uniqueAttendeesWeek: 0,
+    uniqueAttendeesMonth: 0,
+
+    attendedSessionsToday: 0,
+    attendedSessionsWeek: 0,
+    attendedSessionsMonth: 0,
+
+    uniqueBookedUsersToday: 0,
+    uniqueBookedUsersWeek: 0,
+    uniqueBookedUsersMonth: 0,
+
+    activeHostsWeek: 0,
+    avgAttendeesPerHostedSessionWeek: 0,
+    bookedToAttendedConversionWeek: 0,
+
     availableHostBalanceUsd: 0,
     pendingPayoutUsd: 0,
   });
-
-  const [error, setError] = useState("");
 
   const cleanQuery = useMemo(() => query.trim(), [query]);
 
@@ -414,31 +591,6 @@ export default function AdminPage() {
     } finally {
       setBansLoading(false);
     }
-  };
-
-  const safeCount = async (
-    table: string,
-    column: string,
-    fromIso: string,
-    extra?: { lteNow?: boolean }
-  ) => {
-    let q = supabase
-      .from(table)
-      .select("id", { count: "exact", head: true })
-      .gte(column, fromIso);
-
-    if (extra?.lteNow) {
-      q = q.lte(column, new Date().toISOString());
-    }
-
-    const { count, error } = await q;
-
-    if (error) {
-      console.warn(`[admin] count failed: ${table}`, error);
-      return 0;
-    }
-
-    return count || 0;
   };
 
   const loadDashboard = async () => {
@@ -468,15 +620,12 @@ export default function AdminPage() {
         notificationsResult,
         payoutsResult,
         paymentsResult,
-        bookingsResult,
-        attendanceResult,
+        attendanceRows,
+        bookingRows,
         weeklySessionsResult,
-
         registrationsChartResult,
         sessionsCreatedChartResult,
         sessionsHostedChartResult,
-        bookingsChartResult,
-        attendanceChartResult,
         paymentsChartResult,
       ] = await Promise.all([
         safeCount("profiles", "created_at", todayIso),
@@ -505,14 +654,12 @@ export default function AdminPage() {
 
         supabase.from("host_support_payments").select("host_amount_usd, status"),
 
-        supabase.from("session_bookings").select("user_id").gte("created_at", weekIso),
-
-        supabase.from("session_attendance").select("user_id").gte("created_at", weekIso),
+        loadRecentRows("session_attendance", monthIso, "created_at"),
+        loadRecentRows("session_bookings", monthIso, "created_at"),
 
         supabase.from("sessions").select("host_id").gte("created_at", weekIso),
 
         supabase.from("profiles").select("id, created_at").gte("created_at", chartIso),
-
         supabase.from("sessions").select("id, host_id, created_at").gte("created_at", chartIso),
 
         supabase
@@ -520,10 +667,6 @@ export default function AdminPage() {
           .select("id, host_id, start_time")
           .gte("start_time", chartIso)
           .lte("start_time", nowIso),
-
-        supabase.from("session_bookings").select("user_id, created_at").gte("created_at", chartIso),
-
-        supabase.from("session_attendance").select("user_id, created_at").gte("created_at", chartIso),
 
         supabase
           .from("host_support_payments")
@@ -545,13 +688,13 @@ export default function AdminPage() {
         setPayoutRequests((payoutsResult.data as PayoutRequestRow[]) || []);
       }
 
-      const payments = (paymentsResult.data as any[]) || [];
+      const payments = (paymentsResult.data as AnyRow[]) || [];
       const availableHostBalanceUsd = payments.reduce((sum, p) => {
         if (String(p.status || "").toLowerCase() !== "available") return sum;
         return sum + Number(p.host_amount_usd || 0);
       }, 0);
 
-      const payoutRows = ((payoutsResult.data as any[]) || []) as PayoutRequestRow[];
+      const payoutRows = ((payoutsResult.data as AnyRow[]) || []) as PayoutRequestRow[];
       const pendingPayoutUsd = payoutRows.reduce((sum, p) => {
         const status = String(p.status || "").toLowerCase();
         if (status !== "requested" && status !== "processing") return sum;
@@ -559,16 +702,30 @@ export default function AdminPage() {
       }, 0);
 
       const weeklyHosts = new Set(
-        ((weeklySessionsResult.data as any[]) || []).map((s) => s.host_id).filter(Boolean)
+        ((weeklySessionsResult.data as AnyRow[]) || []).map((s) => s.host_id).filter(Boolean)
       );
 
-      const weeklyBookedUsers = new Set(
-        ((bookingsResult.data as any[]) || []).map((b) => b.user_id).filter(Boolean)
-      );
+      const attendanceRecordsToday = countRowsSince(attendanceRows, todayIso);
+      const attendanceRecordsWeek = countRowsSince(attendanceRows, weekIso);
+      const attendanceRecordsMonth = countRowsSince(attendanceRows, monthIso);
 
-      const weeklyAttendees = new Set(
-        ((attendanceResult.data as any[]) || []).map((a) => a.user_id).filter(Boolean)
-      );
+      const uniqueAttendeesToday = uniqueCountSince(attendanceRows, todayIso, getAttendanceUserId);
+      const uniqueAttendeesWeek = uniqueCountSince(attendanceRows, weekIso, getAttendanceUserId);
+      const uniqueAttendeesMonth = uniqueCountSince(attendanceRows, monthIso, getAttendanceUserId);
+
+      const attendedSessionsToday = countDistinctAttendanceSessionsSince(attendanceRows, todayIso);
+      const attendedSessionsWeek = countDistinctAttendanceSessionsSince(attendanceRows, weekIso);
+      const attendedSessionsMonth = countDistinctAttendanceSessionsSince(attendanceRows, monthIso);
+
+      const uniqueBookedUsersToday = uniqueCountSince(bookingRows, todayIso, getBookingUserId);
+      const uniqueBookedUsersWeek = uniqueCountSince(bookingRows, weekIso, getBookingUserId);
+      const uniqueBookedUsersMonth = uniqueCountSince(bookingRows, monthIso, getBookingUserId);
+
+      const avgAttendeesPerHostedSessionWeek =
+        sessionsHostedWeek > 0 ? uniqueAttendeesWeek / sessionsHostedWeek : 0;
+
+      const bookedToAttendedConversionWeek =
+        uniqueBookedUsersWeek > 0 ? (uniqueAttendeesWeek / uniqueBookedUsersWeek) * 100 : 0;
 
       const days = makeLastDays(14);
 
@@ -577,7 +734,9 @@ export default function AdminPage() {
       const sessionsHostedByDay = new Map<string, number>();
       const activeHostsByDay = new Map<string, Set<string>>();
       const bookedUsersByDay = new Map<string, Set<string>>();
-      const attendeesByDay = new Map<string, Set<string>>();
+      const attendanceRecordsByDay = new Map<string, number>();
+      const uniqueAttendeesByDay = new Map<string, Set<string>>();
+      const attendedSessionsByDay = new Map<string, Set<string>>();
       const supportByDay = new Map<string, number>();
 
       for (const day of days) {
@@ -586,43 +745,53 @@ export default function AdminPage() {
         sessionsHostedByDay.set(day.key, 0);
         activeHostsByDay.set(day.key, new Set());
         bookedUsersByDay.set(day.key, new Set());
-        attendeesByDay.set(day.key, new Set());
+        attendanceRecordsByDay.set(day.key, 0);
+        uniqueAttendeesByDay.set(day.key, new Set());
+        attendedSessionsByDay.set(day.key, new Set());
         supportByDay.set(day.key, 0);
       }
 
-      for (const row of ((registrationsChartResult.data as any[]) || [])) {
+      for (const row of ((registrationsChartResult.data as AnyRow[]) || [])) {
         const key = toDateKey(row.created_at);
         if (!key || !registrationsByDay.has(key)) continue;
         registrationsByDay.set(key, (registrationsByDay.get(key) || 0) + 1);
       }
 
-      for (const row of ((sessionsCreatedChartResult.data as any[]) || [])) {
+      for (const row of ((sessionsCreatedChartResult.data as AnyRow[]) || [])) {
         const key = toDateKey(row.created_at);
         if (!key || !sessionsCreatedByDay.has(key)) continue;
         sessionsCreatedByDay.set(key, (sessionsCreatedByDay.get(key) || 0) + 1);
         if (row.host_id) activeHostsByDay.get(key)?.add(row.host_id);
       }
 
-      for (const row of ((sessionsHostedChartResult.data as any[]) || [])) {
+      for (const row of ((sessionsHostedChartResult.data as AnyRow[]) || [])) {
         const key = toDateKey(row.start_time);
         if (!key || !sessionsHostedByDay.has(key)) continue;
         sessionsHostedByDay.set(key, (sessionsHostedByDay.get(key) || 0) + 1);
         if (row.host_id) activeHostsByDay.get(key)?.add(row.host_id);
       }
 
-      for (const row of ((bookingsChartResult.data as any[]) || [])) {
-        const key = toDateKey(row.created_at);
-        if (!key || !row.user_id) continue;
-        bookedUsersByDay.get(key)?.add(row.user_id);
+      for (const row of bookingRows) {
+        const key = toDateKey(getRowTimestamp(row));
+        const userId = getBookingUserId(row);
+        if (!key || !userId || !bookedUsersByDay.has(key)) continue;
+        bookedUsersByDay.get(key)?.add(userId);
       }
 
-      for (const row of ((attendanceChartResult.data as any[]) || [])) {
-        const key = toDateKey(row.created_at);
-        if (!key || !row.user_id) continue;
-        attendeesByDay.get(key)?.add(row.user_id);
+      for (const row of attendanceRows) {
+        const key = toDateKey(getRowTimestamp(row));
+        if (!key || !attendanceRecordsByDay.has(key)) continue;
+
+        attendanceRecordsByDay.set(key, (attendanceRecordsByDay.get(key) || 0) + 1);
+
+        const userId = getAttendanceUserId(row);
+        const sessionId = getAttendanceSessionId(row);
+
+        if (userId) uniqueAttendeesByDay.get(key)?.add(userId);
+        if (sessionId) attendedSessionsByDay.get(key)?.add(sessionId);
       }
 
-      for (const row of ((paymentsChartResult.data as any[]) || [])) {
+      for (const row of ((paymentsChartResult.data as AnyRow[]) || [])) {
         const key = toDateKey(row.created_at);
         if (!key || !supportByDay.has(key)) continue;
 
@@ -636,17 +805,26 @@ export default function AdminPage() {
       }
 
       setChartData(
-        days.map((day) => ({
-          label: day.label,
-          dateKey: day.key,
-          registrations: registrationsByDay.get(day.key) || 0,
-          sessionsCreated: sessionsCreatedByDay.get(day.key) || 0,
-          sessionsHosted: sessionsHostedByDay.get(day.key) || 0,
-          activeHosts: activeHostsByDay.get(day.key)?.size || 0,
-          bookedUsers: bookedUsersByDay.get(day.key)?.size || 0,
-          attendees: attendeesByDay.get(day.key)?.size || 0,
-          supportUsd: Number((supportByDay.get(day.key) || 0).toFixed(2)),
-        }))
+        days.map((day) => {
+          const uniqueAttendees = uniqueAttendeesByDay.get(day.key)?.size || 0;
+          const attendedSessions = attendedSessionsByDay.get(day.key)?.size || 0;
+
+          return {
+            label: day.label,
+            dateKey: day.key,
+            registrations: registrationsByDay.get(day.key) || 0,
+            sessionsCreated: sessionsCreatedByDay.get(day.key) || 0,
+            sessionsHosted: sessionsHostedByDay.get(day.key) || 0,
+            activeHosts: activeHostsByDay.get(day.key)?.size || 0,
+            bookedUsers: bookedUsersByDay.get(day.key)?.size || 0,
+            attendanceRecords: attendanceRecordsByDay.get(day.key) || 0,
+            uniqueAttendees,
+            attendedSessions,
+            avgAttendeesPerSession:
+              attendedSessions > 0 ? Number((uniqueAttendees / attendedSessions).toFixed(2)) : 0,
+            supportUsd: Number((supportByDay.get(day.key) || 0).toFixed(2)),
+          };
+        })
       );
 
       setStats({
@@ -662,9 +840,26 @@ export default function AdminPage() {
         sessionsHostedWeek,
         sessionsHostedMonth,
 
+        attendanceRecordsToday,
+        attendanceRecordsWeek,
+        attendanceRecordsMonth,
+
+        uniqueAttendeesToday,
+        uniqueAttendeesWeek,
+        uniqueAttendeesMonth,
+
+        attendedSessionsToday,
+        attendedSessionsWeek,
+        attendedSessionsMonth,
+
+        uniqueBookedUsersToday,
+        uniqueBookedUsersWeek,
+        uniqueBookedUsersMonth,
+
         activeHostsWeek: weeklyHosts.size,
-        uniqueBookedUsersWeek: weeklyBookedUsers.size,
-        uniqueAttendeesWeek: weeklyAttendees.size,
+        avgAttendeesPerHostedSessionWeek,
+        bookedToAttendedConversionWeek,
+
         availableHostBalanceUsd,
         pendingPayoutUsd,
       });
@@ -788,13 +983,8 @@ export default function AdminPage() {
         payload.resolved_at = nowIso;
       }
 
-      if (nextStatus === "paid") {
-        payload.admin_note = "Marked as paid from admin dashboard.";
-      }
-
-      if (nextStatus === "rejected") {
-        payload.admin_note = "Rejected from admin dashboard.";
-      }
+      if (nextStatus === "paid") payload.admin_note = "Marked as paid from admin dashboard.";
+      if (nextStatus === "rejected") payload.admin_note = "Rejected from admin dashboard.";
 
       const { error: payoutError } = await supabase
         .from("host_payout_requests")
@@ -875,19 +1065,17 @@ export default function AdminPage() {
                 MySession Admin
               </div>
 
-              <div className="relative">
-                <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-black/10 bg-white px-3 text-[13px] font-bold">
-                  🔔 {unreadNotifications}
-                </span>
-              </div>
+              <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-black/10 bg-white px-3 text-[13px] font-bold">
+                🔔 {unreadNotifications}
+              </span>
             </div>
 
             <h1 className="mt-2 text-[34px] font-bold">
               {tab === "dashboard" ? "Admin dashboard" : "Moderation"}
             </h1>
 
-            <p className="mt-2 max-w-2xl text-[14px] leading-6 text-[#666]">
-              Payout requests, notifications, growth stats, user search, bans, and platform operations.
+            <p className="mt-2 max-w-3xl text-[14px] leading-6 text-[#666]">
+              Attendance now uses <b>session_attendance</b>. Attendance records = all rows. Unique attendees = distinct users. Attended sessions = distinct sessions with attendance.
             </p>
           </div>
 
@@ -946,9 +1134,25 @@ export default function AdminPage() {
                 ["Sessions hosted 7d", stats.sessionsHostedWeek],
                 ["Sessions hosted 30d", stats.sessionsHostedMonth],
 
-                ["Active hosts 7d", stats.activeHostsWeek],
+                ["Attendance records today", stats.attendanceRecordsToday],
+                ["Attendance records 7d", stats.attendanceRecordsWeek],
+                ["Attendance records 30d", stats.attendanceRecordsMonth],
+
+                ["Unique attendees today", stats.uniqueAttendeesToday],
+                ["Unique attendees 7d", stats.uniqueAttendeesWeek],
+                ["Unique attendees 30d", stats.uniqueAttendeesMonth],
+
+                ["Attended sessions today", stats.attendedSessionsToday],
+                ["Attended sessions 7d", stats.attendedSessionsWeek],
+                ["Attended sessions 30d", stats.attendedSessionsMonth],
+
+                ["Booked users today", stats.uniqueBookedUsersToday],
                 ["Booked users 7d", stats.uniqueBookedUsersWeek],
-                ["Attendees 7d", stats.uniqueAttendeesWeek],
+                ["Booked users 30d", stats.uniqueBookedUsersMonth],
+
+                ["Active hosts 7d", stats.activeHostsWeek],
+                ["Avg attendees/session 7d", formatNumber(stats.avgAttendeesPerHostedSessionWeek, 2)],
+                ["Booked → attended 7d", formatPercent(stats.bookedToAttendedConversionWeek)],
 
                 ["Available host balance", formatMoney(stats.availableHostBalanceUsd)],
                 ["Pending payouts", formatMoney(stats.pendingPayoutUsd)],
@@ -968,7 +1172,7 @@ export default function AdminPage() {
                 <div>
                   <h2 className="text-[20px] font-bold">Growth charts</h2>
                   <p className="mt-1 text-[13px] text-[#666]">
-                    Sessions created = records created in the sessions table. Sessions hosted = sessions with start_time already reached.
+                    Hover points to inspect exact daily values.
                   </p>
                 </div>
 
@@ -982,62 +1186,16 @@ export default function AdminPage() {
               </div>
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <InteractiveLineChart
-                  title="New registrations"
-                  description="New profile rows created per day."
-                  data={chartData}
-                  dataKey="registrations"
-                  color="#2563EB"
-                />
-
-                <InteractiveLineChart
-                  title="Sessions created"
-                  description="New sessions created per day."
-                  data={chartData}
-                  dataKey="sessionsCreated"
-                  color="#7C3AED"
-                />
-
-                <InteractiveLineChart
-                  title="Sessions hosted"
-                  description="Sessions whose start time has already happened."
-                  data={chartData}
-                  dataKey="sessionsHosted"
-                  color="#059669"
-                />
-
-                <InteractiveLineChart
-                  title="Active hosts"
-                  description="Unique hosts creating or hosting sessions per day."
-                  data={chartData}
-                  dataKey="activeHosts"
-                  color="#EA580C"
-                />
-
-                <InteractiveLineChart
-                  title="Unique booked users"
-                  description="Unique users booking sessions per day."
-                  data={chartData}
-                  dataKey="bookedUsers"
-                  color="#0891B2"
-                />
-
-                <InteractiveLineChart
-                  title="Unique attendees"
-                  description="Unique users appearing in attendance per day."
-                  data={chartData}
-                  dataKey="attendees"
-                  color="#DC2626"
-                />
-
-                <InteractiveLineChart
-                  title="Host support received"
-                  description="Available or paid-out host support per day."
-                  data={chartData}
-                  dataKey="supportUsd"
-                  color="#16A34A"
-                  money
-                />
+                <InteractiveLineChart title="New registrations" description="New profile rows created per day." data={chartData} dataKey="registrations" color="#2563EB" />
+                <InteractiveLineChart title="Sessions created" description="New sessions created per day." data={chartData} dataKey="sessionsCreated" color="#7C3AED" />
+                <InteractiveLineChart title="Sessions hosted" description="Sessions whose start_time has already happened." data={chartData} dataKey="sessionsHosted" color="#059669" />
+                <InteractiveLineChart title="Active hosts" description="Unique hosts creating or hosting sessions per day." data={chartData} dataKey="activeHosts" color="#EA580C" />
+                <InteractiveLineChart title="Unique booked users" description="Unique users booking sessions per day." data={chartData} dataKey="bookedUsers" color="#0891B2" />
+                <InteractiveLineChart title="Attendance records" description="All rows from session_attendance per day." data={chartData} dataKey="attendanceRecords" color="#DC2626" />
+                <InteractiveLineChart title="Unique attendees" description="Distinct users from session_attendance per day." data={chartData} dataKey="uniqueAttendees" color="#BE123C" />
+                <InteractiveLineChart title="Attended sessions" description="Distinct session_id values from session_attendance per day." data={chartData} dataKey="attendedSessions" color="#4338CA" />
+                <InteractiveLineChart title="Avg attendees/session" description="Unique attendees divided by attended sessions." data={chartData} dataKey="avgAttendeesPerSession" color="#C2410C" decimals={2} />
+                <InteractiveLineChart title="Host support received" description="Available or paid-out host support per day." data={chartData} dataKey="supportUsd" color="#16A34A" money />
               </div>
             </section>
 
@@ -1098,30 +1256,15 @@ export default function AdminPage() {
                           </div>
 
                           <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              disabled={processingPayoutId === payout.id || status === "processing"}
-                              onClick={() => void updatePayoutStatus(payout, "processing")}
-                              className="rounded-full border border-blue-600 px-4 py-2 text-[13px] font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-                            >
+                            <button type="button" disabled={processingPayoutId === payout.id || status === "processing"} onClick={() => void updatePayoutStatus(payout, "processing")} className="rounded-full border border-blue-600 px-4 py-2 text-[13px] font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50">
                               Processing
                             </button>
 
-                            <button
-                              type="button"
-                              disabled={processingPayoutId === payout.id || status === "paid"}
-                              onClick={() => void updatePayoutStatus(payout, "paid")}
-                              className="rounded-full bg-green-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-green-700 disabled:opacity-50"
-                            >
+                            <button type="button" disabled={processingPayoutId === payout.id || status === "paid"} onClick={() => void updatePayoutStatus(payout, "paid")} className="rounded-full bg-green-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-green-700 disabled:opacity-50">
                               Mark paid
                             </button>
 
-                            <button
-                              type="button"
-                              disabled={processingPayoutId === payout.id || status === "rejected"}
-                              onClick={() => void updatePayoutStatus(payout, "rejected")}
-                              className="rounded-full border border-red-600 px-4 py-2 text-[13px] font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
-                            >
+                            <button type="button" disabled={processingPayoutId === payout.id || status === "rejected"} onClick={() => void updatePayoutStatus(payout, "rejected")} className="rounded-full border border-red-600 px-4 py-2 text-[13px] font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50">
                               Reject
                             </button>
                           </div>
@@ -1163,11 +1306,7 @@ export default function AdminPage() {
                         </div>
 
                         {!notification.read_at && (
-                          <button
-                            type="button"
-                            onClick={() => void markNotificationRead(notification)}
-                            className="rounded-full border border-blue-600 px-4 py-2 text-[13px] font-semibold text-blue-700 hover:bg-blue-100"
-                          >
+                          <button type="button" onClick={() => void markNotificationRead(notification)} className="rounded-full border border-blue-600 px-4 py-2 text-[13px] font-semibold text-blue-700 hover:bg-blue-100">
                             Mark read
                           </button>
                         )}
@@ -1215,10 +1354,7 @@ export default function AdminPage() {
                     const display = String(u.full_name || u.email || u.id || "User");
 
                     return (
-                      <div
-                        key={u.id}
-                        className="flex flex-col gap-3 rounded-2xl border border-black/10 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                      >
+                      <div key={u.id} className="flex flex-col gap-3 rounded-2xl border border-black/10 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex min-w-0 items-center gap-3">
                           <div className="h-11 w-11 overflow-hidden rounded-full bg-gray-200">
                             {u.avatar_url ? (
