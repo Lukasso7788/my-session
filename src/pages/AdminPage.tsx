@@ -52,14 +52,32 @@ type AdminStats = {
   registrationsToday: number;
   registrationsWeek: number;
   registrationsMonth: number;
-  sessionsToday: number;
-  sessionsWeek: number;
-  sessionsMonth: number;
+
+  sessionsCreatedToday: number;
+  sessionsCreatedWeek: number;
+  sessionsCreatedMonth: number;
+
+  sessionsHostedToday: number;
+  sessionsHostedWeek: number;
+  sessionsHostedMonth: number;
+
   activeHostsWeek: number;
   uniqueBookedUsersWeek: number;
   uniqueAttendeesWeek: number;
   availableHostBalanceUsd: number;
   pendingPayoutUsd: number;
+};
+
+type ChartPoint = {
+  label: string;
+  dateKey: string;
+  registrations: number;
+  sessionsCreated: number;
+  sessionsHosted: number;
+  activeHosts: number;
+  bookedUsers: number;
+  attendees: number;
+  supportUsd: number;
 };
 
 function getInitial(name: string) {
@@ -100,6 +118,114 @@ function daysAgoIso(days: number) {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 }
 
+function toDateKey(value?: string | null) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+function makeLastDays(days: number) {
+  return Array.from({ length: days }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (days - 1 - i));
+    const key = d.toISOString().slice(0, 10);
+
+    return {
+      key,
+      label: key.slice(5),
+    };
+  });
+}
+
+function MiniLineChart({
+  title,
+  description,
+  data,
+  dataKey,
+  money = false,
+}: {
+  title: string;
+  description: string;
+  data: ChartPoint[];
+  dataKey: keyof ChartPoint;
+  money?: boolean;
+}) {
+  const values = data.map((d) => Number(d[dataKey] || 0));
+  const max = Math.max(...values, 1);
+  const total = values.reduce((sum, value) => sum + value, 0);
+
+  const points = values
+    .map((value, index) => {
+      const x = values.length <= 1 ? 0 : (index / (values.length - 1)) * 100;
+      const y = 38 - (value / max) * 34;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <div className="rounded-[22px] border border-black/10 bg-white p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-[14px] font-bold text-[#2F2F2F]">{title}</h3>
+          <p className="mt-1 text-[12px] text-[#777]">{description}</p>
+        </div>
+
+        <div className="shrink-0 text-right text-[18px] font-bold text-[#2F2F2F]">
+          {money ? formatMoney(total) : total}
+        </div>
+      </div>
+
+      <svg viewBox="0 0 100 42" className="mt-4 h-24 w-full overflow-visible">
+        <line x1="0" y1="38" x2="100" y2="38" className="stroke-black/10" strokeWidth="1" />
+        <line x1="0" y1="21" x2="100" y2="21" className="stroke-black/5" strokeWidth="1" />
+        <line x1="0" y1="4" x2="100" y2="4" className="stroke-black/5" strokeWidth="1" />
+
+        <polyline
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          points={points}
+          className="text-[#2F2F2F]"
+        />
+
+        {values.map((value, index) => {
+          const x = values.length <= 1 ? 0 : (index / (values.length - 1)) * 100;
+          const y = 38 - (value / max) * 34;
+
+          return (
+            <circle
+              key={`${title}-${index}`}
+              cx={x}
+              cy={y}
+              r="1.8"
+              className="fill-[#2F2F2F]"
+            />
+          );
+        })}
+      </svg>
+
+      <div className="mt-2 flex justify-between text-[10px] text-[#999]">
+        <span>{data[0]?.label || "—"}</span>
+        <span>{data[data.length - 1]?.label || "—"}</span>
+      </div>
+    </div>
+  );
+}
+
+function getPaymentBadgeClass(status: string | null) {
+  const normalized = String(status || "").toLowerCase();
+
+  if (normalized === "paid") return "bg-[#DCFCE7] text-[#15803D]";
+  if (normalized === "processing") return "bg-[#DBEAFE] text-[#1D4ED8]";
+  if (normalized === "requested") return "bg-[#FEF3C7] text-[#92400E]";
+  if (normalized === "rejected") return "bg-red-100 text-red-700";
+
+  return "bg-[#E5E7EB] text-[#374151]";
+}
+
 export default function AdminPage() {
   const navigate = useNavigate();
 
@@ -121,13 +247,21 @@ export default function AdminPage() {
   const [payoutRequests, setPayoutRequests] = useState<PayoutRequestRow[]>([]);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [processingPayoutId, setProcessingPayoutId] = useState("");
+  const [chartData, setChartData] = useState<ChartPoint[]>([]);
+
   const [stats, setStats] = useState<AdminStats>({
     registrationsToday: 0,
     registrationsWeek: 0,
     registrationsMonth: 0,
-    sessionsToday: 0,
-    sessionsWeek: 0,
-    sessionsMonth: 0,
+
+    sessionsCreatedToday: 0,
+    sessionsCreatedWeek: 0,
+    sessionsCreatedMonth: 0,
+
+    sessionsHostedToday: 0,
+    sessionsHostedWeek: 0,
+    sessionsHostedMonth: 0,
+
     activeHostsWeek: 0,
     uniqueBookedUsersWeek: 0,
     uniqueAttendeesWeek: 0,
@@ -163,11 +297,14 @@ export default function AdminPage() {
     }
   };
 
-  const safeCount = async (table: string, column: string, fromIso: string) => {
-    const { count, error } = await supabase
-      .from(table)
-      .select("id", { count: "exact", head: true })
-      .gte(column, fromIso);
+  const safeCount = async (table: string, column: string, fromIso: string, extra?: { lteNow?: boolean }) => {
+    let q = supabase.from(table).select("id", { count: "exact", head: true }).gte(column, fromIso);
+
+    if (extra?.lteNow) {
+      q = q.lte(column, new Date().toISOString());
+    }
+
+    const { count, error } = await q;
 
     if (error) {
       console.warn(`[admin] count failed: ${table}`, error);
@@ -185,27 +322,47 @@ export default function AdminPage() {
       const todayIso = startOfDayIso();
       const weekIso = daysAgoIso(7);
       const monthIso = daysAgoIso(30);
+      const chartIso = daysAgoIso(14);
+      const nowIso = new Date().toISOString();
 
       const [
         registrationsToday,
         registrationsWeek,
         registrationsMonth,
-        sessionsToday,
-        sessionsWeek,
-        sessionsMonth,
+
+        sessionsCreatedToday,
+        sessionsCreatedWeek,
+        sessionsCreatedMonth,
+
+        sessionsHostedToday,
+        sessionsHostedWeek,
+        sessionsHostedMonth,
+
         notificationsResult,
         payoutsResult,
         paymentsResult,
         bookingsResult,
         attendanceResult,
         weeklySessionsResult,
+
+        registrationsChartResult,
+        sessionsCreatedChartResult,
+        sessionsHostedChartResult,
+        bookingsChartResult,
+        attendanceChartResult,
+        paymentsChartResult,
       ] = await Promise.all([
         safeCount("profiles", "created_at", todayIso),
         safeCount("profiles", "created_at", weekIso),
         safeCount("profiles", "created_at", monthIso),
+
         safeCount("sessions", "created_at", todayIso),
         safeCount("sessions", "created_at", weekIso),
         safeCount("sessions", "created_at", monthIso),
+
+        safeCount("sessions", "start_time", todayIso, { lteNow: true }),
+        safeCount("sessions", "start_time", weekIso, { lteNow: true }),
+        safeCount("sessions", "start_time", monthIso, { lteNow: true }),
 
         supabase
           .from("admin_notifications")
@@ -237,6 +394,37 @@ export default function AdminPage() {
           .from("sessions")
           .select("host_id")
           .gte("created_at", weekIso),
+
+        supabase
+          .from("profiles")
+          .select("id, created_at")
+          .gte("created_at", chartIso),
+
+        supabase
+          .from("sessions")
+          .select("id, host_id, created_at")
+          .gte("created_at", chartIso),
+
+        supabase
+          .from("sessions")
+          .select("id, host_id, start_time")
+          .gte("start_time", chartIso)
+          .lte("start_time", nowIso),
+
+        supabase
+          .from("session_bookings")
+          .select("user_id, created_at")
+          .gte("created_at", chartIso),
+
+        supabase
+          .from("session_attendance")
+          .select("user_id, created_at")
+          .gte("created_at", chartIso),
+
+        supabase
+          .from("host_support_payments")
+          .select("host_amount_usd, status, created_at")
+          .gte("created_at", chartIso),
       ]);
 
       if (notificationsResult.error) {
@@ -266,17 +454,108 @@ export default function AdminPage() {
         return sum + Number(p.amount_usd || 0);
       }, 0);
 
-      const weeklyHosts = new Set(((weeklySessionsResult.data as any[]) || []).map((s) => s.host_id).filter(Boolean));
-      const weeklyBookedUsers = new Set(((bookingsResult.data as any[]) || []).map((b) => b.user_id).filter(Boolean));
-      const weeklyAttendees = new Set(((attendanceResult.data as any[]) || []).map((a) => a.user_id).filter(Boolean));
+      const weeklyHosts = new Set(
+        ((weeklySessionsResult.data as any[]) || []).map((s) => s.host_id).filter(Boolean)
+      );
+      const weeklyBookedUsers = new Set(
+        ((bookingsResult.data as any[]) || []).map((b) => b.user_id).filter(Boolean)
+      );
+      const weeklyAttendees = new Set(
+        ((attendanceResult.data as any[]) || []).map((a) => a.user_id).filter(Boolean)
+      );
+
+      const days = makeLastDays(14);
+
+      const registrationsByDay = new Map<string, number>();
+      const sessionsCreatedByDay = new Map<string, number>();
+      const sessionsHostedByDay = new Map<string, number>();
+      const activeHostsByDay = new Map<string, Set<string>>();
+      const bookedUsersByDay = new Map<string, Set<string>>();
+      const attendeesByDay = new Map<string, Set<string>>();
+      const supportByDay = new Map<string, number>();
+
+      for (const day of days) {
+        registrationsByDay.set(day.key, 0);
+        sessionsCreatedByDay.set(day.key, 0);
+        sessionsHostedByDay.set(day.key, 0);
+        activeHostsByDay.set(day.key, new Set());
+        bookedUsersByDay.set(day.key, new Set());
+        attendeesByDay.set(day.key, new Set());
+        supportByDay.set(day.key, 0);
+      }
+
+      for (const row of ((registrationsChartResult.data as any[]) || [])) {
+        const key = toDateKey(row.created_at);
+        if (!key || !registrationsByDay.has(key)) continue;
+        registrationsByDay.set(key, (registrationsByDay.get(key) || 0) + 1);
+      }
+
+      for (const row of ((sessionsCreatedChartResult.data as any[]) || [])) {
+        const key = toDateKey(row.created_at);
+        if (!key || !sessionsCreatedByDay.has(key)) continue;
+        sessionsCreatedByDay.set(key, (sessionsCreatedByDay.get(key) || 0) + 1);
+        if (row.host_id) activeHostsByDay.get(key)?.add(row.host_id);
+      }
+
+      for (const row of ((sessionsHostedChartResult.data as any[]) || [])) {
+        const key = toDateKey(row.start_time);
+        if (!key || !sessionsHostedByDay.has(key)) continue;
+        sessionsHostedByDay.set(key, (sessionsHostedByDay.get(key) || 0) + 1);
+        if (row.host_id) activeHostsByDay.get(key)?.add(row.host_id);
+      }
+
+      for (const row of ((bookingsChartResult.data as any[]) || [])) {
+        const key = toDateKey(row.created_at);
+        if (!key || !row.user_id) continue;
+        bookedUsersByDay.get(key)?.add(row.user_id);
+      }
+
+      for (const row of ((attendanceChartResult.data as any[]) || [])) {
+        const key = toDateKey(row.created_at);
+        if (!key || !row.user_id) continue;
+        attendeesByDay.get(key)?.add(row.user_id);
+      }
+
+      for (const row of ((paymentsChartResult.data as any[]) || [])) {
+        const key = toDateKey(row.created_at);
+        if (!key || !supportByDay.has(key)) continue;
+
+        const status = String(row.status || "").toLowerCase();
+        if (status !== "available" && status !== "paid_out") continue;
+
+        supportByDay.set(
+          key,
+          (supportByDay.get(key) || 0) + Number(row.host_amount_usd || 0)
+        );
+      }
+
+      setChartData(
+        days.map((day) => ({
+          label: day.label,
+          dateKey: day.key,
+          registrations: registrationsByDay.get(day.key) || 0,
+          sessionsCreated: sessionsCreatedByDay.get(day.key) || 0,
+          sessionsHosted: sessionsHostedByDay.get(day.key) || 0,
+          activeHosts: activeHostsByDay.get(day.key)?.size || 0,
+          bookedUsers: bookedUsersByDay.get(day.key)?.size || 0,
+          attendees: attendeesByDay.get(day.key)?.size || 0,
+          supportUsd: Number((supportByDay.get(day.key) || 0).toFixed(2)),
+        }))
+      );
 
       setStats({
         registrationsToday,
         registrationsWeek,
         registrationsMonth,
-        sessionsToday,
-        sessionsWeek,
-        sessionsMonth,
+
+        sessionsCreatedToday,
+        sessionsCreatedWeek,
+        sessionsCreatedMonth,
+
+        sessionsHostedToday,
+        sessionsHostedWeek,
+        sessionsHostedMonth,
+
         activeHostsWeek: weeklyHosts.size,
         uniqueBookedUsersWeek: weeklyBookedUsers.size,
         uniqueAttendeesWeek: weeklyAttendees.size,
@@ -552,12 +831,19 @@ export default function AdminPage() {
                 ["Registrations today", stats.registrationsToday],
                 ["Registrations 7d", stats.registrationsWeek],
                 ["Registrations 30d", stats.registrationsMonth],
-                ["Sessions today", stats.sessionsToday],
-                ["Sessions 7d", stats.sessionsWeek],
-                ["Sessions 30d", stats.sessionsMonth],
+
+                ["Sessions created today", stats.sessionsCreatedToday],
+                ["Sessions created 7d", stats.sessionsCreatedWeek],
+                ["Sessions created 30d", stats.sessionsCreatedMonth],
+
+                ["Sessions hosted today", stats.sessionsHostedToday],
+                ["Sessions hosted 7d", stats.sessionsHostedWeek],
+                ["Sessions hosted 30d", stats.sessionsHostedMonth],
+
                 ["Active hosts 7d", stats.activeHostsWeek],
                 ["Booked users 7d", stats.uniqueBookedUsersWeek],
                 ["Attendees 7d", stats.uniqueAttendeesWeek],
+
                 ["Available host balance", formatMoney(stats.availableHostBalanceUsd)],
                 ["Pending payouts", formatMoney(stats.pendingPayoutUsd)],
                 ["Open payout requests", requestedPayouts.length],
@@ -571,6 +857,77 @@ export default function AdminPage() {
                   </div>
                 </div>
               ))}
+            </section>
+
+            <section className="mt-8">
+              <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-[20px] font-bold">Growth charts</h2>
+                  <p className="mt-1 text-[13px] text-[#666]">
+                    Sessions created = records created in the sessions table. Sessions hosted = sessions with start_time already reached.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void loadDashboard()}
+                  className="rounded-full border border-black/10 px-4 py-2 text-[13px] font-semibold hover:bg-black/[0.04]"
+                >
+                  {dashboardLoading ? "Refreshing..." : "Refresh charts"}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                <MiniLineChart
+                  title="New registrations"
+                  description="New profile rows created per day."
+                  data={chartData}
+                  dataKey="registrations"
+                />
+
+                <MiniLineChart
+                  title="Sessions created"
+                  description="New sessions created per day."
+                  data={chartData}
+                  dataKey="sessionsCreated"
+                />
+
+                <MiniLineChart
+                  title="Sessions hosted"
+                  description="Sessions whose start time has already happened."
+                  data={chartData}
+                  dataKey="sessionsHosted"
+                />
+
+                <MiniLineChart
+                  title="Active hosts"
+                  description="Unique hosts creating or hosting sessions per day."
+                  data={chartData}
+                  dataKey="activeHosts"
+                />
+
+                <MiniLineChart
+                  title="Unique booked users"
+                  description="Unique users booking sessions per day."
+                  data={chartData}
+                  dataKey="bookedUsers"
+                />
+
+                <MiniLineChart
+                  title="Unique attendees"
+                  description="Unique users appearing in attendance per day."
+                  data={chartData}
+                  dataKey="attendees"
+                />
+
+                <MiniLineChart
+                  title="Host support received"
+                  description="Available or paid-out host support per day."
+                  data={chartData}
+                  dataKey="supportUsd"
+                  money
+                />
+              </div>
             </section>
 
             <section className="mt-8 rounded-[28px] border border-black/10 bg-white p-5">
@@ -611,7 +968,7 @@ export default function AdminPage() {
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <div className="text-[15px] font-bold">{formatMoney(Number(payout.amount_usd || 0))}</div>
-                              <span className="rounded-full bg-[#FEF3C7] px-2 py-0.5 text-[11px] font-bold text-[#92400E]">
+                              <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${getPaymentBadgeClass(status)}`}>
                                 {status}
                               </span>
                             </div>
