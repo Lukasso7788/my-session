@@ -12,12 +12,20 @@ type HostSupportPaymentRow = {
   created_at: string | null;
 };
 
+type HostPayoutRequestRow = {
+  id: string;
+  amount_usd: number | null;
+  status: string | null;
+  note: string | null;
+  requested_at: string | null;
+  created_at: string | null;
+};
+
 function getScheduleDurationMinutes(schedule: any): number {
   if (!schedule) return 0;
 
   try {
-    const parsed =
-      typeof schedule === "string" ? JSON.parse(schedule) : schedule;
+    const parsed = typeof schedule === "string" ? JSON.parse(schedule) : schedule;
 
     if (Array.isArray(parsed)) {
       return parsed.reduce((sum: number, block: any) => {
@@ -67,7 +75,6 @@ function getScheduleDurationMinutes(schedule: any): number {
 
 function getSessionStartMs(session: any): number | null {
   if (!session?.start_time) return null;
-
   const start = new Date(session.start_time).getTime();
   return Number.isFinite(start) ? start : null;
 }
@@ -145,6 +152,11 @@ export default function ProfilePage() {
   const [hostSupportLoading, setHostSupportLoading] = useState(false);
   const [hostSupportPayments, setHostSupportPayments] = useState<HostSupportPaymentRow[]>([]);
 
+  const [payoutRequests, setPayoutRequests] = useState<HostPayoutRequestRow[]>([]);
+  const [payoutBusy, setPayoutBusy] = useState(false);
+  const [payoutMessage, setPayoutMessage] = useState("");
+  const [payoutError, setPayoutError] = useState("");
+
   const displayName = useMemo(() => fullName || "User", [fullName]);
 
   const avatarFallback = useMemo(() => {
@@ -184,9 +196,15 @@ export default function ProfilePage() {
     );
   }, [hostSupportPayments]);
 
-  const recentSupportPayments = useMemo(() => {
-    return hostSupportPayments.slice(0, 5);
-  }, [hostSupportPayments]);
+  const hasOpenPayoutRequest = useMemo(() => {
+    return payoutRequests.some((r) => {
+      const status = String(r.status || "").toLowerCase();
+      return status === "requested" || status === "processing";
+    });
+  }, [payoutRequests]);
+
+  const recentSupportPayments = useMemo(() => hostSupportPayments.slice(0, 5), [hostSupportPayments]);
+  const recentPayoutRequests = useMemo(() => payoutRequests.slice(0, 5), [payoutRequests]);
 
   const upcomingSessions = useMemo(() => {
     const now = Date.now();
@@ -215,7 +233,6 @@ export default function ProfilePage() {
 
     const now = Date.now();
     const start = new Date(session.start_time).getTime();
-
     const durationMinutes =
       Number(session.duration_minutes) || getScheduleDurationMinutes(session.schedule);
     const end = start + durationMinutes * 60 * 1000;
@@ -241,17 +258,20 @@ export default function ProfilePage() {
   const getPaymentBadgeClass = (status: string | null) => {
     const normalized = String(status || "").toLowerCase();
 
-    if (normalized === "available") {
-      return "bg-[#DCFCE7] text-[#15803D]";
-    }
+    if (normalized === "available") return "bg-[#DCFCE7] text-[#15803D]";
+    if (normalized === "pending") return "bg-[#FEF3C7] text-[#92400E]";
+    if (normalized === "paid_out") return "bg-[#DBEAFE] text-[#1D4ED8]";
 
-    if (normalized === "pending") {
-      return "bg-[#FEF3C7] text-[#92400E]";
-    }
+    return "bg-[#E5E7EB] text-[#374151]";
+  };
 
-    if (normalized === "paid_out") {
-      return "bg-[#DBEAFE] text-[#1D4ED8]";
-    }
+  const getPayoutBadgeClass = (status: string | null) => {
+    const normalized = String(status || "").toLowerCase();
+
+    if (normalized === "requested") return "bg-[#FEF3C7] text-[#92400E]";
+    if (normalized === "processing") return "bg-[#DBEAFE] text-[#1D4ED8]";
+    if (normalized === "paid" || normalized === "completed") return "bg-[#DCFCE7] text-[#15803D]";
+    if (normalized === "rejected") return "bg-red-100 text-red-700";
 
     return "bg-[#E5E7EB] text-[#374151]";
   };
@@ -263,6 +283,70 @@ export default function ProfilePage() {
       month: "long",
       year: "numeric",
     }).format(d);
+  };
+
+  const loadHostSupportBalance = async (hostUserId: string) => {
+    setHostSupportLoading(true);
+
+    try {
+      const { data: monetization, error: monetizationError } = await supabase
+        .from("host_monetization_profiles")
+        .select("status, support_enabled")
+        .eq("host_user_id", hostUserId)
+        .maybeSingle();
+
+      if (monetizationError) {
+        console.warn("Failed to load host monetization profile:", monetizationError);
+        setHostSupportApproved(false);
+        setHostSupportPayments([]);
+        setPayoutRequests([]);
+        return;
+      }
+
+      const approved =
+        (monetization as any)?.status === "active" &&
+        (monetization as any)?.support_enabled === true;
+
+      setHostSupportApproved(approved);
+
+      if (!approved) {
+        setHostSupportPayments([]);
+        setPayoutRequests([]);
+        return;
+      }
+
+      const [{ data: payments, error: paymentsError }, { data: requests, error: requestsError }] =
+        await Promise.all([
+          supabase
+            .from("host_support_payments")
+            .select("id, host_amount_usd, gross_amount_usd, platform_fee_usd, status, created_at")
+            .eq("host_user_id", hostUserId)
+            .order("created_at", { ascending: false })
+            .limit(50),
+          supabase
+            .from("host_payout_requests")
+            .select("id, amount_usd, status, note, requested_at, created_at")
+            .eq("host_user_id", hostUserId)
+            .order("created_at", { ascending: false })
+            .limit(20),
+        ]);
+
+      if (paymentsError) {
+        console.warn("Failed to load host support payments:", paymentsError);
+        setHostSupportPayments([]);
+      } else {
+        setHostSupportPayments((payments as HostSupportPaymentRow[]) || []);
+      }
+
+      if (requestsError) {
+        console.warn("Failed to load payout requests:", requestsError);
+        setPayoutRequests([]);
+      } else {
+        setPayoutRequests((requests as HostPayoutRequestRow[]) || []);
+      }
+    } finally {
+      setHostSupportLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -277,13 +361,8 @@ export default function ProfilePage() {
 
     const p: any = profile as any;
 
-    if (typeof p.attended_sessions_count === "number") {
-      setAttendedCount(p.attended_sessions_count);
-    }
-
-    if (typeof p.created_at === "string" && p.created_at) {
-      setCreatedAt(formatSince(p.created_at));
-    }
+    if (typeof p.attended_sessions_count === "number") setAttendedCount(p.attended_sessions_count);
+    if (typeof p.created_at === "string" && p.created_at) setCreatedAt(formatSince(p.created_at));
   }, [profile]);
 
   useEffect(() => {
@@ -306,18 +385,11 @@ export default function ProfilePage() {
       setFullName(data.full_name || "");
       setBio(data.bio || "");
       setAvatarUrl(data.avatar_url || null);
-
-      if (typeof (data as any).attended_sessions_count === "number") {
-        setAttendedCount((data as any).attended_sessions_count);
-      } else {
-        setAttendedCount(0);
-      }
-
-      if (data.created_at) setCreatedAt(formatSince(data.created_at));
-      else setCreatedAt("—");
+      setAttendedCount(typeof (data as any).attended_sessions_count === "number" ? (data as any).attended_sessions_count : 0);
+      setCreatedAt(data.created_at ? formatSince(data.created_at) : "—");
     };
 
-    loadProfile();
+    void loadProfile();
   }, [user]);
 
   useEffect(() => {
@@ -333,7 +405,7 @@ export default function ProfilePage() {
       if (!error && data) setSessions(data);
     };
 
-    loadSessions();
+    void loadSessions();
   }, [user?.id]);
 
   useEffect(() => {
@@ -356,7 +428,7 @@ export default function ProfilePage() {
       if (!cancelled) setFollowersCount(count || 0);
     };
 
-    loadFollowersCount();
+    void loadFollowersCount();
 
     return () => {
       cancelled = true;
@@ -365,66 +437,63 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!user?.id) return;
-
-    let cancelled = false;
-
-    const loadHostSupportBalance = async () => {
-      setHostSupportLoading(true);
-
-      try {
-        const { data: monetization, error: monetizationError } = await supabase
-          .from("host_monetization_profiles")
-          .select("status, support_enabled")
-          .eq("host_user_id", user.id)
-          .maybeSingle();
-
-        if (cancelled) return;
-
-        if (monetizationError) {
-          console.warn("Failed to load host monetization profile:", monetizationError);
-          setHostSupportApproved(false);
-          setHostSupportPayments([]);
-          return;
-        }
-
-        const approved =
-          (monetization as any)?.status === "active" &&
-          (monetization as any)?.support_enabled === true;
-
-        setHostSupportApproved(approved);
-
-        if (!approved) {
-          setHostSupportPayments([]);
-          return;
-        }
-
-        const { data: payments, error: paymentsError } = await supabase
-          .from("host_support_payments")
-          .select("id, host_amount_usd, gross_amount_usd, platform_fee_usd, status, created_at")
-          .eq("host_user_id", user.id)
-          .order("created_at", { ascending: false })
-          .limit(50);
-
-        if (cancelled) return;
-
-        if (paymentsError) {
-          console.warn("Failed to load host support payments:", paymentsError);
-          setHostSupportPayments([]);
-          return;
-        }
-
-        setHostSupportPayments((payments as HostSupportPaymentRow[]) || []);
-      } finally {
-        if (!cancelled) setHostSupportLoading(false);
-      }
-    };
-
-    loadHostSupportBalance();
-
-    return () => {
-      cancelled = true;
-    };
+    void loadHostSupportBalance(user.id);
   }, [user?.id]);
+
+  const handleAskPayout = async () => {
+    if (!user?.id || payoutBusy) return;
+
+    const amount = Number(hostBalance.availableUsd || 0);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setPayoutError("You do not have available balance for payout yet.");
+      return;
+    }
+
+    if (hasOpenPayoutRequest) {
+      setPayoutError("You already have an open payout request.");
+      return;
+    }
+
+    setPayoutBusy(true);
+    setPayoutError("");
+    setPayoutMessage("");
+
+    try {
+      const nowIso = new Date().toISOString();
+
+      const { data: payout, error: payoutError } = await supabase
+        .from("host_payout_requests")
+        .insert({
+          host_user_id: user.id,
+          amount_usd: Number(amount.toFixed(2)),
+          status: "requested",
+          note: "Host requested payout from profile balance.",
+          requested_at: nowIso,
+        })
+        .select("id")
+        .single();
+
+      if (payoutError) throw payoutError;
+
+      await supabase.from("admin_notifications").insert({
+        type: "host_payout_requested",
+        title: "New host payout request",
+        body: `${displayName} requested payout: ${formatMoney(amount)}.`,
+        actor_user_id: user.id,
+        target_user_id: user.id,
+        payout_request_id: payout?.id || null,
+      });
+
+      setPayoutMessage("Payout request sent. Admin will process it manually.");
+      await loadHostSupportBalance(user.id);
+    } catch (e: any) {
+      console.error("Ask payout failed:", e);
+      setPayoutError(String(e?.message || e || "Failed to request payout."));
+    } finally {
+      setPayoutBusy(false);
+    }
+  };
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     try {
@@ -513,11 +582,7 @@ export default function ProfilePage() {
       ? "/icons/save_changes_hover.svg"
       : "/icons/save_changes.svg";
 
-  const actionLabel = editMode
-    ? saving
-      ? "Saving..."
-      : "Save changes"
-    : "Edit profile";
+  const actionLabel = editMode ? (saving ? "Saving..." : "Save changes") : "Edit profile";
 
   return (
     <main className="w-full px-8 pt-10 pb-24 font-inter text-gray-900">
@@ -533,29 +598,13 @@ export default function ProfilePage() {
           <button
             type="button"
             onClick={() => navigate(`/profile/${user.id}`)}
-            className="
-              h-10 w-10 rounded-full
-              border border-[#2F2F2F]
-              flex items-center justify-center
-              text-[#2F2F2F]
-              hover:bg-[#2F2F2F] hover:text-white
-              transition
-            "
+            className="h-10 w-10 rounded-full border border-[#2F2F2F] flex items-center justify-center text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition"
             aria-label="Profile preview"
             title="Profile preview"
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-                stroke="currentColor"
-                strokeWidth="2"
-              />
+              <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+              <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" stroke="currentColor" strokeWidth="2" />
             </svg>
           </button>
 
@@ -564,20 +613,9 @@ export default function ProfilePage() {
             onMouseEnter={() => setEditButtonHover(true)}
             onMouseLeave={() => setEditButtonHover(false)}
             disabled={saving}
-            className="
-              inline-flex items-center gap-2 px-6 py-2 rounded-full
-              border border-[#2F2F2F]
-              text-[16px] font-normal text-[#2F2F2F]
-              hover:bg-[#2F2F2F] hover:text-white
-              hover:border-[#2F2F2F]
-              transition disabled:opacity-60 disabled:cursor-not-allowed
-            "
+            className="inline-flex items-center gap-2 px-6 py-2 rounded-full border border-[#2F2F2F] text-[16px] font-normal text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white hover:border-[#2F2F2F] transition disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            <img
-              src={actionIconSrc}
-              alt={editMode ? "Save changes" : "Edit profile"}
-              className="w-6 h-6"
-            />
+            <img src={actionIconSrc} alt={editMode ? "Save changes" : "Edit profile"} className="w-6 h-6" />
             <span>{actionLabel}</span>
           </button>
         </div>
@@ -594,13 +632,7 @@ export default function ProfilePage() {
           {editMode && (
             <label className="absolute -bottom-2 right-0 bg-white px-3 py-1 border rounded-full text-xs cursor-pointer shadow-sm hover:bg-gray-50">
               Change
-              <input
-                type="file"
-                className="hidden"
-                onChange={handleAvatarUpload}
-                accept="image/*"
-                disabled={uploading}
-              />
+              <input type="file" className="hidden" onChange={handleAvatarUpload} accept="image/*" disabled={uploading} />
             </label>
           )}
         </div>
@@ -611,16 +643,11 @@ export default function ProfilePage() {
 
         {editMode && (
           <div className="mt-3 w-full max-w-[520px]">
-            <label className="block text-sm font-medium text-[#2F2F2F] mb-2">
-              Name
-            </label>
+            <label className="block text-sm font-medium text-[#2F2F2F] mb-2">Name</label>
             <input
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              className="
-                w-full border border-gray-300 px-4 py-3 rounded-xl
-                focus:ring-2 focus:ring-black outline-none transition
-              "
+              className="w-full border border-gray-300 px-4 py-3 rounded-xl focus:ring-2 focus:ring-black outline-none transition"
               placeholder="Your name"
               disabled={saving}
               autoComplete="name"
@@ -633,36 +660,18 @@ export default function ProfilePage() {
 
         <div className="flex items-center gap-6 mt-2 text-sm">
           <span className="flex items-center gap-2">
-            <img
-              src="/icons/date_profile.svg"
-              alt="Account creation date"
-              className="w-[24px] h-[24px]"
-            />
-            <span className="text-[14px] font-light text-[#2F2F2F]">
-              Since: {createdAt}
-            </span>
+            <img src="/icons/date_profile.svg" alt="Account creation date" className="w-[24px] h-[24px]" />
+            <span className="text-[14px] font-light text-[#2F2F2F]">Since: {createdAt}</span>
           </span>
 
           <span className="flex items-center gap-2">
-            <img
-              src="/icons/session_count.svg"
-              alt="Total sessions attended"
-              className="w-[24px] h-[24px]"
-            />
-            <span className="text-[14px] font-medium text-[#2F2F2F]">
-              {attendedCount} sessions
-            </span>
+            <img src="/icons/session_count.svg" alt="Total sessions attended" className="w-[24px] h-[24px]" />
+            <span className="text-[14px] font-medium text-[#2F2F2F]">{attendedCount} sessions</span>
           </span>
 
           <span className="flex items-center gap-2">
-            <img
-              src="/icons/followers_profile.svg"
-              alt="Followers"
-              className="w-[24px] h-[24px]"
-            />
-            <span className="text-[14px] font-medium text-[#2F2F2F]">
-              {followersCount} followers
-            </span>
+            <img src="/icons/followers_profile.svg" alt="Followers" className="w-[24px] h-[24px]" />
+            <span className="text-[14px] font-medium text-[#2F2F2F]">{followersCount} followers</span>
           </span>
         </div>
       </div>
@@ -676,18 +685,13 @@ export default function ProfilePage() {
           <textarea
             value={bio}
             onChange={(e) => setBio(e.target.value)}
-            className="
-              w-full border border-gray-300 p-4 rounded-xl
-              focus:ring-2 focus:ring-black outline-none transition
-            "
+            className="w-full border border-gray-300 p-4 rounded-xl focus:ring-2 focus:ring-black outline-none transition"
             rows={4}
             placeholder="Tell us about yourself..."
           />
         ) : (
           <p className="text-gray-800 text-lg">
-            {bio || (
-              <span className="text-gray-400 italic">No bio added yet.</span>
-            )}
+            {bio || <span className="text-gray-400 italic">No bio added yet.</span>}
           </p>
         )}
       </section>
@@ -710,12 +714,7 @@ export default function ProfilePage() {
               <button
                 type="button"
                 onClick={() => navigate(`/profile/${user.id}`)}
-                className="
-                  inline-flex items-center justify-center rounded-full
-                  border border-[#2F2F2F] px-5 py-2.5
-                  text-[14px] text-[#2F2F2F]
-                  hover:bg-[#2F2F2F] hover:text-white transition
-                "
+                className="inline-flex items-center justify-center rounded-full border border-[#2F2F2F] px-5 py-2.5 text-[14px] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition"
               >
                 Open public profile · {followersCount} follower{followersCount === 1 ? "" : "s"}
               </button>
@@ -723,12 +722,7 @@ export default function ProfilePage() {
               <button
                 type="button"
                 onClick={() => navigate("/sessions")}
-                className="
-                  inline-flex items-center justify-center rounded-full
-                  bg-[#2F2F2F] px-5 py-2.5
-                  text-[14px] text-white
-                  hover:opacity-90 transition
-                "
+                className="inline-flex items-center justify-center rounded-full bg-[#2F2F2F] px-5 py-2.5 text-[14px] text-white hover:opacity-90 transition"
               >
                 Back to sessions
               </button>
@@ -748,58 +742,98 @@ export default function ProfilePage() {
                 </p>
               </div>
 
-              {hostSupportLoading && (
-                <span className="text-sm text-gray-500">Loading balance…</span>
-              )}
+              <div className="flex flex-wrap items-center gap-3">
+                {hostSupportLoading && <span className="text-sm text-gray-500">Loading balance…</span>}
+
+                <button
+                  type="button"
+                  onClick={handleAskPayout}
+                  disabled={payoutBusy || hostBalance.availableUsd <= 0 || hasOpenPayoutRequest}
+                  className="rounded-full bg-[#2F2F2F] px-5 py-2.5 text-[13px] font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  title={hasOpenPayoutRequest ? "You already have an open payout request" : "Ask admin to process payout"}
+                >
+                  {payoutBusy ? "Requesting..." : "Ask payout"}
+                </button>
+              </div>
             </div>
+
+            {(payoutMessage || payoutError) && (
+              <div className="px-6 pt-5">
+                <div
+                  className={`rounded-2xl border px-4 py-3 text-[13px] ${payoutError
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : "border-green-200 bg-green-50 text-green-700"
+                    }`}
+                >
+                  {payoutError || payoutMessage}
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 gap-3 px-6 py-5 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">
-                  Available
-                </div>
-                <div className="mt-2 text-2xl font-bold text-[#15803D]">
-                  {formatMoney(hostBalance.availableUsd)}
-                </div>
+                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">Available</div>
+                <div className="mt-2 text-2xl font-bold text-[#15803D]">{formatMoney(hostBalance.availableUsd)}</div>
               </div>
 
               <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">
-                  Pending
-                </div>
-                <div className="mt-2 text-2xl font-bold text-[#92400E]">
-                  {formatMoney(hostBalance.pendingUsd)}
-                </div>
+                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">Pending</div>
+                <div className="mt-2 text-2xl font-bold text-[#92400E]">{formatMoney(hostBalance.pendingUsd)}</div>
               </div>
 
               <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">
-                  Paid out
-                </div>
-                <div className="mt-2 text-2xl font-bold text-[#1D4ED8]">
-                  {formatMoney(hostBalance.paidOutUsd)}
-                </div>
+                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">Paid out</div>
+                <div className="mt-2 text-2xl font-bold text-[#1D4ED8]">{formatMoney(hostBalance.paidOutUsd)}</div>
               </div>
 
               <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">
-                  Total received
-                </div>
-                <div className="mt-2 text-2xl font-bold text-[#2F2F2F]">
-                  {formatMoney(hostBalance.totalReceivedUsd)}
-                </div>
+                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">Total received</div>
+                <div className="mt-2 text-2xl font-bold text-[#2F2F2F]">{formatMoney(hostBalance.totalReceivedUsd)}</div>
               </div>
             </div>
 
             <div className="border-t border-gray-200 px-6 py-5">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="text-[15px] font-bold text-[#2F2F2F]">
-                  Recent support
-                </h3>
+                <h3 className="text-[15px] font-bold text-[#2F2F2F]">Payout requests</h3>
+                <span className="text-[12px] text-gray-500">Showing latest {recentPayoutRequests.length}</span>
+              </div>
 
-                <span className="text-[12px] text-gray-500">
-                  Showing latest {recentSupportPayments.length}
-                </span>
+              {recentPayoutRequests.length === 0 ? (
+                <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-5 text-sm text-slate-500">
+                  No payout requests yet.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {recentPayoutRequests.map((request) => {
+                    const status = String(request.status || "requested");
+                    return (
+                      <div
+                        key={request.id}
+                        className="flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3"
+                      >
+                        <div>
+                          <div className="text-[14px] font-semibold text-[#2F2F2F]">
+                            {formatMoney(Number(request.amount_usd || 0))}
+                          </div>
+                          <div className="mt-0.5 text-[12px] text-gray-500">
+                            Requested {formatSessionDateTime(request.requested_at || request.created_at)}
+                          </div>
+                        </div>
+
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${getPayoutBadgeClass(status)}`}>
+                          {status}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-gray-200 px-6 py-5">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="text-[15px] font-bold text-[#2F2F2F]">Recent support</h3>
+                <span className="text-[12px] text-gray-500">Showing latest {recentSupportPayments.length}</span>
               </div>
 
               {recentSupportPayments.length === 0 ? (
@@ -830,11 +864,7 @@ export default function ProfilePage() {
                             {formatSessionDateTime(payment.created_at)}
                           </span>
 
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${getPaymentBadgeClass(
-                              status
-                            )}`}
-                          >
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${getPaymentBadgeClass(status)}`}>
                             {status}
                           </span>
                         </div>
@@ -845,8 +875,7 @@ export default function ProfilePage() {
               )}
 
               <p className="mt-4 text-[12px] leading-5 text-gray-500">
-                Payouts are currently handled manually. Available balance means the payment
-                succeeded and is recorded for host payout.
+                Payouts are currently handled manually. Available balance means the payment succeeded and is recorded for host payout.
               </p>
             </div>
           </div>
@@ -857,9 +886,7 @@ export default function ProfilePage() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div>
             <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="text-xl font-bold text-[#2F2F2F]">
-                Upcoming Sessions
-              </h2>
+              <h2 className="text-xl font-bold text-[#2F2F2F]">Upcoming Sessions</h2>
               <span className="rounded-full bg-[#EFF6FF] px-3 py-1 text-[12px] font-semibold text-[#1D4ED8]">
                 {upcomingSessions.length}
               </span>
@@ -878,27 +905,17 @@ export default function ProfilePage() {
                     <div
                       key={s.id}
                       onClick={() => navigate(`/room-livekit/${s.id}`)}
-                      className="
-                        bg-gray-50 rounded-xl px-5 py-3
-                        flex items-center justify-between gap-4
-                        hover:bg-gray-100 transition cursor-pointer
-                      "
+                      className="bg-gray-50 rounded-xl px-5 py-3 flex items-center justify-between gap-4 hover:bg-gray-100 transition cursor-pointer"
                     >
-                      <span className="min-w-0 truncate text-[14px] text-gray-800">
-                        {s.title}
-                      </span>
+                      <span className="min-w-0 truncate text-[14px] text-gray-800">{s.title}</span>
 
                       <div className="flex shrink-0 items-center gap-3">
                         <span className="text-right text-[12px] leading-snug text-gray-500">
-                          <span className="block text-[10px] uppercase tracking-[0.08em] text-gray-400">
-                            Starts
-                          </span>
+                          <span className="block text-[10px] uppercase tracking-[0.08em] text-gray-400">Starts</span>
                           {formatSessionDateTime(s.start_time)}
                         </span>
 
-                        {status && (
-                          <span className={getBadgeClass(status)}>{status}</span>
-                        )}
+                        {status && <span className={getBadgeClass(status)}>{status}</span>}
                       </div>
                     </div>
                   );
@@ -909,9 +926,7 @@ export default function ProfilePage() {
 
           <div>
             <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="text-xl font-bold text-[#2F2F2F]">
-                Hosted Sessions
-              </h2>
+              <h2 className="text-xl font-bold text-[#2F2F2F]">Hosted Sessions</h2>
               <span className="rounded-full bg-[#F3F4F6] px-3 py-1 text-[12px] font-semibold text-[#374151]">
                 {hostedSessions.length}
               </span>
@@ -932,15 +947,9 @@ export default function ProfilePage() {
                     <div
                       key={s.id}
                       onClick={() => navigate(`/room-livekit/${s.id}`)}
-                      className="
-                        bg-gray-50 rounded-xl px-5 py-3
-                        flex items-center justify-between gap-4
-                        hover:bg-gray-100 transition cursor-pointer
-                      "
+                      className="bg-gray-50 rounded-xl px-5 py-3 flex items-center justify-between gap-4 hover:bg-gray-100 transition cursor-pointer"
                     >
-                      <span className="min-w-0 truncate text-[14px] text-gray-800">
-                        {s.title}
-                      </span>
+                      <span className="min-w-0 truncate text-[14px] text-gray-800">{s.title}</span>
 
                       <div className="flex shrink-0 items-center gap-3">
                         <span className="text-right text-[12px] leading-snug text-gray-500">
@@ -950,9 +959,7 @@ export default function ProfilePage() {
                           {formatSessionDateTime(isLive ? s.start_time : endMs || s.start_time)}
                         </span>
 
-                        {status && (
-                          <span className={getBadgeClass(status)}>{status}</span>
-                        )}
+                        {status && <span className={getBadgeClass(status)}>{status}</span>}
                       </div>
                     </div>
                   );

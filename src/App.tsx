@@ -32,17 +32,13 @@ import ContactPage from "./pages/ContactPage";
 import AppLayout from "./layouts/AppLayout";
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
 
-// ✅ Canonical/SEO pages
 import BodyDoublingPage from "./pages/seo/BodyDoublingPage";
 import OnlineCoworkingPage from "./pages/seo/OnlineCoworkingPage";
 import GroupFocusSessionsPage from "./pages/seo/GroupFocusSessionsPage";
 import SilentCoworkingPage from "./pages/seo/SilentCoworkingPage";
 import AdhdProductivityPage from "./pages/seo/AdhdProductivityPage";
 
-// ✅ 404
 import NotFoundPage from "./pages/NotFoundPage";
-
-// ✅ UI playground (local testing page)
 import SessionCardsPlayground from "./SessionCardsPlayground";
 
 function BlogIndexPlaceholder() {
@@ -130,31 +126,31 @@ export default function App() {
   return (
     <CreateSessionModalProvider>
       <Routes>
-        {/* Routes WITH header/footer */}
         <Route element={<AppLayout />}>
-          {/* Root */}
           <Route path="/" element={<LandingPage />} />
 
-          {/* Core app pages */}
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/pricing/success" element={<PricingSuccessPage />} />
           <Route path="/updates" element={<UpdatesPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/profile/:id" element={<PublicProfilePage />} />
+
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="/admin/dashboard" element={<AdminPage />} />
+          <Route path="/admin/moderation" element={<AdminPage />} />
+
           <Route
             path="/admin/daily-schedule-email"
             element={<DailyScheduleEmailAdminPage />}
           />
+
           <Route path="/email/unsubscribe" element={<DailyScheduleUnsubscribePage />} />
           <Route path="/focus-plan" element={<FocusPlanPage />} />
           <Route path="/focus-shield" element={<FocusShieldPage />} />
 
-          {/* UI Playground */}
           <Route path="/ui-playground" element={<SessionCardsPlayground />} />
 
-          {/* Legal */}
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/refund-policy" element={<RefundPolicyPage />} />
@@ -162,31 +158,22 @@ export default function App() {
           <Route path="/data-deletion" element={<DataDeletionPage />} />
           <Route path="/rules" element={<RulesPage />} />
 
-          {/* Blog placeholders */}
           <Route path="/blog" element={<BlogIndexPlaceholder />} />
           <Route path="/blog/:slug" element={<BlogPostPlaceholder />} />
 
-          {/* Canonical SEO pages */}
           <Route path="/body-doubling" element={<BodyDoublingPage />} />
           <Route path="/online-coworking" element={<OnlineCoworkingPage />} />
-          <Route
-            path="/group-focus-sessions"
-            element={<GroupFocusSessionsPage />}
-          />
+          <Route path="/group-focus-sessions" element={<GroupFocusSessionsPage />} />
           <Route path="/silent-coworking" element={<SilentCoworkingPage />} />
           <Route path="/adhd-productivity" element={<AdhdProductivityPage />} />
 
-          {/* Temporary AI assistant route */}
           <Route path="/ai-assistant" element={<SessionsPage />} />
 
-          {/* 404 for layout routes */}
           <Route path="*" element={<NotFoundPage />} />
         </Route>
 
-        {/* Public pretty slugs WITHOUT header/footer: mysession.club/:slug */}
         <Route path="/:slug" element={<PublicSlugRedirectPage />} />
 
-        {/* Routes WITHOUT header/footer */}
         <Route path="/room/:id" element={<RoomPage />} />
         <Route path="/room-iframe/:id" element={<RoomPageIFrame />} />
         <Route path="/room-livekit/:id" element={<RoomPageLiveKit />} />
@@ -194,7 +181,6 @@ export default function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/update-password" element={<UpdatePasswordPage />} />
 
-        {/* OAuth callback routes */}
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/auth/callback/" element={<AuthCallback />} />
       </Routes>
