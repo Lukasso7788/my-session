@@ -8,9 +8,7 @@ export default function Footer() {
         <footer className="w-full bg-white border-t border-[#EAEAEA]">
             <div className="w-full px-3 md:px-6 lg:px-10">
                 <div className="py-10">
-                    {/* Top row */}
                     <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between">
-                        {/* Brand */}
                         <div className="max-w-[420px]">
                             <div className="text-[22px] font-semibold text-[#2F2F2F]">
                                 MySession
@@ -35,39 +33,44 @@ export default function Footer() {
                             </div>
                         </div>
 
-                        {/* Links */}
-                        <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
+                        <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
                             <div className="flex flex-col gap-3">
                                 <div className="text-[12px] font-semibold tracking-wide text-[#2F2F2F]">
                                     Product
                                 </div>
 
-                                <Link
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    to="/sessions"
-                                >
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/sessions">
                                     Sessions
                                 </Link>
 
-                                <Link
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    to="/pricing"
-                                >
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/pricing">
                                     Pricing
                                 </Link>
 
-                                <Link
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    to="/updates"
-                                >
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/updates">
                                     Latest updates
                                 </Link>
 
-                                <Link
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    to="/blog"
-                                >
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/blog">
                                     Blog
+                                </Link>
+                            </div>
+
+                            <div className="flex flex-col gap-3">
+                                <div className="text-[12px] font-semibold tracking-wide text-[#2F2F2F]">
+                                    Growth
+                                </div>
+
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/affiliate">
+                                    Affiliate Program
+                                </Link>
+
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/profile">
+                                    Host profile
+                                </Link>
+
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/sessions">
+                                    Host sessions
                                 </Link>
                             </div>
 
@@ -76,38 +79,23 @@ export default function Footer() {
                                     Legal
                                 </div>
 
-                                <Link
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    to="/rules"
-                                >
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/rules">
                                     Rules
                                 </Link>
 
-                                <Link
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    to="/terms"
-                                >
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/terms">
                                     Terms
                                 </Link>
 
-                                <Link
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    to="/privacy"
-                                >
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/privacy">
                                     Privacy
                                 </Link>
 
-                                <Link
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    to="/refund-policy"
-                                >
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/refund-policy">
                                     Refund Policy
                                 </Link>
 
-                                <Link
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    to="/data-deletion"
-                                >
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/data-deletion">
                                     Data deletion
                                 </Link>
                             </div>
@@ -117,70 +105,44 @@ export default function Footer() {
                                     Support
                                 </div>
 
-                                <Link
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    to="/contact"
-                                >
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/contact">
                                     Contact page
                                 </Link>
 
-                                <Link
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    to="/updates"
-                                >
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/updates">
                                     Updates
                                 </Link>
 
-                                <Link
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    to="/pricing"
-                                >
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/pricing">
                                     Billing info
                                 </Link>
 
-                                <a
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    href={WHATSAPP_URL}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                >
+                                <a className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" href={WHATSAPP_URL} target="_blank" rel="noreferrer">
                                     WhatsApp community
                                 </a>
 
-                                <a
-                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
-                                    href={DISCORD_URL}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                >
+                                <a className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" href={DISCORD_URL} target="_blank" rel="noreferrer">
                                     Discord community
                                 </a>
                             </div>
                         </div>
                     </div>
 
-                    {/* Bottom row */}
                     <div className="mt-10 pt-6 border-t border-[#EAEAEA] flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="text-[13px] text-[#606060]">
                             © {new Date().getFullYear()} MySession. All rights reserved.
                         </div>
 
                         <div className="flex items-center gap-4">
-                            <a
-                                className="text-[13px] text-[#606060] hover:text-[#2F2F2F]"
-                                href={WHATSAPP_URL}
-                                target="_blank"
-                                rel="noreferrer"
-                            >
+                            <Link className="text-[13px] text-[#606060] hover:text-[#2F2F2F]" to="/affiliate">
+                                Affiliate
+                            </Link>
+
+                            <a className="text-[13px] text-[#606060] hover:text-[#2F2F2F]" href={WHATSAPP_URL} target="_blank" rel="noreferrer">
                                 WhatsApp
                             </a>
 
-                            <a
-                                className="text-[13px] text-[#606060] hover:text-[#2F2F2F]"
-                                href={DISCORD_URL}
-                                target="_blank"
-                                rel="noreferrer"
-                            >
+                            <a className="text-[13px] text-[#606060] hover:text-[#2F2F2F]" href={DISCORD_URL} target="_blank" rel="noreferrer">
                                 Discord
                             </a>
                         </div>
