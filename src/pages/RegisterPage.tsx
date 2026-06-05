@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, ExternalLink } from "lucide-react";
 import HeaderLite from "../components/HeaderLite";
+import { attachReferralToNewUser } from "../lib/referrals";
 
 function isInAppBrowser() {
   if (typeof navigator === "undefined") return false;
@@ -17,10 +18,7 @@ function getOauthRedirectUrl() {
     return "https://www.mysession.club/auth/callback?redirect=%2Fsessions";
   }
 
-  const host = window.location.hostname.toLowerCase();
-  const isLocalhost = host === "localhost" || host === "127.0.0.1";
   const base = window.location.origin;
-
   return `${base}/auth/callback?redirect=%2Fsessions`;
 }
 
@@ -29,10 +27,7 @@ function getEmailSignupRedirectUrl() {
     return "https://www.mysession.club/auth/callback?redirect=%2Fsessions";
   }
 
-  const host = window.location.hostname.toLowerCase();
-  const isLocalhost = host === "localhost" || host === "127.0.0.1";
   const base = window.location.origin;
-
   return `${base}/auth/callback?redirect=%2Fsessions`;
 }
 
@@ -85,6 +80,12 @@ export default function RegisterPage() {
             bio: "",
           },
         ]);
+
+        try {
+          await attachReferralToNewUser(data.user.id);
+        } catch (referralError) {
+          console.warn("[referrals] failed to attach referral after signup:", referralError);
+        }
       }
 
       alert(
@@ -107,9 +108,7 @@ export default function RegisterPage() {
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: {
-          redirectTo,
-        },
+        options: { redirectTo },
       });
 
       if (error) {
@@ -158,9 +157,7 @@ export default function RegisterPage() {
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "facebook",
-        options: {
-          redirectTo,
-        },
+        options: { redirectTo },
       });
 
       if (error) {

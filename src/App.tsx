@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Routes, Route, Link } from "react-router-dom";
 
 import { SessionsPage } from "./pages/SessionsPage";
@@ -31,6 +32,7 @@ import ContactPage from "./pages/ContactPage";
 
 import AppLayout from "./layouts/AppLayout";
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
+import { storeReferralCodeFromUrl } from "./lib/referrals";
 
 import BodyDoublingPage from "./pages/seo/BodyDoublingPage";
 import OnlineCoworkingPage from "./pages/seo/OnlineCoworkingPage";
@@ -122,6 +124,10 @@ function BlogPostPlaceholder() {
 
 export default function App() {
   console.log("[ROUTER] App mounted");
+
+  useEffect(() => {
+    storeReferralCodeFromUrl();
+  }, []);
 
   return (
     <CreateSessionModalProvider>
