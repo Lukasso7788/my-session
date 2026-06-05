@@ -61,6 +61,10 @@ export default function Footer() {
                                     Growth
                                 </div>
 
+                                <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/referrals">
+                                    Referral Program
+                                </Link>
+
                                 <Link className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" to="/affiliate">
                                     Affiliate Program
                                 </Link>
@@ -117,11 +121,21 @@ export default function Footer() {
                                     Billing info
                                 </Link>
 
-                                <a className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" href={WHATSAPP_URL} target="_blank" rel="noreferrer">
+                                <a
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    href={WHATSAPP_URL}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
                                     WhatsApp community
                                 </a>
 
-                                <a className="text-[14px] text-[#606060] hover:text-[#2F2F2F]" href={DISCORD_URL} target="_blank" rel="noreferrer">
+                                <a
+                                    className="text-[14px] text-[#606060] hover:text-[#2F2F2F]"
+                                    href={DISCORD_URL}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
                                     Discord community
                                 </a>
                             </div>
@@ -134,15 +148,29 @@ export default function Footer() {
                         </div>
 
                         <div className="flex items-center gap-4">
+                            <Link className="text-[13px] text-[#606060] hover:text-[#2F2F2F]" to="/referrals">
+                                Referrals
+                            </Link>
+
                             <Link className="text-[13px] text-[#606060] hover:text-[#2F2F2F]" to="/affiliate">
                                 Affiliate
                             </Link>
 
-                            <a className="text-[13px] text-[#606060] hover:text-[#2F2F2F]" href={WHATSAPP_URL} target="_blank" rel="noreferrer">
+                            <a
+                                className="text-[13px] text-[#606060] hover:text-[#2F2F2F]"
+                                href={WHATSAPP_URL}
+                                target="_blank"
+                                rel="noreferrer"
+                            >
                                 WhatsApp
                             </a>
 
-                            <a className="text-[13px] text-[#606060] hover:text-[#2F2F2F]" href={DISCORD_URL} target="_blank" rel="noreferrer">
+                            <a
+                                className="text-[13px] text-[#606060] hover:text-[#2F2F2F]"
+                                href={DISCORD_URL}
+                                target="_blank"
+                                rel="noreferrer"
+                            >
                                 Discord
                             </a>
                         </div>

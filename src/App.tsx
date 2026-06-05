@@ -23,6 +23,7 @@ import PricingPage from "./pages/PricingPage";
 import PricingSuccessPage from "./pages/PricingSuccessPage";
 import UpdatesPage from "./pages/UpdatesPage";
 import AffiliatePage from "./pages/AffiliatePage";
+import ReferralPage from "./pages/ReferralPage";
 
 import PrivacyPage from "./pages/PrivacyPage";
 import DataDeletionPage from "./pages/DataDeletionPage";
@@ -140,6 +141,7 @@ export default function App() {
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/pricing/success" element={<PricingSuccessPage />} />
           <Route path="/updates" element={<UpdatesPage />} />
+          <Route path="/referrals" element={<ReferralPage />} />
           <Route path="/affiliate" element={<AffiliatePage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/profile/:id" element={<PublicProfilePage />} />
