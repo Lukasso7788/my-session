@@ -2583,15 +2583,7 @@ export function CreateSessionModal({
       const rows = datesLocal.map((d, idx) => {
         const scheduledISO = d.toISOString();
 
-        // IMPORTANT: for a single reusable public link, do NOT store the slug
-        // directly on the new sessions row. The sessions.custom_slug column can be
-        // unique in production, so reusing the same link would make the insert fail.
-        // The reusable link is owned by public_url_slugs and re-pointed after insert.
-        // Series links are dated and unique, so those can still be stored on sessions.
-        const customSlugForRow =
-          baseSlug && isSeries ? slugsForInsert[idx] || null : null;
-
-        return {
+        const row: Record<string, unknown> = {
           title,
           description: normalizedDescription,
           host_id: profile.id,
@@ -2610,17 +2602,68 @@ export function CreateSessionModal({
           jitsi_domain: FIXED_JITSI_DOMAIN,
 
           max_participants: effectiveMaxParticipants,
-          custom_slug: customSlugForRow,
           assigned_server_id: placement.server.id,
           placement_weight: placement.placementWeight,
           assigned_at: new Date().toISOString(),
         };
+
+        // IMPORTANT:
+        // For a single reusable public link, we intentionally DO NOT send custom_slug
+        // to the sessions insert at all. Sending custom_slug, even in legacy flows,
+        // can hit the DB trigger/unique check: Public URL slug "<slug>" is already taken.
+        //
+        // The reusable link lives in public_url_slugs. After the session is created,
+        // we only re-point public_url_slugs.owner_id to the newly created session id.
+        //
+        // Series links are dated and unique, so they can still be stored on sessions.
+        if (baseSlug && isSeries) {
+          row.custom_slug = slugsForInsert[idx] || null;
+        }
+
+        return row;
       });
 
-      const { data: insertedSessions, error: insertError } = await supabase
+      let insertedSessions: any[] | null = null;
+      let insertError: any = null;
+
+      const insertResult = await supabase
         .from("sessions")
         .insert(rows)
         .select("id, host_id, custom_slug");
+
+      insertedSessions = (insertResult.data as any[]) || null;
+      insertError = insertResult.error;
+
+      // Safety retry for the exact legacy failure:
+      // if the DB still complains that the reusable slug is taken, retry once with
+      // custom_slug forcibly removed from every row. This keeps creation unblocked
+      // and lets public_url_slugs become the only reusable-link source of truth.
+      if (insertError && baseSlug && !isSeries) {
+        const msg = String(insertError?.message || "");
+        const looksLikeReusableSlugCollision =
+          msg.includes("Public URL slug") && msg.includes("already taken");
+
+        if (looksLikeReusableSlugCollision) {
+          console.warn(
+            "[slug] sessions insert hit reusable slug collision; retrying without sessions.custom_slug",
+            insertError,
+          );
+
+          const rowsWithoutSessionSlug = rows.map((row) => {
+            const copy = { ...row };
+            delete (copy as any).custom_slug;
+            return copy;
+          });
+
+          const retryResult = await supabase
+            .from("sessions")
+            .insert(rowsWithoutSessionSlug)
+            .select("id, host_id, custom_slug");
+
+          insertedSessions = (retryResult.data as any[]) || null;
+          insertError = retryResult.error;
+        }
+      }
 
       if (insertError) throw insertError;
 
