@@ -32,41 +32,6 @@ const AUDIENCE_CHIPS = [
     { emoji: "✨", label: "Creators", tone: "blue" },
 ];
 
-const HERO_TASK_CARDS = [
-    {
-        name: "Daniel",
-        avatar: "/images/landing/hero-card-avatar-daniel.png",
-        flag: "/images/landing/flag-france.svg",
-        task1: "Studying biology",
-        task2: "Working on my thesis chapter 3",
-        position: "leftTop",
-    },
-    {
-        name: "Alex R.",
-        avatar: "/images/landing/hero-card-avatar-alex.png",
-        flag: "/images/landing/flag-india.svg",
-        task1: "Preparing slides for tomorrow's meeting",
-        task2: "Editing a client report",
-        position: "rightTop",
-    },
-    {
-        name: "Mark",
-        avatar: "/images/landing/hero-card-avatar-mark.png",
-        flag: "/images/landing/flag-spain.svg",
-        task1: "Reviewing code",
-        task2: "Fixing bugs in my side project",
-        position: "leftBottom",
-    },
-    {
-        name: "Sofia",
-        avatar: "/images/landing/hero-card-avatar-sofia.png",
-        flag: "/images/landing/flag-canada.svg",
-        task1: "Researching ideas for my next article",
-        task2: "Writing a newsletter",
-        position: "rightBottom",
-    },
-];
-
 const STATS = [
     { value: "85%", text: "Report getting started on tasks more easily." },
     { value: "3.8x", text: "More likely to finish the task they came to do." },
@@ -211,96 +176,25 @@ function MovingChips({
     );
 }
 
-function HeroTaskCard({ card }: { card: (typeof HERO_TASK_CARDS)[number] }) {
-    return (
-        <div className="w-[151px] rounded-[8px] border border-[#E6E6E6] bg-white px-[16px] py-[16px] text-left shadow-[0_18px_42px_rgba(47,47,47,0.08)]">
-            <div className="flex items-start justify-between gap-2">
-                <div className="flex min-w-0 items-start gap-[8px]">
-                    <img
-                        src={card.avatar}
-                        alt={`${card.name} avatar`}
-                        className="h-[25px] w-[25px] shrink-0 rounded-full object-cover"
-                        draggable={false}
-                    />
-
-                    <div className="min-w-0 pt-[1px]">
-                        <div className="truncate text-[10px] font-medium leading-[12px] text-[#2F2F2F]">
-                            {card.name}
-                        </div>
-
-                        <img
-                            src={card.flag}
-                            alt=""
-                            className="mt-[3px] h-[7px] w-[11px] select-none object-cover"
-                            draggable={false}
-                        />
-                    </div>
-                </div>
-
-                <div className="flex shrink-0 items-center gap-[4px] pt-[2px] text-[6px] font-medium leading-none text-[#28DC2B]">
-                    <span className="h-[5px] w-[5px] rounded-full bg-[#28DC2B]" />
-                    Live now
-                </div>
-            </div>
-
-            <div className="mt-[15px] text-[9px] font-medium leading-[11px] text-[#666666]">
-                Working on:
-            </div>
-
-            <div className="mt-[8px] space-y-[7px]">
-                {[card.task1, card.task2].map((task) => (
-                    <div key={task} className="flex items-start gap-[7px]">
-                        <span className="mt-[1px] h-[11px] w-[11px] shrink-0 rounded-full border border-[#2F2F2F]" />
-                        <span className="text-[9px] font-medium leading-[11px] text-[#2F2F2F]">
-                            {task}
-                        </span>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-}
-
 function HeroArtwork() {
-    const positionClass: Record<string, string> = {
-        leftTop: "left-[0px] top-[22px] xl:left-[24px]",
-        rightTop: "right-[0px] top-[22px] xl:right-[24px]",
-        leftBottom: "left-[0px] bottom-[42px] xl:left-[24px]",
-        rightBottom: "right-[0px] bottom-[42px] xl:right-[24px]",
-    };
-
     return (
         <div className="mx-auto mt-[64px] w-full max-w-[1320px] md:mt-[70px]">
-            <div className="relative hidden min-h-[585px] md:block">
-                <div className="pointer-events-none absolute left-1/2 top-[54px] w-[780px] -translate-x-1/2 lg:w-[820px] xl:w-[860px]">
-                    <img
-                        src="/images/landing/hero-room-desktop.png"
-                        alt="MySession live coworking room preview"
-                        className="block w-full select-none object-contain"
-                        draggable={false}
-                    />
-                </div>
-
-                {HERO_TASK_CARDS.map((card) => (
-                    <div key={card.name} className={cx("absolute z-10", positionClass[card.position])}>
-                        <HeroTaskCard card={card} />
-                    </div>
-                ))}
+            <div className="hidden md:block">
+                <img
+                    src="/images/landing/hero-complete-desktop.png"
+                    alt="MySession live coworking room preview"
+                    className="mx-auto block w-full max-w-[1180px] select-none object-contain"
+                    draggable={false}
+                />
             </div>
 
             <div className="block md:hidden">
                 <img
-                    src="/images/landing/hero-room-mobile.png"
-                    alt="MySession live room preview"
+                    src="/images/landing/hero-complete-mobile.png"
+                    alt="MySession live coworking room preview"
                     className="mx-auto block w-full max-w-[420px] select-none object-contain"
                     draggable={false}
                 />
-
-                <div className="mx-auto mt-5 grid max-w-[420px] grid-cols-1 gap-3 min-[420px]:grid-cols-2">
-                    {HERO_TASK_CARDS.map((card) => (
-                        <HeroTaskCard key={card.name} card={card} />
-                    ))}
-                </div>
             </div>
         </div>
     );
@@ -339,8 +233,12 @@ function FeatureCard({
 }) {
     return (
         <div className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
-            <h3 className="text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">{title}</h3>
-            <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">{text}</p>
+            <h3 className="text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">
+                {title}
+            </h3>
+            <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">
+                {text}
+            </p>
             {children ? <div className="mt-6">{children}</div> : null}
         </div>
     );
@@ -382,8 +280,12 @@ function WorkMoreSection() {
                                 className="flex items-center justify-between rounded-[14px] bg-white px-4 py-3"
                             >
                                 <div>
-                                    <div className="text-[13px] font-bold text-[#2F2F2F]">{name}</div>
-                                    <div className="mt-0.5 text-[12px] font-medium text-[#747474]">{task}</div>
+                                    <div className="text-[13px] font-bold text-[#2F2F2F]">
+                                        {name}
+                                    </div>
+                                    <div className="mt-0.5 text-[12px] font-medium text-[#747474]">
+                                        {task}
+                                    </div>
                                 </div>
                                 <div className="rounded-full bg-[rgba(101,212,108,0.20)] px-3 py-1 text-[11px] font-bold text-[#2F2F2F]">
                                     {tag}
@@ -416,8 +318,12 @@ function WorkMoreSection() {
                     <div className="rounded-[18px] border border-[#E9E9E9] bg-[#F8F8F8] p-5">
                         <div className="mx-auto flex h-[116px] w-[116px] items-center justify-center rounded-full border-[10px] border-[rgba(101,212,108,0.35)] bg-white">
                             <div className="text-center">
-                                <div className="text-[28px] font-bold text-[#2F2F2F]">32:14</div>
-                                <div className="text-[11px] font-bold text-[#747474]">focus left</div>
+                                <div className="text-[28px] font-bold text-[#2F2F2F]">
+                                    32:14
+                                </div>
+                                <div className="text-[11px] font-bold text-[#747474]">
+                                    focus left
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -446,10 +352,15 @@ function FormatCard({
             <h3 className="mt-7 text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">
                 {title}
             </h3>
-            <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">{text}</p>
+            <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">
+                {text}
+            </p>
             <ul className="mt-6 space-y-3">
                 {bullets.map((bullet) => (
-                    <li key={bullet} className="flex gap-3 text-[13px] font-medium leading-[22px] text-[#2F2F2F]">
+                    <li
+                        key={bullet}
+                        className="flex gap-3 text-[13px] font-medium leading-[22px] text-[#2F2F2F]"
+                    >
                         <span className="mt-[7px] h-2 w-2 shrink-0 rounded-full bg-[#65D46C]" />
                         <span>{bullet}</span>
                     </li>
@@ -475,19 +386,31 @@ function FormatsSection() {
                     icon="✅"
                     title="Group sessions"
                     text="Structured live coworking with check-ins and a shared focus container."
-                    bullets={["Great for momentum", "Pomodoro and deep work", "Best when you need structure"]}
+                    bullets={[
+                        "Great for momentum",
+                        "Pomodoro and deep work",
+                        "Best when you need structure",
+                    ]}
                 />
                 <FormatCard
                     icon="🔵"
                     title="24/7 rooms"
                     text="Permanent rooms you can enter anytime without waiting for a scheduled session."
-                    bullets={["Always available", "Low-friction start", "Perfect for daily rhythm"]}
+                    bullets={[
+                        "Always available",
+                        "Low-friction start",
+                        "Perfect for daily rhythm",
+                    ]}
                 />
                 <FormatCard
                     icon="🎧"
                     title="Buddy tripling"
                     text="Small circles for people who want a calmer, more personal accountability format."
-                    bullets={["Comfortable and focused", "Good for recurring work", "Easy to build habit"]}
+                    bullets={[
+                        "Comfortable and focused",
+                        "Good for recurring work",
+                        "Easy to build habit",
+                    ]}
                 />
             </div>
         </SectionShell>
@@ -499,21 +422,24 @@ function CommunitySection() {
         <SectionShell className="mt-[120px]">
             <div className="overflow-hidden rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 py-14 text-center md:px-10 md:py-16">
                 <div className="mx-auto flex w-max -space-x-3">
-                    {["🧑", "👩", "👨", "👩‍💻", "🧑‍🎨", "👨‍🎓", "👩‍🔬", "🧑‍💼"].map((emoji, i) => (
-                        <div
-                            key={`${emoji}-${i}`}
-                            className="flex h-[54px] w-[54px] items-center justify-center rounded-full border-[3px] border-white bg-[#F2F2F2] text-[24px] shadow-sm"
-                        >
-                            {emoji}
-                        </div>
-                    ))}
+                    {["🧑", "👩", "👨", "👩‍💻", "🧑‍🎨", "👨‍🎓", "👩‍🔬", "🧑‍💼"].map(
+                        (emoji, i) => (
+                            <div
+                                key={`${emoji}-${i}`}
+                                className="flex h-[54px] w-[54px] items-center justify-center rounded-full border-[3px] border-white bg-[#F2F2F2] text-[24px] shadow-sm"
+                            >
+                                {emoji}
+                            </div>
+                        )
+                    )}
                 </div>
 
                 <h2 className="mx-auto mt-10 max-w-[620px] text-[26px] font-bold leading-[32px] tracking-[-1.1%] text-[#2F2F2F] md:text-[32px] md:leading-[38px]">
                     You’re Not Just Joining Sessions. You’re Joining A Community.
                 </h2>
                 <p className="mx-auto mt-5 max-w-[620px] text-[15px] font-medium leading-[25px] text-[#747474]">
-                    Work with students, freelancers, designers, developers, founders, remote workers, and creators — all showing up to make progress together.
+                    Work with students, freelancers, designers, developers, founders, remote
+                    workers, and creators — all showing up to make progress together.
                 </p>
                 <div className="mt-8">
                     <CtaButton to="/sessions" dark>
@@ -530,9 +456,21 @@ function CommunitySection() {
 
 function HowItWorksSection() {
     const items = [
-        { step: "1", title: "Join a session", text: "Pick a focus room or scheduled session and enter from your browser." },
-        { step: "2", title: "Write your task", text: "Set one clear intention, so your next step is visible and concrete." },
-        { step: "3", title: "Work alongside others", text: "Stay in the room, follow the flow, and finish more than you would alone." },
+        {
+            step: "1",
+            title: "Join a session",
+            text: "Pick a focus room or scheduled session and enter from your browser.",
+        },
+        {
+            step: "2",
+            title: "Write your task",
+            text: "Set one clear intention, so your next step is visible and concrete.",
+        },
+        {
+            step: "3",
+            title: "Work alongside others",
+            text: "Stay in the room, follow the flow, and finish more than you would alone.",
+        },
     ];
 
     return (
