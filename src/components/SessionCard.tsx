@@ -1389,6 +1389,9 @@ function computeNowStage(
 }
 
 function getRoomParam(session: any): string {
+    const sessionSlug = getSessionPublicSlug(session);
+    if (sessionSlug) return sessionSlug;
+
     const id = session?.id != null ? String(session.id).trim() : "";
     return id;
 }
@@ -1412,8 +1415,12 @@ function buildSessionInvitePath(session: any): string {
 function getSessionPublicSlug(session: any): string {
     const direct = String(
         session?.custom_slug ||
+        session?.customSlug ||
         session?.public_slug ||
+        session?.publicSlug ||
         session?.session_slug ||
+        session?.sessionSlug ||
+        session?.slug ||
         ""
     ).trim();
 
@@ -1421,12 +1428,16 @@ function getSessionPublicSlug(session: any): string {
 
     const embedded =
         session?.public_url_slugs ||
+        session?.publicUrlSlugs ||
         session?.public_url_slug ||
+        session?.publicUrlSlug ||
         session?.slug_row ||
+        session?.slugRow ||
         null;
 
     if (Array.isArray(embedded)) {
-        return String(embedded[0]?.slug || "").trim();
+        const first = embedded.find((row: any) => String(row?.slug || "").trim());
+        return String(first?.slug || "").trim();
     }
 
     return String(embedded?.slug || "").trim();
@@ -1442,7 +1453,7 @@ function getEmbeddedHostSlug(session: any): string {
     ).trim();
 }
 
-function buildPrettySessionUrl(session: any, hostSlug?: string | null): string {
+function buildPrettySessionUrl(session: any, _hostSlug?: string | null): string {
     const origin =
         typeof window !== "undefined" && window.location?.origin
             ? window.location.origin
@@ -1451,11 +1462,8 @@ function buildPrettySessionUrl(session: any, hostSlug?: string | null): string {
     const sessionSlug = getSessionPublicSlug(session);
     if (sessionSlug) return `${origin}/${sessionSlug}`;
 
-    const hs = String(hostSlug || "").trim() || getEmbeddedHostSlug(session);
-    if (hs) return `${origin}/${hs}`;
-
-    const roomParam = getRoomParam(session);
-    return roomParam ? `${origin}/room-livekit/${roomParam}` : `${origin}/sessions`;
+    const id = session?.id != null ? String(session.id).trim() : "";
+    return id ? `${origin}/room-livekit/${id}` : `${origin}/sessions`;
 }
 
 function buildPrettyHostUrl(hostSlug?: string | null): string {

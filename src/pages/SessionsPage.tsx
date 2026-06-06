@@ -5,6 +5,9 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
 import ActiveBanModal from "../components/ActiveBanModal";
+import SupportMySessionModal from "../components/SupportMySessionModal";
+import HostSessionPromptModal, { type HostPromptKind } from "../components/HostSessionPromptModal";
+import CommunityPromptModal from "../components/CommunityPromptModal";
 import { SessionsDateFilter } from "../components/SessionsDateFilter";
 import BodyTriplingBody from "../components/body/BodyTriplingBody";
 import { BodyTriplingIntro } from "../components/body/BodyTriplingIntro";
@@ -74,6 +77,17 @@ type PostSessionSessionOption = {
   duration_minutes?: number | null;
   host_id?: string | null;
 };
+
+type HostPromptStats = {
+  hostedTotal: number;
+  upcomingHosted: number;
+};
+
+const COMMUNITY_WHATSAPP_URL = "https://chat.whatsapp.com/JjoQhL64NOMITOi7mrG6EC";
+const COMMUNITY_DISCORD_URL = "https://discord.gg/j42NkFmmEj";
+
+const COMMUNITY_PROMPT_DISMISSED_KEY = "mysession_community_prompt_dismissed_at";
+const COMMUNITY_PROMPT_JOINED_KEY = "mysession_community_prompt_joined_at";
 
 function toLocalYMDFromISO(iso: string) {
   const d = new Date(iso);
@@ -442,94 +456,6 @@ function buildBodySchedule(duration: 25 | 50) {
 }
 
 
-type SupportMySessionModalProps = {
-  open: boolean;
-  onClose: () => void;
-  onSupport: () => void;
-};
-
-function SupportMySessionModal({
-  open,
-  onClose,
-  onSupport,
-}: SupportMySessionModalProps) {
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-[1200] flex items-center justify-center px-4 py-6">
-      <div
-        className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
-        onClick={onClose}
-      />
-
-      <div
-        className="
-          relative w-full max-w-[460px]
-          rounded-[28px]
-          bg-white
-          p-6 sm:p-7
-          text-[#2F2F2F]
-          shadow-[0_24px_80px_rgba(0,0,0,0.28)]
-        "
-        role="dialog"
-        aria-modal="true"
-        aria-label="Support MySession"
-      >
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-5 top-5 text-[#8A8A8A] transition hover:text-[#2F2F2F]"
-          aria-label="Close"
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M6 6L18 18M18 6L6 18"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-
-        <div className="pr-8">
-          <div className="inline-flex rounded-full bg-[#F2F2F2] px-3 py-1 text-[12px] font-semibold text-[#555555]">
-            Support the project
-          </div>
-
-          <h2 className="mt-4 text-[24px] font-bold leading-tight text-[#2F2F2F]">
-            Help keep MySession running
-          </h2>
-        </div>
-
-        <p className="mt-4 text-[15px] leading-6 text-[#666666]">
-          MySession is maintained by Yaroslav and supported by people who use it regularly.
-        </p>
-
-        <p className="mt-3 text-[15px] leading-6 text-[#666666]">
-          If this platform helps you focus, please consider subscribing. Your support helps cover hosting, video infrastructure, maintenance, and continued development.
-        </p>
-
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <button
-            type="button"
-            onClick={onSupport}
-            className="flex-1 rounded-full bg-[#2F2F2F] px-5 py-3.5 text-[15px] font-semibold text-white transition hover:opacity-90"
-          >
-            Support MySession
-          </button>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-[#CAC3C3] bg-white px-5 py-3.5 text-[15px] font-semibold text-[#2F2F2F] transition hover:bg-[#F8F8F8]"
-          >
-            Maybe later
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export function SessionsPage() {
   const navigate = useNavigate();
@@ -553,7 +479,12 @@ export function SessionsPage() {
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
   const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
+  const [lifetimeSessionsCount, setLifetimeSessionsCount] = useState<number | null>(null);
   const [supportModalOpen, setSupportModalOpen] = useState(false);
+  const [hostPromptStats, setHostPromptStats] = useState<HostPromptStats | null>(null);
+  const [hostPromptOpen, setHostPromptOpen] = useState(false);
+  const [hostPromptKind, setHostPromptKind] = useState<HostPromptKind>("never_hosted");
+  const [communityPromptOpen, setCommunityPromptOpen] = useState(false);
 
   const [postSessionPrompt, setPostSessionPrompt] =
     useState<PostSessionPromptState>({
@@ -609,19 +540,128 @@ export function SessionsPage() {
   useEffect(() => {
     if (!user?.id) {
       setEntitlementState(null);
+      setLifetimeSessionsCount(null);
       setSupportModalOpen(false);
+      setHostPromptStats(null);
+      setHostPromptOpen(false);
+      setCommunityPromptOpen(false);
       return;
     }
 
     let cancelled = false;
 
     const run = async () => {
+      const nowIso = new Date().toISOString();
+
       try {
-        const state = await loadEntitlementState();
-        if (!cancelled) setEntitlementState(state);
+        const [
+          stateResult,
+          lifetimeCountResult,
+          hostedTotalResult,
+          upcomingHostedResult,
+        ] = await Promise.allSettled([
+          loadEntitlementState(),
+          supabase
+            .from("session_attendance")
+            .select("session_id", { count: "exact", head: true })
+            .eq("user_id", user.id),
+          supabase
+            .from("sessions")
+            .select("id", { count: "exact", head: true })
+            .eq("host_id", user.id),
+          supabase
+            .from("sessions")
+            .select("id", { count: "exact", head: true })
+            .eq("host_id", user.id)
+            .gte("start_time", nowIso),
+        ]);
+
+        if (cancelled) return;
+
+        if (stateResult.status === "fulfilled") {
+          setEntitlementState(stateResult.value);
+        } else {
+          if (DEBUG) {
+            console.warn(
+              "[sessions-support] entitlement load failed:",
+              stateResult.reason
+            );
+          }
+          setEntitlementState(null);
+        }
+
+        if (lifetimeCountResult.status === "fulfilled") {
+          const { count, error } = lifetimeCountResult.value;
+
+          if (error) {
+            if (DEBUG) {
+              console.warn(
+                "[sessions-support] lifetime session count failed:",
+                error
+              );
+            }
+            setLifetimeSessionsCount(null);
+          } else {
+            setLifetimeSessionsCount(Number(count || 0));
+          }
+        } else {
+          if (DEBUG) {
+            console.warn(
+              "[sessions-support] lifetime session count crashed:",
+              lifetimeCountResult.reason
+            );
+          }
+          setLifetimeSessionsCount(null);
+        }
+
+        let hostedTotal = 0;
+        let upcomingHosted = 0;
+
+        if (hostedTotalResult.status === "fulfilled") {
+          const { count, error } = hostedTotalResult.value;
+
+          if (error) {
+            if (DEBUG) {
+              console.warn("[sessions-host-prompt] hosted total count failed:", error);
+            }
+          } else {
+            hostedTotal = Number(count || 0);
+          }
+        } else if (DEBUG) {
+          console.warn(
+            "[sessions-host-prompt] hosted total count crashed:",
+            hostedTotalResult.reason
+          );
+        }
+
+        if (upcomingHostedResult.status === "fulfilled") {
+          const { count, error } = upcomingHostedResult.value;
+
+          if (error) {
+            if (DEBUG) {
+              console.warn("[sessions-host-prompt] upcoming hosted count failed:", error);
+            }
+          } else {
+            upcomingHosted = Number(count || 0);
+          }
+        } else if (DEBUG) {
+          console.warn(
+            "[sessions-host-prompt] upcoming hosted count crashed:",
+            upcomingHostedResult.reason
+          );
+        }
+
+        setHostPromptStats({
+          hostedTotal,
+          upcomingHosted,
+        });
       } catch (e) {
-        if (DEBUG) console.warn("[sessions-support] entitlement load failed:", e);
-        if (!cancelled) setEntitlementState(null);
+        if (DEBUG) console.warn("[sessions-support] load failed:", e);
+        if (!cancelled) {
+          setEntitlementState(null);
+          setLifetimeSessionsCount(null);
+          setHostPromptStats(null);
+        }
       }
     };
 
@@ -636,9 +676,9 @@ export function SessionsPage() {
     if (!user?.id) return;
     if (!entitlementState?.isLoggedIn) return;
     if (entitlementState.isUnlimited) return;
+    if (lifetimeSessionsCount === null) return;
 
-    const sessionsUsed = Number(entitlementState.usage?.sessions_count || 0);
-    if (sessionsUsed < 5) return;
+    if (lifetimeSessionsCount <= 5) return;
 
     const key = "mysession_support_modal_dismissed_at";
     const lastDismissed = Number(localStorage.getItem(key) || 0);
@@ -653,7 +693,107 @@ export function SessionsPage() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [user?.id, entitlementState]);
+  }, [user?.id, entitlementState, lifetimeSessionsCount]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (activeBan) return;
+    if (supportModalOpen) return;
+    if (postSessionPrompt.open) return;
+    if (howItWorksOpen) return;
+
+    if (!hostPromptStats) return;
+
+    const hostedTotal = Math.max(0, Number(hostPromptStats.hostedTotal || 0));
+
+    const upcomingHostedFromStats = Math.max(
+      0,
+      Number(hostPromptStats.upcomingHosted || 0)
+    );
+
+    const upcomingHostedFromLoadedSessions = sessions.filter((s) => {
+      if (String(s.host_id || "") !== String(user.id)) return false;
+      if (!s.start_time) return false;
+
+      const startMs = new Date(s.start_time).getTime();
+      if (Number.isNaN(startMs)) return false;
+
+      return startMs >= Date.now();
+    }).length;
+
+    const upcomingHosted = Math.max(
+      upcomingHostedFromStats,
+      upcomingHostedFromLoadedSessions
+    );
+
+    // Active hosts already have supply on the schedule, so we do not nag them.
+    if (upcomingHosted > 0) return;
+
+    const kind: HostPromptKind =
+      hostedTotal <= 0 ? "never_hosted" : "inactive_host";
+
+    const key = `mysession_host_prompt_dismissed_at:${user.id}:${kind}`;
+    const lastDismissed = Number(localStorage.getItem(key) || 0);
+    const cooldownMs =
+      kind === "never_hosted"
+        ? 24 * 60 * 60 * 1000
+        : 3 * 24 * 60 * 60 * 1000;
+
+    if (lastDismissed && Date.now() - lastDismissed < cooldownMs) return;
+
+    const timer = window.setTimeout(() => {
+      setHostPromptKind(kind);
+      setHostPromptOpen(true);
+    }, 2200);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    user?.id,
+    activeBan,
+    supportModalOpen,
+    postSessionPrompt.open,
+    howItWorksOpen,
+    hostPromptStats,
+    sessions,
+  ]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (activeBan) return;
+    if (supportModalOpen) return;
+    if (hostPromptOpen) return;
+    if (postSessionPrompt.open) return;
+    if (howItWorksOpen) return;
+
+    const now = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+    const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+
+    const joinedAt = Number(localStorage.getItem(COMMUNITY_PROMPT_JOINED_KEY) || 0);
+    if (joinedAt && now - joinedAt < ninetyDaysMs) return;
+
+    const dismissedAt = Number(
+      localStorage.getItem(COMMUNITY_PROMPT_DISMISSED_KEY) || 0
+    );
+    if (dismissedAt && now - dismissedAt < sevenDaysMs) return;
+
+    const timer = window.setTimeout(() => {
+      setCommunityPromptOpen(true);
+    }, 3600);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    user?.id,
+    activeBan,
+    supportModalOpen,
+    hostPromptOpen,
+    postSessionPrompt.open,
+    howItWorksOpen,
+  ]);
 
   useEffect(() => {
     const onRefresh = () => {
@@ -995,6 +1135,45 @@ export function SessionsPage() {
         .filter((x) => x.length > 0);
 
       /**
+       * Optional public slug enrichment.
+       *
+       * Reusable public links now live in public_url_slugs, where owner_id points
+       * to the current session. The sessions row may still have an old/null
+       * custom_slug, so cards must receive the slug from public_url_slugs too.
+       */
+      let publicSlugBySessionId = new Map<string, string>();
+
+      if (ids.length) {
+        try {
+          const { data: slugRows, error: slugError } = await supabase
+            .from("public_url_slugs")
+            .select("slug, owner_id")
+            .eq("owner_type", "session")
+            .in("owner_id", ids);
+
+          if (slugError) throw slugError;
+
+          for (const row of (slugRows || []) as any[]) {
+            const ownerId = String(row?.owner_id || "").trim();
+            const slug = String(row?.slug || "").trim();
+
+            if (ownerId && slug) {
+              publicSlugBySessionId.set(ownerId, slug);
+            }
+          }
+        } catch (slugErr) {
+          if (DEBUG) {
+            console.warn(
+              "[DEBUG Sessions] Optional public slug load failed. Cards will fall back to session id:",
+              slugErr
+            );
+          }
+
+          publicSlugBySessionId = new Map();
+        }
+      }
+
+      /**
        * Optional enrichment.
        *
        * If anon RLS blocks session_bookings/profiles, we do NOT fail the page.
@@ -1040,10 +1219,22 @@ export function SessionsPage() {
         }
       }
 
-      const hydratedRows = rows.map((s) => ({
-        ...s,
-        session_bookings: bookingsBySessionId.get(String(s.id)) || [],
-      }));
+      const hydratedRows = rows.map((s) => {
+        const sessionId = String((s as any).id || "").trim();
+        const publicSlug = publicSlugBySessionId.get(sessionId) || "";
+
+        return {
+          ...s,
+          public_slug: publicSlug || (s as any).public_slug || null,
+          public_url_slug: publicSlug
+            ? { slug: publicSlug }
+            : (s as any).public_url_slug || null,
+          public_url_slugs: publicSlug
+            ? [{ slug: publicSlug, owner_type: "session", owner_id: sessionId }]
+            : (s as any).public_url_slugs || [],
+          session_bookings: bookingsBySessionId.get(sessionId) || [],
+        };
+      });
 
       setSessions(hydratedRows);
 
@@ -1475,14 +1666,53 @@ export function SessionsPage() {
     setSupportModalOpen(false);
   }, []);
 
-  const goToPricingFromSupportModal = useCallback(() => {
+  const closeHostPromptModal = useCallback(() => {
+    if (user?.id) {
+      localStorage.setItem(
+        `mysession_host_prompt_dismissed_at:${user.id}:${hostPromptKind}`,
+        Date.now().toString()
+      );
+    }
+
+    setHostPromptOpen(false);
+  }, [hostPromptKind, user?.id]);
+
+  const openCreateFromHostPrompt = useCallback(() => {
+    if (user?.id) {
+      localStorage.setItem(
+        `mysession_host_prompt_dismissed_at:${user.id}:${hostPromptKind}`,
+        Date.now().toString()
+      );
+    }
+
+    setHostPromptOpen(false);
+
+    if (showBanModal()) return;
+
+    if (!user) {
+      navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+      return;
+    }
+
+    modal.open();
+  }, [hostPromptKind, modal, navigate, showBanModal, user]);
+
+  const closeCommunityPromptModal = useCallback(() => {
     localStorage.setItem(
-      "mysession_support_modal_dismissed_at",
+      COMMUNITY_PROMPT_DISMISSED_KEY,
       Date.now().toString()
     );
-    setSupportModalOpen(false);
-    navigate("/pricing");
-  }, [navigate]);
+    setCommunityPromptOpen(false);
+  }, []);
+
+  const markCommunityPromptJoined = useCallback(() => {
+    localStorage.setItem(
+      COMMUNITY_PROMPT_JOINED_KEY,
+      Date.now().toString()
+    );
+    setCommunityPromptOpen(false);
+  }, []);
+
 
   const topPad =
     sessionTypeTab === "group"
@@ -1905,7 +2135,21 @@ export function SessionsPage() {
       <SupportMySessionModal
         open={supportModalOpen}
         onClose={closeSupportModal}
-        onSupport={goToPricingFromSupportModal}
+      />
+
+      <HostSessionPromptModal
+        open={hostPromptOpen}
+        kind={hostPromptKind}
+        onClose={closeHostPromptModal}
+        onHostSession={openCreateFromHostPrompt}
+      />
+
+      <CommunityPromptModal
+        open={communityPromptOpen}
+        whatsappUrl={COMMUNITY_WHATSAPP_URL}
+        discordUrl={COMMUNITY_DISCORD_URL}
+        onClose={closeCommunityPromptModal}
+        onJoinedCommunity={markCommunityPromptJoined}
       />
 
       <ActiveBanModal
