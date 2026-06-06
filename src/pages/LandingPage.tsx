@@ -2,8 +2,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-const BLACK = "#2F2F2F";
-
 const ROTATING_LINES = [
     "Struggle To Get Started?",
     "Lose Focus Easily?",
@@ -34,36 +32,35 @@ const AUDIENCE_CHIPS = [
     { emoji: "✨", label: "Creators", tone: "blue" },
 ];
 
-
 const HERO_TASK_CARDS = [
     {
         name: "Daniel",
-        flag: "🇺🇸",
-        accent: "#65D46C",
+        avatar: "/images/landing/hero-card-avatar-daniel.png",
+        flag: "/images/landing/flag-france.png",
         task1: "Studying biology",
         task2: "Working on my thesis chapter 3",
         position: "leftTop",
     },
     {
         name: "Alex R.",
-        flag: "🇮🇳",
-        accent: "#65D46C",
-        task1: "Preparing slides for tomorrow's meeting",
+        avatar: "/images/landing/hero-card-avatar-alex.png",
+        flag: "/images/landing/flag-india.png",
+        task1: "Preparing slides for tomorrow’s meeting",
         task2: "Editing a client report",
         position: "rightTop",
     },
     {
         name: "Mark",
-        flag: "🇺🇸",
-        accent: "#65D46C",
+        avatar: "/images/landing/hero-card-avatar-mark.png",
+        flag: "/images/landing/flag-spain.png",
         task1: "Reviewing code",
         task2: "Fixing bugs in my side project",
         position: "leftBottom",
     },
     {
         name: "Sofia",
-        flag: "🇨🇦",
-        accent: "#65D46C",
+        avatar: "/images/landing/hero-card-avatar-sofia.png",
+        flag: "/images/landing/flag-canada.png",
         task1: "Researching ideas for my next article",
         task2: "Writing a newsletter",
         position: "rightBottom",
@@ -71,18 +68,9 @@ const HERO_TASK_CARDS = [
 ];
 
 const STATS = [
-    {
-        value: "85%",
-        text: "Report getting started on tasks more easily.",
-    },
-    {
-        value: "3.8x",
-        text: "More likely to finish the task they came to do.",
-    },
-    {
-        value: "95%",
-        text: "Of people report improved focus.",
-    },
+    { value: "85%", text: "Report getting started on tasks more easily." },
+    { value: "3.8x", text: "More likely to finish the task they came to do." },
+    { value: "95%", text: "Of people report improved focus." },
 ];
 
 const FAQ_ITEMS = [
@@ -185,12 +173,7 @@ function Chip({ item }: { item: { emoji: string; label: string; tone: string } }
 function MovingChips({ items, reverse = false }: { items: Array<{ emoji: string; label: string; tone: string }>; reverse?: boolean }) {
     return (
         <div className="relative overflow-hidden py-1">
-            <div
-                className={cx(
-                    "landing-chip-track flex w-max items-center gap-[10px]",
-                    reverse && "landing-chip-track-reverse"
-                )}
-            >
+            <div className={cx("landing-chip-track flex w-max items-center gap-[10px]", reverse && "landing-chip-track-reverse")}>
                 {[...items, ...items, ...items].map((item, index) => (
                     <Chip key={`${item.label}-${index}`} item={item} />
                 ))}
@@ -201,35 +184,44 @@ function MovingChips({ items, reverse = false }: { items: Array<{ emoji: string;
 
 function HeroTaskCard({ card }: { card: (typeof HERO_TASK_CARDS)[number] }) {
     return (
-        <div className="w-[156px] rounded-[10px] bg-white px-[14px] py-[12px] text-left shadow-[0_18px_42px_rgba(47,47,47,0.08)] ring-1 ring-black/[0.04] md:w-[164px]">
-            <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-[8px]">
-                    <div className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-full bg-[#F2F2F2] text-[14px]">
-                        {card.name.slice(0, 1)}
-                    </div>
-                    <div className="min-w-0">
-                        <div className="truncate text-[10px] font-bold leading-none text-[#2F2F2F]">
+        <div className="w-[151px] rounded-[8px] border border-[#EDEDED] bg-white px-[16px] py-[16px] text-left shadow-[0_18px_42px_rgba(47,47,47,0.08)] md:w-[164px]">
+            <div className="flex items-start justify-between gap-[8px]">
+                <div className="flex min-w-0 items-start gap-[8px]">
+                    <img
+                        src={card.avatar}
+                        alt={`${card.name} avatar`}
+                        className="h-[25px] w-[25px] shrink-0 rounded-full object-cover"
+                        draggable={false}
+                    />
+
+                    <div className="min-w-0 pt-[1px]">
+                        <div className="truncate text-[10px] font-medium leading-[7px] text-[#2F2F2F]">
                             {card.name}
                         </div>
-                        <div className="mt-[3px] text-[10px] leading-none">{card.flag}</div>
+                        <img
+                            src={card.flag}
+                            alt="flag"
+                            className="mt-[5px] h-[7px] w-auto object-contain"
+                            draggable={false}
+                        />
                     </div>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-[4px] text-[8px] font-bold text-[#22C55E]">
-                    <span className="h-[5px] w-[5px] rounded-full bg-[#22C55E]" />
-                    Live now
+                <div className="flex shrink-0 items-center gap-[3px] pt-[1px] text-[6px] font-medium leading-[7px] text-[#28DC2B]">
+                    <span className="h-[5px] w-[5px] rounded-full bg-[#28DC2B]" />
+                    <span>Live now</span>
                 </div>
             </div>
 
-            <div className="mt-[12px] text-[9px] font-medium leading-none text-[#747474]">
+            <div className="mt-[12px] text-[9px] font-medium leading-[11px] text-[#666666]">
                 Working on:
             </div>
 
-            <div className="mt-[9px] space-y-[7px]">
+            <div className="mt-[8px] space-y-[7px]">
                 {[card.task1, card.task2].map((task) => (
                     <div key={task} className="flex items-start gap-[7px]">
-                        <span className="mt-[2px] h-[10px] w-[10px] shrink-0 rounded-full border border-[#2F2F2F]/60" />
-                        <span className="text-[9px] font-medium leading-[12px] text-[#2F2F2F]">{task}</span>
+                        <span className="mt-[1px] h-[10px] w-[10px] shrink-0 rounded-full border border-[#2F2F2F]" />
+                        <span className="text-[9px] font-medium leading-[11px] text-[#2F2F2F]">{task}</span>
                     </div>
                 ))}
             </div>
@@ -239,20 +231,20 @@ function HeroTaskCard({ card }: { card: (typeof HERO_TASK_CARDS)[number] }) {
 
 function HeroArtwork() {
     const positionClass: Record<string, string> = {
-        leftTop: "left-0 top-[4px]",
-        rightTop: "right-0 top-[12px]",
-        leftBottom: "left-0 bottom-[18px]",
-        rightBottom: "right-0 bottom-[18px]",
+        leftTop: "left-[116px] top-[0px] xl:left-[112px]",
+        rightTop: "right-[116px] top-[12px] xl:right-[112px]",
+        leftBottom: "left-[116px] bottom-[24px] xl:left-[112px]",
+        rightBottom: "right-[116px] bottom-[24px] xl:right-[112px]",
     };
 
     return (
         <div className="mx-auto mt-[64px] w-full max-w-[1220px] md:mt-[70px]">
             <div className="relative hidden min-h-[548px] md:block">
-                <div className="pointer-events-none absolute inset-x-[178px] top-[44px]">
+                <div className="pointer-events-none absolute inset-x-[270px] top-[32px] xl:inset-x-[250px]">
                     <img
                         src="/images/landing/hero-room-desktop.png"
                         alt="MySession live coworking room preview"
-                        className="mx-auto block w-full max-w-[805px] select-none object-contain"
+                        className="mx-auto block w-full max-w-[735px] select-none object-contain"
                         draggable={false}
                     />
                 </div>
@@ -287,16 +279,9 @@ function StatCards() {
         <SectionShell className="mt-[118px] md:mt-[130px]">
             <div className="mx-auto grid max-w-[780px] grid-cols-1 gap-6 sm:grid-cols-3">
                 {STATS.map((stat) => (
-                    <div
-                        key={stat.value}
-                        className="min-h-[150px] rounded-[18px] border border-[#E9E9E9] bg-white px-7 py-8 text-center shadow-[0_16px_40px_rgba(47,47,47,0.04)]"
-                    >
-                        <div className="text-[44px] font-bold leading-none tracking-[-1.1%] text-[#2F2F2F]">
-                            {stat.value}
-                        </div>
-                        <p className="mx-auto mt-7 max-w-[170px] text-[14px] font-medium leading-[22px] text-[#747474]">
-                            {stat.text}
-                        </p>
+                    <div key={stat.value} className="min-h-[150px] rounded-[18px] border border-[#E9E9E9] bg-white px-7 py-8 text-center shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
+                        <div className="text-[44px] font-bold leading-none tracking-[-1.1%] text-[#2F2F2F]">{stat.value}</div>
+                        <p className="mx-auto mt-7 max-w-[170px] text-[14px] font-medium leading-[22px] text-[#747474]">{stat.text}</p>
                     </div>
                 ))}
             </div>
@@ -348,9 +333,7 @@ function WorkMoreSection() {
                                     <div className="text-[13px] font-bold text-[#2F2F2F]">{name}</div>
                                     <div className="mt-0.5 text-[12px] font-medium text-[#747474]">{task}</div>
                                 </div>
-                                <div className="rounded-full bg-[rgba(101,212,108,0.20)] px-3 py-1 text-[11px] font-bold text-[#2F2F2F]">
-                                    {tag}
-                                </div>
+                                <div className="rounded-full bg-[rgba(101,212,108,0.20)] px-3 py-1 text-[11px] font-bold text-[#2F2F2F]">{tag}</div>
                             </div>
                         ))}
                     </div>
@@ -362,9 +345,7 @@ function WorkMoreSection() {
                 >
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         {["Code", "Study", "Design", "Write", "Plan", "Admin"].map((item) => (
-                            <div key={item} className="rounded-[14px] bg-[#F8F8F8] px-4 py-4 text-center text-[13px] font-bold text-[#2F2F2F]">
-                                {item}
-                            </div>
+                            <div key={item} className="rounded-[14px] bg-[#F8F8F8] px-4 py-4 text-center text-[13px] font-bold text-[#2F2F2F]">{item}</div>
                         ))}
                     </div>
                 </FeatureCard>
@@ -390,9 +371,7 @@ function WorkMoreSection() {
 function FormatCard({ icon, title, text, bullets }: { icon: string; title: string; text: string; bullets: string[] }) {
     return (
         <div className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
-            <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-[rgba(101,212,108,0.18)] text-[22px]">
-                {icon}
-            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-[rgba(101,212,108,0.18)] text-[22px]">{icon}</div>
             <h3 className="mt-7 text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">{title}</h3>
             <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">{text}</p>
             <ul className="mt-6 space-y-3">
@@ -419,24 +398,9 @@ function FormatsSection() {
             </div>
 
             <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
-                <FormatCard
-                    icon="✅"
-                    title="Group sessions"
-                    text="Structured live coworking with check-ins and a shared focus container."
-                    bullets={["Great for momentum", "Pomodoro and deep work", "Best when you need structure"]}
-                />
-                <FormatCard
-                    icon="🔵"
-                    title="24/7 rooms"
-                    text="Permanent rooms you can enter anytime without waiting for a scheduled session."
-                    bullets={["Always available", "Low-friction start", "Perfect for daily rhythm"]}
-                />
-                <FormatCard
-                    icon="🎧"
-                    title="Buddy tripling"
-                    text="Small circles for people who want a calmer, more personal accountability format."
-                    bullets={["Comfortable and focused", "Good for recurring work", "Easy to build habit"]}
-                />
+                <FormatCard icon="✅" title="Group sessions" text="Structured live coworking with check-ins and a shared focus container." bullets={["Great for momentum", "Pomodoro and deep work", "Best when you need structure"]} />
+                <FormatCard icon="🔵" title="24/7 rooms" text="Permanent rooms you can enter anytime without waiting for a scheduled session." bullets={["Always available", "Low-friction start", "Perfect for daily rhythm"]} />
+                <FormatCard icon="🎧" title="Buddy tripling" text="Small circles for people who want a calmer, more personal accountability format." bullets={["Comfortable and focused", "Good for recurring work", "Easy to build habit"]} />
             </div>
         </SectionShell>
     );
@@ -448,12 +412,7 @@ function CommunitySection() {
             <div className="overflow-hidden rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 py-14 text-center md:px-10 md:py-16">
                 <div className="mx-auto flex w-max -space-x-3">
                     {["🧑", "👩", "👨", "👩‍💻", "🧑‍🎨", "👨‍🎓", "👩‍🔬", "🧑‍💼"].map((emoji, i) => (
-                        <div
-                            key={`${emoji}-${i}`}
-                            className="flex h-[54px] w-[54px] items-center justify-center rounded-full border-[3px] border-white bg-[#F2F2F2] text-[24px] shadow-sm"
-                        >
-                            {emoji}
-                        </div>
+                        <div key={`${emoji}-${i}`} className="flex h-[54px] w-[54px] items-center justify-center rounded-full border-[3px] border-white bg-[#F2F2F2] text-[24px] shadow-sm">{emoji}</div>
                     ))}
                 </div>
 
@@ -476,36 +435,20 @@ function CommunitySection() {
 
 function HowItWorksSection() {
     const items = [
-        {
-            step: "1",
-            title: "Join a session",
-            text: "Pick a focus room or scheduled session and enter from your browser.",
-        },
-        {
-            step: "2",
-            title: "Write your task",
-            text: "Set one clear intention, so your next step is visible and concrete.",
-        },
-        {
-            step: "3",
-            title: "Work alongside others",
-            text: "Stay in the room, follow the flow, and finish more than you would alone.",
-        },
+        { step: "1", title: "Join a session", text: "Pick a focus room or scheduled session and enter from your browser." },
+        { step: "2", title: "Write your task", text: "Set one clear intention, so your next step is visible and concrete." },
+        { step: "3", title: "Work alongside others", text: "Stay in the room, follow the flow, and finish more than you would alone." },
     ];
 
     return (
         <SectionShell className="mt-[120px]">
             <div className="text-center">
-                <h2 className="text-[30px] font-bold leading-[34px] tracking-[-1.1%] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">
-                    How It Works
-                </h2>
+                <h2 className="text-[30px] font-bold leading-[34px] tracking-[-1.1%] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">How It Works</h2>
             </div>
             <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
                 {items.map((item) => (
                     <div key={item.step} className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(101,212,108,0.20)] text-[15px] font-bold text-[#2F2F2F]">
-                            {item.step}
-                        </div>
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(101,212,108,0.20)] text-[15px] font-bold text-[#2F2F2F]">{item.step}</div>
                         <h3 className="mt-7 text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">{item.title}</h3>
                         <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">{item.text}</p>
                     </div>
@@ -527,7 +470,7 @@ function FaqSection() {
             </div>
 
             <div className="mt-10 overflow-hidden rounded-[22px] border border-[#E9E9E9] bg-white">
-                {FAQ_ITEMS.map((item, index) => (
+                {FAQ_ITEMS.map((item) => (
                     <details key={item.q} className="group border-b border-[#E9E9E9] last:border-b-0">
                         <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5 text-left text-[15px] font-bold text-[#2F2F2F]">
                             {item.q}
@@ -550,14 +493,9 @@ function FinalCta() {
                     <br />
                     Done, Together?
                 </h2>
-                <p className="mx-auto mt-4 max-w-[480px] text-[15px] font-medium leading-[25px] text-white/70">
-                    Join a live focus session and make the next step easier to start.
-                </p>
+                <p className="mx-auto mt-4 max-w-[480px] text-[15px] font-medium leading-[25px] text-white/70">Join a live focus session and make the next step easier to start.</p>
                 <div className="mt-8">
-                    <Link
-                        to="/sessions"
-                        className="inline-flex h-[52px] items-center justify-center rounded-full bg-[#65D46C] px-8 text-[14px] font-bold text-[#2F2F2F] shadow-[0_18px_44px_rgba(101,212,108,0.30)] transition hover:-translate-y-0.5"
-                    >
+                    <Link to="/sessions" className="inline-flex h-[52px] items-center justify-center rounded-full bg-[#65D46C] px-8 text-[14px] font-bold text-[#2F2F2F] shadow-[0_18px_44px_rgba(101,212,108,0.30)] transition hover:-translate-y-0.5">
                         Join a session — free
                     </Link>
                 </div>
