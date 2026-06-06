@@ -263,16 +263,16 @@ function HeroTaskCard({ card }: { card: (typeof HERO_TASK_CARDS)[number] }) {
 
 function HeroArtwork() {
     const positionClass: Record<string, string> = {
-        leftTop: "left-[0px] top-[22px] xl:left-[24px]",
-        rightTop: "right-[0px] top-[22px] xl:right-[24px]",
-        leftBottom: "left-[0px] bottom-[42px] xl:left-[24px]",
-        rightBottom: "right-[0px] bottom-[42px] xl:right-[24px]",
+        leftTop: "left-[70px] top-[18px] lg:left-[88px] xl:left-[112px]",
+        rightTop: "right-[70px] top-[18px] lg:right-[88px] xl:right-[112px]",
+        leftBottom: "left-[70px] bottom-[92px] lg:left-[88px] xl:left-[112px]",
+        rightBottom: "right-[70px] bottom-[92px] lg:right-[88px] xl:right-[112px]",
     };
 
     return (
         <div className="mx-auto mt-[64px] w-full max-w-[1320px] md:mt-[70px]">
             <div className="relative hidden min-h-[585px] md:block">
-                <div className="pointer-events-none absolute left-1/2 top-[54px] w-[780px] -translate-x-1/2 lg:w-[820px] xl:w-[860px]">
+                <div className="pointer-events-none absolute left-1/2 top-[54px] w-[700px] -translate-x-1/2 lg:w-[760px] xl:w-[805px]">
                     <img
                         src="/images/landing/hero-room-desktop.png"
                         alt="MySession live coworking room preview"
