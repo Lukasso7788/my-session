@@ -2724,153 +2724,53 @@ export function CreateSessionModal({
         }
       }
 
-      const publicSlugRows =
-        baseSlug && !isSeries
-          ? [
-            {
-              slug: baseSlug,
-              owner_type: "session",
-              owner_id: insertedSessions[0]?.id,
-              host_user_id: profile.id,
-              updated_at: new Date().toISOString(),
-            },
-          ].filter((row) => row.owner_id)
-          : insertedSessions
-            .filter((s: any) => String(s?.custom_slug || "").trim())
-            .map((s: any) => ({
-              slug: String(s.custom_slug).trim(),
-              owner_type: "session",
-              owner_id: s.id,
-              host_user_id: profile.id,
-              updated_at: new Date().toISOString(),
-            }));
+      if (baseSlug && !isSeries) {
+        const targetSessionId = String(insertedSessions[0]?.id || "").trim();
+        const reusableSlug = String(baseSlug || "").trim();
 
-      if (publicSlugRows.length > 0) {
-        try {
-          const nowIso = new Date().toISOString();
+        if (!targetSessionId || !reusableSlug) {
+          throw new Error("Missing reusable slug target session.");
+        }
 
-          if (baseSlug && !isSeries) {
-            const targetSessionId = String(insertedSessions[0]?.id || "").trim();
-            const reusableSlug = String(baseSlug || "").trim();
+        const { data: updatedSlugRows, error: rpcSlugError } = await supabase.rpc(
+          "reuse_session_public_slug",
+          {
+            p_slug: reusableSlug,
+            p_session_id: targetSessionId,
+          },
+        );
 
-            if (!targetSessionId || !reusableSlug) {
-              throw new Error("Missing reusable slug target session.");
-            }
+        if (rpcSlugError) {
+          console.error("❌ Reusable public slug RPC failed:", rpcSlugError);
+          throw rpcSlugError;
+        }
 
-            const { data: existingSlugRow, error: existingSlugError } =
-              await supabase
-                .from("public_url_slugs")
-                .select("slug, owner_type, owner_id, host_user_id, updated_at")
-                .eq("slug", reusableSlug)
-                .maybeSingle();
+        if (!updatedSlugRows || updatedSlugRows.length === 0) {
+          throw new Error("Reusable public link owner_id update returned no rows.");
+        }
 
-            if (existingSlugError) {
-              throw existingSlugError;
-            }
+        setOwnedPublicSlugs(updatedSlugRows as PublicSlugRow[]);
+      }
 
-            if (existingSlugRow?.slug) {
-              let belongsToCurrentHost =
-                String((existingSlugRow as any).host_user_id || "").trim() ===
-                profile.id;
+      if (baseSlug && isSeries) {
+        const publicSlugRows = insertedSessions
+          .filter((s: any) => String(s?.custom_slug || "").trim())
+          .map((s: any) => ({
+            slug: String(s.custom_slug).trim(),
+            owner_type: "session",
+            owner_id: s.id,
+            host_user_id: profile.id,
+            updated_at: new Date().toISOString(),
+          }));
 
-              // Backward compatibility: old rows may have host_user_id empty.
-              // In that case, allow re-pointing only if the old owner session belongs to this host.
-              if (
-                !belongsToCurrentHost &&
-                (existingSlugRow as any).owner_type === "session" &&
-                (existingSlugRow as any).owner_id
-              ) {
-                const { data: oldOwnerSession, error: oldOwnerError } =
-                  await supabase
-                    .from("sessions")
-                    .select("id, host_id")
-                    .eq("id", String((existingSlugRow as any).owner_id))
-                    .maybeSingle();
+        if (publicSlugRows.length > 0) {
+          const { error: publicSlugError } = await supabase
+            .from("public_url_slugs")
+            .upsert(publicSlugRows, { onConflict: "slug" });
 
-                if (oldOwnerError) {
-                  throw oldOwnerError;
-                }
+          if (publicSlugError) throw publicSlugError;
 
-                belongsToCurrentHost = oldOwnerSession?.host_id === profile.id;
-              }
-
-              if (!belongsToCurrentHost) {
-                throw new Error(
-                  "This custom link is already taken by another host.",
-                );
-              }
-
-              // ✅ EXACT REUSABLE LINK FIX:
-              // Do not delete the slug row. Do not create a second slug row.
-              // Do not write this slug into sessions.custom_slug.
-              // Just move the existing public_url_slugs row from the previous session
-              // to the newly created session by changing owner_id.
-              const { data: updatedSlugRows, error: updateSlugError } =
-                await supabase
-                  .from("public_url_slugs")
-                  .update({
-                    // This is the actual reusable-link move:
-                    // same slug row, same URL, new session target.
-                    owner_type: "session",
-                    owner_id: targetSessionId,
-                    host_user_id: profile.id,
-                    updated_at: nowIso,
-                  })
-                  .eq("slug", reusableSlug)
-                  .select("slug, owner_type, owner_id, host_user_id, updated_at");
-
-              if (updateSlugError) {
-                throw updateSlugError;
-              }
-
-              if (!updatedSlugRows || updatedSlugRows.length === 0) {
-                throw new Error("Reusable public link owner_id update returned no rows.");
-              }
-
-              setOwnedPublicSlugs(updatedSlugRows as PublicSlugRow[]);
-            } else {
-              const insertRow = {
-                slug: reusableSlug,
-                owner_type: "session",
-                owner_id: targetSessionId,
-                host_user_id: profile.id,
-                updated_at: nowIso,
-              };
-
-              const { data: insertedSlugRows, error: insertSlugError } =
-                await supabase
-                  .from("public_url_slugs")
-                  .insert(insertRow)
-                  .select("slug, owner_type, owner_id, host_user_id, updated_at");
-
-              if (insertSlugError) {
-                throw insertSlugError;
-              }
-
-              setOwnedPublicSlugs((insertedSlugRows as PublicSlugRow[]) || [insertRow]);
-            }
-          } else {
-            // Series mode: dated slugs are unique, so normal upsert is fine.
-            const { error: publicSlugError } = await supabase
-              .from("public_url_slugs")
-              .upsert(publicSlugRows, { onConflict: "slug" });
-
-            if (publicSlugError) throw publicSlugError;
-
-            setOwnedPublicSlugs(publicSlugRows.slice(0, 1));
-          }
-        } catch (publicSlugUnexpectedError) {
-          console.error(
-            "❌ Public slug owner_id update failed. Reusable link was NOT moved to the new session:",
-            publicSlugUnexpectedError,
-          );
-
-          // For reusable links this is critical: if owner_id was not changed,
-          // the public URL still points to the previous session. Surface the error
-          // instead of pretending that creation succeeded.
-          if (baseSlug && !isSeries) {
-            throw publicSlugUnexpectedError;
-          }
+          setOwnedPublicSlugs(publicSlugRows.slice(0, 1));
         }
       }
 
