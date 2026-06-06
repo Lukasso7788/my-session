@@ -1316,32 +1316,36 @@ export function CreateSessionModal({
           return;
         }
 
-        if (
-          existing.host_user_id &&
-          profile?.id &&
-          existing.host_user_id === profile.id
-        ) {
-          setSlugStatus("owned");
+        if (existing.host_user_id && profile?.id) {
+          setSlugStatus(existing.host_user_id === profile.id ? "owned" : "taken");
           return;
         }
 
-        // Backward compatibility: older registry rows may not have host_user_id.
-        // If the registry points to a session owned by this host, treat the slug as reusable/owned.
-        if (
-          existing.owner_type === "session" &&
-          existing.owner_id &&
-          profile?.id
-        ) {
-          const { data: sessionOwner } = await supabase
-            .from("sessions")
-            .select("id, host_id")
-            .eq("id", existing.owner_id)
-            .maybeSingle();
+        // Reusable-link compatibility:
+        // Old rows can have host_user_id = NULL. For these rows the only thing we
+        // need during creation is to move public_url_slugs.owner_id to the new
+        // session id. Do NOT block the modal as "taken" just because host_user_id
+        // is missing. The final create step will update owner_id and also backfill
+        // host_user_id to the current host.
+        if (existing.owner_type === "session" && existing.owner_id && profile?.id) {
+          try {
+            const { data: sessionOwner } = await supabase
+              .from("sessions")
+              .select("id, host_id")
+              .eq("id", existing.owner_id)
+              .maybeSingle();
 
-          if (sessionOwner?.host_id === profile.id) {
-            setSlugStatus("owned");
-            return;
+            if (sessionOwner?.host_id && sessionOwner.host_id !== profile.id) {
+              setSlugStatus("taken");
+              return;
+            }
+          } catch {
+            // If RLS prevents reading the old session, still allow the create flow.
+            // The update below is the source of truth.
           }
+
+          setSlugStatus("owned");
+          return;
         }
 
         setSlugStatus("taken");
@@ -2506,13 +2510,23 @@ export function CreateSessionModal({
           if (existingSlug.host_user_id) {
             belongsToCurrentHost = existingSlug.host_user_id === profile.id;
           } else if (existingSlug.owner_type === "session" && existingSlug.owner_id) {
-            const { data: sessionOwner } = await supabase
+            // Important: legacy reusable rows can have host_user_id = NULL.
+            // If the old owner session is readable and belongs to another host, block it.
+            // Otherwise allow the reusable flow and move owner_id to the new session below.
+            const { data: sessionOwner, error: sessionOwnerError } = await supabase
               .from("sessions")
               .select("id, host_id")
               .eq("id", existingSlug.owner_id)
               .maybeSingle();
 
-            belongsToCurrentHost = sessionOwner?.host_id === profile.id;
+            if (sessionOwnerError) {
+              console.log("[slug] old owner session lookup skipped:", sessionOwnerError);
+              belongsToCurrentHost = true;
+            } else if (!sessionOwner?.host_id) {
+              belongsToCurrentHost = true;
+            } else {
+              belongsToCurrentHost = sessionOwner.host_id === profile.id;
+            }
           }
 
           if (!belongsToCurrentHost) {
@@ -2743,22 +2757,6 @@ export function CreateSessionModal({
               throw new Error("Missing reusable slug target session.");
             }
 
-            // Keep only one active reusable public link per host, but DO NOT delete
-            // the currently selected slug. The selected slug should be re-pointed.
-            const { error: deleteOtherSlugsError } = await supabase
-              .from("public_url_slugs")
-              .delete()
-              .eq("owner_type", "session")
-              .eq("host_user_id", profile.id)
-              .neq("slug", reusableSlug);
-
-            if (deleteOtherSlugsError) {
-              console.warn(
-                "⚠️ Could not delete older public slug rows:",
-                deleteOtherSlugsError,
-              );
-            }
-
             const { data: existingSlugRow, error: existingSlugError } =
               await supabase
                 .from("public_url_slugs")
@@ -2802,25 +2800,22 @@ export function CreateSessionModal({
                 );
               }
 
-              const updatePayload: Record<string, unknown> = {
-                owner_type: "session",
-                owner_id: targetSessionId,
-                updated_at: nowIso,
-              };
-
-              // Do not overwrite another host. Only backfill host_user_id if this is
-              // our own legacy row with missing host_user_id.
-              if (!String((existingSlugRow as any).host_user_id || "").trim()) {
-                updatePayload.host_user_id = profile.id;
-              }
-
-              // ✅ THE IMPORTANT PART:
-              // Existing reusable link = UPDATE owner_id on public_url_slugs.
-              // This is what moves /slug from the old session to the new session.
+              // ✅ EXACT REUSABLE LINK FIX:
+              // Do not delete the slug row. Do not create a second slug row.
+              // Do not write this slug into sessions.custom_slug.
+              // Just move the existing public_url_slugs row from the previous session
+              // to the newly created session by changing owner_id.
               const { data: updatedSlugRows, error: updateSlugError } =
                 await supabase
                   .from("public_url_slugs")
-                  .update(updatePayload)
+                  .update({
+                    // This is the actual reusable-link move:
+                    // same slug row, same URL, new session target.
+                    owner_type: "session",
+                    owner_id: targetSessionId,
+                    host_user_id: profile.id,
+                    updated_at: nowIso,
+                  })
                   .eq("slug", reusableSlug)
                   .select("slug, owner_type, owner_id, host_user_id, updated_at");
 
@@ -2829,7 +2824,7 @@ export function CreateSessionModal({
               }
 
               if (!updatedSlugRows || updatedSlugRows.length === 0) {
-                throw new Error("Reusable public link update returned no rows.");
+                throw new Error("Reusable public link owner_id update returned no rows.");
               }
 
               setOwnedPublicSlugs(updatedSlugRows as PublicSlugRow[]);
@@ -2865,12 +2860,17 @@ export function CreateSessionModal({
             setOwnedPublicSlugs(publicSlugRows.slice(0, 1));
           }
         } catch (publicSlugUnexpectedError) {
-          // Do not block successful creation/booking because of public_url_slugs registry issues.
-          // But log loudly: if this fails, reusable link will still point to the old session.
-          console.warn(
-            "⚠️ Public slug owner_id update failed. Session creation will still finish, but reusable link may still point to the old session:",
+          console.error(
+            "❌ Public slug owner_id update failed. Reusable link was NOT moved to the new session:",
             publicSlugUnexpectedError,
           );
+
+          // For reusable links this is critical: if owner_id was not changed,
+          // the public URL still points to the previous session. Surface the error
+          // instead of pretending that creation succeeded.
+          if (baseSlug && !isSeries) {
+            throw publicSlugUnexpectedError;
+          }
         }
       }
 
