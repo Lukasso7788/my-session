@@ -2583,8 +2583,13 @@ export function CreateSessionModal({
       const rows = datesLocal.map((d, idx) => {
         const scheduledISO = d.toISOString();
 
+        // IMPORTANT: for a single reusable public link, do NOT store the slug
+        // directly on the new sessions row. The sessions.custom_slug column can be
+        // unique in production, so reusing the same link would make the insert fail.
+        // The reusable link is owned by public_url_slugs and re-pointed after insert.
+        // Series links are dated and unique, so those can still be stored on sessions.
         const customSlugForRow =
-          baseSlug && isSeries ? slugsForInsert[idx] || null : baseSlug || null;
+          baseSlug && isSeries ? slugsForInsert[idx] || null : null;
 
         return {
           title,
@@ -2662,15 +2667,26 @@ export function CreateSessionModal({
         }
       }
 
-      const publicSlugRows = insertedSessions
-        .filter((s: any) => String(s?.custom_slug || "").trim())
-        .map((s: any) => ({
-          slug: String(s.custom_slug).trim(),
-          owner_type: "session",
-          owner_id: s.id,
-          host_user_id: profile.id,
-          updated_at: new Date().toISOString(),
-        }));
+      const publicSlugRows =
+        baseSlug && !isSeries
+          ? [
+            {
+              slug: baseSlug,
+              owner_type: "session",
+              owner_id: insertedSessions[0]?.id,
+              host_user_id: profile.id,
+              updated_at: new Date().toISOString(),
+            },
+          ].filter((row) => row.owner_id)
+          : insertedSessions
+            .filter((s: any) => String(s?.custom_slug || "").trim())
+            .map((s: any) => ({
+              slug: String(s.custom_slug).trim(),
+              owner_type: "session",
+              owner_id: s.id,
+              host_user_id: profile.id,
+              updated_at: new Date().toISOString(),
+            }));
 
       if (publicSlugRows.length > 0) {
         const reusableSlugRow = publicSlugRows[0];
