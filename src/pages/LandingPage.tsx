@@ -41,6 +41,7 @@ const COMMUNITY_AVATARS = [
     "/images/landing/community-avatar-6.png",
     "/images/landing/community-avatar-7.png",
     "/images/landing/community-avatar-8.png",
+    "/images/landing/community-avatar-9.png",
 ];
 
 const STATS = [
@@ -429,19 +430,22 @@ function FormatsSection() {
 }
 
 function CommunityAvatarArc() {
+    const avatars = [
+        { x: 0, y: 52, r: -18 },
+        { x: 52, y: 28, r: -13 },
+        { x: 108, y: 12, r: -8 },
+        { x: 168, y: 2, r: -4 },
+        { x: 230, y: 0, r: 0 },
+        { x: 292, y: 2, r: 4 },
+        { x: 352, y: 12, r: 8 },
+        { x: 408, y: 28, r: 13 },
+        { x: 460, y: 52, r: 18 },
+    ];
+
     return (
-        <div className="pointer-events-none absolute left-1/2 top-0 z-20 h-[112px] w-[430px] max-w-[92vw] -translate-x-1/2 -translate-y-[52px]">
+        <div className="absolute left-1/2 top-0 z-20 h-[140px] w-[540px] -translate-x-1/2 -translate-y-[72px]">
             {COMMUNITY_AVATARS.map((src, index) => {
-                const positions = [
-                    "left-[34px] top-[22px] rotate-[-10deg]",
-                    "left-[82px] top-[11px] rotate-[-8deg]",
-                    "left-[132px] top-[2px] rotate-[-5deg]",
-                    "left-[184px] top-[-6px] rotate-[0deg]",
-                    "left-[236px] top-[-4px] rotate-[3deg]",
-                    "left-[288px] top-[4px] rotate-[7deg]",
-                    "left-[338px] top-[18px] rotate-[10deg]",
-                    "left-[382px] top-[34px] rotate-[12deg]",
-                ];
+                const p = avatars[index];
 
                 return (
                     <img
@@ -449,10 +453,12 @@ function CommunityAvatarArc() {
                         src={src}
                         alt=""
                         draggable={false}
-                        className={cx(
-                            "absolute h-[74px] w-[74px] rounded-[22px] border-[3px] border-white object-cover shadow-[0_14px_34px_rgba(47,47,47,0.18)] transition duration-300 ease-out hover:-translate-y-2 hover:scale-[1.08]",
-                            positions[index]
-                        )}
+                        className="absolute h-[82px] w-[82px] rounded-[24px] border-[4px] border-white object-cover shadow-[0_20px_44px_rgba(47,47,47,0.18)] transition-all duration-300 ease-out hover:-translate-y-3 hover:scale-[1.12]"
+                        style={{
+                            left: `${p.x}px`,
+                            top: `${p.y}px`,
+                            transform: `rotate(${p.r}deg)`,
+                        }}
                     />
                 );
             })}
@@ -463,7 +469,7 @@ function CommunityAvatarArc() {
 function CommunitySection() {
     return (
         <SectionShell className="mt-[150px]">
-            <div className="relative overflow-visible rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 pb-0 pt-[128px] text-center shadow-[0_18px_55px_rgba(47,47,47,0.04)] md:px-10 md:pt-[140px]">
+            <div className="relative overflow-visible rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 pb-0 pt-[128px] text-center shadow-[0_18px_55px_rgba(47,47,47,0.04)] md:px-10 md:pt-[165px]">
                 <CommunityAvatarArc />
 
                 <div className="pointer-events-none absolute left-[5%] top-[8%] h-[220px] w-[220px] rounded-full bg-[rgba(82,134,246,0.16)] blur-[78px]" />
