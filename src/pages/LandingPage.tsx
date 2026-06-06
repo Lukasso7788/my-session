@@ -32,6 +32,17 @@ const AUDIENCE_CHIPS = [
     { emoji: "✨", label: "Creators", tone: "blue" },
 ];
 
+const COMMUNITY_AVATARS = [
+    "/images/landing/community-avatar-1.png",
+    "/images/landing/community-avatar-2.png",
+    "/images/landing/community-avatar-3.png",
+    "/images/landing/community-avatar-4.png",
+    "/images/landing/community-avatar-5.png",
+    "/images/landing/community-avatar-6.png",
+    "/images/landing/community-avatar-7.png",
+    "/images/landing/community-avatar-8.png",
+];
+
 const STATS = [
     { value: "85%", text: "Report getting started on tasks more easily." },
     { value: "3.8x", text: "More likely to finish the task they came to do." },
@@ -417,36 +428,72 @@ function FormatsSection() {
     );
 }
 
+function CommunityAvatarArc() {
+    return (
+        <div className="pointer-events-none absolute left-1/2 top-0 z-20 h-[112px] w-[430px] max-w-[92vw] -translate-x-1/2 -translate-y-[52px]">
+            {COMMUNITY_AVATARS.map((src, index) => {
+                const positions = [
+                    "left-[34px] top-[22px] rotate-[-10deg]",
+                    "left-[82px] top-[11px] rotate-[-8deg]",
+                    "left-[132px] top-[2px] rotate-[-5deg]",
+                    "left-[184px] top-[-6px] rotate-[0deg]",
+                    "left-[236px] top-[-4px] rotate-[3deg]",
+                    "left-[288px] top-[4px] rotate-[7deg]",
+                    "left-[338px] top-[18px] rotate-[10deg]",
+                    "left-[382px] top-[34px] rotate-[12deg]",
+                ];
+
+                return (
+                    <img
+                        key={src}
+                        src={src}
+                        alt=""
+                        draggable={false}
+                        className={cx(
+                            "absolute h-[74px] w-[74px] rounded-[22px] border-[3px] border-white object-cover shadow-[0_14px_34px_rgba(47,47,47,0.18)] transition duration-300 ease-out hover:-translate-y-2 hover:scale-[1.08]",
+                            positions[index]
+                        )}
+                    />
+                );
+            })}
+        </div>
+    );
+}
+
 function CommunitySection() {
     return (
-        <SectionShell className="mt-[120px]">
-            <div className="overflow-hidden rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 py-14 text-center md:px-10 md:py-16">
-                <div className="mx-auto flex w-max -space-x-3">
-                    {["🧑", "👩", "👨", "👩‍💻", "🧑‍🎨", "👨‍🎓", "👩‍🔬", "🧑‍💼"].map(
-                        (emoji, i) => (
-                            <div
-                                key={`${emoji}-${i}`}
-                                className="flex h-[54px] w-[54px] items-center justify-center rounded-full border-[3px] border-white bg-[#F2F2F2] text-[24px] shadow-sm"
-                            >
-                                {emoji}
-                            </div>
-                        )
-                    )}
+        <SectionShell className="mt-[150px]">
+            <div className="relative overflow-visible rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 pb-0 pt-[128px] text-center shadow-[0_18px_55px_rgba(47,47,47,0.04)] md:px-10 md:pt-[140px]">
+                <CommunityAvatarArc />
+
+                <div className="pointer-events-none absolute left-[5%] top-[8%] h-[220px] w-[220px] rounded-full bg-[rgba(82,134,246,0.16)] blur-[78px]" />
+                <div className="pointer-events-none absolute right-[7%] top-[10%] h-[260px] w-[260px] rounded-full bg-[rgba(246,82,82,0.15)] blur-[86px]" />
+                <div className="pointer-events-none absolute bottom-[8%] left-[18%] h-[240px] w-[240px] rounded-full bg-[rgba(101,212,108,0.16)] blur-[88px]" />
+
+                <div className="relative z-10">
+                    <div className="mx-auto inline-flex h-[44px] items-center gap-2 rounded-full border border-black/10 bg-white/70 px-7 text-[13px] font-bold text-[#2F2F2F] shadow-[0_10px_28px_rgba(47,47,47,0.05)] backdrop-blur">
+                        <span className="text-[18px]">⌘</span>
+                        Community
+                    </div>
+
+                    <h2 className="mx-auto mt-[30px] max-w-[670px] text-[30px] font-bold leading-[37px] tracking-[-1.1%] text-[#2F2F2F] md:text-[34px] md:leading-[42px]">
+                        You’re Not Just Joining Sessions. You’re Joining A Community.
+                    </h2>
+
+                    <p className="mx-auto mt-[22px] max-w-[630px] text-[15px] font-medium leading-[25px] text-[#747474]">
+                        A global community of creators, builders, students, and professionals —
+                        all showing up every day to work on things that matter. No pressure, no
+                        judgment — just people doing their best work, together.
+                    </p>
+
+                    <div className="mt-[34px]">
+                        <CtaButton to="/sessions" dark>
+                            Join A Session — It’s Free
+                        </CtaButton>
+                    </div>
                 </div>
 
-                <h2 className="mx-auto mt-10 max-w-[620px] text-[26px] font-bold leading-[32px] tracking-[-1.1%] text-[#2F2F2F] md:text-[32px] md:leading-[38px]">
-                    You’re Not Just Joining Sessions. You’re Joining A Community.
-                </h2>
-                <p className="mx-auto mt-5 max-w-[620px] text-[15px] font-medium leading-[25px] text-[#747474]">
-                    Work with students, freelancers, designers, developers, founders, remote
-                    workers, and creators — all showing up to make progress together.
-                </p>
-                <div className="mt-8">
-                    <CtaButton to="/sessions" dark>
-                        Join a session — it’s free
-                    </CtaButton>
-                </div>
-                <div className="mt-10">
+                <div className="relative z-10 mt-[130px] -mx-7 overflow-hidden pb-[44px] md:-mx-10">
                     <MovingChips items={AUDIENCE_CHIPS} reverse />
                 </div>
             </div>
