@@ -34,6 +34,42 @@ const AUDIENCE_CHIPS = [
     { emoji: "✨", label: "Creators", tone: "blue" },
 ];
 
+
+const HERO_TASK_CARDS = [
+    {
+        name: "Daniel",
+        flag: "🇺🇸",
+        accent: "#65D46C",
+        task1: "Studying biology",
+        task2: "Working on my thesis chapter 3",
+        position: "leftTop",
+    },
+    {
+        name: "Alex R.",
+        flag: "🇮🇳",
+        accent: "#65D46C",
+        task1: "Preparing slides for tomorrow's meeting",
+        task2: "Editing a client report",
+        position: "rightTop",
+    },
+    {
+        name: "Mark",
+        flag: "🇺🇸",
+        accent: "#65D46C",
+        task1: "Reviewing code",
+        task2: "Fixing bugs in my side project",
+        position: "leftBottom",
+    },
+    {
+        name: "Sofia",
+        flag: "🇨🇦",
+        accent: "#65D46C",
+        task1: "Researching ideas for my next article",
+        task2: "Writing a newsletter",
+        position: "rightBottom",
+    },
+];
+
 const STATS = [
     {
         value: "85%",
@@ -163,17 +199,70 @@ function MovingChips({ items, reverse = false }: { items: Array<{ emoji: string;
     );
 }
 
-function HeroArtwork() {
+function HeroTaskCard({ card }: { card: (typeof HERO_TASK_CARDS)[number] }) {
     return (
-        <div className="mx-auto mt-[64px] w-full max-w-[1020px] md:mt-[70px]">
-            <picture className="hidden md:block">
-                <img
-                    src="/images/landing/hero-room-desktop.png"
-                    alt="MySession live coworking room preview"
-                    className="mx-auto block w-full select-none object-contain"
-                    draggable={false}
-                />
-            </picture>
+        <div className="w-[156px] rounded-[10px] bg-white px-[14px] py-[12px] text-left shadow-[0_18px_42px_rgba(47,47,47,0.08)] ring-1 ring-black/[0.04] md:w-[164px]">
+            <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-[8px]">
+                    <div className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-full bg-[#F2F2F2] text-[14px]">
+                        {card.name.slice(0, 1)}
+                    </div>
+                    <div className="min-w-0">
+                        <div className="truncate text-[10px] font-bold leading-none text-[#2F2F2F]">
+                            {card.name}
+                        </div>
+                        <div className="mt-[3px] text-[10px] leading-none">{card.flag}</div>
+                    </div>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-[4px] text-[8px] font-bold text-[#22C55E]">
+                    <span className="h-[5px] w-[5px] rounded-full bg-[#22C55E]" />
+                    Live now
+                </div>
+            </div>
+
+            <div className="mt-[12px] text-[9px] font-medium leading-none text-[#747474]">
+                Working on:
+            </div>
+
+            <div className="mt-[9px] space-y-[7px]">
+                {[card.task1, card.task2].map((task) => (
+                    <div key={task} className="flex items-start gap-[7px]">
+                        <span className="mt-[2px] h-[10px] w-[10px] shrink-0 rounded-full border border-[#2F2F2F]/60" />
+                        <span className="text-[9px] font-medium leading-[12px] text-[#2F2F2F]">{task}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function HeroArtwork() {
+    const positionClass: Record<string, string> = {
+        leftTop: "left-0 top-[4px]",
+        rightTop: "right-0 top-[12px]",
+        leftBottom: "left-0 bottom-[18px]",
+        rightBottom: "right-0 bottom-[18px]",
+    };
+
+    return (
+        <div className="mx-auto mt-[64px] w-full max-w-[1220px] md:mt-[70px]">
+            <div className="relative hidden min-h-[548px] md:block">
+                <div className="pointer-events-none absolute inset-x-[178px] top-[44px]">
+                    <img
+                        src="/images/landing/hero-room-desktop.png"
+                        alt="MySession live coworking room preview"
+                        className="mx-auto block w-full max-w-[805px] select-none object-contain"
+                        draggable={false}
+                    />
+                </div>
+
+                {HERO_TASK_CARDS.map((card) => (
+                    <div key={card.name} className={cx("absolute", positionClass[card.position])}>
+                        <HeroTaskCard card={card} />
+                    </div>
+                ))}
+            </div>
 
             <div className="block md:hidden">
                 <img
@@ -182,12 +271,12 @@ function HeroArtwork() {
                     className="mx-auto block w-full max-w-[420px] select-none object-contain"
                     draggable={false}
                 />
-                <img
-                    src="/images/landing/hero-task-cards-mobile.png"
-                    alt="MySession task cards preview"
-                    className="mx-auto mt-5 block w-full max-w-[420px] select-none object-contain"
-                    draggable={false}
-                />
+
+                <div className="mx-auto mt-5 grid max-w-[420px] grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+                    {HERO_TASK_CARDS.map((card) => (
+                        <HeroTaskCard key={card.name} card={card} />
+                    ))}
+                </div>
             </div>
         </div>
     );
