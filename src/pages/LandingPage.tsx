@@ -36,7 +36,7 @@ const HERO_TASK_CARDS = [
     {
         name: "Daniel",
         avatar: "/images/landing/hero-card-avatar-daniel.png",
-        flag: "/images/landing/flag-france.png",
+        flag: "/images/landing/flag-france.svg",
         task1: "Studying biology",
         task2: "Working on my thesis chapter 3",
         position: "leftTop",
@@ -44,15 +44,15 @@ const HERO_TASK_CARDS = [
     {
         name: "Alex R.",
         avatar: "/images/landing/hero-card-avatar-alex.png",
-        flag: "/images/landing/flag-india.png",
-        task1: "Preparing slides for tomorrow’s meeting",
+        flag: "/images/landing/flag-india.svg",
+        task1: "Preparing slides for tomorrow's meeting",
         task2: "Editing a client report",
         position: "rightTop",
     },
     {
         name: "Mark",
         avatar: "/images/landing/hero-card-avatar-mark.png",
-        flag: "/images/landing/flag-spain.png",
+        flag: "/images/landing/flag-spain.svg",
         task1: "Reviewing code",
         task2: "Fixing bugs in my side project",
         position: "leftBottom",
@@ -60,7 +60,7 @@ const HERO_TASK_CARDS = [
     {
         name: "Sofia",
         avatar: "/images/landing/hero-card-avatar-sofia.png",
-        flag: "/images/landing/flag-canada.png",
+        flag: "/images/landing/flag-canada.svg",
         task1: "Researching ideas for my next article",
         task2: "Writing a newsletter",
         position: "rightBottom",
@@ -184,8 +184,8 @@ function MovingChips({ items, reverse = false }: { items: Array<{ emoji: string;
 
 function HeroTaskCard({ card }: { card: (typeof HERO_TASK_CARDS)[number] }) {
     return (
-        <div className="w-[151px] rounded-[8px] border border-[#EDEDED] bg-white px-[16px] py-[16px] text-left shadow-[0_18px_42px_rgba(47,47,47,0.08)] md:w-[164px]">
-            <div className="flex items-start justify-between gap-[8px]">
+        <div className="w-[151px] rounded-[8px] border border-[#E6E6E6] bg-white px-[16px] py-[16px] text-left shadow-[0_18px_42px_rgba(47,47,47,0.08)]">
+            <div className="flex items-start justify-between gap-2">
                 <div className="flex min-w-0 items-start gap-[8px]">
                     <img
                         src={card.avatar}
@@ -193,34 +193,33 @@ function HeroTaskCard({ card }: { card: (typeof HERO_TASK_CARDS)[number] }) {
                         className="h-[25px] w-[25px] shrink-0 rounded-full object-cover"
                         draggable={false}
                     />
-
                     <div className="min-w-0 pt-[1px]">
-                        <div className="truncate text-[10px] font-medium leading-[7px] text-[#2F2F2F]">
+                        <div className="truncate text-[10px] font-medium leading-[12px] text-[#2F2F2F]">
                             {card.name}
                         </div>
                         <img
                             src={card.flag}
-                            alt="flag"
-                            className="mt-[5px] h-[7px] w-auto object-contain"
+                            alt="country flag"
+                            className="mt-[3px] h-[7px] w-auto select-none object-contain"
                             draggable={false}
                         />
                     </div>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-[3px] pt-[1px] text-[6px] font-medium leading-[7px] text-[#28DC2B]">
+                <div className="flex shrink-0 items-center gap-[4px] pt-[2px] text-[6px] font-medium leading-none text-[#28DC2B]">
                     <span className="h-[5px] w-[5px] rounded-full bg-[#28DC2B]" />
-                    <span>Live now</span>
+                    Live now
                 </div>
             </div>
 
-            <div className="mt-[12px] text-[9px] font-medium leading-[11px] text-[#666666]">
+            <div className="mt-[15px] text-[9px] font-medium leading-[11px] text-[#666666]">
                 Working on:
             </div>
 
             <div className="mt-[8px] space-y-[7px]">
                 {[card.task1, card.task2].map((task) => (
                     <div key={task} className="flex items-start gap-[7px]">
-                        <span className="mt-[1px] h-[10px] w-[10px] shrink-0 rounded-full border border-[#2F2F2F]" />
+                        <span className="mt-[1px] h-[11px] w-[11px] shrink-0 rounded-full border border-[#2F2F2F]" />
                         <span className="text-[9px] font-medium leading-[11px] text-[#2F2F2F]">{task}</span>
                     </div>
                 ))}
@@ -231,20 +230,20 @@ function HeroTaskCard({ card }: { card: (typeof HERO_TASK_CARDS)[number] }) {
 
 function HeroArtwork() {
     const positionClass: Record<string, string> = {
-        leftTop: "left-[116px] top-[0px] xl:left-[112px]",
-        rightTop: "right-[116px] top-[12px] xl:right-[112px]",
-        leftBottom: "left-[116px] bottom-[24px] xl:left-[112px]",
-        rightBottom: "right-[116px] bottom-[24px] xl:right-[112px]",
+        leftTop: "left-[14px] top-[20px]",
+        rightTop: "right-[14px] top-[20px]",
+        leftBottom: "left-[14px] bottom-[34px]",
+        rightBottom: "right-[14px] bottom-[34px]",
     };
 
     return (
-        <div className="mx-auto mt-[64px] w-full max-w-[1220px] md:mt-[70px]">
-            <div className="relative hidden min-h-[548px] md:block">
-                <div className="pointer-events-none absolute inset-x-[270px] top-[32px] xl:inset-x-[250px]">
+        <div className="mx-auto mt-[64px] w-full max-w-[1320px] md:mt-[70px]">
+            <div className="relative hidden min-h-[585px] md:block">
+                <div className="pointer-events-none absolute left-1/2 top-[54px] w-[820px] -translate-x-1/2 lg:w-[880px] xl:w-[900px]">
                     <img
                         src="/images/landing/hero-room-desktop.png"
                         alt="MySession live coworking room preview"
-                        className="mx-auto block w-full max-w-[735px] select-none object-contain"
+                        className="block w-full select-none object-contain"
                         draggable={false}
                     />
                 </div>
@@ -279,7 +278,10 @@ function StatCards() {
         <SectionShell className="mt-[118px] md:mt-[130px]">
             <div className="mx-auto grid max-w-[780px] grid-cols-1 gap-6 sm:grid-cols-3">
                 {STATS.map((stat) => (
-                    <div key={stat.value} className="min-h-[150px] rounded-[18px] border border-[#E9E9E9] bg-white px-7 py-8 text-center shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
+                    <div
+                        key={stat.value}
+                        className="min-h-[150px] rounded-[18px] border border-[#E9E9E9] bg-white px-7 py-8 text-center shadow-[0_16px_40px_rgba(47,47,47,0.04)]"
+                    >
                         <div className="text-[44px] font-bold leading-none tracking-[-1.1%] text-[#2F2F2F]">{stat.value}</div>
                         <p className="mx-auto mt-7 max-w-[170px] text-[14px] font-medium leading-[22px] text-[#747474]">{stat.text}</p>
                     </div>
@@ -333,7 +335,9 @@ function WorkMoreSection() {
                                     <div className="text-[13px] font-bold text-[#2F2F2F]">{name}</div>
                                     <div className="mt-0.5 text-[12px] font-medium text-[#747474]">{task}</div>
                                 </div>
-                                <div className="rounded-full bg-[rgba(101,212,108,0.20)] px-3 py-1 text-[11px] font-bold text-[#2F2F2F]">{tag}</div>
+                                <div className="rounded-full bg-[rgba(101,212,108,0.20)] px-3 py-1 text-[11px] font-bold text-[#2F2F2F]">
+                                    {tag}
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -345,7 +349,9 @@ function WorkMoreSection() {
                 >
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         {["Code", "Study", "Design", "Write", "Plan", "Admin"].map((item) => (
-                            <div key={item} className="rounded-[14px] bg-[#F8F8F8] px-4 py-4 text-center text-[13px] font-bold text-[#2F2F2F]">{item}</div>
+                            <div key={item} className="rounded-[14px] bg-[#F8F8F8] px-4 py-4 text-center text-[13px] font-bold text-[#2F2F2F]">
+                                {item}
+                            </div>
                         ))}
                     </div>
                 </FeatureCard>
@@ -412,7 +418,9 @@ function CommunitySection() {
             <div className="overflow-hidden rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 py-14 text-center md:px-10 md:py-16">
                 <div className="mx-auto flex w-max -space-x-3">
                     {["🧑", "👩", "👨", "👩‍💻", "🧑‍🎨", "👨‍🎓", "👩‍🔬", "🧑‍💼"].map((emoji, i) => (
-                        <div key={`${emoji}-${i}`} className="flex h-[54px] w-[54px] items-center justify-center rounded-full border-[3px] border-white bg-[#F2F2F2] text-[24px] shadow-sm">{emoji}</div>
+                        <div key={`${emoji}-${i}`} className="flex h-[54px] w-[54px] items-center justify-center rounded-full border-[3px] border-white bg-[#F2F2F2] text-[24px] shadow-sm">
+                            {emoji}
+                        </div>
                     ))}
                 </div>
 
@@ -493,7 +501,9 @@ function FinalCta() {
                     <br />
                     Done, Together?
                 </h2>
-                <p className="mx-auto mt-4 max-w-[480px] text-[15px] font-medium leading-[25px] text-white/70">Join a live focus session and make the next step easier to start.</p>
+                <p className="mx-auto mt-4 max-w-[480px] text-[15px] font-medium leading-[25px] text-white/70">
+                    Join a live focus session and make the next step easier to start.
+                </p>
                 <div className="mt-8">
                     <Link to="/sessions" className="inline-flex h-[52px] items-center justify-center rounded-full bg-[#65D46C] px-8 text-[14px] font-bold text-[#2F2F2F] shadow-[0_18px_44px_rgba(101,212,108,0.30)] transition hover:-translate-y-0.5">
                         Join a session — free
@@ -537,7 +547,7 @@ export default function LandingPage() {
 
                 <HeroArtwork />
 
-                <div className="mx-auto mt-[70px] max-w-[1220px] md:mt-[74px]">
+                <div className="mx-auto mt-[46px] max-w-[1220px] md:mt-[52px]">
                     <MovingChips items={TASK_CHIPS} />
                 </div>
             </section>
