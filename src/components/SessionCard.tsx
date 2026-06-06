@@ -1390,9 +1390,7 @@ function computeNowStage(
 
 function getRoomParam(session: any): string {
     const id = session?.id != null ? String(session.id).trim() : "";
-    if (id) return id;
-    const slug = session?.custom_slug != null ? String(session.custom_slug).trim() : "";
-    return slug;
+    return id;
 }
 
 function buildLoginNext(urlPath: string): string {
@@ -1412,7 +1410,26 @@ function buildSessionInvitePath(session: any): string {
 }
 
 function getSessionPublicSlug(session: any): string {
-    return String(session?.custom_slug || "").trim();
+    const direct = String(
+        session?.custom_slug ||
+        session?.public_slug ||
+        session?.session_slug ||
+        ""
+    ).trim();
+
+    if (direct) return direct;
+
+    const embedded =
+        session?.public_url_slugs ||
+        session?.public_url_slug ||
+        session?.slug_row ||
+        null;
+
+    if (Array.isArray(embedded)) {
+        return String(embedded[0]?.slug || "").trim();
+    }
+
+    return String(embedded?.slug || "").trim();
 }
 
 function getEmbeddedHostSlug(session: any): string {
