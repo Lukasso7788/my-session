@@ -431,19 +431,19 @@ function FormatsSection() {
 
 function CommunityAvatarArc() {
     const avatars = [
-        { x: 0, y: 52, r: -18 },
-        { x: 52, y: 28, r: -13 },
-        { x: 108, y: 12, r: -8 },
-        { x: 168, y: 2, r: -4 },
-        { x: 230, y: 0, r: 0 },
-        { x: 292, y: 2, r: 4 },
-        { x: 352, y: 12, r: 8 },
-        { x: 408, y: 28, r: 13 },
-        { x: 460, y: 52, r: 18 },
+        { x: 0, y: 64, r: -18 },
+        { x: 58, y: 36, r: -14 },
+        { x: 122, y: 18, r: -9 },
+        { x: 190, y: 6, r: -4 },
+        { x: 260, y: 0, r: 0 },
+        { x: 330, y: 6, r: 4 },
+        { x: 398, y: 18, r: 9 },
+        { x: 462, y: 36, r: 14 },
+        { x: 520, y: 64, r: 18 },
     ];
 
     return (
-        <div className="absolute left-1/2 top-0 z-20 h-[140px] w-[540px] -translate-x-1/2 -translate-y-[72px]">
+        <div className="absolute left-1/2 top-0 z-20 h-[170px] w-[630px] max-w-[92vw] -translate-x-1/2 -translate-y-[86px]">
             {COMMUNITY_AVATARS.map((src, index) => {
                 const p = avatars[index];
 
@@ -453,7 +453,7 @@ function CommunityAvatarArc() {
                         src={src}
                         alt=""
                         draggable={false}
-                        className="absolute h-[82px] w-[82px] rounded-[24px] border-[4px] border-white object-cover shadow-[0_20px_44px_rgba(47,47,47,0.18)] transition-all duration-300 ease-out hover:-translate-y-3 hover:scale-[1.12]"
+                        className="absolute h-[96px] w-[96px] rounded-[28px] border-[1px] border-white object-cover shadow-[0_18px_42px_rgba(47,47,47,0.16)] transition-all duration-300 ease-out hover:z-30 hover:-translate-y-3 hover:scale-[1.1]"
                         style={{
                             left: `${p.x}px`,
                             top: `${p.y}px`,
@@ -468,13 +468,13 @@ function CommunityAvatarArc() {
 
 function CommunitySection() {
     return (
-        <SectionShell className="mt-[150px]">
-            <div className="relative overflow-visible rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 pb-0 pt-[128px] text-center shadow-[0_18px_55px_rgba(47,47,47,0.04)] md:px-10 md:pt-[165px]">
+        <SectionShell className="mt-[160px]">
+            <div className="relative overflow-visible rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 pb-0 pt-[150px] text-center shadow-[0_18px_55px_rgba(47,47,47,0.04)] md:px-10 md:pt-[175px]">
                 <CommunityAvatarArc />
 
-                <div className="pointer-events-none absolute left-[5%] top-[8%] h-[220px] w-[220px] rounded-full bg-[rgba(82,134,246,0.16)] blur-[78px]" />
-                <div className="pointer-events-none absolute right-[7%] top-[10%] h-[260px] w-[260px] rounded-full bg-[rgba(246,82,82,0.15)] blur-[86px]" />
-                <div className="pointer-events-none absolute bottom-[8%] left-[18%] h-[240px] w-[240px] rounded-full bg-[rgba(101,212,108,0.16)] blur-[88px]" />
+                <div className="pointer-events-none absolute left-[6%] top-[9%] h-[230px] w-[230px] rounded-full bg-[rgba(82,134,246,0.14)] blur-[82px]" />
+                <div className="pointer-events-none absolute right-[7%] top-[9%] h-[270px] w-[270px] rounded-full bg-[rgba(246,82,82,0.14)] blur-[90px]" />
+                <div className="pointer-events-none absolute bottom-[7%] left-[18%] h-[250px] w-[250px] rounded-full bg-[rgba(101,212,108,0.14)] blur-[92px]" />
 
                 <div className="relative z-10">
                     <div className="mx-auto inline-flex h-[44px] items-center gap-2 rounded-full border border-black/10 bg-white/70 px-7 text-[13px] font-bold text-[#2F2F2F] shadow-[0_10px_28px_rgba(47,47,47,0.05)] backdrop-blur">
@@ -681,6 +681,19 @@ export default function LandingPage() {
         @media (max-width: 767px) {
           .landing-chip-track {
             animation-duration: 18s;
+          }
+
+          .landing-chip-track span {
+            height: 48px;
+            padding-left: 18px;
+            padding-right: 18px;
+            font-size: 12px;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .community-avatar-arc-mobile-safe {
+            transform: scale(0.72);
           }
         }
 
