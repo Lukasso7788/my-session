@@ -11,8 +11,59 @@ function getRedirectPath() {
 
     if (!redirect) return "/sessions";
     if (!redirect.startsWith("/")) return "/sessions";
+    if (redirect.startsWith("//")) return "/sessions";
 
     return redirect;
+}
+
+function getOAuthProfileDefaults(user: any) {
+    const metadata = user?.user_metadata || {};
+
+    const fullName = String(
+        metadata.full_name || metadata.name || user?.email || "User"
+    ).trim();
+
+    const avatarUrl = String(metadata.avatar_url || metadata.picture || "").trim();
+
+    return {
+        fullName: fullName || "User",
+        avatarUrl: avatarUrl || null,
+    };
+}
+
+async function ensureProfileWithoutOverwriting(user: any) {
+    const userId = String(user?.id || "").trim();
+    if (!userId) return;
+
+    const { data: existing, error: existingError } = await supabase
+        .from("profiles")
+        .select("id, full_name, avatar_url, bio")
+        .eq("id", userId)
+        .maybeSingle();
+
+    if (existingError) {
+        console.warn("[auth callback] profile lookup failed:", existingError);
+        return;
+    }
+
+    if (existing?.id) {
+        // Important: existing profile wins.
+        // OAuth login must NOT overwrite user's edited name, avatar, or bio.
+        return;
+    }
+
+    const defaults = getOAuthProfileDefaults(user);
+
+    const { error: insertError } = await supabase.from("profiles").insert({
+        id: userId,
+        full_name: defaults.fullName,
+        avatar_url: defaults.avatarUrl,
+        bio: "",
+    });
+
+    if (insertError) {
+        console.warn("[auth callback] profile insert failed:", insertError);
+    }
 }
 
 export const AuthCallback = () => {
@@ -35,27 +86,7 @@ export const AuthCallback = () => {
             handledUserIdRef.current = userId;
 
             try {
-                const fullName =
-                    session.user.user_metadata?.full_name ||
-                    session.user.user_metadata?.name ||
-                    session.user.email ||
-                    "User";
-
-                const avatarUrl =
-                    session.user.user_metadata?.avatar_url ||
-                    session.user.user_metadata?.picture ||
-                    null;
-
-                await supabase.from("profiles").upsert(
-                    {
-                        id: userId,
-                        full_name: fullName,
-                        avatar_url: avatarUrl,
-                        bio: "",
-                    },
-                    { onConflict: "id" }
-                );
-
+                await ensureProfileWithoutOverwriting(session.user);
                 await attachReferralToNewUser(userId);
             } catch (error) {
                 console.warn("[auth callback] profile/referral setup failed:", error);

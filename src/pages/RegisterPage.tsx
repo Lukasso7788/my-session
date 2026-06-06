@@ -31,6 +31,37 @@ function getEmailSignupRedirectUrl() {
   return `${base}/auth/callback?redirect=%2Fsessions`;
 }
 
+async function createProfileOnlyIfMissing(params: {
+  userId: string;
+  fullName: string;
+}) {
+  const { userId, fullName } = params;
+
+  const { data: existing, error: existingError } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (existingError) {
+    console.warn("[register] profile existence check failed:", existingError);
+    return;
+  }
+
+  if (existing?.id) return;
+
+  const { error: insertError } = await supabase.from("profiles").insert({
+    id: userId,
+    full_name: fullName,
+    avatar_url: null,
+    bio: "",
+  });
+
+  if (insertError) {
+    console.warn("[register] profile insert failed:", insertError);
+  }
+}
+
 export default function RegisterPage() {
   const navigate = useNavigate();
 
@@ -72,14 +103,10 @@ export default function RegisterPage() {
       }
 
       if (data.user) {
-        await supabase.from("profiles").upsert([
-          {
-            id: data.user.id,
-            full_name: cleanFullName,
-            avatar_url: null,
-            bio: "",
-          },
-        ]);
+        await createProfileOnlyIfMissing({
+          userId: data.user.id,
+          fullName: cleanFullName,
+        });
 
         try {
           await attachReferralToNewUser(data.user.id);

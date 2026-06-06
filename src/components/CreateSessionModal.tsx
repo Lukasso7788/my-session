@@ -2732,72 +2732,143 @@ export function CreateSessionModal({
             }));
 
       if (publicSlugRows.length > 0) {
-        const reusableSlugRow = publicSlugRows[0];
-
         try {
-          // One reusable public link per host. Clean other registry rows first.
-          const { error: deleteOtherSlugsError } = await supabase
-            .from("public_url_slugs")
-            .delete()
-            .eq("owner_type", "session")
-            .eq("host_user_id", profile.id)
-            .neq("slug", reusableSlugRow.slug);
+          const nowIso = new Date().toISOString();
 
-          if (deleteOtherSlugsError) {
-            console.warn(
-              "⚠️ Could not delete older public slug rows before upsert:",
-              deleteOtherSlugsError,
-            );
-          }
+          if (baseSlug && !isSeries) {
+            const targetSessionId = String(insertedSessions[0]?.id || "").trim();
+            const reusableSlug = String(baseSlug || "").trim();
 
-          // Re-point the existing reusable slug to the newly created session.
-          // If the slug already exists, this updates owner_id. If it does not, it inserts.
-          const { error: publicSlugError } = await supabase
-            .from("public_url_slugs")
-            .upsert(reusableSlugRow, { onConflict: "slug" });
+            if (!targetSessionId || !reusableSlug) {
+              throw new Error("Missing reusable slug target session.");
+            }
 
-          if (publicSlugError) {
-            console.warn(
-              "⚠️ Public slug upsert failed, retrying after host cleanup:",
-              publicSlugError,
-            );
-
-            // Retry path for partial legacy state: delete all session-slug rows for this host,
-            // then insert the current reusable slug again.
-            const { error: deleteAllHostSlugsError } = await supabase
+            // Keep only one active reusable public link per host, but DO NOT delete
+            // the currently selected slug. The selected slug should be re-pointed.
+            const { error: deleteOtherSlugsError } = await supabase
               .from("public_url_slugs")
               .delete()
               .eq("owner_type", "session")
-              .eq("host_user_id", profile.id);
+              .eq("host_user_id", profile.id)
+              .neq("slug", reusableSlug);
 
-            if (deleteAllHostSlugsError) {
+            if (deleteOtherSlugsError) {
               console.warn(
-                "⚠️ Could not delete host public slug rows during retry:",
-                deleteAllHostSlugsError,
+                "⚠️ Could not delete older public slug rows:",
+                deleteOtherSlugsError,
               );
             }
 
-            const { error: retryPublicSlugError } = await supabase
-              .from("public_url_slugs")
-              .insert(reusableSlugRow);
+            const { data: existingSlugRow, error: existingSlugError } =
+              await supabase
+                .from("public_url_slugs")
+                .select("slug, owner_type, owner_id, host_user_id, updated_at")
+                .eq("slug", reusableSlug)
+                .maybeSingle();
 
-            if (retryPublicSlugError) {
-              // Do not throw here. The session was created and host was booked.
-              // The session.custom_slug remains stored, and the registry can be repaired later.
-              console.warn(
-                "⚠️ Public slug registry update failed after retry. Session creation will still finish:",
-                retryPublicSlugError,
-              );
+            if (existingSlugError) {
+              throw existingSlugError;
+            }
+
+            if (existingSlugRow?.slug) {
+              let belongsToCurrentHost =
+                String((existingSlugRow as any).host_user_id || "").trim() ===
+                profile.id;
+
+              // Backward compatibility: old rows may have host_user_id empty.
+              // In that case, allow re-pointing only if the old owner session belongs to this host.
+              if (
+                !belongsToCurrentHost &&
+                (existingSlugRow as any).owner_type === "session" &&
+                (existingSlugRow as any).owner_id
+              ) {
+                const { data: oldOwnerSession, error: oldOwnerError } =
+                  await supabase
+                    .from("sessions")
+                    .select("id, host_id")
+                    .eq("id", String((existingSlugRow as any).owner_id))
+                    .maybeSingle();
+
+                if (oldOwnerError) {
+                  throw oldOwnerError;
+                }
+
+                belongsToCurrentHost = oldOwnerSession?.host_id === profile.id;
+              }
+
+              if (!belongsToCurrentHost) {
+                throw new Error(
+                  "This custom link is already taken by another host.",
+                );
+              }
+
+              const updatePayload: Record<string, unknown> = {
+                owner_type: "session",
+                owner_id: targetSessionId,
+                updated_at: nowIso,
+              };
+
+              // Do not overwrite another host. Only backfill host_user_id if this is
+              // our own legacy row with missing host_user_id.
+              if (!String((existingSlugRow as any).host_user_id || "").trim()) {
+                updatePayload.host_user_id = profile.id;
+              }
+
+              // ✅ THE IMPORTANT PART:
+              // Existing reusable link = UPDATE owner_id on public_url_slugs.
+              // This is what moves /slug from the old session to the new session.
+              const { data: updatedSlugRows, error: updateSlugError } =
+                await supabase
+                  .from("public_url_slugs")
+                  .update(updatePayload)
+                  .eq("slug", reusableSlug)
+                  .select("slug, owner_type, owner_id, host_user_id, updated_at");
+
+              if (updateSlugError) {
+                throw updateSlugError;
+              }
+
+              if (!updatedSlugRows || updatedSlugRows.length === 0) {
+                throw new Error("Reusable public link update returned no rows.");
+              }
+
+              setOwnedPublicSlugs(updatedSlugRows as PublicSlugRow[]);
             } else {
-              setOwnedPublicSlugs([reusableSlugRow]);
+              const insertRow = {
+                slug: reusableSlug,
+                owner_type: "session",
+                owner_id: targetSessionId,
+                host_user_id: profile.id,
+                updated_at: nowIso,
+              };
+
+              const { data: insertedSlugRows, error: insertSlugError } =
+                await supabase
+                  .from("public_url_slugs")
+                  .insert(insertRow)
+                  .select("slug, owner_type, owner_id, host_user_id, updated_at");
+
+              if (insertSlugError) {
+                throw insertSlugError;
+              }
+
+              setOwnedPublicSlugs((insertedSlugRows as PublicSlugRow[]) || [insertRow]);
             }
           } else {
-            setOwnedPublicSlugs([reusableSlugRow]);
+            // Series mode: dated slugs are unique, so normal upsert is fine.
+            const { error: publicSlugError } = await supabase
+              .from("public_url_slugs")
+              .upsert(publicSlugRows, { onConflict: "slug" });
+
+            if (publicSlugError) throw publicSlugError;
+
+            setOwnedPublicSlugs(publicSlugRows.slice(0, 1));
           }
         } catch (publicSlugUnexpectedError) {
           // Do not block successful creation/booking because of public_url_slugs registry issues.
+          // But log loudly: if this fails, reusable link will still point to the old session.
           console.warn(
-            "⚠️ Unexpected public slug registry error. Session creation will still finish:",
+            "⚠️ Public slug owner_id update failed. Session creation will still finish, but reusable link may still point to the old session:",
             publicSlugUnexpectedError,
           );
         }
