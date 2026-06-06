@@ -100,8 +100,18 @@ function cx(...parts: Array<string | false | null | undefined>) {
     return parts.filter(Boolean).join(" ");
 }
 
-function SectionShell({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-    return <section className={cx("mx-auto w-full max-w-[1180px] px-5 md:px-8", className)}>{children}</section>;
+function SectionShell({
+    children,
+    className = "",
+}: {
+    children: React.ReactNode;
+    className?: string;
+}) {
+    return (
+        <section className={cx("mx-auto w-full max-w-[1180px] px-5 md:px-8", className)}>
+            {children}
+        </section>
+    );
 }
 
 function RotatingPrompt() {
@@ -132,7 +142,15 @@ function RotatingPrompt() {
     );
 }
 
-function CtaButton({ to, children, dark = false }: { to: string; children: React.ReactNode; dark?: boolean }) {
+function CtaButton({
+    to,
+    children,
+    dark = false,
+}: {
+    to: string;
+    children: React.ReactNode;
+    dark?: boolean;
+}) {
     return (
         <Link
             to={to}
@@ -170,10 +188,21 @@ function Chip({ item }: { item: { emoji: string; label: string; tone: string } }
     );
 }
 
-function MovingChips({ items, reverse = false }: { items: Array<{ emoji: string; label: string; tone: string }>; reverse?: boolean }) {
+function MovingChips({
+    items,
+    reverse = false,
+}: {
+    items: Array<{ emoji: string; label: string; tone: string }>;
+    reverse?: boolean;
+}) {
     return (
         <div className="relative overflow-hidden py-1">
-            <div className={cx("landing-chip-track flex w-max items-center gap-[10px]", reverse && "landing-chip-track-reverse")}>
+            <div
+                className={cx(
+                    "landing-chip-track flex w-max items-center gap-[10px]",
+                    reverse && "landing-chip-track-reverse"
+                )}
+            >
                 {[...items, ...items, ...items].map((item, index) => (
                     <Chip key={`${item.label}-${index}`} item={item} />
                 ))}
@@ -193,14 +222,16 @@ function HeroTaskCard({ card }: { card: (typeof HERO_TASK_CARDS)[number] }) {
                         className="h-[25px] w-[25px] shrink-0 rounded-full object-cover"
                         draggable={false}
                     />
+
                     <div className="min-w-0 pt-[1px]">
                         <div className="truncate text-[10px] font-medium leading-[12px] text-[#2F2F2F]">
                             {card.name}
                         </div>
+
                         <img
                             src={card.flag}
-                            alt="country flag"
-                            className="mt-[3px] h-[7px] w-auto select-none object-contain"
+                            alt=""
+                            className="mt-[3px] h-[7px] w-[11px] select-none object-cover"
                             draggable={false}
                         />
                     </div>
@@ -220,7 +251,9 @@ function HeroTaskCard({ card }: { card: (typeof HERO_TASK_CARDS)[number] }) {
                 {[card.task1, card.task2].map((task) => (
                     <div key={task} className="flex items-start gap-[7px]">
                         <span className="mt-[1px] h-[11px] w-[11px] shrink-0 rounded-full border border-[#2F2F2F]" />
-                        <span className="text-[9px] font-medium leading-[11px] text-[#2F2F2F]">{task}</span>
+                        <span className="text-[9px] font-medium leading-[11px] text-[#2F2F2F]">
+                            {task}
+                        </span>
                     </div>
                 ))}
             </div>
@@ -230,16 +263,16 @@ function HeroTaskCard({ card }: { card: (typeof HERO_TASK_CARDS)[number] }) {
 
 function HeroArtwork() {
     const positionClass: Record<string, string> = {
-        leftTop: "left-[14px] top-[20px]",
-        rightTop: "right-[14px] top-[20px]",
-        leftBottom: "left-[14px] bottom-[34px]",
-        rightBottom: "right-[14px] bottom-[34px]",
+        leftTop: "left-[0px] top-[22px] xl:left-[24px]",
+        rightTop: "right-[0px] top-[22px] xl:right-[24px]",
+        leftBottom: "left-[0px] bottom-[42px] xl:left-[24px]",
+        rightBottom: "right-[0px] bottom-[42px] xl:right-[24px]",
     };
 
     return (
         <div className="mx-auto mt-[64px] w-full max-w-[1320px] md:mt-[70px]">
             <div className="relative hidden min-h-[585px] md:block">
-                <div className="pointer-events-none absolute left-1/2 top-[54px] w-[820px] -translate-x-1/2 lg:w-[880px] xl:w-[900px]">
+                <div className="pointer-events-none absolute left-1/2 top-[54px] w-[780px] -translate-x-1/2 lg:w-[820px] xl:w-[860px]">
                     <img
                         src="/images/landing/hero-room-desktop.png"
                         alt="MySession live coworking room preview"
@@ -249,7 +282,7 @@ function HeroArtwork() {
                 </div>
 
                 {HERO_TASK_CARDS.map((card) => (
-                    <div key={card.name} className={cx("absolute", positionClass[card.position])}>
+                    <div key={card.name} className={cx("absolute z-10", positionClass[card.position])}>
                         <HeroTaskCard card={card} />
                     </div>
                 ))}
@@ -282,8 +315,12 @@ function StatCards() {
                         key={stat.value}
                         className="min-h-[150px] rounded-[18px] border border-[#E9E9E9] bg-white px-7 py-8 text-center shadow-[0_16px_40px_rgba(47,47,47,0.04)]"
                     >
-                        <div className="text-[44px] font-bold leading-none tracking-[-1.1%] text-[#2F2F2F]">{stat.value}</div>
-                        <p className="mx-auto mt-7 max-w-[170px] text-[14px] font-medium leading-[22px] text-[#747474]">{stat.text}</p>
+                        <div className="text-[44px] font-bold leading-none tracking-[-1.1%] text-[#2F2F2F]">
+                            {stat.value}
+                        </div>
+                        <p className="mx-auto mt-7 max-w-[170px] text-[14px] font-medium leading-[22px] text-[#747474]">
+                            {stat.text}
+                        </p>
                     </div>
                 ))}
             </div>
@@ -291,7 +328,15 @@ function StatCards() {
     );
 }
 
-function FeatureCard({ title, text, children }: { title: string; text: string; children?: React.ReactNode }) {
+function FeatureCard({
+    title,
+    text,
+    children,
+}: {
+    title: string;
+    text: string;
+    children?: React.ReactNode;
+}) {
     return (
         <div className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
             <h3 className="text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">{title}</h3>
@@ -317,7 +362,9 @@ function WorkMoreSection() {
                     title="Built for every kind of person"
                     text="Whether you have ADHD, tend to procrastinate, get distracted easily, feel lonely working alone, or simply work better around people — MySession gives you structure and visible accountability."
                 >
-                    <CtaButton to="/sessions" dark>Join now</CtaButton>
+                    <CtaButton to="/sessions" dark>
+                        Join now
+                    </CtaButton>
                 </FeatureCard>
 
                 <FeatureCard
@@ -330,7 +377,10 @@ function WorkMoreSection() {
                             ["Justin", "Studying biology", "Focus"],
                             ["Amina", "Building a feature", "Deep work"],
                         ].map(([name, task, tag]) => (
-                            <div key={name} className="flex items-center justify-between rounded-[14px] bg-white px-4 py-3">
+                            <div
+                                key={name}
+                                className="flex items-center justify-between rounded-[14px] bg-white px-4 py-3"
+                            >
                                 <div>
                                     <div className="text-[13px] font-bold text-[#2F2F2F]">{name}</div>
                                     <div className="mt-0.5 text-[12px] font-medium text-[#747474]">{task}</div>
@@ -349,7 +399,10 @@ function WorkMoreSection() {
                 >
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                         {["Code", "Study", "Design", "Write", "Plan", "Admin"].map((item) => (
-                            <div key={item} className="rounded-[14px] bg-[#F8F8F8] px-4 py-4 text-center text-[13px] font-bold text-[#2F2F2F]">
+                            <div
+                                key={item}
+                                className="rounded-[14px] bg-[#F8F8F8] px-4 py-4 text-center text-[13px] font-bold text-[#2F2F2F]"
+                            >
                                 {item}
                             </div>
                         ))}
@@ -374,11 +427,25 @@ function WorkMoreSection() {
     );
 }
 
-function FormatCard({ icon, title, text, bullets }: { icon: string; title: string; text: string; bullets: string[] }) {
+function FormatCard({
+    icon,
+    title,
+    text,
+    bullets,
+}: {
+    icon: string;
+    title: string;
+    text: string;
+    bullets: string[];
+}) {
     return (
         <div className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
-            <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-[rgba(101,212,108,0.18)] text-[22px]">{icon}</div>
-            <h3 className="mt-7 text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">{title}</h3>
+            <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-[rgba(101,212,108,0.18)] text-[22px]">
+                {icon}
+            </div>
+            <h3 className="mt-7 text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">
+                {title}
+            </h3>
             <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">{text}</p>
             <ul className="mt-6 space-y-3">
                 {bullets.map((bullet) => (
@@ -404,9 +471,24 @@ function FormatsSection() {
             </div>
 
             <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
-                <FormatCard icon="✅" title="Group sessions" text="Structured live coworking with check-ins and a shared focus container." bullets={["Great for momentum", "Pomodoro and deep work", "Best when you need structure"]} />
-                <FormatCard icon="🔵" title="24/7 rooms" text="Permanent rooms you can enter anytime without waiting for a scheduled session." bullets={["Always available", "Low-friction start", "Perfect for daily rhythm"]} />
-                <FormatCard icon="🎧" title="Buddy tripling" text="Small circles for people who want a calmer, more personal accountability format." bullets={["Comfortable and focused", "Good for recurring work", "Easy to build habit"]} />
+                <FormatCard
+                    icon="✅"
+                    title="Group sessions"
+                    text="Structured live coworking with check-ins and a shared focus container."
+                    bullets={["Great for momentum", "Pomodoro and deep work", "Best when you need structure"]}
+                />
+                <FormatCard
+                    icon="🔵"
+                    title="24/7 rooms"
+                    text="Permanent rooms you can enter anytime without waiting for a scheduled session."
+                    bullets={["Always available", "Low-friction start", "Perfect for daily rhythm"]}
+                />
+                <FormatCard
+                    icon="🎧"
+                    title="Buddy tripling"
+                    text="Small circles for people who want a calmer, more personal accountability format."
+                    bullets={["Comfortable and focused", "Good for recurring work", "Easy to build habit"]}
+                />
             </div>
         </SectionShell>
     );
@@ -418,7 +500,10 @@ function CommunitySection() {
             <div className="overflow-hidden rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 py-14 text-center md:px-10 md:py-16">
                 <div className="mx-auto flex w-max -space-x-3">
                     {["🧑", "👩", "👨", "👩‍💻", "🧑‍🎨", "👨‍🎓", "👩‍🔬", "🧑‍💼"].map((emoji, i) => (
-                        <div key={`${emoji}-${i}`} className="flex h-[54px] w-[54px] items-center justify-center rounded-full border-[3px] border-white bg-[#F2F2F2] text-[24px] shadow-sm">
+                        <div
+                            key={`${emoji}-${i}`}
+                            className="flex h-[54px] w-[54px] items-center justify-center rounded-full border-[3px] border-white bg-[#F2F2F2] text-[24px] shadow-sm"
+                        >
                             {emoji}
                         </div>
                     ))}
@@ -431,7 +516,9 @@ function CommunitySection() {
                     Work with students, freelancers, designers, developers, founders, remote workers, and creators — all showing up to make progress together.
                 </p>
                 <div className="mt-8">
-                    <CtaButton to="/sessions" dark>Join a session — it’s free</CtaButton>
+                    <CtaButton to="/sessions" dark>
+                        Join a session — it’s free
+                    </CtaButton>
                 </div>
                 <div className="mt-10">
                     <MovingChips items={AUDIENCE_CHIPS} reverse />
@@ -451,14 +538,25 @@ function HowItWorksSection() {
     return (
         <SectionShell className="mt-[120px]">
             <div className="text-center">
-                <h2 className="text-[30px] font-bold leading-[34px] tracking-[-1.1%] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">How It Works</h2>
+                <h2 className="text-[30px] font-bold leading-[34px] tracking-[-1.1%] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">
+                    How It Works
+                </h2>
             </div>
             <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
                 {items.map((item) => (
-                    <div key={item.step} className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(101,212,108,0.20)] text-[15px] font-bold text-[#2F2F2F]">{item.step}</div>
-                        <h3 className="mt-7 text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">{item.title}</h3>
-                        <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">{item.text}</p>
+                    <div
+                        key={item.step}
+                        className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]"
+                    >
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(101,212,108,0.20)] text-[15px] font-bold text-[#2F2F2F]">
+                            {item.step}
+                        </div>
+                        <h3 className="mt-7 text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">
+                            {item.title}
+                        </h3>
+                        <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">
+                            {item.text}
+                        </p>
                     </div>
                 ))}
             </div>
@@ -482,9 +580,13 @@ function FaqSection() {
                     <details key={item.q} className="group border-b border-[#E9E9E9] last:border-b-0">
                         <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-6 py-5 text-left text-[15px] font-bold text-[#2F2F2F]">
                             {item.q}
-                            <span className="text-[20px] leading-none text-[#747474] transition group-open:rotate-45">+</span>
+                            <span className="text-[20px] leading-none text-[#747474] transition group-open:rotate-45">
+                                +
+                            </span>
                         </summary>
-                        <p className="px-6 pb-5 text-[14px] font-medium leading-[24px] text-[#747474]">{item.a}</p>
+                        <p className="px-6 pb-5 text-[14px] font-medium leading-[24px] text-[#747474]">
+                            {item.a}
+                        </p>
                     </details>
                 ))}
             </div>
@@ -505,7 +607,10 @@ function FinalCta() {
                     Join a live focus session and make the next step easier to start.
                 </p>
                 <div className="mt-8">
-                    <Link to="/sessions" className="inline-flex h-[52px] items-center justify-center rounded-full bg-[#65D46C] px-8 text-[14px] font-bold text-[#2F2F2F] shadow-[0_18px_44px_rgba(101,212,108,0.30)] transition hover:-translate-y-0.5">
+                    <Link
+                        to="/sessions"
+                        className="inline-flex h-[52px] items-center justify-center rounded-full bg-[#65D46C] px-8 text-[14px] font-bold text-[#2F2F2F] shadow-[0_18px_44px_rgba(101,212,108,0.30)] transition hover:-translate-y-0.5"
+                    >
                         Join a session — free
                     </Link>
                 </div>
@@ -518,7 +623,11 @@ export default function LandingPage() {
     const heroCopy = useMemo(
         () => (
             <>
-                Join <span className="underline decoration-[#2F2F2F]/25 underline-offset-4">live coworking sessions</span>, work alongside focused people,
+                Join{" "}
+                <span className="underline decoration-[#2F2F2F]/25 underline-offset-4">
+                    live coworking sessions
+                </span>
+                , work alongside focused people,
                 <br className="hidden sm:block" />
                 and actually get things done.
             </>
@@ -541,7 +650,9 @@ export default function LandingPage() {
                     </p>
 
                     <div className="mt-[26px] flex justify-center">
-                        <CtaButton to="/sessions" dark>Join A Session — It’s Free</CtaButton>
+                        <CtaButton to="/sessions" dark>
+                            Join A Session — It’s Free
+                        </CtaButton>
                     </div>
                 </div>
 
