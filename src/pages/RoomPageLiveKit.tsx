@@ -621,6 +621,134 @@ function isLiveScreenShareTrack(track: any) {
   return true;
 }
 
+
+function getMediaStreamTrackFromLiveKitTrack(track: any): MediaStreamTrack | null {
+  return (track?.mediaStreamTrack || track?.mediaTrack || null) as MediaStreamTrack | null;
+}
+
+async function waitForMediaTrackRenderableFrame(mediaTrack: MediaStreamTrack | null, timeoutMs = 2400) {
+  if (!mediaTrack || mediaTrack.readyState !== "live") return false;
+  if (typeof document === "undefined") return true;
+
+  const startedAt = Date.now();
+  const video = document.createElement("video");
+
+  try {
+    video.muted = true;
+    video.autoplay = true;
+    video.playsInline = true;
+    video.style.position = "fixed";
+    video.style.left = "-9999px";
+    video.style.top = "-9999px";
+    video.style.width = "1px";
+    video.style.height = "1px";
+    video.style.opacity = "0";
+    video.srcObject = new MediaStream([mediaTrack]);
+    document.body.appendChild(video);
+
+    try {
+      await video.play();
+    } catch {
+      // Some tablet browsers only allow play after metadata. Continue polling.
+    }
+
+    while (Date.now() - startedAt < timeoutMs) {
+      if (mediaTrack.readyState !== "live") return false;
+      if (video.videoWidth > 0 && video.videoHeight > 0) return true;
+      await delay(120);
+    }
+
+    return video.videoWidth > 0 && video.videoHeight > 0;
+  } catch {
+    return false;
+  } finally {
+    try {
+      video.pause();
+      video.srcObject = null;
+      video.remove();
+    } catch {
+      // ignore cleanup failure
+    }
+  }
+}
+
+function getFirstLocalScreenShareMediaTrack(room: Room | null): MediaStreamTrack | null {
+  try {
+    const lp: any = room?.localParticipant;
+    const pubs: any[] = Array.from((lp?.trackPublications as any)?.values?.() || []);
+    const pub = pubs.find((p) => isScreenShareVideoPublication(p) && isLiveScreenShareTrack(p.track));
+    return getMediaStreamTrackFromLiveKitTrack(pub?.track);
+  } catch {
+    return null;
+  }
+}
+
+async function waitForLocalRenderableScreenShareTrack(room: Room | null, timeoutMs = 3600) {
+  const started = Date.now();
+
+  while (Date.now() - started < timeoutMs) {
+    if (!hasLocalLiveScreenShare(room)) {
+      await delay(120);
+      continue;
+    }
+
+    const mediaTrack = getFirstLocalScreenShareMediaTrack(room);
+    if (!mediaTrack) {
+      await delay(120);
+      continue;
+    }
+
+    const remaining = Math.max(250, timeoutMs - (Date.now() - started));
+    const hasFrame = await waitForMediaTrackRenderableFrame(mediaTrack, Math.min(remaining, 1200));
+    if (hasFrame) return true;
+
+    await delay(120);
+  }
+
+  return false;
+}
+
+function shouldPreferManualTabletScreenShare(args: { isMobileQuery?: boolean; isTabletQuery?: boolean }) {
+  const deviceType = inferDeviceTypeFromRuntime(args);
+  if (deviceType !== "tablet") return false;
+
+  if (typeof navigator === "undefined") return true;
+  const ua = String(navigator.userAgent || "").toLowerCase();
+
+  // Android/Samsung tablets are the main problem case: LiveKit's convenience
+  // toggle can create a screen-share publication before the real display track
+  // is renderable, which leaves an empty second tile. Manual capture lets us
+  // validate the MediaStreamTrack before publishing it into the room.
+  return ua.includes("android") || ua.includes("samsungbrowser") || args.isTabletQuery;
+}
+
+async function captureDisplayMediaForTablet() {
+  if (!supportsScreenShareCapture()) {
+    throw new Error("screen_share_not_supported");
+  }
+
+  const stream = await (navigator.mediaDevices as any).getDisplayMedia({
+    audio: false,
+    video: {
+      frameRate: { ideal: 15, max: 20 },
+      width: { ideal: 1280, max: 1920 },
+      height: { ideal: 720, max: 1080 },
+    },
+  });
+
+  const mediaTrack = stream?.getVideoTracks?.()[0] as MediaStreamTrack | undefined;
+  if (!mediaTrack) {
+    try {
+      stream?.getTracks?.().forEach((track: MediaStreamTrack) => track.stop());
+    } catch {
+      // ignore cleanup failure
+    }
+    throw new Error("display_media_returned_no_video_track");
+  }
+
+  return { stream, mediaTrack };
+}
+
 function filterRenderableScreenShareTiles(tiles: TileModel[]) {
   return (tiles || []).filter((tile) => {
     if (tile.kind !== "screen") return true;
@@ -5269,6 +5397,11 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
   const [screenShareOn, setScreenShareOn] = useState(false);
+  const manualScreenShareRef = useRef<{
+    mediaTrack: MediaStreamTrack;
+    stream?: MediaStream | null;
+    publication?: LocalTrackPublication | null;
+  } | null>(null);
   const [remoteAudioRecoveryTick, setRemoteAudioRecoveryTick] = useState(0);
   const [pipMode, setPipMode] = useState<PiPMode>("gallery");
 
@@ -6961,6 +7094,80 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     window.setTimeout(() => scheduleRebuildTiles(), 220);
     window.setTimeout(() => scheduleRebuildTiles(), 520);
     window.setTimeout(() => scheduleRebuildTiles(), 1100);
+    window.setTimeout(() => scheduleRebuildTiles(), 1800);
+  };
+
+  const stopLocalScreenShare = async (reason = "stop") => {
+    const r = roomRef.current;
+    const lp: any = r?.localParticipant;
+    const manual = manualScreenShareRef.current;
+    manualScreenShareRef.current = null;
+
+    try {
+      if (manual?.mediaTrack && lp?.unpublishTrack) {
+        await lp.unpublishTrack(manual.mediaTrack, true);
+      }
+    } catch {
+      // ignore manual unpublish failure; LiveKit cleanup below is the fallback
+    }
+
+    try {
+      manual?.stream?.getTracks?.().forEach((track: MediaStreamTrack) => track.stop());
+    } catch {
+      // ignore cleanup failure
+    }
+
+    try {
+      if (lp?.setScreenShareEnabled) {
+        await lp.setScreenShareEnabled(false);
+      }
+    } catch {
+      // ignore fallback cleanup failure
+    }
+
+    setScreenShareOn(false);
+    scheduleScreenShareRebuildBurst();
+    void logRoomDiagnostic("screen_share_local_stop_cleanup", {
+      reason,
+      snapshot: getScreenShareDiagnosticSnapshot(roomRef.current),
+    });
+  };
+
+  const publishManualTabletScreenShare = async (r: Room) => {
+    const lp: any = r.localParticipant;
+    const captured = await captureDisplayMediaForTablet();
+    const firstFrameReady = await waitForMediaTrackRenderableFrame(captured.mediaTrack, 2600);
+
+    if (!firstFrameReady) {
+      try {
+        captured.stream?.getTracks?.().forEach((track: MediaStreamTrack) => track.stop());
+      } catch {
+        // ignore cleanup failure
+      }
+      throw new Error("display_media_video_track_not_renderable");
+    }
+
+    const publication = await lp.publishTrack(captured.mediaTrack, {
+      source: Track.Source.ScreenShare,
+      name: "screen_share",
+      simulcast: false,
+    } as any) as LocalTrackPublication;
+
+    manualScreenShareRef.current = {
+      mediaTrack: captured.mediaTrack,
+      stream: captured.stream,
+      publication,
+    };
+
+    try {
+      captured.mediaTrack.addEventListener("ended", () => {
+        void stopLocalScreenShare("display_media_track_ended");
+      }, { once: true });
+    } catch {
+      // ignore listener failure
+    }
+
+    return publication;
   };
 
   const toggleScreenShare = async () => {
@@ -6977,22 +7184,23 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
       if (!next) {
         void logRoomDiagnostic("screen_share_stop_attempt", getScreenShareDiagnosticSnapshot(r) as any);
-        await lp.setScreenShareEnabled(false);
-        setScreenShareOn(false);
-        scheduleScreenShareRebuildBurst();
+        await stopLocalScreenShare("user_toggle_off");
         void logRoomDiagnostic("screen_share_stopped", getScreenShareDiagnosticSnapshot(r) as any);
         return;
       }
 
+      const preferManualTabletPath = shouldPreferManualTabletScreenShare({ isMobileQuery, isTabletQuery });
+
       void logRoomDiagnostic("screen_share_start_attempt", {
         supported: supportsScreenShareCapture(),
+        preferManualTabletPath,
         before: getScreenShareDiagnosticSnapshot(r),
       });
 
       if (!supportsScreenShareCapture()) {
         setScreenShareOn(false);
         setMediaWarning(
-          "Screen sharing is not supported by this tablet browser. Try desktop Chrome/Edge, or update the browser and allow screen recording/sharing permissions."
+          "Screen sharing is not supported by this tablet browser. Try Chrome on the tablet, desktop Chrome/Edge, or update the browser and allow screen recording/sharing permissions."
         );
         scheduleScreenShareRebuildBurst();
         void logRoomDiagnostic("screen_share_unsupported", {
@@ -7004,32 +7212,66 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
       setMediaWarning("");
 
-      await lp.setScreenShareEnabled(
-        true,
-        {
-          audio: false,
-          video: true,
-        } as any
-      );
+      if (preferManualTabletPath) {
+        try {
+          await publishManualTabletScreenShare(r);
+          scheduleScreenShareRebuildBurst();
+        } catch (manualError: any) {
+          console.warn("manual tablet screen share failed, falling back to LiveKit toggle:", manualError);
+          void logRoomDiagnostic("screen_share_manual_tablet_failed", {
+            name: String(manualError?.name || ""),
+            message: String(manualError?.message || manualError || ""),
+            snapshot: getScreenShareDiagnosticSnapshot(r),
+          });
+
+          const manualMessage = String(manualError?.message || manualError || "").toLowerCase();
+          const manualName = String(manualError?.name || "").toLowerCase();
+          const userCancelled =
+            manualName.includes("notallowed") ||
+            manualName.includes("abort") ||
+            manualMessage.includes("permission") ||
+            manualMessage.includes("cancel");
+
+          if (userCancelled) {
+            throw manualError;
+          }
+
+          await lp.setScreenShareEnabled(
+            true,
+            {
+              audio: false,
+              video: true,
+            } as any
+          );
+        }
+      } else {
+        await lp.setScreenShareEnabled(
+          true,
+          {
+            audio: false,
+            video: true,
+          } as any
+        );
+      }
 
       scheduleScreenShareRebuildBurst();
 
       const liveTrackReady = await waitForLocalScreenShareTrack(r, 2600);
+      const renderableTrackReady = await waitForLocalRenderableScreenShareTrack(r, preferManualTabletPath ? 4200 : 3200);
       const afterStartSnapshot = getScreenShareDiagnosticSnapshot(r);
 
-      if (!liveTrackReady) {
-        try {
-          await lp.setScreenShareEnabled(false);
-        } catch {
-          // ignore cleanup failure
-        }
+      if (!liveTrackReady || !renderableTrackReady) {
+        await stopLocalScreenShare("screen_share_track_missing_or_not_renderable");
 
         setScreenShareOn(false);
         setMediaWarning(
-          "Screen sharing started but no screen video track was received. This usually happens on some tablet browsers. Please try again, update the browser, or use desktop Chrome/Edge for screen sharing."
+          "Screen sharing started, but the tablet browser did not send a visible screen video. Please try Chrome on the tablet, close other tabs/apps, or use desktop Chrome/Edge for screen sharing."
         );
         scheduleScreenShareRebuildBurst();
         void logRoomDiagnostic("screen_share_track_missing", {
+          liveTrackReady,
+          renderableTrackReady,
+          preferManualTabletPath,
           afterStart: afterStartSnapshot,
           afterCleanup: getScreenShareDiagnosticSnapshot(r),
         });
@@ -7039,16 +7281,13 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       setScreenShareOn(true);
       scheduleScreenShareRebuildBurst();
       void logRoomDiagnostic("screen_share_started", {
+        preferManualTabletPath,
         afterStart: afterStartSnapshot,
       });
     } catch (e: any) {
       console.error("toggleScreenShare error:", e);
 
-      try {
-        await (roomRef.current?.localParticipant as any)?.setScreenShareEnabled?.(false);
-      } catch {
-        // ignore cleanup failure
-      }
+      await stopLocalScreenShare("screen_share_failed_cleanup");
 
       setScreenShareOn(false);
       setMediaWarning(getScreenShareErrorMessage(e));
