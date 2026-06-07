@@ -301,7 +301,6 @@ export default function PricingPage() {
                             "Join up to 3 sessions per week",
                             "Up to 9 hours total per week",
                             "Join and host sessions",
-                            "Core chat, reactions, and room features",
                             "Upgrade later when you want unlimited access",
                         ]}
                         ctaLabel="Start free"
