@@ -234,186 +234,315 @@ function StatCards() {
     );
 }
 
-function FeatureCard({
-    title,
-    text,
-    children,
-}: {
-    title: string;
-    text: string;
-    children?: React.ReactNode;
-}) {
+function PeoplePanelMockup() {
+    const people = [
+        { name: "Sofia", role: "Writer", avatar: "/images/landing/community-avatar-1.png", tag: "ADHD", tone: "green" },
+        { name: "Jordan", role: "Founder", avatar: "/images/landing/community-avatar-2.png", tag: "Procrastinator", tone: "blue" },
+        { name: "Sam", role: "Designer", avatar: "/images/landing/community-avatar-3.png", tag: "Better w/ people", tone: "purple" },
+        { name: "Riya", role: "Student", avatar: "/images/landing/community-avatar-4.png", tag: "Easily distracted", tone: "red" },
+    ];
+
+    const activity = [
+        { avatar: "/images/landing/community-avatar-5.png", name: "Sofia", action: "completed Draft launch email", icon: "◎", time: "just now" },
+        { avatar: "/images/landing/community-avatar-6.png", name: "Jordan", action: "started Deep work · 50 min", icon: "◌", time: "1m" },
+        { avatar: "/images/landing/community-avatar-7.png", name: "Sam", action: "joined Morning routine room", icon: "□", time: "3m" },
+        { avatar: "/images/landing/community-avatar-8.png", name: "Riya", action: "hit a 14-day streak", icon: "♧", time: "5m" },
+    ];
+
+    const tagClass: Record<string, string> = {
+        green: "bg-[#EAFBEA] text-[#58C85C]",
+        blue: "bg-[#EDF3FF] text-[#5286F6]",
+        purple: "bg-[#F0EDFF] text-[#7C6CF2]",
+        red: "bg-[#FFF0F0] text-[#F65252]",
+    };
+
     return (
-        <div className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
-            <h3 className="text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">
-                {title}
-            </h3>
-            <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">
-                {text}
-            </p>
-            {children ? <div className="mt-6">{children}</div> : null}
+        <div className="rounded-[14px] bg-[#F8F8F8] p-[14px]">
+            <div className="rounded-[10px] bg-white shadow-[0_6px_20px_rgba(47,47,47,0.04)]">
+                <div className="flex h-[38px] items-center justify-between border-b border-[#F1F1F1] px-[14px]">
+                    <div className="flex items-center gap-2 text-[10px] font-medium text-[#777]">
+                        <span className="text-[13px]">⌕</span>
+                        Search people in session
+                    </div>
+                    <div className="flex items-center gap-1 text-[8px] font-semibold text-[#65D46C]">
+                        <span className="h-[4px] w-[4px] rounded-full bg-[#65D46C]" />
+                        560 online
+                    </div>
+                </div>
+
+                <div className="flex gap-[6px] border-b border-[#F1F1F1] px-[14px] py-[9px]">
+                    {["All", "ADHD", "Procrastinators", "Introverts"].map((tag, index) => (
+                        <span
+                            key={tag}
+                            className={cx(
+                                "rounded-full px-[11px] py-[5px] text-[9px] font-bold",
+                                index === 0 ? "bg-[#2F2F2F] text-white" : "bg-[#F1F1F1] text-[#2F2F2F]"
+                            )}
+                        >
+                            {tag}
+                        </span>
+                    ))}
+                </div>
+
+                <div className="px-[14px] py-[8px]">
+                    {people.map((person) => (
+                        <div key={person.name} className="flex h-[42px] items-center justify-between border-b border-[#F4F4F4] last:border-b-0">
+                            <div className="flex items-center gap-[10px]">
+                                <img src={person.avatar} alt="" className="h-[24px] w-[24px] rounded-full object-cover" draggable={false} />
+                                <div>
+                                    <div className="text-[10px] font-bold leading-none text-[#2F2F2F]">{person.name}</div>
+                                    <div className="mt-[4px] text-[8px] font-medium leading-none text-[#747474]">{person.role}</div>
+                                </div>
+                            </div>
+                            <span className={cx("rounded-[7px] px-[8px] py-[5px] text-[8px] font-bold", tagClass[person.tone])}>
+                                {person.tag}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="mt-[14px] rounded-[10px] bg-white shadow-[0_6px_20px_rgba(47,47,47,0.04)]">
+                <div className="flex h-[34px] items-center justify-between border-b border-[#F1F1F1] px-[14px]">
+                    <div className="text-[10px] font-bold text-[#747474]">⌁ Happening right now</div>
+                    <div className="flex items-center gap-1 text-[8px] font-bold text-[#65D46C]">
+                        <span className="h-[4px] w-[4px] rounded-full bg-[#65D46C]" />
+                        Live
+                    </div>
+                </div>
+
+                <div className="px-[14px] py-[8px]">
+                    {activity.map((item) => (
+                        <div key={`${item.name}-${item.action}`} className="flex h-[34px] items-center justify-between border-b border-[#F4F4F4] last:border-b-0">
+                            <div className="flex items-center gap-[9px]">
+                                <img src={item.avatar} alt="" className="h-[22px] w-[22px] rounded-full object-cover" draggable={false} />
+                                <div className="text-[9px] font-medium text-[#2F2F2F]">
+                                    <span className="font-bold">{item.name}</span>{" "}
+                                    <span>{item.action}</span>
+                                </div>
+                            </div>
+                            <div className="flex min-w-[48px] items-center justify-end gap-[8px] text-[8px] font-bold text-[#747474]">
+                                <span className="text-[#65D46C]">{item.icon}</span>
+                                {item.time}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function ActivityRoomsMockup() {
+    const rooms = [
+        { title: "Deep work", icon: "♧", color: "green", people: "45 in" },
+        { title: "Reading", icon: "▣", color: "blue", people: "122 in" },
+        { title: "Meditation", icon: "⌘", color: "purple", people: "84 in" },
+        { title: "Workout", icon: "⌁", color: "red", people: "67 in" },
+        { title: "Morning", icon: "☕", color: "green", people: "103 in" },
+        { title: "Wind down", icon: "◔", color: "purple", people: "33 in" },
+    ];
+
+    const colorClass: Record<string, string> = {
+        green: "bg-[#EAFBEA] text-[#65D46C]",
+        blue: "bg-[#EDF3FF] text-[#5286F6]",
+        purple: "bg-[#F0EDFF] text-[#7C6CF2]",
+        red: "bg-[#FFF0F0] text-[#F65252]",
+    };
+
+    return (
+        <div className="rounded-[14px] bg-[#F8F8F8] p-[14px]">
+            <div className="rounded-[10px] bg-white px-[14px] py-[12px] shadow-[0_6px_20px_rgba(47,47,47,0.04)]">
+                <div className="mb-[12px] flex items-center justify-between">
+                    <div className="text-[9px] font-bold text-[#2F2F2F]"># Rooms by activity</div>
+                    <div className="rounded-full bg-[#F2F2F2] px-[9px] py-[4px] text-[8px] font-bold text-[#2F2F2F]">+ New</div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-[8px]">
+                    {rooms.map((room) => (
+                        <div key={room.title} className="rounded-[10px] bg-[#F8F8F8] px-[14px] py-[14px]">
+                            <div className={cx("mb-[12px] flex h-[24px] w-[24px] items-center justify-center rounded-full text-[12px]", colorClass[room.color])}>
+                                {room.icon}
+                            </div>
+                            <div className="text-[10px] font-bold text-[#2F2F2F]">{room.title}</div>
+                            <div className="mt-[10px] flex items-center gap-[6px]">
+                                <div className="flex -space-x-[5px]">
+                                    {[1, 2, 3].map((i) => (
+                                        <img
+                                            key={i}
+                                            src={`/images/landing/community-avatar-${i}.png`}
+                                            alt=""
+                                            className="h-[16px] w-[16px] rounded-full border border-white object-cover"
+                                            draggable={false}
+                                        />
+                                    ))}
+                                </div>
+                                <div className="text-[8px] font-medium text-[#747474]">+ {room.people}</div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function PaceMockup() {
+    return (
+        <div className="rounded-[14px] bg-[#F8F8F8] p-[14px]">
+            <div className="rounded-[10px] bg-white shadow-[0_6px_20px_rgba(47,47,47,0.04)]">
+                <div className="flex h-[38px] items-center justify-between border-b border-[#F1F1F1] px-[16px]">
+                    <div className="flex items-center gap-[7px] text-[9px] font-bold text-[#2F2F2F]">
+                        <span className="h-[5px] w-[5px] rounded-full bg-[#65D46C]" />
+                        Quiet focus · 50/10
+                    </div>
+                    <div className="text-[8px] font-bold text-[#747474]">Round 2 of 4</div>
+                </div>
+
+                <div className="flex items-center gap-[34px] px-[34px] py-[42px]">
+                    <div className="flex h-[118px] w-[118px] shrink-0 items-center justify-center rounded-full border-[8px] border-[#65D46C]">
+                        <div className="text-[32px] font-medium tracking-[1px] text-[#2F2F2F]">32:14</div>
+                    </div>
+
+                    <div>
+                        <div className="text-[12px] font-medium text-[#747474]">Working on...</div>
+                        <div className="mt-[4px] text-[16px] font-bold text-[#2F2F2F]">Outline Q3 roadmap</div>
+                        <div className="mt-[12px] flex items-center gap-[10px]">
+                            <div className="flex -space-x-[7px]">
+                                {[4, 5, 6].map((i) => (
+                                    <img
+                                        key={i}
+                                        src={`/images/landing/community-avatar-${i}.png`}
+                                        alt=""
+                                        className="h-[24px] w-[24px] rounded-full border border-white object-cover"
+                                        draggable={false}
+                                    />
+                                ))}
+                            </div>
+                            <span className="text-[9px] font-medium text-[#747474]">+25 working alongside you</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex h-[38px] items-center justify-between border-t border-[#F1F1F1] px-[16px]">
+                    <div className="flex items-center gap-[20px] text-[9px] font-medium text-[#747474]">
+                        <span>⌁ Mic off</span>
+                        <span>▧ Camera off</span>
+                    </div>
+                    <div className="text-[9px] font-bold text-[#2F2F2F]">Just show up ↗</div>
+                </div>
+            </div>
         </div>
     );
 }
 
 function WorkMoreSection() {
     return (
-        <SectionShell className="mt-[120px]">
-            <div className="text-center">
-                <h2 className="text-[30px] font-bold leading-[34px] tracking-[-1.1%] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">
-                    Work Alongside Others And
-                    <br />
-                    Get X2 More Done
-                </h2>
-            </div>
+        <section className="mt-[118px] bg-[#000000] px-5 py-[90px] md:mt-[130px] md:px-8 md:py-[112px]">
+            <div className="mx-auto max-w-[1200px]">
+                <div className="text-center">
+                    <h2 className="text-[30px] font-bold leading-[38px] tracking-[-0.8px] text-[#252525] md:text-[36px] md:leading-[44px]">
+                        Work Alongside Others And
+                        <br />
+                        Get x2 More Done
+                    </h2>
+                </div>
 
-            <div className="mt-10 grid grid-cols-1 gap-6 lg:grid-cols-2">
-                <FeatureCard
-                    title="Built for every kind of person"
-                    text="Whether you have ADHD, tend to procrastinate, get distracted easily, feel lonely working alone, or simply work better around people — MySession gives you structure and visible accountability."
-                >
-                    <CtaButton to="/sessions" dark>
-                        Join now
-                    </CtaButton>
-                </FeatureCard>
+                <div className="mt-[46px] grid grid-cols-1 gap-[22px] lg:grid-cols-2">
+                    <div className="overflow-hidden rounded-[12px] bg-white px-[42px] py-[40px] lg:col-span-2 lg:min-h-[424px]">
+                        <div className="grid h-full grid-cols-1 gap-[34px] lg:grid-cols-[470px_1fr] lg:items-center">
+                            <div>
+                                <h3 className="text-[24px] font-bold leading-[30px] tracking-[-0.4px] text-[#2F2F2F]">
+                                    Built for every kind of person
+                                </h3>
 
-                <FeatureCard
-                    title="Join focused people already working"
-                    text="Enter a live room, set your intention, and work beside people who are also trying to move their day forward. Quiet, simple, and structured."
-                >
-                    <div className="space-y-3 rounded-[16px] bg-[#F8F8F8] p-4">
-                        {[
-                            ["Sarah", "Writing client notes", "Live"],
-                            ["Justin", "Studying biology", "Focus"],
-                            ["Amina", "Building a feature", "Deep work"],
-                        ].map(([name, task, tag]) => (
-                            <div
-                                key={name}
-                                className="flex items-center justify-between rounded-[14px] bg-white px-4 py-3"
-                            >
-                                <div>
-                                    <div className="text-[13px] font-bold text-[#2F2F2F]">
-                                        {name}
+                                <p className="mt-[20px] max-w-[430px] text-[16px] font-medium leading-[25px] text-[#747474]">
+                                    Whether you have ADHD, tend to procrastinate, get distracted
+                                    easily, feel lonely working alone, or simply work better around
+                                    people, MySession brings you into a structured community of
+                                    people working on things that matter.
+                                </p>
+
+                                <div className="mt-[30px]">
+                                    <Link
+                                        to="/sessions"
+                                        className="inline-flex h-[38px] items-center justify-center rounded-full bg-[#2F2F2F] px-[22px] text-[13px] font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#242424]"
+                                    >
+                                        Join Now
+                                    </Link>
+                                </div>
+
+                                <div className="mt-[44px] grid max-w-[445px] grid-cols-2 gap-[22px]">
+                                    <div className="rounded-[16px] border border-[#EDEDED] bg-white px-[22px] py-[22px]">
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-[13px] font-medium text-[#747474]">Active today</div>
+                                            <div className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-[rgba(101,212,108,0.18)] text-[15px] font-bold text-[#65D46C]">
+                                                ↗
+                                            </div>
+                                        </div>
+                                        <div className="mt-[13px] text-[46px] font-medium leading-none tracking-[-1px] text-[#2F2F2F]">
+                                            120
+                                        </div>
+                                        <div className="mt-[16px] text-[14px] font-medium text-[#747474]">
+                                            +18% vs last week
+                                        </div>
                                     </div>
-                                    <div className="mt-0.5 text-[12px] font-medium text-[#747474]">
-                                        {task}
+
+                                    <div className="rounded-[16px] border border-[#EDEDED] bg-white px-[22px] py-[22px]">
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-[13px] font-medium text-[#747474]">Sessions ran</div>
+                                            <div className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-[rgba(82,134,246,0.18)] text-[15px] font-bold text-[#5286F6]">
+                                                ✧
+                                            </div>
+                                        </div>
+                                        <div className="mt-[13px] text-[46px] font-medium leading-none tracking-[-1px] text-[#2F2F2F]">
+                                            3.5K
+                                        </div>
+                                        <div className="mt-[16px] text-[14px] font-medium text-[#747474]">
+                                            All time
+                                        </div>
                                     </div>
                                 </div>
-                                <div className="rounded-full bg-[rgba(101,212,108,0.20)] px-3 py-1 text-[11px] font-bold text-[#2F2F2F]">
-                                    {tag}
-                                </div>
                             </div>
-                        ))}
-                    </div>
-                </FeatureCard>
 
-                <FeatureCard
-                    title="Built for every kind of work"
-                    text="Deep work, studying, design, coding, writing, admin, research, planning, workouts, or just starting the one task you keep avoiding."
-                >
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                        {["Code", "Study", "Design", "Write", "Plan", "Admin"].map((item) => (
-                            <div
-                                key={item}
-                                className="rounded-[14px] bg-[#F8F8F8] px-4 py-4 text-center text-[13px] font-bold text-[#2F2F2F]"
-                            >
-                                {item}
-                            </div>
-                        ))}
-                    </div>
-                </FeatureCard>
-
-                <FeatureCard
-                    title="Your session, your rhythm"
-                    text="Choose Pomodoro, deep work, short sprints, or a 24/7 infinite room. The format gives the day a container, so your task is easier to start."
-                >
-                    <div className="rounded-[18px] border border-[#E9E9E9] bg-[#F8F8F8] p-5">
-                        <div className="mx-auto flex h-[116px] w-[116px] items-center justify-center rounded-full border-[10px] border-[rgba(101,212,108,0.35)] bg-white">
-                            <div className="text-center">
-                                <div className="text-[28px] font-bold text-[#2F2F2F]">
-                                    32:14
-                                </div>
-                                <div className="text-[11px] font-bold text-[#747474]">
-                                    focus left
-                                </div>
-                            </div>
+                            <PeoplePanelMockup />
                         </div>
                     </div>
-                </FeatureCard>
-            </div>
-        </SectionShell>
-    );
-}
 
-function FormatCard({
-    icon,
-    title,
-    text,
-    bullets,
-}: {
-    icon: string;
-    title: string;
-    text: string;
-    bullets: string[];
-}) {
-    return (
-        <div className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
-            <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-[rgba(101,212,108,0.18)] text-[22px]">
-                {icon}
-            </div>
-            <h3 className="mt-7 text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">
-                {title}
-            </h3>
-            <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">
-                {text}
-            </p>
-            <ul className="mt-6 space-y-3">
-                {bullets.map((bullet) => (
-                    <li
-                        key={bullet}
-                        className="flex gap-3 text-[13px] font-medium leading-[22px] text-[#2F2F2F]"
-                    >
-                        <span className="mt-[7px] h-2 w-2 shrink-0 rounded-full bg-[#65D46C]" />
-                        <span>{bullet}</span>
-                    </li>
-                ))}
-            </ul>
-        </div>
-    );
-}
+                    <div className="rounded-[12px] bg-white px-[42px] py-[40px]">
+                        <h3 className="text-[24px] font-bold leading-[30px] tracking-[-0.4px] text-[#2F2F2F]">
+                            Built for every kind of work
+                        </h3>
 
-function FormatsSection() {
-    return (
-        <SectionShell className="mt-[122px]">
-            <div className="text-center">
-                <h2 className="text-[30px] font-bold leading-[34px] tracking-[-1.1%] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">
-                    Find The Format That Fits
-                    <br />
-                    Your Day
-                </h2>
-            </div>
+                        <p className="mt-[20px] max-w-[500px] text-[16px] font-medium leading-[25px] text-[#747474]">
+                            From deep work and serious projects to morning routines, reading,
+                            meditation, and workouts, everyone is here to show up and make
+                            progress, whatever that looks like for them.
+                        </p>
 
-            <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
-                <FormatCard
-                    icon="✅"
-                    title="Group sessions"
-                    text="Structured live coworking with check-ins and a shared focus container."
-                    bullets={["Great for momentum", "Pomodoro and deep work", "Best when you need structure"]}
-                />
-                <FormatCard
-                    icon="🔵"
-                    title="24/7 rooms"
-                    text="Permanent rooms you can enter anytime without waiting for a scheduled session."
-                    bullets={["Always available", "Low-friction start", "Perfect for daily rhythm"]}
-                />
-                <FormatCard
-                    icon="🎧"
-                    title="Buddy tripling"
-                    text="Small circles for people who want a calmer, more personal accountability format."
-                    bullets={["Comfortable and focused", "Good for recurring work", "Easy to build habit"]}
-                />
+                        <div className="mt-[32px]">
+                            <ActivityRoomsMockup />
+                        </div>
+                    </div>
+
+                    <div className="rounded-[12px] bg-white px-[42px] py-[40px]">
+                        <h3 className="text-[24px] font-bold leading-[30px] tracking-[-0.4px] text-[#2F2F2F]">
+                            Your space, your pace
+                        </h3>
+
+                        <p className="mt-[20px] max-w-[500px] text-[16px] font-medium leading-[25px] text-[#747474]">
+                            Join a session and actually make your plans a reality. Even if you're
+                            shy or introverted, you don't need to talk or perform. Just show up
+                            and work alongside others.
+                        </p>
+
+                        <div className="mt-[32px]">
+                            <PaceMockup />
+                        </div>
+                    </div>
+                </div>
             </div>
-        </SectionShell>
+        </section>
     );
 }
 
@@ -501,9 +630,21 @@ function CommunitySection() {
 
 function HowItWorksSection() {
     const items = [
-        { step: "1", title: "Join a session", text: "Pick a focus room or scheduled session and enter from your browser." },
-        { step: "2", title: "Write your task", text: "Set one clear intention, so your next step is visible and concrete." },
-        { step: "3", title: "Work alongside others", text: "Stay in the room, follow the flow, and finish more than you would alone." },
+        {
+            step: "1",
+            title: "Join a session",
+            text: "Pick a focus room or scheduled session and enter from your browser.",
+        },
+        {
+            step: "2",
+            title: "Write your task",
+            text: "Set one clear intention, so your next step is visible and concrete.",
+        },
+        {
+            step: "3",
+            title: "Work alongside others",
+            text: "Stay in the room, follow the flow, and finish more than you would alone.",
+        },
     ];
 
     return (
@@ -515,7 +656,10 @@ function HowItWorksSection() {
             </div>
             <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
                 {items.map((item) => (
-                    <div key={item.step} className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
+                    <div
+                        key={item.step}
+                        className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]"
+                    >
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(101,212,108,0.20)] text-[15px] font-bold text-[#2F2F2F]">
                             {item.step}
                         </div>
