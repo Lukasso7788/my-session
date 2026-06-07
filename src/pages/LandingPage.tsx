@@ -98,19 +98,31 @@ const FORMAT_CARDS = [
 const FAQ_ITEMS = [
     {
         q: "What is MySession?",
-        a: "MySession is a live coworking platform where you join structured focus rooms, set your intention, work alongside others, and finish more work with less friction.",
+        a: "MySession is a live coworking and body doubling platform where you join structured focus rooms, set your intention, work alongside others, and finish more work with less friction.",
     },
     {
-        q: "Do I need to talk?",
-        a: "No. Most sessions are silent by default. You can simply join, write your task, and work.",
+        q: "Do I have to talk?",
+        a: "It’s totally optional. We have both. We usually practice verbal check-ins because they help with accountability, but text check-ins are also completely okay.",
+    },
+    {
+        q: "Is it really free to start?",
+        a: "Yes. Payments are totally optional right now. As soon as we reach certain attendance limits, free access limits will apply, and the free plan will include only a certain number of hours and sessions, as mentioned in pricing.",
     },
     {
         q: "Is it good for ADHD?",
-        a: "Many ADHD and procrastination-prone users find body doubling helpful because it makes starting and staying on task easier.",
+        a: "Yes. Many ADHD and procrastination-prone users find body doubling helpful because it makes starting easier, adds gentle accountability, and helps them stay on task.",
     },
     {
         q: "Can I join anytime?",
-        a: "Yes. Infinite rooms are available 24/7, and scheduled sessions run throughout the day.",
+        a: "Yes. You can join scheduled sessions, drop into 24/7 rooms, or use smaller buddy tripling formats depending on what fits your day.",
+    },
+    {
+        q: "What session formats are available?",
+        a: "MySession supports group sessions, 24/7 rooms, buddy tripling, 50/10 deep work, 25/5 Pomodoro, short custom sprints, and calmer screenshare-friendly sessions.",
+    },
+    {
+        q: "What if I’m shy or introverted?",
+        a: "That’s completely fine. You don’t need to perform, talk a lot, or keep your camera on all the time. You can simply show up, set your task, and work alongside others.",
     },
     {
         q: "Do I need to download anything?",
