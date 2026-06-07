@@ -280,6 +280,7 @@ async function createSubscriptionCheckout(params: {
       supabase_user_id: user.id,
       payment_region: isIndiaUpi ? "india" : "default",
       payment_method_hint: isIndiaUpi ? "upi" : "card",
+      affiliate_reward_enabled: "true",
     },
 
     subscription_data:
@@ -292,6 +293,7 @@ async function createSubscriptionCheckout(params: {
               supabase_user_id: user.id,
               payment_region: isIndiaUpi ? "india" : "default",
               payment_method_hint: isIndiaUpi ? "upi" : "card",
+              affiliate_reward_enabled: "true",
             },
           }
         : undefined,

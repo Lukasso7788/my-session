@@ -96,9 +96,41 @@ async function upsertEntitlement(params: {
   return payload;
 }
 
+async function rewardReferrerForFirstPayment(params: {
+  referredUserId: string;
+  stripeCheckoutSessionId: string;
+  stripeSubscriptionId?: string;
+  stripeCustomerId?: string;
+}) {
+  const { referredUserId, stripeCheckoutSessionId, stripeSubscriptionId, stripeCustomerId } = params;
+
+  const { error } = await supabaseAdmin.rpc("reward_referrer_for_first_payment", {
+    p_referred_user_id: referredUserId,
+    p_payment_id: null,
+  });
+
+  if (error) {
+    console.error("Stripe webhook: affiliate reward RPC failed", {
+      referredUserId,
+      stripeCheckoutSessionId,
+      stripeSubscriptionId,
+      stripeCustomerId,
+      error,
+    });
+
+    throw error;
+  }
+
+  console.log("Stripe webhook affiliate reward processed", {
+    referredUserId,
+    stripeCheckoutSessionId,
+    stripeSubscriptionId,
+    stripeCustomerId,
+  });
+}
+
 async function markHostSupportPaymentAvailable(session: Stripe.Checkout.Session) {
   const metadata = session.metadata || {};
-
   const supportPaymentId = String(metadata.supportPaymentId || "").trim();
 
   if (!supportPaymentId) {
@@ -194,13 +226,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ received: true, kind: "host_support" });
       }
 
-      const rawMetadataPlan =
-        session.metadata?.entitlement_plan || session.metadata?.plan;
-
+      const rawMetadataPlan = session.metadata?.entitlement_plan || session.metadata?.plan;
       const metadataPlan = normalizePaidPlan(rawMetadataPlan);
-
-      const metadataUserId =
-        session.metadata?.supabase_user_id || session.client_reference_id || "";
+      const metadataUserId = session.metadata?.supabase_user_id || session.client_reference_id || "";
 
       if (!metadataPlan) {
         console.error("Stripe webhook: missing or invalid metadata plan", {
@@ -234,6 +262,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         source: "stripe_webhook",
         stripeCustomerId,
         stripeSubscriptionId,
+      });
+
+      await rewardReferrerForFirstPayment({
+        referredUserId: metadataUserId,
+        stripeCheckoutSessionId: session.id,
+        stripeSubscriptionId,
+        stripeCustomerId,
       });
 
       console.log("Stripe webhook entitlement updated", {
