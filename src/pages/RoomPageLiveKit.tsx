@@ -8275,10 +8275,13 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
   const balancedGridGapPx = isMobileQuery ? 8 : 12;
   const balancedGridPaddingPx = isMobileQuery ? 8 : 12;
-  const balancedGridCellW = Math.max(0, (effectiveW - balancedGridPaddingPx * 2 - balancedGridGapPx) / 2);
-  const balancedGridCellH = Math.max(0, (effectiveH - balancedGridPaddingPx * 2 - balancedGridGapPx) / 2);
-  const balancedGridTileW = Math.floor(Math.max(0, Math.min(balancedGridCellW, balancedGridCellH * (16 / 9))));
-  const balancedGridTileWidthCss = balancedGridTileW > 0 ? `${balancedGridTileW}px` : "100%";
+
+  // Important: do NOT clamp each tile width to cellHeight * 16/9 here.
+  // That was causing the 2x2 gallery to look like two far-apart columns when
+  // the right panel was open: every cell was wide, but the actual 16:9 tile was
+  // narrowed and centered inside it. Let the rendered tile take the whole grid
+  // cell instead, so 3-4 participants stay visually close/tight.
+  const balancedGridTileWidthCss = "100%";
 
   const videoLayout = useFeaturedLayout ? (
     <div
@@ -8369,10 +8372,10 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
               {layoutTilesForRender.map((t, index) => (
                 <div
                   key={`balanced-${t.id}`}
-                  className={`min-w-0 min-h-0 flex items-center justify-center overflow-hidden ${tileCount === 3 && index === 2 ? "col-span-2" : ""}`}
+                  className={`min-w-0 min-h-0 flex items-stretch justify-stretch overflow-hidden ${tileCount === 3 && index === 2 ? "col-span-2" : ""}`}
                 >
                   <div
-                    className="min-w-0 max-w-full"
+                    className="min-w-0 min-h-0 h-full w-full max-w-full"
                     style={{ width: balancedGridTileWidthCss }}
                   >
                     {renderTile(t)}
