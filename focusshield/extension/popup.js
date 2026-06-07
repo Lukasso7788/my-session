@@ -1,3 +1,5 @@
+let manualStatusUntil = 0;
+
 function parseLines(text) {
     return text
         .split("\n")
@@ -19,6 +21,14 @@ function sendMessage(message) {
     return new Promise((resolve) => {
         chrome.runtime.sendMessage(message, resolve);
     });
+}
+
+function showError(message, durationMs = 5000) {
+    const status = document.getElementById("status");
+    manualStatusUntil = Date.now() + durationMs;
+
+    status.textContent = message;
+    status.classList.add("danger");
 }
 
 function getSelectedPopularDomains() {
@@ -97,6 +107,11 @@ async function render() {
     const policy = await getPolicy();
     const status = document.getElementById("status");
 
+    if (Date.now() < manualStatusUntil) {
+        renderActiveList(policy);
+        return;
+    }
+
     status.classList.remove("danger");
 
     if (!policy?.active) {
@@ -125,17 +140,16 @@ document.getElementById("start").onclick = async () => {
     const urls = [...new Set(custom.urls)];
 
     const status = document.getElementById("status");
+    manualStatusUntil = 0;
     status.classList.remove("danger");
 
     if (!minutes) {
-        status.textContent = "Enter a valid custom duration in minutes.";
-        status.classList.add("danger");
+        showError("Enter a valid custom duration in minutes.");
         return;
     }
 
     if (domains.length === 0 && urls.length === 0) {
-        status.textContent = "Choose at least one site or add a custom page.";
-        status.classList.add("danger");
+        showError("Choose at least one site or add a custom page.");
         return;
     }
 
@@ -152,16 +166,15 @@ document.getElementById("start").onclick = async () => {
 
 document.getElementById("stop").onclick = async () => {
     const response = await sendMessage({ type: "STOP" });
-    const status = document.getElementById("status");
-
-    status.classList.remove("danger");
 
     if (response?.error === "locked") {
-        status.textContent = `Locked mode is active. You can stop Shield when the timer ends: ${formatRemaining(response.endAt)} left.`;
-        status.classList.add("danger");
+        showError(
+            `You can’t stop FocusShield because Locked mode is active. Time left: ${formatRemaining(response.endAt)}.`
+        );
         return;
     }
 
+    manualStatusUntil = 0;
     await render();
 };
 
