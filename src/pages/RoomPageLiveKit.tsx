@@ -472,6 +472,125 @@ function supportsScreenShareCapture() {
   return typeof (navigator.mediaDevices as any)?.getDisplayMedia === "function";
 }
 
+
+function getBrowserDetails() {
+  if (typeof navigator === "undefined") {
+    return { browser: "unknown", browserVersion: "", os: "unknown" };
+  }
+
+  const ua = String(navigator.userAgent || "");
+  const uaLower = ua.toLowerCase();
+
+  const matchVersion = (re: RegExp) => {
+    const m = ua.match(re);
+    return m?.[1] || "";
+  };
+
+  let browser = "unknown";
+  let browserVersion = "";
+
+  if (uaLower.includes("samsungbrowser")) {
+    browser = "Samsung Internet";
+    browserVersion = matchVersion(/SamsungBrowser\/([\d.]+)/i);
+  } else if (uaLower.includes("edg/") || uaLower.includes("edga/") || uaLower.includes("edgios/")) {
+    browser = "Microsoft Edge";
+    browserVersion = matchVersion(/EdgA?\/([\d.]+)/i) || matchVersion(/EdgiOS\/([\d.]+)/i);
+  } else if (uaLower.includes("crios")) {
+    browser = "Chrome iOS";
+    browserVersion = matchVersion(/CriOS\/([\d.]+)/i);
+  } else if (uaLower.includes("chrome") || uaLower.includes("chromium")) {
+    browser = "Chrome";
+    browserVersion = matchVersion(/(?:Chrome|Chromium)\/([\d.]+)/i);
+  } else if (uaLower.includes("firefox") || uaLower.includes("fxios")) {
+    browser = "Firefox";
+    browserVersion = matchVersion(/(?:Firefox|FxiOS)\/([\d.]+)/i);
+  } else if (uaLower.includes("safari")) {
+    browser = "Safari";
+    browserVersion = matchVersion(/Version\/([\d.]+)/i);
+  }
+
+  let os = "unknown";
+  if (/ipad|iphone|ipod/i.test(ua)) os = "iOS/iPadOS";
+  else if (/android/i.test(ua)) os = "Android";
+  else if (/cros/i.test(ua)) os = "ChromeOS";
+  else if (/windows/i.test(ua)) os = "Windows";
+  else if (/mac os x|macintosh/i.test(ua)) os = "macOS";
+  else if (/linux/i.test(ua)) os = "Linux";
+
+  return { browser, browserVersion, os };
+}
+
+function inferDeviceTypeFromRuntime(args: { isMobileQuery?: boolean; isTabletQuery?: boolean }) {
+  if (args.isMobileQuery) return "mobile";
+  if (args.isTabletQuery) return "tablet";
+
+  if (typeof navigator === "undefined" || typeof window === "undefined") return "unknown";
+
+  const ua = String(navigator.userAgent || "").toLowerCase();
+  const platform = String((navigator as any).userAgentData?.platform || navigator.platform || "").toLowerCase();
+  const maxTouchPoints = Number((navigator as any).maxTouchPoints || 0);
+  const minSide = Math.min(window.screen?.width || window.innerWidth || 0, window.screen?.height || window.innerHeight || 0);
+  const maxSide = Math.max(window.screen?.width || window.innerWidth || 0, window.screen?.height || window.innerHeight || 0);
+
+  if (/ipad|tablet|playbook|silk/i.test(ua)) return "tablet";
+  if (/android/i.test(ua) && !/mobile/i.test(ua)) return "tablet";
+  if (platform.includes("mac") && maxTouchPoints > 1 && minSide >= 700) return "tablet";
+  if (/mobi|iphone|ipod|android.*mobile/i.test(ua)) return "mobile";
+  if (maxTouchPoints > 1 && minSide >= 700 && maxSide >= 900) return "tablet";
+
+  return "desktop";
+}
+
+function getScreenShareDiagnosticSnapshot(room: Room | null) {
+  try {
+    const lp: any = room?.localParticipant;
+    const localPubs: any[] = Array.from((lp?.trackPublications as any)?.values?.() || []);
+    const remoteParticipants: any[] = Array.from((room as any)?.remoteParticipants?.values?.() || []);
+
+    const localScreenPubs = localPubs.filter((pub) => isScreenShareVideoPublication(pub));
+
+    let remoteScreenPublicationCount = 0;
+    let remoteScreenSubscribedCount = 0;
+    let remoteScreenLiveTrackCount = 0;
+
+    remoteParticipants.forEach((participant) => {
+      const pubs: any[] = Array.from(participant?.trackPublications?.values?.() || []);
+      pubs.forEach((pub) => {
+        if (!isScreenShareVideoPublication(pub)) return;
+        remoteScreenPublicationCount += 1;
+        if (pub.isSubscribed) remoteScreenSubscribedCount += 1;
+        if (isLiveScreenShareTrack(pub.track)) remoteScreenLiveTrackCount += 1;
+      });
+    });
+
+    return {
+      localScreenPublicationCount: localScreenPubs.length,
+      localScreenLiveTrackCount: localScreenPubs.filter((pub) => isLiveScreenShareTrack(pub.track)).length,
+      localScreenTrackReadyStates: localScreenPubs.map((pub) => {
+        const track: any = pub?.track;
+        const mediaTrack = track?.mediaStreamTrack || track?.mediaTrack || null;
+        return {
+          sid: String(pub?.trackSid || pub?.sid || track?.sid || ""),
+          source: String(pub?.source || ""),
+          kind: String(pub?.kind || track?.kind || ""),
+          muted: !!pub?.isMuted,
+          subscribed: !!pub?.isSubscribed,
+          hasTrack: !!track,
+          hasMediaTrack: !!mediaTrack,
+          readyState: String(mediaTrack?.readyState || ""),
+        };
+      }),
+      remoteScreenPublicationCount,
+      remoteScreenSubscribedCount,
+      remoteScreenLiveTrackCount,
+    };
+  } catch (e: any) {
+    return {
+      diagnosticsError: String(e?.message || e || "screen_share_snapshot_failed"),
+    };
+  }
+}
+
 function getPublicationSourceName(pub: any) {
   return String(pub?.source || "").toLowerCase();
 }
@@ -5045,6 +5164,105 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const [clientError, setClientError] = useState<string>("");
   const [mediaWarning, setMediaWarning] = useState<string>("");
 
+
+  const logRoomDiagnostic = useCallback(
+    async (eventType: string, payload: Record<string, unknown> = {}) => {
+      try {
+        const { browser, browserVersion, os } = getBrowserDetails();
+        const deviceType = inferDeviceTypeFromRuntime({ isMobileQuery, isTabletQuery });
+        const nav = typeof navigator !== "undefined" ? (navigator as any) : null;
+        const win = typeof window !== "undefined" ? window : null;
+
+        const screenWidth = win?.screen?.width || win?.innerWidth || null;
+        const screenHeight = win?.screen?.height || win?.innerHeight || null;
+        const viewportWidth = win?.innerWidth || null;
+        const viewportHeight = win?.innerHeight || null;
+
+        const screenSnapshot = getScreenShareDiagnosticSnapshot(roomRef.current);
+        const screenShareTrackCount =
+          Number((screenSnapshot as any).localScreenLiveTrackCount || 0) +
+          Number((screenSnapshot as any).remoteScreenLiveTrackCount || 0);
+
+        await supabase.from("room_diagnostics").insert({
+          session_id: session?.id || null,
+          user_id: authUserId || null,
+          event_type: eventType,
+
+          user_agent: String(nav?.userAgent || ""),
+          platform: String(nav?.userAgentData?.platform || nav?.platform || ""),
+          browser,
+          browser_version: browserVersion,
+          os,
+          device_type: deviceType,
+
+          screen_width: typeof screenWidth === "number" ? screenWidth : null,
+          screen_height: typeof screenHeight === "number" ? screenHeight : null,
+          viewport_width: typeof viewportWidth === "number" ? viewportWidth : null,
+          viewport_height: typeof viewportHeight === "number" ? viewportHeight : null,
+          device_pixel_ratio: Number(win?.devicePixelRatio || 1),
+
+          supports_display_media: supportsScreenShareCapture(),
+          screen_share_supported: supportsScreenShareCapture(),
+          supports_set_sink_id: canUseSetSinkId(),
+          supports_media_devices: !!nav?.mediaDevices,
+
+          screen_share_track_count: Number.isFinite(screenShareTrackCount) ? screenShareTrackCount : 0,
+          livekit_connected: !!connectedRef.current,
+
+          payload: {
+            ...payload,
+            tabId,
+            routeId: routeId || null,
+            effectiveSessionParam,
+            isMobileQuery,
+            isTabletQuery,
+            isLgUp,
+            connected: !!connectedRef.current,
+            roomConnectionState: String((roomRef.current as any)?.state || ""),
+            screenShareSnapshot: screenSnapshot,
+            hardwareConcurrency: Number(nav?.hardwareConcurrency || 0) || null,
+            deviceMemory: Number(nav?.deviceMemory || 0) || null,
+            maxTouchPoints: Number(nav?.maxTouchPoints || 0) || null,
+            language: String(nav?.language || ""),
+            languages: Array.isArray(nav?.languages) ? nav.languages : [],
+          },
+        });
+      } catch (e) {
+        console.warn("[room-diagnostics] insert failed:", e);
+      }
+    },
+    [session?.id, authUserId, isMobileQuery, isTabletQuery, isLgUp, tabId, routeId, effectiveSessionParam]
+  );
+
+  const roomJoinDiagnosticKeyRef = useRef("");
+
+  useEffect(() => {
+    if (!connected) return;
+    if (!session?.id) return;
+    if (!authUserId) return;
+
+    const key = `${session.id}:${authUserId}:${tabId}:room_join`;
+    if (roomJoinDiagnosticKeyRef.current === key) return;
+    roomJoinDiagnosticKeyRef.current = key;
+
+    void logRoomDiagnostic("room_join", {
+      roomName: session?.id ? safeRoomName(session.id) : null,
+      isHost,
+      isModerator: isSelfModerator,
+      lkServerUrl,
+      screenShareSupported: supportsScreenShareCapture(),
+    });
+  }, [
+    connected,
+    session?.id,
+    authUserId,
+    tabId,
+    logRoomDiagnostic,
+    isHost,
+    isSelfModerator,
+    lkServerUrl,
+  ]);
+
   const connectInFlightRef = useRef(false);
   const connectAttemptIdRef = useRef(0);
 
@@ -6758,11 +6976,18 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       const next = !hasLocalLiveScreenShare(r);
 
       if (!next) {
+        void logRoomDiagnostic("screen_share_stop_attempt", getScreenShareDiagnosticSnapshot(r) as any);
         await lp.setScreenShareEnabled(false);
         setScreenShareOn(false);
         scheduleScreenShareRebuildBurst();
+        void logRoomDiagnostic("screen_share_stopped", getScreenShareDiagnosticSnapshot(r) as any);
         return;
       }
+
+      void logRoomDiagnostic("screen_share_start_attempt", {
+        supported: supportsScreenShareCapture(),
+        before: getScreenShareDiagnosticSnapshot(r),
+      });
 
       if (!supportsScreenShareCapture()) {
         setScreenShareOn(false);
@@ -6770,6 +6995,10 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           "Screen sharing is not supported by this tablet browser. Try desktop Chrome/Edge, or update the browser and allow screen recording/sharing permissions."
         );
         scheduleScreenShareRebuildBurst();
+        void logRoomDiagnostic("screen_share_unsupported", {
+          supported: false,
+          snapshot: getScreenShareDiagnosticSnapshot(r),
+        });
         return;
       }
 
@@ -6786,6 +7015,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       scheduleScreenShareRebuildBurst();
 
       const liveTrackReady = await waitForLocalScreenShareTrack(r, 2600);
+      const afterStartSnapshot = getScreenShareDiagnosticSnapshot(r);
 
       if (!liveTrackReady) {
         try {
@@ -6799,11 +7029,18 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           "Screen sharing started but no screen video track was received. This usually happens on some tablet browsers. Please try again, update the browser, or use desktop Chrome/Edge for screen sharing."
         );
         scheduleScreenShareRebuildBurst();
+        void logRoomDiagnostic("screen_share_track_missing", {
+          afterStart: afterStartSnapshot,
+          afterCleanup: getScreenShareDiagnosticSnapshot(r),
+        });
         return;
       }
 
       setScreenShareOn(true);
       scheduleScreenShareRebuildBurst();
+      void logRoomDiagnostic("screen_share_started", {
+        afterStart: afterStartSnapshot,
+      });
     } catch (e: any) {
       console.error("toggleScreenShare error:", e);
 
@@ -6816,6 +7053,11 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       setScreenShareOn(false);
       setMediaWarning(getScreenShareErrorMessage(e));
       scheduleScreenShareRebuildBurst();
+      void logRoomDiagnostic("screen_share_failed", {
+        name: String(e?.name || ""),
+        message: String(e?.message || e || ""),
+        snapshot: getScreenShareDiagnosticSnapshot(roomRef.current),
+      });
     }
   };
 
