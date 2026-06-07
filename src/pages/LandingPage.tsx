@@ -615,21 +615,21 @@ function CommunitySection() {
 
 function FaqSection() {
     return (
-        <SectionShell className="mt-[122px] max-w-[1040px]">
+        <SectionShell className="mt-[122px] max-w-[1180px]">
             <div className="text-center">
                 <h2 className="text-[30px] font-bold leading-[34px] tracking-[-1.1%] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">
                     Frequently Asked<br />Questions
                 </h2>
             </div>
 
-            <div className="mx-auto mt-10 max-w-[900px] overflow-hidden rounded-[22px] border border-[#E9E9E9] bg-white">
+            <div className="mx-auto mt-10 w-full max-w-[1040px] overflow-hidden rounded-[22px] border border-[#E9E9E9] bg-white">
                 {FAQ_ITEMS.map((item) => (
                     <details key={item.q} className="group border-b border-[#E9E9E9] last:border-b-0">
-                        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-7 py-5 text-left text-[15px] font-bold text-[#2F2F2F]">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-8 py-5 text-left text-[15px] font-bold text-[#2F2F2F]">
                             {item.q}
                             <span className="text-[20px] leading-none text-[#747474] transition group-open:rotate-45">+</span>
                         </summary>
-                        <p className="px-7 pb-5 text-[14px] font-medium leading-[24px] text-[#747474]">{item.a}</p>
+                        <p className="px-8 pb-5 text-[14px] font-medium leading-[24px] text-[#747474]">{item.a}</p>
                     </details>
                 ))}
             </div>
@@ -639,8 +639,8 @@ function FaqSection() {
 
 function FinalCta() {
     return (
-        <section className="mt-[120px] px-5 pb-[96px] md:px-8">
-            <div className="mx-auto w-full max-w-[1320px] rounded-[28px] bg-[#2F2F2F] px-7 py-14 text-center shadow-[0_30px_80px_rgba(47,47,47,0.22)] md:px-10 md:py-16">
+        <section className="mt-[120px] w-full px-4 pb-[96px] md:px-6">
+            <div className="mx-auto w-full max-w-[calc(100vw-48px)] rounded-[28px] bg-[#2F2F2F] px-7 py-14 text-center shadow-[0_30px_80px_rgba(47,47,47,0.22)] md:px-10 md:py-16">
                 <h2 className="mx-auto max-w-[760px] text-[30px] font-bold leading-[36px] tracking-[-1.1%] text-white md:text-[42px] md:leading-[48px]">
                     Ready To Get Things<br />Done, Together?
                 </h2>
