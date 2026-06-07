@@ -54,53 +54,44 @@ const TESTIMONIALS = [
     {
         quote: "MySession helps me stop overthinking and actually start. It feels like having people quietly working beside me.",
         name: "Anna",
-        role: "Student",
         avatar: 1,
     },
     {
         quote: "I get more done in one focused session here than I usually do in a whole distracted afternoon alone.",
         name: "Jordan",
-        role: "Founder",
         avatar: 2,
     },
     {
         quote: "The structure is simple, calm, and effective. I can join, write my task, and get back into focus fast.",
         name: "Sofia",
-        role: "Designer",
         avatar: 3,
     },
 ];
 
 const FORMAT_CARDS = [
     {
-        icon: "✅",
+        icon: "♙",
+        tone: "green",
         title: "Group sessions",
-        text: "Join scheduled live coworking sessions with structure, check-ins, and focused people around you.",
-        bullets: [
-            "Choose from formats like 50/10, 25/5, and custom sprints",
-            "Set your intention before the focus block starts",
-            "Share progress, wins, and next steps at the end",
-        ],
+        text: "Join a structured session with others, feel the energy, and get things done. Best for momentum and accountability.",
+        bullets: ["Standard formats: 50/10, 25/5 Pomodoro", "Custom sprints: 5, 10, 15-min formats", "Verbal check-ins built in"],
+        visual: "session",
     },
     {
-        icon: "🔵",
-        title: "24/7 rooms",
-        text: "Drop into always-open focus rooms whenever you need a quiet place to start working.",
-        bullets: [
-            "No need to wait for a scheduled session",
-            "Great for spontaneous work, studying, reading, or planning",
-            "Join, set your task, and work at your own pace",
-        ],
+        icon: "⇄",
+        tone: "blue",
+        title: "24/7 Rooms",
+        text: "Always open, day or night — drop in whenever you need a focus space and start working.",
+        bullets: ["Great for spontaneous work sessions", "Never wait for a session to start", "Drop in, drop out anytime"],
+        visual: "rooms",
     },
     {
-        icon: "🎧",
-        title: "Buddy tripling",
-        text: "Work in a calmer, smaller accountability format with a few people beside you.",
-        bullets: [
-            "Perfect for people who prefer quieter rooms",
-            "Great for recurring sessions and habit building",
-            "Stay accountable without pressure to perform",
-        ],
+        icon: "◷",
+        tone: "red",
+        title: "Buddy Tripling",
+        text: "A cozy circle of 3. Personal enough to feel comfortable, structured enough to keep you on track.",
+        bullets: ["Screenshare-only sessions available", "Great for recurring sessions and habit building"],
+        visual: "buddy",
     },
 ];
 
@@ -222,10 +213,7 @@ function StatCards() {
         <SectionShell className="mt-[104px] md:mt-[118px]">
             <div className="mx-auto grid max-w-[860px] grid-cols-1 gap-[26px] sm:grid-cols-3">
                 {STATS.map((stat) => (
-                    <div
-                        key={stat.value}
-                        className="flex min-h-[192px] flex-col items-center justify-center rounded-[16px] border border-[#E9E9E9] bg-white px-8 py-9 text-center shadow-[0_18px_45px_rgba(47,47,47,0.045)]"
-                    >
+                    <div key={stat.value} className="flex min-h-[192px] flex-col items-center justify-center rounded-[16px] border border-[#E9E9E9] bg-white px-8 py-9 text-center shadow-[0_18px_45px_rgba(47,47,47,0.045)]">
                         <div className="text-[42px] font-bold leading-none tracking-[-0.8px] text-[#2F2F2F] md:text-[46px]">{stat.value}</div>
                         <p className="mx-auto mt-[30px] max-w-[175px] text-[14px] font-medium leading-[22px] text-[#747474]">{stat.text}</p>
                     </div>
@@ -445,29 +433,132 @@ function WorkMoreSection() {
     );
 }
 
-function FormatCard({ icon, title, text, bullets }: { icon: string; title: string; text: string; bullets: string[] }) {
+function FormatSessionMockup() {
     return (
-        <div className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
-            <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-[rgba(101,212,108,0.18)] text-[22px]">{icon}</div>
-            <h3 className="mt-7 text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">{title}</h3>
-            <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">{text}</p>
-            <ul className="mt-6 space-y-3">{bullets.map((bullet) => <li key={bullet} className="flex gap-3 text-[13px] font-medium leading-[22px] text-[#2F2F2F]"><span className="mt-[7px] h-2 w-2 shrink-0 rounded-full bg-[#65D46C]" /><span>{bullet}</span></li>)}</ul>
+        <div className="rounded-[12px] bg-[#F7F7F7] p-[14px]">
+            <div className="rounded-[12px] bg-white px-[16px] py-[14px] shadow-[0_8px_22px_rgba(47,47,47,0.04)]">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-[7px] text-[7px] font-bold text-[#2F2F2F]">
+                        <span className="h-[5px] w-[5px] rounded-full bg-[#65D46C]" />
+                        Quiet focus · 50/10
+                    </div>
+                    <span className="rounded-full bg-[#F2F2F2] px-[9px] py-[5px] text-[7px] font-medium text-[#747474]">50:00</span>
+                </div>
+
+                <div className="mt-[15px] flex items-center justify-center">
+                    <div className="flex h-[54px] w-[54px] items-center justify-center rounded-full border-[4px] border-[#65D46C] text-[16px] font-medium tracking-[-0.011em] text-[#2F2F2F]">42:18</div>
+                </div>
+
+                <div className="mt-[12px] flex items-center justify-between">
+                    <div className="flex items-center">
+                        <div className="flex -space-x-[6px]">
+                            {[1, 2, 3].map((avatar) => <MiniAvatar key={avatar} index={avatar} size={22} />)}
+                        </div>
+                        <span className="ml-[8px] rounded-full bg-[#F2F2F2] px-[7px] py-[4px] text-[7px] font-medium text-[#747474]">+32</span>
+                        <span className="ml-[8px] text-[7px] font-medium text-[#747474]">Joined session</span>
+                    </div>
+                    <span className="text-[7px] font-bold text-[#2F2F2F]">Join now ↗</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function FormatRoomsMockup() {
+    const rows = [
+        ["#65D46C", "15/3 Short sprints", "65 in"],
+        ["#5286F6", "50/10 Deep Work", "18 in"],
+        ["#F65252", "25/5 Pomodoro", "33 in"],
+    ];
+
+    return (
+        <div className="rounded-[12px] bg-[#F7F7F7] p-[14px]">
+            <div className="overflow-hidden rounded-[12px] bg-white shadow-[0_8px_22px_rgba(47,47,47,0.04)]">
+                {rows.map(([color, title, count]) => (
+                    <div key={title} className="flex h-[41px] items-center border-b border-[#EFEFEF] px-[18px] last:border-b-0">
+                        <span className="mr-[14px] h-[6px] w-[6px] rounded-full" style={{ backgroundColor: color }} />
+                        <span className="flex-1 text-[8px] font-bold text-[#2F2F2F]">{title}</span>
+                        <span className="mr-[18px] text-[8px] font-medium text-[#747474]">{count}</span>
+                        <span className="text-[10px] text-[#2F2F2F]">›</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+function FormatBuddyMockup() {
+    return (
+        <div className="rounded-[12px] bg-[#F7F7F7] p-[14px]">
+            <div className="rounded-[12px] bg-white px-[14px] py-[14px] shadow-[0_8px_22px_rgba(47,47,47,0.04)]">
+                <div className="grid grid-cols-4 gap-[8px]">
+                    {[1, 2, 3, 4].map((avatar) => (
+                        <div key={avatar} className="flex h-[56px] items-center justify-center rounded-[10px] bg-[#F4F4F4]">
+                            <MiniAvatar index={avatar} size={30} />
+                        </div>
+                    ))}
+                </div>
+
+                <div className="mt-[10px] flex h-[30px] items-center justify-between rounded-[8px] bg-[#F4F4F4] px-[12px]">
+                    <div className="flex items-center gap-[7px] text-[7px] font-medium text-[#747474]">
+                        <span className="h-[6px] w-[6px] rounded-full bg-[#F65252]" />
+                        Screenshare on
+                    </div>
+                    <span className="text-[8px] font-bold text-[#2F2F2F]">1:24:06</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function FormatVisual({ type }: { type: string }) {
+    if (type === "session") return <FormatSessionMockup />;
+    if (type === "rooms") return <FormatRoomsMockup />;
+    return <FormatBuddyMockup />;
+}
+
+function FormatCard({ icon, tone, title, text, bullets, visual }: { icon: string; tone: string; title: string; text: string; bullets: string[]; visual: string }) {
+    const toneClass: Record<string, string> = {
+        green: "bg-[rgba(101,212,108,0.24)] text-[#39B94A]",
+        blue: "bg-[rgba(82,134,246,0.24)] text-[#5286F6]",
+        red: "bg-[rgba(246,82,82,0.24)] text-[#F65252]",
+    };
+
+    return (
+        <div className="rounded-[12px] border border-[#E4E4E4] bg-white px-[32px] pb-[38px] pt-[32px] shadow-[0_12px_34px_rgba(47,47,47,0.025)]">
+            <div className={cx("flex h-[48px] w-[48px] items-center justify-center rounded-[14px] text-[22px] font-bold", toneClass[tone])}>{icon}</div>
+
+            <h3 className="mt-[27px] text-[20px] font-bold leading-[24px] tracking-[-0.011em] text-[#2F2F2F]">{title}</h3>
+
+            <p className="mt-[16px] min-h-[96px] max-w-[320px] text-[16px] font-medium leading-[24px] tracking-[-0.011em] text-[#747474]">{text}</p>
+
+            <div className="mt-[28px]">
+                <FormatVisual type={visual} />
+            </div>
+
+            <ul className="mt-[28px] space-y-[4px] pl-[18px]">
+                {bullets.map((bullet) => (
+                    <li key={bullet} className="list-disc text-[16px] font-medium leading-[24px] tracking-[-0.011em] text-[#2F2F2F]">
+                        {bullet}
+                    </li>
+                ))}
+            </ul>
         </div>
     );
 }
 
 function FormatsSection() {
     return (
-        <SectionShell className="mt-[122px]">
+        <SectionShell className="mt-[122px] max-w-[1120px]">
             <div className="text-center">
-                <h2 className="text-[30px] font-bold leading-[34px] tracking-[-0.8px] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">
+                <h2 className="mx-auto max-w-[494px] text-[38px] font-bold leading-[46px] tracking-[-0.011em] text-[#2F2F2F]">
                     Find The Format That Fits<br />Your Day
                 </h2>
             </div>
 
-            <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
+            <div className="mt-[58px] grid grid-cols-1 gap-[22px] md:grid-cols-3">
                 {FORMAT_CARDS.map((card) => (
-                    <FormatCard key={card.title} icon={card.icon} title={card.title} text={card.text} bullets={card.bullets} />
+                    <FormatCard key={card.title} icon={card.icon} tone={card.tone} title={card.title} text={card.text} bullets={card.bullets} visual={card.visual} />
                 ))}
             </div>
         </SectionShell>
@@ -545,16 +636,13 @@ function TestimonialsSection() {
             <div className="grid grid-cols-1 gap-[34px] md:grid-cols-3">
                 {TESTIMONIALS.map((item) => (
                     <article key={item.name} className="min-h-[210px] px-1">
-                        <p className="text-[18px] font-bold leading-[30px] tracking-[-0.3px] text-[#2F2F2F] md:text-[19px] md:leading-[31px]">
+                        <p className="text-[16px] font-medium leading-[24px] tracking-[-0.011em] text-[#2F2F2F]">
                             “{item.quote}”
                         </p>
 
                         <div className="mt-[26px] flex items-center gap-[12px]">
-                            <MiniAvatar index={item.avatar} size={34} />
-                            <div>
-                                <div className="text-[13px] font-bold leading-none text-[#2F2F2F]">{item.name}</div>
-                                <div className="mt-[5px] text-[12px] font-medium leading-none text-[#747474]">{item.role}</div>
-                            </div>
+                            <MiniAvatar index={item.avatar} size={44} />
+                            <div className="text-[16px] font-medium leading-[24px] tracking-[-0.011em] text-[#747474]">{item.name}</div>
                         </div>
                     </article>
                 ))}
