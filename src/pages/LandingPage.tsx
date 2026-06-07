@@ -398,31 +398,19 @@ function FormatsSection() {
                     icon="✅"
                     title="Group sessions"
                     text="Structured live coworking with check-ins and a shared focus container."
-                    bullets={[
-                        "Great for momentum",
-                        "Pomodoro and deep work",
-                        "Best when you need structure",
-                    ]}
+                    bullets={["Great for momentum", "Pomodoro and deep work", "Best when you need structure"]}
                 />
                 <FormatCard
                     icon="🔵"
                     title="24/7 rooms"
                     text="Permanent rooms you can enter anytime without waiting for a scheduled session."
-                    bullets={[
-                        "Always available",
-                        "Low-friction start",
-                        "Perfect for daily rhythm",
-                    ]}
+                    bullets={["Always available", "Low-friction start", "Perfect for daily rhythm"]}
                 />
                 <FormatCard
                     icon="🎧"
                     title="Buddy tripling"
                     text="Small circles for people who want a calmer, more personal accountability format."
-                    bullets={[
-                        "Comfortable and focused",
-                        "Good for recurring work",
-                        "Easy to build habit",
-                    ]}
+                    bullets={["Comfortable and focused", "Good for recurring work", "Easy to build habit"]}
                 />
             </div>
         </SectionShell>
@@ -431,35 +419,39 @@ function FormatsSection() {
 
 function CommunityAvatarArc() {
     const avatars = [
-        { x: 0, y: 64, r: -18 },
-        { x: 58, y: 36, r: -14 },
-        { x: 122, y: 18, r: -9 },
-        { x: 190, y: 6, r: -4 },
-        { x: 260, y: 0, r: 0 },
-        { x: 330, y: 6, r: 4 },
-        { x: 398, y: 18, r: 9 },
-        { x: 462, y: 36, r: 14 },
-        { x: 520, y: 64, r: 18 },
+        { x: 0, y: 62, r: -18 },
+        { x: 62, y: 34, r: -14 },
+        { x: 130, y: 16, r: -9 },
+        { x: 202, y: 5, r: -4 },
+        { x: 276, y: 0, r: 0 },
+        { x: 350, y: 5, r: 4 },
+        { x: 422, y: 16, r: 9 },
+        { x: 490, y: 34, r: 14 },
+        { x: 552, y: 62, r: 18 },
     ];
 
     return (
-        <div className="absolute left-1/2 top-0 z-20 h-[170px] w-[630px] max-w-[92vw] -translate-x-1/2 -translate-y-[86px]">
+        <div className="absolute left-1/2 top-0 z-20 h-[168px] w-[660px] max-w-[94vw] -translate-x-1/2 -translate-y-[82px]">
             {COMMUNITY_AVATARS.map((src, index) => {
                 const p = avatars[index];
 
                 return (
-                    <img
+                    <div
                         key={src}
-                        src={src}
-                        alt=""
-                        draggable={false}
-                        className="absolute h-[96px] w-[96px] rounded-[28px] border-[1px] border-white object-cover shadow-[0_18px_42px_rgba(47,47,47,0.16)] transition-all duration-300 ease-out hover:z-30 hover:-translate-y-3 hover:scale-[1.1]"
+                        className="absolute"
                         style={{
                             left: `${p.x}px`,
                             top: `${p.y}px`,
                             transform: `rotate(${p.r}deg)`,
                         }}
-                    />
+                    >
+                        <img
+                            src={src}
+                            alt=""
+                            draggable={false}
+                            className="h-[104px] w-[104px] rounded-[30px] border-[1px] border-white object-cover shadow-[0_18px_42px_rgba(47,47,47,0.16)] transition-transform duration-300 ease-out hover:-translate-y-3 hover:scale-[1.045]"
+                        />
+                    </div>
                 );
             })}
         </div>
@@ -468,8 +460,8 @@ function CommunityAvatarArc() {
 
 function CommunitySection() {
     return (
-        <SectionShell className="mt-[160px]">
-            <div className="relative overflow-visible rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 pb-0 pt-[150px] text-center shadow-[0_18px_55px_rgba(47,47,47,0.04)] md:px-10 md:pt-[175px]">
+        <SectionShell className="mt-[155px]">
+            <div className="relative overflow-visible rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 pb-0 pt-[118px] text-center shadow-[0_18px_55px_rgba(47,47,47,0.04)] md:px-10 md:pt-[132px]">
                 <CommunityAvatarArc />
 
                 <div className="pointer-events-none absolute left-[6%] top-[9%] h-[230px] w-[230px] rounded-full bg-[rgba(82,134,246,0.14)] blur-[82px]" />
@@ -509,21 +501,9 @@ function CommunitySection() {
 
 function HowItWorksSection() {
     const items = [
-        {
-            step: "1",
-            title: "Join a session",
-            text: "Pick a focus room or scheduled session and enter from your browser.",
-        },
-        {
-            step: "2",
-            title: "Write your task",
-            text: "Set one clear intention, so your next step is visible and concrete.",
-        },
-        {
-            step: "3",
-            title: "Work alongside others",
-            text: "Stay in the room, follow the flow, and finish more than you would alone.",
-        },
+        { step: "1", title: "Join a session", text: "Pick a focus room or scheduled session and enter from your browser." },
+        { step: "2", title: "Write your task", text: "Set one clear intention, so your next step is visible and concrete." },
+        { step: "3", title: "Work alongside others", text: "Stay in the room, follow the flow, and finish more than you would alone." },
     ];
 
     return (
@@ -535,10 +515,7 @@ function HowItWorksSection() {
             </div>
             <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
                 {items.map((item) => (
-                    <div
-                        key={item.step}
-                        className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]"
-                    >
+                    <div key={item.step} className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(101,212,108,0.20)] text-[15px] font-bold text-[#2F2F2F]">
                             {item.step}
                         </div>
@@ -663,46 +640,40 @@ export default function LandingPage() {
             <FinalCta />
 
             <style>{`
-        .landing-chip-track {
-          animation: landingChipMove 28s linear infinite;
-          will-change: transform;
-        }
+                .landing-chip-track {
+                    animation: landingChipMove 28s linear infinite;
+                    will-change: transform;
+                }
 
-        .landing-chip-track-reverse {
-          animation-direction: reverse;
-          animation-duration: 34s;
-        }
+                .landing-chip-track-reverse {
+                    animation-direction: reverse;
+                    animation-duration: 34s;
+                }
 
-        @keyframes landingChipMove {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-33.333%); }
-        }
+                @keyframes landingChipMove {
+                    0% { transform: translateX(0); }
+                    100% { transform: translateX(-33.333%); }
+                }
 
-        @media (max-width: 767px) {
-          .landing-chip-track {
-            animation-duration: 18s;
-          }
+                @media (max-width: 767px) {
+                    .landing-chip-track {
+                        animation-duration: 18s;
+                    }
 
-          .landing-chip-track span {
-            height: 48px;
-            padding-left: 18px;
-            padding-right: 18px;
-            font-size: 12px;
-          }
-        }
+                    .landing-chip-track span {
+                        height: 48px;
+                        padding-left: 18px;
+                        padding-right: 18px;
+                        font-size: 12px;
+                    }
+                }
 
-        @media (max-width: 640px) {
-          .community-avatar-arc-mobile-safe {
-            transform: scale(0.72);
-          }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          .landing-chip-track {
-            animation: none !important;
-          }
-        }
-      `}</style>
+                @media (prefers-reduced-motion: reduce) {
+                    .landing-chip-track {
+                        animation: none !important;
+                    }
+                }
+            `}</style>
         </main>
     );
 }
