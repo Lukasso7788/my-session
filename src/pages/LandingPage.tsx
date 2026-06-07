@@ -71,6 +71,39 @@ const TESTIMONIALS = [
     },
 ];
 
+const FORMAT_CARDS = [
+    {
+        icon: "✅",
+        title: "Group sessions",
+        text: "Join scheduled live coworking sessions with structure, check-ins, and focused people around you.",
+        bullets: [
+            "Choose from formats like 50/10, 25/5, and custom sprints",
+            "Set your intention before the focus block starts",
+            "Share progress, wins, and next steps at the end",
+        ],
+    },
+    {
+        icon: "🔵",
+        title: "24/7 rooms",
+        text: "Drop into always-open focus rooms whenever you need a quiet place to start working.",
+        bullets: [
+            "No need to wait for a scheduled session",
+            "Great for spontaneous work, studying, reading, or planning",
+            "Join, set your task, and work at your own pace",
+        ],
+    },
+    {
+        icon: "🎧",
+        title: "Buddy tripling",
+        text: "Work in a calmer, smaller accountability format with a few people beside you.",
+        bullets: [
+            "Perfect for people who prefer quieter rooms",
+            "Great for recurring sessions and habit building",
+            "Stay accountable without pressure to perform",
+        ],
+    },
+];
+
 const FAQ_ITEMS = [
     {
         q: "What is MySession?",
@@ -426,11 +459,16 @@ function FormatCard({ icon, title, text, bullets }: { icon: string; title: strin
 function FormatsSection() {
     return (
         <SectionShell className="mt-[122px]">
-            <div className="text-center"><h2 className="text-[30px] font-bold leading-[34px] tracking-[-0.8px] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">Find The Format That Fits<br />Your Day</h2></div>
+            <div className="text-center">
+                <h2 className="text-[30px] font-bold leading-[34px] tracking-[-0.8px] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">
+                    Find The Format That Fits<br />Your Day
+                </h2>
+            </div>
+
             <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
-                <FormatCard icon="✅" title="Group sessions" text="Structured live coworking with check-ins and a shared focus container." bullets={["Standard formats: 50/10, 25/5 Pomodoro", "Custom sprints: 5, 10, 15-min formats", "Verbal check-ins built in"]} />
-                <FormatCard icon="🔵" title="24/7 rooms" text="Permanent rooms you can enter anytime without waiting for a scheduled session." bullets={["Great for spontaneous work sessions", "Never wait for a session to start", "Drop in, drop out anytime"]} />
-                <FormatCard icon="🎧" title="Buddy tripling" text="Small circles for people who want a calmer, more personal accountability format." bullets={["Screenshare-only sessions available", "Great for recurring sessions and habit building", "Quiet accountability with people you know"]} />
+                {FORMAT_CARDS.map((card) => (
+                    <FormatCard key={card.title} icon={card.icon} title={card.title} text={card.text} bullets={card.bullets} />
+                ))}
             </div>
         </SectionShell>
     );
