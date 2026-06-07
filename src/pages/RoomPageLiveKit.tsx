@@ -8369,10 +8369,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
               {layoutTilesForRender.map((t, index) => (
                 <div
                   key={`balanced-${t.id}`}
-                  className={cx(
-                    "min-w-0 min-h-0 flex items-center justify-center overflow-hidden",
-                    tileCount === 3 && index === 2 && "col-span-2"
-                  )}
+                  className={`min-w-0 min-h-0 flex items-center justify-center overflow-hidden ${tileCount === 3 && index === 2 ? "col-span-2" : ""}`}
                 >
                   <div
                     className="min-w-0 max-w-full"
