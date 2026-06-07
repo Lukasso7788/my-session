@@ -50,6 +50,27 @@ const STATS = [
     { value: "95%", text: "Of people report improved focus." },
 ];
 
+const TESTIMONIALS = [
+    {
+        quote: "MySession helps me stop overthinking and actually start. It feels like having people quietly working beside me.",
+        name: "Anna",
+        role: "Student",
+        avatar: 1,
+    },
+    {
+        quote: "I get more done in one focused session here than I usually do in a whole distracted afternoon alone.",
+        name: "Jordan",
+        role: "Founder",
+        avatar: 2,
+    },
+    {
+        quote: "The structure is simple, calm, and effective. I can join, write my task, and get back into focus fast.",
+        name: "Sofia",
+        role: "Designer",
+        avatar: 3,
+    },
+];
+
 const FAQ_ITEMS = [
     {
         q: "What is MySession?",
@@ -165,12 +186,15 @@ function HeroArtwork() {
 
 function StatCards() {
     return (
-        <SectionShell className="mt-[118px] md:mt-[130px]">
-            <div className="mx-auto grid max-w-[780px] grid-cols-1 gap-6 sm:grid-cols-3">
+        <SectionShell className="mt-[104px] md:mt-[118px]">
+            <div className="mx-auto grid max-w-[860px] grid-cols-1 gap-[26px] sm:grid-cols-3">
                 {STATS.map((stat) => (
-                    <div key={stat.value} className="min-h-[150px] rounded-[18px] border border-[#E9E9E9] bg-white px-7 py-8 text-center shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
-                        <div className="text-[44px] font-bold leading-none tracking-[-1.1%] text-[#2F2F2F]">{stat.value}</div>
-                        <p className="mx-auto mt-7 max-w-[170px] text-[14px] font-medium leading-[22px] text-[#747474]">{stat.text}</p>
+                    <div
+                        key={stat.value}
+                        className="flex min-h-[192px] flex-col items-center justify-center rounded-[16px] border border-[#E9E9E9] bg-white px-8 py-9 text-center shadow-[0_18px_45px_rgba(47,47,47,0.045)]"
+                    >
+                        <div className="text-[42px] font-bold leading-none tracking-[-0.8px] text-[#2F2F2F] md:text-[46px]">{stat.value}</div>
+                        <p className="mx-auto mt-[30px] max-w-[175px] text-[14px] font-medium leading-[22px] text-[#747474]">{stat.text}</p>
                     </div>
                 ))}
             </div>
@@ -402,11 +426,100 @@ function FormatCard({ icon, title, text, bullets }: { icon: string; title: strin
 function FormatsSection() {
     return (
         <SectionShell className="mt-[122px]">
-            <div className="text-center"><h2 className="text-[30px] font-bold leading-[34px] tracking-[-1.1%] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">Find The Format That Fits<br />Your Day</h2></div>
+            <div className="text-center"><h2 className="text-[30px] font-bold leading-[34px] tracking-[-0.8px] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">Find The Format That Fits<br />Your Day</h2></div>
             <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
                 <FormatCard icon="✅" title="Group sessions" text="Structured live coworking with check-ins and a shared focus container." bullets={["Standard formats: 50/10, 25/5 Pomodoro", "Custom sprints: 5, 10, 15-min formats", "Verbal check-ins built in"]} />
                 <FormatCard icon="🔵" title="24/7 rooms" text="Permanent rooms you can enter anytime without waiting for a scheduled session." bullets={["Great for spontaneous work sessions", "Never wait for a session to start", "Drop in, drop out anytime"]} />
                 <FormatCard icon="🎧" title="Buddy tripling" text="Small circles for people who want a calmer, more personal accountability format." bullets={["Screenshare-only sessions available", "Great for recurring sessions and habit building", "Quiet accountability with people you know"]} />
+            </div>
+        </SectionShell>
+    );
+}
+
+function CommunityAvatarArc() {
+    const avatars = [
+        { x: 0, y: 62, r: -18 },
+        { x: 62, y: 34, r: -14 },
+        { x: 130, y: 16, r: -9 },
+        { x: 202, y: 5, r: -4 },
+        { x: 276, y: 0, r: 0 },
+        { x: 350, y: 5, r: 4 },
+        { x: 422, y: 16, r: 9 },
+        { x: 490, y: 34, r: 14 },
+        { x: 552, y: 62, r: 18 },
+    ];
+
+    return (
+        <div className="absolute left-1/2 top-0 z-20 h-[168px] w-[660px] max-w-[94vw] -translate-x-1/2 -translate-y-[82px]">
+            {COMMUNITY_AVATARS.map((src, index) => {
+                const p = avatars[index];
+
+                return (
+                    <div key={src} className="absolute" style={{ left: `${p.x}px`, top: `${p.y}px`, transform: `rotate(${p.r}deg)` }}>
+                        <img src={src} alt="" draggable={false} className="h-[104px] w-[104px] rounded-[30px] border-[1px] border-white object-cover shadow-[0_18px_42px_rgba(47,47,47,0.16)] transition-transform duration-300 ease-out hover:-translate-y-3 hover:scale-[1.045]" />
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+function CommunitySection() {
+    return (
+        <SectionShell className="mt-[155px]">
+            <div className="relative overflow-visible rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 pb-0 pt-[118px] text-center shadow-[0_18px_55px_rgba(47,47,47,0.04)] md:px-10 md:pt-[132px]">
+                <CommunityAvatarArc />
+
+                <div className="pointer-events-none absolute left-[6%] top-[9%] h-[230px] w-[230px] rounded-full bg-[rgba(82,134,246,0.14)] blur-[82px]" />
+                <div className="pointer-events-none absolute right-[7%] top-[9%] h-[270px] w-[270px] rounded-full bg-[rgba(246,82,82,0.14)] blur-[90px]" />
+                <div className="pointer-events-none absolute bottom-[7%] left-[18%] h-[250px] w-[250px] rounded-full bg-[rgba(101,212,108,0.14)] blur-[92px]" />
+
+                <div className="relative z-10">
+                    <div className="mx-auto inline-flex h-[44px] items-center gap-2 rounded-full border border-black/10 bg-white/70 px-7 text-[13px] font-bold text-[#2F2F2F] shadow-[0_10px_28px_rgba(47,47,47,0.05)] backdrop-blur">
+                        <span className="text-[18px]">⌘</span>
+                        Community
+                    </div>
+
+                    <h2 className="mx-auto mt-[30px] max-w-[670px] text-[30px] font-bold leading-[37px] tracking-[-0.8px] text-[#2F2F2F] md:text-[34px] md:leading-[42px]">
+                        You’re Not Just Joining Sessions. You’re Joining A Community.
+                    </h2>
+
+                    <p className="mx-auto mt-[22px] max-w-[630px] text-[15px] font-medium leading-[25px] text-[#747474]">
+                        A global community of creators, builders, students, and professionals — all showing up every day to work on things that matter. No pressure, no judgment — just people doing their best work, together.
+                    </p>
+
+                    <div className="mt-[34px]">
+                        <CtaButton to="/sessions" dark>Join A Session — It’s Free</CtaButton>
+                    </div>
+                </div>
+
+                <div className="relative z-10 mt-[130px] -mx-7 overflow-hidden pb-[44px] md:-mx-10">
+                    <MovingChips items={AUDIENCE_CHIPS} reverse />
+                </div>
+            </div>
+        </SectionShell>
+    );
+}
+
+function TestimonialsSection() {
+    return (
+        <SectionShell className="mt-[118px] max-w-[1220px]">
+            <div className="grid grid-cols-1 gap-[34px] md:grid-cols-3">
+                {TESTIMONIALS.map((item) => (
+                    <article key={item.name} className="min-h-[210px] px-1">
+                        <p className="text-[18px] font-bold leading-[30px] tracking-[-0.3px] text-[#2F2F2F] md:text-[19px] md:leading-[31px]">
+                            “{item.quote}”
+                        </p>
+
+                        <div className="mt-[26px] flex items-center gap-[12px]">
+                            <MiniAvatar index={item.avatar} size={34} />
+                            <div>
+                                <div className="text-[13px] font-bold leading-none text-[#2F2F2F]">{item.name}</div>
+                                <div className="mt-[5px] text-[12px] font-medium leading-none text-[#747474]">{item.role}</div>
+                            </div>
+                        </div>
+                    </article>
+                ))}
             </div>
         </SectionShell>
     );
@@ -503,7 +616,7 @@ function HowItWorksSection() {
         },
         {
             step: "2",
-            title: "Work alongside other",
+            title: "Work alongside others",
             text: "Write down what you want to finish and let the energy of the room do the rest. Silent, structured, and distraction-free.",
             visual: <HowFocusListMockup />,
         },
@@ -548,76 +661,11 @@ function HowItWorksSection() {
     );
 }
 
-function CommunityAvatarArc() {
-    const avatars = [
-        { x: 0, y: 62, r: -18 },
-        { x: 62, y: 34, r: -14 },
-        { x: 130, y: 16, r: -9 },
-        { x: 202, y: 5, r: -4 },
-        { x: 276, y: 0, r: 0 },
-        { x: 350, y: 5, r: 4 },
-        { x: 422, y: 16, r: 9 },
-        { x: 490, y: 34, r: 14 },
-        { x: 552, y: 62, r: 18 },
-    ];
-
-    return (
-        <div className="absolute left-1/2 top-0 z-20 h-[168px] w-[660px] max-w-[94vw] -translate-x-1/2 -translate-y-[82px]">
-            {COMMUNITY_AVATARS.map((src, index) => {
-                const p = avatars[index];
-
-                return (
-                    <div key={src} className="absolute" style={{ left: `${p.x}px`, top: `${p.y}px`, transform: `rotate(${p.r}deg)` }}>
-                        <img src={src} alt="" draggable={false} className="h-[104px] w-[104px] rounded-[30px] border-[1px] border-white object-cover shadow-[0_18px_42px_rgba(47,47,47,0.16)] transition-transform duration-300 ease-out hover:-translate-y-3 hover:scale-[1.045]" />
-                    </div>
-                );
-            })}
-        </div>
-    );
-}
-
-function CommunitySection() {
-    return (
-        <SectionShell className="mt-[155px]">
-            <div className="relative overflow-visible rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 pb-0 pt-[118px] text-center shadow-[0_18px_55px_rgba(47,47,47,0.04)] md:px-10 md:pt-[132px]">
-                <CommunityAvatarArc />
-
-                <div className="pointer-events-none absolute left-[6%] top-[9%] h-[230px] w-[230px] rounded-full bg-[rgba(82,134,246,0.14)] blur-[82px]" />
-                <div className="pointer-events-none absolute right-[7%] top-[9%] h-[270px] w-[270px] rounded-full bg-[rgba(246,82,82,0.14)] blur-[90px]" />
-                <div className="pointer-events-none absolute bottom-[7%] left-[18%] h-[250px] w-[250px] rounded-full bg-[rgba(101,212,108,0.14)] blur-[92px]" />
-
-                <div className="relative z-10">
-                    <div className="mx-auto inline-flex h-[44px] items-center gap-2 rounded-full border border-black/10 bg-white/70 px-7 text-[13px] font-bold text-[#2F2F2F] shadow-[0_10px_28px_rgba(47,47,47,0.05)] backdrop-blur">
-                        <span className="text-[18px]">⌘</span>
-                        Community
-                    </div>
-
-                    <h2 className="mx-auto mt-[30px] max-w-[670px] text-[30px] font-bold leading-[37px] tracking-[-1.1%] text-[#2F2F2F] md:text-[34px] md:leading-[42px]">
-                        You’re Not Just Joining Sessions. You’re Joining A Community.
-                    </h2>
-
-                    <p className="mx-auto mt-[22px] max-w-[630px] text-[15px] font-medium leading-[25px] text-[#747474]">
-                        A global community of creators, builders, students, and professionals — all showing up every day to work on things that matter. No pressure, no judgment — just people doing their best work, together.
-                    </p>
-
-                    <div className="mt-[34px]">
-                        <CtaButton to="/sessions" dark>Join A Session — It’s Free</CtaButton>
-                    </div>
-                </div>
-
-                <div className="relative z-10 mt-[130px] -mx-7 overflow-hidden pb-[44px] md:-mx-10">
-                    <MovingChips items={AUDIENCE_CHIPS} reverse />
-                </div>
-            </div>
-        </SectionShell>
-    );
-}
-
 function FaqSection() {
     return (
         <SectionShell className="mt-[122px] max-w-[1180px]">
             <div className="text-center">
-                <h2 className="text-[30px] font-bold leading-[34px] tracking-[-1.1%] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">
+                <h2 className="text-[30px] font-bold leading-[34px] tracking-[-0.8px] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">
                     Frequently Asked<br />Questions
                 </h2>
             </div>
@@ -641,7 +689,7 @@ function FinalCta() {
     return (
         <section className="mt-[120px] w-full px-4 pb-[96px] md:px-6">
             <div className="mx-auto w-full max-w-[calc(100vw-48px)] rounded-[28px] bg-[#2F2F2F] px-7 py-14 text-center shadow-[0_30px_80px_rgba(47,47,47,0.22)] md:px-10 md:py-16">
-                <h2 className="mx-auto max-w-[760px] text-[30px] font-bold leading-[36px] tracking-[-1.1%] text-white md:text-[42px] md:leading-[48px]">
+                <h2 className="mx-auto max-w-[760px] text-[30px] font-bold leading-[36px] tracking-[-0.8px] text-white md:text-[42px] md:leading-[48px]">
                     Ready To Get Things<br />Done, Together?
                 </h2>
                 <p className="mx-auto mt-4 max-w-[620px] text-[15px] font-medium leading-[25px] text-white/70">
@@ -675,7 +723,7 @@ export default function LandingPage() {
         <main className="min-h-screen overflow-hidden bg-[linear-gradient(90deg,#F2FAF2_0%,#F7F8FA_45%,#F1F5FF_100%)] text-[#2F2F2F]">
             <section className="relative mx-auto max-w-[1440px] px-4 pb-[70px] pt-[128px] md:px-8 md:pb-[88px] md:pt-[150px]">
                 <div className="mx-auto max-w-[760px] text-center">
-                    <h1 className="text-[40px] font-bold leading-[44px] tracking-[-1.1%] text-[#2F2F2F] md:text-[44px] md:leading-[48px]">
+                    <h1 className="text-[40px] font-bold leading-[44px] tracking-[-0.8px] text-[#2F2F2F] md:text-[44px] md:leading-[48px]">
                         Do You<br /><RotatingPrompt />
                     </h1>
 
@@ -699,6 +747,7 @@ export default function LandingPage() {
             <WorkMoreSection />
             <FormatsSection />
             <CommunitySection />
+            <TestimonialsSection />
             <HowItWorksSection />
             <FaqSection />
             <FinalCta />

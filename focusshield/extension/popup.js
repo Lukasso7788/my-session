@@ -1,34 +1,76 @@
-function formatRemaining(endAt) {
-    if (!endAt) return "";
-
-    const ms = Math.max(0, endAt - Date.now());
-    const minutes = Math.floor(ms / 60000);
-    const seconds = Math.floor((ms % 60000) / 1000);
-
-    return `${minutes}:${String(seconds).padStart(2, "0")}`;
-}
-
-function getCheckedOptionIds() {
-    return [...document.querySelectorAll('input[type="checkbox"][value]:checked')]
-        .filter(input => input.id !== "locked")
-        .map(input => input.value);
-}
-
-function getCustomLines() {
-    return document
-        .getElementById("customInput")
-        .value
+function parseLines(text) {
+    return text
         .split("\n")
-        .map(line => line.trim())
+        .map((l) => l.trim())
         .filter(Boolean);
 }
 
-async function getPolicy() {
-    return new Promise(resolve => {
-        chrome.runtime.sendMessage({ type: "GET_POLICY" }, response => {
-            resolve(response.policy);
-        });
+function formatRemaining(endAt) {
+    if (!endAt) return "";
+
+    const diff = Math.max(0, endAt - Date.now());
+    const m = Math.floor(diff / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+
+    return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function sendMessage(message) {
+    return new Promise((resolve) => {
+        chrome.runtime.sendMessage(message, resolve);
     });
+}
+
+function getSelectedPopularDomains() {
+    const checked = [...document.querySelectorAll('input[type="checkbox"][value]:checked')]
+        .filter((input) => input.id !== "locked");
+
+    return checked.flatMap((input) => {
+        return String(input.value)
+            .split(",")
+            .map((x) => x.trim())
+            .filter(Boolean);
+    });
+}
+
+function getCustomDomainsAndUrls() {
+    const lines = parseLines(document.getElementById("custom").value);
+
+    const domains = [];
+    const urls = [];
+
+    for (const line of lines) {
+        if (line.startsWith("http://") || line.startsWith("https://")) {
+            urls.push(line);
+        } else if (line.includes("/")) {
+            urls.push("https://" + line);
+        } else {
+            domains.push(line);
+        }
+    }
+
+    return { domains, urls };
+}
+
+function getDurationMinutes() {
+    const preset = document.getElementById("durationPreset").value;
+
+    if (preset !== "custom") {
+        return Number(preset);
+    }
+
+    const custom = Number(document.getElementById("customDuration").value);
+
+    if (!Number.isFinite(custom) || custom < 1) {
+        return null;
+    }
+
+    return Math.min(custom, 1440);
+}
+
+async function getPolicy() {
+    const response = await sendMessage({ type: "GET" });
+    return response?.policy;
 }
 
 function renderActiveList(policy) {
@@ -57,7 +99,7 @@ async function render() {
 
     status.classList.remove("danger");
 
-    if (!policy.active) {
+    if (!policy?.active) {
         status.textContent = "Shield is inactive.";
         renderActiveList(policy);
         return;
@@ -67,45 +109,61 @@ async function render() {
     renderActiveList(policy);
 }
 
-document.getElementById("start").addEventListener("click", async () => {
-    const selectedOptionIds = getCheckedOptionIds();
-    const customLines = getCustomLines();
-    const minutes = Number(document.getElementById("duration").value);
+document.getElementById("durationPreset").addEventListener("change", () => {
+    const customInput = document.getElementById("customDuration");
+    customInput.style.display =
+        document.getElementById("durationPreset").value === "custom" ? "block" : "none";
+});
+
+document.getElementById("start").onclick = async () => {
+    const selectedDomains = getSelectedPopularDomains();
+    const custom = getCustomDomainsAndUrls();
+    const minutes = getDurationMinutes();
     const locked = document.getElementById("locked").checked;
 
-    if (selectedOptionIds.length === 0 && customLines.length === 0) {
-        const status = document.getElementById("status");
-        status.textContent = "Choose at least one filter or add a custom site/page.";
+    const domains = [...new Set([...selectedDomains, ...custom.domains])];
+    const urls = [...new Set(custom.urls)];
+
+    const status = document.getElementById("status");
+    status.classList.remove("danger");
+
+    if (!minutes) {
+        status.textContent = "Enter a valid custom duration in minutes.";
         status.classList.add("danger");
         return;
     }
 
-    chrome.runtime.sendMessage({
-        type: "ACTIVATE_CUSTOM_POLICY",
-        payload: {
-            selectedOptionIds,
-            customLines,
-            minutes,
-            locked
-        }
-    }, () => {
-        render();
+    if (domains.length === 0 && urls.length === 0) {
+        status.textContent = "Choose at least one site or add a custom page.";
+        status.classList.add("danger");
+        return;
+    }
+
+    await sendMessage({
+        type: "ACTIVATE",
+        domains,
+        urls,
+        minutes,
+        locked
     });
-});
 
-document.getElementById("stop").addEventListener("click", async () => {
-    chrome.runtime.sendMessage({ type: "STOP_SHIELD" }, response => {
-        const status = document.getElementById("status");
+    await render();
+};
 
-        if (response && response.error === "locked") {
-            status.textContent = "Locked mode is active. You cannot stop it yet.";
-            status.classList.add("danger");
-            return;
-        }
+document.getElementById("stop").onclick = async () => {
+    const response = await sendMessage({ type: "STOP" });
+    const status = document.getElementById("status");
 
-        render();
-    });
-});
+    status.classList.remove("danger");
+
+    if (response?.error === "locked") {
+        status.textContent = `Locked mode is active. You can stop Shield when the timer ends: ${formatRemaining(response.endAt)} left.`;
+        status.classList.add("danger");
+        return;
+    }
+
+    await render();
+};
 
 render();
 setInterval(render, 1000);
