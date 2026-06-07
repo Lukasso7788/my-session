@@ -8261,28 +8261,6 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     !useVeryNarrowMode &&
     effectiveW >= (isLgUp && rightPanelOpen ? 980 : 900);
 
-  // Avoid the ugly internal vertical scrollbar that can appear when the right
-  // panel is open and 3-4 regular 16:9 tiles barely exceed the available
-  // stage height. We compute the tile width from BOTH available width and
-  // height, then center each tile inside a 2x2 no-scroll grid.
-  const useNoScrollBalancedGrid =
-    !useFeaturedLayout &&
-    !useVeryNarrowMode &&
-    tileCount >= 3 &&
-    tileCount <= 4 &&
-    effectiveW > 0 &&
-    effectiveH > 0;
-
-  const balancedGridGapPx = isMobileQuery ? 8 : 12;
-  const balancedGridPaddingPx = isMobileQuery ? 8 : 12;
-
-  // Important: do NOT clamp each tile width to cellHeight * 16/9 here.
-  // That was causing the 2x2 gallery to look like two far-apart columns when
-  // the right panel was open: every cell was wide, but the actual 16:9 tile was
-  // narrowed and centered inside it. Let the rendered tile take the whole grid
-  // cell instead, so 3-4 participants stay visually close/tight.
-  const balancedGridTileWidthCss = "100%";
-
   const videoLayout = useFeaturedLayout ? (
     <div
       className="h-full w-full min-w-0 min-h-0 grid gap-2 sm:gap-3 p-2 sm:p-3 overflow-hidden"
@@ -8353,36 +8331,6 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
               stack={stackTwoOnThisViewport}
               renderItem={(t) => renderTile(t)}
             />
-          </div>
-        ) : useNoScrollBalancedGrid ? (
-          <div
-            className="h-full w-full min-w-0 min-h-0 overflow-hidden p-2 sm:p-3"
-            style={{
-              padding: `${balancedGridPaddingPx}px`,
-            }}
-          >
-            <div
-              className="h-full w-full min-w-0 min-h-0 grid overflow-hidden"
-              style={{
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gridTemplateRows: "repeat(2, minmax(0, 1fr))",
-                gap: `${balancedGridGapPx}px`,
-              }}
-            >
-              {layoutTilesForRender.map((t, index) => (
-                <div
-                  key={`balanced-${t.id}`}
-                  className={`min-w-0 min-h-0 flex items-stretch justify-stretch overflow-hidden ${tileCount === 3 && index === 2 ? "col-span-2" : ""}`}
-                >
-                  <div
-                    className="min-w-0 min-h-0 h-full w-full max-w-full"
-                    style={{ width: balancedGridTileWidthCss }}
-                  >
-                    {renderTile(t)}
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
         ) : (
           <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
@@ -9410,11 +9358,15 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           .ms-reaction-float { animation: none; }
         }
 
+        .ms-room-page,
+        .ms-room-page *,
         .ms-video-stage,
         .ms-video-stage * {
           scrollbar-width: none;
           -ms-overflow-style: none;
         }
+        .ms-room-page::-webkit-scrollbar,
+        .ms-room-page *::-webkit-scrollbar,
         .ms-video-stage::-webkit-scrollbar,
         .ms-video-stage *::-webkit-scrollbar {
           width: 0 !important;
@@ -9500,7 +9452,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
         }}
       />
 
-      <div className={`h-[100dvh] overflow-hidden ${pageBg}`}>
+      <div className={`ms-room-page h-[100dvh] overflow-hidden ${pageBg}`}>
         <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))] sm:pb-[calc(90px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
           <RoomTopBar
             theme={theme}
