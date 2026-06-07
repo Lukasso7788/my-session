@@ -400,19 +400,6 @@ export default function PricingPage() {
                     </div>
                 )}
 
-                <div className="mt-8 text-center text-sm text-black/60">
-                    Prefer supporting via Ko-fi?{" "}
-                    <a
-                        href={KOFI_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-medium text-black underline underline-offset-4 hover:opacity-80"
-                    >
-                        Open MySession on Ko-fi
-                    </a>
-                    .
-                </div>
-
                 <div className="mt-10 rounded-2xl border border-black/10 bg-white/85 p-6 shadow-sm sm:p-8">
                     <h2 className="text-[18px] font-semibold tracking-[-0.01em]">
                         Payment and service information

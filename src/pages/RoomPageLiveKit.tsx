@@ -467,6 +467,105 @@ function canUseSetSinkId() {
   }
 }
 
+function supportsScreenShareCapture() {
+  if (typeof navigator === "undefined") return false;
+  return typeof (navigator.mediaDevices as any)?.getDisplayMedia === "function";
+}
+
+function getPublicationSourceName(pub: any) {
+  return String(pub?.source || "").toLowerCase();
+}
+
+function isScreenShareVideoPublication(pub: any) {
+  const source = getPublicationSourceName(pub);
+  const kind = String(pub?.kind || pub?.track?.kind || "").toLowerCase();
+
+  return (
+    (source === String(Track.Source.ScreenShare).toLowerCase() ||
+      source.includes("screen") ||
+      source.includes("display")) &&
+    (kind === "video" || kind === String(Track.Kind.Video).toLowerCase() || !kind)
+  );
+}
+
+function isLiveScreenShareTrack(track: any) {
+  if (!track) return false;
+
+  const mediaTrack = track.mediaStreamTrack || track.mediaTrack || null;
+  if (mediaTrack && mediaTrack.readyState && mediaTrack.readyState !== "live") return false;
+
+  // Some browsers/tablets briefly publish a screen-share publication before the
+  // actual MediaStreamTrack is attached. That phantom publication used to create
+  // an empty "video tile" with no visible screen.
+  if (!mediaTrack && !track.attachedElements?.length && !track.sid) return false;
+
+  return true;
+}
+
+function filterRenderableScreenShareTiles(tiles: TileModel[]) {
+  return (tiles || []).filter((tile) => {
+    if (tile.kind !== "screen") return true;
+    return isLiveScreenShareTrack((tile as any).videoTrack);
+  });
+}
+
+function hasLocalLiveScreenShare(room: Room | null) {
+  const lp: any = room?.localParticipant;
+  if (!lp) return false;
+
+  const pubs: any[] = Array.from((lp.trackPublications as any)?.values?.() || []);
+  return pubs.some((pub) => isScreenShareVideoPublication(pub) && isLiveScreenShareTrack(pub.track));
+}
+
+function requestRemoteScreenShareSubscriptions(room: Room | null) {
+  try {
+    const participants = Array.from((room as any)?.remoteParticipants?.values?.() || []);
+
+    participants.forEach((participant: any) => {
+      const pubs: any[] = Array.from(participant?.trackPublications?.values?.() || []);
+
+      pubs.forEach((pub) => {
+        if (!isScreenShareVideoPublication(pub)) return;
+
+        // Tablet/Chrome/Safari can publish the screen-share publication first and
+        // attach the real track a moment later. Explicitly requesting subscription
+        // prevents our UI from getting stuck with an empty screen tile.
+        if (typeof pub.setSubscribed === "function" && !pub.isSubscribed) {
+          void pub.setSubscribed(true).catch(() => { });
+        }
+      });
+    });
+  } catch {
+    // best effort only
+  }
+}
+
+async function waitForLocalScreenShareTrack(room: Room | null, timeoutMs = 2600) {
+  const started = Date.now();
+
+  while (Date.now() - started < timeoutMs) {
+    if (hasLocalLiveScreenShare(room)) return true;
+    await delay(120);
+  }
+
+  return hasLocalLiveScreenShare(room);
+}
+
+function getScreenShareErrorMessage(error: any) {
+  const name = String(error?.name || "").toLowerCase();
+  const message = String(error?.message || error || "").trim();
+
+  if (name.includes("notallowed") || name.includes("abort") || message.toLowerCase().includes("permission")) {
+    return "Screen sharing was cancelled or blocked by the browser.";
+  }
+
+  if (name.includes("notfound") || name.includes("notreadable")) {
+    return "Screen sharing could not start from this device or browser.";
+  }
+
+  return message || "Screen sharing could not start.";
+}
+
 function pickExistingDeviceId(
   wantedId: string,
   list: MediaDeviceInfo[],
@@ -5661,7 +5760,9 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
     setTiles(next);
 
-    const nextScreenShares = buildScreenShareTiles({
+    requestRemoteScreenShareSubscriptions(room);
+
+    const nextScreenSharesRaw = buildScreenShareTiles({
       room,
       authUserId,
       displayName,
@@ -5669,8 +5770,10 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       profilesById,
     }) as TileModel[];
 
+    const nextScreenShares = filterRenderableScreenShareTiles(nextScreenSharesRaw);
+
     setScreenShareTiles(nextScreenShares);
-    setScreenShareOn(nextScreenShares.some((x) => x.isLocal));
+    setScreenShareOn(hasLocalLiveScreenShare(room));
   };
 
   const disconnectRoom = async (opts?: {
@@ -5976,6 +6079,9 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       r.on(RoomEvent.TrackUnsubscribed, refresh);
       r.on(RoomEvent.TrackMuted as any, refresh as any);
       r.on(RoomEvent.TrackUnmuted as any, refresh as any);
+      r.on(RoomEvent.TrackPublished as any, refresh as any);
+      r.on(RoomEvent.TrackUnpublished as any, refresh as any);
+      r.on(RoomEvent.TrackSubscriptionFailed as any, refresh as any);
       r.on(RoomEvent.LocalTrackPublished as any, refresh as any);
       r.on(RoomEvent.LocalTrackUnpublished as any, refresh as any);
 
@@ -6631,16 +6737,85 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     }
   };
 
+  const scheduleScreenShareRebuildBurst = () => {
+    scheduleRebuildTiles();
+    window.setTimeout(() => scheduleRebuildTiles(), 80);
+    window.setTimeout(() => scheduleRebuildTiles(), 220);
+    window.setTimeout(() => scheduleRebuildTiles(), 520);
+    window.setTimeout(() => scheduleRebuildTiles(), 1100);
+  };
+
   const toggleScreenShare = async () => {
     const r = roomRef.current;
-    if (!r) return;
+    if (!r?.localParticipant) {
+      setMediaWarning("Screen sharing is not ready yet. Please wait a moment and try again.");
+      return;
+    }
+
+    const lp: any = r.localParticipant;
+
     try {
-      const next = !screenShareOn;
-      await (r.localParticipant as any).setScreenShareEnabled(next);
-      setScreenShareOn(next);
-      window.setTimeout(() => scheduleRebuildTiles(), 80);
-    } catch (e) {
+      const next = !hasLocalLiveScreenShare(r);
+
+      if (!next) {
+        await lp.setScreenShareEnabled(false);
+        setScreenShareOn(false);
+        scheduleScreenShareRebuildBurst();
+        return;
+      }
+
+      if (!supportsScreenShareCapture()) {
+        setScreenShareOn(false);
+        setMediaWarning(
+          "Screen sharing is not supported by this tablet browser. Try desktop Chrome/Edge, or update the browser and allow screen recording/sharing permissions."
+        );
+        scheduleScreenShareRebuildBurst();
+        return;
+      }
+
+      setMediaWarning("");
+
+      await lp.setScreenShareEnabled(
+        true,
+        {
+          audio: false,
+          video: true,
+        } as any
+      );
+
+      scheduleScreenShareRebuildBurst();
+
+      const liveTrackReady = await waitForLocalScreenShareTrack(r, 2600);
+
+      if (!liveTrackReady) {
+        try {
+          await lp.setScreenShareEnabled(false);
+        } catch {
+          // ignore cleanup failure
+        }
+
+        setScreenShareOn(false);
+        setMediaWarning(
+          "Screen sharing started but no screen video track was received. This usually happens on some tablet browsers. Please try again, update the browser, or use desktop Chrome/Edge for screen sharing."
+        );
+        scheduleScreenShareRebuildBurst();
+        return;
+      }
+
+      setScreenShareOn(true);
+      scheduleScreenShareRebuildBurst();
+    } catch (e: any) {
       console.error("toggleScreenShare error:", e);
+
+      try {
+        await (roomRef.current?.localParticipant as any)?.setScreenShareEnabled?.(false);
+      } catch {
+        // ignore cleanup failure
+      }
+
+      setScreenShareOn(false);
+      setMediaWarning(getScreenShareErrorMessage(e));
+      scheduleScreenShareRebuildBurst();
     }
   };
 
@@ -7844,6 +8019,25 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     !useVeryNarrowMode &&
     effectiveW >= (isLgUp && rightPanelOpen ? 980 : 900);
 
+  // Avoid the ugly internal vertical scrollbar that can appear when the right
+  // panel is open and 3-4 regular 16:9 tiles barely exceed the available
+  // stage height. We compute the tile width from BOTH available width and
+  // height, then center each tile inside a 2x2 no-scroll grid.
+  const useNoScrollBalancedGrid =
+    !useFeaturedLayout &&
+    !useVeryNarrowMode &&
+    tileCount >= 3 &&
+    tileCount <= 4 &&
+    effectiveW > 0 &&
+    effectiveH > 0;
+
+  const balancedGridGapPx = isMobileQuery ? 8 : 12;
+  const balancedGridPaddingPx = isMobileQuery ? 8 : 12;
+  const balancedGridCellW = Math.max(0, (effectiveW - balancedGridPaddingPx * 2 - balancedGridGapPx) / 2);
+  const balancedGridCellH = Math.max(0, (effectiveH - balancedGridPaddingPx * 2 - balancedGridGapPx) / 2);
+  const balancedGridTileW = Math.floor(Math.max(0, Math.min(balancedGridCellW, balancedGridCellH * (16 / 9))));
+  const balancedGridTileWidthCss = balancedGridTileW > 0 ? `${balancedGridTileW}px` : "100%";
+
   const videoLayout = useFeaturedLayout ? (
     <div
       className="h-full w-full min-w-0 min-h-0 grid gap-2 sm:gap-3 p-2 sm:p-3 overflow-hidden"
@@ -7914,6 +8108,39 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
               stack={stackTwoOnThisViewport}
               renderItem={(t) => renderTile(t)}
             />
+          </div>
+        ) : useNoScrollBalancedGrid ? (
+          <div
+            className="h-full w-full min-w-0 min-h-0 overflow-hidden p-2 sm:p-3"
+            style={{
+              padding: `${balancedGridPaddingPx}px`,
+            }}
+          >
+            <div
+              className="h-full w-full min-w-0 min-h-0 grid overflow-hidden"
+              style={{
+                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                gridTemplateRows: "repeat(2, minmax(0, 1fr))",
+                gap: `${balancedGridGapPx}px`,
+              }}
+            >
+              {layoutTilesForRender.map((t, index) => (
+                <div
+                  key={`balanced-${t.id}`}
+                  className={cx(
+                    "min-w-0 min-h-0 flex items-center justify-center overflow-hidden",
+                    tileCount === 3 && index === 2 && "col-span-2"
+                  )}
+                >
+                  <div
+                    className="min-w-0 max-w-full"
+                    style={{ width: balancedGridTileWidthCss }}
+                  >
+                    {renderTile(t)}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
@@ -8941,6 +9168,18 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           .ms-reaction-float { animation: none; }
         }
 
+        .ms-video-stage,
+        .ms-video-stage * {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+        .ms-video-stage::-webkit-scrollbar,
+        .ms-video-stage *::-webkit-scrollbar {
+          width: 0 !important;
+          height: 0 !important;
+          display: none !important;
+        }
+
         @media (max-width: 1023px) {
           .ms-desktop-only-fx {
             display: none !important;
@@ -9050,7 +9289,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
                 videoWrapRef.current = el;
                 videoSizerRef(el);
               }}
-              className={`relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
+              className={`ms-video-stage relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight ? "bg-white/70 border border-black/10" : "bg-[#0B1220]/45 border border-white/5"
                 }`}
             >
               {videoContent}
