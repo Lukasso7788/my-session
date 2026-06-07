@@ -153,17 +153,33 @@ function Chip({ item }: { item: { emoji: string; label: string; tone: string } }
     };
 
     return (
-        <span className={cx("inline-flex h-[65px] shrink-0 items-center gap-[8px] rounded-full px-[28px] text-[14px] font-medium leading-none", styles[item.tone] || styles.neutral)}>
+        <span
+            className={cx(
+                "inline-flex h-[65px] shrink-0 items-center gap-[8px] rounded-full px-[28px] text-[14px] font-medium leading-none",
+                styles[item.tone] || styles.neutral
+            )}
+        >
             <span className="text-[15px] leading-none">{item.emoji}</span>
             <span className="whitespace-nowrap">{item.label}</span>
         </span>
     );
 }
 
-function MovingChips({ items, reverse = false }: { items: Array<{ emoji: string; label: string; tone: string }>; reverse?: boolean }) {
+function MovingChips({
+    items,
+    reverse = false,
+}: {
+    items: Array<{ emoji: string; label: string; tone: string }>;
+    reverse?: boolean;
+}) {
     return (
         <div className="relative overflow-hidden py-1">
-            <div className={cx("landing-chip-track flex w-max items-center gap-[10px]", reverse && "landing-chip-track-reverse")}>
+            <div
+                className={cx(
+                    "landing-chip-track flex w-max items-center gap-[10px]",
+                    reverse && "landing-chip-track-reverse"
+                )}
+            >
                 {[...items, ...items, ...items].map((item, index) => (
                     <Chip key={`${item.label}-${index}`} item={item} />
                 ))}
@@ -201,9 +217,16 @@ function StatCards() {
         <SectionShell className="mt-[118px] md:mt-[130px]">
             <div className="mx-auto grid max-w-[780px] grid-cols-1 gap-6 sm:grid-cols-3">
                 {STATS.map((stat) => (
-                    <div key={stat.value} className="min-h-[150px] rounded-[18px] border border-[#E9E9E9] bg-white px-7 py-8 text-center shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
-                        <div className="text-[44px] font-bold leading-none tracking-[-1.1%] text-[#2F2F2F]">{stat.value}</div>
-                        <p className="mx-auto mt-7 max-w-[170px] text-[14px] font-medium leading-[22px] text-[#747474]">{stat.text}</p>
+                    <div
+                        key={stat.value}
+                        className="min-h-[150px] rounded-[18px] border border-[#E9E9E9] bg-white px-7 py-8 text-center shadow-[0_16px_40px_rgba(47,47,47,0.04)]"
+                    >
+                        <div className="text-[44px] font-bold leading-none tracking-[-1.1%] text-[#2F2F2F]">
+                            {stat.value}
+                        </div>
+                        <p className="mx-auto mt-7 max-w-[170px] text-[14px] font-medium leading-[22px] text-[#747474]">
+                            {stat.text}
+                        </p>
                     </div>
                 ))}
             </div>
@@ -211,45 +234,228 @@ function StatCards() {
     );
 }
 
-function PeoplePanelMockup() {
+function MiniAvatar({ index, size = 22 }: { index: number; size?: number }) {
     return (
         <img
-            src="/images/landing/feature-people-panel.png"
+            src={`/images/landing/community-avatar-${index}.png`}
             alt=""
-            className="w-full select-none rounded-[14px] object-contain"
             draggable={false}
+            className="shrink-0 rounded-full border border-white object-cover"
+            style={{ width: size, height: size }}
         />
     );
 }
 
-function ActivityRoomsMockup() {
+function PeoplePanelMockup() {
+    const people = [
+        { name: "Sofia", role: "Writer", avatar: 1, tag: "ADHD", tone: "green" },
+        { name: "Jordan", role: "Founder", avatar: 2, tag: "Procrastinator", tone: "blue" },
+        { name: "Sam", role: "Designer", avatar: 3, tag: "Better w/ people", tone: "purple" },
+        { name: "Riya", role: "Student", avatar: 4, tag: "Easily distracted", tone: "red" },
+    ];
+
+    const activity = [
+        { name: "Sofia", avatar: 5, text: "completed Draft launch email", icon: "◎", time: "just now", color: "#65D46C" },
+        { name: "Jordan", avatar: 6, text: "started Deep work · 50 min", icon: "◌", time: "1m", color: "#5286F6" },
+        { name: "Sam", avatar: 7, text: "joined Morning routine room", icon: "□", time: "3m", color: "#6366F1" },
+        { name: "Riya", avatar: 8, text: "hit a 14-day streak", icon: "♧", time: "5m", color: "#F65252" },
+    ];
+
+    const tagClass: Record<string, string> = {
+        green: "bg-[#EAFBEA] text-[#65C96A]",
+        blue: "bg-[#EEF4FF] text-[#5286F6]",
+        purple: "bg-[#F1EEFF] text-[#7D6EF6]",
+        red: "bg-[#FFF0F0] text-[#F65252]",
+    };
+
     return (
-        <img
-            src="/images/landing/feature-rooms-panel.png"
-            alt=""
-            className="w-full select-none rounded-[14px] object-contain"
-            draggable={false}
-        />
+        <div className="rounded-[14px] bg-[#F8F8F8] p-[14px]">
+            <div className="overflow-hidden rounded-[10px] bg-white shadow-[0_8px_24px_rgba(47,47,47,0.04)]">
+                <div className="flex h-[40px] items-center justify-between border-b border-[#F0F0F0] px-[14px]">
+                    <div className="flex items-center gap-[7px] text-[10px] font-medium text-[#747474]">
+                        <span className="text-[13px]">⌕</span>
+                        Search people in sessions
+                    </div>
+                    <div className="flex items-center gap-[5px] text-[8px] font-medium text-[#747474]">
+                        <span className="h-[4px] w-[4px] rounded-full bg-[#65D46C]" />
+                        560 online
+                    </div>
+                </div>
+
+                <div className="flex gap-[6px] border-b border-[#F0F0F0] px-[14px] py-[9px]">
+                    {["All", "ADHD", "Procrastinators", "Introverts"].map((tag, index) => (
+                        <span
+                            key={tag}
+                            className={cx(
+                                "rounded-full px-[10px] py-[5px] text-[8px] font-bold",
+                                index === 0 ? "bg-[#2F2F2F] text-white" : "bg-[#F1F1F1] text-[#2F2F2F]"
+                            )}
+                        >
+                            {tag}
+                        </span>
+                    ))}
+                </div>
+
+                <div className="px-[14px]">
+                    {people.map((person) => (
+                        <div
+                            key={person.name}
+                            className="flex h-[42px] items-center justify-between border-b border-[#F4F4F4] last:border-b-0"
+                        >
+                            <div className="flex items-center gap-[9px]">
+                                <MiniAvatar index={person.avatar} size={23} />
+                                <div>
+                                    <div className="text-[10px] font-bold leading-none text-[#2F2F2F]">{person.name}</div>
+                                    <div className="mt-[4px] text-[8px] font-medium leading-none text-[#747474]">{person.role}</div>
+                                </div>
+                            </div>
+
+                            <span className={cx("rounded-[7px] px-[8px] py-[5px] text-[8px] font-bold", tagClass[person.tone])}>
+                                {person.tag}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="mt-[14px] overflow-hidden rounded-[10px] bg-white shadow-[0_8px_24px_rgba(47,47,47,0.04)]">
+                <div className="flex h-[36px] items-center justify-between border-b border-[#F0F0F0] px-[14px]">
+                    <div className="flex items-center gap-[7px] text-[10px] font-bold text-[#747474]">
+                        <span>⌁</span>
+                        Happening right now
+                    </div>
+                    <div className="flex items-center gap-[5px] text-[8px] font-medium text-[#747474]">
+                        <span className="h-[4px] w-[4px] rounded-full bg-[#65D46C]" />
+                        Live
+                    </div>
+                </div>
+
+                <div className="px-[14px]">
+                    {activity.map((item) => (
+                        <div
+                            key={`${item.name}-${item.text}`}
+                            className="flex h-[35px] items-center justify-between border-b border-[#F4F4F4] last:border-b-0"
+                        >
+                            <div className="flex min-w-0 items-center gap-[8px]">
+                                <MiniAvatar index={item.avatar} size={21} />
+                                <div className="truncate text-[9px] font-medium text-[#2F2F2F]">
+                                    <span className="font-bold">{item.name}</span> {item.text}
+                                </div>
+                            </div>
+
+                            <div className="flex min-w-[50px] items-center justify-end gap-[8px] text-[8px] font-medium text-[#747474]">
+                                <span style={{ color: item.color }}>{item.icon}</span>
+                                {item.time}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function ActivityRoomsMockup() {
+    const rooms = [
+        { title: "Deep work", icon: "♧", tone: "green", people: "45 in", avatars: [1, 2, 3] },
+        { title: "Reading", icon: "▣", tone: "blue", people: "122 in", avatars: [4, 5, 6] },
+        { title: "Meditation", icon: "⌘", tone: "purple", people: "84 in", avatars: [7, 8, 9] },
+        { title: "Workout", icon: "⌁", tone: "red", people: "67 in", avatars: [2, 5, 8] },
+        { title: "Morning", icon: "☕", tone: "green", people: "103 in", avatars: [1, 6, 9] },
+        { title: "Wind down", icon: "◔", tone: "purple", people: "33 in", avatars: [3, 4, 7] },
+    ];
+
+    const toneClass: Record<string, string> = {
+        green: "bg-[#EAFBEA] text-[#65D46C]",
+        blue: "bg-[#EEF4FF] text-[#5286F6]",
+        purple: "bg-[#F1EEFF] text-[#7D6EF6]",
+        red: "bg-[#FFF0F0] text-[#F65252]",
+    };
+
+    return (
+        <div className="rounded-[14px] bg-[#F8F8F8] p-[14px]">
+            <div className="rounded-[10px] bg-white px-[14px] py-[12px] shadow-[0_8px_24px_rgba(47,47,47,0.04)]">
+                <div className="mb-[12px] flex items-center justify-between">
+                    <div className="text-[9px] font-bold text-[#2F2F2F]"># Rooms by activity</div>
+                    <div className="rounded-full bg-[#F2F2F2] px-[9px] py-[4px] text-[8px] font-bold text-[#2F2F2F]">
+                        + New
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-[8px]">
+                    {rooms.map((room) => (
+                        <div key={room.title} className="rounded-[10px] bg-[#F8F8F8] px-[14px] py-[14px]">
+                            <div className={cx("mb-[12px] flex h-[24px] w-[24px] items-center justify-center rounded-full text-[12px]", toneClass[room.tone])}>
+                                {room.icon}
+                            </div>
+
+                            <div className="text-[10px] font-bold text-[#2F2F2F]">{room.title}</div>
+
+                            <div className="mt-[10px] flex items-center gap-[6px]">
+                                <div className="flex -space-x-[5px]">
+                                    {room.avatars.map((avatar) => (
+                                        <MiniAvatar key={`${room.title}-${avatar}`} index={avatar} size={16} />
+                                    ))}
+                                </div>
+                                <div className="text-[8px] font-medium text-[#747474]">+ {room.people}</div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
     );
 }
 
 function PaceMockup() {
     return (
-        <img
-            src="/images/landing/feature-pace-panel.png"
-            alt=""
-            className="w-full select-none rounded-[14px] object-contain"
-            draggable={false}
-        />
+        <div className="rounded-[14px] bg-[#F8F8F8] p-[14px]">
+            <div className="overflow-hidden rounded-[10px] bg-white shadow-[0_8px_24px_rgba(47,47,47,0.04)]">
+                <div className="flex h-[38px] items-center justify-between border-b border-[#F0F0F0] px-[16px]">
+                    <div className="flex items-center gap-[7px] text-[9px] font-bold text-[#2F2F2F]">
+                        <span className="h-[5px] w-[5px] rounded-full bg-[#65D46C]" />
+                        Quiet focus · 50/10
+                    </div>
+                    <div className="text-[8px] font-bold text-[#747474]">Round 2 of 4</div>
+                </div>
+
+                <div className="flex items-center gap-[34px] px-[34px] py-[42px]">
+                    <div className="flex h-[118px] w-[118px] shrink-0 items-center justify-center rounded-full border-[8px] border-[#65D46C]">
+                        <div className="text-[32px] font-medium tracking-[1px] text-[#2F2F2F]">32:14</div>
+                    </div>
+
+                    <div>
+                        <div className="text-[12px] font-medium text-[#747474]">Working on...</div>
+                        <div className="mt-[4px] text-[16px] font-bold text-[#2F2F2F]">Outline Q3 roadmap</div>
+                        <div className="mt-[12px] flex items-center gap-[10px]">
+                            <div className="flex -space-x-[7px]">
+                                {[4, 5, 6].map((avatar) => (
+                                    <MiniAvatar key={avatar} index={avatar} size={24} />
+                                ))}
+                            </div>
+                            <span className="text-[9px] font-medium text-[#747474]">+25 working alongside you</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex h-[38px] items-center justify-between border-t border-[#F0F0F0] px-[16px]">
+                    <div className="flex items-center gap-[20px] text-[9px] font-medium text-[#747474]">
+                        <span>⌁ Mic off</span>
+                        <span>▧ Camera off</span>
+                    </div>
+                    <div className="text-[9px] font-bold text-[#2F2F2F]">Just show up ↗</div>
+                </div>
+            </div>
+        </div>
     );
 }
 
 function WorkMoreSection() {
     return (
-        <section className="mt-[118px] bg-[#000000] px-5 py-[90px] md:mt-[130px] md:px-8 md:py-[112px]">
+        <section className="mt-[118px] bg-[#F7F7F7] px-5 py-[90px] md:mt-[130px] md:px-8 md:py-[112px]">
             <div className="mx-auto max-w-[1200px]">
                 <div className="text-center">
-                    <h2 className="text-[30px] font-bold leading-[38px] tracking-[-0.8px] text-[#252525] md:text-[36px] md:leading-[44px]">
+                    <h2 className="text-[30px] font-bold leading-[38px] tracking-[-0.8px] text-[#2F2F2F] md:text-[36px] md:leading-[44px]">
                         Work Alongside Others And
                         <br />
                         Get x2 More Done
@@ -257,16 +463,25 @@ function WorkMoreSection() {
                 </div>
 
                 <div className="mt-[46px] grid grid-cols-1 gap-[22px] lg:grid-cols-2">
-                    <div className="overflow-hidden rounded-[12px] bg-white px-[42px] py-[40px] lg:col-span-2 lg:min-h-[424px]">
+                    <div className="overflow-hidden rounded-[12px] border border-[#E9E9E9] bg-white px-[42px] py-[40px] lg:col-span-2 lg:min-h-[424px]">
                         <div className="grid h-full grid-cols-1 gap-[34px] lg:grid-cols-[470px_1fr] lg:items-center">
                             <div>
-                                <h3 className="text-[24px] font-bold leading-[30px] tracking-[-0.4px] text-[#2F2F2F]">Built for every kind of person</h3>
+                                <h3 className="text-[24px] font-bold leading-[30px] tracking-[-0.4px] text-[#2F2F2F]">
+                                    Built for every kind of person
+                                </h3>
+
                                 <p className="mt-[20px] max-w-[430px] text-[16px] font-medium leading-[25px] text-[#747474]">
-                                    Whether you have ADHD, tend to procrastinate, get distracted easily, feel lonely working alone, or simply work better around people, MySession brings you into a structured community of people working on things that matter.
+                                    Whether you have ADHD, tend to procrastinate, get distracted
+                                    easily, feel lonely working alone, or simply work better around
+                                    people, MySession brings you into a structured community of
+                                    people working on things that matter.
                                 </p>
 
                                 <div className="mt-[30px]">
-                                    <Link to="/sessions" className="inline-flex h-[38px] items-center justify-center rounded-full bg-[#2F2F2F] px-[22px] text-[13px] font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#242424]">
+                                    <Link
+                                        to="/sessions"
+                                        className="inline-flex h-[38px] items-center justify-center rounded-full bg-[#2F2F2F] px-[22px] text-[13px] font-bold text-white transition hover:-translate-y-0.5 hover:bg-[#242424]"
+                                    >
                                         Join Now
                                     </Link>
                                 </div>
@@ -275,19 +490,31 @@ function WorkMoreSection() {
                                     <div className="rounded-[16px] border border-[#EDEDED] bg-white px-[22px] py-[22px]">
                                         <div className="flex items-center justify-between">
                                             <div className="text-[13px] font-medium text-[#747474]">Active today</div>
-                                            <div className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-[rgba(101,212,108,0.18)] text-[15px] font-bold text-[#65D46C]">↗</div>
+                                            <div className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-[rgba(101,212,108,0.18)] text-[15px] font-bold text-[#65D46C]">
+                                                ↗
+                                            </div>
                                         </div>
-                                        <div className="mt-[13px] text-[46px] font-medium leading-none tracking-[-1px] text-[#2F2F2F]">120</div>
-                                        <div className="mt-[16px] text-[14px] font-medium text-[#747474]">+18% vs last week</div>
+                                        <div className="mt-[13px] text-[46px] font-medium leading-none tracking-[-1px] text-[#2F2F2F]">
+                                            120
+                                        </div>
+                                        <div className="mt-[16px] text-[14px] font-medium text-[#747474]">
+                                            +18% vs last week
+                                        </div>
                                     </div>
 
                                     <div className="rounded-[16px] border border-[#EDEDED] bg-white px-[22px] py-[22px]">
                                         <div className="flex items-center justify-between">
                                             <div className="text-[13px] font-medium text-[#747474]">Sessions ran</div>
-                                            <div className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-[rgba(82,134,246,0.18)] text-[15px] font-bold text-[#5286F6]">✧</div>
+                                            <div className="flex h-[36px] w-[36px] items-center justify-center rounded-full bg-[rgba(82,134,246,0.18)] text-[15px] font-bold text-[#5286F6]">
+                                                ✧
+                                            </div>
                                         </div>
-                                        <div className="mt-[13px] text-[46px] font-medium leading-none tracking-[-1px] text-[#2F2F2F]">3.5K</div>
-                                        <div className="mt-[16px] text-[14px] font-medium text-[#747474]">All time</div>
+                                        <div className="mt-[13px] text-[46px] font-medium leading-none tracking-[-1px] text-[#2F2F2F]">
+                                            3.5K
+                                        </div>
+                                        <div className="mt-[16px] text-[14px] font-medium text-[#747474]">
+                                            All time
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -296,21 +523,33 @@ function WorkMoreSection() {
                         </div>
                     </div>
 
-                    <div className="rounded-[12px] bg-white px-[42px] py-[40px]">
-                        <h3 className="text-[24px] font-bold leading-[30px] tracking-[-0.4px] text-[#2F2F2F]">Built for every kind of work</h3>
+                    <div className="rounded-[12px] border border-[#E9E9E9] bg-white px-[42px] py-[40px]">
+                        <h3 className="text-[24px] font-bold leading-[30px] tracking-[-0.4px] text-[#2F2F2F]">
+                            Built for every kind of work
+                        </h3>
+
                         <p className="mt-[20px] max-w-[500px] text-[16px] font-medium leading-[25px] text-[#747474]">
-                            From deep work and serious projects to morning routines, reading, meditation, and workouts, everyone is here to show up and make progress, whatever that looks like for them.
+                            From deep work and serious projects to morning routines, reading,
+                            meditation, and workouts, everyone is here to show up and make
+                            progress, whatever that looks like for them.
                         </p>
+
                         <div className="mt-[32px]">
                             <ActivityRoomsMockup />
                         </div>
                     </div>
 
-                    <div className="rounded-[12px] bg-white px-[42px] py-[40px]">
-                        <h3 className="text-[24px] font-bold leading-[30px] tracking-[-0.4px] text-[#2F2F2F]">Your space, your pace</h3>
+                    <div className="rounded-[12px] border border-[#E9E9E9] bg-white px-[42px] py-[40px]">
+                        <h3 className="text-[24px] font-bold leading-[30px] tracking-[-0.4px] text-[#2F2F2F]">
+                            Your space, your pace
+                        </h3>
+
                         <p className="mt-[20px] max-w-[500px] text-[16px] font-medium leading-[25px] text-[#747474]">
-                            Join a session and actually make your plans a reality. Even if you're shy or introverted, you don't need to talk or perform. Just show up and work alongside others.
+                            Join a session and actually make your plans a reality. Even if you're
+                            shy or introverted, you don't need to talk or perform. Just show up
+                            and work alongside others.
                         </p>
+
                         <div className="mt-[32px]">
                             <PaceMockup />
                         </div>
@@ -321,10 +560,22 @@ function WorkMoreSection() {
     );
 }
 
-function FormatCard({ icon, title, text, bullets }: { icon: string; title: string; text: string; bullets: string[] }) {
+function FormatCard({
+    icon,
+    title,
+    text,
+    bullets,
+}: {
+    icon: string;
+    title: string;
+    text: string;
+    bullets: string[];
+}) {
     return (
         <div className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
-            <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-[rgba(101,212,108,0.18)] text-[22px]">{icon}</div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-[rgba(101,212,108,0.18)] text-[22px]">
+                {icon}
+            </div>
             <h3 className="mt-7 text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">{title}</h3>
             <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">{text}</p>
             <ul className="mt-6 space-y-3">
@@ -351,9 +602,36 @@ function FormatsSection() {
             </div>
 
             <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
-                <FormatCard icon="✅" title="Group sessions" text="Structured live coworking with check-ins and a shared focus container." bullets={["Standard formats: 50/10, 25/5 Pomodoro", "Custom sprints: 5, 10, 15-min formats", "Verbal check-ins built in"]} />
-                <FormatCard icon="🔵" title="24/7 rooms" text="Permanent rooms you can enter anytime without waiting for a scheduled session." bullets={["Great for spontaneous work sessions", "Never wait for a session to start", "Drop in, drop out anytime"]} />
-                <FormatCard icon="🎧" title="Buddy tripling" text="Small circles for people who want a calmer, more personal accountability format." bullets={["Screenshare-only sessions available", "Great for recurring sessions and habit building", "Quiet accountability with people you know"]} />
+                <FormatCard
+                    icon="✅"
+                    title="Group sessions"
+                    text="Structured live coworking with check-ins and a shared focus container."
+                    bullets={[
+                        "Standard formats: 50/10, 25/5 Pomodoro",
+                        "Custom sprints: 5, 10, 15-min formats",
+                        "Verbal check-ins built in",
+                    ]}
+                />
+                <FormatCard
+                    icon="🔵"
+                    title="24/7 rooms"
+                    text="Permanent rooms you can enter anytime without waiting for a scheduled session."
+                    bullets={[
+                        "Great for spontaneous work sessions",
+                        "Never wait for a session to start",
+                        "Drop in, drop out anytime",
+                    ]}
+                />
+                <FormatCard
+                    icon="🎧"
+                    title="Buddy tripling"
+                    text="Small circles for people who want a calmer, more personal accountability format."
+                    bullets={[
+                        "Screenshare-only sessions available",
+                        "Great for recurring sessions and habit building",
+                        "Quiet accountability with people you know",
+                    ]}
+                />
             </div>
         </SectionShell>
     );
@@ -378,8 +656,21 @@ function CommunityAvatarArc() {
                 const p = avatars[index];
 
                 return (
-                    <div key={src} className="absolute" style={{ left: `${p.x}px`, top: `${p.y}px`, transform: `rotate(${p.r}deg)` }}>
-                        <img src={src} alt="" draggable={false} className="h-[104px] w-[104px] rounded-[30px] border-[1px] border-white object-cover shadow-[0_18px_42px_rgba(47,47,47,0.16)] transition-transform duration-300 ease-out hover:-translate-y-3 hover:scale-[1.045]" />
+                    <div
+                        key={src}
+                        className="absolute"
+                        style={{
+                            left: `${p.x}px`,
+                            top: `${p.y}px`,
+                            transform: `rotate(${p.r}deg)`,
+                        }}
+                    >
+                        <img
+                            src={src}
+                            alt=""
+                            draggable={false}
+                            className="h-[104px] w-[104px] rounded-[30px] border-[1px] border-white object-cover shadow-[0_18px_42px_rgba(47,47,47,0.16)] transition-transform duration-300 ease-out hover:-translate-y-3 hover:scale-[1.045]"
+                        />
                     </div>
                 );
             })}
@@ -392,6 +683,7 @@ function CommunitySection() {
         <SectionShell className="mt-[155px]">
             <div className="relative overflow-visible rounded-[34px] border border-[#F4DADA] bg-[linear-gradient(135deg,#FFFFFF_0%,#FFF4F4_100%)] px-7 pb-0 pt-[118px] text-center shadow-[0_18px_55px_rgba(47,47,47,0.04)] md:px-10 md:pt-[132px]">
                 <CommunityAvatarArc />
+
                 <div className="pointer-events-none absolute left-[6%] top-[9%] h-[230px] w-[230px] rounded-full bg-[rgba(82,134,246,0.14)] blur-[82px]" />
                 <div className="pointer-events-none absolute right-[7%] top-[9%] h-[270px] w-[270px] rounded-full bg-[rgba(246,82,82,0.14)] blur-[90px]" />
                 <div className="pointer-events-none absolute bottom-[7%] left-[18%] h-[250px] w-[250px] rounded-full bg-[rgba(101,212,108,0.14)] blur-[92px]" />
@@ -411,7 +703,9 @@ function CommunitySection() {
                     </p>
 
                     <div className="mt-[34px]">
-                        <CtaButton to="/sessions" dark>Join A Session — It’s Free</CtaButton>
+                        <CtaButton to="/sessions" dark>
+                            Join A Session — It’s Free
+                        </CtaButton>
                     </div>
                 </div>
 
@@ -425,22 +719,45 @@ function CommunitySection() {
 
 function HowItWorksSection() {
     const items = [
-        { step: "1", title: "Join a session", text: "Pick a focus room or scheduled session and enter from your browser." },
-        { step: "2", title: "Write your task", text: "Set one clear intention, so your next step is visible and concrete." },
-        { step: "3", title: "Work alongside others", text: "Stay in the room, follow the flow, and finish more than you would alone." },
+        {
+            step: "1",
+            title: "Join a session",
+            text: "Pick a focus room or scheduled session and enter from your browser.",
+        },
+        {
+            step: "2",
+            title: "Write your task",
+            text: "Set one clear intention, so your next step is visible and concrete.",
+        },
+        {
+            step: "3",
+            title: "Work alongside others",
+            text: "Stay in the room, follow the flow, and finish more than you would alone.",
+        },
     ];
 
     return (
         <SectionShell className="mt-[120px]">
             <div className="text-center">
-                <h2 className="text-[30px] font-bold leading-[34px] tracking-[-1.1%] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">How It Works</h2>
+                <h2 className="text-[30px] font-bold leading-[34px] tracking-[-1.1%] text-[#2F2F2F] md:text-[34px] md:leading-[38px]">
+                    How It Works
+                </h2>
             </div>
             <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-3">
                 {items.map((item) => (
-                    <div key={item.step} className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(101,212,108,0.20)] text-[15px] font-bold text-[#2F2F2F]">{item.step}</div>
-                        <h3 className="mt-7 text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">{item.title}</h3>
-                        <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">{item.text}</p>
+                    <div
+                        key={item.step}
+                        className="rounded-[22px] border border-[#E9E9E9] bg-white p-7 shadow-[0_16px_40px_rgba(47,47,47,0.04)]"
+                    >
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[rgba(101,212,108,0.20)] text-[15px] font-bold text-[#2F2F2F]">
+                            {item.step}
+                        </div>
+                        <h3 className="mt-7 text-[20px] font-bold tracking-[-0.5px] text-[#2F2F2F]">
+                            {item.title}
+                        </h3>
+                        <p className="mt-3 text-[14px] font-medium leading-[24px] text-[#747474]">
+                            {item.text}
+                        </p>
                     </div>
                 ))}
             </div>
@@ -487,7 +804,10 @@ function FinalCta() {
                     Join a live focus session and make the next step easier to start.
                 </p>
                 <div className="mt-8">
-                    <Link to="/sessions" className="inline-flex h-[52px] items-center justify-center rounded-full bg-[#65D46C] px-8 text-[14px] font-bold text-[#2F2F2F] shadow-[0_18px_44px_rgba(101,212,108,0.30)] transition hover:-translate-y-0.5">
+                    <Link
+                        to="/sessions"
+                        className="inline-flex h-[52px] items-center justify-center rounded-full bg-[#65D46C] px-8 text-[14px] font-bold text-[#2F2F2F] shadow-[0_18px_44px_rgba(101,212,108,0.30)] transition hover:-translate-y-0.5"
+                    >
                         Join a session — free
                     </Link>
                 </div>
@@ -527,7 +847,9 @@ export default function LandingPage() {
                     </p>
 
                     <div className="mt-[26px] flex justify-center">
-                        <CtaButton to="/sessions" dark>Join A Session — It’s Free</CtaButton>
+                        <CtaButton to="/sessions" dark>
+                            Join A Session — It’s Free
+                        </CtaButton>
                     </div>
                 </div>
 
@@ -572,6 +894,13 @@ export default function LandingPage() {
                         padding-left: 18px;
                         padding-right: 18px;
                         font-size: 12px;
+                    }
+                }
+
+                @media (max-width: 900px) {
+                    .feature-card-responsive {
+                        padding-left: 24px;
+                        padding-right: 24px;
                     }
                 }
 
