@@ -19,6 +19,13 @@ type RewardRow = {
     created_at: string | null;
 };
 
+type ReferralCodeRow = {
+    id?: string;
+    user_id?: string;
+    code: string;
+    is_active?: boolean;
+};
+
 function formatMoney(value: number) {
     return new Intl.NumberFormat("en-US", {
         style: "currency",
@@ -31,6 +38,23 @@ function getOrigin() {
     return window.location.origin;
 }
 
+function normalizeRewardAmount(row: RewardRow) {
+    return Number(row.amount_usd || 0);
+}
+
+async function getOrCreateReferralCode(userId: string, name: string): Promise<ReferralCodeRow | null> {
+    const rpcResult = await supabase.rpc("get_or_create_referral_code");
+
+    if (!rpcResult.error && rpcResult.data) {
+        return rpcResult.data as ReferralCodeRow;
+    }
+
+    console.warn("[referrals] get_or_create_referral_code RPC failed, falling back:", rpcResult.error);
+
+    const fallbackRow = await ensureMyReferralCode(userId, name);
+    return fallbackRow as ReferralCodeRow | null;
+}
+
 export default function ReferralPage() {
     const navigate = useNavigate();
 
@@ -38,7 +62,7 @@ export default function ReferralPage() {
     const [referralCode, setReferralCode] = useState("");
     const [referrals, setReferrals] = useState<ReferralRow[]>([]);
     const [rewards, setRewards] = useState<RewardRow[]>([]);
-    const [copiedTarget, setCopiedTarget] = useState<"referral" | "payment" | "">("");
+    const [copyText, setCopyText] = useState("Copy link");
     const [error, setError] = useState("");
 
     const referralLink = useMemo(() => {
@@ -46,41 +70,40 @@ export default function ReferralPage() {
         return `${getOrigin()}/?ref=${encodeURIComponent(referralCode)}`;
     }, [referralCode]);
 
-    const paymentLink = useMemo(() => {
-        if (!referralCode) return "";
-        return `${getOrigin()}/pricing?ref=${encodeURIComponent(referralCode)}`;
-    }, [referralCode]);
-
     const stats = useMemo(() => {
         const registered = referrals.length;
+
         const activated = referrals.filter(
             (r) => r.status === "activated" || r.status === "paid" || !!r.activated_at
         ).length;
-        const paid = referrals.filter((r) => r.status === "paid" || !!r.first_paid_at).length;
 
-        const referralRewards = rewards.filter((r) =>
+        const paid = referrals.filter(
+            (r) => r.status === "paid" || !!r.first_paid_at
+        ).length;
+
+        const affiliateRewards = rewards.filter((r) =>
             [
-                "invitation_activation",
-                "invitation_paid",
                 "first_payment_bonus",
+                "affiliate_first_payment",
+                "invitation_paid",
                 "manual_adjustment",
-            ].includes(r.type)
+            ].includes(String(r.type || ""))
         );
 
-        const pendingCredits = referralRewards
+        const pendingBalance = affiliateRewards
             .filter((r) => String(r.status || "").toLowerCase() === "pending")
-            .reduce((sum, r) => sum + Number(r.amount_usd || 0), 0);
+            .reduce((sum, r) => sum + normalizeRewardAmount(r), 0);
 
-        const availableCredits = referralRewards
+        const availableBalance = affiliateRewards
             .filter((r) => String(r.status || "").toLowerCase() === "available")
-            .reduce((sum, r) => sum + Number(r.amount_usd || 0), 0);
+            .reduce((sum, r) => sum + normalizeRewardAmount(r), 0);
 
-        const usedCredits = referralRewards
-            .filter((r) => ["used", "paid"].includes(String(r.status || "").toLowerCase()))
-            .reduce((sum, r) => sum + Number(r.amount_usd || 0), 0);
+        const paidOutBalance = affiliateRewards
+            .filter((r) => ["paid", "paid_out", "used"].includes(String(r.status || "").toLowerCase()))
+            .reduce((sum, r) => sum + normalizeRewardAmount(r), 0);
 
-        const lifetimeCredits = referralRewards.reduce(
-            (sum, r) => sum + Number(r.amount_usd || 0),
+        const lifetimeEarned = affiliateRewards.reduce(
+            (sum, r) => sum + normalizeRewardAmount(r),
             0
         );
 
@@ -88,10 +111,10 @@ export default function ReferralPage() {
             registered,
             activated,
             paid,
-            pendingCredits,
-            availableCredits,
-            usedCredits,
-            lifetimeCredits,
+            pendingBalance,
+            availableBalance,
+            paidOutBalance,
+            lifetimeEarned,
         };
     }, [referrals, rewards]);
 
@@ -121,8 +144,14 @@ export default function ReferralPage() {
                 "User"
             ).trim();
 
-            const codeRow = await ensureMyReferralCode(user.id, name);
-            setReferralCode(String(codeRow?.code || ""));
+            const codeRow = await getOrCreateReferralCode(user.id, name);
+            const code = String(codeRow?.code || "").trim();
+
+            if (!code) {
+                throw new Error("Could not create your referral code.");
+            }
+
+            setReferralCode(code);
 
             const [referralsResult, rewardsResult] = await Promise.all([
                 supabase
@@ -163,15 +192,16 @@ export default function ReferralPage() {
         void loadReferralPage();
     }, []);
 
-    const copyToClipboard = async (value: string, target: "referral" | "payment") => {
-        if (!value) return;
+    const handleCopy = async () => {
+        if (!referralLink) return;
 
         try {
-            await navigator.clipboard.writeText(value);
-            setCopiedTarget(target);
-            window.setTimeout(() => setCopiedTarget(""), 1400);
+            await navigator.clipboard.writeText(referralLink);
+            setCopyText("Copied");
+            window.setTimeout(() => setCopyText("Copy link"), 1400);
         } catch {
-            setCopiedTarget("");
+            setCopyText("Copy failed");
+            window.setTimeout(() => setCopyText("Copy link"), 1400);
         }
     };
 
@@ -206,7 +236,7 @@ export default function ReferralPage() {
                         to="/affiliate"
                         className="rounded-full border border-[#2F2F2F] px-5 py-2.5 text-center text-[14px] font-semibold hover:bg-[#2F2F2F] hover:text-white"
                     >
-                        Go to Affiliate Program
+                        Affiliate dashboard
                     </Link>
                 </div>
 
@@ -217,53 +247,42 @@ export default function ReferralPage() {
                 ) : null}
 
                 <section className="mt-8 rounded-[28px] border border-black/10 bg-gray-50 p-5 sm:p-6">
-                    <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-                        <div className="rounded-2xl border border-black/10 bg-white p-4">
-                            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
-                                Referral link
-                            </div>
-                            <h2 className="mt-2 text-[22px] font-bold">Invite people</h2>
-                            <p className="mt-2 text-[14px] leading-6 text-[#666]">
-                                Send this link to invite someone to MySession. We will remember your referral
-                                code when they register.
+                    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+                        <div>
+                            <h2 className="text-[24px] font-bold">Your unique referral link</h2>
+                            <p className="mt-2 max-w-2xl text-[14px] leading-6 text-[#666]">
+                                Share this link with people you invite. If they register through it and later
+                                make their first successful MySession payment, your partner balance receives $5.
                             </p>
-                            <div className="mt-4 break-all rounded-xl bg-gray-50 p-3 text-[14px] font-semibold">
-                                {referralLink}
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => copyToClipboard(referralLink, "referral")}
-                                className="mt-3 rounded-full bg-[#2F2F2F] px-4 py-2 text-[13px] font-semibold text-white"
-                            >
-                                {copiedTarget === "referral" ? "Copied" : "Copy referral link"}
-                            </button>
                         </div>
 
-                        <div className="rounded-2xl border border-black/10 bg-white p-4">
+                        <div className="rounded-2xl border border-black/10 bg-white p-4 lg:min-w-[440px]">
                             <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
-                                Payment link
+                                Referral code
                             </div>
-                            <h2 className="mt-2 text-[22px] font-bold">Send people to pricing</h2>
-                            <p className="mt-2 text-[14px] leading-6 text-[#666]">
-                                Send this link when someone is ready to upgrade. If they pay after using it,
-                                you earn $5.
-                            </p>
-                            <div className="mt-4 break-all rounded-xl bg-gray-50 p-3 text-[14px] font-semibold">
-                                {paymentLink}
+                            <div className="mt-2 text-[20px] font-bold">{referralCode || "—"}</div>
+
+                            <div className="mt-4 text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
+                                Link
                             </div>
+                            <div className="mt-2 break-all rounded-xl bg-gray-50 p-3 text-[14px] font-semibold">
+                                {referralLink || "No referral link yet"}
+                            </div>
+
                             <button
                                 type="button"
-                                onClick={() => copyToClipboard(paymentLink, "payment")}
-                                className="mt-3 rounded-full bg-[#65D46C] px-4 py-2 text-[13px] font-bold text-[#2F2F2F]"
+                                onClick={handleCopy}
+                                disabled={!referralLink}
+                                className="mt-3 rounded-full bg-[#2F2F2F] px-4 py-2 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                                {copiedTarget === "payment" ? "Copied" : "Copy payment link"}
+                                {copyText}
                             </button>
                         </div>
                     </div>
 
                     <div className="mt-5 rounded-2xl bg-white p-4 text-[13px] leading-6 text-[#666]">
-                        Both links use the same referral code. The payment link simply sends the referred
-                        user directly to the pricing page.
+                        This is not a direct payment link. The user can pay later. The reward is created only
+                        after Stripe confirms the referred user’s first successful payment.
                     </div>
                 </section>
 
@@ -272,10 +291,10 @@ export default function ReferralPage() {
                         ["Registered referrals", stats.registered],
                         ["Activated referrals", stats.activated],
                         ["Paid referrals", stats.paid],
-                        ["Lifetime earned", formatMoney(stats.lifetimeCredits)],
-                        ["Pending rewards", formatMoney(stats.pendingCredits)],
-                        ["Available balance", formatMoney(stats.availableCredits)],
-                        ["Used / paid out", formatMoney(stats.usedCredits)],
+                        ["Available balance", formatMoney(stats.availableBalance)],
+                        ["Pending balance", formatMoney(stats.pendingBalance)],
+                        ["Paid / used", formatMoney(stats.paidOutBalance)],
+                        ["Lifetime earned", formatMoney(stats.lifetimeEarned)],
                     ].map(([label, value]) => (
                         <div key={label} className="rounded-[22px] border border-black/10 bg-white p-5 shadow-sm">
                             <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
@@ -288,41 +307,90 @@ export default function ReferralPage() {
 
                 <section className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-2">
                     <div className="rounded-[28px] border border-black/10 bg-white p-6 shadow-sm">
-                        <h2 className="text-[24px] font-bold">Reward rule</h2>
+                        <h2 className="text-[24px] font-bold">How rewards work</h2>
+
                         <div className="mt-5 rounded-2xl bg-gray-50 p-5">
                             <div className="text-[13px] font-bold uppercase tracking-[0.12em] text-[#777]">
-                                First paid user
+                                Paid referred user
                             </div>
                             <div className="mt-2 text-[30px] font-bold">+$5</div>
                             <p className="mt-2 text-[13px] leading-5 text-[#666]">
-                                You earn $5 when a referred user makes their first successful MySession payment.
+                                You earn $5 when a user you referred makes their first successful MySession payment.
                             </p>
                         </div>
 
                         <div className="mt-5 rounded-2xl bg-gray-50 p-5">
                             <div className="text-[13px] font-bold uppercase tracking-[0.12em] text-[#777]">
-                                Protection
+                                One-time reward
                             </div>
                             <p className="mt-2 text-[13px] leading-5 text-[#666]">
-                                Rewards are counted once per referred paying user, so duplicate Stripe webhooks
+                                A referred user can generate only one first-payment reward. Duplicate Stripe webhooks
                                 should not create duplicate rewards.
                             </p>
                         </div>
                     </div>
 
                     <div className="rounded-[28px] border border-black/10 bg-gray-50 p-6">
-                        <h2 className="text-[24px] font-bold">How to use this</h2>
+                        <h2 className="text-[24px] font-bold">Referral status</h2>
+
                         <ul className="mt-5 space-y-3 text-[15px] text-[#444]">
-                            <li>• Use the referral link for general invites.</li>
-                            <li>• Use the payment link when someone is ready to subscribe.</li>
-                            <li>• Registered users appear in your referral stats.</li>
-                            <li>• Paid users create a $5 reward after Stripe webhook processing.</li>
+                            <li>• Registered — the user signed up through your link.</li>
+                            <li>• Activated — the user completed a real session milestone.</li>
+                            <li>• Paid — the user made their first successful payment.</li>
+                            <li>• Balance — your earned partner rewards from paid referrals.</li>
                         </ul>
 
                         <div className="mt-6 rounded-2xl bg-white p-4 text-[13px] leading-6 text-[#666]">
-                            The payment link is not a separate Stripe Payment Link. It is a MySession pricing
-                            link with your referral code, so attribution stays inside MySession.
+                            Referral rewards are based on attribution stored in Supabase. A user does not need
+                            to pay immediately after clicking your link. If they are assigned to you and later pay,
+                            the reward is credited to your balance.
                         </div>
+                    </div>
+                </section>
+
+                <section className="mt-8 rounded-[28px] border border-black/10 bg-white p-6 shadow-sm">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <h2 className="text-[24px] font-bold">Recent rewards</h2>
+                            <p className="mt-2 text-[14px] leading-6 text-[#666]">
+                                First-payment rewards and manual balance adjustments will appear here.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="mt-5 overflow-hidden rounded-2xl border border-black/10">
+                        {rewards.length ? (
+                            rewards.slice(0, 8).map((reward) => (
+                                <div
+                                    key={reward.id}
+                                    className="flex flex-col gap-2 border-b border-black/10 px-4 py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
+                                >
+                                    <div>
+                                        <div className="text-[14px] font-bold text-[#2F2F2F]">
+                                            {reward.type}
+                                        </div>
+                                        <div className="mt-1 text-[12px] text-[#777]">
+                                            {reward.created_at
+                                                ? new Date(reward.created_at).toLocaleString()
+                                                : "No date"}
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-3">
+                                        <div className="text-[15px] font-bold">
+                                            {formatMoney(normalizeRewardAmount(reward))}
+                                        </div>
+                                        <div className="rounded-full bg-gray-100 px-3 py-1 text-[12px] font-semibold text-[#666]">
+                                            {reward.status || "unknown"}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="px-4 py-8 text-center text-[14px] text-[#777]">
+                                No rewards yet.
+                            </div>
+                        )}
                     </div>
                 </section>
             </div>
