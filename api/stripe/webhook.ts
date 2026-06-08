@@ -103,26 +103,111 @@ async function rewardReferrerForFirstPayment(params: {
   stripeCustomerId?: string;
 }) {
   const { referredUserId, stripeCheckoutSessionId, stripeSubscriptionId, stripeCustomerId } = params;
+  const nowIso = new Date().toISOString();
 
-  const { error } = await supabaseAdmin.rpc("reward_referrer_for_first_payment", {
-    p_referred_user_id: referredUserId,
-    p_payment_id: null,
-  });
+  const { data: referral, error: referralError } = await supabaseAdmin
+    .from("referrals")
+    .select("id, referrer_user_id, referred_user_id, status, first_paid_at")
+    .eq("referred_user_id", referredUserId)
+    .maybeSingle();
 
-  if (error) {
-    console.error("Stripe webhook: affiliate reward RPC failed", {
+  if (referralError) {
+    console.error("Stripe webhook: referral lookup failed", {
+      referredUserId,
+      stripeCheckoutSessionId,
+      error: referralError,
+    });
+    throw referralError;
+  }
+
+  if (!referral?.id || !referral?.referrer_user_id) {
+    console.log("Stripe webhook: no referral found for paid user, skipping affiliate reward", {
       referredUserId,
       stripeCheckoutSessionId,
       stripeSubscriptionId,
       stripeCustomerId,
-      error,
     });
-
-    throw error;
+    return;
   }
 
-  console.log("Stripe webhook affiliate reward processed", {
+  const { data: existingReward, error: existingRewardError } = await supabaseAdmin
+    .from("reward_ledger")
+    .select("id")
+    .eq("referral_id", referral.id)
+    .eq("related_user_id", referredUserId)
+    .eq("type", "first_payment_bonus")
+    .maybeSingle();
+
+  if (existingRewardError) {
+    console.error("Stripe webhook: existing affiliate reward lookup failed", {
+      referredUserId,
+      referralId: referral.id,
+      error: existingRewardError,
+    });
+    throw existingRewardError;
+  }
+
+  if (existingReward?.id) {
+    console.log("Stripe webhook: affiliate reward already exists, skipping duplicate", {
+      referredUserId,
+      referrerUserId: referral.referrer_user_id,
+      referralId: referral.id,
+      rewardId: existingReward.id,
+    });
+
+    return;
+  }
+
+  const { error: rewardInsertError } = await supabaseAdmin
+    .from("reward_ledger")
+    .insert({
+      user_id: referral.referrer_user_id,
+      related_user_id: referredUserId,
+      referral_id: referral.id,
+      type: "first_payment_bonus",
+      amount_usd: 5,
+      currency: "usd",
+      status: "available",
+      available_at: nowIso,
+      created_at: nowIso,
+    });
+
+  if (rewardInsertError) {
+    console.error("Stripe webhook: affiliate reward insert failed", {
+      referredUserId,
+      referrerUserId: referral.referrer_user_id,
+      referralId: referral.id,
+      stripeCheckoutSessionId,
+      stripeSubscriptionId,
+      stripeCustomerId,
+      error: rewardInsertError,
+    });
+    throw rewardInsertError;
+  }
+
+  const { error: referralUpdateError } = await supabaseAdmin
+    .from("referrals")
+    .update({
+      status: "paid",
+      first_paid_at: referral.first_paid_at || nowIso,
+    })
+    .eq("id", referral.id);
+
+  if (referralUpdateError) {
+    console.error("Stripe webhook: referral paid status update failed", {
+      referredUserId,
+      referrerUserId: referral.referrer_user_id,
+      referralId: referral.id,
+      error: referralUpdateError,
+    });
+    throw referralUpdateError;
+  }
+
+  console.log("Stripe webhook affiliate reward created", {
     referredUserId,
+    referrerUserId: referral.referrer_user_id,
+    referralId: referral.id,
+    amountUsd: 5,
     stripeCheckoutSessionId,
     stripeSubscriptionId,
     stripeCustomerId,
