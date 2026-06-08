@@ -367,7 +367,7 @@ export default function AffiliatePage() {
                         application_note: note || null,
                         subscribed_user_reward_usd: 5,
                         revenue_share_label: "$5 per subscribed user",
-                        revenue_share_months: null,
+                        revenue_share_months: 0,
                         updated_at: now,
                     })
                     .eq("user_id", userId);
@@ -381,7 +381,7 @@ export default function AffiliatePage() {
                     application_note: note || null,
                     subscribed_user_reward_usd: 5,
                     revenue_share_label: "$5 per subscribed user",
-                    revenue_share_months: null,
+                    revenue_share_months: 0,
                     created_at: now,
                     updated_at: now,
                 });
