@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
-type PartnerStatus = "none" | "pending" | "active" | "suspended";
+type PartnerStatus = "none" | "pending" | "active" | "approved" | "suspended";
 type PartnerTier = "none" | "partner" | "approved_community_partner" | "strategic_partner";
 
 type PartnerProfile = {
@@ -47,17 +47,42 @@ type PayoutRequestRow = {
 type ReferralCodeRow = {
     id?: string;
     owner_user_id?: string;
+    user_id?: string;
     code: string;
     type?: string;
     is_active?: boolean;
 };
 
+const AFFILIATE_REWARD_TYPES = [
+    "first_payment_bonus",
+    "affiliate_first_payment",
+    "affiliate_paid",
+    "partner_paid",
+    "partner_revenue_share",
+    "manual_adjustment",
+];
+
 function formatMoney(value: number) {
     const safe = Number.isFinite(value) ? value : 0;
+
     return new Intl.NumberFormat("en-US", {
         style: "currency",
         currency: "USD",
     }).format(safe);
+}
+
+function formatDate(value: string | null) {
+    if (!value) return "—";
+
+    try {
+        return new Date(value).toLocaleDateString(undefined, {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+        });
+    } catch {
+        return "—";
+    }
 }
 
 function formatTier(tier: string) {
@@ -65,6 +90,12 @@ function formatTier(tier: string) {
     if (tier === "approved_community_partner") return "Approved Community Partner";
     if (tier === "strategic_partner") return "Strategic Partner";
     return "Not active";
+}
+
+function normalizeStatus(status: string) {
+    const value = String(status || "none").toLowerCase();
+    if (value === "approved") return "active";
+    return value;
 }
 
 function getTierBadgeClass(tier: string) {
@@ -75,9 +106,16 @@ function getTierBadgeClass(tier: string) {
 }
 
 function getStatusBadgeClass(status: string) {
-    if (status === "active") return "bg-green-100 text-green-700";
+    if (status === "active" || status === "approved") return "bg-green-100 text-green-700";
     if (status === "pending") return "bg-amber-100 text-amber-700";
     if (status === "suspended") return "bg-red-100 text-red-700";
+    return "bg-gray-100 text-gray-700";
+}
+
+function getReferralStatusBadgeClass(status: string) {
+    if (status === "paid") return "bg-green-100 text-green-700";
+    if (status === "activated") return "bg-blue-100 text-blue-700";
+    if (status === "registered") return "bg-gray-100 text-gray-700";
     return "bg-gray-100 text-gray-700";
 }
 
@@ -95,6 +133,61 @@ async function getOrCreateReferralCode(): Promise<ReferralCodeRow | null> {
     }
 
     return data as ReferralCodeRow | null;
+}
+
+async function loadPartnerProfile(userId: string) {
+    const { data, error } = await supabase
+        .from("partner_profiles")
+        .select(
+            "id, user_id, tier, status, subscribed_user_reward_usd, revenue_share_label, revenue_share_months, special_launch_reward_label, application_note, approved_at, notes"
+        )
+        .eq("user_id", userId)
+        .maybeSingle();
+
+    if (error) throw error;
+    return (data as PartnerProfile) || null;
+}
+
+async function loadRewards(userId: string) {
+    const byUserId = await supabase
+        .from("reward_ledger")
+        .select("id, type, amount_usd, status, created_at, available_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+
+    if (!byUserId.error) return (byUserId.data as RewardRow[]) || [];
+
+    console.warn("[affiliate] reward_ledger user_id load failed, trying referrer_user_id:", byUserId.error);
+
+    const byReferrerUserId = await supabase
+        .from("reward_ledger")
+        .select("id, type, amount_usd, status, created_at, available_at")
+        .eq("referrer_user_id", userId)
+        .order("created_at", { ascending: false });
+
+    if (byReferrerUserId.error) throw byReferrerUserId.error;
+    return (byReferrerUserId.data as RewardRow[]) || [];
+}
+
+async function loadPayoutRequests(userId: string) {
+    const affiliatePayouts = await supabase
+        .from("affiliate_payout_requests")
+        .select("id, amount_usd, status, requested_at, resolved_at")
+        .eq("user_id", userId)
+        .order("requested_at", { ascending: false });
+
+    if (!affiliatePayouts.error) return (affiliatePayouts.data as PayoutRequestRow[]) || [];
+
+    console.warn("[affiliate] affiliate_payout_requests load failed, trying payout_requests:", affiliatePayouts.error);
+
+    const payouts = await supabase
+        .from("payout_requests")
+        .select("id, amount_usd, status, requested_at, resolved_at")
+        .eq("user_id", userId)
+        .order("requested_at", { ascending: false });
+
+    if (payouts.error) throw payouts.error;
+    return (payouts.data as PayoutRequestRow[]) || [];
 }
 
 export default function AffiliatePage() {
@@ -115,7 +208,8 @@ export default function AffiliatePage() {
     const [payoutBusy, setPayoutBusy] = useState(false);
     const [error, setError] = useState("");
 
-    const status = String(partnerProfile?.status || "none").toLowerCase();
+    const rawStatus = String(partnerProfile?.status || "none").toLowerCase();
+    const status = normalizeStatus(rawStatus);
     const tier = String(partnerProfile?.tier || "none").toLowerCase();
     const isActive = status === "active";
 
@@ -123,6 +217,10 @@ export default function AffiliatePage() {
         if (!referralCode) return "";
         return `${getOrigin()}/?ref=${encodeURIComponent(referralCode)}`;
     }, [referralCode]);
+
+    const affiliateRewards = useMemo(() => {
+        return rewards.filter((r) => AFFILIATE_REWARD_TYPES.includes(String(r.type || "")));
+    }, [rewards]);
 
     const stats = useMemo(() => {
         const registered = referrals.length;
@@ -132,17 +230,6 @@ export default function AffiliatePage() {
         ).length;
 
         const paid = referrals.filter((r) => r.status === "paid" || !!r.first_paid_at).length;
-
-        const affiliateRewards = rewards.filter((r) =>
-            [
-                "first_payment_bonus",
-                "affiliate_first_payment",
-                "affiliate_paid",
-                "partner_paid",
-                "partner_revenue_share",
-                "manual_adjustment",
-            ].includes(String(r.type || ""))
-        );
 
         const pendingRewards = affiliateRewards
             .filter((r) => String(r.status || "").toLowerCase() === "pending")
@@ -170,7 +257,7 @@ export default function AffiliatePage() {
             paidOutRewards,
             totalRewards,
         };
-    }, [referrals, rewards]);
+    }, [referrals, affiliateRewards]);
 
     const loadAffiliate = async () => {
         try {
@@ -190,14 +277,8 @@ export default function AffiliatePage() {
             const codeRow = await getOrCreateReferralCode();
             setReferralCode(String(codeRow?.code || ""));
 
-            const [partnerResult, referralsResult, rewardsResult, payoutsResult] = await Promise.all([
-                supabase
-                    .from("partner_profiles")
-                    .select(
-                        "id, user_id, tier, status, subscribed_user_reward_usd, revenue_share_label, revenue_share_months, special_launch_reward_label, application_note, approved_at, notes"
-                    )
-                    .eq("user_id", user.id)
-                    .maybeSingle(),
+            const [partnerResult, referralsResult, rewardsResult, payoutsResult] = await Promise.allSettled([
+                loadPartnerProfile(user.id),
 
                 supabase
                     .from("referrals")
@@ -205,46 +286,45 @@ export default function AffiliatePage() {
                     .eq("referrer_user_id", user.id)
                     .order("registered_at", { ascending: false }),
 
-                supabase
-                    .from("reward_ledger")
-                    .select("id, type, amount_usd, status, created_at, available_at")
-                    .eq("user_id", user.id)
-                    .order("created_at", { ascending: false }),
+                loadRewards(user.id),
 
-                supabase
-                    .from("affiliate_payout_requests")
-                    .select("id, amount_usd, status, requested_at, resolved_at")
-                    .eq("user_id", user.id)
-                    .order("requested_at", { ascending: false }),
+                loadPayoutRequests(user.id),
             ]);
 
-            if (partnerResult.error) {
-                console.warn("[affiliate] partner profile load failed:", partnerResult.error);
+            if (partnerResult.status === "fulfilled") {
+                setPartnerProfile(partnerResult.value);
+                setApplicationNote(String(partnerResult.value?.application_note || ""));
+            } else {
+                console.warn("[affiliate] partner profile load failed:", partnerResult.reason);
                 setPartnerProfile(null);
-            } else {
-                setPartnerProfile((partnerResult.data as PartnerProfile) || null);
-                setApplicationNote(String((partnerResult.data as any)?.application_note || ""));
             }
 
-            if (referralsResult.error) {
-                console.warn("[affiliate] referrals load failed:", referralsResult.error);
+            if (referralsResult.status === "fulfilled") {
+                const result = referralsResult.value;
+
+                if (result.error) {
+                    console.warn("[affiliate] referrals load failed:", result.error);
+                    setReferrals([]);
+                } else {
+                    setReferrals((result.data as ReferralRow[]) || []);
+                }
+            } else {
+                console.warn("[affiliate] referrals load failed:", referralsResult.reason);
                 setReferrals([]);
-            } else {
-                setReferrals((referralsResult.data as ReferralRow[]) || []);
             }
 
-            if (rewardsResult.error) {
-                console.warn("[affiliate] rewards load failed:", rewardsResult.error);
+            if (rewardsResult.status === "fulfilled") {
+                setRewards(rewardsResult.value);
+            } else {
+                console.warn("[affiliate] rewards load failed:", rewardsResult.reason);
                 setRewards([]);
-            } else {
-                setRewards((rewardsResult.data as RewardRow[]) || []);
             }
 
-            if (payoutsResult.error) {
-                console.warn("[affiliate] payouts load failed:", payoutsResult.error);
-                setPayoutRequests([]);
+            if (payoutsResult.status === "fulfilled") {
+                setPayoutRequests(payoutsResult.value);
             } else {
-                setPayoutRequests((payoutsResult.data as PayoutRequestRow[]) || []);
+                console.warn("[affiliate] payouts load failed:", payoutsResult.reason);
+                setPayoutRequests([]);
             }
         } catch (e: any) {
             console.error("[affiliate] load failed:", e);
@@ -258,29 +338,56 @@ export default function AffiliatePage() {
         void loadAffiliate();
     }, []);
 
-    const handleApply = async () => {
-        if (!userId) return;
+    const handleApply = async (event?: FormEvent<HTMLFormElement>) => {
+        event?.preventDefault();
+
+        if (!userId || applying || status === "pending" || isActive) return;
 
         try {
             setApplying(true);
             setError("");
 
-            const payload = {
-                user_id: userId,
-                tier: "partner",
-                status: "pending",
-                application_note: applicationNote.trim() || null,
-                subscribed_user_reward_usd: 5,
-                revenue_share_label: "$5 per subscribed user",
-                revenue_share_months: null,
-                updated_at: new Date().toISOString(),
-            };
+            const now = new Date().toISOString();
+            const note = applicationNote.trim();
 
-            const { error: upsertError } = await supabase
+            const existing = await supabase
                 .from("partner_profiles")
-                .upsert(payload, { onConflict: "user_id" });
+                .select("id")
+                .eq("user_id", userId)
+                .maybeSingle();
 
-            if (upsertError) throw upsertError;
+            if (existing.error) throw existing.error;
+
+            if (existing.data?.id) {
+                const { error: updateError } = await supabase
+                    .from("partner_profiles")
+                    .update({
+                        tier: "partner",
+                        status: "pending",
+                        application_note: note || null,
+                        subscribed_user_reward_usd: 5,
+                        revenue_share_label: "$5 per subscribed user",
+                        revenue_share_months: null,
+                        updated_at: now,
+                    })
+                    .eq("user_id", userId);
+
+                if (updateError) throw updateError;
+            } else {
+                const { error: insertError } = await supabase.from("partner_profiles").insert({
+                    user_id: userId,
+                    tier: "partner",
+                    status: "pending",
+                    application_note: note || null,
+                    subscribed_user_reward_usd: 5,
+                    revenue_share_label: "$5 per subscribed user",
+                    revenue_share_months: null,
+                    created_at: now,
+                    updated_at: now,
+                });
+
+                if (insertError) throw insertError;
+            }
 
             await loadAffiliate();
             setShowDetails(false);
@@ -317,14 +424,22 @@ export default function AffiliatePage() {
             setPayoutBusy(true);
             setError("");
 
-            const { error: insertError } = await supabase.from("affiliate_payout_requests").insert({
+            const payload = {
                 user_id: userId,
                 amount_usd: Number(stats.availableRewards.toFixed(2)),
                 status: "requested",
                 note: "Affiliate payout requested from affiliate dashboard.",
-            });
+                requested_at: new Date().toISOString(),
+            };
 
-            if (insertError) throw insertError;
+            const affiliatePayout = await supabase.from("affiliate_payout_requests").insert(payload);
+
+            if (affiliatePayout.error) {
+                console.warn("[affiliate] affiliate_payout_requests insert failed, trying payout_requests:", affiliatePayout.error);
+
+                const fallbackPayout = await supabase.from("payout_requests").insert(payload);
+                if (fallbackPayout.error) throw fallbackPayout.error;
+            }
 
             await loadAffiliate();
         } catch (e: any) {
@@ -356,7 +471,7 @@ export default function AffiliatePage() {
                         <h1 className="mt-2 text-[32px] font-bold sm:text-[36px]">Affiliate Program</h1>
                         <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[#666]">
                             For creators, admins, hosts, and community owners who can bring paying users to MySession.
-                            Affiliates earn real payout-trackable rewards.
+                            Affiliates earn real payout-trackable money when referred users become paid.
                         </p>
                     </div>
 
@@ -416,13 +531,14 @@ export default function AffiliatePage() {
                                         Partner link
                                     </div>
                                     <div className="mt-2 break-all rounded-xl bg-gray-50 p-3 text-[14px] font-semibold">
-                                        {referralLink}
+                                        {referralLink || "Generating link..."}
                                     </div>
 
                                     <button
                                         type="button"
                                         onClick={handleCopy}
-                                        className="mt-3 rounded-full bg-[#2F2F2F] px-4 py-2 text-[13px] font-semibold text-white"
+                                        disabled={!referralLink}
+                                        className="mt-3 rounded-full bg-[#2F2F2F] px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
                                     >
                                         {copyText}
                                     </button>
@@ -509,14 +625,71 @@ export default function AffiliatePage() {
                         </section>
 
                         <section className="mt-8 rounded-[28px] border border-black/10 bg-white p-6 shadow-sm">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                                <div>
+                                    <h2 className="text-[24px] font-bold">Referred users</h2>
+                                    <p className="mt-2 text-[14px] leading-6 text-[#666]">
+                                        These are users assigned to your partner link.
+                                    </p>
+                                </div>
+                                <div className="text-[13px] font-semibold text-[#666]">
+                                    {stats.paid} paid / {stats.registered} registered
+                                </div>
+                            </div>
+
+                            <div className="mt-5 overflow-hidden rounded-2xl border border-black/10">
+                                {referrals.length ? (
+                                    referrals.slice(0, 12).map((referral) => {
+                                        const referralStatus = referral.first_paid_at
+                                            ? "paid"
+                                            : referral.activated_at
+                                                ? "activated"
+                                                : String(referral.status || "registered").toLowerCase();
+
+                                        return (
+                                            <div
+                                                key={referral.id}
+                                                className="flex flex-col gap-3 border-b border-black/10 px-4 py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
+                                            >
+                                                <div>
+                                                    <div className="text-[14px] font-bold text-[#2F2F2F]">
+                                                        Referral #{referral.id.slice(0, 8)}
+                                                    </div>
+                                                    <div className="mt-1 text-[12px] text-[#777]">
+                                                        Registered: {formatDate(referral.registered_at)}
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <span className={`rounded-full px-3 py-1 text-[12px] font-bold ${getReferralStatusBadgeClass(referralStatus)}`}>
+                                                        {referralStatus}
+                                                    </span>
+                                                    {referral.first_paid_at ? (
+                                                        <span className="rounded-full bg-green-50 px-3 py-1 text-[12px] font-bold text-green-700">
+                                                            Paid {formatDate(referral.first_paid_at)}
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+                                        );
+                                    })
+                                ) : (
+                                    <div className="px-4 py-8 text-center text-[14px] text-[#777]">
+                                        No referred users yet.
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+
+                        <section className="mt-8 rounded-[28px] border border-black/10 bg-white p-6 shadow-sm">
                             <h2 className="text-[24px] font-bold">Recent affiliate rewards</h2>
                             <p className="mt-2 text-[14px] leading-6 text-[#666]">
                                 Paid-referral rewards and payout-trackable adjustments will appear here.
                             </p>
 
                             <div className="mt-5 overflow-hidden rounded-2xl border border-black/10">
-                                {rewards.length ? (
-                                    rewards.slice(0, 8).map((reward) => (
+                                {affiliateRewards.length ? (
+                                    affiliateRewards.slice(0, 8).map((reward) => (
                                         <div
                                             key={reward.id}
                                             className="flex flex-col gap-2 border-b border-black/10 px-4 py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between"
@@ -620,7 +793,7 @@ export default function AffiliatePage() {
 
                         {!isActive && (
                             <section className="mt-8 rounded-[28px] border border-black/10 bg-white p-6 shadow-sm">
-                                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                                <form onSubmit={handleApply} className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                                     <div>
                                         <h2 className="text-[24px] font-bold">Apply for Affiliate Program</h2>
                                         <p className="mt-2 max-w-2xl text-[14px] leading-6 text-[#666]">
@@ -647,12 +820,11 @@ export default function AffiliatePage() {
                                             placeholder="Example: I host focus sessions for students / I admin a productivity community / I can promote to my Discord audience..."
                                             rows={5}
                                             className="w-full rounded-2xl border border-black/10 bg-white px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-black/15"
-                                            disabled={status === "pending"}
+                                            disabled={status === "pending" || applying}
                                         />
 
                                         <button
-                                            type="button"
-                                            onClick={handleApply}
+                                            type="submit"
                                             disabled={applying || status === "pending"}
                                             className="mt-3 w-full rounded-full bg-[#2F2F2F] px-5 py-3 text-[14px] font-semibold text-white disabled:opacity-50"
                                         >
@@ -663,7 +835,7 @@ export default function AffiliatePage() {
                                                     : "Apply for Affiliate Program"}
                                         </button>
                                     </div>
-                                </div>
+                                </form>
                             </section>
                         )}
                     </>
