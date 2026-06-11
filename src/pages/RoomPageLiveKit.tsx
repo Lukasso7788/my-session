@@ -2597,6 +2597,9 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const [rolesLoading, setRolesLoading] = useState(false);
   const [rolesError, setRolesError] = useState<string>("");
   const [roleBusyKey, setRoleBusyKey] = useState<string>("");
+  const loadModeratorsInFlightRef = useRef(false);
+  const lastModeratorsLoadAtRef = useRef(0);
+  const lastModeratorsLoadSessionIdRef = useRef("");
 
   // right panel
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(() => {
@@ -4595,16 +4598,38 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     return moderatorUserIds.includes(String(authUserId).toLowerCase());
   }, [authUserId, isHost, moderatorUserIds]);
 
-  const loadModerators = async (sessionId: string) => {
+  const loadModerators = useCallback(async (sessionId: string, opts?: { force?: boolean }) => {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return;
+
+    const now = Date.now();
+    const sameSession = lastModeratorsLoadSessionIdRef.current === sid;
+
+    // This used to be polled every 3 seconds and was showing up heavily in
+    // Supabase PostgREST egress. Keep an initial forced load, then rely on
+    // Realtime/local optimistic updates. Non-forced reloads are deduped hard.
+    if (!opts?.force && sameSession && now - lastModeratorsLoadAtRef.current < 60_000) {
+      return;
+    }
+
+    if (loadModeratorsInFlightRef.current) return;
+
+    loadModeratorsInFlightRef.current = true;
+    lastModeratorsLoadAtRef.current = now;
+    lastModeratorsLoadSessionIdRef.current = sid;
+
     setRolesError("");
     setRolesLoading(true);
+
     try {
       const { data, error } = await supabase
         .from("session_role_assignments")
         .select("user_id, role")
-        .eq("session_id", sessionId)
+        .eq("session_id", sid)
         .eq("role", "moderator");
+
       if (error) throw error;
+
       const ids = uniqStrings((data || []).map((r: any) => String(r?.user_id || "")));
       setModeratorUserIds(ids);
     } catch (e: any) {
@@ -4612,44 +4637,53 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       setRolesError(String(e?.message || e || "failed_to_load_roles"));
       setModeratorUserIds([]);
     } finally {
+      loadModeratorsInFlightRef.current = false;
       setRolesLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (!session?.id) return;
-    loadModerators(session.id).catch(() => { });
-  }, [session?.id]);
+    loadModerators(String(session.id), { force: true }).catch(() => { });
+  }, [session?.id, loadModerators]);
 
   useEffect(() => {
     if (!session?.id) return;
 
-    const sessionId = session.id;
-
-    const timer = window.setInterval(() => {
-      void loadModerators(sessionId);
-    }, 3000);
-
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [session?.id]);
-
-  useEffect(() => {
-    if (!session?.id) return;
+    const sid = String(session.id);
 
     const ch = supabase
-      .channel(`session-role-assignments:${session.id}`)
+      .channel(`session-role-assignments:${sid}`)
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
           table: "session_role_assignments",
-          filter: `session_id=eq.${session.id}`,
+          filter: `session_id=eq.${sid}`,
         },
-        () => {
-          void loadModerators(session.id);
+        (payload: any) => {
+          const eventType = String(payload?.eventType || payload?.type || "").toUpperCase();
+          const nextRow = payload?.new || {};
+          const oldRow = payload?.old || {};
+
+          const nextRole = String(nextRow?.role || "").toLowerCase();
+          const oldRole = String(oldRow?.role || "").toLowerCase();
+          const nextUserId = String(nextRow?.user_id || "").toLowerCase();
+          const oldUserId = String(oldRow?.user_id || "").toLowerCase();
+
+          if ((eventType === "INSERT" || eventType === "UPDATE") && nextRole === "moderator" && looksLikeUuid(nextUserId)) {
+            setModeratorUserIds((prev) => uniqStrings([...prev, nextUserId]));
+            return;
+          }
+
+          if (eventType === "DELETE" && oldRole === "moderator" && looksLikeUuid(oldUserId)) {
+            setModeratorUserIds((prev) => prev.filter((x) => x !== oldUserId));
+            return;
+          }
+
+          // Fallback for unexpected payload shapes, but throttled by loadModerators.
+          void loadModerators(sid);
         }
       )
       .subscribe();
@@ -4657,7 +4691,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     return () => {
       safeRemoveRealtimeChannel(ch);
     };
-  }, [session?.id]);
+  }, [session?.id, loadModerators]);
 
   const grantModerator = async (userId: string) => {
     if (!session?.id) return;
@@ -4677,7 +4711,6 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       const { error } = await supabase.from("session_role_assignments").insert(payload as any);
       if (error) throw error;
       setModeratorUserIds((prev) => uniqStrings([...prev, uid]));
-      void loadModerators(session.id);
     } catch (e: any) {
       console.error("grantModerator failed:", e);
       setRolesError(String(e?.message || e || "grant_failed"));
@@ -4703,7 +4736,6 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
         .eq("role", "moderator");
       if (error) throw error;
       setModeratorUserIds((prev) => prev.filter((x) => x !== uid));
-      void loadModerators(session.id);
     } catch (e: any) {
       console.error("revokeModerator failed:", e);
       setRolesError(String(e?.message || e || "revoke_failed"));
