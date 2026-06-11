@@ -3950,6 +3950,72 @@ export default function SessionCard({
     }, [stages]);
 
     useEffect(() => {
+        const sid = String(session?.id || "").trim();
+        if (!sid) return;
+
+        const status = safeLower(session?.status);
+        const shouldLoadLiveAvatars =
+            isInfinite ||
+            liveNowCount > 0 ||
+            liveCountFromSession != null ||
+            status === "active" ||
+            status === "live" ||
+            status === "started" ||
+            status === "in_progress";
+
+        if (!shouldLoadLiveAvatars) {
+            setLiveUsers([]);
+            return;
+        }
+
+        let cancelled = false;
+        let inFlight = false;
+        let timer: number | undefined;
+
+        const run = async () => {
+            if (cancelled || inFlight) return;
+            if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
+
+            inFlight = true;
+            try {
+                const users = await fetchLiveUsers(sid);
+                if (!cancelled) setLiveUsers(users || []);
+            } catch (e) {
+                console.error("[SessionCard] live avatar fetch failed:", e);
+                if (!cancelled) setLiveUsers([]);
+            } finally {
+                inFlight = false;
+            }
+        };
+
+        void run();
+
+        timer = window.setInterval(() => {
+            void run();
+        }, 60_000);
+
+        const onVisibilityChange = () => {
+            if (document.visibilityState === "visible") {
+                void run();
+            }
+        };
+
+        document.addEventListener("visibilitychange", onVisibilityChange);
+
+        return () => {
+            cancelled = true;
+            if (timer) window.clearInterval(timer);
+            document.removeEventListener("visibilitychange", onVisibilityChange);
+        };
+    }, [
+        session?.id,
+        session?.status,
+        isInfinite,
+        liveNowCount,
+        liveCountFromSession,
+    ]);
+
+    useEffect(() => {
         if (!session?.id) return;
         if (!isBookersModalOpen) return;
         if (peopleTab !== "live") return;
