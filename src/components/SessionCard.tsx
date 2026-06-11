@@ -667,9 +667,7 @@ async function fetchSessionExtrasForStages(sessionId: string): Promise<any | nul
 
     const { data, error } = await sb
         .from("sessions")
-        .select(
-            "id, schedule, session_template_id, template_id, description, created_at"
-        )
+        .select("id, schedule, session_template_id, template_id")
         .eq("id", sid)
         .maybeSingle();
 
@@ -814,7 +812,7 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
     if (templateId) {
         const { data: tData, error: tErr } = await sb
             .from("session_templates")
-            .select("id, blocks, stages, schedule, description")
+            .select("id, blocks, stages, schedule")
             .eq("id", templateId)
             .maybeSingle();
 
@@ -863,7 +861,7 @@ async function fetchStagesForSession(session: any): Promise<SessionStage[]> {
 
                 const { data: tData, error: tErr } = await sb
                     .from("session_templates")
-                    .select("id, blocks, stages, schedule, description")
+                    .select("id, blocks, stages, schedule")
                     .eq("id", tidStr)
                     .maybeSingle();
 
@@ -1034,7 +1032,8 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
             .from("session_attendance")
             .select(selectSimple)
             .eq("session_id", sessionId)
-            .order("last_seen_at", { ascending: false });
+            .order("last_seen_at", { ascending: false })
+            .limit(12);
 
         if (!resWithLastSeen.error && Array.isArray(resWithLastSeen.data)) {
             const rows = filterActiveRows(resWithLastSeen.data, cutoffMs);
@@ -1046,7 +1045,8 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
                 .from("session_attendance")
                 .select("user_id, profiles:profiles(id, full_name, avatar_url), created_at")
                 .eq("session_id", sessionId)
-                .order("created_at", { ascending: false });
+                .order("created_at", { ascending: false })
+                .limit(12);
 
             if (!resCreatedOnly.error && Array.isArray(resCreatedOnly.data)) {
                 const rows = filterActiveRows(resCreatedOnly.data, cutoffMs);
@@ -1062,7 +1062,8 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
             .select(selectLegacy)
             .eq("session_id", sessionId)
             .is("left_at", null)
-            .order("joined_at", { ascending: false });
+            .order("joined_at", { ascending: false })
+            .limit(12);
 
         if (!legacyFull.error && Array.isArray(legacyFull.data)) {
             const rows = filterActiveRows(legacyFull.data, cutoffMs);
@@ -1074,7 +1075,8 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
                 .from("session_attendance")
                 .select("user_id, profiles:profiles(id, full_name, avatar_url), joined_at, last_seen_at, created_at")
                 .eq("session_id", sessionId)
-                .order("joined_at", { ascending: false });
+                .order("joined_at", { ascending: false })
+                .limit(12);
 
             if (!legacyNoLeftAt.error && Array.isArray(legacyNoLeftAt.data)) {
                 const rows = filterActiveRows(legacyNoLeftAt.data, cutoffMs);
@@ -1087,7 +1089,8 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
                 .from("session_attendance")
                 .select("user_id, profiles:profiles(id, full_name, avatar_url), last_seen_at, created_at")
                 .eq("session_id", sessionId)
-                .order("created_at", { ascending: false });
+                .order("created_at", { ascending: false })
+                .limit(12);
 
             if (!legacyNoJoinedAt.error && Array.isArray(legacyNoJoinedAt.data)) {
                 const rows = filterActiveRows(legacyNoJoinedAt.data, cutoffMs);
@@ -1100,7 +1103,8 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
                 .from("session_attendance")
                 .select("user_id, profiles:profiles(id, full_name, avatar_url), created_at")
                 .eq("session_id", sessionId)
-                .order("created_at", { ascending: false });
+                .order("created_at", { ascending: false })
+                .limit(12);
 
             if (!legacyCreatedOnly.error && Array.isArray(legacyCreatedOnly.data)) {
                 const rows = filterActiveRows(legacyCreatedOnly.data, cutoffMs);
@@ -1118,7 +1122,8 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
             .select(selectLegacy)
             .eq("session_id", sessionId)
             .is("left_at", null)
-            .order("joined_at", { ascending: false });
+            .order("joined_at", { ascending: false })
+            .limit(12);
 
         if (!participantsFull.error && Array.isArray(participantsFull.data)) {
             const rows = filterActiveRows(participantsFull.data, cutoffMs);
@@ -1130,7 +1135,8 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
                 .from("session_participants")
                 .select("user_id, profiles:profiles(id, full_name, avatar_url), joined_at, last_seen_at, created_at")
                 .eq("session_id", sessionId)
-                .order("joined_at", { ascending: false });
+                .order("joined_at", { ascending: false })
+                .limit(12);
 
             if (!participantsNoLeftAt.error && Array.isArray(participantsNoLeftAt.data)) {
                 const rows = filterActiveRows(participantsNoLeftAt.data, cutoffMs);
@@ -1143,7 +1149,8 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
                 .from("session_participants")
                 .select("user_id, profiles:profiles(id, full_name, avatar_url), last_seen_at, created_at")
                 .eq("session_id", sessionId)
-                .order("created_at", { ascending: false });
+                .order("created_at", { ascending: false })
+                .limit(12);
 
             if (!participantsNoJoinedAt.error && Array.isArray(participantsNoJoinedAt.data)) {
                 const rows = filterActiveRows(participantsNoJoinedAt.data, cutoffMs);
@@ -1156,7 +1163,8 @@ async function fetchLiveUsers(sessionId: string): Promise<BookedUser[]> {
                 .from("session_participants")
                 .select("user_id, profiles:profiles(id, full_name, avatar_url), created_at")
                 .eq("session_id", sessionId)
-                .order("created_at", { ascending: false });
+                .order("created_at", { ascending: false })
+                .limit(12);
 
             if (!participantsCreatedOnly.error && Array.isArray(participantsCreatedOnly.data)) {
                 const rows = filterActiveRows(participantsCreatedOnly.data, cutoffMs);
@@ -3758,6 +3766,11 @@ export default function SessionCard({
 
         if (immediate || !session?.id) return;
 
+        // PostgREST egress guard:
+        // Do not fetch description for every card in the list.
+        // Load it only when the user opens details or edit modal.
+        if (!isInfoOpen && !isEditModalOpen) return;
+
         (async () => {
             try {
                 const text = await fetchSessionDescriptionById(String(session.id));
@@ -3770,7 +3783,7 @@ export default function SessionCard({
         return () => {
             cancelled = true;
         };
-    }, [session?.id, session?.description]);
+    }, [session?.id, session?.description, isInfoOpen, isEditModalOpen]);
 
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionType === "infinite";
@@ -3891,6 +3904,14 @@ export default function SessionCard({
     useEffect(() => {
         let cancelled = false;
 
+        // PostgREST egress guard:
+        // Stage/timeline data can include large schedule/template JSON.
+        // Do not load it for every card in the list. Load it only on demand.
+        if (!isInfoOpen && !isEditModalOpen) {
+            setStages([]);
+            return;
+        }
+
         (async () => {
             try {
                 const s = await fetchStagesForSession(session);
@@ -3904,7 +3925,14 @@ export default function SessionCard({
         return () => {
             cancelled = true;
         };
-    }, [session?.id, session?.schedule, session?.session_template_id, session?.template_id]);
+    }, [
+        session?.id,
+        session?.schedule,
+        session?.session_template_id,
+        session?.template_id,
+        isInfoOpen,
+        isEditModalOpen,
+    ]);
 
     const stagesVisual = useMemo(() => {
         return (stages || []).map((s) => {
@@ -3945,11 +3973,8 @@ export default function SessionCard({
 
         run();
 
-        const timer = window.setInterval(run, 60_000);
-
         return () => {
             cancelled = true;
-            window.clearInterval(timer);
         };
     }, [session?.id, isBookersModalOpen, peopleTab]);
 
