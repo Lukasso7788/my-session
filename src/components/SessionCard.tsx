@@ -3921,63 +3921,6 @@ export default function SessionCard({
         });
     }, [stages]);
 
-    const shouldPollLive = useMemo(() => {
-        if (!session?.id) return false;
-
-        const countFromParent = Number(session?.live_count || 0);
-
-        // We only fetch live user identities if SessionsPage already says
-        // someone is live. This keeps the visible live avatars without
-        // scanning every upcoming session card.
-        return countFromParent > 0;
-    }, [session?.id, session?.live_count]);
-
-    useEffect(() => {
-        if (!session?.id) {
-            setLiveUsers([]);
-            return;
-        }
-
-        if (!shouldPollLive) {
-            setLiveUsers([]);
-            return;
-        }
-
-        let cancelled = false;
-
-        const run = async () => {
-            if (document.visibilityState !== "visible") return;
-
-            try {
-                const users = await fetchLiveUsers(String(session.id));
-                if (!cancelled) setLiveUsers(users || []);
-            } catch (e) {
-                console.error("[SessionCard] fetchLiveUsers light failed:", e);
-                if (!cancelled) setLiveUsers([]);
-            }
-        };
-
-        void run();
-
-        const timer = window.setInterval(() => {
-            void run();
-        }, 60_000);
-
-        const onVisibilityChange = () => {
-            if (document.visibilityState === "visible") {
-                void run();
-            }
-        };
-
-        document.addEventListener("visibilitychange", onVisibilityChange);
-
-        return () => {
-            cancelled = true;
-            window.clearInterval(timer);
-            document.removeEventListener("visibilitychange", onVisibilityChange);
-        };
-    }, [session?.id, shouldPollLive]);
-
     useEffect(() => {
         if (!session?.id) return;
         if (!isBookersModalOpen) return;
@@ -4578,7 +4521,7 @@ export default function SessionCard({
                                     {liveNowCount}
                                 </div>
                                 <div className="text-[10px] text-[#606060] font-light -mt-1">
-                                    {shouldPollLive ? "in the session now" : "live count soon"}
+                                    {hasLiveNow ? "in the session now" : "live count soon"}
                                 </div>
                             </div>
                         </div>
