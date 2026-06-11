@@ -48,7 +48,9 @@ const MSG_TABLE = "session_chat_messages";
 const REACTIONS_TABLE = "session_chat_message_reactions";
 
 const MESSAGE_BOOTSTRAP_LIMIT = 150;
-const REACTIONS_BOOTSTRAP_LIMIT = 400;
+const REACTIONS_BOOTSTRAP_LIMIT = 120;
+const REACTIONS_MESSAGE_ID_LIMIT = 60;
+const REACTIONS_REFETCH_DEDUPE_MS = 30_000;
 const VISIBLE_MESSAGE_LIMIT = 150;
 const REACTION_EMOJIS = ["🔥", "😂", "👏", "❤️", "👍", "👎", "👌", "👋", "🙌", "🎉"] as const;
 
@@ -134,6 +136,13 @@ function normalizeMessageIds(ids: string[]) {
     }
 
     return out.length > MESSAGE_BOOTSTRAP_LIMIT ? out.slice(out.length - MESSAGE_BOOTSTRAP_LIMIT) : out;
+}
+
+function normalizeReactionMessageIds(ids: string[]) {
+    const normalized = normalizeMessageIds(ids);
+    return normalized.length > REACTIONS_MESSAGE_ID_LIMIT
+        ? normalized.slice(normalized.length - REACTIONS_MESSAGE_ID_LIMIT)
+        : normalized;
 }
 
 type ChatCacheEntry = {
@@ -811,6 +820,10 @@ export function ChatPanel({
     const queuedMessagesReloadRef = useRef(false);
     const queuedReactionsReloadRef = useRef(false);
 
+    const lastReactionsLoadKeyRef = useRef("");
+    const lastReactionsLoadAtRef = useRef(0);
+    const myReactionsRefreshKeyRef = useRef("");
+
     const atBottomRef = useRef<boolean>(true);
     const [unseenNew, setUnseenNew] = useState<number>(0);
 
@@ -1162,7 +1175,8 @@ export function ChatPanel({
         [userId]
     );
 
-    const getRecentMessageIdsForReactions = () => normalizeMessageIds(messagesRef.current.map((m) => m.id));
+    const getRecentMessageIdsForReactions = () =>
+        normalizeReactionMessageIds(messagesRef.current.map((m) => m.id));
 
     const closeReactionDetails = () => {
         setReactionDetails({
@@ -1331,7 +1345,7 @@ export function ChatPanel({
         }
     }, [sessionId, activeMode, userId, hostUserId, activeDirectPeerId, ensureProfiles, attachProfile]);
 
-    const loadReactions = useCallback(async (opts?: { silent?: boolean; messageIds?: string[] }) => {
+    const loadReactions = useCallback(async (opts?: { silent?: boolean; messageIds?: string[]; force?: boolean }) => {
         if (!sessionId) return;
 
         if (loadingReactionsRef.current) {
@@ -1339,20 +1353,33 @@ export function ChatPanel({
             return;
         }
 
+        const msgIdsRaw = opts?.messageIds && opts.messageIds.length > 0 ? opts.messageIds : getRecentMessageIdsForReactions();
+        const msgIds = normalizeReactionMessageIds(msgIdsRaw);
+
+        if (msgIds.length === 0) {
+            setReactions({});
+            setMyReactions({});
+            return;
+        }
+
+        const loadKey = `${sessionId}|${userId || "anon"}|${msgIds.join(",")}`;
+        const now = Date.now();
+
+        if (
+            !opts?.force &&
+            lastReactionsLoadKeyRef.current === loadKey &&
+            now - lastReactionsLoadAtRef.current < REACTIONS_REFETCH_DEDUPE_MS
+        ) {
+            return;
+        }
+
+        lastReactionsLoadKeyRef.current = loadKey;
+        lastReactionsLoadAtRef.current = now;
+
         loadingReactionsRef.current = true;
         const reqId = ++reactionsReqIdRef.current;
 
         try {
-            const msgIdsRaw = opts?.messageIds && opts.messageIds.length > 0 ? opts.messageIds : getRecentMessageIdsForReactions();
-            const msgIds = normalizeMessageIds(msgIdsRaw);
-
-            if (msgIds.length === 0) {
-                if (!aliveRef.current || reqId !== reactionsReqIdRef.current) return;
-                setReactions({});
-                setMyReactions({});
-                return;
-            }
-
             const q = supabase
                 .from(REACTIONS_TABLE)
                 .select("id, session_id, message_id, user_id, emoji, created_at")
@@ -1363,7 +1390,9 @@ export function ChatPanel({
 
             const loadReactionsResult = (await withTimeout<any>(q as any, 12000, "loadReactions timeout")) as any;
             const { data, error } = loadReactionsResult;
+
             if (!aliveRef.current || reqId !== reactionsReqIdRef.current) return;
+
             if (error) {
                 console.error("reactions load error:", error);
                 return;
@@ -1389,9 +1418,10 @@ export function ChatPanel({
             console.warn("loadReactions failed:", e);
         } finally {
             loadingReactionsRef.current = false;
+
             if (queuedReactionsReloadRef.current) {
                 queuedReactionsReloadRef.current = false;
-                void loadReactions({ silent: true });
+                void loadReactions({ silent: true, force: true });
             }
         }
     }, [sessionId, userId]);
@@ -1407,8 +1437,8 @@ export function ChatPanel({
 
         const loaded = await loadMessages({ silent: opts?.silent });
         const list = loaded ?? messagesRef.current;
-        const ids = normalizeMessageIds(list.map((m) => m.id));
-        await loadReactions({ silent: true, messageIds: ids });
+        const ids = normalizeReactionMessageIds(list.map((m) => m.id));
+        await loadReactions({ silent: true, messageIds: ids, force: opts?.force });
         bootTsRef.current = now;
     }, [sessionId, isHost, loadDirectPeers, loadMessages, loadReactions]);
 
@@ -1419,13 +1449,21 @@ export function ChatPanel({
 
     useEffect(() => {
         if (!sessionId || !userId) return;
-        const hasAnyReactions = Object.keys(reactions).length > 0;
-        const hasAnyMy = Object.keys(myReactions).length > 0;
-        if (hasAnyReactions && !hasAnyMy) {
-            const ids = normalizeMessageIds(messagesRef.current.map((m) => m.id));
-            void loadReactions({ silent: true, messageIds: ids });
-        }
-    }, [sessionId, userId, reactions, myReactions, loadReactions]);
+
+        const ids = getRecentMessageIdsForReactions();
+        if (ids.length === 0) return;
+
+        const key = `${sessionId}|${userId}|${activeMode}|${activeDirectPeerId || ""}|${ids.join(",")}`;
+        if (myReactionsRefreshKeyRef.current === key) return;
+
+        myReactionsRefreshKeyRef.current = key;
+
+        void loadReactions({
+            silent: true,
+            messageIds: ids,
+            force: true,
+        });
+    }, [sessionId, userId, activeMode, activeDirectPeerId, loadReactions]);
 
     useEffect(() => {
         if (!sessionId) return;
