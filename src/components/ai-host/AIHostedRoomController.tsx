@@ -30,6 +30,29 @@ type AiHostApiResponse = {
     source?: "gemini" | "fallback";
 };
 
+type SpeechRecognitionLike = {
+    lang: string;
+    interimResults: boolean;
+    continuous: boolean;
+    maxAlternatives: number;
+    start: () => void;
+    stop: () => void;
+    abort: () => void;
+    onstart: null | (() => void);
+    onend: null | (() => void);
+    onerror: null | ((event: any) => void);
+    onresult: null | ((event: any) => void);
+};
+
+function getSpeechRecognitionConstructor(): any | null {
+    if (typeof window === "undefined") return null;
+    return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || null;
+}
+
+function canUseSpeechRecognition() {
+    return !!getSpeechRecognitionConstructor();
+}
+
 function speak(text: string) {
     if (typeof window === "undefined") return;
     if (!("speechSynthesis" in window)) return;
@@ -156,8 +179,12 @@ export default function AIHostedRoomController({
     const [errorText, setErrorText] = useState("");
     const [aiReply, setAiReply] = useState("");
     const [privateAdvice, setPrivateAdvice] = useState<string[]>([]);
+    const [listening, setListening] = useState(false);
+    const [voiceSupported, setVoiceSupported] = useState(false);
+    const [voiceHint, setVoiceHint] = useState("");
 
     const greetedRef = useRef(false);
+    const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
     const cleanName = useMemo(() => {
         const name = String(currentUserName || "").trim();
@@ -170,6 +197,8 @@ export default function AIHostedRoomController({
     }, [cleanName]);
 
     useEffect(() => {
+        setVoiceSupported(canUseSpeechRecognition());
+
         console.log("[AI HOST] mounted", {
             sessionId,
             currentUserId,
@@ -178,9 +207,16 @@ export default function AIHostedRoomController({
             currentStage,
             chatTable,
             theme,
+            voiceSupported: canUseSpeechRecognition(),
         });
 
         return () => {
+            try {
+                recognitionRef.current?.abort();
+            } catch {
+                // ignore
+            }
+
             console.log("[AI HOST] unmounted", { sessionId });
         };
     }, [sessionId, currentUserId, currentUserName, tiles.length, currentStage, chatTable, theme]);
@@ -204,11 +240,110 @@ export default function AIHostedRoomController({
         return () => window.clearTimeout(timer);
     }, [chatTable, currentUserId, greetingText, sessionId]);
 
+    const startVoiceInput = () => {
+        if (submitted || saving || listening) return;
+
+        const SpeechRecognitionConstructor = getSpeechRecognitionConstructor();
+
+        if (!SpeechRecognitionConstructor) {
+            setVoiceHint("Voice input is not supported in this browser. Try Chrome or Edge.");
+            setExpanded(true);
+            return;
+        }
+
+        try {
+            window.speechSynthesis?.cancel?.();
+
+            const recognition = new SpeechRecognitionConstructor() as SpeechRecognitionLike;
+            recognition.lang = "en-US";
+            recognition.interimResults = true;
+            recognition.continuous = false;
+            recognition.maxAlternatives = 1;
+
+            recognition.onstart = () => {
+                setListening(true);
+                setExpanded(true);
+                setVoiceHint("Listening… say your intention.");
+            };
+
+            recognition.onerror = (event: any) => {
+                console.warn("[AI HOST] speech recognition error:", event);
+                setListening(false);
+
+                const code = String(event?.error || "").trim();
+                if (code === "not-allowed" || code === "service-not-allowed") {
+                    setVoiceHint("Microphone permission was blocked. Allow mic access and try again.");
+                } else if (code === "no-speech") {
+                    setVoiceHint("I did not catch anything. Try again or type it.");
+                } else {
+                    setVoiceHint("Voice input failed. Try again or type it.");
+                }
+            };
+
+            recognition.onend = () => {
+                setListening(false);
+            };
+
+            recognition.onresult = (event: any) => {
+                let finalText = "";
+                let interimText = "";
+
+                for (let i = event.resultIndex; i < event.results.length; i += 1) {
+                    const result = event.results[i];
+                    const transcript = String(result?.[0]?.transcript || "").trim();
+
+                    if (!transcript) continue;
+
+                    if (result.isFinal) {
+                        finalText += `${transcript} `;
+                    } else {
+                        interimText += `${transcript} `;
+                    }
+                }
+
+                const nextText = `${finalText || interimText}`.trim();
+
+                if (nextText) {
+                    setIntention((prev) => {
+                        const cleanPrev = prev.trim();
+                        if (!cleanPrev) return nextText;
+                        if (nextText.toLowerCase().startsWith(cleanPrev.toLowerCase())) return nextText;
+                        return `${cleanPrev} ${nextText}`.trim();
+                    });
+                }
+
+                if (finalText.trim()) {
+                    setVoiceHint("Got it. Press Start to save.");
+                }
+            };
+
+            recognitionRef.current = recognition;
+            recognition.start();
+        } catch (e: any) {
+            console.error("[AI HOST] start voice input failed:", e);
+            setListening(false);
+            setVoiceHint(String(e?.message || "Could not start voice input."));
+        }
+    };
+
+    const stopVoiceInput = () => {
+        try {
+            recognitionRef.current?.stop();
+        } catch {
+            // ignore
+        }
+
+        setListening(false);
+        setVoiceHint((prev) => prev || "Stopped listening.");
+    };
+
     const handleSubmit = async () => {
         const value = intention.trim();
         if (!value || saving || submitted) return;
 
         try {
+            stopVoiceInput();
+
             setSaving(true);
             setErrorText("");
             setExpanded(true);
@@ -268,14 +403,14 @@ export default function AIHostedRoomController({
         <div className="pointer-events-none fixed inset-x-0 bottom-5 z-[230] flex justify-center px-4">
             <div
                 className={[
-                    "pointer-events-auto w-full max-w-[760px] transition-all duration-300 ease-out",
-                    expanded || intention || submitted
+                    "pointer-events-auto w-full max-w-[820px] transition-all duration-300 ease-out",
+                    expanded || intention || submitted || listening
                         ? "translate-y-0 opacity-100"
                         : "translate-y-1 opacity-95",
                 ].join(" ")}
                 onMouseEnter={() => setExpanded(true)}
                 onMouseLeave={() => {
-                    if (!intention && !submitted) setExpanded(false);
+                    if (!intention && !submitted && !listening) setExpanded(false);
                 }}
             >
                 <div
@@ -284,12 +419,17 @@ export default function AIHostedRoomController({
                         theme === "light"
                             ? "border-black/10 bg-white/92 text-black"
                             : "border-white/12 bg-[#0b1220]/92 text-white",
-                        expanded || intention || submitted ? "p-4" : "p-3",
+                        expanded || intention || submitted || listening ? "p-4" : "p-3",
                     ].join(" ")}
                 >
                     <div className="flex items-center gap-3">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-500/15 text-[22px]">
-                            🤖
+                        <div
+                            className={[
+                                "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-[22px] transition",
+                                listening ? "bg-red-500/20" : "bg-violet-500/15",
+                            ].join(" ")}
+                        >
+                            {listening ? "🎙️" : "🤖"}
                         </div>
 
                         <div className="min-w-0 flex-1">
@@ -308,6 +448,12 @@ export default function AIHostedRoomController({
                                 >
                                     15/3
                                 </div>
+
+                                {listening ? (
+                                    <div className="rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-semibold text-red-300">
+                                        Listening
+                                    </div>
+                                ) : null}
                             </div>
 
                             <div
@@ -318,7 +464,9 @@ export default function AIHostedRoomController({
                             >
                                 {submitted
                                     ? "Intention saved. AI host is ready for check-ins."
-                                    : "Tell me what you’re working on."}
+                                    : listening
+                                        ? "Say what you’re going to work on."
+                                        : "Type or say what you’re working on."}
                             </div>
                         </div>
 
@@ -340,7 +488,7 @@ export default function AIHostedRoomController({
                     <div
                         className={[
                             "grid transition-all duration-300 ease-out",
-                            expanded || intention || submitted
+                            expanded || intention || submitted || listening
                                 ? "grid-rows-[1fr] opacity-100"
                                 : "grid-rows-[0fr] opacity-0",
                         ].join(" ")}
@@ -378,6 +526,29 @@ export default function AIHostedRoomController({
 
                                 <button
                                     type="button"
+                                    onClick={listening ? stopVoiceInput : startVoiceInput}
+                                    disabled={submitted || saving || !voiceSupported}
+                                    title={
+                                        voiceSupported
+                                            ? listening
+                                                ? "Stop listening"
+                                                : "Say your intention"
+                                            : "Voice input is not supported in this browser"
+                                    }
+                                    className={[
+                                        "h-12 shrink-0 rounded-2xl px-4 text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-45",
+                                        listening
+                                            ? "bg-red-600 text-white hover:bg-red-700"
+                                            : theme === "light"
+                                                ? "border border-black/10 bg-white text-black hover:bg-black/[0.04]"
+                                                : "border border-white/10 bg-white/[0.08] text-white hover:bg-white/[0.12]",
+                                    ].join(" ")}
+                                >
+                                    {listening ? "Stop" : "🎙️"}
+                                </button>
+
+                                <button
+                                    type="button"
                                     onClick={() => void handleSubmit()}
                                     disabled={!intention.trim() || submitted || saving}
                                     className="h-12 shrink-0 rounded-2xl bg-violet-600 px-5 text-[14px] font-bold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-45"
@@ -385,6 +556,21 @@ export default function AIHostedRoomController({
                                     {saving ? "Saving..." : submitted ? "Saved" : "Start"}
                                 </button>
                             </div>
+
+                            {voiceHint ? (
+                                <div
+                                    className={[
+                                        "mt-2 text-[12px]",
+                                        listening
+                                            ? "text-red-300"
+                                            : theme === "light"
+                                                ? "text-black/45"
+                                                : "text-white/40",
+                                    ].join(" ")}
+                                >
+                                    {voiceHint}
+                                </div>
+                            ) : null}
 
                             {privateAdvice.length ? (
                                 <div
@@ -419,7 +605,7 @@ export default function AIHostedRoomController({
                                     theme === "light" ? "text-black/40" : "text-white/35",
                                 ].join(" ")}
                             >
-                                This saves AI-room state, writes to chat, and calls the AI host endpoint.
+                                Voice input uses your browser speech recognition. You can edit the text before pressing Start.
                             </div>
                         </div>
                     </div>
