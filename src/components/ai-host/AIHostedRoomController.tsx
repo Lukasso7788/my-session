@@ -331,6 +331,7 @@ export default function AIHostedRoomController({
     const lastCheckinAtRef = useRef<string | null>(null);
     const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
     const spokenBodiesRef = useRef<Set<string>>(new Set());
+    const silenceStopTimerRef = useRef<number | null>(null);
 
     const cleanName = useMemo(() => {
         const name = String(currentUserName || "").trim();
@@ -369,6 +370,11 @@ export default function AIHostedRoomController({
                 recognitionRef.current?.abort();
             } catch {
                 // ignore
+            }
+
+            if (silenceStopTimerRef.current) {
+                window.clearTimeout(silenceStopTimerRef.current);
+                silenceStopTimerRef.current = null;
             }
 
             console.log("[AI HOST] unmounted", { sessionId });
@@ -536,7 +542,7 @@ export default function AIHostedRoomController({
             const recognition = new SpeechRecognitionConstructor() as SpeechRecognitionLike;
             recognition.lang = "en-US";
             recognition.interimResults = true;
-            recognition.continuous = false;
+            recognition.continuous = mode === "checkin";
             recognition.maxAlternatives = 1;
 
             recognition.onstart = () => {
@@ -587,6 +593,26 @@ export default function AIHostedRoomController({
                     setInputText(nextText);
                 }
 
+                if (mode === "checkin" && nextText) {
+                    if (silenceStopTimerRef.current) {
+                        window.clearTimeout(silenceStopTimerRef.current);
+                    }
+
+                    silenceStopTimerRef.current = window.setTimeout(() => {
+                        try {
+                            recognitionRef.current?.stop();
+                        } catch {
+                            // ignore
+                        }
+
+                        setVoiceHint(
+                            "Paused. Review the transcript or press Save check-in."
+                        );
+
+                        silenceStopTimerRef.current = null;
+                    }, 7000);
+                }
+
                 if (finalText.trim()) {
                     setVoiceHint(mode === "checkin" ? "Got it. Press Save check-in." : "Got it. Press Start.");
                 }
@@ -602,6 +628,10 @@ export default function AIHostedRoomController({
     };
 
     const stopVoiceInput = () => {
+        if (silenceStopTimerRef.current) {
+            window.clearTimeout(silenceStopTimerRef.current);
+            silenceStopTimerRef.current = null;
+        }
         try {
             recognitionRef.current?.stop();
         } catch {
