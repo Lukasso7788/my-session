@@ -43,6 +43,7 @@ type SpeechRecognitionLike = {
 type AiMode = "intention" | "checkin";
 
 const SESSION_INTENTIONS_TABLE = "intentions";
+const AI_PREFIX = "🤖 AI Host:";
 
 function getSpeechRecognitionConstructor(): any | null {
     if (typeof window === "undefined") return null;
@@ -59,10 +60,12 @@ function speak(text: string) {
 
     try {
         window.speechSynthesis.cancel();
+
         const utterance = new SpeechSynthesisUtterance(text);
         utterance.lang = "en-US";
         utterance.rate = 0.95;
         utterance.pitch = 1;
+
         window.speechSynthesis.speak(utterance);
     } catch {
         // ignore
@@ -70,24 +73,52 @@ function speak(text: string) {
 }
 
 function getStageText(stage: AiHostStage) {
-    return [
-        stage?.type,
-        stage?.name,
-        stage?.title,
-        stage?.kind,
-    ]
+    return [stage?.type, stage?.name, stage?.title, stage?.kind]
         .map((x) => String(x || "").toLowerCase())
         .join(" ");
 }
 
 function isCheckinLikeStage(stage: AiHostStage) {
     const text = getStageText(stage);
+
     return (
         text.includes("check") ||
         text.includes("break") ||
         text.includes("intention") ||
         text.includes("recap")
     );
+}
+
+function isFreshCheckin(lastCheckinAt: string | null) {
+    if (!lastCheckinAt) return false;
+
+    const time = new Date(lastCheckinAt).getTime();
+    if (!Number.isFinite(time)) return false;
+
+    return Date.now() - time < 1000 * 60 * 2;
+}
+
+async function loadAiRoomState(args: {
+    sessionId: string;
+    currentUserId: string;
+}) {
+    const { data, error } = await supabase
+        .from("ai_room_participant_state")
+        .select("intention_collected,last_intention_at,last_checkin_at")
+        .eq("session_id", args.sessionId)
+        .eq("user_id", args.currentUserId)
+        .maybeSingle();
+
+    if (error) {
+        console.warn("[AI HOST] state load failed:", error);
+        return null;
+    }
+
+    return data as {
+        intention_collected?: boolean | null;
+        last_intention_at?: string | null;
+        last_checkin_at?: string | null;
+    } | null;
 }
 
 async function writeAiRoomState(args: {
@@ -176,10 +207,12 @@ async function writeChatMessage(args: {
     const text = String(args.text || "").trim();
     if (!text) return;
 
+    const body = args.isAi ? `${AI_PREFIX} ${text}` : text;
+
     const { error } = await supabase.from(args.chatTable).insert({
         session_id: args.sessionId,
         user_id: args.currentUserId,
-        body: args.isAi ? `🤖 AI Host: ${text}` : text,
+        body,
         scope: "room",
     });
 
@@ -195,17 +228,17 @@ function buildLocalAiReply(args: {
 }) {
     if (args.mode === "checkin") {
         return {
-            spoken: `Nice check-in, ${args.name}. Pick one small next step and keep going.`,
+            publicSpoken: `Nice check-in, ${args.name}. Keep going with one small next step.`,
             privateAdvice: [
-                "Do not restart the whole plan.",
-                "Choose one concrete next action.",
-                "Continue with one short 15-minute block.",
+                "Summarize only the real progress, not the whole story.",
+                "Pick one concrete next action for the next block.",
+                "Keep the next step small enough to start immediately.",
             ],
         };
     }
 
     return {
-        spoken: `Got it, ${args.name}. Start with the first small visible step.`,
+        publicSpoken: `Got it, ${args.name}. Start with the first small visible step.`,
         privateAdvice: [
             "Make the first action very small.",
             "Use the first 15-minute block only to start.",
@@ -225,6 +258,7 @@ export default function AIHostedRoomController({
     const [open, setOpen] = useState(true);
     const [closing, setClosing] = useState(false);
     const [minimized, setMinimized] = useState(false);
+    const [hydrated, setHydrated] = useState(false);
 
     const [expanded, setExpanded] = useState(false);
     const [mode, setMode] = useState<AiMode>("intention");
@@ -241,8 +275,10 @@ export default function AIHostedRoomController({
     const [voiceHint, setVoiceHint] = useState("");
 
     const greetedRef = useRef(false);
-    const checkinAskedForStageRef = useRef<string>("");
+    const checkinAskedRef = useRef(false);
+    const lastCheckinAtRef = useRef<string | null>(null);
     const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+    const spokenBodiesRef = useRef<Set<string>>(new Set());
 
     const cleanName = useMemo(() => {
         const name = String(currentUserName || "").trim();
@@ -256,7 +292,7 @@ export default function AIHostedRoomController({
 
     const currentPrompt = useMemo(() => {
         if (mode === "checkin") {
-            return `OK, ${cleanName}, it’s time for check-in. How did it go?`;
+            return `Summarize your progress for the previous block, ${cleanName}. How did it go?`;
         }
 
         return aiReply || greetingText;
@@ -282,16 +318,53 @@ export default function AIHostedRoomController({
             } catch {
                 // ignore
             }
+
             console.log("[AI HOST] unmounted", { sessionId });
         };
     }, [sessionId, currentUserId, currentUserName, tiles.length, currentStage, chatTable, theme]);
 
     useEffect(() => {
+        let cancelled = false;
+
+        (async () => {
+            const state = await loadAiRoomState({ sessionId, currentUserId });
+            if (cancelled) return;
+
+            const collected = Boolean(state?.intention_collected);
+            const lastCheckinAt = state?.last_checkin_at || null;
+
+            lastCheckinAtRef.current = lastCheckinAt;
+            setIntentionSaved(collected);
+
+            if (collected) {
+                greetedRef.current = true;
+                setMinimized(true);
+                setExpanded(false);
+                setMode("intention");
+                setAiReply("Your intention is already saved. I’ll ask for a progress summary during check-in.");
+            }
+
+            setHydrated(true);
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [currentUserId, sessionId]);
+
+    useEffect(() => {
+        if (!hydrated) return;
         if (greetedRef.current) return;
+        if (intentionSaved) return;
+
         greetedRef.current = true;
 
         const timer = window.setTimeout(() => {
             speak(greetingText);
+
+            const body = `${AI_PREFIX} ${greetingText}`;
+            spokenBodiesRef.current.add(body);
+
             void writeChatMessage({
                 chatTable,
                 sessionId,
@@ -302,21 +375,58 @@ export default function AIHostedRoomController({
         }, 900);
 
         return () => window.clearTimeout(timer);
-    }, [chatTable, currentUserId, greetingText, sessionId]);
+    }, [chatTable, currentUserId, greetingText, hydrated, intentionSaved, sessionId]);
 
     useEffect(() => {
+        const channel = supabase
+            .channel(`ai_host_voice_${sessionId}`)
+            .on(
+                "postgres_changes",
+                {
+                    event: "INSERT",
+                    schema: "public",
+                    table: chatTable,
+                    filter: `session_id=eq.${sessionId}`,
+                },
+                (payload: any) => {
+                    const body = String(payload?.new?.body || "").trim();
+                    if (!body.startsWith(AI_PREFIX)) return;
+
+                    if (spokenBodiesRef.current.has(body)) return;
+                    spokenBodiesRef.current.add(body);
+
+                    const spoken = body.replace(AI_PREFIX, "").trim();
+                    if (spoken) speak(spoken);
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [chatTable, sessionId]);
+
+    useEffect(() => {
+        if (!hydrated) return;
         if (!intentionSaved) return;
-        if (!isCheckinLikeStage(currentStage)) return;
 
-        const stageKey = getStageText(currentStage) || "checkin";
-        if (checkinAskedForStageRef.current === stageKey) return;
+        const isCheckin = isCheckinLikeStage(currentStage);
 
-        checkinAskedForStageRef.current = stageKey;
+        if (!isCheckin) {
+            checkinAskedRef.current = false;
+            setCheckinActive(false);
+            return;
+        }
+
+        if (checkinAskedRef.current) return;
+        if (isFreshCheckin(lastCheckinAtRef.current)) return;
+
+        checkinAskedRef.current = true;
 
         const delayMs = 2500 + Math.floor(Math.random() * 1200);
 
         const timer = window.setTimeout(() => {
-            const prompt = `OK, ${cleanName}, it’s time for check-in. How did it go?`;
+            const prompt = `Summarize your progress for the previous block, ${cleanName}. How did it go?`;
 
             setMode("checkin");
             setInputText("");
@@ -330,6 +440,9 @@ export default function AIHostedRoomController({
 
             speak(prompt);
 
+            const body = `${AI_PREFIX} ${prompt}`;
+            spokenBodiesRef.current.add(body);
+
             void writeChatMessage({
                 chatTable,
                 sessionId,
@@ -340,12 +453,7 @@ export default function AIHostedRoomController({
         }, delayMs);
 
         return () => window.clearTimeout(timer);
-    }, [chatTable, cleanName, currentStage, currentUserId, intentionSaved, sessionId]);
-
-    useEffect(() => {
-        if (isCheckinLikeStage(currentStage)) return;
-        setCheckinActive(false);
-    }, [currentStage]);
+    }, [chatTable, cleanName, currentStage, currentUserId, hydrated, intentionSaved, sessionId]);
 
     const startVoiceInput = () => {
         if (saving || listening) return;
@@ -372,7 +480,11 @@ export default function AIHostedRoomController({
                 setListening(true);
                 setExpanded(true);
                 setMinimized(false);
-                setVoiceHint(mode === "checkin" ? "Listening… say how it went." : "Listening… say your intention.");
+                setVoiceHint(
+                    mode === "checkin"
+                        ? "Listening… summarize your progress."
+                        : "Listening… say your intention."
+                );
             };
 
             recognition.onerror = (event: any) => {
@@ -440,7 +552,12 @@ export default function AIHostedRoomController({
 
     const handleClose = () => {
         setClosing(true);
-        window.setTimeout(() => setOpen(false), 220);
+
+        window.setTimeout(() => {
+            setClosing(false);
+            setMinimized(true);
+            setExpanded(false);
+        }, 220);
     };
 
     const handleSubmit = async () => {
@@ -483,6 +600,7 @@ export default function AIHostedRoomController({
                 });
 
                 setIntentionSaved(true);
+                setInputText("");
             } else {
                 await writeAiRoomState({
                     sessionId,
@@ -490,27 +608,33 @@ export default function AIHostedRoomController({
                     checkinCollected: true,
                 });
 
+                lastCheckinAtRef.current = new Date().toISOString();
+
                 await writeChatMessage({
                     chatTable,
                     sessionId,
                     currentUserId,
-                    text: `${cleanName} check-in: ${value}`,
+                    text: `${cleanName} progress summary: ${value}`,
                     isAi: false,
                 });
 
                 setCheckinActive(false);
+                setInputText("");
             }
 
-            setAiReply(local.spoken);
+            setAiReply(local.publicSpoken);
             setPrivateAdvice(local.privateAdvice);
 
-            speak(local.spoken);
+            speak(local.publicSpoken);
+
+            const body = `${AI_PREFIX} ${local.publicSpoken}`;
+            spokenBodiesRef.current.add(body);
 
             await writeChatMessage({
                 chatTable,
                 sessionId,
                 currentUserId,
-                text: local.spoken,
+                text: local.publicSpoken,
                 isAi: true,
             });
         } catch (e: any) {
@@ -529,14 +653,14 @@ export default function AIHostedRoomController({
     return (
         <div
             className={[
-                "pointer-events-none fixed inset-x-0 bottom-5 z-[230] flex justify-center px-4 transition-all duration-200",
+                "pointer-events-none fixed inset-x-0 bottom-[92px] z-[230] flex justify-center px-4 transition-all duration-200",
                 closing ? "translate-y-3 opacity-0" : "translate-y-0 opacity-100",
             ].join(" ")}
         >
             <div
                 className={[
-                    "pointer-events-auto w-full max-w-[820px] transition-all duration-300 ease-out",
-                    showCompact ? "max-w-[360px]" : "",
+                    "pointer-events-auto w-full transition-all duration-300 ease-out",
+                    showCompact ? "max-w-[360px]" : "max-w-[820px]",
                 ].join(" ")}
                 onMouseEnter={() => !showCompact && setExpanded(true)}
                 onMouseLeave={() => {
@@ -595,16 +719,11 @@ export default function AIHostedRoomController({
                             </div>
 
                             {!showCompact ? (
-                                <div
-                                    className={[
-                                        "mt-0.5 truncate text-[13px]",
-                                        isLight ? "text-black/55" : "text-white/55",
-                                    ].join(" ")}
-                                >
+                                <div className={["mt-0.5 truncate text-[13px]", isLight ? "text-black/55" : "text-white/55"].join(" ")}>
                                     {mode === "checkin"
-                                        ? "Tell the AI host how it went."
+                                        ? "Summarize your progress for the previous block."
                                         : intentionSaved
-                                            ? "Intention saved. AI host is ready for check-ins."
+                                            ? "Intention saved. I’ll ask for progress summaries during check-ins."
                                             : listening
                                                 ? "Say what you’re going to work on."
                                                 : "Type or say what you’re working on."}
@@ -634,8 +753,8 @@ export default function AIHostedRoomController({
                                 "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[16px] transition",
                                 isLight ? "text-black/45 hover:bg-black/5 hover:text-black" : "text-white/45 hover:bg-white/10 hover:text-white",
                             ].join(" ")}
-                            aria-label="Close AI host"
-                            title="Close"
+                            aria-label="Hide AI host"
+                            title="Hide"
                         >
                             ×
                         </button>
@@ -645,7 +764,7 @@ export default function AIHostedRoomController({
                         <div
                             className={[
                                 "grid transition-all duration-300 ease-out",
-                                expanded || inputText || intentionSaved || listening || checkinActive
+                                expanded || inputText || !intentionSaved || listening || checkinActive || privateAdvice.length
                                     ? "grid-rows-[1fr] opacity-100"
                                     : "grid-rows-[0fr] opacity-0",
                             ].join(" ")}
@@ -669,7 +788,7 @@ export default function AIHostedRoomController({
                                             if (e.key === "Enter") void handleSubmit();
                                         }}
                                         disabled={saving}
-                                        placeholder={mode === "checkin" ? "It went..." : "I’m going to work on..."}
+                                        placeholder={mode === "checkin" ? "Progress summary for the last block..." : "I’m going to work on..."}
                                         className={[
                                             "h-12 min-w-0 flex-1 rounded-2xl border px-4 text-[14px] outline-none transition",
                                             isLight
@@ -682,15 +801,6 @@ export default function AIHostedRoomController({
                                         type="button"
                                         onClick={listening ? stopVoiceInput : startVoiceInput}
                                         disabled={saving || !voiceSupported}
-                                        title={
-                                            voiceSupported
-                                                ? listening
-                                                    ? "Stop listening"
-                                                    : mode === "checkin"
-                                                        ? "Say how it went"
-                                                        : "Say your intention"
-                                                : "Voice input is not supported in this browser"
-                                        }
                                         className={[
                                             "h-12 shrink-0 rounded-2xl px-4 text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-45",
                                             listening
@@ -714,12 +824,7 @@ export default function AIHostedRoomController({
                                 </div>
 
                                 {voiceHint ? (
-                                    <div
-                                        className={[
-                                            "mt-2 text-[12px]",
-                                            listening ? "text-red-300" : isLight ? "text-black/45" : "text-white/40",
-                                        ].join(" ")}
-                                    >
+                                    <div className={["mt-2 text-[12px]", listening ? "text-red-300" : isLight ? "text-black/45" : "text-white/40"].join(" ")}>
                                         {voiceHint}
                                     </div>
                                 ) : null}
@@ -752,7 +857,7 @@ export default function AIHostedRoomController({
                                 ) : null}
 
                                 <div className={["mt-2 text-[12px]", isLight ? "text-black/40" : "text-white/35"].join(" ")}>
-                                    Voice input uses your browser speech recognition. You can edit the text before saving.
+                                    Public AI messages are spoken for everyone through room chat. Private suggestions stay visible only here.
                                 </div>
                             </div>
                         </div>
