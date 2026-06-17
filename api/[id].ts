@@ -126,7 +126,7 @@ Rules:
 export default async function handler(req: any, res: any) {
   const id = String(req.query?.id || "").trim();
 
-  if (id === "ai-host") {
+  if (id === "default" && req.body?.action === "respond") {
     return handleAiHost(req, res);
   }
 

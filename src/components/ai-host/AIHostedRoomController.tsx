@@ -258,7 +258,7 @@ async function callAiHostGemini(args: {
     name: string;
     text: string;
 }): Promise<AiReply> {
-    const res = await fetch("/api/ai-host", {
+    const res = await fetch("/api/default", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
