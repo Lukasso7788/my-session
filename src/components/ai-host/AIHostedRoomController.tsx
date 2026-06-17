@@ -42,6 +42,12 @@ type SpeechRecognitionLike = {
 
 type AiMode = "intention" | "checkin";
 
+type AiReply = {
+    publicSpoken: string;
+    privateAdvice: string[];
+    source?: "gemini" | "fallback";
+};
+
 const SESSION_INTENTIONS_TABLE = "intentions";
 const AI_PREFIX = "🤖 AI Host:";
 
@@ -224,8 +230,7 @@ async function writeChatMessage(args: {
 function buildLocalAiReply(args: {
     mode: AiMode;
     name: string;
-    text: string;
-}) {
+}): AiReply {
     if (args.mode === "checkin") {
         return {
             publicSpoken: `Nice check-in, ${args.name}. Keep going with one small next step.`,
@@ -234,6 +239,7 @@ function buildLocalAiReply(args: {
                 "Pick one concrete next action for the next block.",
                 "Keep the next step small enough to start immediately.",
             ],
+            source: "fallback",
         };
     }
 
@@ -243,6 +249,41 @@ function buildLocalAiReply(args: {
             "Make the first action very small.",
             "Use the first 15-minute block only to start.",
         ],
+        source: "fallback",
+    };
+}
+
+async function callAiHostGemini(args: {
+    mode: AiMode;
+    name: string;
+    text: string;
+}): Promise<AiReply> {
+    const res = await fetch("/api/ai-host", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            action: "respond",
+            phase: args.mode,
+            userName: args.name,
+            text: args.text,
+        }),
+    });
+
+    if (!res.ok) {
+        throw new Error(`AI host failed: ${res.status}`);
+    }
+
+    const data = await res.json();
+
+    return {
+        publicSpoken: String(data?.publicSpoken || "").trim(),
+        privateAdvice: Array.isArray(data?.privateAdvice)
+            ? data.privateAdvice
+                .map((x: unknown) => String(x || "").trim())
+                .filter(Boolean)
+                .slice(0, 3)
+            : [],
+        source: data?.source === "gemini" ? "gemini" : "fallback",
     };
 }
 
@@ -255,7 +296,7 @@ export default function AIHostedRoomController({
     chatTable = "session_chat_messages",
     theme = "dark",
 }: Props) {
-    const [open, setOpen] = useState(true);
+    const [open] = useState(true);
     const [closing, setClosing] = useState(false);
     const [minimized, setMinimized] = useState(false);
     const [hydrated, setHydrated] = useState(false);
@@ -572,11 +613,28 @@ export default function AIHostedRoomController({
             setExpanded(true);
             setMinimized(false);
 
-            const local = buildLocalAiReply({
+            let reply = buildLocalAiReply({
                 mode,
                 name: cleanName,
-                text: value,
             });
+
+            try {
+                const gemini = await callAiHostGemini({
+                    mode,
+                    name: cleanName,
+                    text: value,
+                });
+
+                if (gemini.publicSpoken) {
+                    reply = {
+                        publicSpoken: gemini.publicSpoken,
+                        privateAdvice: gemini.privateAdvice.length ? gemini.privateAdvice : reply.privateAdvice,
+                        source: gemini.source,
+                    };
+                }
+            } catch (e) {
+                console.warn("[AI HOST] Gemini fallback:", e);
+            }
 
             if (mode === "intention") {
                 await writeAiRoomState({
@@ -622,19 +680,19 @@ export default function AIHostedRoomController({
                 setInputText("");
             }
 
-            setAiReply(local.publicSpoken);
-            setPrivateAdvice(local.privateAdvice);
+            setAiReply(reply.publicSpoken);
+            setPrivateAdvice(reply.privateAdvice);
 
-            speak(local.publicSpoken);
+            speak(reply.publicSpoken);
 
-            const body = `${AI_PREFIX} ${local.publicSpoken}`;
+            const body = `${AI_PREFIX} ${reply.publicSpoken}`;
             spokenBodiesRef.current.add(body);
 
             await writeChatMessage({
                 chatTable,
                 sessionId,
                 currentUserId,
-                text: local.publicSpoken,
+                text: reply.publicSpoken,
                 isAi: true,
             });
         } catch (e: any) {
