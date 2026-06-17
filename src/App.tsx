@@ -3,7 +3,6 @@ import { Routes, Route, Link } from "react-router-dom";
 
 import { SessionsPage } from "./pages/SessionsPage";
 import LandingPage from "./pages/LandingPage";
-import RoomPage from "./pages/RoomPage";
 import RoomPageIFrame from "./pages/RoomPageIFrame";
 import RoomPageLiveKit from "./pages/RoomPageLiveKit";
 import LoginPage from "./pages/LoginPage";
