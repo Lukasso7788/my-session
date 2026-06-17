@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "../../lib/supabase";
 
 type AiHostStage = {
     name?: string;
@@ -23,6 +24,12 @@ type Props = {
     theme?: string;
 };
 
+type AiHostApiResponse = {
+    spoken?: string;
+    privateAdvice?: string[];
+    source?: "gemini" | "fallback";
+};
+
 function speak(text: string) {
     if (typeof window === "undefined") return;
     if (!("speechSynthesis" in window)) return;
@@ -37,8 +44,99 @@ function speak(text: string) {
 
         window.speechSynthesis.speak(utterance);
     } catch {
-        // ignore browser speech errors
+        // ignore
     }
+}
+
+async function writeAiRoomState(args: {
+    sessionId: string;
+    currentUserId: string;
+}) {
+    const nowIso = new Date().toISOString();
+
+    const { error } = await supabase.from("ai_room_participant_state").upsert(
+        {
+            session_id: args.sessionId,
+            user_id: args.currentUserId,
+            intention_collected: true,
+            last_intention_at: nowIso,
+            updated_at: nowIso,
+        },
+        {
+            onConflict: "session_id,user_id",
+        }
+    );
+
+    if (error) {
+        console.warn("[AI HOST] ai_room_participant_state upsert failed:", error);
+    }
+}
+
+async function writeChatMessage(args: {
+    chatTable: string;
+    sessionId: string;
+    currentUserId: string;
+    text: string;
+    isAi?: boolean;
+}) {
+    const text = String(args.text || "").trim();
+    if (!text) return;
+
+    const nowIso = new Date().toISOString();
+    const prefix = args.isAi ? "🤖 AI Host: " : "";
+
+    const variants = [
+        {
+            session_id: args.sessionId,
+            user_id: args.currentUserId,
+            message: `${prefix}${text}`,
+            created_at: nowIso,
+        },
+        {
+            session_id: args.sessionId,
+            user_id: args.currentUserId,
+            content: `${prefix}${text}`,
+            created_at: nowIso,
+        },
+        {
+            session_id: args.sessionId,
+            user_id: args.currentUserId,
+            text: `${prefix}${text}`,
+            created_at: nowIso,
+        },
+    ];
+
+    for (const payload of variants) {
+        const { error } = await supabase.from(args.chatTable).insert(payload as any);
+        if (!error) return;
+
+        console.warn("[AI HOST] chat insert variant failed:", {
+            payload,
+            error,
+        });
+    }
+}
+
+async function callAiHostRespond(args: {
+    phase: "intention" | "checkin";
+    userName: string;
+    intention: string;
+    answer?: string;
+    sessionTitle?: string;
+}): Promise<AiHostApiResponse> {
+    const res = await fetch("/api/ai-host/respond", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(args),
+    });
+
+    if (!res.ok) {
+        throw new Error(`AI host API failed: ${res.status}`);
+    }
+
+    return (await res.json()) as AiHostApiResponse;
 }
 
 export default function AIHostedRoomController({
@@ -54,6 +152,11 @@ export default function AIHostedRoomController({
     const [expanded, setExpanded] = useState(false);
     const [intention, setIntention] = useState("");
     const [submitted, setSubmitted] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [errorText, setErrorText] = useState("");
+    const [aiReply, setAiReply] = useState("");
+    const [privateAdvice, setPrivateAdvice] = useState<string[]>([]);
+
     const greetedRef = useRef(false);
 
     const cleanName = useMemo(() => {
@@ -88,26 +191,75 @@ export default function AIHostedRoomController({
 
         const timer = window.setTimeout(() => {
             speak(greetingText);
+
+            void writeChatMessage({
+                chatTable,
+                sessionId,
+                currentUserId,
+                text: greetingText,
+                isAi: true,
+            });
         }, 900);
 
         return () => window.clearTimeout(timer);
-    }, [greetingText]);
+    }, [chatTable, currentUserId, greetingText, sessionId]);
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         const value = intention.trim();
-        if (!value) return;
+        if (!value || saving || submitted) return;
 
-        setSubmitted(true);
-        setExpanded(true);
+        try {
+            setSaving(true);
+            setErrorText("");
+            setExpanded(true);
 
-        const reply = `Got it. I'll keep your intention in mind: ${value}`;
-        speak(reply);
+            await writeAiRoomState({
+                sessionId,
+                currentUserId,
+            });
 
-        console.log("[AI HOST] intention submitted", {
-            sessionId,
-            currentUserId,
-            intention: value,
-        });
+            await writeChatMessage({
+                chatTable,
+                sessionId,
+                currentUserId,
+                text: `${cleanName} is working on: ${value}`,
+                isAi: false,
+            });
+
+            const response = await callAiHostRespond({
+                phase: "intention",
+                userName: cleanName,
+                intention: value,
+                sessionTitle: "🤖✨ 15/3 AI Focus Room - 24/7",
+            });
+
+            const spoken =
+                String(response.spoken || "").trim() ||
+                `Got it, ${cleanName}. Start with the first small step.`;
+
+            const advice = Array.isArray(response.privateAdvice)
+                ? response.privateAdvice.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 3)
+                : [];
+
+            setAiReply(spoken);
+            setPrivateAdvice(advice);
+            setSubmitted(true);
+
+            speak(spoken);
+
+            await writeChatMessage({
+                chatTable,
+                sessionId,
+                currentUserId,
+                text: spoken,
+                isAi: true,
+            });
+        } catch (e: any) {
+            console.error("[AI HOST] submit failed:", e);
+            setErrorText(String(e?.message || e || "Failed to save intention."));
+        } finally {
+            setSaving(false);
+        }
     };
 
     if (!open) return null;
@@ -116,7 +268,7 @@ export default function AIHostedRoomController({
         <div className="pointer-events-none fixed inset-x-0 bottom-5 z-[230] flex justify-center px-4">
             <div
                 className={[
-                    "pointer-events-auto w-full max-w-[720px] transition-all duration-300 ease-out",
+                    "pointer-events-auto w-full max-w-[760px] transition-all duration-300 ease-out",
                     expanded || intention || submitted
                         ? "translate-y-0 opacity-100"
                         : "translate-y-1 opacity-95",
@@ -165,7 +317,7 @@ export default function AIHostedRoomController({
                                 ].join(" ")}
                             >
                                 {submitted
-                                    ? "Intention saved locally for this MVP."
+                                    ? "Intention saved. AI host is ready for check-ins."
                                     : "Tell me what you’re working on."}
                             </div>
                         </div>
@@ -202,7 +354,7 @@ export default function AIHostedRoomController({
                                         : "bg-white/[0.06] text-white/75",
                                 ].join(" ")}
                             >
-                                {greetingText}
+                                {aiReply || greetingText}
                             </div>
 
                             <div className="mt-3 flex gap-2">
@@ -211,9 +363,9 @@ export default function AIHostedRoomController({
                                     onChange={(e) => setIntention(e.target.value)}
                                     onFocus={() => setExpanded(true)}
                                     onKeyDown={(e) => {
-                                        if (e.key === "Enter") handleSubmit();
+                                        if (e.key === "Enter") void handleSubmit();
                                     }}
-                                    disabled={submitted}
+                                    disabled={submitted || saving}
                                     placeholder="I’m going to work on..."
                                     className={[
                                         "h-12 min-w-0 flex-1 rounded-2xl border px-4 text-[14px] outline-none transition",
@@ -226,13 +378,40 @@ export default function AIHostedRoomController({
 
                                 <button
                                     type="button"
-                                    onClick={handleSubmit}
-                                    disabled={!intention.trim() || submitted}
+                                    onClick={() => void handleSubmit()}
+                                    disabled={!intention.trim() || submitted || saving}
                                     className="h-12 shrink-0 rounded-2xl bg-violet-600 px-5 text-[14px] font-bold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-45"
                                 >
-                                    {submitted ? "Saved" : "Start"}
+                                    {saving ? "Saving..." : submitted ? "Saved" : "Start"}
                                 </button>
                             </div>
+
+                            {privateAdvice.length ? (
+                                <div
+                                    className={[
+                                        "mt-3 rounded-2xl border px-4 py-3",
+                                        theme === "light"
+                                            ? "border-violet-100 bg-violet-50 text-violet-950"
+                                            : "border-violet-300/15 bg-violet-400/10 text-violet-100",
+                                    ].join(" ")}
+                                >
+                                    <div className="text-[12px] font-bold uppercase tracking-[0.12em] opacity-70">
+                                        Private suggestion
+                                    </div>
+
+                                    <ul className="mt-2 list-disc space-y-1 pl-5 text-[13px] leading-5">
+                                        {privateAdvice.map((item, index) => (
+                                            <li key={`${item}-${index}`}>{item}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            ) : null}
+
+                            {errorText ? (
+                                <div className="mt-3 rounded-2xl border border-red-300/30 bg-red-500/10 px-4 py-3 text-[13px] text-red-200">
+                                    {errorText}
+                                </div>
+                            ) : null}
 
                             <div
                                 className={[
@@ -240,7 +419,7 @@ export default function AIHostedRoomController({
                                     theme === "light" ? "text-black/40" : "text-white/35",
                                 ].join(" ")}
                             >
-                                Next step: we’ll save this to IntentionsPanel and duplicate AI messages into chat.
+                                This saves AI-room state, writes to chat, and calls the AI host endpoint.
                             </div>
                         </div>
                     </div>
