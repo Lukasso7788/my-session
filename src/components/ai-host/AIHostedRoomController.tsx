@@ -105,38 +105,15 @@ async function writeChatMessage(args: {
     const text = String(args.text || "").trim();
     if (!text) return;
 
-    const nowIso = new Date().toISOString();
-    const prefix = args.isAi ? "🤖 AI Host: " : "";
+    const { error } = await supabase.from(args.chatTable).insert({
+        session_id: args.sessionId,
+        user_id: args.currentUserId,
+        body: args.isAi ? `🤖 AI Host: ${text}` : text,
+        scope: "room",
+    });
 
-    const variants = [
-        {
-            session_id: args.sessionId,
-            user_id: args.currentUserId,
-            message: `${prefix}${text}`,
-            created_at: nowIso,
-        },
-        {
-            session_id: args.sessionId,
-            user_id: args.currentUserId,
-            content: `${prefix}${text}`,
-            created_at: nowIso,
-        },
-        {
-            session_id: args.sessionId,
-            user_id: args.currentUserId,
-            text: `${prefix}${text}`,
-            created_at: nowIso,
-        },
-    ];
-
-    for (const payload of variants) {
-        const { error } = await supabase.from(args.chatTable).insert(payload as any);
-        if (!error) return;
-
-        console.warn("[AI HOST] chat insert variant failed:", {
-            payload,
-            error,
-        });
+    if (error) {
+        console.warn("[AI HOST] chat insert failed:", error);
     }
 }
 
