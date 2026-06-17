@@ -219,7 +219,7 @@ async function writeChatMessage(args: {
         session_id: args.sessionId,
         user_id: args.currentUserId,
         body,
-        scope: "room",
+        scope: "session",
     });
 
     if (error) {
