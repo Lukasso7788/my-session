@@ -9979,6 +9979,9 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
             setSettingsPreviewVersion((v) => v + 1);
           }}
           onSendReaction={sendReaction}
+          showAIHost={aiHostedEnabled}
+          aiHostOpen={aiHostInputOpen}
+          onOpenAIHost={() => setAiHostInputOpen(true)}
         />
 
         <RoomSettingsModalLiveKit
