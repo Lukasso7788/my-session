@@ -38,6 +38,7 @@ import { PAYWALL_ENABLED } from "../lib/flags";
 
 import ChatPanel from "../components/ChatPanel";
 import { IntentionsPanel } from "../components/IntentionsPanel";
+import AIHostedRoomController from "../components/ai-host/AIHostedRoomController";
 import JoinGateModal from "../components/JoinGateModal";
 import { UserProfileModal } from "../components/UserProfileModal";
 import RoomTopBar from "../components/RoomTopBar";
@@ -98,6 +99,7 @@ type SessionRow = {
   start_time?: string | null;
   created_at?: string | null;
   duration_minutes?: number | null;
+  ai_hosted?: boolean | null;
   host_profile?: HostProfile | null;
   session_templates?: SessionTemplate | SessionTemplate[] | null;
   session_bookings?: Array<{
@@ -8515,6 +8517,10 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   // Layout
   const tileCount = layoutTilesForRender.length;
 
+  const aiHostedEnabled = !!session?.ai_hosted;
+
+  const currentStageForAiHost = stages[currentStage] || null;
+
   const paddingBottomPx = 12;
 
   const isVeryNarrow = effectiveW < 430;
@@ -9722,6 +9728,18 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           setBgImageUrl(DEFAULT_BG_DATA_URL);
         }}
       />
+
+      {aiHostedEnabled && session?.id && authUserId ? (
+        <AIHostedRoomController
+          sessionId={session.id}
+          currentUserId={authUserId}
+          currentUserName={displayName || userName || "there"}
+          tiles={layoutTilesForRender}
+          currentStage={currentStageForAiHost}
+          chatTable={CHAT_MSG_TABLE}
+          theme={theme}
+        />
+      ) : null}
 
       <div className={`ms-room-page h-[100dvh] overflow-hidden ${pageBg}`}>
         <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))] sm:pb-[calc(90px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
