@@ -173,28 +173,6 @@ async function writeChatMessage(args: {
     }
 }
 
-async function callAiHostRespond(args: {
-    phase: "intention" | "checkin";
-    userName: string;
-    intention: string;
-    answer?: string;
-    sessionTitle?: string;
-}): Promise<AiHostApiResponse> {
-    const res = await fetch("/api/ai-host/respond", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(args),
-    });
-
-    if (!res.ok) {
-        throw new Error(`AI host API failed: ${res.status}`);
-    }
-
-    return (await res.json()) as AiHostApiResponse;
-}
-
 export default function AIHostedRoomController({
     sessionId,
     currentUserId,
@@ -395,12 +373,14 @@ export default function AIHostedRoomController({
                 isAi: false,
             });
 
-            const response = await callAiHostRespond({
-                phase: "intention",
-                userName: cleanName,
-                intention: value,
-                sessionTitle: "🤖✨ 15/3 AI Focus Room - 24/7",
-            });
+            const response: AiHostApiResponse = {
+                spoken: `Got it, ${cleanName}. Start with the first small step and keep it simple.`,
+                privateAdvice: [
+                    "Pick one concrete next action.",
+                    "Work on it for one 15-minute block.",
+                ],
+                source: "fallback",
+            };
 
             const spoken =
                 String(response.spoken || "").trim() ||
