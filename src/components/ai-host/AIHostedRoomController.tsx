@@ -218,8 +218,8 @@ async function writeChatMessage(args: {
     const { error } = await supabase.from(args.chatTable).insert({
         session_id: args.sessionId,
         user_id: args.currentUserId,
-        body,
-        scope: "session",
+        body: body.slice(0, 1900),
+        scope: "general",
     });
 
     if (error) {
