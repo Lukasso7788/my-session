@@ -183,7 +183,6 @@ export default function App() {
 
         <Route path="/:slug" element={<PublicSlugRedirectPage />} />
 
-        <Route path="/room/:id" element={<RoomPage />} />
         <Route path="/room-iframe/:id" element={<RoomPageIFrame />} />
         <Route path="/room-livekit/:id" element={<RoomPageLiveKit />} />
         <Route path="/login" element={<LoginPage />} />
