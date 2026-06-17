@@ -19,11 +19,9 @@ function safeJsonParse(raw: string): any | null {
 
 function getRequestBody(req: VercelRequest): any {
   const body = req.body;
-
   if (!body) return {};
   if (typeof body === "string") return safeJsonParse(body) || {};
   if (typeof body === "object") return body;
-
   return {};
 }
 
@@ -52,29 +50,20 @@ function makeFallback(phase: string, userName: string, debugReason?: string) {
 }
 
 async function handleAiHost(req: VercelRequest, res: VercelResponse) {
-  const apiKey = String(process.env.GEMINI_API_KEY || "").trim();
-  const model = String(process.env.GEMINI_MODEL || "gemini-2.0-flash").trim();
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  const model = String(process.env.OPENAI_MODEL || "gpt-4.1-mini").trim();
 
   const body = getRequestBody(req);
-
   const phase = cleanText(body.phase, "intention");
   const userName = cleanText(body.userName, "there");
   const text = cleanText(body.text);
 
   if (!apiKey) {
-    console.warn("[api/templates ai-host] Missing GEMINI_API_KEY");
-
-    return res.status(200).json(
-      makeFallback(phase, userName, "missing_gemini_api_key")
-    );
+    return res.status(200).json(makeFallback(phase, userName, "missing_openai_api_key"));
   }
 
-  const prompt = `
+  const systemPrompt = `
 You are the AI host of a MySession AI-hosted body-doubling focus room.
-
-User: ${userName}
-Phase: ${phase}
-User text: ${text}
 
 Return JSON only:
 {
@@ -93,60 +82,55 @@ Rules:
 - For intention, help the user start with a small visible first step.
 `.trim();
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-    model
-  )}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const userPrompt = `
+User: ${userName}
+Phase: ${phase}
+User text: ${text}
+`.trim();
 
   try {
-    const geminiRes = await fetch(url, {
+    const openAiRes = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
       body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.35,
-          maxOutputTokens: 320,
-          responseMimeType: "application/json",
-        },
+        model,
+        temperature: 0.35,
+        max_tokens: 320,
+        response_format: { type: "json_object" },
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
       }),
     });
 
-    const raw = await geminiRes.text();
+    const raw = await openAiRes.text();
 
-    if (!geminiRes.ok) {
-      console.error("[api/templates ai-host] Gemini failed:", {
-        status: geminiRes.status,
+    if (!openAiRes.ok) {
+      console.error("[api/templates ai-host] OpenAI failed:", {
+        status: openAiRes.status,
         raw: raw.slice(0, 1000),
         model,
         hasKey: Boolean(apiKey),
       });
 
-      return res.status(200).json(
-        makeFallback(phase, userName, `gemini_http_${geminiRes.status}`)
-      );
+      return res.status(200).json(makeFallback(phase, userName, `openai_http_${openAiRes.status}`));
     }
 
     const data = safeJsonParse(raw);
-    const answerText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const answerText = data?.choices?.[0]?.message?.content || "";
     const parsed = safeJsonParse(answerText);
 
     const publicSpoken = cleanText(parsed?.publicSpoken);
     const privateAdvice = Array.isArray(parsed?.privateAdvice)
-      ? parsed.privateAdvice
-          .map((x: unknown) => cleanText(x))
-          .filter(Boolean)
-          .slice(0, 3)
+      ? parsed.privateAdvice.map((x: unknown) => cleanText(x)).filter(Boolean).slice(0, 3)
       : [];
 
     if (!publicSpoken && privateAdvice.length === 0) {
-      console.warn("[api/templates ai-host] Gemini returned unusable JSON:", {
-        raw: raw.slice(0, 1000),
-        answerText: String(answerText || "").slice(0, 1000),
-      });
-
-      return res.status(200).json(
-        makeFallback(phase, userName, "gemini_unusable_json")
-      );
+      return res.status(200).json(makeFallback(phase, userName, "openai_unusable_json"));
     }
 
     return res.status(200).json({
@@ -155,22 +139,18 @@ Rules:
         (phase === "checkin"
           ? `Nice check-in, ${userName}. Choose the next small step.`
           : `Got it, ${userName}. Start with one small step.`),
-      privateAdvice: privateAdvice.length
-        ? privateAdvice
-        : ["Choose one concrete next action."],
-      source: "gemini",
+      privateAdvice: privateAdvice.length ? privateAdvice : ["Choose one concrete next action."],
+      source: "openai",
       debugReason: null,
     });
   } catch (error: any) {
-    console.error("[api/templates ai-host] Gemini exception:", {
+    console.error("[api/templates ai-host] OpenAI exception:", {
       message: error?.message || String(error),
       model,
       hasKey: Boolean(apiKey),
     });
 
-    return res.status(200).json(
-      makeFallback(phase, userName, "gemini_exception")
-    );
+    return res.status(200).json(makeFallback(phase, userName, "openai_exception"));
   }
 }
 
@@ -178,9 +158,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const body = getRequestBody(req);
 
   if (req.method === "POST") {
-    if (body?.action === "ai-host-respond") {
-      return handleAiHost(req, res);
-    }
+    if (body?.action === "ai-host-respond") return handleAiHost(req, res);
 
     return res.status(400).json({
       error: "Unknown POST action",
@@ -198,14 +176,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .select("*")
       .order("total_duration", { ascending: true });
 
-    if (error) {
-      console.error("Supabase error:", error.message);
-      return res.status(500).json({ error: error.message });
-    }
+    if (error) return res.status(500).json({ error: error.message });
 
     return res.status(200).json(data || []);
   } catch (err: any) {
-    console.error("Handler error:", err);
     return res.status(500).json({ error: err.message });
   }
 }

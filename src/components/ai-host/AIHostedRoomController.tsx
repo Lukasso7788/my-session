@@ -45,7 +45,7 @@ type AiMode = "intention" | "checkin";
 type AiReply = {
     publicSpoken: string;
     privateAdvice: string[];
-    source?: "gemini" | "fallback";
+    source?: "openai" | "fallback";
 };
 
 const SESSION_INTENTIONS_TABLE = "intentions";
@@ -289,7 +289,7 @@ async function callAiHostGemini(args: {
                 .filter(Boolean)
                 .slice(0, 3)
             : [],
-        source: data?.source === "gemini" ? "gemini" : "fallback",
+        source: data?.source === "openai" ? "openai" : "fallback",
     };
 }
 
@@ -317,7 +317,7 @@ export default function AIHostedRoomController({
     const [errorText, setErrorText] = useState("");
     const [aiReply, setAiReply] = useState("");
     const [privateAdvice, setPrivateAdvice] = useState<string[]>([]);
-    const [replySource, setReplySource] = useState<"gemini" | "fallback" | "">("");
+    const [replySource, setReplySource] = useState<"openai" | "fallback" | "">("");
     const [listening, setListening] = useState(false);
     const [voiceSupported, setVoiceSupported] = useState(false);
     const [voiceHint, setVoiceHint] = useState("");
