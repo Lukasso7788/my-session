@@ -44,6 +44,8 @@ type SpeechRecognitionLike = {
     onresult: null | ((event: any) => void);
 };
 
+const SESSION_INTENTIONS_TABLE = "intentions";
+
 function getSpeechRecognitionConstructor(): any | null {
     if (typeof window === "undefined") return null;
     return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || null;
@@ -92,6 +94,60 @@ async function writeAiRoomState(args: {
 
     if (error) {
         console.warn("[AI HOST] ai_room_participant_state upsert failed:", error);
+    }
+}
+
+async function upsertSessionIntention(args: {
+    sessionId: string;
+    currentUserId: string;
+    text: string;
+}) {
+    const text = String(args.text || "").trim();
+    if (!text) return;
+
+    const { data: existing, error: findError } = await supabase
+        .from(SESSION_INTENTIONS_TABLE)
+        .select("id")
+        .eq("session_id", args.sessionId)
+        .eq("user_id", args.currentUserId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+    if (findError) {
+        console.warn("[AI HOST] intention lookup failed:", findError);
+    }
+
+    const existingId = Array.isArray(existing) ? existing[0]?.id : null;
+
+    if (existingId) {
+        const { error } = await supabase
+            .from(SESSION_INTENTIONS_TABLE)
+            .update({
+                text,
+                completed: false,
+            })
+            .eq("id", existingId)
+            .eq("session_id", args.sessionId)
+            .eq("user_id", args.currentUserId);
+
+        if (error) {
+            console.warn("[AI HOST] intention update failed:", error);
+            throw error;
+        }
+
+        return;
+    }
+
+    const { error } = await supabase.from(SESSION_INTENTIONS_TABLE).insert({
+        session_id: args.sessionId,
+        user_id: args.currentUserId,
+        text,
+        completed: false,
+    });
+
+    if (error) {
+        console.warn("[AI HOST] intention insert failed:", error);
+        throw error;
     }
 }
 
@@ -281,12 +337,7 @@ export default function AIHostedRoomController({
                 const nextText = `${finalText || interimText}`.trim();
 
                 if (nextText) {
-                    setIntention((prev) => {
-                        const cleanPrev = prev.trim();
-                        if (!cleanPrev) return nextText;
-                        if (nextText.toLowerCase().startsWith(cleanPrev.toLowerCase())) return nextText;
-                        return `${cleanPrev} ${nextText}`.trim();
-                    });
+                    setIntention(nextText);
                 }
 
                 if (finalText.trim()) {
@@ -330,6 +381,12 @@ export default function AIHostedRoomController({
                 currentUserId,
             });
 
+            await upsertSessionIntention({
+                sessionId,
+                currentUserId,
+                text: value,
+            });
+
             await writeChatMessage({
                 chatTable,
                 sessionId,
@@ -350,7 +407,10 @@ export default function AIHostedRoomController({
                 `Got it, ${cleanName}. Start with the first small step.`;
 
             const advice = Array.isArray(response.privateAdvice)
-                ? response.privateAdvice.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 3)
+                ? response.privateAdvice
+                    .map((x) => String(x || "").trim())
+                    .filter(Boolean)
+                    .slice(0, 3)
                 : [];
 
             setAiReply(spoken);
@@ -440,7 +500,7 @@ export default function AIHostedRoomController({
                                 ].join(" ")}
                             >
                                 {submitted
-                                    ? "Intention saved. AI host is ready for check-ins."
+                                    ? "Intention saved to the Intentions panel."
                                     : listening
                                         ? "Say what you’re going to work on."
                                         : "Type or say what you’re working on."}
@@ -582,7 +642,7 @@ export default function AIHostedRoomController({
                                     theme === "light" ? "text-black/40" : "text-white/35",
                                 ].join(" ")}
                             >
-                                Voice input uses your browser speech recognition. You can edit the text before pressing Start.
+                                Voice input writes into the same session intentions table used by IntentionsPanel.
                             </div>
                         </div>
                     </div>
