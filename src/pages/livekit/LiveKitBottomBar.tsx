@@ -243,6 +243,26 @@ export function LiveKitBottomBar(props: {
                                         className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
                                             }`}
                                     >
+                                        {showAIHost && onOpenAIHost ? (
+                                            <button
+                                                onClick={() => {
+                                                    onOpenAIHost();
+                                                    setShowMoreMenu(false);
+                                                }}
+                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${aiHostOpen
+                                                        ? isLight
+                                                            ? "bg-blue-600 text-white"
+                                                            : "bg-violet-500 text-white"
+                                                        : isLight
+                                                            ? "text-black/75 hover:bg-black/5"
+                                                            : "text-white/85 hover:bg-white/5"
+                                                    }`}
+                                                type="button"
+                                            >
+                                                <AIHostIcon isLight={aiHostOpen ? false : isLight} className="w-4 h-4 opacity-90" />
+                                                <span>{aiHostOpen ? "AI Host open" : "Open AI Host"}</span>
+                                            </button>
+                                        ) : null}
 
                                         <button
                                             onClick={() => {
@@ -420,27 +440,6 @@ export function LiveKitBottomBar(props: {
                                 className="w-5 h-5"
                             />
                         </button>
-
-                        {showAIHost && onOpenAIHost ? (
-                            <button
-                                onClick={() => {
-                                    onOpenAIHost();
-                                    setShowMoreMenu(false);
-                                }}
-                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${aiHostOpen
-                                    ? isLight
-                                        ? "bg-blue-600 text-white"
-                                        : "bg-violet-500 text-white"
-                                    : isLight
-                                        ? "text-black/75 hover:bg-black/5"
-                                        : "text-white/85 hover:bg-white/5"
-                                    }`}
-                                type="button"
-                            >
-                                <AIHostIcon isLight={aiHostOpen ? false : isLight} className="w-4 h-4 opacity-90" />
-                                <span>{aiHostOpen ? "AI Host open" : "Open AI Host"}</span>
-                            </button>
-                        ) : null}
 
                         <div className="relative" ref={reactionsMenuRef}>
                             <button
