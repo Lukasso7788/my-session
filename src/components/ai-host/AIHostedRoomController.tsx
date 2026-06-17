@@ -258,6 +258,8 @@ async function callAiHostGemini(args: {
     name: string;
     text: string;
 }): Promise<AiReply> {
+    console.log("[AI HOST] calling /api/templates", args);
+
     const res = await fetch("/api/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -269,11 +271,15 @@ async function callAiHostGemini(args: {
         }),
     });
 
+    console.log("[AI HOST] /api/templates status", res.status);
+
     if (!res.ok) {
         throw new Error(`AI host failed: ${res.status}`);
     }
 
     const data = await res.json();
+
+    console.log("[AI HOST] /api/templates response", data);
 
     return {
         publicSpoken: String(data?.publicSpoken || "").trim(),
@@ -311,6 +317,7 @@ export default function AIHostedRoomController({
     const [errorText, setErrorText] = useState("");
     const [aiReply, setAiReply] = useState("");
     const [privateAdvice, setPrivateAdvice] = useState<string[]>([]);
+    const [replySource, setReplySource] = useState<"gemini" | "fallback" | "">("");
     const [listening, setListening] = useState(false);
     const [voiceSupported, setVoiceSupported] = useState(false);
     const [voiceHint, setVoiceHint] = useState("");
@@ -473,6 +480,7 @@ export default function AIHostedRoomController({
             setInputText("");
             setAiReply("");
             setPrivateAdvice([]);
+            setReplySource("");
             setErrorText("");
             setVoiceHint("");
             setCheckinActive(true);
@@ -603,6 +611,9 @@ export default function AIHostedRoomController({
 
     const handleSubmit = async () => {
         const value = inputText.trim();
+
+        console.log("[AI HOST] submit clicked", { mode, value, saving });
+
         if (!value || saving) return;
 
         try {
@@ -619,11 +630,15 @@ export default function AIHostedRoomController({
             });
 
             try {
+                console.log("[AI HOST] calling Gemini", { mode, value });
+
                 const gemini = await callAiHostGemini({
                     mode,
                     name: cleanName,
                     text: value,
                 });
+
+                console.log("[AI HOST] Gemini response", gemini);
 
                 if (gemini.publicSpoken) {
                     reply = {
@@ -682,6 +697,9 @@ export default function AIHostedRoomController({
 
             setAiReply(reply.publicSpoken);
             setPrivateAdvice(reply.privateAdvice);
+            setReplySource(reply.source || "fallback");
+            setMinimized(false);
+            setExpanded(true);
 
             speak(reply.publicSpoken);
 
@@ -698,6 +716,8 @@ export default function AIHostedRoomController({
         } catch (e: any) {
             console.error("[AI HOST] submit failed:", e);
             setErrorText(String(e?.message || e || "Failed to save."));
+            setMinimized(false);
+            setExpanded(true);
         } finally {
             setSaving(false);
         }
@@ -722,7 +742,9 @@ export default function AIHostedRoomController({
                 ].join(" ")}
                 onMouseEnter={() => !showCompact && setExpanded(true)}
                 onMouseLeave={() => {
-                    if (!inputText && !intentionSaved && !listening && !checkinActive) setExpanded(false);
+                    if (!inputText && !intentionSaved && !listening && !checkinActive && !privateAdvice.length) {
+                        setExpanded(false);
+                    }
                 }}
             >
                 <div
@@ -730,8 +752,8 @@ export default function AIHostedRoomController({
                         "overflow-hidden border shadow-[0_18px_70px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-all duration-300",
                         showCompact ? "rounded-full px-3 py-2" : "rounded-[28px]",
                         isLight ? "border-black/10 bg-white/92 text-black" : "border-white/12 bg-[#0b1220]/92 text-white",
-                        !showCompact && (expanded || inputText || intentionSaved || listening || checkinActive) ? "p-4" : "",
-                        !showCompact && !(expanded || inputText || intentionSaved || listening || checkinActive) ? "p-3" : "",
+                        !showCompact && (expanded || inputText || intentionSaved || listening || checkinActive || privateAdvice.length) ? "p-4" : "",
+                        !showCompact && !(expanded || inputText || intentionSaved || listening || checkinActive || privateAdvice.length) ? "p-3" : "",
                     ].join(" ")}
                 >
                     <div className="flex items-center gap-3">
@@ -768,6 +790,19 @@ export default function AIHostedRoomController({
                                 >
                                     {mode === "checkin" ? "Check-in" : "15/3"}
                                 </div>
+
+                                {replySource ? (
+                                    <div
+                                        className={[
+                                            "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                                            replySource === "gemini"
+                                                ? "bg-emerald-500/15 text-emerald-300"
+                                                : "bg-yellow-500/15 text-yellow-300",
+                                        ].join(" ")}
+                                    >
+                                        {replySource}
+                                    </div>
+                                ) : null}
 
                                 {listening ? (
                                     <div className="rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-semibold text-red-300">
@@ -896,8 +931,16 @@ export default function AIHostedRoomController({
                                                 : "border-violet-300/15 bg-violet-400/10 text-violet-100",
                                         ].join(" ")}
                                     >
-                                        <div className="text-[12px] font-bold uppercase tracking-[0.12em] opacity-70">
-                                            Private suggestion
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="text-[12px] font-bold uppercase tracking-[0.12em] opacity-70">
+                                                Private suggestion
+                                            </div>
+
+                                            {replySource ? (
+                                                <div className="text-[11px] opacity-60">
+                                                    source: {replySource}
+                                                </div>
+                                            ) : null}
                                         </div>
 
                                         <ul className="mt-2 list-disc space-y-1 pl-5 text-[13px] leading-5">
