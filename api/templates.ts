@@ -17,14 +17,25 @@ function safeJsonParse(raw: string): any | null {
   }
 }
 
+function getRequestBody(req: VercelRequest): any {
+  const body = req.body;
+
+  if (!body) return {};
+  if (typeof body === "string") return safeJsonParse(body) || {};
+  if (typeof body === "object") return body;
+
+  return {};
+}
+
 async function handleAiHost(req: VercelRequest, res: VercelResponse) {
   const apiKey = String(process.env.GEMINI_API_KEY || "").trim();
   const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 
-  const body = req.body || {};
-  const phase = cleanText((body as any).phase, "intention");
-  const userName = cleanText((body as any).userName, "there");
-  const text = cleanText((body as any).text);
+  const body = getRequestBody(req);
+
+  const phase = cleanText(body.phase, "intention");
+  const userName = cleanText(body.userName, "there");
+  const text = cleanText(body.text);
 
   const fallback =
     phase === "checkin"
@@ -47,6 +58,7 @@ async function handleAiHost(req: VercelRequest, res: VercelResponse) {
         };
 
   if (!apiKey) {
+    console.warn("[api/templates ai-host] Missing GEMINI_API_KEY");
     return res.status(200).json(fallback);
   }
 
@@ -127,8 +139,17 @@ Rules:
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (req.method === "POST" && (req.body as any)?.action === "ai-host-respond") {
-    return handleAiHost(req, res);
+  const body = getRequestBody(req);
+
+  if (req.method === "POST") {
+    if (body?.action === "ai-host-respond") {
+      return handleAiHost(req, res);
+    }
+
+    return res.status(400).json({
+      error: "Unknown POST action",
+      receivedAction: body?.action || null,
+    });
   }
 
   if (req.method !== "GET") {
