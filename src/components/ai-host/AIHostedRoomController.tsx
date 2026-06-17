@@ -258,11 +258,11 @@ async function callAiHostGemini(args: {
     name: string;
     text: string;
 }): Promise<AiReply> {
-    const res = await fetch("/api/default", {
+    const res = await fetch("/api/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            action: "respond",
+            action: "ai-host-respond",
             phase: args.mode,
             userName: args.name,
             text: args.text,
