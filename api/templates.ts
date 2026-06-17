@@ -27,17 +27,8 @@ function getRequestBody(req: VercelRequest): any {
   return {};
 }
 
-async function handleAiHost(req: VercelRequest, res: VercelResponse) {
-  const apiKey = String(process.env.GEMINI_API_KEY || "").trim();
-  const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
-
-  const body = getRequestBody(req);
-
-  const phase = cleanText(body.phase, "intention");
-  const userName = cleanText(body.userName, "there");
-  const text = cleanText(body.text);
-
-  const fallback =
+function makeFallback(phase: string, userName: string, debugReason?: string) {
+  const base =
     phase === "checkin"
       ? {
           publicSpoken: `Nice check-in, ${userName}. Pick one small next step and continue.`,
@@ -57,9 +48,25 @@ async function handleAiHost(req: VercelRequest, res: VercelResponse) {
           source: "fallback",
         };
 
+  return debugReason ? { ...base, debugReason } : base;
+}
+
+async function handleAiHost(req: VercelRequest, res: VercelResponse) {
+  const apiKey = String(process.env.GEMINI_API_KEY || "").trim();
+  const model = String(process.env.GEMINI_MODEL || "gemini-2.0-flash").trim();
+
+  const body = getRequestBody(req);
+
+  const phase = cleanText(body.phase, "intention");
+  const userName = cleanText(body.userName, "there");
+  const text = cleanText(body.text);
+
   if (!apiKey) {
     console.warn("[api/templates ai-host] Missing GEMINI_API_KEY");
-    return res.status(200).json(fallback);
+
+    return res.status(200).json(
+      makeFallback(phase, userName, "missing_gemini_api_key")
+    );
   }
 
   const prompt = `
@@ -109,10 +116,14 @@ Rules:
     if (!geminiRes.ok) {
       console.error("[api/templates ai-host] Gemini failed:", {
         status: geminiRes.status,
-        raw: raw.slice(0, 500),
+        raw: raw.slice(0, 1000),
+        model,
+        hasKey: Boolean(apiKey),
       });
 
-      return res.status(200).json(fallback);
+      return res.status(200).json(
+        makeFallback(phase, userName, `gemini_http_${geminiRes.status}`)
+      );
     }
 
     const data = safeJsonParse(raw);
@@ -127,14 +138,39 @@ Rules:
           .slice(0, 3)
       : [];
 
+    if (!publicSpoken && privateAdvice.length === 0) {
+      console.warn("[api/templates ai-host] Gemini returned unusable JSON:", {
+        raw: raw.slice(0, 1000),
+        answerText: String(answerText || "").slice(0, 1000),
+      });
+
+      return res.status(200).json(
+        makeFallback(phase, userName, "gemini_unusable_json")
+      );
+    }
+
     return res.status(200).json({
-      publicSpoken: publicSpoken || fallback.publicSpoken,
-      privateAdvice: privateAdvice.length ? privateAdvice : fallback.privateAdvice,
+      publicSpoken:
+        publicSpoken ||
+        (phase === "checkin"
+          ? `Nice check-in, ${userName}. Choose the next small step.`
+          : `Got it, ${userName}. Start with one small step.`),
+      privateAdvice: privateAdvice.length
+        ? privateAdvice
+        : ["Choose one concrete next action."],
       source: "gemini",
+      debugReason: null,
     });
-  } catch (error) {
-    console.error("[api/templates ai-host] Gemini error:", error);
-    return res.status(200).json(fallback);
+  } catch (error: any) {
+    console.error("[api/templates ai-host] Gemini exception:", {
+      message: error?.message || String(error),
+      model,
+      hasKey: Boolean(apiKey),
+    });
+
+    return res.status(200).json(
+      makeFallback(phase, userName, "gemini_exception")
+    );
   }
 }
 
