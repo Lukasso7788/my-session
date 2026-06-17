@@ -24,6 +24,8 @@ type Props = {
     currentStage?: AiHostStage;
     chatTable?: string;
     theme?: string;
+    isOpen?: boolean;
+    onClose?: () => void;
 };
 
 type SpeechRecognitionLike = {
@@ -253,7 +255,7 @@ function buildLocalAiReply(args: {
     };
 }
 
-async function callAiHostGemini(args: {
+async function callAiHostOpenAI(args: {
     mode: AiMode;
     name: string;
     text: string;
@@ -301,10 +303,10 @@ export default function AIHostedRoomController({
     currentStage = null,
     chatTable = "session_chat_messages",
     theme = "dark",
+    isOpen = true,
+    onClose,
 }: Props) {
-    const [open] = useState(true);
     const [closing, setClosing] = useState(false);
-    const [minimized, setMinimized] = useState(false);
     const [hydrated, setHydrated] = useState(false);
 
     const [expanded, setExpanded] = useState(false);
@@ -386,7 +388,6 @@ export default function AIHostedRoomController({
 
             if (collected) {
                 greetedRef.current = true;
-                setMinimized(true);
                 setExpanded(false);
                 setMode("intention");
                 setAiReply("Your intention is already saved. I’ll ask for a progress summary during check-in.");
@@ -402,6 +403,7 @@ export default function AIHostedRoomController({
 
     useEffect(() => {
         if (!hydrated) return;
+        if (!isOpen) return;
         if (greetedRef.current) return;
         if (intentionSaved) return;
 
@@ -423,7 +425,7 @@ export default function AIHostedRoomController({
         }, 900);
 
         return () => window.clearTimeout(timer);
-    }, [chatTable, currentUserId, greetingText, hydrated, intentionSaved, sessionId]);
+    }, [chatTable, currentUserId, greetingText, hydrated, intentionSaved, isOpen, sessionId]);
 
     useEffect(() => {
         const channel = supabase
@@ -484,7 +486,6 @@ export default function AIHostedRoomController({
             setErrorText("");
             setVoiceHint("");
             setCheckinActive(true);
-            setMinimized(false);
             setExpanded(true);
 
             speak(prompt);
@@ -512,7 +513,6 @@ export default function AIHostedRoomController({
         if (!SpeechRecognitionConstructor) {
             setVoiceHint("Voice input is not supported in this browser. Try Chrome or Edge.");
             setExpanded(true);
-            setMinimized(false);
             return;
         }
 
@@ -528,7 +528,6 @@ export default function AIHostedRoomController({
             recognition.onstart = () => {
                 setListening(true);
                 setExpanded(true);
-                setMinimized(false);
                 setVoiceHint(
                     mode === "checkin"
                         ? "Listening… summarize your progress."
@@ -604,9 +603,9 @@ export default function AIHostedRoomController({
 
         window.setTimeout(() => {
             setClosing(false);
-            setMinimized(true);
             setExpanded(false);
-        }, 220);
+            onClose?.();
+        }, 180);
     };
 
     const handleSubmit = async () => {
@@ -622,7 +621,6 @@ export default function AIHostedRoomController({
             setSaving(true);
             setErrorText("");
             setExpanded(true);
-            setMinimized(false);
 
             let reply = buildLocalAiReply({
                 mode,
@@ -630,25 +628,25 @@ export default function AIHostedRoomController({
             });
 
             try {
-                console.log("[AI HOST] calling Gemini", { mode, value });
+                console.log("[AI HOST] calling OpenAI", { mode, value });
 
-                const gemini = await callAiHostGemini({
+                const openai = await callAiHostOpenAI({
                     mode,
                     name: cleanName,
                     text: value,
                 });
 
-                console.log("[AI HOST] Gemini response", gemini);
+                console.log("[AI HOST] OpenAI response", openai);
 
-                if (gemini.publicSpoken) {
+                if (openai.publicSpoken) {
                     reply = {
-                        publicSpoken: gemini.publicSpoken,
-                        privateAdvice: gemini.privateAdvice.length ? gemini.privateAdvice : reply.privateAdvice,
-                        source: gemini.source,
+                        publicSpoken: openai.publicSpoken,
+                        privateAdvice: openai.privateAdvice.length ? openai.privateAdvice : reply.privateAdvice,
+                        source: openai.source,
                     };
                 }
             } catch (e) {
-                console.warn("[AI HOST] Gemini fallback:", e);
+                console.warn("[AI HOST] OpenAI fallback:", e);
             }
 
             if (mode === "intention") {
@@ -698,7 +696,6 @@ export default function AIHostedRoomController({
             setAiReply(reply.publicSpoken);
             setPrivateAdvice(reply.privateAdvice);
             setReplySource(reply.source || "fallback");
-            setMinimized(false);
             setExpanded(true);
 
             speak(reply.publicSpoken);
@@ -716,53 +713,43 @@ export default function AIHostedRoomController({
         } catch (e: any) {
             console.error("[AI HOST] submit failed:", e);
             setErrorText(String(e?.message || e || "Failed to save."));
-            setMinimized(false);
             setExpanded(true);
         } finally {
             setSaving(false);
         }
     };
 
-    if (!open) return null;
+    if (!isOpen) return null;
 
     const isLight = theme === "light";
-    const showCompact = minimized;
 
     return (
         <div
             className={[
-                "pointer-events-none fixed inset-x-0 bottom-[92px] z-[230] flex justify-center px-4 transition-all duration-200",
+                "pointer-events-none fixed inset-x-0 bottom-[112px] z-[230] flex justify-center px-4 transition-all duration-200",
                 closing ? "translate-y-3 opacity-0" : "translate-y-0 opacity-100",
             ].join(" ")}
         >
             <div
-                className={[
-                    "pointer-events-auto w-full transition-all duration-300 ease-out",
-                    showCompact ? "max-w-[360px]" : "max-w-[820px]",
-                ].join(" ")}
-                onMouseEnter={() => !showCompact && setExpanded(true)}
+                className="pointer-events-auto w-full max-w-[820px] transition-all duration-300 ease-out"
+                onMouseEnter={() => setExpanded(true)}
                 onMouseLeave={() => {
-                    if (!inputText && !intentionSaved && !listening && !checkinActive && !privateAdvice.length) {
+                    if (!inputText && intentionSaved && !listening && !checkinActive && !privateAdvice.length) {
                         setExpanded(false);
                     }
                 }}
             >
                 <div
                     className={[
-                        "overflow-hidden border shadow-[0_18px_70px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-all duration-300",
-                        showCompact ? "rounded-full px-3 py-2" : "rounded-[28px]",
+                        "overflow-hidden rounded-[28px] border shadow-[0_18px_70px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-all duration-300",
                         isLight ? "border-black/10 bg-white/92 text-black" : "border-white/12 bg-[#0b1220]/92 text-white",
-                        !showCompact && (expanded || inputText || intentionSaved || listening || checkinActive || privateAdvice.length) ? "p-4" : "",
-                        !showCompact && !(expanded || inputText || intentionSaved || listening || checkinActive || privateAdvice.length) ? "p-3" : "",
+                        expanded || inputText || !intentionSaved || listening || checkinActive || privateAdvice.length ? "p-4" : "p-3",
                     ].join(" ")}
                 >
                     <div className="flex items-center gap-3">
                         <button
                             type="button"
-                            onClick={() => {
-                                setMinimized(false);
-                                setExpanded(true);
-                            }}
+                            onClick={() => setExpanded(true)}
                             className={[
                                 "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-[22px] transition",
                                 listening ? "bg-red-500/20" : "bg-violet-500/15",
@@ -772,13 +759,7 @@ export default function AIHostedRoomController({
                             {listening ? "🎙️" : "🤖"}
                         </button>
 
-                        <div
-                            className="min-w-0 flex-1 cursor-pointer"
-                            onClick={() => {
-                                setMinimized(false);
-                                setExpanded(true);
-                            }}
-                        >
+                        <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setExpanded(true)}>
                             <div className="flex items-center gap-2">
                                 <div className="truncate text-[13px] font-bold">MySession AI Host</div>
 
@@ -795,7 +776,7 @@ export default function AIHostedRoomController({
                                     <div
                                         className={[
                                             "rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                                            replySource === "gemini"
+                                            replySource === "openai"
                                                 ? "bg-emerald-500/15 text-emerald-300"
                                                 : "bg-yellow-500/15 text-yellow-300",
                                         ].join(" ")}
@@ -811,33 +792,29 @@ export default function AIHostedRoomController({
                                 ) : null}
                             </div>
 
-                            {!showCompact ? (
-                                <div className={["mt-0.5 truncate text-[13px]", isLight ? "text-black/55" : "text-white/55"].join(" ")}>
-                                    {mode === "checkin"
-                                        ? "Summarize your progress for the previous block."
-                                        : intentionSaved
-                                            ? "Intention saved. I’ll ask for progress summaries during check-ins."
-                                            : listening
-                                                ? "Say what you’re going to work on."
-                                                : "Type or say what you’re working on."}
-                                </div>
-                            ) : null}
+                            <div className={["mt-0.5 truncate text-[13px]", isLight ? "text-black/55" : "text-white/55"].join(" ")}>
+                                {mode === "checkin"
+                                    ? "Summarize your progress for the previous block."
+                                    : intentionSaved
+                                        ? "Intention saved. I’ll ask for progress summaries during check-ins."
+                                        : listening
+                                            ? "Say what you’re going to work on."
+                                            : "Type or say what you’re working on."}
+                            </div>
                         </div>
 
-                        {!showCompact ? (
-                            <button
-                                type="button"
-                                onClick={() => setMinimized(true)}
-                                className={[
-                                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[16px] transition",
-                                    isLight ? "text-black/45 hover:bg-black/5 hover:text-black" : "text-white/45 hover:bg-white/10 hover:text-white",
-                                ].join(" ")}
-                                aria-label="Collapse AI host"
-                                title="Collapse"
-                            >
-                                —
-                            </button>
-                        ) : null}
+                        <button
+                            type="button"
+                            onClick={() => setExpanded((v) => !v)}
+                            className={[
+                                "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[16px] transition",
+                                isLight ? "text-black/45 hover:bg-black/5 hover:text-black" : "text-white/45 hover:bg-white/10 hover:text-white",
+                            ].join(" ")}
+                            aria-label="Collapse AI host"
+                            title="Collapse"
+                        >
+                            —
+                        </button>
 
                         <button
                             type="button"
@@ -853,116 +830,112 @@ export default function AIHostedRoomController({
                         </button>
                     </div>
 
-                    {!showCompact ? (
-                        <div
-                            className={[
-                                "grid transition-all duration-300 ease-out",
-                                expanded || inputText || !intentionSaved || listening || checkinActive || privateAdvice.length
-                                    ? "grid-rows-[1fr] opacity-100"
-                                    : "grid-rows-[0fr] opacity-0",
-                            ].join(" ")}
-                        >
-                            <div className="min-h-0 overflow-hidden">
-                                <div
+                    <div
+                        className={[
+                            "grid transition-all duration-300 ease-out",
+                            expanded || inputText || !intentionSaved || listening || checkinActive || privateAdvice.length
+                                ? "grid-rows-[1fr] opacity-100"
+                                : "grid-rows-[0fr] opacity-0",
+                        ].join(" ")}
+                    >
+                        <div className="min-h-0 overflow-hidden">
+                            <div
+                                className={[
+                                    "mt-4 rounded-2xl px-4 py-3 text-[14px] leading-6",
+                                    isLight ? "bg-black/[0.035] text-black/70" : "bg-white/[0.06] text-white/75",
+                                ].join(" ")}
+                            >
+                                {currentPrompt}
+                            </div>
+
+                            <div className="mt-3 flex gap-2">
+                                <input
+                                    value={inputText}
+                                    onChange={(e) => setInputText(e.target.value)}
+                                    onFocus={() => setExpanded(true)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter") void handleSubmit();
+                                    }}
+                                    disabled={saving}
+                                    placeholder={mode === "checkin" ? "Progress summary for the last block..." : "I’m going to work on..."}
                                     className={[
-                                        "mt-4 rounded-2xl px-4 py-3 text-[14px] leading-6",
-                                        isLight ? "bg-black/[0.035] text-black/70" : "bg-white/[0.06] text-white/75",
+                                        "h-12 min-w-0 flex-1 rounded-2xl border px-4 text-[14px] outline-none transition",
+                                        isLight
+                                            ? "border-black/10 bg-white text-black placeholder:text-black/35 focus:ring-2 focus:ring-violet-500/20"
+                                            : "border-white/10 bg-white/[0.07] text-white placeholder:text-white/35 focus:ring-2 focus:ring-violet-300/20",
+                                    ].join(" ")}
+                                />
+
+                                <button
+                                    type="button"
+                                    onClick={listening ? stopVoiceInput : startVoiceInput}
+                                    disabled={saving || !voiceSupported}
+                                    className={[
+                                        "h-12 shrink-0 rounded-2xl px-4 text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-45",
+                                        listening
+                                            ? "bg-red-600 text-white hover:bg-red-700"
+                                            : isLight
+                                                ? "border border-black/10 bg-white text-black hover:bg-black/[0.04]"
+                                                : "border border-white/10 bg-white/[0.08] text-white hover:bg-white/[0.12]",
                                     ].join(" ")}
                                 >
-                                    {currentPrompt}
+                                    {listening ? "Stop" : "🎙️"}
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => void handleSubmit()}
+                                    disabled={!inputText.trim() || saving}
+                                    className="h-12 shrink-0 rounded-2xl bg-violet-600 px-5 text-[14px] font-bold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-45"
+                                >
+                                    {saving ? "Saving..." : mode === "checkin" ? "Save check-in" : "Start"}
+                                </button>
+                            </div>
+
+                            {voiceHint ? (
+                                <div className={["mt-2 text-[12px]", listening ? "text-red-300" : isLight ? "text-black/45" : "text-white/40"].join(" ")}>
+                                    {voiceHint}
                                 </div>
+                            ) : null}
 
-                                <div className="mt-3 flex gap-2">
-                                    <input
-                                        value={inputText}
-                                        onChange={(e) => setInputText(e.target.value)}
-                                        onFocus={() => setExpanded(true)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === "Enter") void handleSubmit();
-                                        }}
-                                        disabled={saving}
-                                        placeholder={mode === "checkin" ? "Progress summary for the last block..." : "I’m going to work on..."}
-                                        className={[
-                                            "h-12 min-w-0 flex-1 rounded-2xl border px-4 text-[14px] outline-none transition",
-                                            isLight
-                                                ? "border-black/10 bg-white text-black placeholder:text-black/35 focus:ring-2 focus:ring-violet-500/20"
-                                                : "border-white/10 bg-white/[0.07] text-white placeholder:text-white/35 focus:ring-2 focus:ring-violet-300/20",
-                                        ].join(" ")}
-                                    />
-
-                                    <button
-                                        type="button"
-                                        onClick={listening ? stopVoiceInput : startVoiceInput}
-                                        disabled={saving || !voiceSupported}
-                                        className={[
-                                            "h-12 shrink-0 rounded-2xl px-4 text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-45",
-                                            listening
-                                                ? "bg-red-600 text-white hover:bg-red-700"
-                                                : isLight
-                                                    ? "border border-black/10 bg-white text-black hover:bg-black/[0.04]"
-                                                    : "border border-white/10 bg-white/[0.08] text-white hover:bg-white/[0.12]",
-                                        ].join(" ")}
-                                    >
-                                        {listening ? "Stop" : "🎙️"}
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => void handleSubmit()}
-                                        disabled={!inputText.trim() || saving}
-                                        className="h-12 shrink-0 rounded-2xl bg-violet-600 px-5 text-[14px] font-bold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-45"
-                                    >
-                                        {saving ? "Saving..." : mode === "checkin" ? "Save check-in" : "Start"}
-                                    </button>
-                                </div>
-
-                                {voiceHint ? (
-                                    <div className={["mt-2 text-[12px]", listening ? "text-red-300" : isLight ? "text-black/45" : "text-white/40"].join(" ")}>
-                                        {voiceHint}
-                                    </div>
-                                ) : null}
-
-                                {privateAdvice.length ? (
-                                    <div
-                                        className={[
-                                            "mt-3 rounded-2xl border px-4 py-3",
-                                            isLight
-                                                ? "border-violet-100 bg-violet-50 text-violet-950"
-                                                : "border-violet-300/15 bg-violet-400/10 text-violet-100",
-                                        ].join(" ")}
-                                    >
-                                        <div className="flex items-center justify-between gap-3">
-                                            <div className="text-[12px] font-bold uppercase tracking-[0.12em] opacity-70">
-                                                Private suggestion
-                                            </div>
-
-                                            {replySource ? (
-                                                <div className="text-[11px] opacity-60">
-                                                    source: {replySource}
-                                                </div>
-                                            ) : null}
+                            {privateAdvice.length ? (
+                                <div
+                                    className={[
+                                        "mt-3 rounded-2xl border px-4 py-3",
+                                        isLight
+                                            ? "border-violet-100 bg-violet-50 text-violet-950"
+                                            : "border-violet-300/15 bg-violet-400/10 text-violet-100",
+                                    ].join(" ")}
+                                >
+                                    <div className="flex items-center justify-between gap-3">
+                                        <div className="text-[12px] font-bold uppercase tracking-[0.12em] opacity-70">
+                                            Private suggestion
                                         </div>
 
-                                        <ul className="mt-2 list-disc space-y-1 pl-5 text-[13px] leading-5">
-                                            {privateAdvice.map((item, index) => (
-                                                <li key={`${item}-${index}`}>{item}</li>
-                                            ))}
-                                        </ul>
+                                        {replySource ? (
+                                            <div className="text-[11px] opacity-60">source: {replySource}</div>
+                                        ) : null}
                                     </div>
-                                ) : null}
 
-                                {errorText ? (
-                                    <div className="mt-3 rounded-2xl border border-red-300/30 bg-red-500/10 px-4 py-3 text-[13px] text-red-200">
-                                        {errorText}
-                                    </div>
-                                ) : null}
-
-                                <div className={["mt-2 text-[12px]", isLight ? "text-black/40" : "text-white/35"].join(" ")}>
-                                    Public AI messages are spoken for everyone through room chat. Private suggestions stay visible only here.
+                                    <ul className="mt-2 list-disc space-y-1 pl-5 text-[13px] leading-5">
+                                        {privateAdvice.map((item, index) => (
+                                            <li key={`${item}-${index}`}>{item}</li>
+                                        ))}
+                                    </ul>
                                 </div>
+                            ) : null}
+
+                            {errorText ? (
+                                <div className="mt-3 rounded-2xl border border-red-300/30 bg-red-500/10 px-4 py-3 text-[13px] text-red-200">
+                                    {errorText}
+                                </div>
+                            ) : null}
+
+                            <div className={["mt-2 text-[12px]", isLight ? "text-black/40" : "text-white/35"].join(" ")}>
+                                Public AI messages are spoken for everyone through room chat. Private suggestions stay visible only here.
                             </div>
                         </div>
-                    ) : null}
+                    </div>
                 </div>
             </div>
         </div>

@@ -2083,6 +2083,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
   const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
   const [paywallModalOpen, setPaywallModalOpen] = useState(false);
+  const [aiHostInputOpen, setAiHostInputOpen] = useState(true);
 
   const tabId = useMemo(() => makeLiveKitPageTabId(), []);
   const devClones = useMemo(() => Math.max(0, Math.min(24, getQueryInt("devClones", 0))), []);
@@ -9738,6 +9739,8 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           currentStage={currentStageForAiHost}
           chatTable={CHAT_MSG_TABLE}
           theme={theme}
+          isOpen={aiHostInputOpen}
+          onClose={() => setAiHostInputOpen(false)}
         />
       ) : null}
 
