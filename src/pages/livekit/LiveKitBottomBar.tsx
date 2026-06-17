@@ -13,6 +13,23 @@ const REACTION_MENU_ITEMS: ReactionType[] = [
     "celebrate",
 ];
 
+function AIHostIcon({
+    isLight,
+    className = "w-5 h-5",
+}: {
+    isLight: boolean;
+    className?: string;
+}) {
+    return (
+        <img
+            src={isLight ? "/icons/ai-host-light.svg" : "/icons/ai-host-dark.svg"}
+            alt="AI Host"
+            className={className}
+            draggable={false}
+        />
+    );
+}
+
 export function LiveKitBottomBar(props: {
     theme: RoomTheme;
     isLight: boolean;
@@ -29,6 +46,10 @@ export function LiveKitBottomBar(props: {
     showPiP?: boolean;
     pipActive?: boolean;
     onTogglePiP?: () => void;
+
+    showAIHost?: boolean;
+    aiHostOpen?: boolean;
+    onOpenAIHost?: () => void;
 
     onToggleMic: () => void;
     onToggleCam: () => void;
@@ -56,6 +77,10 @@ export function LiveKitBottomBar(props: {
         showPiP = false,
         pipActive = false,
         onTogglePiP,
+
+        showAIHost = false,
+        aiHostOpen = false,
+        onOpenAIHost,
 
         onToggleMic,
         onToggleCam,
@@ -131,6 +156,14 @@ export function LiveKitBottomBar(props: {
             : "light"
         : theme;
 
+    const aiHostBtnClass =
+        "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
+        (aiHostOpen
+            ? isLight
+                ? "bg-blue-600 hover:bg-blue-700 text-white"
+                : "bg-violet-500 hover:bg-violet-600 text-white"
+            : ctlBtnBase);
+
     const chatBtn = (
         <button
             onClick={onOpenChat}
@@ -151,6 +184,19 @@ export function LiveKitBottomBar(props: {
             )}
         </button>
     );
+
+    const aiHostDesktopBtn =
+        showAIHost && onOpenAIHost ? (
+            <button
+                onClick={onOpenAIHost}
+                className={aiHostBtnClass}
+                title={aiHostOpen ? "AI Host is open" : "Open AI Host"}
+                type="button"
+            >
+                <AIHostIcon isLight={aiHostOpen ? false : isLight} />
+                <span className="sr-only">Open AI Host</span>
+            </button>
+        ) : null;
 
     const pipDesktopBtn =
         showPiP && onTogglePiP ? (
@@ -197,6 +243,27 @@ export function LiveKitBottomBar(props: {
                                         className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"
                                             }`}
                                     >
+                                        {showAIHost && onOpenAIHost ? (
+                                            <button
+                                                onClick={() => {
+                                                    onOpenAIHost();
+                                                    setShowMoreMenu(false);
+                                                }}
+                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${aiHostOpen
+                                                        ? isLight
+                                                            ? "bg-blue-600 text-white"
+                                                            : "bg-violet-500 text-white"
+                                                        : isLight
+                                                            ? "text-black/75 hover:bg-black/5"
+                                                            : "text-white/85 hover:bg-white/5"
+                                                    }`}
+                                                type="button"
+                                            >
+                                                <AIHostIcon isLight={aiHostOpen ? false : isLight} className="w-4 h-4 opacity-90" />
+                                                <span>{aiHostOpen ? "AI Host open" : "Open AI Host"}</span>
+                                            </button>
+                                        ) : null}
+
                                         <button
                                             onClick={() => {
                                                 onOpenParticipants();
@@ -268,12 +335,12 @@ export function LiveKitBottomBar(props: {
                                                     setShowMoreMenu(false);
                                                 }}
                                                 className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${pipActive
-                                                    ? isLight
-                                                        ? "bg-blue-600 text-white"
-                                                        : "bg-emerald-500 text-[#02140B]"
-                                                    : isLight
-                                                        ? "text-black/75 hover:bg-black/5"
-                                                        : "text-white/85 hover:bg-white/5"
+                                                        ? isLight
+                                                            ? "bg-blue-600 text-white"
+                                                            : "bg-emerald-500 text-[#02140B]"
+                                                        : isLight
+                                                            ? "text-black/75 hover:bg-black/5"
+                                                            : "text-white/85 hover:bg-white/5"
                                                     }`}
                                                 type="button"
                                             >
@@ -287,6 +354,8 @@ export function LiveKitBottomBar(props: {
                         </div>
 
                         <div className="hidden md:flex items-center gap-2">
+                            {aiHostDesktopBtn}
+
                             <button
                                 onClick={onOpenParticipants}
                                 className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
