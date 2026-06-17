@@ -26,6 +26,10 @@ type Props = {
     theme?: string;
     isOpen?: boolean;
     onClose?: () => void;
+
+    localMicMuted?: boolean;
+    onUnmuteLocalMic?: () => Promise<void> | void;
+    onMuteLocalMic?: () => Promise<void> | void;
 };
 
 type SpeechRecognitionLike = {
@@ -260,8 +264,6 @@ async function callAiHostOpenAI(args: {
     name: string;
     text: string;
 }): Promise<AiReply> {
-    console.log("[AI HOST] calling /api/templates", args);
-
     const res = await fetch("/api/templates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -273,15 +275,11 @@ async function callAiHostOpenAI(args: {
         }),
     });
 
-    console.log("[AI HOST] /api/templates status", res.status);
-
     if (!res.ok) {
         throw new Error(`AI host failed: ${res.status}`);
     }
 
     const data = await res.json();
-
-    console.log("[AI HOST] /api/templates response", data);
 
     return {
         publicSpoken: String(data?.publicSpoken || "").trim(),
@@ -305,6 +303,10 @@ export default function AIHostedRoomController({
     theme = "dark",
     isOpen = true,
     onClose,
+
+    localMicMuted = true,
+    onUnmuteLocalMic,
+    onMuteLocalMic,
 }: Props) {
     const [closing, setClosing] = useState(false);
     const [hydrated, setHydrated] = useState(false);
@@ -505,7 +507,7 @@ export default function AIHostedRoomController({
         return () => window.clearTimeout(timer);
     }, [chatTable, cleanName, currentStage, currentUserId, hydrated, intentionSaved, sessionId]);
 
-    const startVoiceInput = () => {
+    const startVoiceInput = async () => {
         if (saving || listening) return;
 
         const SpeechRecognitionConstructor = getSpeechRecognitionConstructor();
@@ -519,6 +521,18 @@ export default function AIHostedRoomController({
         try {
             window.speechSynthesis?.cancel?.();
 
+            if (mode === "checkin") {
+                setVoiceHint("Unmuting your microphone… others will hear your check-in.");
+
+                try {
+                    await onUnmuteLocalMic?.();
+                } catch (e: any) {
+                    console.warn("[AI HOST] failed to unmute local mic:", e);
+                    setVoiceHint(String(e?.message || "Could not unmute microphone. Try the room mic button."));
+                    return;
+                }
+            }
+
             const recognition = new SpeechRecognitionConstructor() as SpeechRecognitionLike;
             recognition.lang = "en-US";
             recognition.interimResults = true;
@@ -530,7 +544,7 @@ export default function AIHostedRoomController({
                 setExpanded(true);
                 setVoiceHint(
                     mode === "checkin"
-                        ? "Listening… summarize your progress."
+                        ? "Live check-in — others can hear you. I’m transcribing it."
                         : "Listening… say your intention."
                 );
             };
@@ -611,8 +625,6 @@ export default function AIHostedRoomController({
     const handleSubmit = async () => {
         const value = inputText.trim();
 
-        console.log("[AI HOST] submit clicked", { mode, value, saving });
-
         if (!value || saving) return;
 
         try {
@@ -628,15 +640,11 @@ export default function AIHostedRoomController({
             });
 
             try {
-                console.log("[AI HOST] calling OpenAI", { mode, value });
-
                 const openai = await callAiHostOpenAI({
                     mode,
                     name: cleanName,
                     text: value,
                 });
-
-                console.log("[AI HOST] OpenAI response", openai);
 
                 if (openai.publicSpoken) {
                     reply = {
@@ -691,6 +699,13 @@ export default function AIHostedRoomController({
 
                 setCheckinActive(false);
                 setInputText("");
+
+                try {
+                    await onMuteLocalMic?.();
+                    setVoiceHint("Check-in saved. Your microphone was muted again.");
+                } catch {
+                    setVoiceHint("Check-in saved. Mic auto-mute failed — mute manually if needed.");
+                }
             }
 
             setAiReply(reply.publicSpoken);
@@ -730,15 +745,7 @@ export default function AIHostedRoomController({
                 closing ? "translate-y-3 opacity-0" : "translate-y-0 opacity-100",
             ].join(" ")}
         >
-            <div
-                className="pointer-events-auto w-full max-w-[820px] transition-all duration-300 ease-out"
-                onMouseEnter={() => setExpanded(true)}
-                onMouseLeave={() => {
-                    if (!inputText && intentionSaved && !listening && !checkinActive && !privateAdvice.length) {
-                        setExpanded(false);
-                    }
-                }}
-            >
+            <div className="pointer-events-auto w-full max-w-[820px] transition-all duration-300 ease-out">
                 <div
                     className={[
                         "overflow-hidden rounded-[28px] border shadow-[0_18px_70px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-all duration-300",
@@ -754,7 +761,6 @@ export default function AIHostedRoomController({
                                 "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-[22px] transition",
                                 listening ? "bg-red-500/20" : "bg-violet-500/15",
                             ].join(" ")}
-                            title="Open AI host"
                         >
                             {listening ? "🎙️" : "🤖"}
                         </button>
@@ -772,6 +778,17 @@ export default function AIHostedRoomController({
                                     {mode === "checkin" ? "Check-in" : "15/3"}
                                 </div>
 
+                                {mode === "checkin" ? (
+                                    <div
+                                        className={[
+                                            "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                                            localMicMuted ? "bg-yellow-500/15 text-yellow-300" : "bg-red-500/15 text-red-300",
+                                        ].join(" ")}
+                                    >
+                                        {localMicMuted ? "Mic muted" : "Mic live"}
+                                    </div>
+                                ) : null}
+
                                 {replySource ? (
                                     <div
                                         className={[
@@ -784,22 +801,14 @@ export default function AIHostedRoomController({
                                         {replySource}
                                     </div>
                                 ) : null}
-
-                                {listening ? (
-                                    <div className="rounded-full bg-red-500/15 px-2 py-0.5 text-[11px] font-semibold text-red-300">
-                                        Listening
-                                    </div>
-                                ) : null}
                             </div>
 
                             <div className={["mt-0.5 truncate text-[13px]", isLight ? "text-black/55" : "text-white/55"].join(" ")}>
                                 {mode === "checkin"
-                                    ? "Summarize your progress for the previous block."
+                                    ? "Voice check-in unmutes your room mic so others can hear you."
                                     : intentionSaved
                                         ? "Intention saved. I’ll ask for progress summaries during check-ins."
-                                        : listening
-                                            ? "Say what you’re going to work on."
-                                            : "Type or say what you’re working on."}
+                                        : "Type or say what you’re working on."}
                             </div>
                         </div>
 
@@ -810,7 +819,6 @@ export default function AIHostedRoomController({
                                 "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[16px] transition",
                                 isLight ? "text-black/45 hover:bg-black/5 hover:text-black" : "text-white/45 hover:bg-white/10 hover:text-white",
                             ].join(" ")}
-                            aria-label="Collapse AI host"
                             title="Collapse"
                         >
                             —
@@ -823,7 +831,6 @@ export default function AIHostedRoomController({
                                 "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[16px] transition",
                                 isLight ? "text-black/45 hover:bg-black/5 hover:text-black" : "text-white/45 hover:bg-white/10 hover:text-white",
                             ].join(" ")}
-                            aria-label="Hide AI host"
                             title="Hide"
                         >
                             ×
@@ -868,10 +875,11 @@ export default function AIHostedRoomController({
 
                                 <button
                                     type="button"
-                                    onClick={listening ? stopVoiceInput : startVoiceInput}
+                                    onClick={listening ? stopVoiceInput : () => void startVoiceInput()}
                                     disabled={saving || !voiceSupported}
                                     className={[
-                                        "h-12 shrink-0 rounded-2xl px-4 text-[15px] font-bold transition disabled:cursor-not-allowed disabled:opacity-45",
+                                        "h-12 shrink-0 rounded-2xl px-4 text-[13px] font-bold transition disabled:cursor-not-allowed disabled:opacity-45",
+                                        mode === "checkin" ? "min-w-[164px]" : "",
                                         listening
                                             ? "bg-red-600 text-white hover:bg-red-700"
                                             : isLight
@@ -879,7 +887,7 @@ export default function AIHostedRoomController({
                                                 : "border border-white/10 bg-white/[0.08] text-white hover:bg-white/[0.12]",
                                     ].join(" ")}
                                 >
-                                    {listening ? "Stop" : "🎙️"}
+                                    {listening ? "Stop" : mode === "checkin" ? "Start voice check-in" : "🎙️"}
                                 </button>
 
                                 <button
@@ -891,6 +899,12 @@ export default function AIHostedRoomController({
                                     {saving ? "Saving..." : mode === "checkin" ? "Save check-in" : "Start"}
                                 </button>
                             </div>
+
+                            {mode === "checkin" && !listening ? (
+                                <div className={["mt-2 text-[12px]", isLight ? "text-black/45" : "text-white/40"].join(" ")}>
+                                    Start voice check-in will unmute your room microphone. Others will hear you while I transcribe.
+                                </div>
+                            ) : null}
 
                             {voiceHint ? (
                                 <div className={["mt-2 text-[12px]", listening ? "text-red-300" : isLight ? "text-black/45" : "text-white/40"].join(" ")}>

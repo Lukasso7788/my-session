@@ -6851,6 +6851,16 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     }
   };
 
+  const unmuteMicForAiCheckin = async () => {
+    if (micOn) return;
+    await toggleMic();
+  };
+
+  const muteMicAfterAiCheckin = async () => {
+    if (!micOn) return;
+    await toggleMic();
+  };
+
   // toggle cam without recreating track
   const toggleCam = async () => {
     try {
@@ -9741,6 +9751,9 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           theme={theme}
           isOpen={aiHostInputOpen}
           onClose={() => setAiHostInputOpen(false)}
+          localMicMuted={!micOn}
+          onUnmuteLocalMic={unmuteMicForAiCheckin}
+          onMuteLocalMic={muteMicAfterAiCheckin}
         />
       ) : null}
 
