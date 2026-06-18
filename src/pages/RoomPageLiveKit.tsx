@@ -4212,7 +4212,11 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const voiceCommandHardStopTimerRef = useRef<number | null>(null);
   const voiceCommandGraceTimerRef = useRef<number | null>(null);
   const voiceCommandFinishRef = useRef<(() => void) | null>(null);
+  const voicePersistentRestartTimerRef = useRef<number | null>(null);
+  const voiceControlOnRef = useRef(true);
+  const voiceSuppressNextEndRef = useRef(false);
   const lastVoiceCommandAtRef = useRef(0);
+  const lastVoiceCommandKeyRef = useRef("");
   const camOnRef = useRef(false);
   const micOnRef = useRef(false);
   const screenShareOnRef = useRef(false);
@@ -7581,178 +7585,217 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     [toggleScreenShare]
   );
 
-  const runVoiceUiCommand = useCallback(
-    async (raw: string) => {
-      const text = normalizeVoiceCommand(raw);
-      if (!text) return;
+  const detectVoiceUiCommand = useCallback((raw: string) => {
+    const text = normalizeVoiceCommand(raw);
+    if (!text) return null;
 
-      setVoiceControlText(text);
+    if (voiceCommandIncludes(text, ["open chat", "show chat", "chat panel", "chat", "open messages", "show messages"])) return "open_chat";
+    if (voiceCommandIncludes(text, ["open intentions", "open intention", "show intentions", "show intention", "intentions", "intention panel", "open goals", "show goals"])) return "open_intentions";
+    if (voiceCommandIncludes(text, ["open participants", "show participants", "participants panel", "participants", "open people", "show people"])) return "open_participants";
+    if (voiceCommandIncludes(text, ["open settings", "show settings", "settings", "room settings"])) return "open_settings";
+    if (voiceCommandIncludes(text, ["close panel", "close chat", "close intentions", "close intention", "hide panel", "hide chat", "hide intentions", "close sidebar", "hide sidebar"])) return "close_panel";
 
+    if (voiceCommandIncludes(text, [
+      "turn video off", "turn off video", "video off", "disable video", "stop video",
+      "turn camera off", "turn off camera", "camera off", "disable camera", "stop camera",
+      "hide camera", "hide my camera", "switch camera off", "switch video off",
+    ])) return "video_off";
+
+    if (voiceCommandIncludes(text, [
+      "turn video on", "turn on video", "video on", "enable video", "start video",
+      "turn camera on", "turn on camera", "camera on", "enable camera", "start camera",
+      "show camera", "show my camera", "switch camera on", "switch video on",
+    ])) return "video_on";
+
+    if (voiceCommandIncludes(text, [
+      "mute microphone", "mute mic", "mute my microphone", "mute my mic",
+      "microphone off", "mic off", "turn microphone off", "turn off microphone",
+      "turn mic off", "turn off mic", "disable microphone", "disable mic",
+    ]) || text === "mute") return "mic_off";
+
+    if (voiceCommandIncludes(text, [
+      "unmute microphone", "unmute mic", "unmute my microphone", "unmute my mic",
+      "microphone on", "mic on", "turn microphone on", "turn on microphone",
+      "turn mic on", "turn on mic", "enable microphone", "enable mic",
+    ]) || text === "unmute") return "mic_on";
+
+    if (voiceCommandIncludes(text, ["share screen", "start screen share", "start sharing", "screen share on", "share my screen"])) return "screen_on";
+    if (voiceCommandIncludes(text, ["stop sharing", "stop screen share", "stop sharing screen", "screen share off", "end screen share"])) return "screen_off";
+
+    if (voiceCommandIncludes(text, ["one column", "single column", "layout one", "layout 1", "one column layout"])) return "layout_one";
+    if (voiceCommandIncludes(text, ["two columns", "two column", "layout two", "layout 2", "two column layout"])) return "layout_two";
+    if (voiceCommandIncludes(text, ["three columns", "three column", "layout three", "layout 3"])) return "layout_three";
+    if (voiceCommandIncludes(text, ["four columns", "four column", "layout four", "layout 4"])) return "layout_four";
+    if (voiceCommandIncludes(text, ["auto layout", "layout auto", "automatic layout", "reset layout"])) return "layout_auto";
+    if (voiceCommandIncludes(text, ["strip layout", "horizontal layout", "swipe layout", "layout strip"])) return "layout_strip";
+    if (voiceCommandIncludes(text, ["open ai host", "show ai host", "ai host", "open assistant", "show assistant"])) return "open_ai_host";
+
+    return null;
+  }, []);
+
+  const executeVoiceUiCommand = useCallback(
+    async (command: string, raw: string) => {
       const now = Date.now();
-      if (now - lastVoiceCommandAtRef.current < 900) return;
+      const normalized = normalizeVoiceCommand(raw);
 
-      const mark = (label: string) => {
-        lastVoiceCommandAtRef.current = now;
-        setVoiceControlHint(label);
-      };
+      if (lastVoiceCommandKeyRef.current === command && now - lastVoiceCommandAtRef.current < 1400) return;
 
-      if (voiceCommandIncludes(text, ["open chat", "show chat", "chat panel", "chat"])) {
-        mark("Opening chat.");
-        openRightTab("chat");
-        return;
-      }
+      lastVoiceCommandKeyRef.current = command;
+      lastVoiceCommandAtRef.current = now;
+      setVoiceControlText(normalized);
 
-      if (voiceCommandIncludes(text, ["open intentions", "open intention", "show intentions", "show intention", "intentions", "intention panel"])) {
-        mark("Opening intentions.");
-        openRightTab("intentions");
-        return;
-      }
+      console.log("[VOICE COMMAND RAW]", raw);
+      console.log("[VOICE COMMAND]", command);
 
-      if (voiceCommandIncludes(text, ["open participants", "show participants", "participants panel", "participants"])) {
-        mark("Opening participants.");
-        openRightTab("participants");
-        return;
-      }
+      const mark = (label: string) => setVoiceControlHint(label);
 
-      if (voiceCommandIncludes(text, ["open settings", "show settings", "settings"])) {
-        mark("Opening settings.");
-        setSettingsOpen(true);
-        setSettingsPreviewVersion((v) => v + 1);
-        return;
-      }
+      if (command === "open_chat") { mark("Opening chat."); openRightTab("chat"); return; }
+      if (command === "open_intentions") { mark("Opening intentions."); openRightTab("intentions"); return; }
+      if (command === "open_participants") { mark("Opening participants."); openRightTab("participants"); return; }
+      if (command === "open_settings") { mark("Opening settings."); setSettingsOpen(true); setSettingsPreviewVersion((v) => v + 1); return; }
+      if (command === "close_panel") { mark("Closing panel."); openRightTab(null); return; }
 
-      if (voiceCommandIncludes(text, ["close panel", "close chat", "close intentions", "close intention", "hide panel", "hide chat", "hide intentions"])) {
-        mark("Closing panel.");
-        openRightTab(null);
-        return;
-      }
+      if (command === "video_off") { mark("Turning video off."); await setCameraFromVoiceCommand(false); return; }
+      if (command === "video_on") { mark("Turning video on."); await setCameraFromVoiceCommand(true); return; }
+      if (command === "mic_off") { mark("Muting microphone."); await setMicrophoneFromVoiceCommand(false); return; }
+      if (command === "mic_on") { mark("Unmuting microphone."); await setMicrophoneFromVoiceCommand(true); return; }
+      if (command === "screen_on") { mark("Starting screen share."); await setScreenShareFromVoiceCommand(true); return; }
+      if (command === "screen_off") { mark("Stopping screen share."); await setScreenShareFromVoiceCommand(false); return; }
 
-      if (
-        voiceCommandIncludes(text, [
-          "turn video off",
-          "turn off video",
-          "video off",
-          "disable video",
-          "stop video",
-          "turn camera off",
-          "turn off camera",
-          "camera off",
-          "disable camera",
-          "stop camera",
-          "hide camera",
-        ])
-      ) {
-        mark("Turning video off.");
-        await setCameraFromVoiceCommand(false);
-        return;
-      }
-
-      if (
-        voiceCommandIncludes(text, [
-          "turn video on",
-          "turn on video",
-          "video on",
-          "enable video",
-          "start video",
-          "turn camera on",
-          "turn on camera",
-          "camera on",
-          "enable camera",
-          "start camera",
-          "show camera",
-        ])
-      ) {
-        mark("Turning video on.");
-        await setCameraFromVoiceCommand(true);
-        return;
-      }
-
-      if (
-        voiceCommandIncludes(text, [
-          "mute microphone",
-          "mute mic",
-          "microphone off",
-          "mic off",
-          "turn microphone off",
-          "turn off microphone",
-          "turn mic off",
-          "turn off mic",
-          "disable microphone",
-          "disable mic",
-        ])
-      ) {
-        mark("Muting microphone.");
-        await setMicrophoneFromVoiceCommand(false);
-        return;
-      }
-
-      if (
-        voiceCommandIncludes(text, [
-          "unmute microphone",
-          "unmute mic",
-          "microphone on",
-          "mic on",
-          "turn microphone on",
-          "turn on microphone",
-          "turn mic on",
-          "turn on mic",
-          "enable microphone",
-          "enable mic",
-        ])
-      ) {
-        mark("Unmuting microphone.");
-        await setMicrophoneFromVoiceCommand(true);
-        return;
-      }
-
-      if (voiceCommandIncludes(text, ["share screen", "start screen share", "start sharing", "screen share on"])) {
-        mark("Starting screen share.");
-        await setScreenShareFromVoiceCommand(true);
-        return;
-      }
-
-      if (voiceCommandIncludes(text, ["one column", "single column", "layout one", "layout 1", "one column layout"])) {
-        mark("Switching to one column layout.");
-        setVideoTileLayoutPreset("one");
-        return;
-      }
-
-      if (voiceCommandIncludes(text, ["two columns", "two column", "layout two", "layout 2", "two column layout"])) {
-        mark("Switching to two columns layout.");
-        setVideoTileLayoutPreset("two");
-        return;
-      }
-
-      if (voiceCommandIncludes(text, ["three columns", "three column", "layout three", "layout 3"])) {
-        mark("Switching to three columns layout.");
-        setVideoTileLayoutPreset("three");
-        return;
-      }
-
-      if (voiceCommandIncludes(text, ["four columns", "four column", "layout four", "layout 4"])) {
-        mark("Switching to four columns layout.");
-        setVideoTileLayoutPreset("four");
-        return;
-      }
-
-      if (voiceCommandIncludes(text, ["auto layout", "layout auto", "automatic layout"])) {
-        mark("Switching to auto layout.");
-        setVideoTileLayoutPreset("auto");
-        return;
-      }
-
-      if (voiceCommandIncludes(text, ["strip layout", "horizontal layout", "swipe layout", "layout strip"])) {
-        mark("Switching to horizontal strip layout.");
-        setVideoTileLayoutPreset("strip");
-        return;
-      }
-
-      setVoiceControlHint(`No matching command: "${text}"`);
+      if (command === "layout_one") { mark("Switching to one column layout."); setVideoTileLayoutPreset("one"); return; }
+      if (command === "layout_two") { mark("Switching to two columns layout."); setVideoTileLayoutPreset("two"); return; }
+      if (command === "layout_three") { mark("Switching to three columns layout."); setVideoTileLayoutPreset("three"); return; }
+      if (command === "layout_four") { mark("Switching to four columns layout."); setVideoTileLayoutPreset("four"); return; }
+      if (command === "layout_auto") { mark("Switching to auto layout."); setVideoTileLayoutPreset("auto"); return; }
+      if (command === "layout_strip") { mark("Switching to horizontal strip layout."); setVideoTileLayoutPreset("strip"); return; }
+      if (command === "open_ai_host") { mark("Opening AI Host."); setAiHostInputOpen(true); return; }
     },
-    [openRightTab, setCameraFromVoiceCommand, setMicrophoneFromVoiceCommand, setScreenShareFromVoiceCommand]
+    [openRightTab, setAiHostInputOpen, setCameraFromVoiceCommand, setMicrophoneFromVoiceCommand, setScreenShareFromVoiceCommand]
   );
 
+  const stopPersistentVoiceControl = useCallback(() => {
+    if (voicePersistentRestartTimerRef.current != null) {
+      window.clearTimeout(voicePersistentRestartTimerRef.current);
+      voicePersistentRestartTimerRef.current = null;
+    }
+
+    try {
+      if (voiceRecognitionRef.current) voiceSuppressNextEndRef.current = true;
+      voiceRecognitionRef.current?.abort?.();
+    } catch { }
+    voiceRecognitionRef.current = null;
+  }, []);
+
+  const startPersistentVoiceControl = useCallback(() => {
+    if (!voiceControlOnRef.current) return;
+
+    const Ctor = getSpeechRecognitionConstructor();
+    if (!Ctor) {
+      setVoiceControlStatus("unsupported");
+      setVoiceControlHint("Voice commands are not supported in this browser. Try Chrome or Edge.");
+      return;
+    }
+
+    if (voicePersistentRestartTimerRef.current != null) {
+      window.clearTimeout(voicePersistentRestartTimerRef.current);
+      voicePersistentRestartTimerRef.current = null;
+    }
+
+    try {
+      if (voiceRecognitionRef.current) voiceSuppressNextEndRef.current = true;
+      voiceRecognitionRef.current?.abort?.();
+    } catch { }
+
+    const recognition = new Ctor();
+    voiceRecognitionRef.current = recognition;
+
+    recognition.lang = "en-US";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      if (!voiceControlOnRef.current) return;
+      setVoiceControlStatus("listening");
+      setVoiceControlHint("Voice ready. Say: open chat, mute mic, camera off.");
+    };
+
+    recognition.onresult = (event: any) => {
+      let text = "";
+      for (let i = event.resultIndex || 0; i < event.results.length; i += 1) {
+        const transcript = String(event.results[i]?.[0]?.transcript || "").trim();
+        if (transcript) text += ` ${transcript}`;
+      }
+
+      const visible = normalizeVoiceCommand(text);
+      if (!visible) return;
+
+      voiceCommandTextRef.current = visible;
+      setVoiceControlText(visible);
+      setVoiceControlStatus("listening");
+
+      const command = detectVoiceUiCommand(visible);
+      if (command) {
+        setVoiceControlHint(`Command heard: ${visible}`);
+        void executeVoiceUiCommand(command, visible);
+      } else {
+        setVoiceControlHint(`Listening… heard: ${visible}`);
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      const code = String(event?.error || "").trim();
+      if (!voiceControlOnRef.current) return;
+
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        setVoiceControlStatus("error");
+        setVoiceControlHint("Microphone permission is blocked. Allow mic access to use voice commands.");
+        return;
+      }
+
+      if (code === "audio-capture") {
+        setVoiceControlStatus("error");
+        setVoiceControlHint("Voice command cannot find a microphone.");
+        return;
+      }
+
+      if (code === "no-speech") {
+        setVoiceControlStatus("listening");
+        return;
+      }
+
+      setVoiceControlStatus("restarting");
+      setVoiceControlHint(code ? `Voice restarting after: ${code}` : "Voice restarting…");
+    };
+
+    recognition.onend = () => {
+      if (voiceSuppressNextEndRef.current) {
+        voiceSuppressNextEndRef.current = false;
+        return;
+      }
+
+      if (!voiceControlOnRef.current) return;
+      setVoiceControlStatus("restarting");
+
+      if (voicePersistentRestartTimerRef.current != null) window.clearTimeout(voicePersistentRestartTimerRef.current);
+
+      voicePersistentRestartTimerRef.current = window.setTimeout(() => {
+        voicePersistentRestartTimerRef.current = null;
+        startPersistentVoiceControl();
+      }, 350);
+    };
+
+    try {
+      recognition.start();
+    } catch (e: any) {
+      setVoiceControlStatus("error");
+      setVoiceControlHint(String(e?.message || "Could not start voice commands."));
+    }
+  }, [detectVoiceUiCommand, executeVoiceUiCommand]);
+
   useEffect(() => {
+    voiceControlOnRef.current = voiceControlOn;
+
     try {
       localStorage.setItem("mysession_lk_voice_control_enabled", voiceControlOn ? "1" : "0");
     } catch {
@@ -7760,33 +7803,21 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     }
 
     if (!voiceControlOn) {
-      try {
-        voiceRecognitionRef.current?.abort?.();
-      } catch {
-        // ignore
-      }
-
-      voiceRecognitionRef.current = null;
-      voiceCommandTextRef.current = "";
-
-      if (voiceCommandHardStopTimerRef.current != null) {
-        window.clearTimeout(voiceCommandHardStopTimerRef.current);
-        voiceCommandHardStopTimerRef.current = null;
-      }
-
-      if (voiceCommandGraceTimerRef.current != null) {
-        window.clearTimeout(voiceCommandGraceTimerRef.current);
-        voiceCommandGraceTimerRef.current = null;
-      }
-
+      stopPersistentVoiceControl();
       setVoiceControlStatus("off");
-      setVoiceControlHint("Voice command is disabled in Settings.");
+      setVoiceControlHint("Voice control is disabled in Settings.");
       setVoiceControlText("");
-    } else {
-      setVoiceControlStatus("off");
-      setVoiceControlHint("Tap Speech Command, then say a room command.");
+      return;
     }
-  }, [voiceControlOn]);
+
+    setVoiceControlStatus("restarting");
+    setVoiceControlHint("Starting voice control…");
+    startPersistentVoiceControl();
+
+    return () => {
+      stopPersistentVoiceControl();
+    };
+  }, [voiceControlOn, startPersistentVoiceControl, stopPersistentVoiceControl]);
 
   const clearVoiceCommandTimers = useCallback(() => {
     if (voiceCommandHardStopTimerRef.current != null) {
@@ -7800,168 +7831,25 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     }
   }, []);
 
-  const finishVoiceUiCommand = useCallback(() => {
-    clearVoiceCommandTimers();
-
-    try {
-      voiceRecognitionRef.current?.stop?.();
-    } catch {
-      // ignore
-    }
-
-    const raw = String(voiceCommandTextRef.current || "").trim();
-    const normalized = normalizeVoiceCommand(raw);
-
-    setVoiceControlStatus("off");
-    setVoiceControlText(normalized);
-
-    if (!voiceControlOn) {
-      setVoiceControlHint("Voice command is disabled in Settings.");
-      return;
-    }
-
-    if (!normalized) {
-      setVoiceControlHint("No command heard. Tap again and say: open chat, turn video off, mute mic.");
-      return;
-    }
-
-    setVoiceControlHint(`Heard: "${normalized}"`);
-    void runVoiceUiCommand(normalized);
-  }, [clearVoiceCommandTimers, runVoiceUiCommand, voiceControlOn]);
-
-  useEffect(() => {
-    voiceCommandFinishRef.current = finishVoiceUiCommand;
-  }, [finishVoiceUiCommand]);
-
   const startVoiceUiCommand = useCallback(() => {
-    if (!voiceControlOn) {
+    if (!voiceControlOnRef.current) {
       setVoiceControlStatus("off");
-      setVoiceControlHint("Voice command is disabled in Settings.");
+      setVoiceControlHint("Voice control is disabled in Settings.");
       return;
     }
 
-    const Ctor = getSpeechRecognitionConstructor();
-
-    if (!Ctor) {
-      setVoiceControlStatus("unsupported");
-      setVoiceControlHint("Voice commands are not supported in this browser. Try Chrome or Edge.");
-      return;
-    }
-
-    clearVoiceCommandTimers();
-
-    try {
-      voiceRecognitionRef.current?.abort?.();
-    } catch {
-      // ignore
-    }
-
-    const recognition = new Ctor();
-
-    voiceCommandTextRef.current = "";
-    setVoiceControlText("");
-    setVoiceControlStatus("listening");
-    setVoiceControlHint("Listening for a room command…");
-
-    recognition.lang = "en-US";
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      setVoiceControlStatus("listening");
-      setVoiceControlHint("Listening for a room command… say it now.");
-    };
-
-    recognition.onresult = (event: any) => {
-      let text = "";
-
-      for (let i = 0; i < event.results.length; i += 1) {
-        const transcript = String(event.results[i]?.[0]?.transcript || "").trim();
-        if (transcript) text += ` ${transcript}`;
-      }
-
-      const visible = normalizeVoiceCommand(text);
-      if (!visible) return;
-
-      voiceCommandTextRef.current = visible;
-      setVoiceControlText(visible);
-      setVoiceControlStatus("listening");
-      setVoiceControlHint(`Heard: "${visible}"`);
-
-      if (voiceCommandGraceTimerRef.current != null) {
-        window.clearTimeout(voiceCommandGraceTimerRef.current);
-      }
-
-      voiceCommandGraceTimerRef.current = window.setTimeout(() => {
-        voiceCommandFinishRef.current?.();
-      }, 2500);
-    };
-
-    recognition.onerror = (event: any) => {
-      const code = String(event?.error || "").trim();
-
-      if (code === "not-allowed" || code === "service-not-allowed") {
-        clearVoiceCommandTimers();
-        setVoiceControlStatus("error");
-        setVoiceControlHint("Microphone permission is blocked. Allow mic access to use voice commands.");
-        return;
-      }
-
-      if (code === "audio-capture") {
-        clearVoiceCommandTimers();
-        setVoiceControlStatus("error");
-        setVoiceControlHint("Voice command cannot find a microphone.");
-        return;
-      }
-
-      if (code === "no-speech") {
-        setVoiceControlHint("No speech yet. Keep talking or tap again.");
-        return;
-      }
-
-      setVoiceControlStatus("error");
-      setVoiceControlHint(code ? `Voice command error: ${code}` : "Voice command failed.");
-    };
-
-    recognition.onend = () => {
-      // Browser may end recognition by itself after a short silence.
-      // Do not execute here immediately. Our own timers decide when to finish.
-      if (voiceControlStatus === "listening") {
-        setVoiceControlStatus("off");
-      }
-    };
-
-    voiceRecognitionRef.current = recognition;
-
-    try {
-      recognition.start();
-    } catch (e: any) {
-      clearVoiceCommandTimers();
-      setVoiceControlStatus("error");
-      setVoiceControlHint(String(e?.message || "Could not start voice command."));
-      return;
-    }
-
-    voiceCommandHardStopTimerRef.current = window.setTimeout(() => {
-      voiceCommandFinishRef.current?.();
-    }, 9000);
-  }, [clearVoiceCommandTimers, voiceControlOn, voiceControlStatus]);
+    setVoiceControlStatus("restarting");
+    setVoiceControlHint("Restarting voice control…");
+    startPersistentVoiceControl();
+  }, [startPersistentVoiceControl]);
 
   useEffect(() => {
     return () => {
       clearVoiceCommandTimers();
-
-      try {
-        voiceRecognitionRef.current?.abort?.();
-      } catch {
-        // ignore
-      }
-
-      voiceRecognitionRef.current = null;
+      stopPersistentVoiceControl();
       voiceCommandFinishRef.current = null;
     };
-  }, [clearVoiceCommandTimers]);
+  }, [clearVoiceCommandTimers, stopPersistentVoiceControl]);
 
   const leave = async () => {
     explicitLeaveRequestedRef.current = true;

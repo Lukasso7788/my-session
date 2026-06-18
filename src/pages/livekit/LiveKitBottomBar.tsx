@@ -44,14 +44,14 @@ function SpeechRecognitionIndicator({
 
     const label =
         effectiveStatus === "listening"
-            ? "Speech"
+            ? "Voice ready"
             : effectiveStatus === "restarting"
-                ? "Speech…"
+                ? "Voice…"
                 : effectiveStatus === "unsupported"
-                    ? "No speech"
+                    ? "No voice"
                     : effectiveStatus === "error"
-                        ? "Speech error"
-                        : "Speech off";
+                        ? "Voice error"
+                        : "Voice off";
 
     const title = [hint, text ? `Heard: ${text}` : ""].filter(Boolean).join("\n") || label;
 
@@ -404,7 +404,7 @@ export function LiveKitBottomBar(props: {
                                                 type="button"
                                             >
                                                 <span className="w-4 h-4 flex items-center justify-center" aria-hidden="true">🎙️</span>
-                                                <span>{voiceControlStatus === "listening" ? "Listening…" : "Speech command"}</span>
+                                                <span>{voiceControlStatus === "listening" ? "Voice ready" : "Restart voice"}</span>
                                             </button>
                                         ) : null}
 
@@ -634,13 +634,13 @@ export function LiveKitBottomBar(props: {
                                 ].join(" ")}
                                 title={
                                     voiceControlEnabled
-                                        ? "Speech command: click, then say open chat / turn video off / mute mic"
+                                        ? "Voice control is always listening. Click to restart it if it gets stuck."
                                         : "Speech command is disabled in Settings"
                                 }
                                 type="button"
                             >
                                 <span className="text-[18px]" aria-hidden="true">🎙️</span>
-                                <span className="sr-only">Start speech command</span>
+                                <span className="sr-only">Restart voice control</span>
                             </button>
                         ) : null}
 
