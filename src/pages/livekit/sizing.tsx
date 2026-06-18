@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 // ----------------------- SIZING -----------------------
 
+export type MobileVideoLayoutMode = "auto" | "one" | "two" | "strip";
+
 export function useElementSize<T extends HTMLElement>() {
     const [node, setNode] = useState<T | null>(null);
     const [size, setSize] = useState({ width: 0, height: 0 });
@@ -13,7 +15,9 @@ export function useElementSize<T extends HTMLElement>() {
     useEffect(() => {
         if (!node) return;
 
-        const update = () => {
+        let raf = 0;
+
+        const updateNow = () => {
             const r = node.getBoundingClientRect();
             setSize({
                 width: Math.round(r.width),
@@ -21,19 +25,32 @@ export function useElementSize<T extends HTMLElement>() {
             });
         };
 
-        update();
+        const update = () => {
+            if (raf) window.cancelAnimationFrame(raf);
+            raf = window.requestAnimationFrame(updateNow);
+        };
+
+        updateNow();
 
         const RO: any = (window as any).ResizeObserver;
         if (RO) {
             const ro = new RO(() => update());
             ro.observe(node);
-            return () => ro.disconnect();
+
+            window.addEventListener("orientationchange", update);
+
+            return () => {
+                if (raf) window.cancelAnimationFrame(raf);
+                ro.disconnect();
+                window.removeEventListener("orientationchange", update);
+            };
         }
 
         window.addEventListener("resize", update);
         window.addEventListener("orientationchange", update);
 
         return () => {
+            if (raf) window.cancelAnimationFrame(raf);
             window.removeEventListener("resize", update);
             window.removeEventListener("orientationchange", update);
         };
@@ -49,8 +66,24 @@ function isMobileLikeSize(width: number, height: number) {
     return minSide > 0 && minSide <= 520 && maxSide <= 980;
 }
 
+function isTabletLikeSize(width: number, height: number) {
+    const minSide = Math.min(width || 0, height || 0);
+    const maxSide = Math.max(width || 0, height || 0);
+
+    return minSide > 520 && minSide <= 1024 && maxSide <= 1400;
+}
+
+function isMobileOrTabletLikeSize(width: number, height: number) {
+    return isMobileLikeSize(width, height) || isTabletLikeSize(width, height);
+}
+
 function isLandscape(width: number, height: number) {
     return width > height;
+}
+
+function normalizeMobileMode(mode?: MobileVideoLayoutMode): MobileVideoLayoutMode {
+    if (mode === "one" || mode === "two" || mode === "strip") return mode;
+    return "auto";
 }
 
 function computeCols(count: number, containerWidth: number, rightPanelOpen = false) {
@@ -110,20 +143,33 @@ function computeCols(count: number, containerWidth: number, rightPanelOpen = fal
     return 3;
 }
 
-function computeMobileCols(count: number, width: number, height: number) {
+function computeMobileCols(count: number, width: number, height: number, mode?: MobileVideoLayoutMode) {
+    const resolved = normalizeMobileMode(mode);
+
+    if (resolved === "one") return 1;
+    if (resolved === "two") return count <= 1 ? 1 : 2;
+
     const landscape = isLandscape(width, height);
+    const tablet = isTabletLikeSize(width, height);
 
     if (count <= 1) return 1;
     if (count === 2) return landscape ? 2 : 1;
 
-    if (landscape) {
-        if (count <= 4) return 2;
-        if (count <= 8) return 4;
-        return 4;
+    // Important mobile/tablet rule:
+    // 6 and 8 participants should be 2 columns, not 3 columns.
+    // On Surface/iPad-like widths, 3 columns makes tiles too tiny and leaves a huge empty stage.
+    if (tablet && !landscape) {
+        if (count <= 10) return 2;
+        return 3;
     }
 
-    if (count <= 4) return 2;
-    if (count <= 8) return 2;
+    if (landscape) {
+        if (count <= 4) return 2;
+        if (count <= 8) return 2;
+        return 3;
+    }
+
+    if (count <= 10) return 2;
     return 3;
 }
 
@@ -158,6 +204,7 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
     containerHeight: number;
     forceThreeAsTwoPlusOne?: boolean;
     rightPanelOpen?: boolean;
+    mobileMode?: MobileVideoLayoutMode;
     renderItem: (t: T, idx: number) => React.ReactNode;
 }) {
     const {
@@ -166,18 +213,19 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
         containerHeight,
         forceThreeAsTwoPlusOne,
         rightPanelOpen = false,
+        mobileMode = "auto",
         renderItem,
     } = props;
 
-    const isMobile = isMobileLikeSize(containerWidth, containerHeight);
+    const mobileOrTablet = isMobileOrTabletLikeSize(containerWidth, containerHeight);
     const paddingPx = containerWidth && containerWidth < 520 ? 6 : 10;
     const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
 
     const cols = useMemo(() => {
-        if (isMobile) return computeMobileCols(items.length, containerWidth, containerHeight);
+        if (mobileOrTablet) return computeMobileCols(items.length, containerWidth, containerHeight, mobileMode);
         if (forceThreeAsTwoPlusOne && items.length === 3) return 2;
         return computeCols(items.length, containerWidth || 1200, rightPanelOpen);
-    }, [isMobile, items.length, containerWidth, containerHeight, rightPanelOpen, forceThreeAsTwoPlusOne]);
+    }, [mobileOrTablet, items.length, containerWidth, containerHeight, mobileMode, rightPanelOpen, forceThreeAsTwoPlusOne]);
 
     const rows = useMemo(() => Math.ceil(items.length / Math.max(1, cols)), [items.length, cols]);
 
@@ -294,23 +342,38 @@ export function MobileFillLayoutSizing<T extends { id: string }>(props: {
     containerWidth: number;
     containerHeight: number;
     paddingBottomPx?: number;
+    mobileMode?: MobileVideoLayoutMode;
     renderItem: (t: T, idx: number) => React.ReactNode;
 }) {
-    const { items, containerWidth, containerHeight, paddingBottomPx = 12, renderItem } = props;
+    const { items, containerWidth, containerHeight, paddingBottomPx = 12, mobileMode = "auto", renderItem } = props;
 
     const count = items.length || 1;
+    const mode = normalizeMobileMode(mobileMode);
     const paddingPx = containerWidth && containerWidth < 520 ? 6 : 8;
     const gapPx = containerWidth && containerWidth < 520 ? 6 : 8;
 
     const landscape = isLandscape(containerWidth, containerHeight);
 
-    if (landscape && count > 2) {
+    if ((mode === "strip" || (mode === "auto" && landscape)) && count > 2) {
         return (
             <MobileHorizontalStripLayoutSizing
                 items={items}
                 containerWidth={containerWidth}
                 containerHeight={containerHeight}
                 paddingBottomPx={paddingBottomPx}
+                renderItem={renderItem}
+            />
+        );
+    }
+
+    if (mode === "two" && count > 2) {
+        return (
+            <MobileStackLayoutSizing
+                items={items}
+                containerWidth={containerWidth}
+                containerHeight={containerHeight}
+                paddingBottomPx={paddingBottomPx}
+                mode="two"
                 renderItem={renderItem}
             />
         );
@@ -348,7 +411,7 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
     containerWidth: number;
     containerHeight: number;
     paddingBottomPx?: number;
-    mode?: "grid" | "list" | "strip";
+    mode?: MobileVideoLayoutMode;
     renderItem: (t: T, idx: number) => React.ReactNode;
 }) {
     const {
@@ -356,18 +419,18 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
         containerWidth,
         containerHeight,
         paddingBottomPx = 12,
-        mode,
+        mode = "auto",
         renderItem,
     } = props;
 
     const count = items.length || 1;
+    const resolvedMode = normalizeMobileMode(mode);
     const paddingPx = containerWidth && containerWidth < 520 ? 6 : 8;
     const gapPx = containerWidth && containerWidth < 520 ? 6 : 8;
 
     const landscape = isLandscape(containerWidth, containerHeight);
-    const resolvedMode = mode || (landscape ? "strip" : "grid");
 
-    if (resolvedMode === "strip") {
+    if (resolvedMode === "strip" || (resolvedMode === "auto" && landscape && count > 2)) {
         return (
             <MobileHorizontalStripLayoutSizing
                 items={items}
@@ -379,7 +442,7 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
         );
     }
 
-    if (resolvedMode === "list") {
+    if (resolvedMode === "one") {
         return (
             <MobileOneColumnListLayoutSizing
                 items={items}
@@ -391,7 +454,7 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
         );
     }
 
-    const cols = computeMobileCols(count, containerWidth, containerHeight);
+    const cols = computeMobileCols(count, containerWidth, containerHeight, resolvedMode);
     const rows = Math.ceil(count / cols);
 
     const maxGridWidth = calcMaxGridWidthPx({
@@ -447,6 +510,7 @@ export function MobileOneColumnListLayoutSizing<T extends { id: string }>(props:
             style={{
                 padding: paddingPx,
                 paddingBottom: paddingBottomPx,
+                WebkitOverflowScrolling: "touch",
             }}
         >
             <div className="w-full flex flex-col" style={{ gap: gapPx }}>
@@ -473,7 +537,7 @@ export function MobileHorizontalStripLayoutSizing<T extends { id: string }>(prop
     const gapPx = 8;
 
     const availH = Math.max(0, (containerHeight || 0) - paddingPx * 2 - paddingBottomPx);
-    const tileW = Math.max(180, Math.min(320, availH > 0 ? availH * (16 / 9) : 240));
+    const tileW = Math.max(180, Math.min(360, availH > 0 ? availH * (16 / 9) : 240));
 
     return (
         <div

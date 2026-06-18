@@ -71,6 +71,7 @@ import {
   P2PLayoutSizing,
   MobileFillLayoutSizing,
   MobileStackLayoutSizing,
+  type MobileVideoLayoutMode,
 } from "./livekit/sizing";
 
 type FxMode = "off" | "blur" | "bg";
@@ -2084,6 +2085,20 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
   const [paywallModalOpen, setPaywallModalOpen] = useState(false);
   const [aiHostInputOpen, setAiHostInputOpen] = useState(true);
+  const [mobileVideoLayoutMode, setMobileVideoLayoutMode] = useState<MobileVideoLayoutMode>(() => {
+    if (typeof window === "undefined") return "auto";
+
+    const stored = String(window.localStorage.getItem("mysession_mobile_video_layout_mode") || "").trim();
+    return stored === "one" || stored === "two" || stored === "strip" ? stored : "auto";
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("mysession_mobile_video_layout_mode", mobileVideoLayoutMode);
+    } catch {
+      // ignore
+    }
+  }, [mobileVideoLayoutMode]);
 
   const tabId = useMemo(() => makeLiveKitPageTabId(), []);
   const devClones = useMemo(() => Math.max(0, Math.min(24, getQueryInt("devClones", 0))), []);
@@ -8539,6 +8554,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const isCompact = effectiveW < 900;
 
   const useVeryNarrowMode = isVeryNarrow || (isMobileQuery && isNarrowForColumns);
+  const useMobileOrTabletGallery = isMobileQuery || isTabletQuery;
   const stackTwoOnThisViewport =
     tileCount === 2 &&
     !useVeryNarrowMode &&
@@ -8546,8 +8562,59 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
   const useFeaturedLayout =
     !!featuredTile &&
+    !useMobileOrTabletGallery &&
     !useVeryNarrowMode &&
     effectiveW >= (isLgUp && rightPanelOpen ? 980 : 900);
+
+  const showMobileLayoutControls = useMobileOrTabletGallery && tileCount >= 3;
+
+  const mobileLayoutIconTheme = isLight ? "light" : "dark";
+
+  const mobileLayoutBtnBase = isLight
+    ? "border-black/10 bg-white/90 text-black/75 hover:bg-white"
+    : "border-white/10 bg-[#020617]/85 text-white/80 hover:bg-[#0B1220]";
+
+  const mobileLayoutBtnActive = isLight
+    ? "border-blue-500/50 bg-blue-600 text-white shadow"
+    : "border-emerald-400/50 bg-emerald-500 text-[#02140B] shadow";
+
+  const MobileLayoutButton = ({
+    mode,
+    icon,
+    label,
+    title,
+  }: {
+    mode: MobileVideoLayoutMode;
+    icon: string;
+    label: string;
+    title: string;
+  }) => {
+    const active = mobileVideoLayoutMode === mode;
+
+    return (
+      <button
+        type="button"
+        onClick={() => setMobileVideoLayoutMode(mode)}
+        className={[
+          "h-9 min-w-9 rounded-xl border px-2 text-[11px] font-semibold transition inline-flex items-center justify-center gap-1.5",
+          active ? mobileLayoutBtnActive : mobileLayoutBtnBase,
+        ].join(" ")}
+        title={title}
+        aria-label={title}
+      >
+        <img
+          src={`/icons/${icon}-${mobileLayoutIconTheme}.svg`}
+          alt=""
+          className="h-4 w-4 shrink-0"
+          draggable={false}
+          onError={(e) => {
+            (e.currentTarget as HTMLImageElement).style.display = "none";
+          }}
+        />
+        <span>{label}</span>
+      </button>
+    );
+  };
 
   const videoLayout = useFeaturedLayout ? (
     <div
@@ -8588,28 +8655,28 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           </div>
         </div>
       ) : tileCount ? (
-        useVeryNarrowMode ? (
-          tileCount <= 2 ? (
-            <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
+        useMobileOrTabletGallery ? (
+          <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
+            {tileCount <= 2 ? (
               <MobileFillLayoutSizing<TileModel>
                 items={layoutTilesForRender}
                 containerWidth={effectiveW}
                 containerHeight={effectiveH}
                 paddingBottomPx={paddingBottomPx}
+                mobileMode={mobileVideoLayoutMode}
                 renderItem={(t) => renderTile(t)}
               />
-            </div>
-          ) : (
-            <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
+            ) : (
               <MobileStackLayoutSizing<TileModel>
                 items={layoutTilesForRender}
                 containerWidth={effectiveW}
                 containerHeight={effectiveH}
                 paddingBottomPx={paddingBottomPx}
+                mode={mobileVideoLayoutMode}
                 renderItem={(t) => renderTile(t)}
               />
-            </div>
-          )
+            )}
+          </div>
         ) : tileCount <= 2 ? (
           <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
             <P2PLayoutSizing<TileModel>
@@ -8638,6 +8705,28 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
   const videoContent = (
     <div className="w-full h-full min-w-0 min-h-0 relative overflow-hidden">
+      {showMobileLayoutControls ? (
+        <div className="absolute right-2 top-2 z-20 flex items-center gap-1.5 rounded-2xl p-1 backdrop-blur-xl pointer-events-auto">
+          <MobileLayoutButton
+            mode="auto"
+            icon="layout-auto"
+            label="Auto"
+            title="Auto mobile video layout"
+          />
+          <MobileLayoutButton
+            mode="one"
+            icon="layout-one-column"
+            label="1"
+            title="One-column video layout"
+          />
+          <MobileLayoutButton
+            mode="two"
+            icon="layout-two-columns"
+            label="2"
+            title="Two-column video layout"
+          />
+        </div>
+      ) : null}
       {roomReadyText ? (
         <div className={`absolute inset-0 flex items-center justify-center z-10 ${isLight ? "text-black/60" : "text-white/70"}`}>
           <div className={`px-4 py-2 rounded-xl ${isLight ? "bg-white/70" : "bg-black/30"}`}>
