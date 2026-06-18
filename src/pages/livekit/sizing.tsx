@@ -60,6 +60,17 @@ export function useElementSize<T extends HTMLElement>() {
     return { ref, width: size.width, height: size.height };
 }
 
+function chunkItems<T>(items: T[], cols: number) {
+    const safeCols = Math.max(1, cols || 1);
+    const rows: T[][] = [];
+
+    for (let i = 0; i < items.length; i += safeCols) {
+        rows.push(items.slice(i, i + safeCols));
+    }
+
+    return rows;
+}
+
 function isMobileLikeSize(width: number, height: number) {
     const minSide = Math.min(width || 0, height || 0);
     const maxSide = Math.max(width || 0, height || 0);
@@ -94,6 +105,7 @@ function normalizeMobileMode(mode?: MobileVideoLayoutMode): MobileVideoLayoutMod
     ) {
         return mode;
     }
+
     return "auto";
 }
 
@@ -200,16 +212,12 @@ function computeMobileCols(count: number, width: number, height: number, mode?: 
     if (count <= 1) return 1;
     if (count === 2) return landscape ? 2 : 1;
 
-    // Important mobile/tablet rule:
-    // 6 and 8 participants should be 2 columns, not 3 columns.
-    // On Surface/iPad-like widths, 3 columns makes tiles too tiny and leaves a huge empty stage.
     if (tablet && !landscape) {
         if (count <= 10) return 2;
         return 3;
     }
 
     if (landscape) {
-        if (count <= 4) return 2;
         if (count <= 8) return 2;
         return 3;
     }
@@ -284,21 +292,33 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
         if (mobileOrTablet) return computeMobileCols(items.length, containerWidth, containerHeight, mobileMode);
         if (forceThreeAsTwoPlusOne && items.length === 3) return 2;
         return computeCols(items.length, containerWidth || 1200, rightPanelOpen);
-    }, [mobileOrTablet, items.length, containerWidth, containerHeight, mobileMode, layoutPreset, customColumns, customRows, rightPanelOpen, forceThreeAsTwoPlusOne]);
+    }, [
+        mobileOrTablet,
+        items.length,
+        containerWidth,
+        containerHeight,
+        mobileMode,
+        layoutPreset,
+        customColumns,
+        customRows,
+        rightPanelOpen,
+        forceThreeAsTwoPlusOne,
+    ]);
 
-    const rows = useMemo(() => Math.ceil(items.length / Math.max(1, cols)), [items.length, cols]);
+    const rows = useMemo(() => chunkItems(items, cols), [items, cols]);
+    const rowsCount = rows.length || 1;
 
     const maxGridWidth = useMemo(() => {
         return calcMaxGridWidthPx({
             containerWidth: containerWidth || 0,
             containerHeight: containerHeight || 0,
             cols,
-            rows,
+            rows: rowsCount,
             gapPx,
             paddingPx,
             aspectHOverW: 9 / 16,
         });
-    }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx]);
+    }, [containerWidth, containerHeight, cols, rowsCount, gapPx, paddingPx]);
 
     const shouldCenterY = useMemo(() => {
         if (!containerWidth || !containerHeight) return false;
@@ -309,14 +329,16 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
         if (availW <= 0 || availH <= 0) return false;
 
         const byWidth = (availW - (cols - 1) * gapPx) / cols;
-        const byHeight = (availH - (rows - 1) * gapPx) / (rows * (9 / 16));
+        const byHeight = (availH - (rowsCount - 1) * gapPx) / (rowsCount * (9 / 16));
 
         const tileW = Math.max(0, Math.min(byWidth, byHeight));
         const tileH = tileW * (9 / 16);
-        const gridH = rows * tileH + (rows - 1) * gapPx;
+        const gridH = rowsCount * tileH + (rowsCount - 1) * gapPx;
 
         return gridH > 0 && gridH <= availH - 4;
-    }, [containerWidth, containerHeight, paddingPx, gapPx, cols, rows]);
+    }, [containerWidth, containerHeight, paddingPx, gapPx, cols, rowsCount]);
+
+    const tileWidth = `calc((100% - ${(cols - 1) * gapPx}px) / ${cols})`;
 
     return (
         <div
@@ -327,16 +349,28 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
             style={{ padding: paddingPx }}
         >
             <div
-                className="w-full grid"
+                className="w-full flex flex-col"
                 style={{
                     gap: gapPx,
                     maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
-                    gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-                    alignContent: shouldCenterY ? "center" : "start",
                 }}
             >
-                {items.map((t, i) => (
-                    <React.Fragment key={t.id}>{renderItem(t, i)}</React.Fragment>
+                {rows.map((row, rowIndex) => (
+                    <div
+                        key={`grid-row-${rowIndex}`}
+                        className="w-full flex justify-center"
+                        style={{ gap: gapPx }}
+                    >
+                        {row.map((t) => {
+                            const idx = items.findIndex((x) => x.id === t.id);
+
+                            return (
+                                <div key={t.id} className="shrink-0" style={{ width: tileWidth }}>
+                                    {renderItem(t, idx)}
+                                </div>
+                            );
+                        })}
+                    </div>
                 ))}
             </div>
         </div>
@@ -360,19 +394,19 @@ export function P2PLayoutSizing<T extends { id: string }>(props: {
     const landscape = isLandscape(containerWidth, containerHeight);
 
     const cols = stack || (mobile && !landscape) ? 1 : count <= 1 ? 1 : 2;
-    const rows = count <= 1 ? 1 : cols === 1 ? count : 1;
+    const rowsCount = count <= 1 ? 1 : cols === 1 ? count : 1;
 
     const maxGridWidth = useMemo(() => {
         return calcMaxGridWidthPx({
             containerWidth: containerWidth || 0,
             containerHeight: containerHeight || 0,
             cols,
-            rows,
+            rows: rowsCount,
             gapPx,
             paddingPx,
             aspectHOverW: 9 / 16,
         });
-    }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx]);
+    }, [containerWidth, containerHeight, cols, rowsCount, gapPx, paddingPx]);
 
     return (
         <div
@@ -537,17 +571,20 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
 
     const forcedCols = resolveForcedCols({ count, layoutPreset: resolvedMode, customColumns, customRows });
     const cols = forcedCols > 0 ? forcedCols : computeMobileCols(count, containerWidth, containerHeight, resolvedMode);
-    const rows = Math.ceil(count / cols);
+    const rows = chunkItems(items, cols);
+    const rowsCount = rows.length || 1;
 
     const maxGridWidth = calcMaxGridWidthPx({
         containerWidth: containerWidth || 0,
         containerHeight: containerHeight || 0,
         cols,
-        rows,
+        rows: rowsCount,
         gapPx,
         paddingPx,
         aspectHOverW: 9 / 16,
     });
+
+    const tileWidth = `calc((100% - ${(cols - 1) * gapPx}px) / ${cols})`;
 
     return (
         <div
@@ -558,16 +595,28 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
             }}
         >
             <div
-                className="w-full grid"
+                className="w-full flex flex-col"
                 style={{
                     gap: gapPx,
                     maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
-                    gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
-                    alignContent: "center",
                 }}
             >
-                {items.map((t, idx) => (
-                    <React.Fragment key={t.id}>{renderItem(t, idx)}</React.Fragment>
+                {rows.map((row, rowIndex) => (
+                    <div
+                        key={`mobile-stack-row-${rowIndex}`}
+                        className="w-full flex justify-center"
+                        style={{ gap: gapPx }}
+                    >
+                        {row.map((t) => {
+                            const idx = items.findIndex((x) => x.id === t.id);
+
+                            return (
+                                <div key={t.id} className="shrink-0" style={{ width: tileWidth }}>
+                                    {renderItem(t, idx)}
+                                </div>
+                            );
+                        })}
+                    </div>
                 ))}
             </div>
         </div>
