@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
-// ----------------------- SIZING (ported from VideoRoom, ONLY sizing) -----------------------
+// ----------------------- SIZING -----------------------
+
 export function useElementSize<T extends HTMLElement>() {
     const [node, setNode] = useState<T | null>(null);
     const [size, setSize] = useState({ width: 0, height: 0 });
@@ -30,10 +31,26 @@ export function useElementSize<T extends HTMLElement>() {
         }
 
         window.addEventListener("resize", update);
-        return () => window.removeEventListener("resize", update);
+        window.addEventListener("orientationchange", update);
+
+        return () => {
+            window.removeEventListener("resize", update);
+            window.removeEventListener("orientationchange", update);
+        };
     }, [node]);
 
     return { ref, width: size.width, height: size.height };
+}
+
+function isMobileLikeSize(width: number, height: number) {
+    const minSide = Math.min(width || 0, height || 0);
+    const maxSide = Math.max(width || 0, height || 0);
+
+    return minSide > 0 && minSide <= 520 && maxSide <= 980;
+}
+
+function isLandscape(width: number, height: number) {
+    return width > height;
 }
 
 function computeCols(count: number, containerWidth: number, rightPanelOpen = false) {
@@ -48,58 +65,34 @@ function computeCols(count: number, containerWidth: number, rightPanelOpen = fal
 
     if (count === 3) {
         if (!isDesktop) return 2;
-
-        // 3 participants in one row looks too small on laptops,
-        // especially when the right panel is open.
-        // Keep 2+1 until the actual video container is really wide.
         return w >= 1500 ? 3 : 2;
     }
 
     if (count === 5) return w >= 900 ? 3 : 2;
     if (count === 6) return w >= 780 ? 3 : 2;
 
-    // 7–8:
-    // Правильная логика не через угадывание ширины, а через состояние правой панели.
-    //
-    // rightPanelOpen=true  → открыта Intentions / Participants / Chat panel → держим 3 колонки
-    // rightPanelOpen=false → правая панель закрыта → на desktop даём 4 колонки
-    //
-    // Это важно для 1366×768 / 1920×1080: один только width threshold врёт,
-    // потому что video container может быть достаточно широким даже с открытой панелью.
     if (count >= 7 && count <= 8) {
         if (w < 760) return 2;
         if (isDesktop && !rightPanelOpen) return 4;
         return 3;
     }
 
-    // 9:
-    // Keep 9 participants in a stable 3x3 grid.
-    // Do not switch 9 to 4 columns, because that creates 4 + 4 + 1.
     if (count === 9) {
         if (w < 760) return 2;
         return 3;
     }
 
-    // 10–12:
-    // стабильный режим 4x3 на desktop
     if (count >= 10 && count <= 12) {
         if (!isDesktop) return 3;
         return 4;
     }
 
-    // 13–14:
-    // - с правой панелью / обычный desktop: 4 колонки
-    // - без панели на очень широком: 5 колонок
     if (count >= 13 && count <= 14) {
         if (!isDesktop) return 3;
         if (isUltraWideDesktop) return 5;
         return 4;
     }
 
-    // 15–16:
-    // - обычный desktop / с правой панелью: 4 колонки
-    // - широкий desktop: 5 колонок
-    // - очень широкий desktop: 6 колонок
     if (count >= 15 && count <= 16) {
         if (!isDesktop) return 3;
         if (isUltraWideDesktop) return 6;
@@ -107,7 +100,6 @@ function computeCols(count: number, containerWidth: number, rightPanelOpen = fal
         return 4;
     }
 
-    // 17+ — это уже позже, но оставим мягкую эскалацию
     if (count >= 17) {
         if (!isDesktop) return 3;
         if (isUltraWideDesktop) return 6;
@@ -115,6 +107,23 @@ function computeCols(count: number, containerWidth: number, rightPanelOpen = fal
         return 4;
     }
 
+    return 3;
+}
+
+function computeMobileCols(count: number, width: number, height: number) {
+    const landscape = isLandscape(width, height);
+
+    if (count <= 1) return 1;
+    if (count === 2) return landscape ? 2 : 1;
+
+    if (landscape) {
+        if (count <= 4) return 2;
+        if (count <= 8) return 4;
+        return 4;
+    }
+
+    if (count <= 4) return 2;
+    if (count <= 8) return 2;
     return 3;
 }
 
@@ -129,7 +138,7 @@ function calcMaxGridWidthPx(params: {
 }) {
     const { containerWidth, containerHeight, cols, rows, gapPx, paddingPx, aspectHOverW } = params;
 
-    if (!containerWidth || !containerHeight) return null;
+    if (!containerWidth || !containerHeight || !cols || !rows) return null;
 
     const availW = Math.max(0, containerWidth - paddingPx * 2);
     const availH = Math.max(0, containerHeight - paddingPx * 2);
@@ -160,18 +169,20 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
         renderItem,
     } = props;
 
-    const paddingPx = containerWidth && containerWidth < 520 ? 8 : 10;
+    const isMobile = isMobileLikeSize(containerWidth, containerHeight);
+    const paddingPx = containerWidth && containerWidth < 520 ? 6 : 10;
     const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
 
     const cols = useMemo(() => {
+        if (isMobile) return computeMobileCols(items.length, containerWidth, containerHeight);
         if (forceThreeAsTwoPlusOne && items.length === 3) return 2;
         return computeCols(items.length, containerWidth || 1200, rightPanelOpen);
-    }, [items.length, containerWidth, rightPanelOpen, forceThreeAsTwoPlusOne]);
+    }, [isMobile, items.length, containerWidth, containerHeight, rightPanelOpen, forceThreeAsTwoPlusOne]);
 
-    const rows = useMemo(() => Math.ceil(items.length / cols), [items.length, cols]);
+    const rows = useMemo(() => Math.ceil(items.length / Math.max(1, cols)), [items.length, cols]);
 
     const maxGridWidth = useMemo(() => {
-        const w = calcMaxGridWidthPx({
+        return calcMaxGridWidthPx({
             containerWidth: containerWidth || 0,
             containerHeight: containerHeight || 0,
             cols,
@@ -180,7 +191,6 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
             paddingPx,
             aspectHOverW: 9 / 16,
         });
-        return w;
     }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx]);
 
     const shouldCenterY = useMemo(() => {
@@ -201,15 +211,6 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
         return gridH > 0 && gridH <= availH - 4;
     }, [containerWidth, containerHeight, paddingPx, gapPx, cols, rows]);
 
-    const count = items.length;
-    const remainder = cols > 0 ? count % cols : 0;
-    const fullCount = remainder === 0 ? count : count - remainder;
-
-    const oneColWidth = `calc((100% - ${(cols - 1) * gapPx}px) / ${cols})`;
-
-    const fullRows = items.slice(0, fullCount);
-    const lastRow = items.slice(fullCount);
-
     return (
         <div
             className={
@@ -227,25 +228,9 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
                     alignContent: shouldCenterY ? "center" : "start",
                 }}
             >
-                {fullRows.map((t, i) => (
+                {items.map((t, i) => (
                     <React.Fragment key={t.id}>{renderItem(t, i)}</React.Fragment>
                 ))}
-
-                {lastRow.length > 0 && (
-                    <div
-                        className="col-span-full w-full flex justify-center"
-                        style={{
-                            gap: gapPx,
-                            alignItems: shouldCenterY ? "center" : "flex-start",
-                        }}
-                    >
-                        {lastRow.map((t, i) => (
-                            <div key={t.id} className="shrink-0" style={{ width: oneColWidth }}>
-                                {renderItem(t, fullCount + i)}
-                            </div>
-                        ))}
-                    </div>
-                )}
             </div>
         </div>
     );
@@ -260,16 +245,18 @@ export function P2PLayoutSizing<T extends { id: string }>(props: {
 }) {
     const { items, containerWidth, containerHeight, stack = false, renderItem } = props;
 
-    const paddingPx = containerWidth && containerWidth < 520 ? 8 : 10;
+    const paddingPx = containerWidth && containerWidth < 520 ? 6 : 10;
     const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
 
     const count = items.length;
+    const mobile = isMobileLikeSize(containerWidth, containerHeight);
+    const landscape = isLandscape(containerWidth, containerHeight);
 
-    const cols = stack ? 1 : count <= 1 ? 1 : 2;
-    const rows = count <= 1 ? 1 : stack ? 2 : 1;
+    const cols = stack || (mobile && !landscape) ? 1 : count <= 1 ? 1 : 2;
+    const rows = count <= 1 ? 1 : cols === 1 ? count : 1;
 
     const maxGridWidth = useMemo(() => {
-        const w = calcMaxGridWidthPx({
+        return calcMaxGridWidthPx({
             containerWidth: containerWidth || 0,
             containerHeight: containerHeight || 0,
             cols,
@@ -278,14 +265,11 @@ export function P2PLayoutSizing<T extends { id: string }>(props: {
             paddingPx,
             aspectHOverW: 9 / 16,
         });
-
-        if (!w) return null;
-        return w;
     }, [containerWidth, containerHeight, cols, rows, gapPx, paddingPx]);
 
     return (
         <div
-            className="w-full h-full min-h-0 overflow-hidden flex justify-center items-center"
+            className="w-full h-full min-h-0 overflow-y-auto flex justify-center items-center"
             style={{ padding: paddingPx }}
         >
             <div
@@ -293,7 +277,7 @@ export function P2PLayoutSizing<T extends { id: string }>(props: {
                 style={{
                     gap: gapPx,
                     maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
-                    gridTemplateColumns: cols === 1 ? "1fr" : "1fr 1fr",
+                    gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
                     alignContent: "center",
                 }}
             >
@@ -313,22 +297,35 @@ export function MobileFillLayoutSizing<T extends { id: string }>(props: {
     renderItem: (t: T, idx: number) => React.ReactNode;
 }) {
     const { items, containerWidth, containerHeight, paddingBottomPx = 12, renderItem } = props;
-    const count = items.length || 1;
 
-    const paddingPx = containerWidth && containerWidth < 520 ? 8 : 10;
-    const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
+    const count = items.length || 1;
+    const paddingPx = containerWidth && containerWidth < 520 ? 6 : 8;
+    const gapPx = containerWidth && containerWidth < 520 ? 6 : 8;
+
+    const landscape = isLandscape(containerWidth, containerHeight);
+
+    if (landscape && count > 2) {
+        return (
+            <MobileHorizontalStripLayoutSizing
+                items={items}
+                containerWidth={containerWidth}
+                containerHeight={containerHeight}
+                paddingBottomPx={paddingBottomPx}
+                renderItem={renderItem}
+            />
+        );
+    }
 
     const availW = Math.max(0, (containerWidth || 0) - paddingPx * 2);
     const availH = Math.max(0, (containerHeight || 0) - paddingPx * 2 - paddingBottomPx - (count - 1) * gapPx);
 
     const tileH = availH > 0 ? availH / count : 0;
     const tileWByH = tileH > 0 ? tileH * (16 / 9) : 0;
-
     const maxTileW = Math.max(0, Math.min(availW || 0, tileWByH || availW || 0));
 
     return (
         <div
-            className="w-full h-full min-h-0 flex flex-col justify-center"
+            className="w-full h-full min-h-0 flex flex-col justify-center overflow-y-auto"
             style={{
                 padding: paddingPx,
                 paddingBottom: paddingBottomPx,
@@ -351,51 +348,50 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
     containerWidth: number;
     containerHeight: number;
     paddingBottomPx?: number;
+    mode?: "grid" | "list" | "strip";
     renderItem: (t: T, idx: number) => React.ReactNode;
 }) {
-    const { items, containerWidth, containerHeight, paddingBottomPx = 12, renderItem } = props;
+    const {
+        items,
+        containerWidth,
+        containerHeight,
+        paddingBottomPx = 12,
+        mode,
+        renderItem,
+    } = props;
 
     const count = items.length || 1;
-    const paddingPx = containerWidth && containerWidth < 520 ? 8 : 10;
+    const paddingPx = containerWidth && containerWidth < 520 ? 6 : 8;
     const gapPx = containerWidth && containerWidth < 520 ? 6 : 8;
 
-    const availW = Math.max(0, (containerWidth || 0) - paddingPx * 2);
-    const availH = Math.max(0, (containerHeight || 0) - paddingPx * 2 - paddingBottomPx);
+    const landscape = isLandscape(containerWidth, containerHeight);
+    const resolvedMode = mode || (landscape ? "strip" : "grid");
 
-    // ✅ До 4 участников включительно — всегда вертикальный стек
-    if (count <= 4) {
-        const totalGap = Math.max(0, (count - 1) * gapPx);
-        const tileH = count > 0 ? Math.max(0, (availH - totalGap) / count) : 0;
-        const tileWByH = tileH > 0 ? tileH * (16 / 9) : 0;
-        const stackWidth = Math.max(0, Math.min(availW, tileWByH || availW));
-
+    if (resolvedMode === "strip") {
         return (
-            <div
-                className="w-full h-full min-h-0 overflow-y-auto flex justify-center items-center"
-                style={{
-                    padding: paddingPx,
-                    paddingBottom: paddingBottomPx,
-                }}
-            >
-                <div
-                    className="w-full flex flex-col justify-center items-center"
-                    style={{
-                        gap: gapPx,
-                        maxWidth: stackWidth ? `${stackWidth}px` : undefined,
-                    }}
-                >
-                    {items.map((t, idx) => (
-                        <div key={t.id} className="w-full shrink-0">
-                            {renderItem(t, idx)}
-                        </div>
-                    ))}
-                </div>
-            </div>
+            <MobileHorizontalStripLayoutSizing
+                items={items}
+                containerWidth={containerWidth}
+                containerHeight={containerHeight}
+                paddingBottomPx={paddingBottomPx}
+                renderItem={renderItem}
+            />
         );
     }
 
-    // ✅ С 5 участников — 2 колонки
-    const cols = 2;
+    if (resolvedMode === "list") {
+        return (
+            <MobileOneColumnListLayoutSizing
+                items={items}
+                containerWidth={containerWidth}
+                containerHeight={containerHeight}
+                paddingBottomPx={paddingBottomPx}
+                renderItem={renderItem}
+            />
+        );
+    }
+
+    const cols = computeMobileCols(count, containerWidth, containerHeight);
     const rows = Math.ceil(count / cols);
 
     const maxGridWidth = calcMaxGridWidthPx({
@@ -421,7 +417,7 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
                 style={{
                     gap: gapPx,
                     maxWidth: maxGridWidth ? `${maxGridWidth}px` : undefined,
-                    gridTemplateColumns: "1fr 1fr",
+                    gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
                     alignContent: "center",
                 }}
             >
@@ -432,4 +428,79 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
         </div>
     );
 }
+
+export function MobileOneColumnListLayoutSizing<T extends { id: string }>(props: {
+    items: T[];
+    containerWidth: number;
+    containerHeight: number;
+    paddingBottomPx?: number;
+    renderItem: (t: T, idx: number) => React.ReactNode;
+}) {
+    const { items, containerWidth, paddingBottomPx = 12, renderItem } = props;
+
+    const paddingPx = containerWidth && containerWidth < 520 ? 6 : 8;
+    const gapPx = 8;
+
+    return (
+        <div
+            className="w-full h-full min-h-0 overflow-y-auto"
+            style={{
+                padding: paddingPx,
+                paddingBottom: paddingBottomPx,
+            }}
+        >
+            <div className="w-full flex flex-col" style={{ gap: gapPx }}>
+                {items.map((t, idx) => (
+                    <div key={t.id} className="w-full shrink-0">
+                        {renderItem(t, idx)}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
+export function MobileHorizontalStripLayoutSizing<T extends { id: string }>(props: {
+    items: T[];
+    containerWidth: number;
+    containerHeight: number;
+    paddingBottomPx?: number;
+    renderItem: (t: T, idx: number) => React.ReactNode;
+}) {
+    const { items, containerWidth, containerHeight, paddingBottomPx = 12, renderItem } = props;
+
+    const paddingPx = containerWidth && containerWidth < 520 ? 6 : 8;
+    const gapPx = 8;
+
+    const availH = Math.max(0, (containerHeight || 0) - paddingPx * 2 - paddingBottomPx);
+    const tileW = Math.max(180, Math.min(320, availH > 0 ? availH * (16 / 9) : 240));
+
+    return (
+        <div
+            className="w-full h-full min-h-0 overflow-x-auto overflow-y-hidden"
+            style={{
+                padding: paddingPx,
+                paddingBottom: paddingBottomPx,
+                scrollSnapType: "x mandatory",
+                WebkitOverflowScrolling: "touch",
+            }}
+        >
+            <div className="h-full flex items-center" style={{ gap: gapPx }}>
+                {items.map((t, idx) => (
+                    <div
+                        key={t.id}
+                        className="shrink-0"
+                        style={{
+                            width: tileW,
+                            scrollSnapAlign: "center",
+                        }}
+                    >
+                        {renderItem(t, idx)}
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 // ----------------------- /SIZING -----------------------
