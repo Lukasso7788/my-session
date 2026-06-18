@@ -13,65 +13,6 @@ const REACTION_MENU_ITEMS: ReactionType[] = [
     "celebrate",
 ];
 
-
-type VoiceControlStatus = "off" | "listening" | "restarting" | "unsupported" | "error";
-
-function SpeechRecognitionIndicator({
-    enabled,
-    status,
-    hint,
-    text,
-    isLight,
-}: {
-    enabled?: boolean;
-    status?: VoiceControlStatus;
-    hint?: string;
-    text?: string;
-    isLight: boolean;
-}) {
-    const effectiveStatus: VoiceControlStatus = !enabled ? "off" : status || "off";
-
-    const dotClass =
-        effectiveStatus === "listening"
-            ? "bg-emerald-400 shadow-[0_0_0_4px_rgba(52,211,153,0.16)] animate-pulse"
-            : effectiveStatus === "restarting"
-                ? "bg-yellow-400 shadow-[0_0_0_4px_rgba(250,204,21,0.14)]"
-                : effectiveStatus === "error" || effectiveStatus === "unsupported"
-                    ? "bg-red-400 shadow-[0_0_0_4px_rgba(248,113,113,0.14)]"
-                    : isLight
-                        ? "bg-black/30"
-                        : "bg-white/35";
-
-    const label =
-        effectiveStatus === "listening"
-            ? "Voice ready"
-            : effectiveStatus === "restarting"
-                ? "Voice…"
-                : effectiveStatus === "unsupported"
-                    ? "No voice"
-                    : effectiveStatus === "error"
-                        ? "Voice error"
-                        : "Voice off";
-
-    const title = [hint, text ? `Heard: ${text}` : ""].filter(Boolean).join("\n") || label;
-
-    return (
-        <div
-            className={[
-                "hidden sm:inline-flex h-9 max-w-[190px] items-center gap-2 rounded-2xl border px-3 text-[12px] font-semibold transition",
-                isLight
-                    ? "border-black/10 bg-white/75 text-black/70"
-                    : "border-white/10 bg-white/[0.06] text-white/75",
-            ].join(" ")}
-            title={title}
-            aria-label={title}
-        >
-            <span className={["h-2.5 w-2.5 shrink-0 rounded-full", dotClass].join(" ")} />
-            <span className="truncate">{label}</span>
-        </div>
-    );
-}
-
 function AIHostIcon({
     isLight,
     className = "w-5 h-5",
@@ -130,12 +71,6 @@ export function LiveKitBottomBar(props: {
     showLayoutControls?: boolean;
     onOpenLayoutControls?: () => void;
 
-    voiceControlEnabled?: boolean;
-    voiceControlStatus?: VoiceControlStatus;
-    voiceControlHint?: string;
-    voiceControlText?: string;
-    onStartVoiceCommand?: () => void;
-
     onToggleMic: () => void;
     onToggleCam: () => void;
     onToggleScreenShare: () => void;
@@ -169,12 +104,6 @@ export function LiveKitBottomBar(props: {
 
         showLayoutControls = true,
         onOpenLayoutControls,
-
-        voiceControlEnabled = false,
-        voiceControlStatus = "off",
-        voiceControlHint = "",
-        voiceControlText = "",
-        onStartVoiceCommand,
 
         onToggleMic,
         onToggleCam,
@@ -357,12 +286,12 @@ export function LiveKitBottomBar(props: {
                                                     setShowMoreMenu(false);
                                                 }}
                                                 className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${aiHostOpen
-                                                    ? isLight
-                                                        ? "bg-blue-600 text-white"
-                                                        : "bg-violet-500 text-white"
-                                                    : isLight
-                                                        ? "text-black/75 hover:bg-black/5"
-                                                        : "text-white/85 hover:bg-white/5"
+                                                        ? isLight
+                                                            ? "bg-blue-600 text-white"
+                                                            : "bg-violet-500 text-white"
+                                                        : isLight
+                                                            ? "text-black/75 hover:bg-black/5"
+                                                            : "text-white/85 hover:bg-white/5"
                                                     }`}
                                                 type="button"
                                             >
@@ -383,28 +312,6 @@ export function LiveKitBottomBar(props: {
                                             >
                                                 <LayoutIcon isLight={isLight} className="w-4 h-4 opacity-90" />
                                                 <span>Layout</span>
-                                            </button>
-                                        ) : null}
-
-                                        {onStartVoiceCommand ? (
-                                            <button
-                                                onClick={() => {
-                                                    onStartVoiceCommand();
-                                                    setShowMoreMenu(false);
-                                                }}
-                                                disabled={!connected || !voiceControlEnabled || voiceControlStatus === "unsupported"}
-                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 disabled:opacity-50 ${voiceControlStatus === "listening"
-                                                    ? isLight
-                                                        ? "bg-blue-600 text-white"
-                                                        : "bg-emerald-500 text-[#02140B]"
-                                                    : isLight
-                                                        ? "text-black/75 hover:bg-black/5"
-                                                        : "text-white/85 hover:bg-white/5"
-                                                    }`}
-                                                type="button"
-                                            >
-                                                <span className="w-4 h-4 flex items-center justify-center" aria-hidden="true">🎙️</span>
-                                                <span>{voiceControlStatus === "listening" ? "Voice ready" : "Restart voice"}</span>
                                             </button>
                                         ) : null}
 
@@ -479,12 +386,12 @@ export function LiveKitBottomBar(props: {
                                                     setShowMoreMenu(false);
                                                 }}
                                                 className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${pipActive
-                                                    ? isLight
-                                                        ? "bg-blue-600 text-white"
-                                                        : "bg-emerald-500 text-[#02140B]"
-                                                    : isLight
-                                                        ? "text-black/75 hover:bg-black/5"
-                                                        : "text-white/85 hover:bg-white/5"
+                                                        ? isLight
+                                                            ? "bg-blue-600 text-white"
+                                                            : "bg-emerald-500 text-[#02140B]"
+                                                        : isLight
+                                                            ? "text-black/75 hover:bg-black/5"
+                                                            : "text-white/85 hover:bg-white/5"
                                                     }`}
                                                 type="button"
                                             >
@@ -620,38 +527,6 @@ export function LiveKitBottomBar(props: {
                     </div>
 
                     <div className="flex items-center justify-end gap-2 sm:gap-3">
-                        {onStartVoiceCommand ? (
-                            <button
-                                onClick={onStartVoiceCommand}
-                                disabled={!connected || !voiceControlEnabled || voiceControlStatus === "unsupported"}
-                                className={[
-                                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 disabled:cursor-not-allowed",
-                                    voiceControlStatus === "listening"
-                                        ? isLight
-                                            ? "bg-blue-600 hover:bg-blue-700 text-white"
-                                            : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
-                                        : ctlBtnBase,
-                                ].join(" ")}
-                                title={
-                                    voiceControlEnabled
-                                        ? "Voice control is always listening. Click to restart it if it gets stuck."
-                                        : "Speech command is disabled in Settings"
-                                }
-                                type="button"
-                            >
-                                <span className="text-[18px]" aria-hidden="true">🎙️</span>
-                                <span className="sr-only">Restart voice control</span>
-                            </button>
-                        ) : null}
-
-                        <SpeechRecognitionIndicator
-                            enabled={voiceControlEnabled}
-                            status={voiceControlStatus}
-                            hint={voiceControlHint}
-                            text={voiceControlText}
-                            isLight={isLight}
-                        />
-
                         <button
                             onClick={onLeave}
                             className="hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white"
