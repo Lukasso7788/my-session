@@ -1357,6 +1357,19 @@ function readStoredLayoutNumber(key: string) {
   return Math.max(0, Math.min(6, n));
 }
 
+function getSpeechRecognitionConstructor(): any | null {
+  if (typeof window === "undefined") return null;
+  return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || null;
+}
+
+function normalizeVoiceCommand(raw: string) {
+  return String(raw || "")
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 const CHAT_MSG_TABLE = "session_chat_messages";
 const REACTION_TTL_MS = 2750;
 const SESSION_SELECT_STR =
@@ -4170,6 +4183,12 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const [fxStatusText, setFxStatusText] = useState<string>("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPreviewVersion, setSettingsPreviewVersion] = useState(0);
+  const [voiceControlOn, setVoiceControlOn] = useState(false);
+  const [voiceControlText, setVoiceControlText] = useState("");
+  const [voiceControlHint, setVoiceControlHint] = useState("");
+  const voiceRecognitionRef = useRef<any | null>(null);
+  const voiceControlDesiredRef = useRef(false);
+  const lastVoiceCommandAtRef = useRef(0);
   const [blurStrength, setBlurStrength] = useState<number>(12);
   const firefoxSafeFx = useMemo(() => isFirefoxLike(), []);
   const [connected, setConnected] = useState(false);
@@ -7416,6 +7435,171 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       });
     }
   };
+  
+  const runVoiceUiCommand = useCallback(
+    async (raw: string) => {
+      const text = normalizeVoiceCommand(raw);
+      if (!text) return;
+
+      const now = Date.now();
+      if (now - lastVoiceCommandAtRef.current < 1200) return;
+
+      const mark = (label: string) => {
+        lastVoiceCommandAtRef.current = now;
+        setVoiceControlHint(label);
+      };
+
+      if (text.includes("open chat") || text === "chat") {
+        mark("Opening chat");
+        openRightTab("chat");
+        return;
+      }
+
+      if (text.includes("open intentions") || text.includes("open intention") || text === "intentions") {
+        mark("Opening intentions");
+        openRightTab("intentions");
+        return;
+      }
+
+      if (text.includes("open participants") || text.includes("show participants")) {
+        mark("Opening participants");
+        openRightTab("participants");
+        return;
+      }
+
+      if (text.includes("open settings") || text.includes("show settings")) {
+        mark("Opening settings");
+        setSettingsOpen(true);
+        setSettingsPreviewVersion((v) => v + 1);
+        return;
+      }
+
+      if (text.includes("close panel") || text.includes("close chat") || text.includes("close intentions")) {
+        mark("Closing panel");
+        openRightTab(null);
+        return;
+      }
+
+      if (text.includes("turn off video") || text.includes("turn off camera") || text.includes("camera off")) {
+        mark("Turning video off");
+        if (camOn) await toggleCam();
+        return;
+      }
+
+      if (text.includes("turn on video") || text.includes("turn on camera") || text.includes("camera on")) {
+        mark("Turning video on");
+        if (!camOn) await toggleCam();
+        return;
+      }
+
+      if (text.includes("mute microphone") || text.includes("mute mic") || text.includes("turn off mic")) {
+        mark("Muting microphone");
+        if (micOn) await toggleMic();
+        return;
+      }
+
+      if (text.includes("unmute microphone") || text.includes("unmute mic") || text.includes("turn on mic")) {
+        mark("Unmuting microphone");
+        if (!micOn) await toggleMic();
+        return;
+      }
+
+      if (text.includes("share screen") || text.includes("start screen share")) {
+        mark("Starting screen share");
+        if (!screenShareOn) await toggleScreenShare();
+        return;
+      }
+
+      if (text.includes("stop sharing") || text.includes("stop screen share")) {
+        mark("Stopping screen share");
+        if (screenShareOn) await toggleScreenShare();
+        return;
+      }
+
+      setVoiceControlHint(`Heard: "${text}"`);
+    },
+    [camOn, micOn, screenShareOn, toggleCam, toggleMic, toggleScreenShare, openRightTab]
+  );
+
+  useEffect(() => {
+    voiceControlDesiredRef.current = voiceControlOn;
+
+    if (!voiceControlOn) {
+      try {
+        voiceRecognitionRef.current?.abort?.();
+      } catch { }
+      voiceRecognitionRef.current = null;
+      return;
+    }
+
+    const Ctor = getSpeechRecognitionConstructor();
+
+    if (!Ctor) {
+      setVoiceControlHint("Voice control is not supported in this browser.");
+      setVoiceControlOn(false);
+      return;
+    }
+
+    let cancelled = false;
+    const recognition = new Ctor();
+
+    recognition.lang = "en-US";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event: any) => {
+      let finalText = "";
+      let interimText = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const transcript = String(event.results[i]?.[0]?.transcript || "").trim();
+        if (!transcript) continue;
+
+        if (event.results[i].isFinal) finalText += `${transcript} `;
+        else interimText += `${transcript} `;
+      }
+
+      const visible = (finalText || interimText).trim();
+      if (visible) setVoiceControlText(visible);
+
+      if (finalText.trim()) {
+        void runVoiceUiCommand(finalText);
+      }
+    };
+
+    recognition.onerror = () => {
+      setVoiceControlHint("Voice control stopped. Click Voice again to restart.");
+      setVoiceControlOn(false);
+    };
+
+    recognition.onend = () => {
+      if (!cancelled && voiceControlDesiredRef.current) {
+        window.setTimeout(() => {
+          try {
+            recognition.start();
+          } catch { }
+        }, 350);
+      }
+    };
+
+    voiceRecognitionRef.current = recognition;
+
+    try {
+      recognition.start();
+      setVoiceControlHint("Voice control is listening.");
+    } catch {
+      setVoiceControlHint("Could not start voice control.");
+      setVoiceControlOn(false);
+    }
+
+    return () => {
+      cancelled = true;
+      try {
+        recognition.abort();
+      } catch { }
+    };
+  }, [voiceControlOn, runVoiceUiCommand]);
 
   const leave = async () => {
     explicitLeaveRequestedRef.current = true;
@@ -10129,6 +10313,38 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
             </div>
           </>
         ) : null}
+
+        <div className="fixed right-4 bottom-[92px] z-[90]">
+          <button
+            type="button"
+            onClick={() => setVoiceControlOn((v) => !v)}
+            className={[
+              "rounded-2xl px-4 py-3 text-[13px] font-bold shadow-xl border",
+              voiceControlOn
+                ? "bg-emerald-500 text-black border-emerald-300"
+                : isLight
+                  ? "bg-white text-black border-black/10"
+                  : "bg-[#020617] text-white border-white/10",
+            ].join(" ")}
+            title="Voice control"
+          >
+            {voiceControlOn ? "🎙️ Voice on" : "🎙️ Voice"}
+          </button>
+
+          {voiceControlOn || voiceControlHint ? (
+            <div
+              className={[
+                "mt-2 max-w-[260px] rounded-2xl px-3 py-2 text-[11px] shadow-xl border",
+                isLight
+                  ? "bg-white text-black/70 border-black/10"
+                  : "bg-[#020617] text-white/70 border-white/10",
+              ].join(" ")}
+            >
+              <div>{voiceControlHint}</div>
+              {voiceControlText ? <div className="mt-1 opacity-70">{voiceControlText}</div> : null}
+            </div>
+          ) : null}
+        </div>
 
         <LiveKitBottomBar
           theme={theme}
