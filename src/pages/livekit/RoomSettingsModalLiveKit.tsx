@@ -1434,7 +1434,7 @@ export function RoomSettingsModalLiveKit({
                     <div className={`mb-5 rounded-2xl p-4 ${sectionCls}`}>
                         <ToggleRow
                             label="Voice control over UI"
-                            description="Always listens for room commands like open chat, open intentions, turn camera off, mute mic, or share screen. You can disable it here."
+                            description="Enables the Speech Command button in the bottom controls. Click it, then say commands like open chat, open intentions, turn camera off, mute mic, or share screen."
                             checked={voiceControlEnabled}
                             onChange={(v) => onChangeVoiceControlEnabled?.(v)}
                             isLight={isLight}

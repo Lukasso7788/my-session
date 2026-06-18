@@ -1366,6 +1366,7 @@ function normalizeVoiceCommand(raw: string) {
   return String(raw || "")
     .toLowerCase()
     .replace(/[^\w\s]/g, " ")
+    .replace(/\b(the|my|please|can you|could you|would you)\b/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -4207,8 +4208,10 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const [voiceControlText, setVoiceControlText] = useState("");
   const [voiceControlHint, setVoiceControlHint] = useState("");
   const voiceRecognitionRef = useRef<any | null>(null);
-  const voiceControlDesiredRef = useRef(false);
-  const voiceRestartTimerRef = useRef<number | null>(null);
+  const voiceCommandTextRef = useRef("");
+  const voiceCommandHardStopTimerRef = useRef<number | null>(null);
+  const voiceCommandGraceTimerRef = useRef<number | null>(null);
+  const voiceCommandFinishRef = useRef<(() => void) | null>(null);
   const lastVoiceCommandAtRef = useRef(0);
   const camOnRef = useRef(false);
   const micOnRef = useRef(false);
@@ -7708,13 +7711,43 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
         return;
       }
 
-      if (voiceCommandIncludes(text, ["stop sharing", "stop screen share", "screen share off", "turn off screen share", "stop share screen"])) {
-        mark("Stopping screen share.");
-        await setScreenShareFromVoiceCommand(false);
+      if (voiceCommandIncludes(text, ["one column", "single column", "layout one", "layout 1", "one column layout"])) {
+        mark("Switching to one column layout.");
+        setVideoTileLayoutPreset("one");
         return;
       }
 
-      setVoiceControlHint(`Heard: "${text}"`);
+      if (voiceCommandIncludes(text, ["two columns", "two column", "layout two", "layout 2", "two column layout"])) {
+        mark("Switching to two columns layout.");
+        setVideoTileLayoutPreset("two");
+        return;
+      }
+
+      if (voiceCommandIncludes(text, ["three columns", "three column", "layout three", "layout 3"])) {
+        mark("Switching to three columns layout.");
+        setVideoTileLayoutPreset("three");
+        return;
+      }
+
+      if (voiceCommandIncludes(text, ["four columns", "four column", "layout four", "layout 4"])) {
+        mark("Switching to four columns layout.");
+        setVideoTileLayoutPreset("four");
+        return;
+      }
+
+      if (voiceCommandIncludes(text, ["auto layout", "layout auto", "automatic layout"])) {
+        mark("Switching to auto layout.");
+        setVideoTileLayoutPreset("auto");
+        return;
+      }
+
+      if (voiceCommandIncludes(text, ["strip layout", "horizontal layout", "swipe layout", "layout strip"])) {
+        mark("Switching to horizontal strip layout.");
+        setVideoTileLayoutPreset("strip");
+        return;
+      }
+
+      setVoiceControlHint(`No matching command: "${text}"`);
     },
     [openRightTab, setCameraFromVoiceCommand, setMicrophoneFromVoiceCommand, setScreenShareFromVoiceCommand]
   );
@@ -7725,24 +7758,85 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     } catch {
       // ignore
     }
-  }, [voiceControlOn]);
-
-  useEffect(() => {
-    voiceControlDesiredRef.current = voiceControlOn;
-
-    if (voiceRestartTimerRef.current != null) {
-      window.clearTimeout(voiceRestartTimerRef.current);
-      voiceRestartTimerRef.current = null;
-    }
 
     if (!voiceControlOn) {
       try {
         voiceRecognitionRef.current?.abort?.();
-      } catch { }
+      } catch {
+        // ignore
+      }
+
       voiceRecognitionRef.current = null;
+      voiceCommandTextRef.current = "";
+
+      if (voiceCommandHardStopTimerRef.current != null) {
+        window.clearTimeout(voiceCommandHardStopTimerRef.current);
+        voiceCommandHardStopTimerRef.current = null;
+      }
+
+      if (voiceCommandGraceTimerRef.current != null) {
+        window.clearTimeout(voiceCommandGraceTimerRef.current);
+        voiceCommandGraceTimerRef.current = null;
+      }
+
       setVoiceControlStatus("off");
-      setVoiceControlHint("Voice control is off.");
+      setVoiceControlHint("Voice command is disabled in Settings.");
       setVoiceControlText("");
+    } else {
+      setVoiceControlStatus("off");
+      setVoiceControlHint("Tap Speech Command, then say a room command.");
+    }
+  }, [voiceControlOn]);
+
+  const clearVoiceCommandTimers = useCallback(() => {
+    if (voiceCommandHardStopTimerRef.current != null) {
+      window.clearTimeout(voiceCommandHardStopTimerRef.current);
+      voiceCommandHardStopTimerRef.current = null;
+    }
+
+    if (voiceCommandGraceTimerRef.current != null) {
+      window.clearTimeout(voiceCommandGraceTimerRef.current);
+      voiceCommandGraceTimerRef.current = null;
+    }
+  }, []);
+
+  const finishVoiceUiCommand = useCallback(() => {
+    clearVoiceCommandTimers();
+
+    try {
+      voiceRecognitionRef.current?.stop?.();
+    } catch {
+      // ignore
+    }
+
+    const raw = String(voiceCommandTextRef.current || "").trim();
+    const normalized = normalizeVoiceCommand(raw);
+
+    setVoiceControlStatus("off");
+    setVoiceControlText(normalized);
+
+    if (!voiceControlOn) {
+      setVoiceControlHint("Voice command is disabled in Settings.");
+      return;
+    }
+
+    if (!normalized) {
+      setVoiceControlHint("No command heard. Tap again and say: open chat, turn video off, mute mic.");
+      return;
+    }
+
+    setVoiceControlHint(`Heard: "${normalized}"`);
+    void runVoiceUiCommand(normalized);
+  }, [clearVoiceCommandTimers, runVoiceUiCommand, voiceControlOn]);
+
+  useEffect(() => {
+    voiceCommandFinishRef.current = finishVoiceUiCommand;
+  }, [finishVoiceUiCommand]);
+
+  const startVoiceUiCommand = useCallback(() => {
+    if (!voiceControlOn) {
+      setVoiceControlStatus("off");
+      setVoiceControlHint("Voice command is disabled in Settings.");
       return;
     }
 
@@ -7750,38 +7844,24 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
     if (!Ctor) {
       setVoiceControlStatus("unsupported");
-      setVoiceControlHint("Voice control is not supported in this browser.");
+      setVoiceControlHint("Voice commands are not supported in this browser. Try Chrome or Edge.");
       return;
     }
 
-    let cancelled = false;
+    clearVoiceCommandTimers();
+
+    try {
+      voiceRecognitionRef.current?.abort?.();
+    } catch {
+      // ignore
+    }
+
     const recognition = new Ctor();
 
-    const scheduleRestart = (delayMs = 700) => {
-      if (cancelled || !voiceControlDesiredRef.current) return;
-
-      if (voiceRestartTimerRef.current != null) {
-        window.clearTimeout(voiceRestartTimerRef.current);
-      }
-
-      setVoiceControlStatus("restarting");
-
-      voiceRestartTimerRef.current = window.setTimeout(() => {
-        voiceRestartTimerRef.current = null;
-        if (cancelled || !voiceControlDesiredRef.current) return;
-
-        try {
-          recognition.start();
-          setVoiceControlStatus("listening");
-          setVoiceControlHint("Voice control is listening.");
-        } catch (e: any) {
-          const msg = String(e?.message || e || "").toLowerCase();
-          setVoiceControlStatus("restarting");
-          setVoiceControlHint(msg ? `Restarting voice control… ${msg}` : "Restarting voice control…");
-          scheduleRestart(1200);
-        }
-      }, delayMs);
-    };
+    voiceCommandTextRef.current = "";
+    setVoiceControlText("");
+    setVoiceControlStatus("listening");
+    setVoiceControlHint("Listening for a room command…");
 
     recognition.lang = "en-US";
     recognition.continuous = true;
@@ -7789,59 +7869,66 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
-      if (cancelled) return;
       setVoiceControlStatus("listening");
-      setVoiceControlHint("Voice control is listening.");
+      setVoiceControlHint("Listening for a room command… say it now.");
     };
 
     recognition.onresult = (event: any) => {
-      let finalText = "";
-      let interimText = "";
+      let text = "";
 
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      for (let i = 0; i < event.results.length; i += 1) {
         const transcript = String(event.results[i]?.[0]?.transcript || "").trim();
-        if (!transcript) continue;
-
-        if (event.results[i].isFinal) finalText += `${transcript} `;
-        else interimText += `${transcript} `;
+        if (transcript) text += ` ${transcript}`;
       }
 
-      const visible = (finalText || interimText).trim();
-      if (visible) {
-        setVoiceControlText(visible);
-        setVoiceControlStatus("listening");
+      const visible = normalizeVoiceCommand(text);
+      if (!visible) return;
+
+      voiceCommandTextRef.current = visible;
+      setVoiceControlText(visible);
+      setVoiceControlStatus("listening");
+      setVoiceControlHint(`Heard: "${visible}"`);
+
+      if (voiceCommandGraceTimerRef.current != null) {
+        window.clearTimeout(voiceCommandGraceTimerRef.current);
       }
 
-      if (finalText.trim()) {
-        void runVoiceUiCommand(finalText);
-      }
+      voiceCommandGraceTimerRef.current = window.setTimeout(() => {
+        voiceCommandFinishRef.current?.();
+      }, 2500);
     };
 
     recognition.onerror = (event: any) => {
       const code = String(event?.error || "").trim();
 
       if (code === "not-allowed" || code === "service-not-allowed") {
+        clearVoiceCommandTimers();
         setVoiceControlStatus("error");
-        setVoiceControlHint("Microphone permission is blocked. Allow mic access to use voice control.");
+        setVoiceControlHint("Microphone permission is blocked. Allow mic access to use voice commands.");
         return;
       }
 
       if (code === "audio-capture") {
+        clearVoiceCommandTimers();
         setVoiceControlStatus("error");
-        setVoiceControlHint("Voice control cannot find a microphone.");
+        setVoiceControlHint("Voice command cannot find a microphone.");
         return;
       }
 
-      setVoiceControlStatus("restarting");
-      setVoiceControlHint(code ? `Voice control restarting after ${code}.` : "Voice control restarting…");
-      scheduleRestart(code === "no-speech" ? 450 : 900);
+      if (code === "no-speech") {
+        setVoiceControlHint("No speech yet. Keep talking or tap again.");
+        return;
+      }
+
+      setVoiceControlStatus("error");
+      setVoiceControlHint(code ? `Voice command error: ${code}` : "Voice command failed.");
     };
 
     recognition.onend = () => {
-      if (!cancelled && voiceControlDesiredRef.current) {
-        setVoiceControlStatus("restarting");
-        setVoiceControlHint("Voice control is restarting…");
-        scheduleRestart(650);
+      // Browser may end recognition by itself after a short silence.
+      // Do not execute here immediately. Our own timers decide when to finish.
+      if (voiceControlStatus === "listening") {
+        setVoiceControlStatus("off");
       }
     };
 
@@ -7849,27 +7936,32 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
     try {
       recognition.start();
-      setVoiceControlStatus("listening");
-      setVoiceControlHint("Voice control is listening.");
     } catch (e: any) {
-      setVoiceControlStatus("restarting");
-      setVoiceControlHint(String(e?.message || "Could not start voice control. Restarting…"));
-      scheduleRestart(1200);
+      clearVoiceCommandTimers();
+      setVoiceControlStatus("error");
+      setVoiceControlHint(String(e?.message || "Could not start voice command."));
+      return;
     }
 
-    return () => {
-      cancelled = true;
+    voiceCommandHardStopTimerRef.current = window.setTimeout(() => {
+      voiceCommandFinishRef.current?.();
+    }, 9000);
+  }, [clearVoiceCommandTimers, voiceControlOn, voiceControlStatus]);
 
-      if (voiceRestartTimerRef.current != null) {
-        window.clearTimeout(voiceRestartTimerRef.current);
-        voiceRestartTimerRef.current = null;
-      }
+  useEffect(() => {
+    return () => {
+      clearVoiceCommandTimers();
 
       try {
-        recognition.abort();
-      } catch { }
+        voiceRecognitionRef.current?.abort?.();
+      } catch {
+        // ignore
+      }
+
+      voiceRecognitionRef.current = null;
+      voiceCommandFinishRef.current = null;
     };
-  }, [voiceControlOn, runVoiceUiCommand]);
+  }, [clearVoiceCommandTimers]);
 
   const leave = async () => {
     explicitLeaveRequestedRef.current = true;
@@ -10623,6 +10715,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           voiceControlStatus={voiceControlStatus}
           voiceControlHint={voiceControlHint}
           voiceControlText={voiceControlText}
+          onStartVoiceCommand={startVoiceUiCommand}
         />
 
         <RoomSettingsModalLiveKit

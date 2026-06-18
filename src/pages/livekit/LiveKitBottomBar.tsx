@@ -134,6 +134,7 @@ export function LiveKitBottomBar(props: {
     voiceControlStatus?: VoiceControlStatus;
     voiceControlHint?: string;
     voiceControlText?: string;
+    onStartVoiceCommand?: () => void;
 
     onToggleMic: () => void;
     onToggleCam: () => void;
@@ -173,6 +174,7 @@ export function LiveKitBottomBar(props: {
         voiceControlStatus = "off",
         voiceControlHint = "",
         voiceControlText = "",
+        onStartVoiceCommand,
 
         onToggleMic,
         onToggleCam,
@@ -381,6 +383,28 @@ export function LiveKitBottomBar(props: {
                                             >
                                                 <LayoutIcon isLight={isLight} className="w-4 h-4 opacity-90" />
                                                 <span>Layout</span>
+                                            </button>
+                                        ) : null}
+
+                                        {onStartVoiceCommand ? (
+                                            <button
+                                                onClick={() => {
+                                                    onStartVoiceCommand();
+                                                    setShowMoreMenu(false);
+                                                }}
+                                                disabled={!connected || !voiceControlEnabled || voiceControlStatus === "unsupported"}
+                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 disabled:opacity-50 ${voiceControlStatus === "listening"
+                                                    ? isLight
+                                                        ? "bg-blue-600 text-white"
+                                                        : "bg-emerald-500 text-[#02140B]"
+                                                    : isLight
+                                                        ? "text-black/75 hover:bg-black/5"
+                                                        : "text-white/85 hover:bg-white/5"
+                                                    }`}
+                                                type="button"
+                                            >
+                                                <span className="w-4 h-4 flex items-center justify-center" aria-hidden="true">🎙️</span>
+                                                <span>{voiceControlStatus === "listening" ? "Listening…" : "Speech command"}</span>
                                             </button>
                                         ) : null}
 
@@ -596,6 +620,30 @@ export function LiveKitBottomBar(props: {
                     </div>
 
                     <div className="flex items-center justify-end gap-2 sm:gap-3">
+                        {onStartVoiceCommand ? (
+                            <button
+                                onClick={onStartVoiceCommand}
+                                disabled={!connected || !voiceControlEnabled || voiceControlStatus === "unsupported"}
+                                className={[
+                                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 disabled:cursor-not-allowed",
+                                    voiceControlStatus === "listening"
+                                        ? isLight
+                                            ? "bg-blue-600 hover:bg-blue-700 text-white"
+                                            : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                                        : ctlBtnBase,
+                                ].join(" ")}
+                                title={
+                                    voiceControlEnabled
+                                        ? "Speech command: click, then say open chat / turn video off / mute mic"
+                                        : "Speech command is disabled in Settings"
+                                }
+                                type="button"
+                            >
+                                <span className="text-[18px]" aria-hidden="true">🎙️</span>
+                                <span className="sr-only">Start speech command</span>
+                            </button>
+                        ) : null}
+
                         <SpeechRecognitionIndicator
                             enabled={voiceControlEnabled}
                             status={voiceControlStatus}
