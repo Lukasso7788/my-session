@@ -8606,7 +8606,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     !useVeryNarrowMode &&
     effectiveW >= (isLgUp && rightPanelOpen ? 980 : 900);
 
-  const showMobileLayoutControls = false;
+  const showMobileLayoutControls = useMobileOrTabletGallery && tileCount >= 3;
 
   const mobileLayoutIconTheme = isLight ? "light" : "dark";
 
@@ -10133,11 +10133,6 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           showAIHost={aiHostedEnabled}
           aiHostOpen={aiHostInputOpen}
           onOpenAIHost={() => setAiHostInputOpen(true)}
-          showLayoutControls={true}
-          onOpenLayoutControls={() => {
-            setSettingsOpen(true);
-            setSettingsPreviewVersion((v) => v + 1);
-          }}
         />
 
         <RoomSettingsModalLiveKit

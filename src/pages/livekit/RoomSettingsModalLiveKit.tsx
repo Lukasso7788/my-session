@@ -2,6 +2,7 @@ import React from "react";
 
 type RoomTheme = "dark" | "light";
 type FxMode = "off" | "blur" | "bg";
+type VideoTileLayoutPreset = "auto" | "one" | "two" | "three" | "four" | "five" | "six" | "strip";
 
 type SinkAudioElement = HTMLAudioElement & {
     setSinkId?: (sinkId: string) => Promise<void>;
@@ -1069,6 +1070,13 @@ export function RoomSettingsModalLiveKit({
     onUploadBg,
     onResetBg,
 
+    videoTileLayoutPreset = "auto",
+    videoTileLayoutColumns = 0,
+    videoTileLayoutRows = 0,
+    onChangeVideoTileLayoutPreset,
+    onChangeVideoTileLayoutColumns,
+    onChangeVideoTileLayoutRows,
+
     devices,
     selectedAudioInputId,
     selectedVideoInputId,
@@ -1126,6 +1134,13 @@ export function RoomSettingsModalLiveKit({
     onTogglePreviewMirrored: (v: boolean) => void;
     onUploadBg: (file: File) => void;
     onResetBg: () => void;
+
+    videoTileLayoutPreset?: VideoTileLayoutPreset;
+    videoTileLayoutColumns?: number;
+    videoTileLayoutRows?: number;
+    onChangeVideoTileLayoutPreset?: (v: VideoTileLayoutPreset) => void;
+    onChangeVideoTileLayoutColumns?: (v: number) => void;
+    onChangeVideoTileLayoutRows?: (v: number) => void;
 
     devices: {
         videoInputs: MediaDeviceInfo[];
@@ -1295,6 +1310,27 @@ export function RoomSettingsModalLiveKit({
         })),
     ];
 
+    const layoutPresetOptions: Array<{ value: string; label: string }> = [
+        { value: "auto", label: "Auto — MySession decides" },
+        { value: "one", label: "1 column" },
+        { value: "two", label: "2 columns" },
+        { value: "three", label: "3 columns" },
+        { value: "four", label: "4 columns" },
+        { value: "five", label: "5 columns" },
+        { value: "six", label: "6 columns" },
+        { value: "strip", label: "Horizontal strip / swipe" },
+    ];
+
+    const layoutCountOptions: Array<{ value: string; label: string }> = [
+        { value: "0", label: "Auto" },
+        { value: "1", label: "1" },
+        { value: "2", label: "2" },
+        { value: "3", label: "3" },
+        { value: "4", label: "4" },
+        { value: "5", label: "5" },
+        { value: "6", label: "6" },
+    ];
+
     const effectivePreviewFilterCss = colorCorrectionEnabled ? (previewVideoFilterCss || "") : "";
 
     return (
@@ -1323,6 +1359,59 @@ export function RoomSettingsModalLiveKit({
                 </div>
 
                 <div className="px-5 sm:px-6 py-4 sm:py-5 flex-1 overflow-y-auto overscroll-contain">
+                    <div className={`mb-5 rounded-2xl p-4 ${sectionCls}`}>
+                        <div className="flex items-start justify-between gap-3 mb-4">
+                            <div className="min-w-0">
+                                <div className="text-[13px] font-semibold">Video tile layout</div>
+                                <div className={`mt-1 text-[12px] leading-5 ${subtleText}`}>
+                                    If the room grid looks broken on your device, override the tile layout here. These settings are saved on this browser.
+                                </div>
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onChangeVideoTileLayoutPreset?.("auto");
+                                    onChangeVideoTileLayoutColumns?.(0);
+                                    onChangeVideoTileLayoutRows?.(0);
+                                }}
+                                className={`h-9 px-3 rounded-xl text-[12px] font-semibold ${ghostBtn}`}
+                            >
+                                Reset layout
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            <SelectField
+                                label="Layout preset"
+                                value={videoTileLayoutPreset}
+                                onChange={(v) => onChangeVideoTileLayoutPreset?.(v as VideoTileLayoutPreset)}
+                                options={layoutPresetOptions}
+                                isLight={isLight}
+                            />
+
+                            <SelectField
+                                label="Force columns"
+                                value={String(videoTileLayoutColumns || 0)}
+                                onChange={(v) => onChangeVideoTileLayoutColumns?.(Number(v) || 0)}
+                                options={layoutCountOptions}
+                                isLight={isLight}
+                            />
+
+                            <SelectField
+                                label="Force rows"
+                                value={String(videoTileLayoutRows || 0)}
+                                onChange={(v) => onChangeVideoTileLayoutRows?.(Number(v) || 0)}
+                                options={layoutCountOptions}
+                                isLight={isLight}
+                            />
+                        </div>
+
+                        <div className={`mt-3 text-[12px] leading-5 ${subtleText}`}>
+                            Columns win first. If columns are Auto, forced rows can rebalance the grid. Horizontal strip is useful for narrow phones and landscape mode.
+                        </div>
+                    </div>
+
                     <div className={`mb-5 rounded-2xl p-4 ${sectionCls}`}>
                         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                             <div className="min-w-0">
