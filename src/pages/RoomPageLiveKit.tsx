@@ -1370,6 +1370,15 @@ function normalizeVoiceCommand(raw: string) {
     .trim();
 }
 
+function voiceCommandIncludes(text: string, phrases: string[]) {
+  const normalized = ` ${normalizeVoiceCommand(text)} `;
+
+  return phrases.some((phrase) => {
+    const p = ` ${normalizeVoiceCommand(phrase)} `;
+    return normalized.includes(p);
+  });
+}
+
 const CHAT_MSG_TABLE = "session_chat_messages";
 const REACTION_TTL_MS = 2750;
 const SESSION_SELECT_STR =
@@ -4201,6 +4210,9 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const voiceControlDesiredRef = useRef(false);
   const voiceRestartTimerRef = useRef<number | null>(null);
   const lastVoiceCommandAtRef = useRef(0);
+  const camOnRef = useRef(false);
+  const micOnRef = useRef(false);
+  const screenShareOnRef = useRef(false);
   const [blurStrength, setBlurStrength] = useState<number>(12);
   const firefoxSafeFx = useMemo(() => isFirefoxLike(), []);
   const [connected, setConnected] = useState(false);
@@ -5535,6 +5547,19 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
   const [screenShareOn, setScreenShareOn] = useState(false);
+
+  useEffect(() => {
+    micOnRef.current = micOn;
+  }, [micOn]);
+
+  useEffect(() => {
+    camOnRef.current = camOn;
+  }, [camOn]);
+
+  useEffect(() => {
+    screenShareOnRef.current = screenShareOn;
+  }, [screenShareOn]);
+
   const manualScreenShareRef = useRef<{
     mediaTrack: MediaStreamTrack;
     stream?: MediaStream | null;
@@ -7448,89 +7473,250 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     }
   };
 
+  const setCameraFromVoiceCommand = useCallback(
+    async (enabled: boolean) => {
+      const r = roomRef.current;
+      const lp: any = r?.localParticipant;
+
+      if (camOnRef.current === enabled) {
+        setVoiceControlHint(enabled ? "Video is already on." : "Video is already off.");
+        return;
+      }
+
+      try {
+        if (lp?.setCameraEnabled) {
+          await lp.setCameraEnabled(
+            enabled,
+            enabled
+              ? ({
+                deviceId: selectedVideoInputId || prejoinRef.current.videoInputId || undefined,
+                resolution: {
+                  width: lowPowerMobileMode ? 320 : capturePreset.width,
+                  height: lowPowerMobileMode ? 180 : capturePreset.height,
+                },
+                frameRate: lowPowerMobileMode ? 8 : capturePreset.fps,
+              } as any)
+              : undefined
+          );
+        } else {
+          await toggleCam();
+        }
+
+        setCamOn(enabled);
+        camOnRef.current = enabled;
+        setMediaWarning("");
+
+        await ensureRoomAudioPlaybackUnlocked(enabled ? "voice-camera-on" : "voice-camera-off").catch(() => { });
+        scheduleRebuildTiles();
+        window.setTimeout(() => scheduleRebuildTiles(), 120);
+        setVoiceControlHint(enabled ? "Video turned on." : "Video turned off.");
+      } catch (e: any) {
+        console.error("[voice-control] camera command failed:", e);
+        setVoiceControlHint(`Camera command failed: ${String(e?.message || e || "unknown error")}`);
+        setMediaWarning(
+          `${normalizeMediaWarningMessage(e?.message || e?.name || e || "camera_command_failed")} Try the camera button or Settings if permissions are blocked.`
+        );
+      }
+    },
+    [capturePreset.fps, capturePreset.height, capturePreset.width, lowPowerMobileMode, selectedVideoInputId, toggleCam]
+  );
+
+  const setMicrophoneFromVoiceCommand = useCallback(
+    async (enabled: boolean) => {
+      const r = roomRef.current;
+      const lp: any = r?.localParticipant;
+
+      if (micOnRef.current === enabled) {
+        setVoiceControlHint(enabled ? "Microphone is already on." : "Microphone is already muted.");
+        return;
+      }
+
+      try {
+        if (lp?.setMicrophoneEnabled) {
+          await lp.setMicrophoneEnabled(
+            enabled,
+            enabled
+              ? ({
+                deviceId: selectedAudioInputId || prejoinRef.current.audioInputId || undefined,
+                echoCancellation: echoCancellationEnabled,
+                noiseSuppression: noiseSuppressionEnabled,
+                autoGainControl: autoGainControlEnabled,
+              } as any)
+              : undefined
+          );
+        } else {
+          await toggleMic();
+        }
+
+        setMicOn(enabled);
+        micOnRef.current = enabled;
+        scheduleRebuildTiles();
+        window.setTimeout(() => scheduleRebuildTiles(), 120);
+        setVoiceControlHint(enabled ? "Microphone unmuted." : "Microphone muted.");
+      } catch (e: any) {
+        console.error("[voice-control] microphone command failed:", e);
+        setVoiceControlHint(`Microphone command failed: ${String(e?.message || e || "unknown error")}`);
+        setMediaWarning(
+          `${normalizeMediaWarningMessage(e?.message || e?.name || e || "microphone_command_failed")} Try the mic button or Settings if permissions are blocked.`
+        );
+      }
+    },
+    [autoGainControlEnabled, echoCancellationEnabled, noiseSuppressionEnabled, selectedAudioInputId, toggleMic]
+  );
+
+  const setScreenShareFromVoiceCommand = useCallback(
+    async (enabled: boolean) => {
+      if (screenShareOnRef.current === enabled) {
+        setVoiceControlHint(enabled ? "Screen sharing is already on." : "Screen sharing is already off.");
+        return;
+      }
+
+      await toggleScreenShare();
+      screenShareOnRef.current = enabled;
+      setVoiceControlHint(enabled ? "Starting screen share." : "Stopping screen share.");
+    },
+    [toggleScreenShare]
+  );
+
   const runVoiceUiCommand = useCallback(
     async (raw: string) => {
       const text = normalizeVoiceCommand(raw);
       if (!text) return;
 
+      setVoiceControlText(text);
+
       const now = Date.now();
-      if (now - lastVoiceCommandAtRef.current < 1200) return;
+      if (now - lastVoiceCommandAtRef.current < 900) return;
 
       const mark = (label: string) => {
         lastVoiceCommandAtRef.current = now;
         setVoiceControlHint(label);
       };
 
-      if (text.includes("open chat") || text === "chat") {
-        mark("Opening chat");
+      if (voiceCommandIncludes(text, ["open chat", "show chat", "chat panel", "chat"])) {
+        mark("Opening chat.");
         openRightTab("chat");
         return;
       }
 
-      if (text.includes("open intentions") || text.includes("open intention") || text === "intentions") {
-        mark("Opening intentions");
+      if (voiceCommandIncludes(text, ["open intentions", "open intention", "show intentions", "show intention", "intentions", "intention panel"])) {
+        mark("Opening intentions.");
         openRightTab("intentions");
         return;
       }
 
-      if (text.includes("open participants") || text.includes("show participants")) {
-        mark("Opening participants");
+      if (voiceCommandIncludes(text, ["open participants", "show participants", "participants panel", "participants"])) {
+        mark("Opening participants.");
         openRightTab("participants");
         return;
       }
 
-      if (text.includes("open settings") || text.includes("show settings")) {
-        mark("Opening settings");
+      if (voiceCommandIncludes(text, ["open settings", "show settings", "settings"])) {
+        mark("Opening settings.");
         setSettingsOpen(true);
         setSettingsPreviewVersion((v) => v + 1);
         return;
       }
 
-      if (text.includes("close panel") || text.includes("close chat") || text.includes("close intentions")) {
-        mark("Closing panel");
+      if (voiceCommandIncludes(text, ["close panel", "close chat", "close intentions", "close intention", "hide panel", "hide chat", "hide intentions"])) {
+        mark("Closing panel.");
         openRightTab(null);
         return;
       }
 
-      if (text.includes("turn off video") || text.includes("turn off camera") || text.includes("camera off")) {
-        mark("Turning video off");
-        if (camOn) await toggleCam();
+      if (
+        voiceCommandIncludes(text, [
+          "turn video off",
+          "turn off video",
+          "video off",
+          "disable video",
+          "stop video",
+          "turn camera off",
+          "turn off camera",
+          "camera off",
+          "disable camera",
+          "stop camera",
+          "hide camera",
+        ])
+      ) {
+        mark("Turning video off.");
+        await setCameraFromVoiceCommand(false);
         return;
       }
 
-      if (text.includes("turn on video") || text.includes("turn on camera") || text.includes("camera on")) {
-        mark("Turning video on");
-        if (!camOn) await toggleCam();
+      if (
+        voiceCommandIncludes(text, [
+          "turn video on",
+          "turn on video",
+          "video on",
+          "enable video",
+          "start video",
+          "turn camera on",
+          "turn on camera",
+          "camera on",
+          "enable camera",
+          "start camera",
+          "show camera",
+        ])
+      ) {
+        mark("Turning video on.");
+        await setCameraFromVoiceCommand(true);
         return;
       }
 
-      if (text.includes("mute microphone") || text.includes("mute mic") || text.includes("turn off mic")) {
-        mark("Muting microphone");
-        if (micOn) await toggleMic();
+      if (
+        voiceCommandIncludes(text, [
+          "mute microphone",
+          "mute mic",
+          "microphone off",
+          "mic off",
+          "turn microphone off",
+          "turn off microphone",
+          "turn mic off",
+          "turn off mic",
+          "disable microphone",
+          "disable mic",
+        ])
+      ) {
+        mark("Muting microphone.");
+        await setMicrophoneFromVoiceCommand(false);
         return;
       }
 
-      if (text.includes("unmute microphone") || text.includes("unmute mic") || text.includes("turn on mic")) {
-        mark("Unmuting microphone");
-        if (!micOn) await toggleMic();
+      if (
+        voiceCommandIncludes(text, [
+          "unmute microphone",
+          "unmute mic",
+          "microphone on",
+          "mic on",
+          "turn microphone on",
+          "turn on microphone",
+          "turn mic on",
+          "turn on mic",
+          "enable microphone",
+          "enable mic",
+        ])
+      ) {
+        mark("Unmuting microphone.");
+        await setMicrophoneFromVoiceCommand(true);
         return;
       }
 
-      if (text.includes("share screen") || text.includes("start screen share")) {
-        mark("Starting screen share");
-        if (!screenShareOn) await toggleScreenShare();
+      if (voiceCommandIncludes(text, ["share screen", "start screen share", "start sharing", "screen share on"])) {
+        mark("Starting screen share.");
+        await setScreenShareFromVoiceCommand(true);
         return;
       }
 
-      if (text.includes("stop sharing") || text.includes("stop screen share")) {
-        mark("Stopping screen share");
-        if (screenShareOn) await toggleScreenShare();
+      if (voiceCommandIncludes(text, ["stop sharing", "stop screen share", "screen share off", "turn off screen share", "stop share screen"])) {
+        mark("Stopping screen share.");
+        await setScreenShareFromVoiceCommand(false);
         return;
       }
 
       setVoiceControlHint(`Heard: "${text}"`);
     },
-    [camOn, micOn, screenShareOn, toggleCam, toggleMic, toggleScreenShare, openRightTab]
+    [openRightTab, setCameraFromVoiceCommand, setMicrophoneFromVoiceCommand, setScreenShareFromVoiceCommand]
   );
 
   useEffect(() => {
