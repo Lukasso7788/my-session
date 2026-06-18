@@ -4183,11 +4183,23 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const [fxStatusText, setFxStatusText] = useState<string>("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPreviewVersion, setSettingsPreviewVersion] = useState(0);
-  const [voiceControlOn, setVoiceControlOn] = useState(false);
+
+  const [voiceControlOn, setVoiceControlOn] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("mysession_lk_voice_control_enabled");
+      return saved !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const [voiceControlStatus, setVoiceControlStatus] = useState<
+    "off" | "listening" | "restarting" | "unsupported" | "error"
+  >("off");
   const [voiceControlText, setVoiceControlText] = useState("");
   const [voiceControlHint, setVoiceControlHint] = useState("");
   const voiceRecognitionRef = useRef<any | null>(null);
   const voiceControlDesiredRef = useRef(false);
+  const voiceRestartTimerRef = useRef<number | null>(null);
   const lastVoiceCommandAtRef = useRef(0);
   const [blurStrength, setBlurStrength] = useState<number>(12);
   const firefoxSafeFx = useMemo(() => isFirefoxLike(), []);
@@ -7435,7 +7447,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       });
     }
   };
-  
+
   const runVoiceUiCommand = useCallback(
     async (raw: string) => {
       const text = normalizeVoiceCommand(raw);
@@ -7522,31 +7534,79 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   );
 
   useEffect(() => {
+    try {
+      localStorage.setItem("mysession_lk_voice_control_enabled", voiceControlOn ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, [voiceControlOn]);
+
+  useEffect(() => {
     voiceControlDesiredRef.current = voiceControlOn;
+
+    if (voiceRestartTimerRef.current != null) {
+      window.clearTimeout(voiceRestartTimerRef.current);
+      voiceRestartTimerRef.current = null;
+    }
 
     if (!voiceControlOn) {
       try {
         voiceRecognitionRef.current?.abort?.();
       } catch { }
       voiceRecognitionRef.current = null;
+      setVoiceControlStatus("off");
+      setVoiceControlHint("Voice control is off.");
+      setVoiceControlText("");
       return;
     }
 
     const Ctor = getSpeechRecognitionConstructor();
 
     if (!Ctor) {
+      setVoiceControlStatus("unsupported");
       setVoiceControlHint("Voice control is not supported in this browser.");
-      setVoiceControlOn(false);
       return;
     }
 
     let cancelled = false;
     const recognition = new Ctor();
 
+    const scheduleRestart = (delayMs = 700) => {
+      if (cancelled || !voiceControlDesiredRef.current) return;
+
+      if (voiceRestartTimerRef.current != null) {
+        window.clearTimeout(voiceRestartTimerRef.current);
+      }
+
+      setVoiceControlStatus("restarting");
+
+      voiceRestartTimerRef.current = window.setTimeout(() => {
+        voiceRestartTimerRef.current = null;
+        if (cancelled || !voiceControlDesiredRef.current) return;
+
+        try {
+          recognition.start();
+          setVoiceControlStatus("listening");
+          setVoiceControlHint("Voice control is listening.");
+        } catch (e: any) {
+          const msg = String(e?.message || e || "").toLowerCase();
+          setVoiceControlStatus("restarting");
+          setVoiceControlHint(msg ? `Restarting voice control… ${msg}` : "Restarting voice control…");
+          scheduleRestart(1200);
+        }
+      }, delayMs);
+    };
+
     recognition.lang = "en-US";
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      if (cancelled) return;
+      setVoiceControlStatus("listening");
+      setVoiceControlHint("Voice control is listening.");
+    };
 
     recognition.onresult = (event: any) => {
       let finalText = "";
@@ -7561,25 +7621,41 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       }
 
       const visible = (finalText || interimText).trim();
-      if (visible) setVoiceControlText(visible);
+      if (visible) {
+        setVoiceControlText(visible);
+        setVoiceControlStatus("listening");
+      }
 
       if (finalText.trim()) {
         void runVoiceUiCommand(finalText);
       }
     };
 
-    recognition.onerror = () => {
-      setVoiceControlHint("Voice control stopped. Click Voice again to restart.");
-      setVoiceControlOn(false);
+    recognition.onerror = (event: any) => {
+      const code = String(event?.error || "").trim();
+
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        setVoiceControlStatus("error");
+        setVoiceControlHint("Microphone permission is blocked. Allow mic access to use voice control.");
+        return;
+      }
+
+      if (code === "audio-capture") {
+        setVoiceControlStatus("error");
+        setVoiceControlHint("Voice control cannot find a microphone.");
+        return;
+      }
+
+      setVoiceControlStatus("restarting");
+      setVoiceControlHint(code ? `Voice control restarting after ${code}.` : "Voice control restarting…");
+      scheduleRestart(code === "no-speech" ? 450 : 900);
     };
 
     recognition.onend = () => {
       if (!cancelled && voiceControlDesiredRef.current) {
-        window.setTimeout(() => {
-          try {
-            recognition.start();
-          } catch { }
-        }, 350);
+        setVoiceControlStatus("restarting");
+        setVoiceControlHint("Voice control is restarting…");
+        scheduleRestart(650);
       }
     };
 
@@ -7587,14 +7663,22 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
     try {
       recognition.start();
+      setVoiceControlStatus("listening");
       setVoiceControlHint("Voice control is listening.");
-    } catch {
-      setVoiceControlHint("Could not start voice control.");
-      setVoiceControlOn(false);
+    } catch (e: any) {
+      setVoiceControlStatus("restarting");
+      setVoiceControlHint(String(e?.message || "Could not start voice control. Restarting…"));
+      scheduleRestart(1200);
     }
 
     return () => {
       cancelled = true;
+
+      if (voiceRestartTimerRef.current != null) {
+        window.clearTimeout(voiceRestartTimerRef.current);
+        voiceRestartTimerRef.current = null;
+      }
+
       try {
         recognition.abort();
       } catch { }
@@ -10314,37 +10398,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           </>
         ) : null}
 
-        <div className="fixed right-4 bottom-[92px] z-[90]">
-          <button
-            type="button"
-            onClick={() => setVoiceControlOn((v) => !v)}
-            className={[
-              "rounded-2xl px-4 py-3 text-[13px] font-bold shadow-xl border",
-              voiceControlOn
-                ? "bg-emerald-500 text-black border-emerald-300"
-                : isLight
-                  ? "bg-white text-black border-black/10"
-                  : "bg-[#020617] text-white border-white/10",
-            ].join(" ")}
-            title="Voice control"
-          >
-            {voiceControlOn ? "🎙️ Voice on" : "🎙️ Voice"}
-          </button>
 
-          {voiceControlOn || voiceControlHint ? (
-            <div
-              className={[
-                "mt-2 max-w-[260px] rounded-2xl px-3 py-2 text-[11px] shadow-xl border",
-                isLight
-                  ? "bg-white text-black/70 border-black/10"
-                  : "bg-[#020617] text-white/70 border-white/10",
-              ].join(" ")}
-            >
-              <div>{voiceControlHint}</div>
-              {voiceControlText ? <div className="mt-1 opacity-70">{voiceControlText}</div> : null}
-            </div>
-          ) : null}
-        </div>
 
         <LiveKitBottomBar
           theme={theme}
@@ -10379,6 +10433,10 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           showAIHost={aiHostedEnabled}
           aiHostOpen={aiHostInputOpen}
           onOpenAIHost={() => setAiHostInputOpen(true)}
+          voiceControlEnabled={voiceControlOn}
+          voiceControlStatus={voiceControlStatus}
+          voiceControlHint={voiceControlHint}
+          voiceControlText={voiceControlText}
         />
 
         <RoomSettingsModalLiveKit
@@ -10448,6 +10506,8 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           onChangeVideoTileLayoutPreset={setVideoTileLayoutPreset}
           onChangeVideoTileLayoutColumns={setVideoTileLayoutColumns}
           onChangeVideoTileLayoutRows={setVideoTileLayoutRows}
+          voiceControlEnabled={voiceControlOn}
+          onChangeVoiceControlEnabled={setVoiceControlOn}
           devices={devices}
           selectedAudioInputId={selectedAudioInputId}
           selectedVideoInputId={selectedVideoInputId}
