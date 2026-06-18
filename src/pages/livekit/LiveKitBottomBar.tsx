@@ -30,6 +30,23 @@ function AIHostIcon({
     );
 }
 
+function LayoutIcon({
+    isLight,
+    className = "w-5 h-5",
+}: {
+    isLight: boolean;
+    className?: string;
+}) {
+    return (
+        <img
+            src={isLight ? "/icons/layout-light.svg" : "/icons/layout-dark.svg"}
+            alt="Layout"
+            className={className}
+            draggable={false}
+        />
+    );
+}
+
 export function LiveKitBottomBar(props: {
     theme: RoomTheme;
     isLight: boolean;
@@ -50,6 +67,9 @@ export function LiveKitBottomBar(props: {
     showAIHost?: boolean;
     aiHostOpen?: boolean;
     onOpenAIHost?: () => void;
+
+    showLayoutControls?: boolean;
+    onOpenLayoutControls?: () => void;
 
     onToggleMic: () => void;
     onToggleCam: () => void;
@@ -81,6 +101,9 @@ export function LiveKitBottomBar(props: {
         showAIHost = false,
         aiHostOpen = false,
         onOpenAIHost,
+
+        showLayoutControls = true,
+        onOpenLayoutControls,
 
         onToggleMic,
         onToggleCam,
@@ -163,6 +186,19 @@ export function LiveKitBottomBar(props: {
                 ? "bg-blue-600 hover:bg-blue-700 text-white"
                 : "bg-violet-500 hover:bg-violet-600 text-white"
             : ctlBtnBase);
+
+    const layoutDesktopBtn =
+        showLayoutControls && onOpenLayoutControls ? (
+            <button
+                onClick={onOpenLayoutControls}
+                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                title="Video layout"
+                type="button"
+            >
+                <LayoutIcon isLight={isLight} />
+                <span className="sr-only">Video layout</span>
+            </button>
+        ) : null;
 
     const chatBtn = (
         <button
@@ -264,6 +300,21 @@ export function LiveKitBottomBar(props: {
                                             </button>
                                         ) : null}
 
+                                        {showLayoutControls && onOpenLayoutControls ? (
+                                            <button
+                                                onClick={() => {
+                                                    onOpenLayoutControls();
+                                                    setShowMoreMenu(false);
+                                                }}
+                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight ? "text-black/75 hover:bg-black/5" : "text-white/85 hover:bg-white/5"
+                                                    }`}
+                                                type="button"
+                                            >
+                                                <LayoutIcon isLight={isLight} className="w-4 h-4 opacity-90" />
+                                                <span>Layout</span>
+                                            </button>
+                                        ) : null}
+
                                         <button
                                             onClick={() => {
                                                 onOpenParticipants();
@@ -355,6 +406,7 @@ export function LiveKitBottomBar(props: {
 
                         <div className="hidden md:flex items-center gap-2">
                             {aiHostDesktopBtn}
+                            {layoutDesktopBtn}
 
                             <button
                                 onClick={onOpenParticipants}

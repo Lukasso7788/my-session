@@ -72,6 +72,7 @@ import {
   MobileFillLayoutSizing,
   MobileStackLayoutSizing,
   type MobileVideoLayoutMode,
+  type VideoTileLayoutPreset,
 } from "./livekit/sizing";
 
 type FxMode = "off" | "blur" | "bg";
@@ -1328,6 +1329,33 @@ const LK_CAPTURE_WIDTH = 960;
 const LK_CAPTURE_HEIGHT = 540;
 const LK_CAPTURE_FPS = 24;
 
+const VIDEO_TILE_LAYOUT_PRESET_KEY = "mysession_video_tile_layout_preset";
+const VIDEO_TILE_LAYOUT_COLUMNS_KEY = "mysession_video_tile_layout_columns";
+const VIDEO_TILE_LAYOUT_ROWS_KEY = "mysession_video_tile_layout_rows";
+
+function normalizeVideoTileLayoutPreset(raw: unknown): VideoTileLayoutPreset {
+  const s = String(raw || "").trim();
+  if (
+    s === "one" ||
+    s === "two" ||
+    s === "three" ||
+    s === "four" ||
+    s === "five" ||
+    s === "six" ||
+    s === "strip"
+  ) {
+    return s;
+  }
+  return "auto";
+}
+
+function readStoredLayoutNumber(key: string) {
+  if (typeof window === "undefined") return 0;
+  const n = Math.round(Number(window.localStorage.getItem(key) || 0));
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(6, n));
+}
+
 const CHAT_MSG_TABLE = "session_chat_messages";
 const REACTION_TTL_MS = 2750;
 const SESSION_SELECT_STR =
@@ -2085,20 +2113,32 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
   const [paywallModalOpen, setPaywallModalOpen] = useState(false);
   const [aiHostInputOpen, setAiHostInputOpen] = useState(true);
-  const [mobileVideoLayoutMode, setMobileVideoLayoutMode] = useState<MobileVideoLayoutMode>(() => {
+  const [videoTileLayoutPreset, setVideoTileLayoutPreset] = useState<VideoTileLayoutPreset>(() => {
     if (typeof window === "undefined") return "auto";
-
-    const stored = String(window.localStorage.getItem("mysession_mobile_video_layout_mode") || "").trim();
-    return stored === "one" || stored === "two" || stored === "strip" ? stored : "auto";
+    return normalizeVideoTileLayoutPreset(
+      window.localStorage.getItem(VIDEO_TILE_LAYOUT_PRESET_KEY) ||
+      window.localStorage.getItem("mysession_mobile_video_layout_mode")
+    );
   });
+  const [videoTileLayoutColumns, setVideoTileLayoutColumns] = useState<number>(() =>
+    readStoredLayoutNumber(VIDEO_TILE_LAYOUT_COLUMNS_KEY)
+  );
+  const [videoTileLayoutRows, setVideoTileLayoutRows] = useState<number>(() =>
+    readStoredLayoutNumber(VIDEO_TILE_LAYOUT_ROWS_KEY)
+  );
+
+  const mobileVideoLayoutMode = videoTileLayoutPreset as MobileVideoLayoutMode;
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("mysession_mobile_video_layout_mode", mobileVideoLayoutMode);
+      window.localStorage.setItem(VIDEO_TILE_LAYOUT_PRESET_KEY, videoTileLayoutPreset);
+      window.localStorage.setItem("mysession_mobile_video_layout_mode", videoTileLayoutPreset);
+      window.localStorage.setItem(VIDEO_TILE_LAYOUT_COLUMNS_KEY, String(videoTileLayoutColumns || 0));
+      window.localStorage.setItem(VIDEO_TILE_LAYOUT_ROWS_KEY, String(videoTileLayoutRows || 0));
     } catch {
       // ignore
     }
-  }, [mobileVideoLayoutMode]);
+  }, [videoTileLayoutPreset, videoTileLayoutColumns, videoTileLayoutRows]);
 
   const tabId = useMemo(() => makeLiveKitPageTabId(), []);
   const devClones = useMemo(() => Math.max(0, Math.min(24, getQueryInt("devClones", 0))), []);
@@ -8566,7 +8606,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     !useVeryNarrowMode &&
     effectiveW >= (isLgUp && rightPanelOpen ? 980 : 900);
 
-  const showMobileLayoutControls = useMobileOrTabletGallery && tileCount >= 3;
+  const showMobileLayoutControls = false;
 
   const mobileLayoutIconTheme = isLight ? "light" : "dark";
 
@@ -8594,7 +8634,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     return (
       <button
         type="button"
-        onClick={() => setMobileVideoLayoutMode(mode)}
+        onClick={() => setVideoTileLayoutPreset(mode)}
         className={[
           "h-9 min-w-9 rounded-xl border px-2 text-[11px] font-semibold transition inline-flex items-center justify-center gap-1.5",
           active ? mobileLayoutBtnActive : mobileLayoutBtnBase,
@@ -8664,6 +8704,9 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
                 containerHeight={effectiveH}
                 paddingBottomPx={paddingBottomPx}
                 mobileMode={mobileVideoLayoutMode}
+                layoutPreset={videoTileLayoutPreset}
+                customColumns={videoTileLayoutColumns}
+                customRows={videoTileLayoutRows}
                 renderItem={(t) => renderTile(t)}
               />
             ) : (
@@ -8673,6 +8716,9 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
                 containerHeight={effectiveH}
                 paddingBottomPx={paddingBottomPx}
                 mode={mobileVideoLayoutMode}
+                layoutPreset={videoTileLayoutPreset}
+                customColumns={videoTileLayoutColumns}
+                customRows={videoTileLayoutRows}
                 renderItem={(t) => renderTile(t)}
               />
             )}
@@ -8695,6 +8741,9 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
               containerHeight={effectiveH}
               rightPanelOpen={rightPanelOpen}
               forceThreeAsTwoPlusOne={isLgUp && rightPanelOpen && effectiveW < 1500}
+              layoutPreset={videoTileLayoutPreset}
+              customColumns={videoTileLayoutColumns}
+              customRows={videoTileLayoutRows}
               renderItem={(t) => renderTile(t)}
             />
           </div>
@@ -10084,6 +10133,11 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
           showAIHost={aiHostedEnabled}
           aiHostOpen={aiHostInputOpen}
           onOpenAIHost={() => setAiHostInputOpen(true)}
+          showLayoutControls={true}
+          onOpenLayoutControls={() => {
+            setSettingsOpen(true);
+            setSettingsPreviewVersion((v) => v + 1);
+          }}
         />
 
         <RoomSettingsModalLiveKit
@@ -10147,6 +10201,12 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
             }
             setBgImageUrl(DEFAULT_BG_DATA_URL);
           }}
+          videoTileLayoutPreset={videoTileLayoutPreset}
+          videoTileLayoutColumns={videoTileLayoutColumns}
+          videoTileLayoutRows={videoTileLayoutRows}
+          onChangeVideoTileLayoutPreset={setVideoTileLayoutPreset}
+          onChangeVideoTileLayoutColumns={setVideoTileLayoutColumns}
+          onChangeVideoTileLayoutRows={setVideoTileLayoutRows}
           devices={devices}
           selectedAudioInputId={selectedAudioInputId}
           selectedVideoInputId={selectedVideoInputId}

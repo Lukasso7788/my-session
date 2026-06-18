@@ -2,7 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 // ----------------------- SIZING -----------------------
 
-export type MobileVideoLayoutMode = "auto" | "one" | "two" | "strip";
+export type VideoTileLayoutPreset = "auto" | "one" | "two" | "three" | "four" | "five" | "six" | "strip";
+export type MobileVideoLayoutMode = VideoTileLayoutPreset;
 
 export function useElementSize<T extends HTMLElement>() {
     const [node, setNode] = useState<T | null>(null);
@@ -82,8 +83,52 @@ function isLandscape(width: number, height: number) {
 }
 
 function normalizeMobileMode(mode?: MobileVideoLayoutMode): MobileVideoLayoutMode {
-    if (mode === "one" || mode === "two" || mode === "strip") return mode;
+    if (
+        mode === "one" ||
+        mode === "two" ||
+        mode === "three" ||
+        mode === "four" ||
+        mode === "five" ||
+        mode === "six" ||
+        mode === "strip"
+    ) {
+        return mode;
+    }
     return "auto";
+}
+
+function presetToColumnCount(preset?: VideoTileLayoutPreset) {
+    if (preset === "one") return 1;
+    if (preset === "two") return 2;
+    if (preset === "three") return 3;
+    if (preset === "four") return 4;
+    if (preset === "five") return 5;
+    if (preset === "six") return 6;
+    return 0;
+}
+
+function clampLayoutNumber(raw: unknown, min = 0, max = 6) {
+    const n = Math.round(Number(raw || 0));
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(min, Math.min(max, n));
+}
+
+function resolveForcedCols(args: {
+    count: number;
+    layoutPreset?: VideoTileLayoutPreset;
+    customColumns?: number;
+    customRows?: number;
+}) {
+    const count = Math.max(1, args.count || 1);
+    const presetCols = presetToColumnCount(args.layoutPreset);
+    const customColumns = clampLayoutNumber(args.customColumns);
+    const customRows = clampLayoutNumber(args.customRows);
+
+    if (presetCols > 0) return Math.min(count, presetCols);
+    if (customColumns > 0) return Math.min(count, customColumns);
+    if (customRows > 0) return Math.min(count, Math.max(1, Math.ceil(count / customRows)));
+
+    return 0;
 }
 
 function computeCols(count: number, containerWidth: number, rightPanelOpen = false) {
@@ -146,8 +191,8 @@ function computeCols(count: number, containerWidth: number, rightPanelOpen = fal
 function computeMobileCols(count: number, width: number, height: number, mode?: MobileVideoLayoutMode) {
     const resolved = normalizeMobileMode(mode);
 
-    if (resolved === "one") return 1;
-    if (resolved === "two") return count <= 1 ? 1 : 2;
+    const forcedCols = resolveForcedCols({ count, layoutPreset: resolved });
+    if (forcedCols > 0) return forcedCols;
 
     const landscape = isLandscape(width, height);
     const tablet = isTabletLikeSize(width, height);
@@ -205,6 +250,9 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
     forceThreeAsTwoPlusOne?: boolean;
     rightPanelOpen?: boolean;
     mobileMode?: MobileVideoLayoutMode;
+    layoutPreset?: VideoTileLayoutPreset;
+    customColumns?: number;
+    customRows?: number;
     renderItem: (t: T, idx: number) => React.ReactNode;
 }) {
     const {
@@ -214,6 +262,9 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
         forceThreeAsTwoPlusOne,
         rightPanelOpen = false,
         mobileMode = "auto",
+        layoutPreset,
+        customColumns = 0,
+        customRows = 0,
         renderItem,
     } = props;
 
@@ -222,10 +273,18 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
     const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
 
     const cols = useMemo(() => {
+        const forcedCols = resolveForcedCols({
+            count: items.length,
+            layoutPreset: layoutPreset || mobileMode,
+            customColumns,
+            customRows,
+        });
+
+        if (forcedCols > 0) return forcedCols;
         if (mobileOrTablet) return computeMobileCols(items.length, containerWidth, containerHeight, mobileMode);
         if (forceThreeAsTwoPlusOne && items.length === 3) return 2;
         return computeCols(items.length, containerWidth || 1200, rightPanelOpen);
-    }, [mobileOrTablet, items.length, containerWidth, containerHeight, mobileMode, rightPanelOpen, forceThreeAsTwoPlusOne]);
+    }, [mobileOrTablet, items.length, containerWidth, containerHeight, mobileMode, layoutPreset, customColumns, customRows, rightPanelOpen, forceThreeAsTwoPlusOne]);
 
     const rows = useMemo(() => Math.ceil(items.length / Math.max(1, cols)), [items.length, cols]);
 
@@ -343,12 +402,25 @@ export function MobileFillLayoutSizing<T extends { id: string }>(props: {
     containerHeight: number;
     paddingBottomPx?: number;
     mobileMode?: MobileVideoLayoutMode;
+    layoutPreset?: VideoTileLayoutPreset;
+    customColumns?: number;
+    customRows?: number;
     renderItem: (t: T, idx: number) => React.ReactNode;
 }) {
-    const { items, containerWidth, containerHeight, paddingBottomPx = 12, mobileMode = "auto", renderItem } = props;
+    const {
+        items,
+        containerWidth,
+        containerHeight,
+        paddingBottomPx = 12,
+        mobileMode = "auto",
+        layoutPreset,
+        customColumns = 0,
+        customRows = 0,
+        renderItem,
+    } = props;
 
     const count = items.length || 1;
-    const mode = normalizeMobileMode(mobileMode);
+    const mode = normalizeMobileMode(layoutPreset || mobileMode);
     const paddingPx = containerWidth && containerWidth < 520 ? 6 : 8;
     const gapPx = containerWidth && containerWidth < 520 ? 6 : 8;
 
@@ -374,6 +446,9 @@ export function MobileFillLayoutSizing<T extends { id: string }>(props: {
                 containerHeight={containerHeight}
                 paddingBottomPx={paddingBottomPx}
                 mode="two"
+                layoutPreset={layoutPreset}
+                customColumns={customColumns}
+                customRows={customRows}
                 renderItem={renderItem}
             />
         );
@@ -411,7 +486,10 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
     containerWidth: number;
     containerHeight: number;
     paddingBottomPx?: number;
-    mode?: MobileVideoLayoutMode;
+    mode?: VideoTileLayoutPreset;
+    layoutPreset?: VideoTileLayoutPreset;
+    customColumns?: number;
+    customRows?: number;
     renderItem: (t: T, idx: number) => React.ReactNode;
 }) {
     const {
@@ -420,11 +498,14 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
         containerHeight,
         paddingBottomPx = 12,
         mode = "auto",
+        layoutPreset,
+        customColumns = 0,
+        customRows = 0,
         renderItem,
     } = props;
 
     const count = items.length || 1;
-    const resolvedMode = normalizeMobileMode(mode);
+    const resolvedMode = normalizeMobileMode(layoutPreset || mode);
     const paddingPx = containerWidth && containerWidth < 520 ? 6 : 8;
     const gapPx = containerWidth && containerWidth < 520 ? 6 : 8;
 
@@ -454,7 +535,8 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
         );
     }
 
-    const cols = computeMobileCols(count, containerWidth, containerHeight, resolvedMode);
+    const forcedCols = resolveForcedCols({ count, layoutPreset: resolvedMode, customColumns, customRows });
+    const cols = forcedCols > 0 ? forcedCols : computeMobileCols(count, containerWidth, containerHeight, resolvedMode);
     const rows = Math.ceil(count / cols);
 
     const maxGridWidth = calcMaxGridWidthPx({
