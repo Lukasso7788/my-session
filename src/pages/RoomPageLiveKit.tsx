@@ -1332,6 +1332,7 @@ const LK_CAPTURE_FPS = 24;
 const VIDEO_TILE_LAYOUT_PRESET_KEY = "mysession_video_tile_layout_preset";
 const VIDEO_TILE_LAYOUT_COLUMNS_KEY = "mysession_video_tile_layout_columns";
 const VIDEO_TILE_LAYOUT_ROWS_KEY = "mysession_video_tile_layout_rows";
+const MOBILE_LAYOUT_SWITCHER_VISIBLE_KEY = "mysession_mobile_layout_switcher_visible";
 
 function normalizeVideoTileLayoutPreset(raw: unknown): VideoTileLayoutPreset {
   const s = String(raw || "").trim();
@@ -2120,6 +2121,22 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       window.localStorage.getItem("mysession_mobile_video_layout_mode")
     );
   });
+  const [showMobileLayoutSwitcher, setShowMobileLayoutSwitcher] = useState(() => {
+    try {
+      return localStorage.getItem(MOBILE_LAYOUT_SWITCHER_VISIBLE_KEY) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const updateShowMobileLayoutSwitcher = useCallback((next: boolean) => {
+    setShowMobileLayoutSwitcher(next);
+
+    try {
+      localStorage.setItem(MOBILE_LAYOUT_SWITCHER_VISIBLE_KEY, next ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }, []);
   const [videoTileLayoutColumns, setVideoTileLayoutColumns] = useState<number>(() =>
     readStoredLayoutNumber(VIDEO_TILE_LAYOUT_COLUMNS_KEY)
   );
@@ -8754,7 +8771,7 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
   const videoContent = (
     <div className="w-full h-full min-w-0 min-h-0 relative overflow-hidden">
-      {showMobileLayoutControls ? (
+      {showMobileLayoutControls && showMobileLayoutSwitcher ? (
         <div className="absolute right-2 top-2 z-20 flex items-center gap-1.5 rounded-2xl p-1 backdrop-blur-xl pointer-events-auto">
           <MobileLayoutButton
             mode="auto"
@@ -8774,6 +8791,19 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
             label="2"
             title="Two-column video layout"
           />
+          <button
+            type="button"
+            onClick={() => updateShowMobileLayoutSwitcher(false)}
+            className={[
+              "w-7 h-7 rounded-xl flex items-center justify-center text-[13px] font-bold transition",
+              isLight
+                ? "bg-white/80 hover:bg-white text-black/60 border border-black/10"
+                : "bg-black/35 hover:bg-black/55 text-white/70 border border-white/10",
+            ].join(" ")}
+            title="Hide layout switcher"
+          >
+            ×
+          </button>
         </div>
       ) : null}
       {roomReadyText ? (
@@ -10276,6 +10306,8 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
             if (!isLgUp) return;
             setColorCorrection((p) => ({ ...p, saturation: v }));
           }}
+          showMobileLayoutSwitcher={showMobileLayoutSwitcher}
+          onChangeShowMobileLayoutSwitcher={updateShowMobileLayoutSwitcher}
         />
 
         {settingsOpen && deviceError ? (

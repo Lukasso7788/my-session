@@ -1076,6 +1076,8 @@ export function RoomSettingsModalLiveKit({
     onChangeVideoTileLayoutPreset,
     onChangeVideoTileLayoutColumns,
     onChangeVideoTileLayoutRows,
+    showMobileLayoutSwitcher = true,
+    onChangeShowMobileLayoutSwitcher,
 
     devices,
     selectedAudioInputId,
@@ -1141,6 +1143,9 @@ export function RoomSettingsModalLiveKit({
     onChangeVideoTileLayoutPreset?: (v: VideoTileLayoutPreset) => void;
     onChangeVideoTileLayoutColumns?: (v: number) => void;
     onChangeVideoTileLayoutRows?: (v: number) => void;
+    showMobileLayoutSwitcher?: boolean;
+    onChangeShowMobileLayoutSwitcher?: (v: boolean) => void;
+    
 
     devices: {
         videoInputs: MediaDeviceInfo[];
@@ -1409,6 +1414,15 @@ export function RoomSettingsModalLiveKit({
 
                         <div className={`mt-3 text-[12px] leading-5 ${subtleText}`}>
                             Columns win first. If columns are Auto, forced rows can rebalance the grid. Horizontal strip is useful for narrow phones and landscape mode.
+                        </div>
+                        <div className={`mt-4 pt-4 border-t ${isLight ? "border-black/10" : "border-white/10"}`}>
+                            <ToggleRow
+                                label="Show mobile layout switcher"
+                                description="Shows the floating Auto / 1 / 2 layout buttons on phones and tablets."
+                                checked={showMobileLayoutSwitcher}
+                                onChange={(v) => onChangeShowMobileLayoutSwitcher?.(v)}
+                                isLight={isLight}
+                            />
                         </div>
                     </div>
 
