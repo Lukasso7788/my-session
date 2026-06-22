@@ -262,15 +262,13 @@ function getSessionStartMs(s: SessionWithRelations) {
   return Number.isFinite(ms) ? ms : Number.MAX_SAFE_INTEGER;
 }
 
-function getSessionPopularityScore(s: SessionWithRelations) {
-  const attendance = Number((s as any).attendance_count || 0);
-  const live = Number((s as any).live_count || 0);
-  const booked = Array.isArray((s as any).session_bookings)
-    ? (s as any).session_bookings.length
-    : 0;
+function getSessionAttendanceCount(s: SessionWithRelations) {
+  const n = Number((s as any).attendance_count || 0);
+  return Number.isFinite(n) ? Math.max(0, n) : 0;
+}
 
-  // Attendance is the durable popularity signal. Live/booked are tie-breakers.
-  return attendance * 10000 + live * 100 + booked;
+function getSessionTitleSortValue(s: SessionWithRelations) {
+  return String((s as any).title || "").trim().toLowerCase();
 }
 
 function sortSessionsForSessionsPage(items: SessionWithRelations[]) {
@@ -278,14 +276,25 @@ function sortSessionsForSessionsPage(items: SessionWithRelations[]) {
     const aType = resolveSessionType(a);
     const bType = resolveSessionType(b);
 
-    // Infinite rooms stay above dated group sessions when mixed.
+    // Infinite rooms stay above dated group/body sessions when the list is mixed.
     if (aType === "infinite" && bType !== "infinite") return -1;
     if (aType !== "infinite" && bType === "infinite") return 1;
 
-    const popularityDiff = getSessionPopularityScore(b) - getSessionPopularityScore(a);
-    if (popularityDiff !== 0) return popularityDiff;
+    // Infinite rooms: sort ONLY by durable attendance popularity.
+    // Bookings must not affect room order.
+    if (aType === "infinite" && bType === "infinite") {
+      const attendanceDiff = getSessionAttendanceCount(b) - getSessionAttendanceCount(a);
+      if (attendanceDiff !== 0) return attendanceDiff;
 
-    return getSessionStartMs(a) - getSessionStartMs(b);
+      return getSessionTitleSortValue(a).localeCompare(getSessionTitleSortValue(b));
+    }
+
+    // Group/body sessions: chronological only.
+    // Bookings and attendance must not affect scheduled session order.
+    const startDiff = getSessionStartMs(a) - getSessionStartMs(b);
+    if (startDiff !== 0) return startDiff;
+
+    return getSessionTitleSortValue(a).localeCompare(getSessionTitleSortValue(b));
   });
 }
 
