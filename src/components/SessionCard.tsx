@@ -240,6 +240,60 @@ function formatBookingRangeFromIso(startIso?: string | null, endIso?: string | n
     return `Until ${end!.toLocaleString("en-US", dateFmt)}`;
 }
 
+async function persistInfiniteBookingTimeRangeFallback(args: {
+    sessionId: string;
+    userId: string;
+    bookedStartTime: string;
+    bookedEndTime: string;
+    bookingNote?: string | null;
+}) {
+    const sb = getSupabase();
+    if (!sb) return;
+
+    try {
+        await ensureAuthReady(sb);
+
+        const payload = {
+            session_id: args.sessionId,
+            user_id: args.userId,
+            booked_start_time: args.bookedStartTime,
+            booked_end_time: args.bookedEndTime,
+            booking_note: args.bookingNote ?? null,
+        };
+
+        const { data: existing, error: findError } = await sb
+            .from("session_bookings")
+            .select("id")
+            .eq("session_id", args.sessionId)
+            .eq("user_id", args.userId)
+            .order("created_at", { ascending: false })
+            .limit(1);
+
+        if (findError) throw findError;
+
+        const existingId = Array.isArray(existing) ? existing[0]?.id : null;
+
+        if (existingId) {
+            const { error: updateError } = await sb
+                .from("session_bookings")
+                .update({
+                    booked_start_time: args.bookedStartTime,
+                    booked_end_time: args.bookedEndTime,
+                    booking_note: args.bookingNote ?? null,
+                })
+                .eq("id", existingId);
+
+            if (updateError) throw updateError;
+            return;
+        }
+
+        const { error: insertError } = await sb.from("session_bookings").insert(payload);
+        if (insertError) throw insertError;
+    } catch (e) {
+        console.warn("[SessionCard] infinite booking time range persist fallback failed:", e);
+    }
+}
+
 function inferTypeFromTitle(
     title: any
 ): "Deep work" | "Pomodoro" | "Short sprints" | null {
@@ -4289,7 +4343,7 @@ export default function SessionCard({
         setIsHoveringBook(false);
     };
 
-    const handleConfirmInfiniteBooking = () => {
+    const handleConfirmInfiniteBooking = async () => {
         if (!userId) {
             navigate(buildLoginNext("/sessions"));
             return;
@@ -4313,9 +4367,18 @@ export default function SessionCard({
 
         setBookingDraftError("");
 
-        onBook(session.id, {
+        await Promise.resolve(onBook(session.id, {
             booked_start_time: startIso,
             booked_end_time: endIso,
+            booking_note: null,
+        }));
+
+        await persistInfiniteBookingTimeRangeFallback({
+            sessionId: session.id,
+            userId,
+            bookedStartTime: startIso,
+            bookedEndTime: endIso,
+            bookingNote: null,
         });
 
         setIsBookingConfirmed(true);
@@ -5045,7 +5108,7 @@ export default function SessionCard({
                         </button>
                         <button
                             type="button"
-                            onClick={handleConfirmInfiniteBooking}
+                            onClick={() => void handleConfirmInfiniteBooking()}
                             className="h-11 flex-1 rounded-full bg-[#111827] px-4 text-[14px] font-semibold text-white transition hover:bg-[#2F2F2F]"
                         >
                             Book this time
