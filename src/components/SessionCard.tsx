@@ -4627,10 +4627,7 @@ export default function SessionCard({
                     relative
                     border rounded-[42px] bg-white
                     transition-all duration-200
-                    ${isInfinite
-                        ? "border-[#5286F6] shadow-[0_16px_45px_rgba(82,134,246,0.14)]"
-                        : "border-borderGray"
-                    }
+                    border-borderGray
                     hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
                     p-6
                     flex flex-col
@@ -4646,12 +4643,6 @@ export default function SessionCard({
                                     {session.title}
                                 </h3>
 
-                                {isInfinite ? (
-                                    <div className="inline-flex items-center gap-1.5 rounded-full border border-[#5286F6] bg-[#5286F6]/10 px-3 py-1 text-[11px] font-semibold text-[#5286F6]">
-                                        <span aria-hidden="true">∞</span>
-                                        <span>24/7 room</span>
-                                    </div>
-                                ) : null}
                             </div>
 
                             <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
@@ -5154,7 +5145,9 @@ export default function SessionCard({
                                                 {isLive ? (
                                                     <span className="font-semibold text-[#65D46C]">Online · </span>
                                                 ) : null}
-                                                {formatBookingRangeFromIso(u.booked_start_time, u.booked_end_time) || bookingTimeRangeString}
+                                                {isInfinite
+                                                    ? formatBookingRangeFromIso(u.booked_start_time, u.booked_end_time)
+                                                    : "Booked for this session"}
                                             </div>
                                         ) : null}
                                     </div>

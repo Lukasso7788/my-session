@@ -56,6 +56,7 @@ type SessionWithRelations = Session & {
   session_bookings?: SessionBookingRow[];
 
   live_count?: number;
+  attendance_count?: number;
 };
 
 
@@ -261,13 +262,28 @@ function getSessionStartMs(s: SessionWithRelations) {
   return Number.isFinite(ms) ? ms : Number.MAX_SAFE_INTEGER;
 }
 
-function sortSessionsWithInfiniteFirst(items: SessionWithRelations[]) {
+function getSessionPopularityScore(s: SessionWithRelations) {
+  const attendance = Number((s as any).attendance_count || 0);
+  const live = Number((s as any).live_count || 0);
+  const booked = Array.isArray((s as any).session_bookings)
+    ? (s as any).session_bookings.length
+    : 0;
+
+  // Attendance is the durable popularity signal. Live/booked are tie-breakers.
+  return attendance * 10000 + live * 100 + booked;
+}
+
+function sortSessionsForSessionsPage(items: SessionWithRelations[]) {
   return [...items].sort((a, b) => {
     const aType = resolveSessionType(a);
     const bType = resolveSessionType(b);
 
+    // Infinite rooms stay above dated group sessions when mixed.
     if (aType === "infinite" && bType !== "infinite") return -1;
     if (aType !== "infinite" && bType === "infinite") return 1;
+
+    const popularityDiff = getSessionPopularityScore(b) - getSessionPopularityScore(a);
+    if (popularityDiff !== 0) return popularityDiff;
 
     return getSessionStartMs(a) - getSessionStartMs(b);
   });
@@ -1201,19 +1217,42 @@ export function SessionsPage() {
        *
        * If anon RLS blocks session_bookings/profiles, we do NOT fail the page.
        * Session cards still render; booked avatars/count just won't be enriched.
+       *
+       * Important: older public_session_bookings views may not have
+       * booked_start_time/booked_end_time yet. In that case we retry with
+       * the old column list so normal group bookings do not disappear.
        */
       let bookingsBySessionId = new Map<string, SessionBookingRow[]>();
 
       if (ids.length) {
         try {
-          const { data: bookingsData, error: bookingsError } = await supabase
+          let bookingsData: any[] | null = null;
+
+          const withRange = await supabase
             .from("public_session_bookings")
             .select("session_id, user_id, full_name, avatar_url, created_at, booked_start_time, booked_end_time")
             .in("session_id", ids);
 
-          if (bookingsError) throw bookingsError;
+          if (withRange.error) {
+            if (DEBUG) {
+              console.warn(
+                "[DEBUG Sessions] public_session_bookings range columns unavailable; retrying old view shape:",
+                withRange.error
+              );
+            }
 
-          for (const row of (bookingsData || []) as any[]) {
+            const legacy = await supabase
+              .from("public_session_bookings")
+              .select("session_id, user_id, full_name, avatar_url, created_at")
+              .in("session_id", ids);
+
+            if (legacy.error) throw legacy.error;
+            bookingsData = (legacy.data || []) as any[];
+          } else {
+            bookingsData = (withRange.data || []) as any[];
+          }
+
+          for (const row of bookingsData || []) {
             const sid = String(row?.session_id || "");
             if (!sid) continue;
 
@@ -1245,6 +1284,39 @@ export function SessionsPage() {
         }
       }
 
+      /**
+       * Popularity enrichment. Used only for sorting cards.
+       * session_attendance is the durable signal: rooms with more attendance go first.
+       */
+      let attendanceCountBySessionId = new Map<string, number>();
+
+      if (ids.length) {
+        try {
+          const { data: attendanceRows, error: attendanceError } = await supabase
+            .from("session_attendance")
+            .select("session_id")
+            .in("session_id", ids)
+            .limit(20000);
+
+          if (attendanceError) throw attendanceError;
+
+          for (const row of (attendanceRows || []) as any[]) {
+            const sid = String(row?.session_id || "");
+            if (!sid) continue;
+            attendanceCountBySessionId.set(sid, (attendanceCountBySessionId.get(sid) || 0) + 1);
+          }
+        } catch (attendanceErr) {
+          if (DEBUG) {
+            console.warn(
+              "[DEBUG Sessions] Optional attendance popularity load failed. Falling back to time/bookings sort:",
+              attendanceErr
+            );
+          }
+
+          attendanceCountBySessionId = new Map();
+        }
+      }
+
       const hydratedRows = rows.map((s) => {
         const sessionId = String((s as any).id || "").trim();
         const publicSlug = publicSlugBySessionId.get(sessionId) || "";
@@ -1259,6 +1331,7 @@ export function SessionsPage() {
             ? [{ slug: publicSlug, owner_type: "session", owner_id: sessionId }]
             : (s as any).public_url_slugs || [],
           session_bookings: bookingsBySessionId.get(sessionId) || [],
+          attendance_count: attendanceCountBySessionId.get(sessionId) || 0,
         };
       });
 
@@ -1328,7 +1401,7 @@ export function SessionsPage() {
   };
 
   const activeSessions = useMemo(
-    () => sortSessionsWithInfiniteFirst(sessions.filter((s) => !isExpired(s))),
+    () => sortSessionsForSessionsPage(sessions.filter((s) => !isExpired(s))),
     [sessions]
   );
 
@@ -1343,14 +1416,14 @@ export function SessionsPage() {
 
   const visibleSessions = useMemo(() => {
     if (sessionTypeTab === "infinite") {
-      return sortSessionsWithInfiniteFirst(typeFilteredSessions);
+      return sortSessionsForSessionsPage(typeFilteredSessions);
     }
 
     if (isAllDatesValue(dateFilter)) {
-      return sortSessionsWithInfiniteFirst(typeFilteredSessions);
+      return sortSessionsForSessionsPage(typeFilteredSessions);
     }
 
-    return sortSessionsWithInfiniteFirst(
+    return sortSessionsForSessionsPage(
       typeFilteredSessions.filter((s) => {
         if (!s.start_time) return false;
 
