@@ -271,6 +271,42 @@ function getSessionTitleSortValue(s: SessionWithRelations) {
   return String((s as any).title || "").trim().toLowerCase();
 }
 
+
+function getBookingEndMs(row: SessionBookingRow) {
+  const value = String(row?.booked_end_time || "").trim();
+  if (!value) return Number.POSITIVE_INFINITY;
+
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
+}
+
+function getBookingStartMs(row: SessionBookingRow) {
+  const value = String(row?.booked_start_time || row?.created_at || "").trim();
+  if (!value) return Number.MAX_SAFE_INTEGER;
+
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : Number.MAX_SAFE_INTEGER;
+}
+
+function normalizeBookingsForSession(
+  session: SessionWithRelations,
+  rows: SessionBookingRow[]
+) {
+  const type = resolveSessionType(session);
+
+  if (type !== "infinite") {
+    // Scheduled group/body sessions: keep legacy bookings even when time range is null.
+    return [...rows].sort((a, b) => getBookingStartMs(a) - getBookingStartMs(b));
+  }
+
+  const now = Date.now();
+
+  // Infinite rooms: time-ranged bookings are reservations. Hide expired reservations.
+  return [...rows]
+    .filter((row) => getBookingEndMs(row) > now)
+    .sort((a, b) => getBookingStartMs(a) - getBookingStartMs(b));
+}
+
 function sortSessionsForSessionsPage(items: SessionWithRelations[]) {
   return [...items].sort((a, b) => {
     const aType = resolveSessionType(a);
@@ -1294,30 +1330,55 @@ export function SessionsPage() {
       }
 
       /**
-       * Popularity enrichment. Used only for sorting cards.
-       * session_attendance is the durable signal: rooms with more attendance go first.
+       * Popularity enrichment. Used only for infinite-room sorting.
+       *
+       * Important:
+       * - Do NOT sort group/body sessions by bookings or attendance.
+       * - For infinite rooms, the durable popularity signal is total session_attendance count.
+       * - Prefer the public aggregate view because direct session_attendance can be incomplete
+       *   under client-side RLS.
        */
       let attendanceCountBySessionId = new Map<string, number>();
 
       if (ids.length) {
         try {
-          const { data: attendanceRows, error: attendanceError } = await supabase
-            .from("session_attendance")
-            .select("session_id")
-            .in("session_id", ids)
-            .limit(20000);
+          const fromView = await supabase
+            .from("public_session_attendance_counts")
+            .select("session_id, attendance_count")
+            .in("session_id", ids);
 
-          if (attendanceError) throw attendanceError;
+          if (!fromView.error) {
+            for (const row of (fromView.data || []) as any[]) {
+              const sid = String(row?.session_id || "");
+              if (!sid) continue;
+              attendanceCountBySessionId.set(sid, Number(row?.attendance_count || 0));
+            }
+          } else {
+            if (DEBUG) {
+              console.warn(
+                "[DEBUG Sessions] public_session_attendance_counts unavailable; falling back to direct session_attendance count:",
+                fromView.error
+              );
+            }
 
-          for (const row of (attendanceRows || []) as any[]) {
-            const sid = String(row?.session_id || "");
-            if (!sid) continue;
-            attendanceCountBySessionId.set(sid, (attendanceCountBySessionId.get(sid) || 0) + 1);
+            const { data: attendanceRows, error: attendanceError } = await supabase
+              .from("session_attendance")
+              .select("session_id")
+              .in("session_id", ids)
+              .limit(50000);
+
+            if (attendanceError) throw attendanceError;
+
+            for (const row of (attendanceRows || []) as any[]) {
+              const sid = String(row?.session_id || "");
+              if (!sid) continue;
+              attendanceCountBySessionId.set(sid, (attendanceCountBySessionId.get(sid) || 0) + 1);
+            }
           }
         } catch (attendanceErr) {
           if (DEBUG) {
             console.warn(
-              "[DEBUG Sessions] Optional attendance popularity load failed. Falling back to time/bookings sort:",
+              "[DEBUG Sessions] Optional attendance popularity load failed. Infinite rooms may fall back to title order:",
               attendanceErr
             );
           }
@@ -1339,7 +1400,7 @@ export function SessionsPage() {
           public_url_slugs: publicSlug
             ? [{ slug: publicSlug, owner_type: "session", owner_id: sessionId }]
             : (s as any).public_url_slugs || [],
-          session_bookings: bookingsBySessionId.get(sessionId) || [],
+          session_bookings: normalizeBookingsForSession(s, bookingsBySessionId.get(sessionId) || []),
           attendance_count: attendanceCountBySessionId.get(sessionId) || 0,
         };
       });
