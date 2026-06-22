@@ -31,6 +31,9 @@ type CurrentProfile = BookingProfile & {
 type SessionBookingRow = {
   user_id: string;
   profiles?: BookingProfile | null;
+  created_at?: string | null;
+  booked_start_time?: string | null;
+  booked_end_time?: string | null;
 };
 
 type SessionWithRelations = Session & {
@@ -248,6 +251,26 @@ function resolveSessionType(
   if (String(s.format || "").toLowerCase() === "body") return "body";
 
   return "group";
+}
+
+
+function getSessionStartMs(s: SessionWithRelations) {
+  if (!s.start_time) return Number.MAX_SAFE_INTEGER;
+
+  const ms = new Date(s.start_time).getTime();
+  return Number.isFinite(ms) ? ms : Number.MAX_SAFE_INTEGER;
+}
+
+function sortSessionsWithInfiniteFirst(items: SessionWithRelations[]) {
+  return [...items].sort((a, b) => {
+    const aType = resolveSessionType(a);
+    const bType = resolveSessionType(b);
+
+    if (aType === "infinite" && bType !== "infinite") return -1;
+    if (aType !== "infinite" && bType === "infinite") return 1;
+
+    return getSessionStartMs(a) - getSessionStartMs(b);
+  });
 }
 
 function InfinityIcon({ className = "w-5 h-5" }: { className?: string }) {
@@ -470,7 +493,7 @@ export function SessionsPage() {
 
   const [sessionTypeTab, setSessionTypeTab] = useState<
     "group" | "infinite" | "body"
-  >("group");
+  >("infinite");
 
   const [dateFilter, setDateFilter] = useState<string | null>(null);
   const [currentProfile, setCurrentProfile] = useState<CurrentProfile | null>(
@@ -1185,7 +1208,7 @@ export function SessionsPage() {
         try {
           const { data: bookingsData, error: bookingsError } = await supabase
             .from("public_session_bookings")
-            .select("session_id, user_id, full_name, avatar_url")
+            .select("session_id, user_id, full_name, avatar_url, created_at, booked_start_time, booked_end_time")
             .in("session_id", ids);
 
           if (bookingsError) throw bookingsError;
@@ -1198,6 +1221,9 @@ export function SessionsPage() {
 
             prev.push({
               user_id: String(row?.user_id || ""),
+              created_at: row?.created_at || null,
+              booked_start_time: row?.booked_start_time || null,
+              booked_end_time: row?.booked_end_time || null,
               profiles: {
                 id: String(row?.user_id || ""),
                 full_name: row?.full_name || null,
@@ -1302,7 +1328,7 @@ export function SessionsPage() {
   };
 
   const activeSessions = useMemo(
-    () => sessions.filter((s) => !isExpired(s)),
+    () => sortSessionsWithInfiniteFirst(sessions.filter((s) => !isExpired(s))),
     [sessions]
   );
 
@@ -1316,15 +1342,22 @@ export function SessionsPage() {
     sessionTypeTab === "group" && isAllDatesValue(dateFilter);
 
   const visibleSessions = useMemo(() => {
-    if (sessionTypeTab === "infinite") return typeFilteredSessions;
-    if (isAllDatesValue(dateFilter)) return typeFilteredSessions;
+    if (sessionTypeTab === "infinite") {
+      return sortSessionsWithInfiniteFirst(typeFilteredSessions);
+    }
 
-    return typeFilteredSessions.filter((s) => {
-      if (!s.start_time) return false;
+    if (isAllDatesValue(dateFilter)) {
+      return sortSessionsWithInfiniteFirst(typeFilteredSessions);
+    }
 
-      const ymd = toLocalYMDFromISO(s.start_time);
-      return ymd === dateFilter;
-    });
+    return sortSessionsWithInfiniteFirst(
+      typeFilteredSessions.filter((s) => {
+        if (!s.start_time) return false;
+
+        const ymd = toLocalYMDFromISO(s.start_time);
+        return ymd === dateFilter;
+      })
+    );
   }, [typeFilteredSessions, dateFilter, sessionTypeTab]);
 
   const groupedVisibleSessions = useMemo(() => {
@@ -1361,18 +1394,31 @@ export function SessionsPage() {
     navigate(next);
   };
 
-  const book = async (id: string) => {
+  const book = async (
+    id: string,
+    opts?: {
+      booked_start_time?: string | null;
+      booked_end_time?: string | null;
+      booking_note?: string | null;
+    }
+  ) => {
     if (showBanModal()) return;
 
     if (!user) {
       return navigate(`/login?next=${encodeURIComponent("/sessions")}`);
     }
 
+    const payload: any = {
+      session_id: id,
+      user_id: user.id,
+    };
+
+    if (opts?.booked_start_time) payload.booked_start_time = opts.booked_start_time;
+    if (opts?.booked_end_time) payload.booked_end_time = opts.booked_end_time;
+    if (opts?.booking_note) payload.booking_note = opts.booking_note;
+
     try {
-      const { error } = await supabase.from("session_bookings").insert({
-        session_id: id,
-        user_id: user.id,
-      });
+      const { error } = await supabase.from("session_bookings").insert(payload);
 
       if (error) throw error;
 

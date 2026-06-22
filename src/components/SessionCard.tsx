@@ -65,11 +65,17 @@ function getSupabase(): SupabaseClient | null {
     return g.__mysession_supabase__ || null;
 }
 
+type BookSessionOptions = {
+    booked_start_time?: string | null;
+    booked_end_time?: string | null;
+    booking_note?: string | null;
+};
+
 interface SessionCardProps {
     session: any;
     userId?: string;
 
-    onBook: (sessionId: string) => void;
+    onBook: (sessionId: string, opts?: BookSessionOptions) => void;
     onCancelBooking: (sessionId: string) => void;
     onJoin: (sessionId: string) => void;
     onDelete: (sessionId: string) => void;
@@ -101,7 +107,7 @@ interface SessionCardProps {
     };
 }
 
-type BookedUser = { id: string; full_name?: string; avatar_url?: string };
+type BookedUser = { id: string; full_name?: string; avatar_url?: string; created_at?: string | null; booked_start_time?: string | null; booked_end_time?: string | null };
 type HostTransferCandidate = {
     id: string;
     full_name?: string | null;
@@ -140,6 +146,9 @@ function extractBookers(session: any): BookedUser[] {
                 id: String(uid),
                 full_name,
                 avatar_url,
+                created_at: b?.created_at ?? b?.booked_at ?? null,
+                booked_start_time: b?.booked_start_time ?? b?.start_time ?? null,
+                booked_end_time: b?.booked_end_time ?? b?.end_time ?? null,
             };
         })
         .filter((u): u is BookedUser => !!u);
@@ -154,6 +163,81 @@ function extractBookers(session: any): BookedUser[] {
     }
 
     return out;
+}
+
+
+function pad2(n: number) {
+    return String(n).padStart(2, "0");
+}
+
+function toLocalDateInputValue(date: Date) {
+    return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function toLocalTimeInputValue(date: Date) {
+    return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+function roundDateToNextQuarterHour(date = new Date()) {
+    const d = new Date(date);
+    d.setSeconds(0, 0);
+    const minutes = d.getMinutes();
+    const next = Math.ceil(minutes / 15) * 15;
+    if (next >= 60) {
+        d.setHours(d.getHours() + 1, 0, 0, 0);
+    } else {
+        d.setMinutes(next, 0, 0);
+    }
+    return d;
+}
+
+function combineLocalDateAndTimeToIso(dateYMD: string, timeHHMM: string) {
+    const date = String(dateYMD || "").trim();
+    const time = String(timeHHMM || "").trim();
+    if (!date || !time) return null;
+
+    const d = new Date(`${date}T${time}:00`);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString();
+}
+
+function formatBookingRangeFromIso(startIso?: string | null, endIso?: string | null) {
+    const startRaw = String(startIso || "").trim();
+    const endRaw = String(endIso || "").trim();
+
+    if (!startRaw && !endRaw) return "Any time — this room is always open";
+
+    const start = startRaw ? new Date(startRaw) : null;
+    const end = endRaw ? new Date(endRaw) : null;
+
+    const hasStart = !!start && !Number.isNaN(start.getTime());
+    const hasEnd = !!end && !Number.isNaN(end.getTime());
+
+    if (!hasStart && !hasEnd) return "Any time — this room is always open";
+
+    const dateFmt: Intl.DateTimeFormatOptions = {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+    };
+
+    if (hasStart && hasEnd) {
+        const sameDay =
+            start!.getFullYear() === end!.getFullYear() &&
+            start!.getMonth() === end!.getMonth() &&
+            start!.getDate() === end!.getDate();
+
+        const startText = start!.toLocaleString("en-US", dateFmt);
+        const endText = sameDay
+            ? end!.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+            : end!.toLocaleString("en-US", dateFmt);
+
+        return `${startText} — ${endText}`;
+    }
+
+    if (hasStart) return `From ${start!.toLocaleString("en-US", dateFmt)}`;
+    return `Until ${end!.toLocaleString("en-US", dateFmt)}`;
 }
 
 function inferTypeFromTitle(
@@ -3607,6 +3691,21 @@ export default function SessionCard({
     }, [session?.id]);
 
     const [isBookersModalOpen, setIsBookersModalOpen] = useState(false);
+    const [isBookingTimeModalOpen, setIsBookingTimeModalOpen] = useState(false);
+    const [bookingDateDraft, setBookingDateDraft] = useState(() => {
+        const start = roundDateToNextQuarterHour();
+        return toLocalDateInputValue(start);
+    });
+    const [bookingStartTimeDraft, setBookingStartTimeDraft] = useState(() => {
+        const start = roundDateToNextQuarterHour();
+        return toLocalTimeInputValue(start);
+    });
+    const [bookingEndTimeDraft, setBookingEndTimeDraft] = useState(() => {
+        const start = roundDateToNextQuarterHour();
+        const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+        return toLocalTimeInputValue(end);
+    });
+    const [bookingDraftError, setBookingDraftError] = useState("");
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
     const [paywallOpen, setPaywallOpen] = useState(false);
@@ -3787,6 +3886,38 @@ export default function SessionCard({
 
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionType === "infinite";
+
+    const bookingTimeRangeString = useMemo(() => {
+        const start = session?.start_time ? new Date(session.start_time) : null;
+        const durationMinutes = Number(session?.duration_minutes || 0);
+
+        if (!start || Number.isNaN(start.getTime())) {
+            return isInfinite ? "Any time — this room is always open" : "Time TBD";
+        }
+
+        if (isInfinite) return "Any time — this room is always open";
+
+        const end = durationMinutes > 0
+            ? new Date(start.getTime() + durationMinutes * 60_000)
+            : null;
+
+        const startText = start.toLocaleString("en-US", {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+
+        if (!end || Number.isNaN(end.getTime())) return startText;
+
+        const endText = end.toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+
+        return `${startText} — ${endText}`;
+    }, [session?.start_time, session?.duration_minutes, isInfinite]);
+
 
     const liveCountFromSession: number | null = parseDbCount(
         session?.live_count ??
@@ -4093,20 +4224,38 @@ export default function SessionCard({
         return () => window.clearInterval(timer);
     }, [isInfoOpen, stagesVisual, timelineStartTime, isInfinite, session?.schedule]);
 
-    const ensureCurrentUserAsBooked = () => {
+    const ensureCurrentUserAsBooked = (opts?: { booked_start_time?: string | null; booked_end_time?: string | null }) => {
         if (!userId) return;
-        const exists = bookers.some((u) => u.id === userId);
-        if (exists) return;
 
         const cu: BookedUser = currentUser?.id
             ? {
                 id: currentUser.id,
                 full_name: currentUser.full_name || "You",
                 avatar_url: currentUser.avatar_url,
+                booked_start_time: opts?.booked_start_time || null,
+                booked_end_time: opts?.booked_end_time || null,
             }
-            : { id: userId, full_name: "You" };
+            : {
+                id: userId,
+                full_name: "You",
+                booked_start_time: opts?.booked_start_time || null,
+                booked_end_time: opts?.booked_end_time || null,
+            };
 
-        setBookers((prev) => [cu, ...prev]);
+        setBookers((prev) => {
+            const exists = prev.some((u) => u.id === userId);
+            if (!exists) return [cu, ...prev];
+
+            return prev.map((u) =>
+                u.id === userId
+                    ? {
+                        ...u,
+                        booked_start_time: opts?.booked_start_time ?? u.booked_start_time ?? null,
+                        booked_end_time: opts?.booked_end_time ?? u.booked_end_time ?? null,
+                    }
+                    : u
+            );
+        });
     };
 
     const removeCurrentUserFromBooked = () => {
@@ -4119,9 +4268,62 @@ export default function SessionCard({
             navigate(buildLoginNext("/sessions"));
             return;
         }
+
+        if (isInfinite) {
+            setBookingDraftError("");
+
+            const start = roundDateToNextQuarterHour();
+            const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+            setBookingDateDraft(toLocalDateInputValue(start));
+            setBookingStartTimeDraft(toLocalTimeInputValue(start));
+            setBookingEndTimeDraft(toLocalTimeInputValue(end));
+            setIsBookingTimeModalOpen(true);
+            setIsHoveringBook(false);
+            return;
+        }
+
         onBook(session.id);
         setIsBookingConfirmed(true);
         ensureCurrentUserAsBooked();
+        setIsHoveringBook(false);
+    };
+
+    const handleConfirmInfiniteBooking = () => {
+        if (!userId) {
+            navigate(buildLoginNext("/sessions"));
+            return;
+        }
+
+        const startIso = combineLocalDateAndTimeToIso(bookingDateDraft, bookingStartTimeDraft);
+        const endIso = combineLocalDateAndTimeToIso(bookingDateDraft, bookingEndTimeDraft);
+
+        if (!startIso || !endIso) {
+            setBookingDraftError("Choose a valid start and end time.");
+            return;
+        }
+
+        const startMs = new Date(startIso).getTime();
+        const endMs = new Date(endIso).getTime();
+
+        if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+            setBookingDraftError("End time should be after start time.");
+            return;
+        }
+
+        setBookingDraftError("");
+
+        onBook(session.id, {
+            booked_start_time: startIso,
+            booked_end_time: endIso,
+        });
+
+        setIsBookingConfirmed(true);
+        ensureCurrentUserAsBooked({
+            booked_start_time: startIso,
+            booked_end_time: endIso,
+        });
+        setIsBookingTimeModalOpen(false);
         setIsHoveringBook(false);
     };
 
@@ -4423,8 +4625,12 @@ export default function SessionCard({
                 onMouseLeave={() => setIsHoveringCard(false)}
                 className={`
                     relative
-                    border border-borderGray rounded-[42px] bg-white
+                    border rounded-[42px] bg-white
                     transition-all duration-200
+                    ${isInfinite
+                        ? "border-[#5286F6] shadow-[0_16px_45px_rgba(82,134,246,0.14)]"
+                        : "border-borderGray"
+                    }
                     hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
                     p-6
                     flex flex-col
@@ -4435,9 +4641,18 @@ export default function SessionCard({
                 <div className="flex flex-col xl:flex-row w-full gap-6">
                     <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 flex-1">
                         <div className="flex flex-col gap-3 w-full">
-                            <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">
-                                {session.title}
-                            </h3>
+                            <div className="flex flex-wrap items-center gap-3">
+                                <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">
+                                    {session.title}
+                                </h3>
+
+                                {isInfinite ? (
+                                    <div className="inline-flex items-center gap-1.5 rounded-full border border-[#5286F6] bg-[#5286F6]/10 px-3 py-1 text-[11px] font-semibold text-[#5286F6]">
+                                        <span aria-hidden="true">∞</span>
+                                        <span>24/7 room</span>
+                                    </div>
+                                ) : null}
+                            </div>
 
                             <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
                                 <Link
@@ -4772,7 +4987,84 @@ export default function SessionCard({
             </div>
 
             <ModalShell
-                title={hasStarted || hasLiveNow ? "People" : "People who booked this session"}
+                title="Book your focus time"
+                isOpen={isBookingTimeModalOpen}
+                onClose={() => setIsBookingTimeModalOpen(false)}
+                widthClass="max-w-[500px]"
+            >
+                <div className="space-y-4">
+                    <div className="rounded-[18px] border border-[#DBEAFE] bg-[#EFF6FF] px-4 py-3 text-[13px] leading-5 text-[#1E3A8A]">
+                        Choose when you plan to use this 24/7 room. The room stays open, but your booking helps others see when people are planning to focus.
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <label className="flex flex-col gap-1.5">
+                            <span className="text-[12px] font-semibold text-[#606060]">Date</span>
+                            <input
+                                type="date"
+                                value={bookingDateDraft}
+                                onChange={(e) => setBookingDateDraft(e.target.value)}
+                                className="h-11 rounded-[14px] border border-[#E5E7EB] px-3 text-[13px] outline-none focus:border-[#111827]"
+                            />
+                        </label>
+
+                        <label className="flex flex-col gap-1.5">
+                            <span className="text-[12px] font-semibold text-[#606060]">Start</span>
+                            <input
+                                type="time"
+                                value={bookingStartTimeDraft}
+                                onChange={(e) => setBookingStartTimeDraft(e.target.value)}
+                                className="h-11 rounded-[14px] border border-[#E5E7EB] px-3 text-[13px] outline-none focus:border-[#111827]"
+                            />
+                        </label>
+
+                        <label className="flex flex-col gap-1.5">
+                            <span className="text-[12px] font-semibold text-[#606060]">End</span>
+                            <input
+                                type="time"
+                                value={bookingEndTimeDraft}
+                                onChange={(e) => setBookingEndTimeDraft(e.target.value)}
+                                className="h-11 rounded-[14px] border border-[#E5E7EB] px-3 text-[13px] outline-none focus:border-[#111827]"
+                            />
+                        </label>
+                    </div>
+
+                    {bookingDraftError ? (
+                        <div className="rounded-[14px] border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+                            {bookingDraftError}
+                        </div>
+                    ) : null}
+
+                    <div className="rounded-[16px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-[12px] text-[#606060]">
+                        Preview: <span className="font-semibold text-[#111827]">
+                            {formatBookingRangeFromIso(
+                                combineLocalDateAndTimeToIso(bookingDateDraft, bookingStartTimeDraft),
+                                combineLocalDateAndTimeToIso(bookingDateDraft, bookingEndTimeDraft)
+                            )}
+                        </span>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setIsBookingTimeModalOpen(false)}
+                            className="h-11 flex-1 rounded-full border border-[#111827] bg-white px-4 text-[14px] font-semibold text-[#111827] transition hover:bg-[#F3F4F6]"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleConfirmInfiniteBooking}
+                            className="h-11 flex-1 rounded-full bg-[#111827] px-4 text-[14px] font-semibold text-white transition hover:bg-[#2F2F2F]"
+                        >
+                            Book this time
+                        </button>
+                    </div>
+                </div>
+            </ModalShell>
+
+            <ModalShell
+                title={hasStarted || hasLiveNow || isInfinite ? "People" : "People who booked this session"}
                 isOpen={isBookersModalOpen}
                 onClose={() => setIsBookersModalOpen(false)}
             >
@@ -4808,6 +5100,12 @@ export default function SessionCard({
                 {!hasStarted && !hasLiveNow && !isInfinite && (
                     <div className="text-[12px] text-[#606060]">{bookedCount} booked</div>
                 )}
+
+                {peopleTab === "booked" ? (
+                    <div className="mb-3 rounded-[16px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-[12px] text-[#606060]">
+                        {isInfinite ? "Room default:" : "Session time:"} <span className="font-semibold text-[#111827]">{bookingTimeRangeString}</span>
+                    </div>
+                ) : null}
 
                 <div className="mt-1 flex flex-col gap-2">
                     {modalCount === 0 ? (
@@ -4851,11 +5149,14 @@ export default function SessionCard({
                                             {label}
                                         </div>
 
-                                        {peopleTab === "booked" && isLive && (
-                                            <div className="text-[11px] text-[#65D46C] font-semibold">
-                                                Online
+                                        {peopleTab === "booked" ? (
+                                            <div className="text-[11px] text-[#606060] truncate">
+                                                {isLive ? (
+                                                    <span className="font-semibold text-[#65D46C]">Online · </span>
+                                                ) : null}
+                                                {formatBookingRangeFromIso(u.booked_start_time, u.booked_end_time) || bookingTimeRangeString}
                                             </div>
-                                        )}
+                                        ) : null}
                                     </div>
                                 </Link>
                             );
