@@ -2470,32 +2470,64 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
   const [localAvatarUrl, setLocalAvatarUrl] = useState<string>("");
   const accessTokenRef = useRef<string>("");
+  const currentAuthUserIdRef = useRef<string | null>(null);
   const sessionJoinStartedAtRef = useRef<number | null>(null);
   const usageTrackedRef = useRef(false);
-  useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      accessTokenRef.current = String(session?.access_token || "").trim();
 
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED" || event === "INITIAL_SESSION") {
-        const nextUserId = String(session?.user?.id || "").trim();
-        if (nextUserId) {
-          setAuthUserId(nextUserId);
-          setAuthGateStatus("authed");
-          setAuthReady(true);
+  useEffect(() => {
+    let mounted = true;
+
+    const applyAuthSession = (event: string, session: any) => {
+      if (!mounted) return;
+
+      const nextAccessToken = String(session?.access_token || "").trim();
+      const nextUserId = String(session?.user?.id || "").trim();
+
+      accessTokenRef.current = nextAccessToken;
+
+      if (nextUserId) {
+        const sameUser = currentAuthUserIdRef.current === nextUserId;
+
+        currentAuthUserIdRef.current = nextUserId;
+
+        // Token refresh must NOT behave like a room auth transition.
+        // It should update accessTokenRef only, without retriggering room/session/join state.
+        if (sameUser && (event === "TOKEN_REFRESHED" || event === "USER_UPDATED" || event === "INITIAL_SESSION")) {
+          setAuthReady((prev) => (prev ? prev : true));
           return;
         }
+
+        setAuthUserId((prev) => (prev === nextUserId ? prev : nextUserId));
+        setAuthGateStatus((prev) => (prev === "authed" ? prev : "authed"));
+        setAuthReady((prev) => (prev ? prev : true));
+        return;
       }
 
       if (event === "SIGNED_OUT") {
-        setAuthUserId(null);
-        setAuthGateStatus("guest");
-        setAuthReady(true);
+        currentAuthUserIdRef.current = null;
+        accessTokenRef.current = "";
+
+        setAuthUserId((prev) => (prev === null ? prev : null));
+        setAuthGateStatus((prev) => (prev === "guest" ? prev : "guest"));
+        setAuthReady((prev) => (prev ? prev : true));
+        return;
       }
+
+      setAuthReady((prev) => (prev ? prev : true));
+    };
+
+    void supabase.auth.getSession().then(({ data }) => {
+      applyAuthSession("INITIAL_SESSION", data?.session || null);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      applyAuthSession(event, session);
     });
 
     return () => {
+      mounted = false;
       subscription.unsubscribe();
     };
   }, []);
@@ -4959,6 +4991,12 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
     };
 
     const onBeforeUnload = () => {
+      if (isMobileQuery || isTabletQuery) {
+        pageHiddenAtRef.current = Date.now();
+        returningFromBackgroundRef.current = true;
+        return;
+      }
+
       explicitLeaveRequestedRef.current = true;
       releaseTabPresence();
     };
@@ -4982,6 +5020,13 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
 
   useEffect(() => {
     const onBeforeUnload = () => {
+      if (isMobileQuery || isTabletQuery) {
+        pageHiddenAtRef.current = Date.now();
+        returningFromBackgroundRef.current = true;
+        void attendanceHeartbeat();
+        return;
+      }
+
       explicitLeaveRequestedRef.current = true;
       void leaveAttendanceOnce({ keepalive: true });
     };
