@@ -1333,6 +1333,10 @@ const VIDEO_TILE_LAYOUT_PRESET_KEY = "mysession_video_tile_layout_preset";
 const VIDEO_TILE_LAYOUT_COLUMNS_KEY = "mysession_video_tile_layout_columns";
 const VIDEO_TILE_LAYOUT_ROWS_KEY = "mysession_video_tile_layout_rows";
 const MOBILE_LAYOUT_SWITCHER_VISIBLE_KEY = "mysession_mobile_layout_switcher_visible";
+const CONNECTION_DIAGNOSTICS_TABLE = "connection_diagnostics";
+const CONNECTION_DIAGNOSTICS_LOCAL_KEY = "mysession_connection_diagnostics_buffer_v1";
+const CONNECTION_DIAGNOSTICS_LOCAL_MAX = 120;
+
 
 function normalizeVideoTileLayoutPreset(raw: unknown): VideoTileLayoutPreset {
   const s = String(raw || "").trim();
@@ -1355,6 +1359,51 @@ function readStoredLayoutNumber(key: string) {
   const n = Math.round(Number(window.localStorage.getItem(key) || 0));
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(6, n));
+}
+
+function getNetworkDiagnosticSnapshot() {
+  if (typeof navigator === "undefined") {
+    return {
+      online: null,
+      effectiveType: "",
+      connectionType: "",
+      downlink: null,
+      rtt: null,
+      saveData: null,
+    };
+  }
+
+  const connection =
+    (navigator as any).connection ||
+    (navigator as any).mozConnection ||
+    (navigator as any).webkitConnection ||
+    null;
+
+  return {
+    online: typeof navigator.onLine === "boolean" ? navigator.onLine : null,
+    effectiveType: String(connection?.effectiveType || ""),
+    connectionType: String(connection?.type || ""),
+    downlink: Number.isFinite(Number(connection?.downlink)) ? Number(connection.downlink) : null,
+    rtt: Number.isFinite(Number(connection?.rtt)) ? Number(connection.rtt) : null,
+    saveData: typeof connection?.saveData === "boolean" ? connection.saveData : null,
+  };
+}
+
+function pushConnectionDiagnosticToLocalBuffer(entry: Record<string, unknown>) {
+  if (typeof window === "undefined") return;
+
+  try {
+    const raw = window.localStorage.getItem(CONNECTION_DIAGNOSTICS_LOCAL_KEY);
+    const prev = raw ? JSON.parse(raw) : [];
+    const list = Array.isArray(prev) ? prev : [];
+
+    window.localStorage.setItem(
+      CONNECTION_DIAGNOSTICS_LOCAL_KEY,
+      JSON.stringify([...list, entry].slice(-CONNECTION_DIAGNOSTICS_LOCAL_MAX))
+    );
+  } catch {
+    // local diagnostics are best-effort only
+  }
 }
 
 const CHAT_MSG_TABLE = "session_chat_messages";
@@ -5504,6 +5553,176 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
   const [screenShareOn, setScreenShareOn] = useState(false);
+
+  const writeConnectionDiagnostic = useCallback(
+    async (eventType: string, payload: Record<string, unknown> = {}) => {
+      const network = getNetworkDiagnosticSnapshot();
+      const { browser, browserVersion, os } = getBrowserDetails();
+      const deviceType = inferDeviceTypeFromRuntime({ isMobileQuery, isTabletQuery });
+      const nav = typeof navigator !== "undefined" ? (navigator as any) : null;
+      const win = typeof window !== "undefined" ? window : null;
+      const roomAny: any = roomRef.current;
+
+      const hiddenForMs = pageHiddenAtRef.current ? Date.now() - pageHiddenAtRef.current : null;
+
+      const localEntry = {
+        at: new Date().toISOString(),
+        event_type: eventType,
+        session_id: session?.id || null,
+        user_id: authUserId || null,
+        visibility_state: typeof document !== "undefined" ? document.visibilityState : "unknown",
+        network_online: network.online,
+        room_state: String(roomAny?.state || ""),
+        livekit_connected: !!connectedRef.current,
+        hidden_for_ms: hiddenForMs,
+        payload,
+      };
+
+      pushConnectionDiagnosticToLocalBuffer(localEntry);
+
+      try {
+        await supabase.from(CONNECTION_DIAGNOSTICS_TABLE).insert({
+          session_id: session?.id || null,
+          user_id: authUserId || null,
+          event_type: eventType,
+
+          visibility_state: typeof document !== "undefined" ? document.visibilityState : "unknown",
+          network_online: network.online,
+
+          room_state: String(roomAny?.state || ""),
+          livekit_connected: !!connectedRef.current,
+
+          user_agent: String(nav?.userAgent || ""),
+          platform: String(nav?.userAgentData?.platform || nav?.platform || ""),
+          browser,
+          browser_version: browserVersion,
+          os,
+          device_type: deviceType,
+
+          screen_width: Number(win?.screen?.width || win?.innerWidth || 0) || null,
+          screen_height: Number(win?.screen?.height || win?.innerHeight || 0) || null,
+          viewport_width: Number(win?.innerWidth || 0) || null,
+          viewport_height: Number(win?.innerHeight || 0) || null,
+          device_pixel_ratio: Number(win?.devicePixelRatio || 1) || null,
+
+          effective_connection_type: network.effectiveType || null,
+          connection_type: network.connectionType || null,
+          downlink: network.downlink,
+          rtt: network.rtt,
+          save_data: network.saveData,
+
+          payload: {
+            ...payload,
+            tabId,
+            routeId: routeId || null,
+            effectiveSessionParam,
+            isMobileQuery,
+            isTabletQuery,
+            isLgUp,
+            hiddenForMs,
+            pageHiddenAt: pageHiddenAtRef.current,
+            returningFromBackground: returningFromBackgroundRef.current,
+            explicitLeaveRequested: explicitLeaveRequestedRef.current,
+            kickedBySignal: kickedBySignalRef.current,
+            connected,
+            connectedRef: connectedRef.current,
+            joinRequested,
+            joinRequestedRef: joinRequestedRef.current,
+            roomConnectionState: String(roomAny?.state || ""),
+            remoteParticipants: roomAny?.remoteParticipants?.size ?? null,
+            localIdentity: roomAny?.localParticipant?.identity || "",
+            micOn,
+            camOn,
+            hardwareConcurrency: Number(nav?.hardwareConcurrency || 0) || null,
+            deviceMemory: Number(nav?.deviceMemory || 0) || null,
+            maxTouchPoints: Number(nav?.maxTouchPoints || 0) || null,
+            language: String(nav?.language || ""),
+          },
+        });
+      } catch (e) {
+        console.warn("[connection-diagnostics] insert failed:", e);
+      }
+    },
+    [
+      session?.id,
+      authUserId,
+      isMobileQuery,
+      isTabletQuery,
+      isLgUp,
+      tabId,
+      routeId,
+      effectiveSessionParam,
+      connected,
+      joinRequested,
+      micOn,
+      camOn,
+    ]
+  );
+
+  useEffect(() => {
+    const write = (eventType: string, payload: Record<string, unknown> = {}) => {
+      void writeConnectionDiagnostic(eventType, payload);
+    };
+
+    const onVisibilityChange = () => {
+      write(`document.visibilitychange:${document.visibilityState}`);
+    };
+
+    const onPageHide = (e: PageTransitionEvent) => {
+      write("window.pagehide", { persisted: e.persisted });
+    };
+
+    const onPageShow = (e: PageTransitionEvent) => {
+      write("window.pageshow", { persisted: e.persisted });
+    };
+
+    const onBeforeUnload = () => {
+      write("window.beforeunload");
+    };
+
+    const onFreeze = () => {
+      write("document.freeze");
+    };
+
+    const onResume = () => {
+      write("document.resume");
+    };
+
+    const onOnline = () => {
+      write("window.online");
+    };
+
+    const onOffline = () => {
+      write("window.offline");
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    document.addEventListener("freeze", onFreeze as any);
+    document.addEventListener("resume", onResume as any);
+
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+
+    write("connection_diagnostics.mounted");
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      document.removeEventListener("freeze", onFreeze as any);
+      document.removeEventListener("resume", onResume as any);
+
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+
+      write("connection_diagnostics.unmounted");
+    };
+  }, [writeConnectionDiagnostic]);
+
   const manualScreenShareRef = useRef<{
     mediaTrack: MediaStreamTrack;
     stream?: MediaStream | null;
@@ -6484,11 +6703,20 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
       const refresh = () => scheduleRebuildTiles();
 
       r.on(RoomEvent.Connected, () => {
+        void writeConnectionDiagnostic("livekit.connected", {
+          roomState: String((r as any)?.state || ""),
+        });
+
         setConnected(true);
         refresh();
       });
 
-      r.on(RoomEvent.Disconnected, () => {
+      r.on(RoomEvent.Disconnected, (reason: any) => {
+        void writeConnectionDiagnostic("livekit.disconnected", {
+          reason: String(reason || ""),
+          roomState: String((r as any)?.state || ""),
+        });
+
         const likelyBackgroundDisconnect =
           !explicitLeaveRequestedRef.current &&
           !kickedBySignalRef.current &&
@@ -6520,7 +6748,19 @@ export function RoomPageLiveKit({ sessionIdOverride = null }: RoomPageLiveKitPro
         releaseTabPresence();
       });
 
-      r.on(RoomEvent.Reconnected, refresh);
+      r.on(RoomEvent.Reconnecting as any, () => {
+        void writeConnectionDiagnostic("livekit.reconnecting", {
+          roomState: String((r as any)?.state || ""),
+        });
+      });
+
+      r.on(RoomEvent.Reconnected, () => {
+        void writeConnectionDiagnostic("livekit.reconnected", {
+          roomState: String((r as any)?.state || ""),
+        });
+
+        refresh();
+      });
       r.on(RoomEvent.ParticipantConnected, () => {
         if (roomSoundsEnabledRef.current) {
           playOneShotFromCandidates(JOIN_SOUND_CANDIDATES, 0.8);
