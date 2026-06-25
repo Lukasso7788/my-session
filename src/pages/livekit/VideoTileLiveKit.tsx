@@ -21,7 +21,8 @@ function getQueryBool(name: string, def = false) {
         const raw = u.searchParams.get(name);
         if (raw === null) return def;
         const v = raw.trim().toLowerCase();
-        if (v === "" || v === "1" || v === "true" || v === "yes" || v === "on") return true;
+        if (v === "" || v === "1" || v === "true" || v === "yes" || v === "on")
+            return true;
         if (v === "0" || v === "false" || v === "no" || v === "off") return false;
         return def;
     } catch {
@@ -42,7 +43,9 @@ function clamp(n: number, a: number, b: number) {
 }
 
 function getStatusLabel(status: unknown): string {
-    const key = String(status || "").trim().toLowerCase();
+    const key = String(status || "")
+        .trim()
+        .toLowerCase();
 
     if (key === "afk") return "AFK";
     if (key === "break") return "Break";
@@ -55,11 +58,13 @@ function getStatusLabel(status: unknown): string {
 }
 
 function getStatusClass(status: unknown, isLight: boolean): string {
-    const key = String(status || "").trim().toLowerCase();
+    const key = String(status || "")
+        .trim()
+        .toLowerCase();
 
     if (key === "afk") {
         return isLight
-            ? "bg-neutral-200 text-neutral-700 border-[#CFCFCF]"
+            ? "bg-neutral-200 text-neutral-700 border-[#D8D0D0]"
             : "bg-white/10 text-white/80 border-[#2B2B2B]";
     }
 
@@ -94,7 +99,7 @@ function getStatusClass(status: unknown, isLight: boolean): string {
     }
 
     return isLight
-        ? "bg-neutral-100 text-neutral-700 border-[#CFCFCF]"
+        ? "bg-neutral-100 text-neutral-700 border-[#D8D0D0]"
         : "bg-white/10 text-white/80 border-[#2B2B2B]";
 }
 
@@ -187,12 +192,13 @@ function MicBadgeWithBarVisualizer({
     const badgeBaseClass = isSelfMutedBadge
         ? "bg-[#F65252] border-red-700/70 text-white shadow-sm"
         : hasCameraOn
-            ? "bg-[#242424] border-[#2B2B2B] text-white shadow-sm"
+            ? "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm"
             : isLight
-                ? "bg-[#F5F5F5] border-[#CFCFCF] text-neutral-800 shadow-sm"
-                : "bg-[#242424] border-[#2B2B2B] text-white shadow-sm";
+                ? "bg-[#F5F5F5] border-[#D8D0D0] text-neutral-800 shadow-sm"
+                : "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm";
 
-    const micIconTheme: RoomTheme = isSelfMutedBadge || hasCameraOn ? "dark" : isLight ? "light" : "dark";
+    const micIconTheme: RoomTheme =
+        isSelfMutedBadge || hasCameraOn ? "dark" : isLight ? "light" : "dark";
 
     const safeAudioLevel = clamp(Number(audioLevel || 0), 0, 1);
     const speaking = !micMuted && safeAudioLevel > 0.04;
@@ -207,8 +213,12 @@ function MicBadgeWithBarVisualizer({
     return (
         <div
             className={`pointer-events-auto relative flex h-6 min-w-6 shrink-0 items-center justify-center overflow-hidden rounded-[10px] border p-1 backdrop-blur-md ${badgeBaseClass} ${micGlowClass}`}
-            title={micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"}
-            aria-label={micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"}
+            title={
+                micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"
+            }
+            aria-label={
+                micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"
+            }
         >
             {showVisualizer ? (
                 <>
@@ -274,26 +284,32 @@ function VideoTileInner({
     const isLight = theme === "light";
     const isCompact = density === "compact";
 
-    const tileBgClass = isLight ? "bg-[#F8F8F8]" : "bg-[#1E1E1E]";
+    const tileBgClass = isLight ? "bg-[#F8F8F8]" : "bg-[#1B1B1B]";
     const mediaBgColor = isLight ? "#F8F8F8" : "#1E1E1E";
-    const offStateClass = isLight ? "text-black/60 bg-[#F3F3F3]" : "text-white/70 bg-[#1E1E1E]";
+    const offStateClass = isLight
+        ? "text-black/60 bg-[#F3F1F1]"
+        : "text-white/70 bg-[#1B1B1B]";
     const initialsBgClass = isLight
-        ? "bg-neutral-200 text-neutral-800 border-[#CFCFCF]"
+        ? "bg-neutral-200 text-neutral-800 border-[#D8D0D0]"
         : "bg-[#81DB86]/80 text-[#F3F3F3] border-[#2B2B2B]";
 
     const hasCameraOn = !!videoTrack;
 
     const namePillClass = hasCameraOn
-        ? "bg-[#242424] border-[#2B2B2B] text-white shadow-sm"
+        ? "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm"
         : isLight
-            ? "bg-[#F5F5F5] border-[#CFCFCF] text-neutral-900 shadow-sm"
-            : "bg-[#242424] border-[#2B2B2B] text-white shadow-sm";
+            ? "bg-[#F5F5F5] border-[#D8D0D0] text-neutral-900 shadow-sm"
+            : "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm";
 
-    const nameTextClass = hasCameraOn ? "!text-white" : isLight ? "text-neutral-900" : "text-white";
+    const nameTextClass = hasCameraOn
+        ? "!text-white"
+        : isLight
+            ? "text-neutral-900"
+            : "text-white";
 
     const menuBtnClass = isLight
-        ? "bg-[#F5F5F5] border-[#CFCFCF] text-black/85 hover:bg-[#F2F3F5]"
-        : "bg-[#242424] border-[#2B2B2B] text-white hover:bg-[#242424]";
+        ? "bg-[#F5F5F5] border-[#D8D0D0] text-black/85 hover:bg-[#F2F3F5]"
+        : "bg-[#1B1B1B] border-[#2B2B2B] text-white hover:bg-[#1B1B1B]";
 
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const [sizeText, setSizeText] = useState<string>("");
@@ -332,7 +348,11 @@ function VideoTileInner({
             const current = attachedElRef.current;
 
             try {
-                if (videoTrack && current && typeof (videoTrack as any)?.detach === "function") {
+                if (
+                    videoTrack &&
+                    current &&
+                    typeof (videoTrack as any)?.detach === "function"
+                ) {
                     (videoTrack as any).detach(current as any);
                 }
             } catch { }
@@ -439,7 +459,7 @@ function VideoTileInner({
             className={
                 "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border " +
                 (isCompact ? "rounded-xl " : "rounded-2xl ") +
-                (isLight ? "border-[#CFCFCF]" : "border-[#2B2B2B]") +
+                (isLight ? "border-[#D8D0D0]" : "border-[#2B2B2B]") +
                 " " +
                 tileBgClass
             }
@@ -459,7 +479,7 @@ function VideoTileInner({
                             <img
                                 src={normalizedAvatarUrl}
                                 alt={label || "User"}
-                                className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)]"} rounded-full object-cover border shadow-2xl ${isLight ? "border-[#CFCFCF]" : "border-[#2B2B2B]"
+                                className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)]"} rounded-full object-cover border shadow-2xl ${isLight ? "border-[#D8D0D0]" : "border-[#2B2B2B]"
                                     }`}
                                 referrerPolicy="no-referrer"
                                 onError={() => setAvatarBroken(true)}
@@ -486,8 +506,8 @@ function VideoTileInner({
                         className={
                             "absolute left-2 top-2 px-2 py-1 rounded-lg text-[10px] border " +
                             (isLight
-                                ? "bg-[#F5F5F5] text-black border-[#CFCFCF]"
-                                : "bg-[#242424] text-white border-[#2B2B2B]")
+                                ? "bg-[#F5F5F5] text-black border-[#D8D0D0]"
+                                : "bg-[#1B1B1B] text-white border-[#2B2B2B]")
                         }
                         title="Tile size (debug)"
                     >
@@ -533,8 +553,8 @@ function VideoTileInner({
                                 className={
                                     "px-2 py-1 rounded-lg text-[11px] border flex items-center gap-1 " +
                                     (isLight
-                                        ? "bg-[#F5F5F5] text-black border-[#CFCFCF] disabled:opacity-50"
-                                        : "bg-[#242424] text-white border-[#2B2B2B] disabled:opacity-50")
+                                        ? "bg-[#F5F5F5] text-black border-[#D8D0D0] disabled:opacity-50"
+                                        : "bg-[#1B1B1B] text-white border-[#2B2B2B] disabled:opacity-50")
                                 }
                                 title="Mute / unmute remote microphone (host action)"
                             >
@@ -554,8 +574,8 @@ function VideoTileInner({
                                 className={
                                     "px-2 py-1 rounded-lg text-[11px] border flex items-center gap-1 " +
                                     (isLight
-                                        ? "bg-[#F5F5F5] text-black border-[#CFCFCF] disabled:opacity-50"
-                                        : "bg-[#242424] text-white border-[#2B2B2B] disabled:opacity-50")
+                                        ? "bg-[#F5F5F5] text-black border-[#D8D0D0] disabled:opacity-50"
+                                        : "bg-[#1B1B1B] text-white border-[#2B2B2B] disabled:opacity-50")
                                 }
                                 title="Mute / unmute remote camera (host action)"
                             >
@@ -590,7 +610,9 @@ function VideoTileInner({
                 />
             </div>
 
-            <div className={`pointer-events-none absolute z-[12] flex min-w-0 items-end justify-between gap-[0.35rem] ${isCompact ? "inset-x-[0.28rem] bottom-[0.28rem]" : "inset-x-[0.4rem] bottom-[0.4rem]"}`}>
+            <div
+                className={`pointer-events-none absolute z-[12] flex min-w-0 items-end justify-between gap-[0.35rem] ${isCompact ? "inset-x-[0.28rem] bottom-[0.28rem]" : "inset-x-[0.4rem] bottom-[0.4rem]"}`}
+            >
                 <div
                     className={`pointer-events-auto min-w-0 max-w-full rounded-[12px] border backdrop-blur-md ${isCompact ? "px-1.5 py-0.5" : "px-2 py-1"} ${namePillClass}`}
                 >

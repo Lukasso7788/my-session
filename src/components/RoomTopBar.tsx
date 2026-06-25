@@ -63,7 +63,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
     const isLight = theme === "light";
 
     const topBarBg = isLight
-        ? "bg-[#F3F3F3]/95 border border-[#CFCFCF]"
+        ? "bg-[#F3F1F1]/95 border border-[#CFCFCF]"
         : "bg-[#1B1B1B] border border-[#252525]";
 
     const chipBg = isLight
@@ -86,7 +86,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
     const thumbTranslate = isLight ? "translateX(0px)" : "translateX(52px)";
 
     const showTimer = !isSilentRoom && stages.length > 0 && !!stagebarStartTime;
-    const showStageBar = !isSilentRoom && stages.length > 0 && !!stagebarStartTime;
+    const showStageBar =
+        !isSilentRoom && stages.length > 0 && !!stagebarStartTime;
     const showEditTimeline =
         showStageBar && !!canEditTimeline && typeof onEditTimeline === "function";
 
@@ -120,7 +121,9 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                         {/* desktop */}
                         <div className="hidden min-[481px]:flex items-center gap-2 shrink-0">
                             {showTimer && (
-                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
+                                <div
+                                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}
+                                >
                                     <Icon
                                         name="timer"
                                         theme={theme}
@@ -140,7 +143,10 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                 aria-label="Toggle theme"
                                 type="button"
                             >
-                                <div className={switchThumb} style={{ transform: thumbTranslate }}>
+                                <div
+                                    className={switchThumb}
+                                    style={{ transform: thumbTranslate }}
+                                >
                                     <Icon
                                         name={isLight ? "theme-sun" : "theme-moon"}
                                         theme={theme}
@@ -153,13 +159,16 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                 <button
                                     onClick={onOpenHostProfile}
                                     className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
-                                        ? "border-[#CFCFCF] bg-[#E1E3E6] hover:bg-[#E0E0E0] text-black/75"
-                                        : "border-[#2B2B2B] bg-[#1B1B1B]/60 hover:bg-[#242424] text-[#F1F1F1]/85"
+                                            ? "border-[#CFCFCF] bg-[#E1E3E6] hover:bg-[#E0E0E0] text-black/75"
+                                            : "border-[#2B2B2B] bg-[#1B1B1B]/60 hover:bg-[#242424] text-[#F1F1F1]/85"
                                         }`}
                                     title="Host profile"
                                     type="button"
                                 >
-                                    <ParticipantsSmartIcon theme={theme} className="w-4 h-4 opacity-90" />
+                                    <ParticipantsSmartIcon
+                                        theme={theme}
+                                        className="w-4 h-4 opacity-90"
+                                    />
                                     <span className="font-inter">
                                         <span className="font-light">Host:</span>{" "}
                                         <span className="font-bold">
@@ -174,7 +183,9 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                     {/* row 2 mobile */}
                     <div className="min-[481px]:hidden flex items-center justify-start gap-2">
                         {showTimer && (
-                            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
+                            <div
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}
+                            >
                                 <Icon
                                     name="timer"
                                     theme={theme}
@@ -194,7 +205,10 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                             aria-label="Toggle theme"
                             type="button"
                         >
-                            <div className={switchThumb} style={{ transform: thumbTranslate }}>
+                            <div
+                                className={switchThumb}
+                                style={{ transform: thumbTranslate }}
+                            >
                                 <Icon
                                     name={isLight ? "theme-sun" : "theme-moon"}
                                     theme={theme}
@@ -207,14 +221,17 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                             <button
                                 onClick={onOpenHostProfile}
                                 className={`w-10 h-10 rounded-2xl flex items-center justify-center border transition ${isLight
-                                    ? "border-[#CFCFCF] bg-[#E1E3E6] hover:bg-[#E0E0E0] text-black/70"
-                                    : "border-[#2B2B2B] bg-[#1B1B1B]/60 hover:bg-[#242424] text-white/85"
+                                        ? "border-[#CFCFCF] bg-[#E1E3E6] hover:bg-[#E0E0E0] text-black/70"
+                                        : "border-[#2B2B2B] bg-[#1B1B1B]/60 hover:bg-[#242424] text-white/85"
                                     }`}
                                 title={`Host: ${String(hostProfile.full_name || "Host")}`}
                                 aria-label="Host profile"
                                 type="button"
                             >
-                                <ParticipantsSmartIcon theme={theme} className="w-5 h-5 opacity-90" />
+                                <ParticipantsSmartIcon
+                                    theme={theme}
+                                    className="w-5 h-5 opacity-90"
+                                />
                             </button>
                         )}
                     </div>

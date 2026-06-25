@@ -87,7 +87,10 @@ type DocPiPWindow = Window & { document: Document; close: () => void };
 declare global {
   interface Window {
     documentPictureInPicture?: {
-      requestWindow: (opts?: { width?: number; height?: number }) => Promise<DocPiPWindow>;
+      requestWindow: (opts?: {
+        width?: number;
+        height?: number;
+      }) => Promise<DocPiPWindow>;
     };
   }
 }
@@ -97,6 +100,8 @@ const OVERLAY_FONT_FAMILY =
 
 const PANEL_INTENTIONS_TABLE = "panel_intentions";
 const SESSION_INTENTIONS_TABLE = "intentions";
+const INTENTION_ENCOURAGEMENTS_TABLE = "intention_encouragements";
+const ENCOURAGEMENT_EMOJI = "🤩";
 
 /**
  * Conservative limits:
@@ -109,7 +114,6 @@ const TEAM_INTENTIONS_RENDER_LIMIT = 50;
 const PLAN_ITEMS_RENDER_LIMIT = 40;
 const FOCUS_PLAN_ITEMS_FETCH_LIMIT = 120;
 const FOCUS_PLANS_FETCH_LIMIT = 40;
-
 
 function PanelSmartIcon({
   name,
@@ -165,7 +169,12 @@ function IconButton({
     <button
       title={title}
       onClick={onClick}
-      className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + base + " " + className}
+      className={
+        "w-9 h-9 rounded-xl flex items-center justify-center transition " +
+        base +
+        " " +
+        className
+      }
       type="button"
     >
       {children}
@@ -208,8 +217,8 @@ function copyStylesToDocument(from: Document, to: Document) {
   try {
     const nodes = Array.from(
       from.querySelectorAll<HTMLStyleElement | HTMLLinkElement>(
-        'style, link[rel="stylesheet"], link[rel="preconnect"], link[rel="preload"]'
-      )
+        'style, link[rel="stylesheet"], link[rel="preconnect"], link[rel="preload"]',
+      ),
     );
 
     nodes.forEach((n) => {
@@ -234,11 +243,20 @@ function safeTrim(x: unknown) {
 }
 
 function normalizeTextForMatch(x: unknown) {
-  return String(x || "").replace(/\s+/g, " ").trim().toLowerCase();
+  return String(x || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
-async function fetchProfilesMap(userIds: string[]): Promise<Map<string, ProfileMini>> {
-  const ids = [...new Set((userIds || []).map((x) => String(x || "").trim()).filter(Boolean))];
+async function fetchProfilesMap(
+  userIds: string[],
+): Promise<Map<string, ProfileMini>> {
+  const ids = [
+    ...new Set(
+      (userIds || []).map((x) => String(x || "").trim()).filter(Boolean),
+    ),
+  ];
   const map = new Map<string, ProfileMini>();
   if (!ids.length) return map;
 
@@ -284,8 +302,16 @@ export function IntentionsPanel({
   const [panelIntentions, setPanelIntentions] = useState<PanelIntention[]>([]);
   const [panelLoading, setPanelLoading] = useState(true);
 
-  const [sessionIntentions, setSessionIntentions] = useState<SessionIntention[]>([]);
+  const [sessionIntentions, setSessionIntentions] = useState<
+    SessionIntention[]
+  >([]);
   const [sessionLoading, setSessionLoading] = useState(true);
+  const [encouragementCounts, setEncouragementCounts] = useState<
+    Record<string, number>
+  >({});
+  const [myEncouragedIds, setMyEncouragedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   const [newIntention, setNewIntention] = useState("");
 
@@ -298,7 +324,11 @@ export function IntentionsPanel({
 
   const [timerText, setTimerText] = useState<string>("--:--");
 
-  const overlayRef = useRef<{ win: Window | null; container: HTMLElement; kind: "pip" | "window" } | null>(null);
+  const overlayRef = useRef<{
+    win: Window | null;
+    container: HTMLElement;
+    kind: "pip" | "window";
+  } | null>(null);
   const [overlayOpen, setOverlayOpen] = useState(false);
 
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -313,41 +343,31 @@ export function IntentionsPanel({
   const [importingItemId, setImportingItemId] = useState<string | null>(null);
   const [lastPlansLoadedAt, setLastPlansLoadedAt] = useState<string>("");
 
-  const titleText = isLight ? "text-black/85" : "text-white/85";
-  const mutedText = isLight ? "text-black/50" : "text-white/45";
-  const divider = isLight ? "bg-[#DCDCDC]" : "bg-[#242424]";
+  const titleText = "text-black/90";
+  const mutedText = "text-black/55";
+  const divider = "bg-[#D8D0D0]";
 
-  const panelBg = isLight ? "bg-[#F3F3F3]" : "bg-[#171717]";
-  const headerBg = isLight ? "bg-[#F3F3F3]" : "bg-[#171717]";
-  const headerBorder = isLight ? "border-[#D4D4D4]" : "border-[#171717]";
+  const panelBg = "bg-[#F3F1F1] text-black";
+  const headerBg = "bg-[#F3F1F1]";
+  const headerBorder = "border-[#D8D0D0]";
 
-  const inputCls = isLight
-    ? `
-      bg-[#F3F3F3] border border-[#C9C9C9] rounded-xl
+  const inputCls = `
+      bg-[#F3F1F1] border border-[#CFC6C6] rounded-[14px]
       px-3 py-3 text-[13px] text-black/85 placeholder:text-black/35
-      outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
-      font-inter
-    `
-    : `
-      bg-[#242424] border border-[#2B2B2B] rounded-xl
-      px-3 py-3 text-[13px] text-white/85 placeholder:text-white/35
       outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
       font-inter
     `;
 
-  const myCardCls = isLight
-    ? "group rounded-xl border border-[#C9C9C9] px-3 py-2.5 bg-[#F9F9F9] hover:bg-[#EFEFEF] transition cursor-pointer"
-    : "group rounded-xl border border-[#2B2B2B] px-3 py-2.5 bg-[#202020] hover:bg-[#262626] transition cursor-pointer";
+  const myCardCls =
+    "group rounded-[14px] border border-[#CFC6C6] px-3 py-2.5 bg-[#F7F5F5] hover:bg-[#ECEAEA] transition cursor-pointer";
 
-  const teamCardCls = isLight
-    ? "relative rounded-xl border border-[#C9C9C9] px-3 py-2.5 bg-[#F9F9F9] hover:bg-[#EFEFEF] transition"
-    : "relative rounded-xl border border-[#2B2B2B] px-3 py-2.5 bg-[#202020] hover:bg-[#262626] transition";
+  const teamCardCls =
+    "relative rounded-[14px] border border-[#CFC6C6] px-3 py-2.5 bg-[#F7F5F5] hover:bg-[#ECEAEA] transition";
 
-  const ghostBtn = isLight
-    ? "border border-[#CFCFCF] bg-transparent hover:bg-[#E8E8E8] text-black/75"
-    : "border border-[#2B2B2B] bg-transparent hover:bg-[#303030] text-white/80";
+  const ghostBtn =
+    "border border-[#CFC6C6] bg-transparent hover:bg-[#ECEAEA] text-black/75";
 
-  const primaryBtn = "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white font-semibold";
+  const primaryBtn = "bg-[#252525] hover:bg-[#303030] text-white font-semibold";
 
   const stopRoomBubbling = useCallback((e: any) => {
     e?.stopPropagation?.();
@@ -375,7 +395,10 @@ export function IntentionsPanel({
 
     const id = window.setInterval(() => {
       try {
-        const v = localStorage.getItem("mysession_timer_text") || localStorage.getItem("timer_text") || "";
+        const v =
+          localStorage.getItem("mysession_timer_text") ||
+          localStorage.getItem("timer_text") ||
+          "";
         const vv = v ? v.trim() : "";
         if (vv) setTimerText((prev) => (prev === vv ? prev : vv));
       } catch { }
@@ -426,7 +449,8 @@ export function IntentionsPanel({
   }, [rawSessionId]);
 
   const getAvatar = (profile?: any) =>
-    profile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
+    profile?.avatar_url ||
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
 
   const loadPanelIntentions = useCallback(async () => {
     if (!user?.id) return;
@@ -437,7 +461,9 @@ export function IntentionsPanel({
     try {
       const { data, error } = await supabase
         .from(PANEL_INTENTIONS_TABLE)
-        .select("id,user_id,text,focus_plan_item_id,completed,created_at,updated_at")
+        .select(
+          "id,user_id,text,focus_plan_item_id,completed,created_at,updated_at",
+        )
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(PANEL_INTENTIONS_FETCH_LIMIT);
@@ -463,8 +489,13 @@ export function IntentionsPanel({
       .channel(`panel_intentions_${user.id}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: PANEL_INTENTIONS_TABLE, filter: `user_id=eq.${user.id}` },
-        () => void loadPanelIntentions()
+        {
+          event: "*",
+          schema: "public",
+          table: PANEL_INTENTIONS_TABLE,
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => void loadPanelIntentions(),
       )
       .subscribe();
 
@@ -511,7 +542,7 @@ export function IntentionsPanel({
         if (seq === loadSeqRef.current) setSessionLoading(false);
       }
     },
-    [sessionId]
+    [sessionId],
   );
 
   const scheduleSessionIntentionsReload = useCallback(
@@ -528,7 +559,7 @@ export function IntentionsPanel({
         void loadSessionIntentions(targetSid);
       }, 120);
     },
-    [sessionId, loadSessionIntentions]
+    [sessionId, loadSessionIntentions],
   );
 
   useEffect(() => {
@@ -542,12 +573,14 @@ export function IntentionsPanel({
         "postgres_changes",
         { event: "*", schema: "public", table: SESSION_INTENTIONS_TABLE },
         (payload: any) => {
-          const payloadSessionId = String(payload?.new?.session_id || payload?.old?.session_id || "").trim();
+          const payloadSessionId = String(
+            payload?.new?.session_id || payload?.old?.session_id || "",
+          ).trim();
 
           if (!payloadSessionId || payloadSessionId === String(sessionId)) {
             scheduleSessionIntentionsReload(sessionId);
           }
-        }
+        },
       )
       .subscribe();
 
@@ -559,6 +592,125 @@ export function IntentionsPanel({
       supabase.removeChannel(channel);
     };
   }, [sessionId, loadSessionIntentions, scheduleSessionIntentionsReload]);
+
+  const loadEncouragements = useCallback(async () => {
+    const ids = sessionIntentions
+      .map((x) => String(x.id || ""))
+      .filter(Boolean);
+    if (!sessionId || ids.length === 0) {
+      setEncouragementCounts({});
+      setMyEncouragedIds(new Set());
+      return;
+    }
+
+    try {
+      let data: any[] | null = null;
+      let error: any = null;
+
+      const bySession = await supabase
+        .from(INTENTION_ENCOURAGEMENTS_TABLE)
+        .select("session_intention_id,user_id,emoji")
+        .eq("session_id", sessionId);
+
+      data = (bySession.data as any[]) || null;
+      error = bySession.error;
+
+      if (error) {
+        const byIds = await supabase
+          .from(INTENTION_ENCOURAGEMENTS_TABLE)
+          .select("session_intention_id,user_id,emoji")
+          .in("session_intention_id", ids);
+        data = (byIds.data as any[]) || null;
+        error = byIds.error;
+      }
+
+      if (error || !Array.isArray(data)) return;
+
+      const nextCounts: Record<string, number> = {};
+      const nextMine = new Set<string>();
+      const allowed = new Set(ids);
+
+      data.forEach((row) => {
+        const intentionId = String(row?.session_intention_id || "");
+        if (!intentionId || !allowed.has(intentionId)) return;
+        nextCounts[intentionId] = (nextCounts[intentionId] || 0) + 1;
+        if (String(row?.user_id || "") === String(user?.id || ""))
+          nextMine.add(intentionId);
+      });
+
+      setEncouragementCounts(nextCounts);
+      setMyEncouragedIds(nextMine);
+    } catch {
+      // Encouragements are optional. Never break the panel if this table is missing.
+    }
+  }, [sessionId, sessionIntentions, user?.id]);
+
+  useEffect(() => {
+    void loadEncouragements();
+  }, [loadEncouragements]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const channel = supabase
+      .channel(`intention_encouragements_${sessionId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: INTENTION_ENCOURAGEMENTS_TABLE },
+        () => void loadEncouragements(),
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sessionId, loadEncouragements]);
+
+  const toggleEncouragement = useCallback(
+    async (intentionId: string) => {
+      const id = String(intentionId || "");
+      const uid = String(user?.id || "");
+      if (!id || !uid || !sessionId) return;
+
+      const had = myEncouragedIds.has(id);
+
+      setMyEncouragedIds((prev) => {
+        const next = new Set(prev);
+        if (had) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+
+      setEncouragementCounts((prev) => ({
+        ...prev,
+        [id]: Math.max(0, (prev[id] || 0) + (had ? -1 : 1)),
+      }));
+
+      try {
+        if (had) {
+          const { error } = await supabase
+            .from(INTENTION_ENCOURAGEMENTS_TABLE)
+            .delete()
+            .eq("session_intention_id", id)
+            .eq("user_id", uid);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from(INTENTION_ENCOURAGEMENTS_TABLE)
+            .insert({
+              session_id: sessionId,
+              session_intention_id: id,
+              user_id: uid,
+              emoji: ENCOURAGEMENT_EMOJI,
+            } as any);
+          if (error) throw error;
+        }
+      } catch {
+        void loadEncouragements();
+      }
+    },
+    [loadEncouragements, myEncouragedIds, sessionId, user?.id],
+  );
 
   const findOwnSessionIntentionLocal = useCallback(
     (text: string) => {
@@ -572,11 +724,11 @@ export function IntentionsPanel({
           (x) =>
             String(x.user_id) === uid &&
             String(x.session_id) === sid &&
-            normalizeTextForMatch(x.text) === norm
+            normalizeTextForMatch(x.text) === norm,
         ) || null
       );
     },
-    [user?.id, sessionId, sessionIntentions]
+    [user?.id, sessionId, sessionIntentions],
   );
 
   const upsertOwnSessionIntention = useCallback(
@@ -602,7 +754,10 @@ export function IntentionsPanel({
         const updates: any = {};
 
         if (safeTrim(existing.text) !== nextText) updates.text = nextText;
-        if (typeof completed === "boolean" && Boolean(existing.completed) !== completed) {
+        if (
+          typeof completed === "boolean" &&
+          Boolean(existing.completed) !== completed
+        ) {
           updates.completed = completed;
         }
 
@@ -643,7 +798,12 @@ export function IntentionsPanel({
         if (error) throw error;
 
         if (data) {
-          setSessionIntentions((prev) => [data as SessionIntention, ...prev].slice(0, SESSION_INTENTIONS_FETCH_LIMIT));
+          setSessionIntentions((prev) =>
+            [data as SessionIntention, ...prev].slice(
+              0,
+              SESSION_INTENTIONS_FETCH_LIMIT,
+            ),
+          );
         }
 
         void loadSessionIntentions(sessionId);
@@ -653,7 +813,7 @@ export function IntentionsPanel({
         return null;
       }
     },
-    [user?.id, sessionId, findOwnSessionIntentionLocal, loadSessionIntentions]
+    [user?.id, sessionId, findOwnSessionIntentionLocal, loadSessionIntentions],
   );
 
   const deleteOwnSessionIntentionByText = useCallback(
@@ -681,7 +841,13 @@ export function IntentionsPanel({
 
       scheduleSessionIntentionsReload(sessionId);
     },
-    [user?.id, sessionId, findOwnSessionIntentionLocal, loadSessionIntentions, scheduleSessionIntentionsReload]
+    [
+      user?.id,
+      sessionId,
+      findOwnSessionIntentionLocal,
+      loadSessionIntentions,
+      scheduleSessionIntentionsReload,
+    ],
   );
 
   const loadPlans = useCallback(async () => {
@@ -733,7 +899,9 @@ export function IntentionsPanel({
       try {
         const { data, error } = await supabase
           .from("focus_plan_items")
-          .select("id,plan_id,user_id,text,target_date,session_id,created_at,completed,sort_order")
+          .select(
+            "id,plan_id,user_id,text,target_date,session_id,created_at,completed,sort_order",
+          )
           .eq("user_id", user.id)
           .eq("plan_id", planId)
           .order("sort_order", { ascending: true })
@@ -752,7 +920,7 @@ export function IntentionsPanel({
         setPlanItemsLoading(false);
       }
     },
-    [user?.id]
+    [user?.id],
   );
 
   useEffect(() => {
@@ -772,7 +940,9 @@ export function IntentionsPanel({
 
   const filteredPlanItems = useMemo(() => {
     const q = normalizeTextForMatch(planSearch);
-    const base = (planItems || []).filter((it) => safeTrim(it?.text).length > 0);
+    const base = (planItems || []).filter(
+      (it) => safeTrim(it?.text).length > 0,
+    );
     if (!q) return base;
     return base.filter((it) => normalizeTextForMatch(it.text).includes(q));
   }, [planItems, planSearch]);
@@ -794,7 +964,7 @@ export function IntentionsPanel({
           .eq("user_id", user.id);
       } catch { }
     },
-    [user?.id]
+    [user?.id],
   );
 
   const panelTextSet = useMemo(() => {
@@ -818,9 +988,14 @@ export function IntentionsPanel({
       setImportingItemId(item.id);
 
       try {
-        const alreadyById = panelIntentions.some((p) => String(p.focus_plan_item_id || "") === String(item.id));
+        const alreadyById = panelIntentions.some(
+          (p) => String(p.focus_plan_item_id || "") === String(item.id),
+        );
         if (!alreadyById) {
-          const existingSameText = panelIntentions.find((p) => normalizeTextForMatch(p.text) === norm) || null;
+          const existingSameText =
+            panelIntentions.find(
+              (p) => normalizeTextForMatch(p.text) === norm,
+            ) || null;
 
           if (existingSameText) {
             await supabase
@@ -848,7 +1023,7 @@ export function IntentionsPanel({
         setImportingItemId(null);
       }
     },
-    [user?.id, panelIntentions, loadPanelIntentions, upsertOwnSessionIntention]
+    [user?.id, panelIntentions, loadPanelIntentions, upsertOwnSessionIntention],
   );
 
   const handleAddPanelIntention = async () => {
@@ -870,13 +1045,17 @@ export function IntentionsPanel({
       updated_at: new Date().toISOString(),
     };
 
-    setPanelIntentions((prev) => [optimistic, ...prev].slice(0, PANEL_INTENTIONS_FETCH_LIMIT));
+    setPanelIntentions((prev) =>
+      [optimistic, ...prev].slice(0, PANEL_INTENTIONS_FETCH_LIMIT),
+    );
 
     try {
       const { data, error } = await supabase
         .from(PANEL_INTENTIONS_TABLE)
         .insert({ user_id: user.id, text, completed: false } as any)
-        .select("id,user_id,text,focus_plan_item_id,completed,created_at,updated_at")
+        .select(
+          "id,user_id,text,focus_plan_item_id,completed,created_at,updated_at",
+        )
         .single();
 
       if (error || !data) {
@@ -885,7 +1064,10 @@ export function IntentionsPanel({
       }
 
       setPanelIntentions((prev) =>
-        [data as PanelIntention, ...prev.filter((x) => x.id !== optimisticId)].slice(0, PANEL_INTENTIONS_FETCH_LIMIT)
+        [
+          data as PanelIntention,
+          ...prev.filter((x) => x.id !== optimisticId),
+        ].slice(0, PANEL_INTENTIONS_FETCH_LIMIT),
       );
       void upsertOwnSessionIntention({ text, completed: false });
     } catch {
@@ -899,7 +1081,9 @@ export function IntentionsPanel({
 
     const next = !Boolean(it.completed);
 
-    setPanelIntentions((prev) => prev.map((x) => (x.id === it.id ? { ...x, completed: next } : x)));
+    setPanelIntentions((prev) =>
+      prev.map((x) => (x.id === it.id ? { ...x, completed: next } : x)),
+    );
 
     try {
       const { error } = await supabase
@@ -920,7 +1104,9 @@ export function IntentionsPanel({
         completed: next,
       });
     } catch {
-      setPanelIntentions((prev) => prev.map((x) => (x.id === it.id ? { ...x, completed: !next } : x)));
+      setPanelIntentions((prev) =>
+        prev.map((x) => (x.id === it.id ? { ...x, completed: !next } : x)),
+      );
     }
   };
 
@@ -971,7 +1157,9 @@ export function IntentionsPanel({
     const prevText = prevItem?.text || text;
     const prevCompleted = Boolean(prevItem?.completed);
 
-    setPanelIntentions((p) => p.map((x) => (x.id === targetId ? { ...x, text } : x)));
+    setPanelIntentions((p) =>
+      p.map((x) => (x.id === targetId ? { ...x, text } : x)),
+    );
 
     try {
       const { error } = await supabase
@@ -1011,7 +1199,10 @@ export function IntentionsPanel({
 
     try {
       if (canPip) {
-        const pipWin = await window.documentPictureInPicture!.requestWindow({ width: 420, height: 720 });
+        const pipWin = await window.documentPictureInPicture!.requestWindow({
+          width: 420,
+          height: 720,
+        });
         pipWin.document.title = "Intentions";
         applyOverlayBaseStyles(pipWin.document, isLight);
         copyStylesToDocument(document, pipWin.document);
@@ -1030,7 +1221,11 @@ export function IntentionsPanel({
         return;
       }
 
-      const w = window.open("", "mysession_intentions", "popup,width=420,height=720");
+      const w = window.open(
+        "",
+        "mysession_intentions",
+        "popup,width=420,height=720",
+      );
       if (!w) return;
 
       w.document.title = "Intentions";
@@ -1067,10 +1262,16 @@ export function IntentionsPanel({
       void openOverlay();
     };
 
-    window.addEventListener("mysession:intentions-open-pinned", onOpenPinnedIntentions);
+    window.addEventListener(
+      "mysession:intentions-open-pinned",
+      onOpenPinnedIntentions,
+    );
 
     return () => {
-      window.removeEventListener("mysession:intentions-open-pinned", onOpenPinnedIntentions);
+      window.removeEventListener(
+        "mysession:intentions-open-pinned",
+        onOpenPinnedIntentions,
+      );
     };
   }, [openOverlay]);
 
@@ -1106,23 +1307,36 @@ export function IntentionsPanel({
 
   if (!rawSessionId) {
     return (
-      <div className={"h-full flex items-center justify-center font-inter " + panelBg}>
-        <div className={"text-[12px] italic font-inter " + mutedText}>No session id</div>
+      <div
+        className={
+          "h-full flex items-center justify-center font-inter " + panelBg
+        }
+      >
+        <div className={"text-[12px] italic font-inter " + mutedText}>
+          No session id
+        </div>
       </div>
     );
   }
 
   if (!sessionId) {
     return (
-      <div className={"h-full flex items-center justify-center font-inter " + panelBg}>
-        <div className={"text-[12px] italic font-inter " + mutedText}>Resolving session...</div>
+      <div
+        className={
+          "h-full flex items-center justify-center font-inter " + panelBg
+        }
+      >
+        <div className={"text-[12px] italic font-inter " + mutedText}>
+          Resolving session...
+        </div>
       </div>
     );
   }
 
-  const timerPillCls = isLight ? "bg-[#E6E6E6] border border-[#CFCFCF] text-black/80" : "bg-[#242424] border border-[#2B2B2B] text-white/80";
-  const headerTitle = isLight ? "text-black/85" : "text-white/85";
-  const timerTextCls = `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
+  const timerPillCls = "bg-[#F3F1F1] border border-[#CFC6C6] text-black/80";
+  const headerTitle = "text-black/90";
+  const timerTextCls =
+    `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
 
   const ImportModal = importModalOpen
     ? (() => {
@@ -1133,12 +1347,18 @@ export function IntentionsPanel({
       const modalBorder = isLight ? "border-[#CFCFCF]" : "border-[#2B2B2B]";
       const modalTitle = isLight ? "text-black/85" : "text-white/85";
       const modalSub = isLight ? "text-black/50" : "text-white/45";
-      const rowBg = isLight ? "bg-[#FAFAFA] hover:bg-[#F3F3F3]" : "bg-[#242424] hover:bg-[#2B2B2B]";
+      const rowBg = isLight
+        ? "bg-[#FAFAFA] hover:bg-[#F3F3F3]"
+        : "bg-[#242424] hover:bg-[#2B2B2B]";
       const rowBorder = isLight ? "border-[#CFCFCF]" : "border-[#2B2B2B]";
 
       return createPortal(
         <div
-          className={["fixed inset-0 z-[9999] flex items-center justify-center", backdropBg, "font-inter"].join(" ")}
+          className={[
+            "fixed inset-0 z-[9999] flex items-center justify-center",
+            backdropBg,
+            "font-inter",
+          ].join(" ")}
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) closeImportModal();
           }}
@@ -1157,19 +1377,33 @@ export function IntentionsPanel({
             <div className={["px-4 py-3 border-b", modalBorder].join(" ")}>
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className={["text-[13px] font-semibold", modalTitle].join(" ")}>Attach to Intention Panel</div>
+                  <div
+                    className={["text-[13px] font-semibold", modalTitle].join(
+                      " ",
+                    )}
+                  >
+                    Attach to Intention Panel
+                  </div>
                   <div className={["text-[11px] mt-0.5", modalSub].join(" ")}>
-                    Imports Focus plan items into your global panel intentions (visible in every session).
+                    Imports Focus plan items into your global panel intentions
+                    (visible in every session).
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
                   <button
                     type="button"
-                    className={"h-9 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2 " + ghostBtn}
+                    className={
+                      "h-9 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2 " +
+                      ghostBtn
+                    }
                     onClick={() => {
                       const sid = (rawSessionId || sessionId || "").trim();
-                      window.open(`/focus-plan?sessionId=${encodeURIComponent(sid)}`, "_blank", "noopener,noreferrer");
+                      window.open(
+                        `/focus-plan?sessionId=${encodeURIComponent(sid)}`,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
                     }}
                     title="Go to Focus Plan"
                   >
@@ -1179,7 +1413,10 @@ export function IntentionsPanel({
 
                   <button
                     type="button"
-                    className={"h-9 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2 " + ghostBtn}
+                    className={
+                      "h-9 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2 " +
+                      ghostBtn
+                    }
                     onClick={() => loadPlans()}
                     title="Refresh plans"
                   >
@@ -1189,7 +1426,10 @@ export function IntentionsPanel({
 
                   <button
                     type="button"
-                    className={"w-9 h-9 rounded-xl border transition flex items-center justify-center " + ghostBtn}
+                    className={
+                      "w-9 h-9 rounded-xl border transition flex items-center justify-center " +
+                      ghostBtn
+                    }
                     onClick={closeImportModal}
                     title="Close"
                   >
@@ -1199,18 +1439,27 @@ export function IntentionsPanel({
               </div>
             </div>
 
-            <div className="p-4 overflow-y-auto custom-scrollbar" style={{ maxHeight: "calc(78vh - 56px)" }}>
+            <div
+              className="p-4 overflow-y-auto custom-scrollbar"
+              style={{ maxHeight: "calc(78vh - 56px)" }}
+            >
               {plansLoading ? (
-                <div className={"text-[12px] italic " + mutedText}>Loading plans…</div>
+                <div className={"text-[12px] italic " + mutedText}>
+                  Loading plans…
+                </div>
               ) : plans.length === 0 ? (
                 <div className={"text-[12px] italic " + mutedText}>
                   No plans found. Create a plan in Focus plan page.
-                  {lastPlansLoadedAt ? ` (checked ${new Date(lastPlansLoadedAt).toLocaleTimeString()})` : ""}
+                  {lastPlansLoadedAt
+                    ? ` (checked ${new Date(lastPlansLoadedAt).toLocaleTimeString()})`
+                    : ""}
                 </div>
               ) : (
                 <>
                   <div className="flex flex-col gap-2">
-                    <div className={"text-[11px] font-semibold " + mutedText}>Plan</div>
+                    <div className={"text-[11px] font-semibold " + mutedText}>
+                      Plan
+                    </div>
 
                     <select
                       value={selectedPlanId}
@@ -1228,15 +1477,28 @@ export function IntentionsPanel({
                       ))}
                     </select>
 
-                    <div className={"text-[11px] font-semibold " + mutedText + " mt-2"}>Search</div>
+                    <div
+                      className={
+                        "text-[11px] font-semibold " + mutedText + " mt-2"
+                      }
+                    >
+                      Search
+                    </div>
                     <div className="flex items-center gap-2">
                       <div
                         className={[
                           "h-11 w-11 rounded-xl border flex items-center justify-center",
-                          isLight ? "border-[#CFCFCF] bg-[#F3F3F3]" : "border-[#2B2B2B] bg-[#242424]",
+                          isLight
+                            ? "border-[#CFCFCF] bg-[#F3F3F3]"
+                            : "border-[#2B2B2B] bg-[#242424]",
                         ].join(" ")}
                       >
-                        <Search size={16} className={isLight ? "text-black/40" : "text-white/45"} />
+                        <Search
+                          size={16}
+                          className={
+                            isLight ? "text-black/40" : "text-white/45"
+                          }
+                        />
                       </div>
 
                       <input
@@ -1251,19 +1513,36 @@ export function IntentionsPanel({
                   <div className={"h-px my-4 " + divider} />
 
                   {planItemsLoading ? (
-                    <div className={"text-[12px] italic " + mutedText}>Loading items…</div>
+                    <div className={"text-[12px] italic " + mutedText}>
+                      Loading items…
+                    </div>
                   ) : filteredPlanItems.length === 0 ? (
-                    <div className={"text-[12px] italic " + mutedText}>No items match your filter.</div>
+                    <div className={"text-[12px] italic " + mutedText}>
+                      No items match your filter.
+                    </div>
                   ) : (
                     <div className="flex flex-col gap-2">
                       {renderedPlanItems.map((it) => {
                         const text = safeTrim(it.text);
-                        const inPanelById = panelIntentions.some((p) => String(p.focus_plan_item_id || "") === String(it.id));
-                        const inPanelByText = panelTextSet.has(normalizeTextForMatch(text));
+                        const inPanelById = panelIntentions.some(
+                          (p) =>
+                            String(p.focus_plan_item_id || "") ===
+                            String(it.id),
+                        );
+                        const inPanelByText = panelTextSet.has(
+                          normalizeTextForMatch(text),
+                        );
                         const already = inPanelById || inPanelByText;
 
                         return (
-                          <div key={it.id} className={["rounded-xl border px-3 py-2.5 transition", rowBg, rowBorder].join(" ")}>
+                          <div
+                            key={it.id}
+                            className={[
+                              "rounded-xl border px-3 py-2.5 transition",
+                              rowBg,
+                              rowBorder,
+                            ].join(" ")}
+                          >
                             <div className="flex items-start gap-3">
                               <div className="flex-1 min-w-0">
                                 <div
@@ -1281,9 +1560,15 @@ export function IntentionsPanel({
                                   {text}
                                 </div>
 
-                                <div className={"mt-1 text-[11px] " + mutedText}>
-                                  {already ? "Already in your panel" : "Focus plan item"}
-                                  {it.target_date ? ` · Due: ${it.target_date}` : ""}
+                                <div
+                                  className={"mt-1 text-[11px] " + mutedText}
+                                >
+                                  {already
+                                    ? "Already in your panel"
+                                    : "Focus plan item"}
+                                  {it.target_date
+                                    ? ` · Due: ${it.target_date}`
+                                    : ""}
                                 </div>
                               </div>
 
@@ -1292,7 +1577,9 @@ export function IntentionsPanel({
                                   <div
                                     className={[
                                       "h-10 px-3 rounded-xl text-[12px] font-semibold inline-flex items-center gap-2",
-                                      isLight ? "bg-[#E6E6E6] text-black/60 border border-[#CFCFCF]" : "bg-[#242424] text-white/70 border border-[#2B2B2B]",
+                                      isLight
+                                        ? "bg-[#E6E6E6] text-black/60 border border-[#CFCFCF]"
+                                        : "bg-[#242424] text-white/70 border border-[#2B2B2B]",
                                     ].join(" ")}
                                     title="Already attached to panel"
                                   >
@@ -1307,13 +1594,17 @@ export function IntentionsPanel({
                                   disabled={importingItemId === it.id}
                                   className={[
                                     "shrink-0 h-10 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2",
-                                    importingItemId === it.id ? "opacity-70" : "opacity-100",
+                                    importingItemId === it.id
+                                      ? "opacity-70"
+                                      : "opacity-100",
                                     primaryBtn,
                                   ].join(" ")}
                                   title="Attach to panel"
                                 >
                                   <ListPlus size={16} />
-                                  {importingItemId === it.id ? "Attaching..." : "Attach"}
+                                  {importingItemId === it.id
+                                    ? "Attaching..."
+                                    : "Attach"}
                                 </button>
                               )}
                             </div>
@@ -1324,14 +1615,15 @@ export function IntentionsPanel({
                   )}
 
                   <div className={"mt-4 text-[11px] " + mutedText}>
-                    Tip: this is your “always-on” intentions list. It stays the same across sessions.
+                    Tip: this is your “always-on” intentions list. It stays
+                    the same across sessions.
                   </div>
                 </>
               )}
             </div>
           </div>
         </div>,
-        modalDoc.body
+        modalDoc.body,
       );
     })()
     : null;
@@ -1343,50 +1635,95 @@ export function IntentionsPanel({
       onMouseDown={stopRoomBubbling}
       onClick={stopRoomBubbling}
     >
-      <div className={"px-4 pt-4 pb-3 shrink-0 border-b " + headerBorder + " " + headerBg}>
+      <div
+        className={
+          "px-4 pt-4 pb-3 shrink-0 border-b " + headerBorder + " " + headerBg
+        }
+      >
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div className={"font-inter font-semibold text-[13px] " + headerTitle}>Intentions</div>
-            <div className={"text-[11px] font-inter " + mutedText}>Keep it visible while you work</div>
+            <div
+              className={"font-inter font-semibold text-[13px] " + headerTitle}
+            >
+              Intentions
+            </div>
+            <div className={"text-[11px] font-inter " + mutedText}>
+              Keep it visible while you work
+            </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0 font-inter">
-            <div className={"inline-flex items-center gap-2 px-3 py-2 rounded-xl " + timerPillCls} title="Timer">
+            <div
+              className={
+                "inline-flex items-center gap-2 px-3 py-2 rounded-xl " +
+                timerPillCls
+              }
+              title="Timer"
+            >
               <TimerSmartIcon theme={theme} className="w-4 h-4 opacity-80" />
-              <span className={timerTextCls + " leading-none"} style={{ fontFamily: OVERLAY_FONT_FAMILY }}>
+              <span
+                className={timerTextCls + " leading-none"}
+                style={{ fontFamily: OVERLAY_FONT_FAMILY }}
+              >
                 {timerText || "--:--"}
               </span>
             </div>
 
             <IconButton
               theme={theme}
-              className={isLight ? "border border-[#5286F6] bg-transparent text-[#5286F6] hover:bg-[#5286F6]/10" : "border border-[#5286F6]/45 bg-[#202020] text-[#5286F6] hover:bg-[#242424]"}
+              className={
+                isLight
+                  ? "border border-[#5286F6] bg-transparent text-[#5286F6] hover:bg-[#5286F6]/10"
+                  : "border border-[#5286F6]/45 bg-[#202020] text-[#5286F6] hover:bg-[#242424]"
+              }
               title="Attach from Focus plan to panel"
               onClick={(e) => {
                 e.preventDefault();
                 openImportModal();
               }}
             >
-              <PanelSmartIcon name="focus-plan" theme={theme} className="w-4 h-4" alt="Focus plan" />
+              <PanelSmartIcon
+                name="focus-plan"
+                theme={theme}
+                className="w-4 h-4"
+                alt="Focus plan"
+              />
             </IconButton>
 
             {pictureInPictureSupported && onOpenPictureInPicture ? (
               <IconButton
                 theme={theme}
-                className={isLight ? "border border-[#81DB86] bg-transparent text-[#81DB86] hover:bg-[#81DB86]/10" : "border border-[#81DB86]/45 bg-[#202020] text-[#81DB86] hover:bg-[#242424]"}
-                title={pictureInPictureOpen ? "Close Picture-in-Picture video" : "Open video Picture-in-Picture"}
+                className={
+                  isLight
+                    ? "border border-[#81DB86] bg-transparent text-[#81DB86] hover:bg-[#81DB86]/10"
+                    : "border border-[#81DB86]/45 bg-[#202020] text-[#81DB86] hover:bg-[#242424]"
+                }
+                title={
+                  pictureInPictureOpen
+                    ? "Close Picture-in-Picture video"
+                    : "Open video Picture-in-Picture"
+                }
                 onClick={(e) => {
                   e.preventDefault();
                   onOpenPictureInPicture();
                 }}
               >
-                <PanelSmartIcon name="pip-intentions" theme={theme} className="w-4 h-4" alt="Picture-in-Picture" />
+                <PanelSmartIcon
+                  name="pip-intentions"
+                  theme={theme}
+                  className="w-4 h-4"
+                  alt="Picture-in-Picture"
+                />
               </IconButton>
             ) : null}
 
             <IconButton
               theme={theme}
-              className={isLight ? "border border-[#F65252] bg-transparent text-[#F65252] hover:bg-[#F65252]/10" : "border border-[#F65252]/45 bg-[#202020] text-[#F65252] hover:bg-[#242424]"}
+              className={
+                isLight
+                  ? "border border-[#F65252] bg-transparent text-[#F65252] hover:bg-[#F65252]/10"
+                  : "border border-[#F65252]/45 bg-[#202020] text-[#F65252] hover:bg-[#242424]"
+              }
               title={overlayOpen ? "Unpin" : "Pin (always on top if supported)"}
               onClick={(e) => {
                 e.preventDefault();
@@ -1394,16 +1731,24 @@ export function IntentionsPanel({
                 else void openOverlay();
               }}
             >
-              <PanelSmartIcon name="pin" theme={theme} className="w-4 h-4" alt="Pin" />
+              <PanelSmartIcon
+                name="pin"
+                theme={theme}
+                className="w-4 h-4"
+                alt="Pin"
+              />
             </IconButton>
-
           </div>
         </div>
       </div>
 
       <div className="px-4 pb-4 pt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar font-inter">
         <div className="mb-5">
-          <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>My intentions</div>
+          <div
+            className={titleText + " font-inter font-semibold text-[13px] mb-3"}
+          >
+            My intentions
+          </div>
 
           <div className="flex items-center gap-2 mb-3">
             <input
@@ -1419,7 +1764,9 @@ export function IntentionsPanel({
               onClick={handleAddPanelIntention}
               className={[
                 "h-11 px-4 rounded-xl font-semibold text-[13px] font-inter transition",
-                isLight ? "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white" : "bg-[#81DB86] hover:bg-[#6ECF74] text-[#102313]",
+                isLight
+                  ? "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white"
+                  : "bg-[#81DB86] hover:bg-[#6ECF74] text-[#102313]",
               ].join(" ")}
               type="button"
               title="Add"
@@ -1428,8 +1775,20 @@ export function IntentionsPanel({
             </button>
           </div>
 
+          <div className="mb-3 rounded-[14px] border border-[#CFC6C6] bg-[#F7F5F5] px-3 py-2.5 flex items-center gap-3">
+            <Circle size={18} className="text-black/25 shrink-0" />
+            <div className="flex-1 min-w-0 text-[13px] text-black/85">
+              Keep it visible while you work
+            </div>
+            <div className="shrink-0 text-[15px]" title="Visible only to you">
+              🔒
+            </div>
+          </div>
+
           {panelLoading ? (
-            <div className={"text-[12px] italic font-inter " + mutedText}>Loading...</div>
+            <div className={"text-[12px] italic font-inter " + mutedText}>
+              Loading...
+            </div>
           ) : panelIntentions.length === 0 ? (
             <div className={"text-[12px] italic font-inter " + mutedText}>
               No panel intentions yet. Attach from Focus plan or add manually.
@@ -1440,8 +1799,12 @@ export function IntentionsPanel({
                 const isEditing = editingId === i.id;
 
                 const circleCls = isLight ? "text-black/40" : "text-white/45";
-                const textDoneCls = isLight ? "text-black/45 line-through" : "text-white/50 line-through";
-                const textActiveCls = isLight ? "text-black/80" : "text-white/80";
+                const textDoneCls = isLight
+                  ? "text-black/45 line-through"
+                  : "text-white/50 line-through";
+                const textActiveCls = isLight
+                  ? "text-black/80"
+                  : "text-white/80";
 
                 const editInputCls = isLight
                   ? `
@@ -1465,12 +1828,21 @@ export function IntentionsPanel({
                   >
                     <div className="flex items-center gap-2">
                       <div className="shrink-0">
-                        {i.completed ? <CheckCircle size={18} className="text-[#81DB86]" /> : <Circle size={18} className={circleCls} />}
+                        {i.completed ? (
+                          <CheckCircle size={18} className="text-[#81DB86]" />
+                        ) : (
+                          <Circle size={18} className={circleCls} />
+                        )}
                       </div>
 
                       <div className="flex-1 min-w-0">
                         {!isEditing ? (
-                          <div className={"text-[13px] break-words leading-5 font-inter " + (i.completed ? textDoneCls : textActiveCls)}>
+                          <div
+                            className={
+                              "text-[13px] break-words leading-5 font-inter " +
+                              (i.completed ? textDoneCls : textActiveCls)
+                            }
+                          >
                             {i.text}
                           </div>
                         ) : (
@@ -1561,45 +1933,90 @@ export function IntentionsPanel({
 
         <div className={"h-px my-5 " + divider} />
 
-        <div className={titleText + " font-inter font-semibold text-[13px] mb-3"}>Team intentions</div>
+        <div
+          className={titleText + " font-inter font-semibold text-[13px] mb-3"}
+        >
+          Team intentions
+        </div>
 
         {sessionLoading ? (
-          <div className={"text-[12px] italic font-inter " + mutedText}>Loading...</div>
+          <div className={"text-[12px] italic font-inter " + mutedText}>
+            Loading...
+          </div>
         ) : teamIntentions.length === 0 ? (
-          <div className={"text-[12px] italic font-inter " + mutedText}>No team intentions</div>
+          <div className={"text-[12px] italic font-inter " + mutedText}>
+            No team intentions
+          </div>
         ) : (
           <div className="flex flex-col gap-2">
             {teamIntentions.map((item) => {
-              const nameCls = isLight ? "text-black/85" : "text-white/85";
-              const bodyActive = isLight ? "text-black/75" : "text-white/75";
-              const bodyDone = isLight ? "text-black/45 line-through" : "text-white/50 line-through";
-              const circleCls = isLight ? "text-black/30" : "text-white/30";
+              const nameCls = "text-black/90";
+              const bodyActive = "text-black/85";
+              const bodyDone = "text-black/35 line-through";
+              const circleCls = "text-black/25";
+              const encouragementCount = encouragementCounts[item.id] || 0;
+              const encouragedByMe = myEncouragedIds.has(item.id);
 
               return (
                 <div key={item.id} className={teamCardCls + " font-inter"}>
                   <div className="flex items-start gap-3">
-                    <img src={getAvatar(item.profiles)} className="w-9 h-9 rounded-full object-cover" alt="" />
+                    <img
+                      src={getAvatar(item.profiles)}
+                      className="w-9 h-9 rounded-full object-cover"
+                      alt=""
+                    />
 
                     <div className="flex-1 min-w-0">
-                      <div className={"text-[13px] font-medium truncate font-inter " + nameCls}>
+                      <div
+                        className={
+                          "text-[13px] font-medium truncate font-inter " +
+                          nameCls
+                        }
+                      >
                         {item.profiles?.full_name || "Participant"}
                       </div>
 
-                      <div className={"text-[13px] break-words leading-5 font-inter " + (item.completed ? bodyDone : bodyActive)}>
+                      <div
+                        className={
+                          "text-[13px] break-words leading-5 font-inter " +
+                          (item.completed ? bodyDone : bodyActive)
+                        }
+                      >
                         {item.text}
                       </div>
                     </div>
 
-                    <div className="shrink-0 mt-1">
-                      {item.completed ? <CheckCircle size={16} className="text-[#81DB86]" /> : <Circle size={16} className={circleCls} />}
-                    </div>
+                    <div className="shrink-0 mt-1 flex flex-col items-center gap-1.5">
+                      {item.completed ? (
+                        <CheckCircle size={16} className="text-[#81DB86]" />
+                      ) : (
+                        <Circle size={16} className={circleCls} />
+                      )}
 
-                    <div
-                      className="absolute -right-2 -bottom-2 flex h-6 w-6 items-center justify-center rounded-full text-[17px] shadow-sm"
-                      title="Encouragement"
-                      aria-label="Encouragement"
-                    >
-                      🤩
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void toggleEncouragement(item.id);
+                        }}
+                        className={[
+                          "relative h-7 min-w-7 rounded-full px-1.5 text-[17px] leading-none flex items-center justify-center transition",
+                          encouragedByMe
+                            ? "bg-[#FFF1B8]"
+                            : "bg-transparent hover:bg-[#ECEAEA]",
+                        ].join(" ")}
+                        title="Send encouragement"
+                        aria-label="Send encouragement"
+                      >
+                        <span>{ENCOURAGEMENT_EMOJI}</span>
+                        {encouragementCount > 0 ? (
+                          <span className="absolute -right-1 -bottom-1 min-w-[16px] h-[16px] rounded-full bg-[#252525] px-1 text-[10px] font-bold leading-[16px] text-white">
+                            {encouragementCount > 99
+                              ? "99+"
+                              : encouragementCount}
+                          </span>
+                        ) : null}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -1615,20 +2032,26 @@ export function IntentionsPanel({
 
   return (
     <>
-      {overlayOpen && overlayRef.current?.container ? createPortal(PanelUI, overlayRef.current.container) : null}
+      {overlayOpen && overlayRef.current?.container
+        ? createPortal(PanelUI, overlayRef.current.container)
+        : null}
 
       {!overlayOpen ? (
         PanelUI
       ) : (
         <div
-          className={"h-full flex items-center justify-center font-inter " + panelBg}
+          className={
+            "h-full flex items-center justify-center font-inter " + panelBg
+          }
           onPointerDown={stopRoomBubbling}
           onMouseDown={stopRoomBubbling}
           onClick={stopRoomBubbling}
         >
           <div className="text-center font-inter">
             <div className={"text-[12px] font-inter " + titleText}>Pinned</div>
-            <div className={"text-[12px] italic mt-1 font-inter " + mutedText}>Intentions are opened in a floating window.</div>
+            <div className={"text-[12px] italic mt-1 font-inter " + mutedText}>
+              Intentions are opened in a floating window.
+            </div>
             <button
               type="button"
               onClick={closeOverlay}
@@ -1638,7 +2061,12 @@ export function IntentionsPanel({
                 transition inline-flex items-center gap-2 text-[13px] font-semibold font-inter
               `}
             >
-              <PanelSmartIcon name="pin" theme={theme} className="w-4 h-4" alt="Pin" />
+              <PanelSmartIcon
+                name="pin"
+                theme={theme}
+                className="w-4 h-4"
+                alt="Pin"
+              />
               Unpin
             </button>
           </div>

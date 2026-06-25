@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 import { createPortal } from "react-dom";
 import Picker from "@emoji-mart/react";
 import emojiData from "@emoji-mart/data";
@@ -17,7 +23,11 @@ type RoomTheme = "dark" | "light";
 
 type ChatMode = "general" | "direct";
 
-type Profile = { id: string; full_name?: string | null; avatar_url?: string | null };
+type Profile = {
+    id: string;
+    full_name?: string | null;
+    avatar_url?: string | null;
+};
 
 type SessionHostRow = {
     host_id: string | null;
@@ -52,7 +62,18 @@ const REACTIONS_BOOTSTRAP_LIMIT = 120;
 const REACTIONS_MESSAGE_ID_LIMIT = 60;
 const REACTIONS_REFETCH_DEDUPE_MS = 30_000;
 const VISIBLE_MESSAGE_LIMIT = 150;
-const REACTION_EMOJIS = ["🔥", "😂", "👏", "❤️", "👍", "👎", "👌", "👋", "🙌", "🎉"] as const;
+const REACTION_EMOJIS = [
+    "🔥",
+    "😂",
+    "👏",
+    "❤️",
+    "👍",
+    "👎",
+    "👌",
+    "👋",
+    "🙌",
+    "🎉",
+] as const;
 
 function avatarFromProfile(profile?: Profile | null) {
     return (
@@ -83,7 +104,10 @@ function parseReplyBody(body: string): ParsedReplyBody {
 
     const parts = trimmed.split(/\n\s*\n/);
     const header = parts[0] || "";
-    const main = parts.length > 1 ? parts.slice(1).join("\n\n") : trimmed.replace(header, "").trim();
+    const main =
+        parts.length > 1
+            ? parts.slice(1).join("\n\n")
+            : trimmed.replace(header, "").trim();
 
     let rest = header.replace(/^↪\s*/, "").trim();
     let quoteMessageId: string | null = null;
@@ -94,7 +118,10 @@ function parseReplyBody(body: string): ParsedReplyBody {
         rest = rest.slice(idMatch[0].length).trim();
     }
 
-    rest = rest.replace(/^Reply:\s*/i, "").replace(/^Reply to:\s*/i, "").trim();
+    rest = rest
+        .replace(/^Reply:\s*/i, "")
+        .replace(/^Reply to:\s*/i, "")
+        .trim();
 
     return {
         quote: rest || null,
@@ -104,7 +131,9 @@ function parseReplyBody(body: string): ParsedReplyBody {
 }
 
 function collapseWs(s: string) {
-    return String(s || "").replace(/\s+/g, " ").trim();
+    return String(s || "")
+        .replace(/\s+/g, " ")
+        .trim();
 }
 
 function quotePreviewForReply(body: string, maxLen = 220) {
@@ -115,7 +144,11 @@ function quotePreviewForReply(body: string, maxLen = 220) {
     return oneLine.slice(0, Math.max(0, maxLen - 1)) + "…";
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number, label = "timeout"): Promise<T> {
+function withTimeout<T>(
+    p: Promise<T>,
+    ms: number,
+    label = "timeout",
+): Promise<T> {
     let t: any;
     const timeout = new Promise<T>((_, reject) => {
         t = setTimeout(() => reject(new Error(label)), ms);
@@ -135,7 +168,9 @@ function normalizeMessageIds(ids: string[]) {
         out.push(id);
     }
 
-    return out.length > MESSAGE_BOOTSTRAP_LIMIT ? out.slice(out.length - MESSAGE_BOOTSTRAP_LIMIT) : out;
+    return out.length > MESSAGE_BOOTSTRAP_LIMIT
+        ? out.slice(out.length - MESSAGE_BOOTSTRAP_LIMIT)
+        : out;
 }
 
 function normalizeReactionMessageIds(ids: string[]) {
@@ -212,7 +247,9 @@ function renderTextWithLinks(text: string, isLight: boolean) {
                     rel="noreferrer noopener"
                     className={
                         "underline break-all transition " +
-                        (isLight ? "text-[#2563eb] hover:text-[#1d4ed8]" : "text-[#7dd3fc] hover:text-[#bae6fd]")
+                        (isLight
+                            ? "text-[#2563eb] hover:text-[#1d4ed8]"
+                            : "text-[#7dd3fc] hover:text-[#bae6fd]")
                     }
                     onClick={(e) => e.stopPropagation()}
                 >
@@ -230,7 +267,7 @@ function messageBelongsToView(
     mode: ChatMode,
     currentUserId: string | null,
     hostUserId: string | null,
-    selectedDirectPeerId: string | null
+    selectedDirectPeerId: string | null,
 ) {
     const scope = row.scope === "direct" ? "direct" : "general";
 
@@ -244,8 +281,10 @@ function messageBelongsToView(
     if (currentUserId === hostUserId) {
         if (!selectedDirectPeerId) return false;
         return (
-            (row.user_id === hostUserId && row.dm_peer_user_id === selectedDirectPeerId) ||
-            (row.user_id === selectedDirectPeerId && row.dm_peer_user_id === hostUserId)
+            (row.user_id === hostUserId &&
+                row.dm_peer_user_id === selectedDirectPeerId) ||
+            (row.user_id === selectedDirectPeerId &&
+                row.dm_peer_user_id === hostUserId)
         );
     }
 
@@ -260,7 +299,7 @@ function buildMessageQuery(
     mode: ChatMode,
     currentUserId: string | null,
     hostUserId: string | null,
-    selectedDirectPeerId: string | null
+    selectedDirectPeerId: string | null,
 ) {
     let q = supabase
         .from(MSG_TABLE)
@@ -286,14 +325,14 @@ function buildMessageQuery(
         return q
             .eq("scope", "direct")
             .or(
-                `and(user_id.eq.${hostUserId},dm_peer_user_id.eq.${selectedDirectPeerId}),and(user_id.eq.${selectedDirectPeerId},dm_peer_user_id.eq.${hostUserId})`
+                `and(user_id.eq.${hostUserId},dm_peer_user_id.eq.${selectedDirectPeerId}),and(user_id.eq.${selectedDirectPeerId},dm_peer_user_id.eq.${hostUserId})`,
             );
     }
 
     return q
         .eq("scope", "direct")
         .or(
-            `and(user_id.eq.${currentUserId},dm_peer_user_id.eq.${hostUserId}),and(user_id.eq.${hostUserId},dm_peer_user_id.eq.${currentUserId})`
+            `and(user_id.eq.${currentUserId},dm_peer_user_id.eq.${hostUserId}),and(user_id.eq.${hostUserId},dm_peer_user_id.eq.${currentUserId})`,
         );
 }
 
@@ -334,7 +373,10 @@ function MessageCardInner({
     const [openReactions, setOpenReactions] = useState(false);
     const reactionButtonRef = useRef<HTMLButtonElement | null>(null);
     const reactionMenuRef = useRef<HTMLDivElement | null>(null);
-    const [reactionMenuPos, setReactionMenuPos] = useState<{ top: number; left: number } | null>(null);
+    const [reactionMenuPos, setReactionMenuPos] = useState<{
+        top: number;
+        left: number;
+    } | null>(null);
 
     const [isEditing, setIsEditing] = useState(false);
     const [draft, setDraft] = useState(msg.body);
@@ -350,7 +392,10 @@ function MessageCardInner({
         const margin = 8;
 
         let left = rect.right - menuWidth;
-        left = Math.max(margin, Math.min(left, window.innerWidth - menuWidth - margin));
+        left = Math.max(
+            margin,
+            Math.min(left, window.innerWidth - menuWidth - margin),
+        );
 
         let top = rect.bottom + 8;
         if (top + menuHeight > window.innerHeight - margin) {
@@ -394,7 +439,8 @@ function MessageCardInner({
         };
     }, [openReactions, updateReactionMenuPos]);
 
-    const hasReactions = reactionsCounts && Object.keys(reactionsCounts).length > 0;
+    const hasReactions =
+        reactionsCounts && Object.keys(reactionsCounts).length > 0;
     const orderedReactionEntries = useMemo(() => {
         const entries = Object.entries(reactionsCounts || {});
         entries.sort((a, b) => {
@@ -408,42 +454,49 @@ function MessageCardInner({
         return entries;
     }, [reactionsCounts, myReactions]);
 
-    const metaNameCls = isLight ? "text-black/55" : "text-white/55";
-    const metaTimeCls = isLight ? "text-black/35" : "text-white/35";
-    const actionBtnCls = isLight ? "text-black/45 hover:text-emerald-700" : "text-white/45 hover:text-emerald-300";
-    const dangerBtnCls = isLight ? "text-black/40 hover:text-red-700" : "text-white/40 hover:text-red-300";
-    const menuCls = isLight ? "bg-[#F3F3F3] border border-[#D0D0D0]" : "bg-[#202020] border border-[#2B2B2B]";
+    const metaNameCls = "text-black/55";
+    const metaTimeCls = "text-black/35";
+    const actionBtnCls = "text-black/45 hover:text-emerald-700";
+    const dangerBtnCls = "text-black/40 hover:text-red-700";
+    const menuCls = "bg-[#F3F1F1] border border-[#D8D0D0]";
 
     const bubbleCls =
         "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
         (mine
             ? isLight
                 ? "bg-[#81DB86]/15 border-emerald-600/25 text-black/85"
-                : "bg-[#81DB86]/15 border-emerald-400/20 text-white/90"
+                : "bg-[#81DB86]/15 border-emerald-400/20 text-black/90"
             : isLight
-                ? "bg-[#E6E6E6] border-[#CFCFCF] text-black/80"
-                : "bg-[#242424] border-[#2B2B2B] text-white/85") +
-        (highlighted ? (isLight ? " ring-2 ring-[#6B7280]/55" : " ring-2 ring-emerald-400/55") : "");
+                ? "bg-[#ECEAEA] border-[#D8D0D0] text-black/80"
+                : "bg-[#F7F5F5] border-[#D8D0D0] text-black/85") +
+        (highlighted
+            ? isLight
+                ? " ring-2 ring-[#6B7280]/55"
+                : " ring-2 ring-emerald-400/55"
+            : "");
 
     const quoteBoxCls = isLight
-        ? "bg-[#FAFAFA] border border-[#CFCFCF] text-black/70 hover:bg-[#F1F1F1]/90"
-        : "bg-black/25 border border-[#2B2B2B] text-white/70 hover:bg-[#242424]";
+        ? "bg-[#F7F5F5] border border-[#D8D0D0] text-black/70 hover:bg-[#F1F1F1]/90"
+        : "bg-black/25 border border-[#D8D0D0] text-black/70 hover:bg-[#F7F5F5]";
 
     const reactionPillBase = isLight
-        ? "px-2 py-1 rounded-xl bg-[#E6E6E6] border border-[#CFCFCF] text-[12px] text-black/70 flex items-center gap-1.5 transition"
-        : "px-2 py-1 rounded-xl bg-[#242424] border border-[#2B2B2B] text-[12px] text-white/80 flex items-center gap-1.5 transition";
+        ? "px-2 py-1 rounded-xl bg-[#ECEAEA] border border-[#D8D0D0] text-[12px] text-black/70 flex items-center gap-1.5 transition"
+        : "px-2 py-1 rounded-xl bg-[#F7F5F5] border border-[#D8D0D0] text-[12px] text-black/80 flex items-center gap-1.5 transition";
 
     const reactionPillMine = isLight
         ? "bg-[#81DB86]/12 ring-2 ring-emerald-400/70 border-emerald-500/55 text-emerald-900"
         : "bg-emerald-400/12 ring-2 ring-emerald-300/55 border-emerald-300/45 text-white";
 
-    const reactionCountCls = isLight ? "text-black/50" : "text-white/60";
+    const reactionCountCls = "text-black/50";
 
     const inputCls = isLight
-        ? "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#F3F3F3] border border-[#CFCFCF] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]"
-        : "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#242424] border border-[#2B2B2B] text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]";
+        ? "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]"
+        : "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#F7F5F5] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]";
 
-    const { quote, quoteMessageId, main } = useMemo(() => parseReplyBody(msg.body), [msg.body]);
+    const { quote, quoteMessageId, main } = useMemo(
+        () => parseReplyBody(msg.body),
+        [msg.body],
+    );
 
     const saveEdit = async () => {
         const next = draft.trim();
@@ -472,13 +525,26 @@ function MessageCardInner({
     };
 
     return (
-        <div className={"flex items-start gap-3 " + (mine ? "justify-end" : "justify-start")}>
+        <div
+            className={
+                "flex items-start gap-3 " + (mine ? "justify-end" : "justify-start")
+            }
+        >
             {!mine && (
-                <img src={avatarFromProfile(msg.profile)} className="w-9 h-9 rounded-full object-cover" alt="" />
+                <img
+                    src={avatarFromProfile(msg.profile)}
+                    className="w-9 h-9 rounded-full object-cover"
+                    alt=""
+                />
             )}
 
             <div className="max-w-[82%] min-w-0">
-                <div className={"flex items-center gap-2 mb-1 " + (mine ? "justify-end" : "justify-start")}>
+                <div
+                    className={
+                        "flex items-center gap-2 mb-1 " +
+                        (mine ? "justify-end" : "justify-start")
+                    }
+                >
                     <div className={"text-[11px] truncate " + metaNameCls}>{name}</div>
                     <div className={"text-[11px] " + metaTimeCls}>{time}</div>
 
@@ -487,7 +553,10 @@ function MessageCardInner({
                             <button
                                 type="button"
                                 onClick={() => onReply(msg)}
-                                className={"ml-1 inline-flex items-center gap-1 text-[11px] transition " + actionBtnCls}
+                                className={
+                                    "ml-1 inline-flex items-center gap-1 text-[11px] transition " +
+                                    actionBtnCls
+                                }
                                 title="Reply"
                             >
                                 <CornerUpLeft size={14} />
@@ -502,7 +571,10 @@ function MessageCardInner({
                                         if (!openReactions) updateReactionMenuPos();
                                         setOpenReactions((v) => !v);
                                     }}
-                                    className={"ml-1 inline-flex items-center gap-1 text-[11px] transition " + actionBtnCls}
+                                    className={
+                                        "ml-1 inline-flex items-center gap-1 text-[11px] transition " +
+                                        actionBtnCls
+                                    }
                                     title="React"
                                 >
                                     <Smile size={14} />
@@ -515,8 +587,14 @@ function MessageCardInner({
                                     createPortal(
                                         <div
                                             ref={reactionMenuRef}
-                                            className={"fixed z-[99999] rounded-2xl px-2.5 py-2 flex gap-1.5 shadow-xl " + menuCls}
-                                            style={{ top: reactionMenuPos.top, left: reactionMenuPos.left }}
+                                            className={
+                                                "fixed z-[99999] rounded-2xl px-2.5 py-2 flex gap-1.5 shadow-xl " +
+                                                menuCls
+                                            }
+                                            style={{
+                                                top: reactionMenuPos.top,
+                                                left: reactionMenuPos.left,
+                                            }}
                                             onMouseDown={(e) => e.stopPropagation()}
                                         >
                                             {REACTION_EMOJIS.map((e) => {
@@ -540,12 +618,14 @@ function MessageCardInner({
                                                         title={isMine ? `Remove ${e}` : e}
                                                         type="button"
                                                     >
-                                                        <span className="inline-block align-middle text-[16px] leading-none">{e}</span>
+                                                        <span className="inline-block align-middle text-[16px] leading-none">
+                                                            {e}
+                                                        </span>
                                                     </button>
                                                 );
                                             })}
                                         </div>,
-                                        document.body
+                                        document.body,
                                     )}
                             </div>
 
@@ -554,7 +634,10 @@ function MessageCardInner({
                                     <button
                                         type="button"
                                         onClick={() => setIsEditing(true)}
-                                        className={"ml-1 inline-flex items-center gap-1 text-[11px] transition " + actionBtnCls}
+                                        className={
+                                            "ml-1 inline-flex items-center gap-1 text-[11px] transition " +
+                                            actionBtnCls
+                                        }
                                         title="Edit"
                                     >
                                         <Pencil size={14} />
@@ -563,7 +646,10 @@ function MessageCardInner({
                                     <button
                                         type="button"
                                         onClick={doDelete}
-                                        className={"ml-1 inline-flex items-center gap-1 text-[11px] transition " + dangerBtnCls}
+                                        className={
+                                            "ml-1 inline-flex items-center gap-1 text-[11px] transition " +
+                                            dangerBtnCls
+                                        }
                                         title="Delete"
                                     >
                                         <Trash2 size={14} />
@@ -588,14 +674,20 @@ function MessageCardInner({
                                     quoteBoxCls +
                                     (quoteMessageId ? " cursor-pointer" : " cursor-default")
                                 }
-                                title={quoteMessageId ? "Jump to quoted message" : "Quoted message"}
+                                title={
+                                    quoteMessageId ? "Jump to quoted message" : "Quoted message"
+                                }
                             >
                                 <div className="text-[10px] opacity-75 mb-1">Reply</div>
-                                <div className="whitespace-pre-wrap break-words">{renderTextWithLinks(quote, isLight)}</div>
+                                <div className="whitespace-pre-wrap break-words">
+                                    {renderTextWithLinks(quote, isLight)}
+                                </div>
                             </button>
                         )}
 
-                        <div className="whitespace-pre-wrap break-words">{renderTextWithLinks(main, isLight)}</div>
+                        <div className="whitespace-pre-wrap break-words">
+                            {renderTextWithLinks(main, isLight)}
+                        </div>
                     </div>
                 ) : (
                     <div className={bubbleCls}>
@@ -624,8 +716,8 @@ function MessageCardInner({
                                 }}
                                 className={
                                     isLight
-                                        ? "px-3 h-9 rounded-xl bg-[#E6E6E6] hover:bg-[#DCDCDC] border border-[#CFCFCF] text-black/70 text-sm"
-                                        : "px-3 h-9 rounded-xl bg-[#242424] hover:bg-[#303030] border border-[#2B2B2B] text-white/75 text-sm"
+                                        ? "px-3 h-9 rounded-xl bg-[#ECEAEA] hover:bg-[#DCDCDC] border border-[#D8D0D0] text-black/70 text-sm"
+                                        : "px-3 h-9 rounded-xl bg-[#F7F5F5] hover:bg-[#303030] border border-[#D8D0D0] text-black/75 text-sm"
                                 }
                                 disabled={savingEdit}
                                 title="Cancel"
@@ -648,21 +740,33 @@ function MessageCardInner({
                                 Save
                             </button>
                         </div>
-                        <div className={"mt-1 text-[11px] " + (isLight ? "text-black/40" : "text-white/35")}>
+                        <div
+                            className={
+                                "mt-1 text-[11px] " +
+                                (isLight ? "text-black/40" : "text-black/35")
+                            }
+                        >
                             Enter — save • Shift+Enter — new line • Esc — cancel
                         </div>
                     </div>
                 )}
 
                 {hasReactions && !isEditing && (
-                    <div className={"mt-2 flex flex-wrap gap-2 " + (mine ? "justify-end" : "justify-start")}>
+                    <div
+                        className={
+                            "mt-2 flex flex-wrap gap-2 " +
+                            (mine ? "justify-end" : "justify-start")
+                        }
+                    >
                         {orderedReactionEntries.map(([emoji, count]) => {
                             const isMine = !!myReactions?.[emoji];
                             return (
                                 <button
                                     key={emoji}
                                     type="button"
-                                    className={reactionPillBase + " " + (isMine ? reactionPillMine : "")}
+                                    className={
+                                        reactionPillBase + " " + (isMine ? reactionPillMine : "")
+                                    }
                                     onClick={() => onOpenReactionDetails(msg.id, emoji)}
                                     onContextMenu={(e) => {
                                         e.preventDefault();
@@ -680,13 +784,20 @@ function MessageCardInner({
             </div>
 
             {mine && (
-                <img src={avatarFromProfile(msg.profile)} className="w-9 h-9 rounded-full object-cover" alt="" />
+                <img
+                    src={avatarFromProfile(msg.profile)}
+                    className="w-9 h-9 rounded-full object-cover"
+                    alt=""
+                />
             )}
         </div>
     );
 }
 
-const areMessageCardPropsEqual = (prev: MessageCardProps, next: MessageCardProps) => {
+const areMessageCardPropsEqual = (
+    prev: MessageCardProps,
+    next: MessageCardProps,
+) => {
     return (
         prev.msg === next.msg &&
         prev.mine === next.mine &&
@@ -783,8 +894,12 @@ export function ChatPanel({
         messagesRef.current = messages;
     }, [messages]);
 
-    const [reactions, setReactions] = useState<Record<string, Record<string, number>>>({});
-    const [myReactions, setMyReactions] = useState<Record<string, Record<string, boolean>>>({});
+    const [reactions, setReactions] = useState<
+        Record<string, Record<string, number>>
+    >({});
+    const [myReactions, setMyReactions] = useState<
+        Record<string, Record<string, boolean>>
+    >({});
     const [reactionDetails, setReactionDetails] = useState<ReactionDetailsState>({
         open: false,
         messageId: "",
@@ -797,7 +912,9 @@ export function ChatPanel({
     const [text, setText] = useState("");
     const [loading, setLoading] = useState(true);
     const [replyTo, setReplyTo] = useState<Msg | null>(null);
-    const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+    const [highlightedMessageId, setHighlightedMessageId] = useState<
+        string | null
+    >(null);
 
     const bottomRef = useRef<HTMLDivElement | null>(null);
     const listRef = useRef<HTMLDivElement | null>(null);
@@ -832,14 +949,25 @@ export function ChatPanel({
     const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
     const emojiPortalRef = useRef<HTMLDivElement | null>(null);
     const [composerEmojiOpen, setComposerEmojiOpen] = useState(false);
-    const [emojiPos, setEmojiPos] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);
+    const [emojiPos, setEmojiPos] = useState<{
+        left: number;
+        top: number;
+        width: number;
+        maxHeight: number;
+    } | null>(null);
 
     const bootTsRef = useRef<number>(0);
     const pendingReactionOpsRef = useRef<Map<string, number>>(new Map());
-    const reactionKey = (ev: string, messageId: string, emoji: string, uid: string) => `${ev}|${messageId}|${emoji}|${uid}`;
+    const reactionKey = (
+        ev: string,
+        messageId: string,
+        emoji: string,
+        uid: string,
+    ) => `${ev}|${messageId}|${emoji}|${uid}`;
 
     const isHost = !!userId && !!hostUserId && userId === hostUserId;
-    const canUseDirect = !!hostUserId && (!!isHost || (!!userId && userId !== hostUserId));
+    const canUseDirect =
+        !!hostUserId && (!!isHost || (!!userId && userId !== hostUserId));
     const activeMode: ChatMode = externalMode === "host" ? "direct" : "general";
 
     const activeDirectPeerId = useMemo(() => {
@@ -871,13 +999,21 @@ export function ChatPanel({
         }
 
         return `Direct messages with ${activeDirectPeerProfile?.full_name || "host"}`;
-    }, [activeMode, subtitle, canUseDirect, activeDirectPeerId, isHost, activeDirectPeerProfile]);
+    }, [
+        activeMode,
+        subtitle,
+        canUseDirect,
+        activeDirectPeerId,
+        isHost,
+        activeDirectPeerProfile,
+    ]);
 
     const isReplyCompatibleWithActiveComposer = useCallback(
         (message: Msg | null) => {
             if (!message) return false;
 
-            const messageScope: ChatMode = message.scope === "direct" ? "direct" : "general";
+            const messageScope: ChatMode =
+                message.scope === "direct" ? "direct" : "general";
 
             // A quote from DMs must never be carried into All chat.
             if (activeMode === "general") {
@@ -894,7 +1030,8 @@ export function ChatPanel({
 
             if (isHost) {
                 return (
-                    (messageUserId === hostUserId && messagePeerId === activeDirectPeerId) ||
+                    (messageUserId === hostUserId &&
+                        messagePeerId === activeDirectPeerId) ||
                     (messageUserId === activeDirectPeerId && messagePeerId === hostUserId)
                 );
             }
@@ -904,7 +1041,7 @@ export function ChatPanel({
                 (messageUserId === hostUserId && messagePeerId === userId)
             );
         },
-        [activeMode, userId, hostUserId, activeDirectPeerId, isHost]
+        [activeMode, userId, hostUserId, activeDirectPeerId, isHost],
     );
 
     useEffect(() => {
@@ -914,7 +1051,6 @@ export function ChatPanel({
             setReplyTo(null);
         }
     }, [replyTo, isReplyCompatibleWithActiveComposer]);
-
 
     const isAtBottom = () => {
         const el = listRef.current;
@@ -994,7 +1130,16 @@ export function ChatPanel({
             hostUserId,
             directPeerIds,
         });
-    }, [sessionId, messages, reactions, myReactions, profilesById, meProfile, hostUserId, directPeerIds]);
+    }, [
+        sessionId,
+        messages,
+        reactions,
+        myReactions,
+        profilesById,
+        meProfile,
+        hostUserId,
+        directPeerIds,
+    ]);
 
     useEffect(() => {
         onBecameVisible?.();
@@ -1029,26 +1174,32 @@ export function ChatPanel({
         externalDirectPeerUserId,
     ]);
 
-    const headerBorder = isLight ? "border-[#D0D0D0]" : "border-[#171717]";
-    const titleText = isLight ? "text-black/85" : "text-white/85";
-    const subText = isLight ? "text-black/50" : "text-white/45";
-    const headerCloseBtnCls = isLight ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60" : "bg-[#242424] hover:bg-[#303030] text-white/70";
-    const replyBoxCls = isLight ? "bg-[#E6E6E6] border-[#CFCFCF]" : "bg-[#242424] border-[#2B2B2B]";
+    const headerBorder = "border-[#D8D0D0]";
+    const titleText = "text-black/85";
+    const subText = "text-black/50";
+    const headerCloseBtnCls = isLight
+        ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60"
+        : "bg-[#F7F5F5] hover:bg-[#303030] text-black/70";
+    const replyBoxCls = isLight
+        ? "bg-[#ECEAEA] border-[#D8D0D0]"
+        : "bg-[#F7F5F5] border-[#D8D0D0]";
     const replyingLabel = "text-[11px] text-[#81DB86]/90 font-medium";
-    const replyingText = isLight ? "text-black/55" : "text-white/55";
-    const cancelBtnCls = isLight ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60" : "bg-[#1B1B1B] hover:bg-[#242424] text-white/70";
-    const hintText = isLight ? "text-black/40" : "text-white/35";
+    const replyingText = "text-black/55";
+    const cancelBtnCls = isLight
+        ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60"
+        : "bg-[#F3F1F1] hover:bg-[#F7F5F5] text-black/70";
+    const hintText = "text-black/40";
     const sendBtnActive = "bg-emerald-600 hover:bg-emerald-700 text-white";
-    const sendBtnDisabled = isLight ? "bg-[#DCDCDC] text-black/35" : "bg-[#303030] text-white/35";
+    const sendBtnDisabled = "bg-[#DCDCDC] text-black/35";
     const composerInputCls = isLight
-        ? "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#F3F3F3] border border-[#CFCFCF] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]"
-        : "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#242424] border border-[#2B2B2B] text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]";
+        ? "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]"
+        : "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#F7F5F5] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]";
     const composerEmojiBtnCls = isLight
-        ? "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#F3F3F3] border-[#CFCFCF] text-black/60 hover:bg-[#E8E8E8] hover:text-black/80"
-        : "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#242424] border-[#2B2B2B] text-white/70 hover:bg-[#303030] hover:text-white/90";
+        ? "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#F3F1F1] border-[#D8D0D0] text-black/60 hover:bg-[#E8E8E8] hover:text-black/80"
+        : "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#F7F5F5] border-[#D8D0D0] text-black/70 hover:bg-[#303030] hover:text-black/90";
     const portalBoxCls = isLight
-        ? "rounded-2xl border border-[#CFCFCF] bg-[#F3F3F3] shadow-2xl overflow-hidden"
-        : "rounded-2xl border border-[#252525] bg-[#171717] shadow-2xl overflow-hidden";
+        ? "rounded-2xl border border-[#D8D0D0] bg-[#F3F1F1] shadow-2xl overflow-hidden"
+        : "rounded-2xl border border-[#D8D0D0] bg-[#171717] shadow-2xl overflow-hidden";
 
     useEffect(() => {
         (async () => {
@@ -1069,7 +1220,10 @@ export function ChatPanel({
                 if (p) {
                     meProfileRef.current = p as any;
                     setMeProfile(p as any);
-                    profilesByIdRef.current = { ...profilesByIdRef.current, [uid]: p as any };
+                    profilesByIdRef.current = {
+                        ...profilesByIdRef.current,
+                        [uid]: p as any,
+                    };
                     setProfilesById((prev) => ({ ...prev, [uid]: p as any }));
                 }
             }
@@ -1095,7 +1249,8 @@ export function ChatPanel({
                     return;
                 }
 
-                const hostId = String((data as SessionHostRow | null)?.host_id || "").trim() || null;
+                const hostId =
+                    String((data as SessionHostRow | null)?.host_id || "").trim() || null;
                 setHostUserId(hostId);
                 if (hostId) {
                     void ensureProfiles([hostId]);
@@ -1146,7 +1301,10 @@ export function ChatPanel({
         setMessages((prev) => {
             let changed = false;
             const next = prev.map((m) => {
-                const nextProfile = profilesByIdRef.current[m.user_id] || (m.user_id === userId ? meProfileRef.current : null) || null;
+                const nextProfile =
+                    profilesByIdRef.current[m.user_id] ||
+                    (m.user_id === userId ? meProfileRef.current : null) ||
+                    null;
                 const prevName = m.profile?.full_name || null;
                 const nextName = nextProfile?.full_name || null;
                 const prevAvatar = m.profile?.avatar_url || null;
@@ -1169,10 +1327,11 @@ export function ChatPanel({
             const mp = meProfileRef.current;
             return {
                 ...row,
-                profile: (map[row.user_id] || (row.user_id === userId ? mp : null)) ?? null,
+                profile:
+                    (map[row.user_id] || (row.user_id === userId ? mp : null)) ?? null,
             };
         },
-        [userId]
+        [userId],
     );
 
     const getRecentMessageIdsForReactions = () =>
@@ -1212,13 +1371,23 @@ export function ChatPanel({
                 .order("created_at", { ascending: true })
                 .limit(5000);
 
-            const reactionDetailsResult = (await withTimeout<any>(q as any, 12000, "loadReactionDetails timeout")) as any;
+            const reactionDetailsResult = (await withTimeout<any>(
+                q as any,
+                12000,
+                "loadReactionDetails timeout",
+            )) as any;
             const { data, error } = reactionDetailsResult;
             if (!aliveRef.current) return;
 
             if (error) {
                 console.error("reaction details load error:", error);
-                setReactionDetails((prev) => ({ ...prev, open: true, loading: false, error: "Failed to load reactions", userIds: [] }));
+                setReactionDetails((prev) => ({
+                    ...prev,
+                    open: true,
+                    loading: false,
+                    error: "Failed to load reactions",
+                    userIds: [],
+                }));
                 return;
             }
 
@@ -1227,11 +1396,23 @@ export function ChatPanel({
             await ensureProfiles(ids);
             if (!aliveRef.current) return;
 
-            setReactionDetails((prev) => ({ ...prev, open: true, loading: false, error: null, userIds: ids }));
+            setReactionDetails((prev) => ({
+                ...prev,
+                open: true,
+                loading: false,
+                error: null,
+                userIds: ids,
+            }));
         } catch (e) {
             console.warn("loadReactionDetails failed:", e);
             if (!aliveRef.current) return;
-            setReactionDetails((prev) => ({ ...prev, open: true, loading: false, error: "Failed to load reactions", userIds: [] }));
+            setReactionDetails((prev) => ({
+                ...prev,
+                open: true,
+                loading: false,
+                error: "Failed to load reactions",
+                userIds: [],
+            }));
         }
     };
 
@@ -1246,7 +1427,10 @@ export function ChatPanel({
 
     const loadDirectPeers = useCallback(async () => {
         if (!sessionId || !hostUserId) {
-            console.log("[chat][direct-peers] skipped: missing sessionId or hostUserId", { sessionId, hostUserId });
+            console.log(
+                "[chat][direct-peers] skipped: missing sessionId or hostUserId",
+                { sessionId, hostUserId },
+            );
             setDirectPeerIds([]);
             return [] as string[];
         }
@@ -1267,9 +1451,12 @@ export function ChatPanel({
             const peerIds = Array.from(
                 new Set(
                     ((data as any[]) || [])
-                        .flatMap((row) => [String(row?.user_id || "").trim(), String(row?.dm_peer_user_id || "").trim()])
-                        .filter((id) => id && id !== hostUserId)
-                )
+                        .flatMap((row) => [
+                            String(row?.user_id || "").trim(),
+                            String(row?.dm_peer_user_id || "").trim(),
+                        ])
+                        .filter((id) => id && id !== hostUserId),
+                ),
             );
 
             console.log("[chat][direct-peers] loaded", {
@@ -1299,148 +1486,207 @@ export function ChatPanel({
         onDirectPeerIdsChange?.(directPeerIds);
     }, [directPeerIds, onDirectPeerIdsChange]);
 
-    const loadMessages = useCallback(async (opts?: { silent?: boolean }): Promise<Msg[] | null> => {
-        if (!sessionId) return null;
+    const loadMessages = useCallback(
+        async (opts?: { silent?: boolean }): Promise<Msg[] | null> => {
+            if (!sessionId) return null;
 
-        if (loadingMessagesRef.current) {
-            queuedMessagesReloadRef.current = true;
-            return null;
-        }
-
-        loadingMessagesRef.current = true;
-        const reqId = ++messagesReqIdRef.current;
-
-        if (!opts?.silent && messagesRef.current.length === 0) setLoading(true);
-
-        try {
-            const q = buildMessageQuery(sessionId, activeMode, userId, hostUserId, activeDirectPeerId);
-            const loadMessagesResult = (await withTimeout<any>(q as any, 12000, "loadMessages timeout")) as any;
-            const { data: rows, error } = loadMessagesResult;
-
-            if (!aliveRef.current || reqId !== messagesReqIdRef.current) return null;
-            if (error) {
-                console.error("chat load error:", error);
+            if (loadingMessagesRef.current) {
+                queuedMessagesReloadRef.current = true;
                 return null;
             }
 
-            const safeRows = (((rows as any as MsgRow[]) || []).slice()).reverse();
-            await ensureProfiles(safeRows.map((r) => r.user_id).concat(safeRows.map((r) => String(r.dm_peer_user_id || "")).filter(Boolean)));
-            if (!aliveRef.current || reqId !== messagesReqIdRef.current) return null;
+            loadingMessagesRef.current = true;
+            const reqId = ++messagesReqIdRef.current;
 
-            const attached = safeRows.map((r) => attachProfile(r));
-            messagesRef.current = attached;
-            setMessages(attached);
-            return attached;
-        } catch (e) {
-            console.warn("loadMessages failed:", e);
-            if (!aliveRef.current || reqId !== messagesReqIdRef.current) return null;
-            return null;
-        } finally {
-            if (aliveRef.current && reqId === messagesReqIdRef.current && !opts?.silent) setLoading(false);
-            loadingMessagesRef.current = false;
-            if (queuedMessagesReloadRef.current) {
-                queuedMessagesReloadRef.current = false;
-                void loadMessages({ silent: true });
+            if (!opts?.silent && messagesRef.current.length === 0) setLoading(true);
+
+            try {
+                const q = buildMessageQuery(
+                    sessionId,
+                    activeMode,
+                    userId,
+                    hostUserId,
+                    activeDirectPeerId,
+                );
+                const loadMessagesResult = (await withTimeout<any>(
+                    q as any,
+                    12000,
+                    "loadMessages timeout",
+                )) as any;
+                const { data: rows, error } = loadMessagesResult;
+
+                if (!aliveRef.current || reqId !== messagesReqIdRef.current)
+                    return null;
+                if (error) {
+                    console.error("chat load error:", error);
+                    return null;
+                }
+
+                const safeRows = ((rows as any as MsgRow[]) || []).slice().reverse();
+                await ensureProfiles(
+                    safeRows
+                        .map((r) => r.user_id)
+                        .concat(
+                            safeRows
+                                .map((r) => String(r.dm_peer_user_id || ""))
+                                .filter(Boolean),
+                        ),
+                );
+                if (!aliveRef.current || reqId !== messagesReqIdRef.current)
+                    return null;
+
+                const attached = safeRows.map((r) => attachProfile(r));
+                messagesRef.current = attached;
+                setMessages(attached);
+                return attached;
+            } catch (e) {
+                console.warn("loadMessages failed:", e);
+                if (!aliveRef.current || reqId !== messagesReqIdRef.current)
+                    return null;
+                return null;
+            } finally {
+                if (
+                    aliveRef.current &&
+                    reqId === messagesReqIdRef.current &&
+                    !opts?.silent
+                )
+                    setLoading(false);
+                loadingMessagesRef.current = false;
+                if (queuedMessagesReloadRef.current) {
+                    queuedMessagesReloadRef.current = false;
+                    void loadMessages({ silent: true });
+                }
             }
-        }
-    }, [sessionId, activeMode, userId, hostUserId, activeDirectPeerId, ensureProfiles, attachProfile]);
+        },
+        [
+            sessionId,
+            activeMode,
+            userId,
+            hostUserId,
+            activeDirectPeerId,
+            ensureProfiles,
+            attachProfile,
+        ],
+    );
 
-    const loadReactions = useCallback(async (opts?: { silent?: boolean; messageIds?: string[]; force?: boolean }) => {
-        if (!sessionId) return;
+    const loadReactions = useCallback(
+        async (opts?: {
+            silent?: boolean;
+            messageIds?: string[];
+            force?: boolean;
+        }) => {
+            if (!sessionId) return;
 
-        if (loadingReactionsRef.current) {
-            queuedReactionsReloadRef.current = true;
-            return;
-        }
-
-        const msgIdsRaw = opts?.messageIds && opts.messageIds.length > 0 ? opts.messageIds : getRecentMessageIdsForReactions();
-        const msgIds = normalizeReactionMessageIds(msgIdsRaw);
-
-        if (msgIds.length === 0) {
-            setReactions({});
-            setMyReactions({});
-            return;
-        }
-
-        const loadKey = `${sessionId}|${userId || "anon"}|${msgIds.join(",")}`;
-        const now = Date.now();
-
-        if (
-            !opts?.force &&
-            lastReactionsLoadKeyRef.current === loadKey &&
-            now - lastReactionsLoadAtRef.current < REACTIONS_REFETCH_DEDUPE_MS
-        ) {
-            return;
-        }
-
-        lastReactionsLoadKeyRef.current = loadKey;
-        lastReactionsLoadAtRef.current = now;
-
-        loadingReactionsRef.current = true;
-        const reqId = ++reactionsReqIdRef.current;
-
-        try {
-            const q = supabase
-                .from(REACTIONS_TABLE)
-                .select("id, session_id, message_id, user_id, emoji, created_at")
-                .eq("session_id", sessionId)
-                .in("message_id", msgIds)
-                .order("created_at", { ascending: false })
-                .limit(REACTIONS_BOOTSTRAP_LIMIT);
-
-            const loadReactionsResult = (await withTimeout<any>(q as any, 12000, "loadReactions timeout")) as any;
-            const { data, error } = loadReactionsResult;
-
-            if (!aliveRef.current || reqId !== reactionsReqIdRef.current) return;
-
-            if (error) {
-                console.error("reactions load error:", error);
+            if (loadingReactionsRef.current) {
+                queuedReactionsReloadRef.current = true;
                 return;
             }
 
-            const rows = (data as any as ReactionRow[]) || [];
-            const counts: Record<string, Record<string, number>> = {};
-            const mine: Record<string, Record<string, boolean>> = {};
+            const msgIdsRaw =
+                opts?.messageIds && opts.messageIds.length > 0
+                    ? opts.messageIds
+                    : getRecentMessageIdsForReactions();
+            const msgIds = normalizeReactionMessageIds(msgIdsRaw);
 
-            for (const r of rows) {
-                if (!counts[r.message_id]) counts[r.message_id] = {};
-                counts[r.message_id][r.emoji] = (counts[r.message_id][r.emoji] || 0) + 1;
+            if (msgIds.length === 0) {
+                setReactions({});
+                setMyReactions({});
+                return;
+            }
 
-                if (userId && r.user_id === userId) {
-                    if (!mine[r.message_id]) mine[r.message_id] = {};
-                    mine[r.message_id][r.emoji] = true;
+            const loadKey = `${sessionId}|${userId || "anon"}|${msgIds.join(",")}`;
+            const now = Date.now();
+
+            if (
+                !opts?.force &&
+                lastReactionsLoadKeyRef.current === loadKey &&
+                now - lastReactionsLoadAtRef.current < REACTIONS_REFETCH_DEDUPE_MS
+            ) {
+                return;
+            }
+
+            lastReactionsLoadKeyRef.current = loadKey;
+            lastReactionsLoadAtRef.current = now;
+
+            loadingReactionsRef.current = true;
+            const reqId = ++reactionsReqIdRef.current;
+
+            try {
+                const q = supabase
+                    .from(REACTIONS_TABLE)
+                    .select("id, session_id, message_id, user_id, emoji, created_at")
+                    .eq("session_id", sessionId)
+                    .in("message_id", msgIds)
+                    .order("created_at", { ascending: false })
+                    .limit(REACTIONS_BOOTSTRAP_LIMIT);
+
+                const loadReactionsResult = (await withTimeout<any>(
+                    q as any,
+                    12000,
+                    "loadReactions timeout",
+                )) as any;
+                const { data, error } = loadReactionsResult;
+
+                if (!aliveRef.current || reqId !== reactionsReqIdRef.current) return;
+
+                if (error) {
+                    console.error("reactions load error:", error);
+                    return;
+                }
+
+                const rows = (data as any as ReactionRow[]) || [];
+                const counts: Record<string, Record<string, number>> = {};
+                const mine: Record<string, Record<string, boolean>> = {};
+
+                for (const r of rows) {
+                    if (!counts[r.message_id]) counts[r.message_id] = {};
+                    counts[r.message_id][r.emoji] =
+                        (counts[r.message_id][r.emoji] || 0) + 1;
+
+                    if (userId && r.user_id === userId) {
+                        if (!mine[r.message_id]) mine[r.message_id] = {};
+                        mine[r.message_id][r.emoji] = true;
+                    }
+                }
+
+                setReactions(counts);
+                setMyReactions(mine);
+            } catch (e) {
+                console.warn("loadReactions failed:", e);
+            } finally {
+                loadingReactionsRef.current = false;
+
+                if (queuedReactionsReloadRef.current) {
+                    queuedReactionsReloadRef.current = false;
+                    void loadReactions({ silent: true, force: true });
                 }
             }
+        },
+        [sessionId, userId],
+    );
 
-            setReactions(counts);
-            setMyReactions(mine);
-        } catch (e) {
-            console.warn("loadReactions failed:", e);
-        } finally {
-            loadingReactionsRef.current = false;
+    const bootstrap = useCallback(
+        async (opts?: { silent?: boolean; force?: boolean }) => {
+            if (!sessionId) return;
+            const now = Date.now();
+            if (!opts?.force && now - bootTsRef.current < 8000) return;
 
-            if (queuedReactionsReloadRef.current) {
-                queuedReactionsReloadRef.current = false;
-                void loadReactions({ silent: true, force: true });
+            if (isHost) {
+                await loadDirectPeers();
             }
-        }
-    }, [sessionId, userId]);
 
-    const bootstrap = useCallback(async (opts?: { silent?: boolean; force?: boolean }) => {
-        if (!sessionId) return;
-        const now = Date.now();
-        if (!opts?.force && now - bootTsRef.current < 8000) return;
-
-        if (isHost) {
-            await loadDirectPeers();
-        }
-
-        const loaded = await loadMessages({ silent: opts?.silent });
-        const list = loaded ?? messagesRef.current;
-        const ids = normalizeReactionMessageIds(list.map((m) => m.id));
-        await loadReactions({ silent: true, messageIds: ids, force: opts?.force });
-        bootTsRef.current = now;
-    }, [sessionId, isHost, loadDirectPeers, loadMessages, loadReactions]);
+            const loaded = await loadMessages({ silent: opts?.silent });
+            const list = loaded ?? messagesRef.current;
+            const ids = normalizeReactionMessageIds(list.map((m) => m.id));
+            await loadReactions({
+                silent: true,
+                messageIds: ids,
+                force: opts?.force,
+            });
+            bootTsRef.current = now;
+        },
+        [sessionId, isHost, loadDirectPeers, loadMessages, loadReactions],
+    );
 
     useEffect(() => {
         if (!sessionId) return;
@@ -1477,24 +1723,44 @@ export function ChatPanel({
 
         channel.on(
             "postgres_changes",
-            { event: "INSERT", schema: "public", table: MSG_TABLE, filter: `session_id=eq.${sessionId}` },
+            {
+                event: "INSERT",
+                schema: "public",
+                table: MSG_TABLE,
+                filter: `session_id=eq.${sessionId}`,
+            },
             async (payload: any) => {
                 const row = payload?.new as MsgRow | undefined;
                 if (!row?.id) return;
 
-                const relevant = messageBelongsToView(row, activeMode, userId, hostUserId, activeDirectPeerId);
+                const relevant = messageBelongsToView(
+                    row,
+                    activeMode,
+                    userId,
+                    hostUserId,
+                    activeDirectPeerId,
+                );
 
                 if (row.scope === "direct" && isHost && hostUserId) {
-                    const otherId = row.user_id === hostUserId ? String(row.dm_peer_user_id || "").trim() : row.user_id;
+                    const otherId =
+                        row.user_id === hostUserId
+                            ? String(row.dm_peer_user_id || "").trim()
+                            : row.user_id;
                     if (otherId && otherId !== hostUserId) {
-                        setDirectPeerIds((prev) => (prev.includes(otherId) ? prev : [...prev, otherId]));
+                        setDirectPeerIds((prev) =>
+                            prev.includes(otherId) ? prev : [...prev, otherId],
+                        );
                         void ensureProfiles([otherId]);
                     }
                 }
 
                 if (!relevant) return;
 
-                await ensureProfiles([row.user_id, String(row.dm_peer_user_id || "").trim()].filter(Boolean));
+                await ensureProfiles(
+                    [row.user_id, String(row.dm_peer_user_id || "").trim()].filter(
+                        Boolean,
+                    ),
+                );
                 if (!aliveRef.current) return;
 
                 const beforeAtBottom = isAtBottom();
@@ -1509,7 +1775,8 @@ export function ChatPanel({
                             m.user_id === row.user_id &&
                             m.body === row.body &&
                             (m.scope || "general") === (row.scope || "general") &&
-                            String(m.dm_peer_user_id || "") === String(row.dm_peer_user_id || "")
+                            String(m.dm_peer_user_id || "") ===
+                            String(row.dm_peer_user_id || ""),
                     );
 
                     const merged = attachProfile(row);
@@ -1528,16 +1795,27 @@ export function ChatPanel({
                 if (!beforeAtBottom && row.user_id !== userId) {
                     setUnseenNew((n) => Math.min(99, n + 1));
                 }
-            }
+            },
         );
 
         channel.on(
             "postgres_changes",
-            { event: "UPDATE", schema: "public", table: MSG_TABLE, filter: `session_id=eq.${sessionId}` },
+            {
+                event: "UPDATE",
+                schema: "public",
+                table: MSG_TABLE,
+                filter: `session_id=eq.${sessionId}`,
+            },
             async (payload: any) => {
                 const row = payload?.new as MsgRow | undefined;
                 if (!row?.id) return;
-                const relevant = messageBelongsToView(row, activeMode, userId, hostUserId, activeDirectPeerId);
+                const relevant = messageBelongsToView(
+                    row,
+                    activeMode,
+                    userId,
+                    hostUserId,
+                    activeDirectPeerId,
+                );
                 if (!relevant) {
                     setMessages((prev) => {
                         const next = prev.filter((m) => m.id !== row.id);
@@ -1547,22 +1825,33 @@ export function ChatPanel({
                     return;
                 }
 
-                await ensureProfiles([row.user_id, String(row.dm_peer_user_id || "").trim()].filter(Boolean));
+                await ensureProfiles(
+                    [row.user_id, String(row.dm_peer_user_id || "").trim()].filter(
+                        Boolean,
+                    ),
+                );
                 if (!aliveRef.current) return;
 
                 setMessages((prev) => {
                     const exists = prev.some((m) => m.id === row.id);
                     const mapped = attachProfile(row);
-                    const next = exists ? prev.map((m) => (m.id === row.id ? mapped : m)) : [...prev, mapped];
+                    const next = exists
+                        ? prev.map((m) => (m.id === row.id ? mapped : m))
+                        : [...prev, mapped];
                     messagesRef.current = next;
                     return next;
                 });
-            }
+            },
         );
 
         channel.on(
             "postgres_changes",
-            { event: "DELETE", schema: "public", table: MSG_TABLE, filter: `session_id=eq.${sessionId}` },
+            {
+                event: "DELETE",
+                schema: "public",
+                table: MSG_TABLE,
+                filter: `session_id=eq.${sessionId}`,
+            },
             (payload: any) => {
                 const deletedId = payload?.old?.id as string | undefined;
                 if (!deletedId) return;
@@ -1586,7 +1875,7 @@ export function ChatPanel({
                     delete next[deletedId];
                     return next;
                 });
-            }
+            },
         );
 
         channel.subscribe((status) => {
@@ -1617,7 +1906,17 @@ export function ChatPanel({
             }
             supabase.removeChannel(channel);
         };
-    }, [sessionId, userId, activeMode, hostUserId, activeDirectPeerId, isHost, attachProfile, ensureProfiles, bootstrap]);
+    }, [
+        sessionId,
+        userId,
+        activeMode,
+        hostUserId,
+        activeDirectPeerId,
+        isHost,
+        attachProfile,
+        ensureProfiles,
+        bootstrap,
+    ]);
 
     useEffect(() => {
         if (!sessionId) return;
@@ -1692,9 +1991,15 @@ export function ChatPanel({
             .channel(`chat-reactions:${sessionId}`)
             .on(
                 "postgres_changes",
-                { event: "*", schema: "public", table: REACTIONS_TABLE, filter: `session_id=eq.${sessionId}` },
+                {
+                    event: "*",
+                    schema: "public",
+                    table: REACTIONS_TABLE,
+                    filter: `session_id=eq.${sessionId}`,
+                },
                 (payload: any) => {
-                    const ev: string = payload?.eventType || payload?.type || payload?.event || "";
+                    const ev: string =
+                        payload?.eventType || payload?.type || payload?.event || "";
                     const n = payload?.new as ReactionRow | undefined;
                     const o = payload?.old as ReactionRow | undefined;
 
@@ -1711,15 +2016,24 @@ export function ChatPanel({
                     }
 
                     if (ev === "UPDATE" && o && n) {
-                        if (!(userId && o.user_id === userId && shouldSkipFromPending("UPDATE", o))) {
+                        if (
+                            !(
+                                userId &&
+                                o.user_id === userId &&
+                                shouldSkipFromPending("UPDATE", o)
+                            )
+                        ) {
                             applyDelete(o);
                             applyInsert(n);
                         }
                         return;
                     }
 
-                    void loadReactions({ silent: true, messageIds: getRecentMessageIdsForReactions() });
-                }
+                    void loadReactions({
+                        silent: true,
+                        messageIds: getRecentMessageIdsForReactions(),
+                    });
+                },
             )
             .subscribe();
 
@@ -1792,17 +2106,28 @@ export function ChatPanel({
         const desiredHeight = 420;
 
         let left = rect.right - width + offsetLeft;
-        left = Math.max(margin + offsetLeft, Math.min(left, offsetLeft + vw - width - margin));
+        left = Math.max(
+            margin + offsetLeft,
+            Math.min(left, offsetLeft + vw - width - margin),
+        );
 
         const spaceAbove = rect.top - margin;
         const spaceBelow = vh - rect.bottom - margin;
         const preferAbove = spaceAbove >= 260 || spaceAbove >= spaceBelow;
 
-        let maxHeight = Math.max(240, Math.min(desiredHeight, (preferAbove ? spaceAbove : spaceBelow) - 8));
+        let maxHeight = Math.max(
+            240,
+            Math.min(desiredHeight, (preferAbove ? spaceAbove : spaceBelow) - 8),
+        );
         maxHeight = Math.max(240, Math.min(maxHeight, vh - margin * 2));
 
-        let top = preferAbove ? rect.top - maxHeight - 8 + offsetTop : rect.bottom + 8 + offsetTop;
-        top = Math.max(margin + offsetTop, Math.min(top, offsetTop + vh - maxHeight - margin));
+        let top = preferAbove
+            ? rect.top - maxHeight - 8 + offsetTop
+            : rect.bottom + 8 + offsetTop;
+        top = Math.max(
+            margin + offsetTop,
+            Math.min(top, offsetTop + vh - maxHeight - margin),
+        );
 
         return { left, top, width, maxHeight };
     };
@@ -1848,19 +2173,26 @@ export function ChatPanel({
         const raw = text.trim();
         if (!raw || !userId || !sessionId) return;
 
-        const outgoingScope: ChatMode = activeMode === "direct" ? "direct" : "general";
-        const outgoingPeerId = outgoingScope === "direct" ? activeDirectPeerId : null;
+        const outgoingScope: ChatMode =
+            activeMode === "direct" ? "direct" : "general";
+        const outgoingPeerId =
+            outgoingScope === "direct" ? activeDirectPeerId : null;
 
-        const safeReplyTo = replyTo && isReplyCompatibleWithActiveComposer(replyTo) ? replyTo : null;
+        const safeReplyTo =
+            replyTo && isReplyCompatibleWithActiveComposer(replyTo) ? replyTo : null;
 
         if (replyTo && !safeReplyTo) {
             // Privacy guard: never leak a quoted DM into All chat, or a quote from one DM thread into another.
             setReplyTo(null);
         }
 
-        const replyQuote = safeReplyTo ? quotePreviewForReply(safeReplyTo.body, 240) : "";
+        const replyQuote = safeReplyTo
+            ? quotePreviewForReply(safeReplyTo.body, 240)
+            : "";
         const replyName = safeReplyTo?.profile?.full_name || "Participant";
-        const replyHeader = safeReplyTo ? `↪ [msg:${safeReplyTo.id}] ${replyName}: ${replyQuote || "[message]"}` : null;
+        const replyHeader = safeReplyTo
+            ? `↪ [msg:${safeReplyTo.id}] ${replyName}: ${replyQuote || "[message]"}`
+            : null;
         const composed = replyHeader ? `${replyHeader}\n\n${raw}` : raw;
 
         if (outgoingScope === "direct" && !outgoingPeerId) {
@@ -1874,7 +2206,11 @@ export function ChatPanel({
                 externalMode,
                 externalDirectPeerUserId,
             });
-            alert(isHost ? "Pick a participant first." : "Direct host chat is not ready yet.");
+            alert(
+                isHost
+                    ? "Pick a participant first."
+                    : "Direct host chat is not ready yet.",
+            );
             return;
         }
 
@@ -1924,16 +2260,21 @@ export function ChatPanel({
         }
 
         if (isHost && outgoingScope === "direct" && outgoingPeerId) {
-            setDirectPeerIds((prev) => (prev.includes(outgoingPeerId) ? prev : [...prev, outgoingPeerId]));
+            setDirectPeerIds((prev) =>
+                prev.includes(outgoingPeerId) ? prev : [...prev, outgoingPeerId],
+            );
         }
     };
 
     const updateMessage = async (messageId: string, newBody: string) => {
         if (!userId || !sessionId) return;
-        const prevBody = messagesRef.current.find((m) => m.id === messageId)?.body ?? null;
+        const prevBody =
+            messagesRef.current.find((m) => m.id === messageId)?.body ?? null;
 
         setMessages((prev) => {
-            const next = prev.map((m) => (m.id === messageId ? { ...m, body: newBody } : m));
+            const next = prev.map((m) =>
+                m.id === messageId ? { ...m, body: newBody } : m,
+            );
             messagesRef.current = next;
             return next;
         });
@@ -1949,7 +2290,9 @@ export function ChatPanel({
             console.error("chat update error:", error);
             if (prevBody !== null) {
                 setMessages((prev) => {
-                    const next = prev.map((m) => (m.id === messageId ? { ...m, body: prevBody } : m));
+                    const next = prev.map((m) =>
+                        m.id === messageId ? { ...m, body: prevBody } : m,
+                    );
                     messagesRef.current = next;
                     return next;
                 });
@@ -2010,7 +2353,10 @@ export function ChatPanel({
         });
 
         const expectedEv = already ? "DELETE" : "INSERT";
-        pendingReactionOpsRef.current.set(reactionKey(expectedEv, messageId, emoji, userId), Date.now());
+        pendingReactionOpsRef.current.set(
+            reactionKey(expectedEv, messageId, emoji, userId),
+            Date.now(),
+        );
 
         if (already) {
             const { error } = await supabase
@@ -2023,7 +2369,10 @@ export function ChatPanel({
 
             if (error) {
                 console.warn("removeReaction error:", error);
-                void loadReactions({ silent: true, messageIds: getRecentMessageIdsForReactions() });
+                void loadReactions({
+                    silent: true,
+                    messageIds: getRecentMessageIdsForReactions(),
+                });
             }
             return;
         }
@@ -2038,10 +2387,16 @@ export function ChatPanel({
         if (error) {
             const code = (error as any)?.code;
             const msg = String((error as any)?.message || "");
-            const isDup = code === "23505" || msg.toLowerCase().includes("duplicate") || msg.toLowerCase().includes("unique");
+            const isDup =
+                code === "23505" ||
+                msg.toLowerCase().includes("duplicate") ||
+                msg.toLowerCase().includes("unique");
 
             if (isDup) {
-                pendingReactionOpsRef.current.set(reactionKey("DELETE", messageId, emoji, userId), Date.now());
+                pendingReactionOpsRef.current.set(
+                    reactionKey("DELETE", messageId, emoji, userId),
+                    Date.now(),
+                );
                 await supabase
                     .from(REACTIONS_TABLE)
                     .delete()
@@ -2049,40 +2404,76 @@ export function ChatPanel({
                     .eq("message_id", messageId)
                     .eq("user_id", userId)
                     .eq("emoji", emoji);
-                void loadReactions({ silent: true, messageIds: getRecentMessageIdsForReactions() });
+                void loadReactions({
+                    silent: true,
+                    messageIds: getRecentMessageIdsForReactions(),
+                });
                 return;
             }
 
             console.warn("addReaction error:", error);
-            void loadReactions({ silent: true, messageIds: getRecentMessageIdsForReactions() });
+            void loadReactions({
+                silent: true,
+                messageIds: getRecentMessageIdsForReactions(),
+            });
         }
     };
 
-    const visibleMessages = useMemo(() => messages.slice(-VISIBLE_MESSAGE_LIMIT), [messages]);
-    const modalMessage = reactionDetails.open ? messagesRef.current.find((m) => m.id === reactionDetails.messageId) || null : null;
-    const modalMessageMain = modalMessage ? parseReplyBody(modalMessage.body).main : "";
-    const modalBg = isLight ? "bg-[#F3F3F3] border border-[#CFCFCF]" : "bg-[#1B1B1B] border border-[#2B2B2B]";
-    const modalTextPrimary = isLight ? "text-black/85" : "text-white/90";
-    const modalTextSecondary = isLight ? "text-black/55" : "text-white/55";
+    const visibleMessages = useMemo(
+        () => messages.slice(-VISIBLE_MESSAGE_LIMIT),
+        [messages],
+    );
+    const modalMessage = reactionDetails.open
+        ? messagesRef.current.find((m) => m.id === reactionDetails.messageId) ||
+        null
+        : null;
+    const modalMessageMain = modalMessage
+        ? parseReplyBody(modalMessage.body).main
+        : "";
+    const modalBg = isLight
+        ? "bg-[#F3F1F1] border border-[#D8D0D0]"
+        : "bg-[#F3F1F1] border border-[#D8D0D0]";
+    const modalTextPrimary = isLight ? "text-black/85" : "text-black/90";
+    const modalTextSecondary = isLight ? "text-black/55" : "text-black/55";
     const modalBtn = isLight
-        ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] border border-[#CFCFCF] text-black/70"
-        : "bg-[#242424] hover:bg-[#303030] border border-[#2B2B2B] text-white/75";
+        ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] border border-[#D8D0D0] text-black/70"
+        : "bg-[#F7F5F5] hover:bg-[#303030] border border-[#D8D0D0] text-black/75";
     const modalPrimaryBtn = "bg-emerald-600 hover:bg-emerald-700 text-white";
-    const canToggleInModal = !!reactionDetails.open && !!reactionDetails.messageId && !!reactionDetails.emoji;
-    const myReactedInModal = canToggleInModal && !!myReactions?.[reactionDetails.messageId]?.[reactionDetails.emoji];
+    const canToggleInModal =
+        !!reactionDetails.open &&
+        !!reactionDetails.messageId &&
+        !!reactionDetails.emoji;
+    const myReactedInModal =
+        canToggleInModal &&
+        !!myReactions?.[reactionDetails.messageId]?.[reactionDetails.emoji];
 
     const emojiPortal =
         composerEmojiOpen && emojiPos && typeof document !== "undefined"
             ? createPortal(
-                <div className="fixed inset-0 z-[99999]" style={{ pointerEvents: "none" }}>
-                    <div className="absolute inset-0" style={{ pointerEvents: "auto", background: "transparent" }} onMouseDown={() => setComposerEmojiOpen(false)} />
+                <div
+                    className="fixed inset-0 z-[99999]"
+                    style={{ pointerEvents: "none" }}
+                >
+                    <div
+                        className="absolute inset-0"
+                        style={{ pointerEvents: "auto", background: "transparent" }}
+                        onMouseDown={() => setComposerEmojiOpen(false)}
+                    />
                     <div
                         ref={emojiPortalRef}
                         className={"absolute " + portalBoxCls}
-                        style={{ pointerEvents: "auto", left: emojiPos.left, top: emojiPos.top, width: emojiPos.width }}
+                        style={{
+                            pointerEvents: "auto",
+                            left: emojiPos.left,
+                            top: emojiPos.top,
+                            width: emojiPos.width,
+                        }}
                         onMouseDown={(e) => e.stopPropagation()}
                     >
-                        <div style={{ maxHeight: emojiPos.maxHeight }} className="overflow-hidden">
+                        <div
+                            style={{ maxHeight: emojiPos.maxHeight }}
+                            className="overflow-hidden"
+                        >
                             <Picker
                                 data={emojiData}
                                 theme={theme === "light" ? "light" : "dark"}
@@ -2099,7 +2490,7 @@ export function ChatPanel({
                         </div>
                     </div>
                 </div>,
-                document.body
+                document.body,
             )
             : null;
 
@@ -2107,24 +2498,65 @@ export function ChatPanel({
         <div className="h-full flex flex-col bg-transparent min-h-0 relative">
             {reactionDetails.open && (
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeReactionDetails} />
-                    <div className={"relative w-[92vw] max-w-[520px] rounded-2xl shadow-2xl " + modalBg}>
-                        <div className={"px-5 py-4 border-b " + (isLight ? "border-[#CFCFCF]" : "border-[#2B2B2B]")}>
+                    <div
+                        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                        onClick={closeReactionDetails}
+                    />
+                    <div
+                        className={
+                            "relative w-[92vw] max-w-[520px] rounded-2xl shadow-2xl " +
+                            modalBg
+                        }
+                    >
+                        <div
+                            className={
+                                "px-5 py-4 border-b " +
+                                (isLight ? "border-[#D8D0D0]" : "border-[#D8D0D0]")
+                            }
+                        >
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                    <div className={"text-[14px] font-semibold " + modalTextPrimary}>{reactionDetails.emoji} Reactions</div>
-                                    <div className={"text-[12px] mt-0.5 " + modalTextSecondary}>Click outside or press Esc to close</div>
+                                    <div
+                                        className={"text-[14px] font-semibold " + modalTextPrimary}
+                                    >
+                                        {reactionDetails.emoji} Reactions
+                                    </div>
+                                    <div className={"text-[12px] mt-0.5 " + modalTextSecondary}>
+                                        Click outside or press Esc to close
+                                    </div>
                                 </div>
-                                <button type="button" onClick={closeReactionDetails} className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + modalBtn} title="Close">
+                                <button
+                                    type="button"
+                                    onClick={closeReactionDetails}
+                                    className={
+                                        "w-9 h-9 rounded-xl flex items-center justify-center transition " +
+                                        modalBtn
+                                    }
+                                    title="Close"
+                                >
                                     <X size={18} />
                                 </button>
                             </div>
 
                             {modalMessage && (
-                                <div className={"mt-3 rounded-xl px-3 py-2 text-[12px] " + (isLight ? "bg-[#E6E6E6] border border-[#CFCFCF]" : "bg-[#242424] border border-[#2B2B2B]")}>
-                                    <div className={"text-[11px] mb-1 " + modalTextSecondary}>Message</div>
-                                    <div className={modalTextPrimary + " whitespace-pre-wrap break-words"}>
-                                        {collapseWs(modalMessageMain).slice(0, 260) + (collapseWs(modalMessageMain).length > 260 ? "…" : "")}
+                                <div
+                                    className={
+                                        "mt-3 rounded-xl px-3 py-2 text-[12px] " +
+                                        (isLight
+                                            ? "bg-[#ECEAEA] border border-[#D8D0D0]"
+                                            : "bg-[#F7F5F5] border border-[#D8D0D0]")
+                                    }
+                                >
+                                    <div className={"text-[11px] mb-1 " + modalTextSecondary}>
+                                        Message
+                                    </div>
+                                    <div
+                                        className={
+                                            modalTextPrimary + " whitespace-pre-wrap break-words"
+                                        }
+                                    >
+                                        {collapseWs(modalMessageMain).slice(0, 260) +
+                                            (collapseWs(modalMessageMain).length > 260 ? "…" : "")}
                                     </div>
                                 </div>
                             )}
@@ -2133,54 +2565,129 @@ export function ChatPanel({
                         <div className="px-5 py-4">
                             <div className="flex items-center justify-between gap-3">
                                 <div className={modalTextSecondary + " text-[12px]"}>
-                                    {reactionDetails.loading ? "Loading…" : `${reactionDetails.userIds.length} ${reactionDetails.userIds.length === 1 ? "person" : "people"} reacted`}
+                                    {reactionDetails.loading
+                                        ? "Loading…"
+                                        : `${reactionDetails.userIds.length} ${reactionDetails.userIds.length === 1 ? "person" : "people"} reacted`}
                                 </div>
 
                                 {canToggleInModal && (
                                     <button
                                         type="button"
-                                        className={"px-3 h-9 rounded-xl text-[13px] font-semibold border transition " + (myReactedInModal ? modalBtn : modalPrimaryBtn + " border-emerald-500/40")}
+                                        className={
+                                            "px-3 h-9 rounded-xl text-[13px] font-semibold border transition " +
+                                            (myReactedInModal
+                                                ? modalBtn
+                                                : modalPrimaryBtn + " border-emerald-500/40")
+                                        }
                                         onClick={async () => {
-                                            await toggleReaction(reactionDetails.messageId, reactionDetails.emoji);
-                                            void loadReactionDetails(reactionDetails.messageId, reactionDetails.emoji);
+                                            await toggleReaction(
+                                                reactionDetails.messageId,
+                                                reactionDetails.emoji,
+                                            );
+                                            void loadReactionDetails(
+                                                reactionDetails.messageId,
+                                                reactionDetails.emoji,
+                                            );
                                         }}
                                         title={myReactedInModal ? "Remove my reaction" : "React"}
                                     >
-                                        {myReactedInModal ? "Remove my reaction" : "Add my reaction"}
+                                        {myReactedInModal
+                                            ? "Remove my reaction"
+                                            : "Add my reaction"}
                                     </button>
                                 )}
                             </div>
 
-                            {reactionDetails.error && <div className={"mt-3 text-[12px] " + (isLight ? "text-red-700" : "text-red-300")}>{reactionDetails.error}</div>}
+                            {reactionDetails.error && (
+                                <div
+                                    className={
+                                        "mt-3 text-[12px] " +
+                                        (isLight ? "text-red-700" : "text-red-300")
+                                    }
+                                >
+                                    {reactionDetails.error}
+                                </div>
+                            )}
 
                             <div className="mt-4 max-h-[46vh] overflow-y-auto custom-scrollbar pr-1">
                                 {reactionDetails.loading && (
                                     <div className="py-6 flex items-center justify-center">
-                                        <div className={"w-7 h-7 rounded-full border-2 animate-spin " + (isLight ? "border-black/20 border-t-black/60" : "border-[#333333] border-t-white/70")} />
+                                        <div
+                                            className={
+                                                "w-7 h-7 rounded-full border-2 animate-spin " +
+                                                (isLight
+                                                    ? "border-black/20 border-t-black/60"
+                                                    : "border-[#333333] border-t-white/70")
+                                            }
+                                        />
                                     </div>
                                 )}
 
-                                {!reactionDetails.loading && reactionDetails.userIds.length === 0 && !reactionDetails.error && (
-                                    <div className={modalTextSecondary + " text-[13px] italic py-6 text-center"}>No reactions yet</div>
-                                )}
+                                {!reactionDetails.loading &&
+                                    reactionDetails.userIds.length === 0 &&
+                                    !reactionDetails.error && (
+                                        <div
+                                            className={
+                                                modalTextSecondary +
+                                                " text-[13px] italic py-6 text-center"
+                                            }
+                                        >
+                                            No reactions yet
+                                        </div>
+                                    )}
 
-                                {!reactionDetails.loading && reactionDetails.userIds.length > 0 && (
-                                    <div className="space-y-2">
-                                        {reactionDetails.userIds.map((uid) => {
-                                            const prof = profilesByIdRef.current[uid] || (uid === userId ? meProfileRef.current : null) || ({ id: uid, full_name: "Participant", avatar_url: null } as Profile);
-                                            const displayName = uid === userId ? "You" : prof?.full_name || "Participant";
-                                            return (
-                                                <div key={uid} className={"flex items-center gap-3 rounded-xl px-3 py-2 border " + (isLight ? "bg-[#F3F3F3] border-[#CFCFCF]" : "bg-[#242424] border-[#2B2B2B]")}>
-                                                    <img src={avatarFromProfile(prof)} className="w-9 h-9 rounded-full object-cover" alt="" />
-                                                    <div className="min-w-0">
-                                                        <div className={modalTextPrimary + " text-[13px] truncate"}>{displayName}</div>
-                                                        <div className={modalTextSecondary + " text-[11px] truncate"}>{uid === userId ? "This is you" : ""}</div>
+                                {!reactionDetails.loading &&
+                                    reactionDetails.userIds.length > 0 && (
+                                        <div className="space-y-2">
+                                            {reactionDetails.userIds.map((uid) => {
+                                                const prof =
+                                                    profilesByIdRef.current[uid] ||
+                                                    (uid === userId ? meProfileRef.current : null) ||
+                                                    ({
+                                                        id: uid,
+                                                        full_name: "Participant",
+                                                        avatar_url: null,
+                                                    } as Profile);
+                                                const displayName =
+                                                    uid === userId
+                                                        ? "You"
+                                                        : prof?.full_name || "Participant";
+                                                return (
+                                                    <div
+                                                        key={uid}
+                                                        className={
+                                                            "flex items-center gap-3 rounded-xl px-3 py-2 border " +
+                                                            (isLight
+                                                                ? "bg-[#F3F1F1] border-[#D8D0D0]"
+                                                                : "bg-[#F7F5F5] border-[#D8D0D0]")
+                                                        }
+                                                    >
+                                                        <img
+                                                            src={avatarFromProfile(prof)}
+                                                            className="w-9 h-9 rounded-full object-cover"
+                                                            alt=""
+                                                        />
+                                                        <div className="min-w-0">
+                                                            <div
+                                                                className={
+                                                                    modalTextPrimary + " text-[13px] truncate"
+                                                                }
+                                                            >
+                                                                {displayName}
+                                                            </div>
+                                                            <div
+                                                                className={
+                                                                    modalTextSecondary + " text-[11px] truncate"
+                                                                }
+                                                            >
+                                                                {uid === userId ? "This is you" : ""}
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                             </div>
                         </div>
                     </div>
@@ -2191,17 +2698,35 @@ export function ChatPanel({
                 <div className={"px-5 py-4 border-b " + headerBorder}>
                     <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0 flex items-center gap-3">
-                            <div className={titleText + " font-inter font-semibold truncate min-w-0"}>{title}</div>
+                            <div
+                                className={
+                                    titleText + " font-inter font-semibold truncate min-w-0"
+                                }
+                            >
+                                {title}
+                            </div>
                         </div>
 
                         {onClose && (
-                            <button type="button" onClick={onClose} className={"w-9 h-9 rounded-xl flex items-center justify-center transition " + headerCloseBtnCls} title="Close">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className={
+                                    "w-9 h-9 rounded-xl flex items-center justify-center transition " +
+                                    headerCloseBtnCls
+                                }
+                                title="Close"
+                            >
                                 <X size={18} />
                             </button>
                         )}
                     </div>
 
-                    {activeSubtitle && <div className={subText + " text-[12px] mt-0.5"}>{activeSubtitle}</div>}
+                    {activeSubtitle && (
+                        <div className={subText + " text-[12px] mt-0.5"}>
+                            {activeSubtitle}
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -2217,11 +2742,27 @@ export function ChatPanel({
                     }
                 }}
             >
-                {loading && <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>Loading…</div>}
+                {loading && (
+                    <div
+                        className={
+                            (isLight ? "text-black/45" : "text-white/40") + " text-sm italic"
+                        }
+                    >
+                        Loading…
+                    </div>
+                )}
 
                 {!loading && visibleMessages.length === 0 && (
-                    <div className={(isLight ? "text-black/45" : "text-white/40") + " text-sm italic"}>
-                        {activeMode === "general" ? "No messages yet" : isHost && !activeDirectPeerId ? "Pick a participant to start a direct thread" : "No direct messages yet"}
+                    <div
+                        className={
+                            (isLight ? "text-black/45" : "text-white/40") + " text-sm italic"
+                        }
+                    >
+                        {activeMode === "general"
+                            ? "No messages yet"
+                            : isHost && !activeDirectPeerId
+                                ? "Pick a participant to start a direct thread"
+                                : "No direct messages yet"}
                     </div>
                 )}
 
@@ -2264,7 +2805,9 @@ export function ChatPanel({
                         type="button"
                         className={
                             "pointer-events-auto px-4 py-2 rounded-full shadow-xl text-[12px] font-semibold border transition " +
-                            (isLight ? "bg-[#F1F1F1]/95 border-[#CFCFCF] text-black/80 hover:bg-[#F3F3F3]" : "bg-[#242424]/95 border-[#2B2B2B] text-white/85 hover:bg-[#242424]")
+                            (isLight
+                                ? "bg-[#F1F1F1]/95 border-[#D8D0D0] text-black/80 hover:bg-[#F3F1F1]"
+                                : "bg-[#F7F5F5]/95 border-[#D8D0D0] text-black/85 hover:bg-[#F7F5F5]")
                         }
                         onClick={() => {
                             atBottomRef.current = true;
@@ -2281,14 +2824,29 @@ export function ChatPanel({
 
             <div className={"p-4 border-t " + headerBorder}>
                 {replyTo && (
-                    <div className={"mb-2 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 " + replyBoxCls}>
+                    <div
+                        className={
+                            "mb-2 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 " +
+                            replyBoxCls
+                        }
+                    >
                         <div className="min-w-0">
                             <div className={replyingLabel}>Replying</div>
                             <div className={"text-[11px] truncate " + replyingText}>
-                                {(replyTo.profile?.full_name || "Participant") + ": " + (quotePreviewForReply(replyTo.body, 220) || "[message]")}
+                                {(replyTo.profile?.full_name || "Participant") +
+                                    ": " +
+                                    (quotePreviewForReply(replyTo.body, 220) || "[message]")}
                             </div>
                         </div>
-                        <button type="button" onClick={() => setReplyTo(null)} className={"w-8 h-8 rounded-lg flex items-center justify-center transition " + cancelBtnCls} title="Cancel reply">
+                        <button
+                            type="button"
+                            onClick={() => setReplyTo(null)}
+                            className={
+                                "w-8 h-8 rounded-lg flex items-center justify-center transition " +
+                                cancelBtnCls
+                            }
+                            title="Cancel reply"
+                        >
                             <X size={16} />
                         </button>
                     </div>
@@ -2299,7 +2857,15 @@ export function ChatPanel({
                         ref={composerRef}
                         value={text}
                         onChange={(e) => setText(e.target.value)}
-                        placeholder={activeMode === "general" ? "Write a message…" : isHost ? (activeDirectPeerId ? "Write a direct message…" : "Pick a participant first…") : "Message the host…"}
+                        placeholder={
+                            activeMode === "general"
+                                ? "Write a message…"
+                                : isHost
+                                    ? activeDirectPeerId
+                                        ? "Write a direct message…"
+                                        : "Pick a participant first…"
+                                    : "Message the host…"
+                        }
                         className={composerInputCls}
                         onKeyDown={(e) => {
                             if (e.key === "Enter" && !e.shiftKey) {
@@ -2330,19 +2896,25 @@ export function ChatPanel({
                         onClick={() => void send()}
                         className={
                             "w-11 h-11 rounded-xl flex items-center justify-center transition border " +
-                            (text.trim() && !(activeMode === "direct" && isHost && !activeDirectPeerId)
+                            (text.trim() &&
+                                !(activeMode === "direct" && isHost && !activeDirectPeerId)
                                 ? sendBtnActive + " border-emerald-500/40"
                                 : sendBtnDisabled + " border-transparent cursor-not-allowed")
                         }
                         type="button"
-                        disabled={!text.trim() || (activeMode === "direct" && isHost && !activeDirectPeerId)}
+                        disabled={
+                            !text.trim() ||
+                            (activeMode === "direct" && isHost && !activeDirectPeerId)
+                        }
                         title="Send"
                     >
                         <SendHorizontal size={18} />
                     </button>
                 </div>
 
-                <div className={"mt-2 text-[11px] " + hintText}>Enter — send • Shift+Enter — new line</div>
+                <div className={"mt-2 text-[11px] " + hintText}>
+                    Enter — send • Shift+Enter — new line
+                </div>
             </div>
 
             {emojiPortal}
