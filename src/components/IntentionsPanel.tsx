@@ -149,23 +149,17 @@ function IconButton({
   children,
   className = "",
   theme = "dark",
-  active = false,
 }: {
   title: string;
   onClick: (e: MouseEvent<HTMLButtonElement>) => void;
   children: ReactNode;
   className?: string;
   theme?: RoomTheme;
-  active?: boolean;
 }) {
   const isLight = theme === "light";
-  const base = active
-    ? isLight
-      ? "bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-      : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B] shadow-sm"
-    : isLight
-      ? "bg-black/5 hover:bg-black/10 text-black/70"
-      : "bg-[#111827] hover:bg-[#1f2937] text-white/80";
+  const base = isLight
+    ? "bg-black/5 hover:bg-black/10 text-black/70"
+    : "bg-[#111827] hover:bg-[#1f2937] text-white/80";
 
   return (
     <button
@@ -1383,7 +1377,6 @@ export function IntentionsPanel({
                   e.preventDefault();
                   onOpenPictureInPicture();
                 }}
-                active={pictureInPictureOpen}
               >
                 <PanelSmartIcon name="pip" theme={theme} className="w-4 h-4" alt="Picture-in-Picture" />
               </IconButton>
@@ -1392,7 +1385,6 @@ export function IntentionsPanel({
             <IconButton
               theme={theme}
               title={overlayOpen ? "Unpin" : "Pin (always on top if supported)"}
-              active={overlayOpen}
               onClick={(e) => {
                 e.preventDefault();
                 if (overlayOpen) closeOverlay();
