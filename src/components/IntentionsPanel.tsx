@@ -317,13 +317,13 @@ export function IntentionsPanel({
   const mutedText = isLight ? "text-black/50" : "text-white/45";
   const divider = isLight ? "bg-[#E2E6EC]" : "bg-[#3A3A3A]";
 
-  const panelBg = isLight ? "bg-[#F3F4F6]" : "bg-[#2F2F2F]";
-  const headerBg = isLight ? "bg-[#F3F4F6]/95" : "bg-[#2F2F2F]/95";
+  const panelBg = isLight ? "bg-[#ECECEC]" : "bg-[#2F2F2F]";
+  const headerBg = isLight ? "bg-[#ECECEC]/95" : "bg-[#2F2F2F]/95";
   const headerBorder = isLight ? "border-[#D8DDE5]" : "border-white/10";
 
   const inputCls = isLight
     ? `
-      bg-[#F7F8FA] border border-[#D8DDE5] rounded-xl
+      bg-[#F2F2F2] border border-[#D8DDE5] rounded-xl
       px-3 py-3 text-[13px] text-black/85 placeholder:text-black/35
       outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
       font-inter
@@ -336,18 +336,18 @@ export function IntentionsPanel({
     `;
 
   const myCardCls = isLight
-    ? "group rounded-xl border border-[#D8DDE5] px-3 py-2.5 bg-[#3D3D3D]0 hover:bg-[#F7F8FA] transition cursor-pointer"
+    ? "group rounded-xl border border-[#D8DDE5] px-3 py-2.5 bg-[#3D3D3D]0 hover:bg-[#F2F2F2] transition cursor-pointer"
     : "group rounded-xl border border-white/5 px-3 py-2.5 bg-[#3A3A3A]/55 hover:bg-[#3A3A3A]/75 transition cursor-pointer";
 
   const teamCardCls = isLight
-    ? "rounded-xl border border-[#D8DDE5] px-3 py-2.5 bg-[#3D3D3D]0 hover:bg-[#F7F8FA] transition"
+    ? "rounded-xl border border-[#D8DDE5] px-3 py-2.5 bg-[#3D3D3D]0 hover:bg-[#F2F2F2] transition"
     : "rounded-xl border border-white/5 px-3 py-2.5 bg-[#3A3A3A]/55 hover:bg-[#3A3A3A]/75 transition";
 
   const ghostBtn = isLight
     ? "border border-[#D8DDE5] bg-transparent hover:bg-[#E7EAF0] text-black/75"
     : "border border-white/10 bg-transparent hover:bg-[#3F3F3F] text-white/80";
 
-  const primaryBtn = "bg-emerald-500 hover:bg-emerald-600 text-[#02140B] font-semibold";
+  const primaryBtn = "bg-[#2F2F2F] hover:bg-[#3A3A3A] text-white font-semibold";
 
   const stopRoomBubbling = useCallback((e: any) => {
     e?.stopPropagation?.();
@@ -1129,11 +1129,11 @@ export function IntentionsPanel({
       const modalDoc = getPortalDocument();
 
       const backdropBg = isLight ? "bg-black/40" : "bg-[#ECEFF3]5";
-      const modalBg = isLight ? "bg-[#F7F8FA]" : "bg-[#2F2F2F]";
+      const modalBg = isLight ? "bg-[#F2F2F2]" : "bg-[#2F2F2F]";
       const modalBorder = isLight ? "border-[#D8DDE5]" : "border-white/10";
       const modalTitle = isLight ? "text-black/85" : "text-white/85";
       const modalSub = isLight ? "text-black/50" : "text-white/45";
-      const rowBg = isLight ? "bg-[#3D3D3D]0 hover:bg-[#F7F8FA]" : "bg-[#3A3A3A]/55 hover:bg-[#3A3A3A]/75";
+      const rowBg = isLight ? "bg-[#3D3D3D]0 hover:bg-[#F2F2F2]" : "bg-[#3A3A3A]/55 hover:bg-[#3A3A3A]/75";
       const rowBorder = isLight ? "border-[#D8DDE5]" : "border-white/10";
 
       return createPortal(
@@ -1217,7 +1217,7 @@ export function IntentionsPanel({
                       onChange={(e) => setSelectedPlanId(e.target.value)}
                       className={
                         isLight
-                          ? "w-full h-11 px-3 rounded-xl border border-[#D8DDE5] bg-[#F7F8FA] text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-emerald-500"
+                          ? "w-full h-11 px-3 rounded-xl border border-[#D8DDE5] bg-[#F2F2F2] text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-emerald-500"
                           : "w-full h-11 px-3 rounded-xl border border-white/10 bg-[#3A3A3A]/70 text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-emerald-500"
                       }
                     >
@@ -1233,7 +1233,7 @@ export function IntentionsPanel({
                       <div
                         className={[
                           "h-11 w-11 rounded-xl border flex items-center justify-center",
-                          isLight ? "border-[#D8DDE5] bg-[#F7F8FA]" : "border-white/10 bg-[#3A3A3A]/70",
+                          isLight ? "border-[#D8DDE5] bg-[#F2F2F2]" : "border-white/10 bg-[#3A3A3A]/70",
                         ].join(" ")}
                       >
                         <Search size={16} className={isLight ? "text-black/40" : "text-white/45"} />
@@ -1444,7 +1444,7 @@ export function IntentionsPanel({
 
                 const editInputCls = isLight
                   ? `
-                    w-full bg-[#F7F8FA] border border-[#D8DDE5] rounded-xl
+                    w-full bg-[#F2F2F2] border border-[#D8DDE5] rounded-xl
                     px-3 py-2 text-[13px] text-black/85
                     outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
                     font-inter

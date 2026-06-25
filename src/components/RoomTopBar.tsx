@@ -63,22 +63,22 @@ export default function RoomTopBar(props: RoomTopBarProps) {
     const isLight = theme === "light";
 
     const topBarBg = isLight
-        ? "bg-white/85 border border-black/10"
-        : "bg-[#111827]/40 border border-white/5";
+        ? "bg-[#F2F2F2]/95 border border-[#D9D9D9]"
+        : "bg-[#2F2F2F] border border-white/10";
 
     const chipBg = isLight
-        ? "bg-black/5 border border-black/10"
-        : "bg-[#0B1220]/70 border border-white/10";
+        ? "bg-[#EAEAEA] border border-[#D9D9D9]"
+        : "bg-[#3A3A3A] border border-white/10";
 
-    const strongText = isLight ? "text-black/85" : "text-[#F3F4F6]/90";
+    const strongText = isLight ? "text-black/85" : "text-[#ECECEC]/90";
 
     const mutedText = isLight ? "text-black/65" : "text-white/80";
 
     const switchTrack =
         "w-[84px] max-[480px]:w-[78px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
     const switchTrackCls = isLight
-        ? "bg-black/5 border-black/10 hover:bg-black/10"
-        : "bg-white/5 border-white/10 hover:bg-white/10";
+        ? "bg-[#EAEAEA] border-[#D9D9D9] hover:bg-[#E0E0E0]"
+        : "bg-white/5 border-white/10 hover:bg-[#F7F7F7]/10";
 
     const switchThumb =
         "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
@@ -153,8 +153,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                 <button
                                     onClick={onOpenHostProfile}
                                     className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
-                                            ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/75"
-                                            : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-[#F3F4F6]/85"
+                                        ? "border-[#D9D9D9] bg-[#EAEAEA] hover:bg-[#E0E0E0] text-black/75"
+                                        : "border-white/10 bg-[#2F2F2F]/60 hover:bg-[#2F2F2F]/80 text-[#ECECEC]/85"
                                         }`}
                                     title="Host profile"
                                     type="button"
@@ -207,8 +207,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                             <button
                                 onClick={onOpenHostProfile}
                                 className={`w-10 h-10 rounded-2xl flex items-center justify-center border transition ${isLight
-                                        ? "border-black/10 bg-black/5 hover:bg-black/10 text-black/70"
-                                        : "border-white/10 bg-[#0B1220]/60 hover:bg-[#0B1220]/80 text-white/85"
+                                    ? "border-[#D9D9D9] bg-[#EAEAEA] hover:bg-[#E0E0E0] text-black/70"
+                                    : "border-white/10 bg-[#2F2F2F]/60 hover:bg-[#2F2F2F]/80 text-white/85"
                                     }`}
                                 title={`Host: ${String(hostProfile.full_name || "Host")}`}
                                 aria-label="Host profile"
@@ -231,8 +231,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                             "absolute right-0 -top-10 z-20 rounded-xl px-3 py-1.5 text-[12px] font-semibold border shadow-lg transition",
                                             "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100",
                                             isLight
-                                                ? "bg-white border-black/10 text-black/75 hover:bg-white"
-                                                : "bg-[#020617]/90 border-white/10 text-white/85 hover:bg-[#020617]",
+                                                ? "bg-[#F7F7F7] border-[#D9D9D9] text-black/75 hover:bg-[#EAEAEA]"
+                                                : "bg-[#2F2F2F]/90 border-white/10 text-white/85 hover:bg-[#2F2F2F]",
                                         ].join(" ")}
                                         title="Edit timeline"
                                     >

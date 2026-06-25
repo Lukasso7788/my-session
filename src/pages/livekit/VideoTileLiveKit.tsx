@@ -59,7 +59,7 @@ function getStatusClass(status: unknown, isLight: boolean): string {
 
     if (key === "afk") {
         return isLight
-            ? "bg-neutral-200 text-neutral-700 border-black/10"
+            ? "bg-neutral-200 text-neutral-700 border-[#D9D9D9]"
             : "bg-white/10 text-white/80 border-white/10";
     }
 
@@ -77,8 +77,8 @@ function getStatusClass(status: unknown, isLight: boolean): string {
 
     if (key === "call") {
         return isLight
-            ? "bg-blue-100 text-blue-800 border-blue-300/60"
-            : "bg-blue-400/15 text-blue-200 border-blue-300/25";
+            ? "bg-neutral-200 text-neutral-800 border-neutral-300/70"
+            : "bg-white/10 text-white/80 border-white/10";
     }
 
     if (key === "eating") {
@@ -94,7 +94,7 @@ function getStatusClass(status: unknown, isLight: boolean): string {
     }
 
     return isLight
-        ? "bg-neutral-100 text-neutral-700 border-black/10"
+        ? "bg-neutral-100 text-neutral-700 border-[#D9D9D9]"
         : "bg-white/10 text-white/80 border-white/10";
 }
 
@@ -187,10 +187,10 @@ function MicBadgeWithBarVisualizer({
     const badgeBaseClass = isSelfMutedBadge
         ? "bg-red-600 border-red-700/70 text-white shadow-sm"
         : hasCameraOn
-            ? "bg-black/58 border-white/10 text-white shadow-sm"
+            ? "bg-[#EAEAEA]8 border-white/10 text-white shadow-sm"
             : isLight
-                ? "bg-white/92 border-black/10 text-neutral-800 shadow-sm"
-                : "bg-black/58 border-white/10 text-white shadow-sm";
+                ? "bg-[#FAFAFA] border-[#D9D9D9] text-neutral-800 shadow-sm"
+                : "bg-[#EAEAEA]8 border-white/10 text-white shadow-sm";
 
     const micIconTheme: RoomTheme = isSelfMutedBadge || hasCameraOn ? "dark" : isLight ? "light" : "dark";
 
@@ -229,7 +229,7 @@ function MicBadgeWithBarVisualizer({
                                     "lk-audio-bar block h-full w-full rounded-none transition-all duration-75 " +
                                     (hasCameraOn || !isLight
                                         ? "bg-[#34D399]/18 data-[lk-highlighted=true]:bg-[#34D399]/95"
-                                        : "bg-[#4CA0FF]/18 data-[lk-highlighted=true]:bg-[#4CA0FF]/95")
+                                        : "bg-[#6B7280]/18 data-[lk-highlighted=true]:bg-[#6B7280]/95")
                                 }
                             />
                         </BarVisualizer>
@@ -274,26 +274,26 @@ function VideoTileInner({
     const isLight = theme === "light";
     const isCompact = density === "compact";
 
-    const tileBgClass = isLight ? "bg-white/80" : "bg-[#071427]";
-    const mediaBgColor = isLight ? "#FFFFFF" : "#071427";
-    const offStateClass = isLight ? "text-black/60 bg-[#F6F7FB]" : "text-white/70 bg-[#071427]";
+    const tileBgClass = isLight ? "bg-[#FAFAFA]" : "bg-[#2F2F2F]";
+    const mediaBgColor = isLight ? "#FAFAFA" : "#2F2F2F";
+    const offStateClass = isLight ? "text-black/60 bg-[#F2F2F2]" : "text-white/70 bg-[#2F2F2F]";
     const initialsBgClass = isLight
-        ? "bg-blue-500/15 text-blue-700 border-black/10"
-        : "bg-emerald-500/80 text-[#02140B] border-white/10";
+        ? "bg-neutral-200 text-neutral-800 border-[#D9D9D9]"
+        : "bg-emerald-500/80 text-[#FFFFFF] border-white/10";
 
     const hasCameraOn = !!videoTrack;
 
     const namePillClass = hasCameraOn
-        ? "bg-black/45 border-white/10 text-white shadow-sm"
+        ? "bg-[#2F2F2F]/70 border-white/10 text-white shadow-sm"
         : isLight
-            ? "bg-white/92 border-black/10 text-neutral-900 shadow-sm"
-            : "bg-black/45 border-white/10 text-white shadow-sm";
+            ? "bg-[#FAFAFA] border-[#D9D9D9] text-neutral-900 shadow-sm"
+            : "bg-[#2F2F2F]/70 border-white/10 text-white shadow-sm";
 
     const nameTextClass = hasCameraOn ? "!text-white" : isLight ? "text-neutral-900" : "text-white";
 
     const menuBtnClass = isLight
-        ? "bg-white/92 border-black/10 text-black/85 hover:bg-white"
-        : "bg-black/58 border-white/10 text-white hover:bg-black/70";
+        ? "bg-[#FAFAFA] border-[#D9D9D9] text-black/85 hover:bg-[#F7F7F7]"
+        : "bg-[#EAEAEA]8 border-white/10 text-white hover:bg-[#3A3A3A]";
 
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const [sizeText, setSizeText] = useState<string>("");
@@ -439,7 +439,7 @@ function VideoTileInner({
             className={
                 "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border " +
                 (isCompact ? "rounded-xl " : "rounded-2xl ") +
-                (isLight ? "border-black/10" : "border-white/10") +
+                (isLight ? "border-[#D9D9D9]" : "border-white/10") +
                 " " +
                 tileBgClass
             }
@@ -459,7 +459,7 @@ function VideoTileInner({
                             <img
                                 src={normalizedAvatarUrl}
                                 alt={label || "User"}
-                                className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)]"} rounded-full object-cover border shadow-2xl ${isLight ? "border-black/10" : "border-white/10"
+                                className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)]"} rounded-full object-cover border shadow-2xl ${isLight ? "border-[#D9D9D9]" : "border-white/10"
                                     }`}
                                 referrerPolicy="no-referrer"
                                 onError={() => setAvatarBroken(true)}
@@ -486,8 +486,8 @@ function VideoTileInner({
                         className={
                             "absolute left-2 top-2 px-2 py-1 rounded-lg text-[10px] border " +
                             (isLight
-                                ? "bg-white/80 text-black border-black/10"
-                                : "bg-black/50 text-white border-white/10")
+                                ? "bg-[#FAFAFA] text-black border-[#D9D9D9]"
+                                : "bg-[#EAEAEA]0 text-white border-white/10")
                         }
                         title="Tile size (debug)"
                     >
@@ -533,8 +533,8 @@ function VideoTileInner({
                                 className={
                                     "px-2 py-1 rounded-lg text-[11px] border flex items-center gap-1 " +
                                     (isLight
-                                        ? "bg-white/90 text-black border-black/10 disabled:opacity-50"
-                                        : "bg-black/60 text-white border-white/10 disabled:opacity-50")
+                                        ? "bg-[#FAFAFA] text-black border-[#D9D9D9] disabled:opacity-50"
+                                        : "bg-[#2F2F2F]/80 text-white border-white/10 disabled:opacity-50")
                                 }
                                 title="Mute / unmute remote microphone (host action)"
                             >
@@ -554,8 +554,8 @@ function VideoTileInner({
                                 className={
                                     "px-2 py-1 rounded-lg text-[11px] border flex items-center gap-1 " +
                                     (isLight
-                                        ? "bg-white/90 text-black border-black/10 disabled:opacity-50"
-                                        : "bg-black/60 text-white border-white/10 disabled:opacity-50")
+                                        ? "bg-[#FAFAFA] text-black border-[#D9D9D9] disabled:opacity-50"
+                                        : "bg-[#2F2F2F]/80 text-white border-white/10 disabled:opacity-50")
                                 }
                                 title="Mute / unmute remote camera (host action)"
                             >
