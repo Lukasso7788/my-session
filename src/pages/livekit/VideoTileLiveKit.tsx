@@ -59,7 +59,7 @@ function getStatusClass(status: unknown, isLight: boolean): string {
 
     if (key === "afk") {
         return isLight
-            ? "bg-neutral-200 text-neutral-700 border-[#D9D9D9]"
+            ? "bg-neutral-200 text-neutral-700 border-[#D4D7DC]"
             : "bg-white/10 text-white/80 border-white/10";
     }
 
@@ -94,7 +94,7 @@ function getStatusClass(status: unknown, isLight: boolean): string {
     }
 
     return isLight
-        ? "bg-neutral-100 text-neutral-700 border-[#D9D9D9]"
+        ? "bg-neutral-100 text-neutral-700 border-[#D4D7DC]"
         : "bg-white/10 text-white/80 border-white/10";
 }
 
@@ -187,10 +187,10 @@ function MicBadgeWithBarVisualizer({
     const badgeBaseClass = isSelfMutedBadge
         ? "bg-red-600 border-red-700/70 text-white shadow-sm"
         : hasCameraOn
-            ? "bg-[#EAEAEA]8 border-white/10 text-white shadow-sm"
+            ? "bg-[#E1E3E6]8 border-white/10 text-white shadow-sm"
             : isLight
-                ? "bg-[#FAFAFA] border-[#D9D9D9] text-neutral-800 shadow-sm"
-                : "bg-[#EAEAEA]8 border-white/10 text-white shadow-sm";
+                ? "bg-[#F4F5F6] border-[#D4D7DC] text-neutral-800 shadow-sm"
+                : "bg-[#E1E3E6]8 border-white/10 text-white shadow-sm";
 
     const micIconTheme: RoomTheme = isSelfMutedBadge || hasCameraOn ? "dark" : isLight ? "light" : "dark";
 
@@ -274,26 +274,26 @@ function VideoTileInner({
     const isLight = theme === "light";
     const isCompact = density === "compact";
 
-    const tileBgClass = isLight ? "bg-[#FAFAFA]" : "bg-[#2F2F2F]";
-    const mediaBgColor = isLight ? "#FAFAFA" : "#2F2F2F";
-    const offStateClass = isLight ? "text-black/60 bg-[#F2F2F2]" : "text-white/70 bg-[#2F2F2F]";
+    const tileBgClass = isLight ? "bg-[#F4F5F6]" : "bg-[#2F2F2F]";
+    const mediaBgColor = isLight ? "#F4F5F6" : "#2F2F2F";
+    const offStateClass = isLight ? "text-black/60 bg-[#ECEEF0]" : "text-white/70 bg-[#2F2F2F]";
     const initialsBgClass = isLight
-        ? "bg-neutral-200 text-neutral-800 border-[#D9D9D9]"
-        : "bg-emerald-500/80 text-[#FFFFFF] border-white/10";
+        ? "bg-neutral-200 text-neutral-800 border-[#D4D7DC]"
+        : "bg-emerald-500/80 text-[#F6F7F8] border-white/10";
 
     const hasCameraOn = !!videoTrack;
 
     const namePillClass = hasCameraOn
         ? "bg-[#2F2F2F]/70 border-white/10 text-white shadow-sm"
         : isLight
-            ? "bg-[#FAFAFA] border-[#D9D9D9] text-neutral-900 shadow-sm"
+            ? "bg-[#F4F5F6] border-[#D4D7DC] text-neutral-900 shadow-sm"
             : "bg-[#2F2F2F]/70 border-white/10 text-white shadow-sm";
 
     const nameTextClass = hasCameraOn ? "!text-white" : isLight ? "text-neutral-900" : "text-white";
 
     const menuBtnClass = isLight
-        ? "bg-[#FAFAFA] border-[#D9D9D9] text-black/85 hover:bg-[#F7F7F7]"
-        : "bg-[#EAEAEA]8 border-white/10 text-white hover:bg-[#3A3A3A]";
+        ? "bg-[#F4F5F6] border-[#D4D7DC] text-black/85 hover:bg-[#F2F3F5]"
+        : "bg-[#E1E3E6]8 border-white/10 text-white hover:bg-[#3A3A3A]";
 
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const [sizeText, setSizeText] = useState<string>("");
@@ -439,7 +439,7 @@ function VideoTileInner({
             className={
                 "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border " +
                 (isCompact ? "rounded-xl " : "rounded-2xl ") +
-                (isLight ? "border-[#D9D9D9]" : "border-white/10") +
+                (isLight ? "border-[#D4D7DC]" : "border-white/10") +
                 " " +
                 tileBgClass
             }
@@ -459,7 +459,7 @@ function VideoTileInner({
                             <img
                                 src={normalizedAvatarUrl}
                                 alt={label || "User"}
-                                className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)]"} rounded-full object-cover border shadow-2xl ${isLight ? "border-[#D9D9D9]" : "border-white/10"
+                                className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)]"} rounded-full object-cover border shadow-2xl ${isLight ? "border-[#D4D7DC]" : "border-white/10"
                                     }`}
                                 referrerPolicy="no-referrer"
                                 onError={() => setAvatarBroken(true)}
@@ -486,8 +486,8 @@ function VideoTileInner({
                         className={
                             "absolute left-2 top-2 px-2 py-1 rounded-lg text-[10px] border " +
                             (isLight
-                                ? "bg-[#FAFAFA] text-black border-[#D9D9D9]"
-                                : "bg-[#EAEAEA]0 text-white border-white/10")
+                                ? "bg-[#F4F5F6] text-black border-[#D4D7DC]"
+                                : "bg-[#E1E3E6]0 text-white border-white/10")
                         }
                         title="Tile size (debug)"
                     >
@@ -533,7 +533,7 @@ function VideoTileInner({
                                 className={
                                     "px-2 py-1 rounded-lg text-[11px] border flex items-center gap-1 " +
                                     (isLight
-                                        ? "bg-[#FAFAFA] text-black border-[#D9D9D9] disabled:opacity-50"
+                                        ? "bg-[#F4F5F6] text-black border-[#D4D7DC] disabled:opacity-50"
                                         : "bg-[#2F2F2F]/80 text-white border-white/10 disabled:opacity-50")
                                 }
                                 title="Mute / unmute remote microphone (host action)"
@@ -554,7 +554,7 @@ function VideoTileInner({
                                 className={
                                     "px-2 py-1 rounded-lg text-[11px] border flex items-center gap-1 " +
                                     (isLight
-                                        ? "bg-[#FAFAFA] text-black border-[#D9D9D9] disabled:opacity-50"
+                                        ? "bg-[#F4F5F6] text-black border-[#D4D7DC] disabled:opacity-50"
                                         : "bg-[#2F2F2F]/80 text-white border-white/10 disabled:opacity-50")
                                 }
                                 title="Mute / unmute remote camera (host action)"
