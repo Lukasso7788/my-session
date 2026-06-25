@@ -10,8 +10,6 @@ import {
   Pencil,
   X,
   Check,
-  Pin,
-  PinOff,
   ExternalLink,
   ListPlus,
   RefreshCw,
@@ -112,23 +110,62 @@ const PLAN_ITEMS_RENDER_LIMIT = 40;
 const FOCUS_PLAN_ITEMS_FETCH_LIMIT = 120;
 const FOCUS_PLANS_FETCH_LIMIT = 40;
 
+
+function PanelSmartIcon({
+  name,
+  theme,
+  className = "w-4 h-4",
+  alt,
+}: {
+  name: "focus-plan" | "pip" | "pin";
+  theme: RoomTheme;
+  className?: string;
+  alt?: string;
+}) {
+  const themedSrc = `/icons/${name}-${theme}.svg`;
+  const neutralSrc = `/icons/${name}.svg`;
+  const [src, setSrc] = useState(themedSrc);
+
+  useEffect(() => {
+    setSrc(themedSrc);
+  }, [themedSrc]);
+
+  return (
+    <img
+      src={src}
+      onError={() => {
+        if (src !== neutralSrc) setSrc(neutralSrc);
+      }}
+      className={className}
+      alt={alt || name}
+      draggable={false}
+    />
+  );
+}
+
 function IconButton({
   title,
   onClick,
   children,
   className = "",
   theme = "dark",
+  active = false,
 }: {
   title: string;
   onClick: (e: MouseEvent<HTMLButtonElement>) => void;
   children: ReactNode;
   className?: string;
   theme?: RoomTheme;
+  active?: boolean;
 }) {
   const isLight = theme === "light";
-  const base = isLight
-    ? "bg-black/5 hover:bg-black/10 text-black/70"
-    : "bg-[#111827] hover:bg-[#1f2937] text-white/80";
+  const base = active
+    ? isLight
+      ? "bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+      : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B] shadow-sm"
+    : isLight
+      ? "bg-black/5 hover:bg-black/10 text-black/70"
+      : "bg-[#111827] hover:bg-[#1f2937] text-white/80";
 
   return (
     <button
@@ -1335,7 +1372,7 @@ export function IntentionsPanel({
                 openImportModal();
               }}
             >
-              <ListPlus size={16} />
+              <PanelSmartIcon name="focus-plan" theme={theme} className="w-4 h-4" alt="Focus plan" />
             </IconButton>
 
             {pictureInPictureSupported && onOpenPictureInPicture ? (
@@ -1346,34 +1383,24 @@ export function IntentionsPanel({
                   e.preventDefault();
                   onOpenPictureInPicture();
                 }}
+                active={pictureInPictureOpen}
               >
-                <ExternalLink size={16} />
+                <PanelSmartIcon name="pip" theme={theme} className="w-4 h-4" alt="Picture-in-Picture" />
               </IconButton>
             ) : null}
 
-            {!overlayOpen ? (
-              <IconButton
-                theme={theme}
-                title="Pin (always on top if supported)"
-                onClick={(e) => {
-                  e.preventDefault();
-                  openOverlay();
-                }}
-              >
-                <Pin size={16} />
-              </IconButton>
-            ) : (
-              <IconButton
-                theme={theme}
-                title="Unpin"
-                onClick={(e) => {
-                  e.preventDefault();
-                  closeOverlay();
-                }}
-              >
-                <PinOff size={16} />
-              </IconButton>
-            )}
+            <IconButton
+              theme={theme}
+              title={overlayOpen ? "Unpin" : "Pin (always on top if supported)"}
+              active={overlayOpen}
+              onClick={(e) => {
+                e.preventDefault();
+                if (overlayOpen) closeOverlay();
+                else void openOverlay();
+              }}
+            >
+              <PanelSmartIcon name="pin" theme={theme} className="w-4 h-4" alt="Pin" />
+            </IconButton>
 
           </div>
         </div>
@@ -1610,7 +1637,7 @@ export function IntentionsPanel({
                 transition inline-flex items-center gap-2 text-[13px] font-semibold font-inter
               `}
             >
-              <PinOff size={16} />
+              <PanelSmartIcon name="pin" theme={theme} className="w-4 h-4" alt="Pin" />
               Unpin
             </button>
           </div>
