@@ -117,7 +117,7 @@ function PanelSmartIcon({
   className = "w-4 h-4",
   alt,
 }: {
-  name: "focus-plan" | "pip" | "pin";
+  name: "focus-plan" | "pip-intentions" | "pin";
   theme: RoomTheme;
   className?: string;
   alt?: string;
@@ -1378,7 +1378,7 @@ export function IntentionsPanel({
                   onOpenPictureInPicture();
                 }}
               >
-                <PanelSmartIcon name="pip" theme={theme} className="w-4 h-4" alt="Picture-in-Picture" />
+                <PanelSmartIcon name="pip-intentions" theme={theme} className="w-4 h-4" alt="Picture-in-Picture" />
               </IconButton>
             ) : null}
 
