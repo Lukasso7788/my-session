@@ -844,7 +844,7 @@ export function ChatPanel({
     externalDirectPeerUserId?: string | null;
     onDirectPeerIdsChange?: (peerIds: string[]) => void;
 }) {
-    const isLight = theme === "light";
+    const isLight = true;
 
     const [userId, setUserId] = useState<string | null>(null);
     const [hostUserId, setHostUserId] = useState<string | null>(null);

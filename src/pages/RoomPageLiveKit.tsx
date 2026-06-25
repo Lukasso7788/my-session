@@ -10198,7 +10198,7 @@ export function RoomPageLiveKit({
   // UI colors
   const pageBg = isLight
     ? "bg-[#F3F1F1] text-[#1F1F1F]"
-    : "bg-[#242424] text-white";
+    : "bg-[#1B1B1B] text-white";
   const panelBg = "bg-[#F3F1F1] border border-[#D8D0D0]";
   const bottomBarBg = isLight
     ? "bg-[#F3F1F1] border border-[#D8D0D0]"
