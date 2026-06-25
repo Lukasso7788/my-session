@@ -293,7 +293,7 @@ function VideoTileInner({
 
     const menuBtnClass = isLight
         ? "bg-[#F4F5F6] border-[#D4D7DC] text-black/85 hover:bg-[#F2F3F5]"
-        : "bg-[#E1E3E6]8 border-white/10 text-white hover:bg-[#3A3A3A]";
+        : "bg-[#E1E3E6]8 border-white/10 text-white hover:bg-[#333333]";
 
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const [sizeText, setSizeText] = useState<string>("");

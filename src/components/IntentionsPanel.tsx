@@ -158,8 +158,8 @@ function IconButton({
 }) {
   const isLight = theme === "light";
   const base = isLight
-    ? "bg-[#ECEFF3] hover:bg-[#E2E6EC] text-black/70"
-    : "bg-[#2F2F2F] hover:bg-[#3A3A3A] text-white/80";
+    ? "bg-[#DDE0E5] hover:bg-[#D2D6DC] text-black/70"
+    : "bg-[#2F2F2F] hover:bg-[#333333] text-white/80";
 
   return (
     <button
@@ -224,7 +224,7 @@ function applyOverlayBaseStyles(doc: Document, isLight: boolean) {
     doc.documentElement.style.height = "100%";
     doc.body.style.height = "100%";
     doc.body.style.margin = "0";
-    doc.body.style.background = isLight ? "#ffffff" : "#2F2F2F";
+    doc.body.style.background = isLight ? "#F6F7F8" : "#2F2F2F";
     doc.body.style.fontFamily = OVERLAY_FONT_FAMILY;
   } catch { }
 }
@@ -315,39 +315,39 @@ export function IntentionsPanel({
 
   const titleText = isLight ? "text-black/85" : "text-white/85";
   const mutedText = isLight ? "text-black/50" : "text-white/45";
-  const divider = isLight ? "bg-[#E2E6EC]" : "bg-[#3A3A3A]";
+  const divider = isLight ? "bg-[#D2D6DC]" : "bg-[#333333]";
 
-  const panelBg = isLight ? "bg-[#ECECEC]" : "bg-[#2F2F2F]";
-  const headerBg = isLight ? "bg-[#ECECEC]/95" : "bg-[#2F2F2F]/95";
-  const headerBorder = isLight ? "border-[#D8DDE5]" : "border-white/10";
+  const panelBg = isLight ? "bg-[#E8EAED]" : "bg-[#2F2F2F]";
+  const headerBg = isLight ? "bg-[#E8EAED]/95" : "bg-[#242424]/95";
+  const headerBorder = isLight ? "border-[#D4D7DC]" : "border-white/10";
 
   const inputCls = isLight
     ? `
-      bg-[#F2F2F2] border border-[#D8DDE5] rounded-xl
+      bg-[#ECEEF0] border border-[#D4D7DC] rounded-xl
       px-3 py-3 text-[13px] text-black/85 placeholder:text-black/35
       outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
       font-inter
     `
     : `
-      bg-[#3A3A3A]/70 border border-white/10 rounded-xl
+      bg-[#333333]/70 border border-white/10 rounded-xl
       px-3 py-3 text-[13px] text-white/85 placeholder:text-white/35
       outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
       font-inter
     `;
 
   const myCardCls = isLight
-    ? "group rounded-xl border border-[#D8DDE5] px-3 py-2.5 bg-[#3D3D3D]0 hover:bg-[#F2F2F2] transition cursor-pointer"
-    : "group rounded-xl border border-white/5 px-3 py-2.5 bg-[#3A3A3A]/55 hover:bg-[#3A3A3A]/75 transition cursor-pointer";
+    ? "group rounded-xl border border-[#D4D7DC] px-3 py-2.5 bg-[#3D3D3D]0 hover:bg-[#ECEEF0] transition cursor-pointer"
+    : "group rounded-xl border border-white/5 px-3 py-2.5 bg-[#333333]/55 hover:bg-[#333333]/75 transition cursor-pointer";
 
   const teamCardCls = isLight
-    ? "rounded-xl border border-[#D8DDE5] px-3 py-2.5 bg-[#3D3D3D]0 hover:bg-[#F2F2F2] transition"
-    : "rounded-xl border border-white/5 px-3 py-2.5 bg-[#3A3A3A]/55 hover:bg-[#3A3A3A]/75 transition";
+    ? "rounded-xl border border-[#D4D7DC] px-3 py-2.5 bg-[#3D3D3D]0 hover:bg-[#ECEEF0] transition"
+    : "rounded-xl border border-white/5 px-3 py-2.5 bg-[#333333]/55 hover:bg-[#333333]/75 transition";
 
   const ghostBtn = isLight
-    ? "border border-[#D8DDE5] bg-transparent hover:bg-[#E7EAF0] text-black/75"
+    ? "border border-[#D4D7DC] bg-transparent hover:bg-[#E7EAF0] text-black/75"
     : "border border-white/10 bg-transparent hover:bg-[#3F3F3F] text-white/80";
 
-  const primaryBtn = "bg-[#2F2F2F] hover:bg-[#3A3A3A] text-white font-semibold";
+  const primaryBtn = "bg-[#2F2F2F] hover:bg-[#333333] text-white font-semibold";
 
   const stopRoomBubbling = useCallback((e: any) => {
     e?.stopPropagation?.();
@@ -1120,7 +1120,7 @@ export function IntentionsPanel({
     );
   }
 
-  const timerPillCls = isLight ? "bg-[#ECEFF3] border border-[#D8DDE5] text-black/80" : "bg-[#3A3A3A] border border-white/10 text-white/80";
+  const timerPillCls = isLight ? "bg-[#DDE0E5] border border-[#D4D7DC] text-black/80" : "bg-[#333333] border border-white/10 text-white/80";
   const headerTitle = isLight ? "text-black/85" : "text-white/85";
   const timerTextCls = `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
 
@@ -1128,13 +1128,13 @@ export function IntentionsPanel({
     ? (() => {
       const modalDoc = getPortalDocument();
 
-      const backdropBg = isLight ? "bg-black/40" : "bg-[#ECEFF3]5";
-      const modalBg = isLight ? "bg-[#F2F2F2]" : "bg-[#2F2F2F]";
-      const modalBorder = isLight ? "border-[#D8DDE5]" : "border-white/10";
+      const backdropBg = isLight ? "bg-black/40" : "bg-[#DDE0E5]5";
+      const modalBg = isLight ? "bg-[#ECEEF0]" : "bg-[#2F2F2F]";
+      const modalBorder = isLight ? "border-[#D4D7DC]" : "border-white/10";
       const modalTitle = isLight ? "text-black/85" : "text-white/85";
       const modalSub = isLight ? "text-black/50" : "text-white/45";
-      const rowBg = isLight ? "bg-[#3D3D3D]0 hover:bg-[#F2F2F2]" : "bg-[#3A3A3A]/55 hover:bg-[#3A3A3A]/75";
-      const rowBorder = isLight ? "border-[#D8DDE5]" : "border-white/10";
+      const rowBg = isLight ? "bg-[#3D3D3D]0 hover:bg-[#ECEEF0]" : "bg-[#333333]/55 hover:bg-[#333333]/75";
+      const rowBorder = isLight ? "border-[#D4D7DC]" : "border-white/10";
 
       return createPortal(
         <div
@@ -1217,8 +1217,8 @@ export function IntentionsPanel({
                       onChange={(e) => setSelectedPlanId(e.target.value)}
                       className={
                         isLight
-                          ? "w-full h-11 px-3 rounded-xl border border-[#D8DDE5] bg-[#F2F2F2] text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-emerald-500"
-                          : "w-full h-11 px-3 rounded-xl border border-white/10 bg-[#3A3A3A]/70 text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-emerald-500"
+                          ? "w-full h-11 px-3 rounded-xl border border-[#D4D7DC] bg-[#ECEEF0] text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-emerald-500"
+                          : "w-full h-11 px-3 rounded-xl border border-white/10 bg-[#333333]/70 text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-emerald-500"
                       }
                     >
                       {plans.map((p) => (
@@ -1233,7 +1233,7 @@ export function IntentionsPanel({
                       <div
                         className={[
                           "h-11 w-11 rounded-xl border flex items-center justify-center",
-                          isLight ? "border-[#D8DDE5] bg-[#F2F2F2]" : "border-white/10 bg-[#3A3A3A]/70",
+                          isLight ? "border-[#D4D7DC] bg-[#ECEEF0]" : "border-white/10 bg-[#333333]/70",
                         ].join(" ")}
                       >
                         <Search size={16} className={isLight ? "text-black/40" : "text-white/45"} />
@@ -1292,7 +1292,7 @@ export function IntentionsPanel({
                                   <div
                                     className={[
                                       "h-10 px-3 rounded-xl text-[12px] font-semibold inline-flex items-center gap-2",
-                                      isLight ? "bg-[#ECEFF3] text-black/60 border border-[#D8DDE5]" : "bg-[#3A3A3A] text-white/70 border border-white/10",
+                                      isLight ? "bg-[#DDE0E5] text-black/60 border border-[#D4D7DC]" : "bg-[#333333] text-white/70 border border-white/10",
                                     ].join(" ")}
                                     title="Already attached to panel"
                                   >
@@ -1444,13 +1444,13 @@ export function IntentionsPanel({
 
                 const editInputCls = isLight
                   ? `
-                    w-full bg-[#F2F2F2] border border-[#D8DDE5] rounded-xl
+                    w-full bg-[#ECEEF0] border border-[#D4D7DC] rounded-xl
                     px-3 py-2 text-[13px] text-black/85
                     outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
                     font-inter
                   `
                   : `
-                    w-full bg-[#3A3A3A]/80 border border-white/10 rounded-xl
+                    w-full bg-[#242424] border border-white/10 rounded-xl
                     px-3 py-2 text-[13px] text-white/85
                     outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
                     font-inter

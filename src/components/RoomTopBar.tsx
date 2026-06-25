@@ -68,7 +68,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
 
     const chipBg = isLight
         ? "bg-[#E1E3E6] border border-[#D4D7DC]"
-        : "bg-[#3A3A3A] border border-white/10";
+        : "bg-[#242424] border border-white/10";
 
     const strongText = isLight ? "text-black/85" : "text-[#E8EAED]/90";
 
