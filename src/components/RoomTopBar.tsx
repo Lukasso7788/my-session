@@ -64,11 +64,11 @@ export default function RoomTopBar(props: RoomTopBarProps) {
 
     const topBarBg = isLight
         ? "bg-[#ECEEF0]/95 border border-[#D4D7DC]"
-        : "bg-[#242424] border border-white/10";
+        : "bg-[#2F2F2F] border border-[#3A3A3A]";
 
     const chipBg = isLight
         ? "bg-[#E1E3E6] border border-[#D4D7DC]"
-        : "bg-[#242424] border border-white/10";
+        : "bg-[#2F2F2F] border border-[#3A3A3A]";
 
     const strongText = isLight ? "text-black/85" : "text-[#E8EAED]/90";
 
@@ -78,7 +78,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         "w-[84px] max-[480px]:w-[78px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
     const switchTrackCls = isLight
         ? "bg-[#E1E3E6] border-[#D4D7DC] hover:bg-[#E0E0E0]"
-        : "bg-white/5 border-white/10 hover:bg-[#F2F3F5]/10";
+        : "bg-white/5 border-[#3A3A3A] hover:bg-[#F2F3F5]/10";
 
     const switchThumb =
         "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
@@ -154,7 +154,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                     onClick={onOpenHostProfile}
                                     className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
                                         ? "border-[#D4D7DC] bg-[#E1E3E6] hover:bg-[#E0E0E0] text-black/75"
-                                        : "border-white/10 bg-[#2F2F2F]/60 hover:bg-[#2F2F2F]/80 text-[#E8EAED]/85"
+                                        : "border-[#3A3A3A] bg-[#2F2F2F]/60 hover:bg-[#2F2F2F]/80 text-[#E8EAED]/85"
                                         }`}
                                     title="Host profile"
                                     type="button"
@@ -208,7 +208,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                 onClick={onOpenHostProfile}
                                 className={`w-10 h-10 rounded-2xl flex items-center justify-center border transition ${isLight
                                     ? "border-[#D4D7DC] bg-[#E1E3E6] hover:bg-[#E0E0E0] text-black/70"
-                                    : "border-white/10 bg-[#2F2F2F]/60 hover:bg-[#2F2F2F]/80 text-white/85"
+                                    : "border-[#3A3A3A] bg-[#2F2F2F]/60 hover:bg-[#2F2F2F]/80 text-white/85"
                                     }`}
                                 title={`Host: ${String(hostProfile.full_name || "Host")}`}
                                 aria-label="Host profile"
@@ -232,7 +232,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                             "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100",
                                             isLight
                                                 ? "bg-[#F2F3F5] border-[#D4D7DC] text-black/75 hover:bg-[#E1E3E6]"
-                                                : "bg-[#242424]/90 border-white/10 text-white/85 hover:bg-[#2F2F2F]",
+                                                : "bg-[#2F2F2F]/90 border-[#3A3A3A] text-white/85 hover:bg-[#2F2F2F]",
                                         ].join(" ")}
                                         title="Edit timeline"
                                     >

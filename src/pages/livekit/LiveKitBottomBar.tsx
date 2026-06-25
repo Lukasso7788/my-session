@@ -276,7 +276,7 @@ export function LiveKitBottomBar(props: {
                             {showMoreMenu && (
                                 <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
                                     <div
-                                        className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-[#ECEEF0] border border-[#D4D7DC]" : "bg-[#242424] border border-white/10"
+                                        className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-[#ECEEF0] border border-[#D4D7DC]" : "bg-[#2F2F2F] border border-transparent"
                                             }`}
                                     >
                                         {showAIHost && onOpenAIHost ? (
@@ -505,7 +505,7 @@ export function LiveKitBottomBar(props: {
 
                             {showReactionsMenu && (
                                 <div
-                                    className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex items-center gap-2 text-[26px] shadow-xl whitespace-nowrap ${isLight ? "bg-[#ECEEF0] border border-[#D4D7DC]" : "bg-[#242424] border border-white/10"
+                                    className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex items-center gap-2 text-[26px] shadow-xl whitespace-nowrap ${isLight ? "bg-[#ECEEF0] border border-[#D4D7DC]" : "bg-[#2F2F2F] border border-transparent"
                                         }`}
                                 >
                                     {REACTION_MENU_ITEMS.map((t) => (
