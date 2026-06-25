@@ -412,7 +412,7 @@ function MessageCardInner({
     const metaTimeCls = isLight ? "text-black/35" : "text-white/35";
     const actionBtnCls = isLight ? "text-black/45 hover:text-emerald-700" : "text-white/45 hover:text-emerald-300";
     const dangerBtnCls = isLight ? "text-black/40 hover:text-red-700" : "text-white/40 hover:text-red-300";
-    const menuCls = isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10";
+    const menuCls = isLight ? "bg-[#F7F8FA] border border-[#D8DDE5]" : "bg-[#262626] border border-white/10";
 
     const bubbleCls =
         "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
@@ -421,17 +421,17 @@ function MessageCardInner({
                 ? "bg-emerald-500/15 border-emerald-600/25 text-black/85"
                 : "bg-emerald-500/15 border-emerald-400/20 text-white/90"
             : isLight
-                ? "bg-black/5 border-black/10 text-black/80"
-                : "bg-white/5 border-white/10 text-white/85") +
+                ? "bg-[#ECEFF3] border-[#D8DDE5] text-black/80"
+                : "bg-[#3A3A3A] border-white/10 text-white/85") +
         (highlighted ? (isLight ? " ring-2 ring-[#4CA0FF]/55" : " ring-2 ring-emerald-400/55") : "");
 
     const quoteBoxCls = isLight
-        ? "bg-white/70 border border-black/10 text-black/70 hover:bg-white/90"
+        ? "bg-[#3D3D3D]0 border border-[#D8DDE5] text-black/70 hover:bg-[#F3F4F6]/90"
         : "bg-black/25 border border-white/10 text-white/70 hover:bg-black/35";
 
     const reactionPillBase = isLight
-        ? "px-2 py-1 rounded-xl bg-black/5 border border-black/10 text-[12px] text-black/70 flex items-center gap-1.5 transition"
-        : "px-2 py-1 rounded-xl bg-white/5 border border-white/10 text-[12px] text-white/80 flex items-center gap-1.5 transition";
+        ? "px-2 py-1 rounded-xl bg-[#ECEFF3] border border-[#D8DDE5] text-[12px] text-black/70 flex items-center gap-1.5 transition"
+        : "px-2 py-1 rounded-xl bg-[#3A3A3A] border border-white/10 text-[12px] text-white/80 flex items-center gap-1.5 transition";
 
     const reactionPillMine = isLight
         ? "bg-emerald-500/12 ring-2 ring-emerald-400/70 border-emerald-500/55 text-emerald-900"
@@ -440,8 +440,8 @@ function MessageCardInner({
     const reactionCountCls = isLight ? "text-black/50" : "text-white/60";
 
     const inputCls = isLight
-        ? "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-white border border-black/10 text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
-        : "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#0B1220]/70 border border-white/10 text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500";
+        ? "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#F7F8FA] border border-[#D8DDE5] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+        : "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#3A3A3A]/70 border border-white/10 text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500";
 
     const { quote, quoteMessageId, main } = useMemo(() => parseReplyBody(msg.body), [msg.body]);
 
@@ -534,8 +534,8 @@ function MessageCardInner({
                                                                     ? "bg-emerald-500/12 ring-1 ring-emerald-500/35"
                                                                     : "bg-emerald-400/12 ring-1 ring-emerald-300/25"
                                                                 : isLight
-                                                                    ? "hover:bg-black/5"
-                                                                    : "hover:bg-white/5")
+                                                                    ? "hover:bg-[#E7EAF0]"
+                                                                    : "hover:bg-[#3F3F3F]")
                                                         }
                                                         title={isMine ? `Remove ${e}` : e}
                                                         type="button"
@@ -624,8 +624,8 @@ function MessageCardInner({
                                 }}
                                 className={
                                     isLight
-                                        ? "px-3 h-9 rounded-xl bg-black/5 hover:bg-black/10 border border-black/10 text-black/70 text-sm"
-                                        : "px-3 h-9 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/75 text-sm"
+                                        ? "px-3 h-9 rounded-xl bg-[#ECEFF3] hover:bg-[#E2E6EC] border border-[#D8DDE5] text-black/70 text-sm"
+                                        : "px-3 h-9 rounded-xl bg-[#3A3A3A] hover:bg-[#454545] border border-white/10 text-white/75 text-sm"
                                 }
                                 disabled={savingEdit}
                                 title="Cancel"
@@ -1029,26 +1029,26 @@ export function ChatPanel({
         externalDirectPeerUserId,
     ]);
 
-    const headerBorder = isLight ? "border-black/10" : "border-white/5";
+    const headerBorder = isLight ? "border-[#D8DDE5]" : "border-white/5";
     const titleText = isLight ? "text-black/85" : "text-white/85";
     const subText = isLight ? "text-black/50" : "text-white/45";
-    const headerCloseBtnCls = isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-white/5 hover:bg-white/10 text-white/70";
-    const replyBoxCls = isLight ? "bg-black/5 border-black/10" : "bg-white/5 border-white/10";
+    const headerCloseBtnCls = isLight ? "bg-[#ECEFF3] hover:bg-[#E2E6EC] text-black/60" : "bg-[#3A3A3A] hover:bg-[#454545] text-white/70";
+    const replyBoxCls = isLight ? "bg-[#ECEFF3] border-[#D8DDE5]" : "bg-[#3A3A3A] border-white/10";
     const replyingLabel = "text-[11px] text-emerald-500/90 font-medium";
     const replyingText = isLight ? "text-black/55" : "text-white/55";
-    const cancelBtnCls = isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/70";
+    const cancelBtnCls = isLight ? "bg-[#ECEFF3] hover:bg-[#E2E6EC] text-black/60" : "bg-[#2F2F2F] hover:bg-[#3A3A3A] text-white/70";
     const hintText = isLight ? "text-black/40" : "text-white/35";
     const sendBtnActive = "bg-emerald-600 hover:bg-emerald-700 text-white";
-    const sendBtnDisabled = isLight ? "bg-black/10 text-black/35" : "bg-white/10 text-white/35";
+    const sendBtnDisabled = isLight ? "bg-[#E2E6EC] text-black/35" : "bg-[#454545] text-white/35";
     const composerInputCls = isLight
-        ? "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-white border border-black/10 text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
-        : "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#0B1220]/70 border border-white/10 text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500";
+        ? "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#F7F8FA] border border-[#D8DDE5] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
+        : "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#3A3A3A]/70 border border-white/10 text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500";
     const composerEmojiBtnCls = isLight
-        ? "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-white border-black/10 text-black/60 hover:bg-black/5 hover:text-black/80"
-        : "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#0B1220]/70 border-white/10 text-white/70 hover:bg-white/5 hover:text-white/90";
+        ? "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#F7F8FA] border-[#D8DDE5] text-black/60 hover:bg-[#E7EAF0] hover:text-black/80"
+        : "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#3A3A3A]/70 border-white/10 text-white/70 hover:bg-[#3F3F3F] hover:text-white/90";
     const portalBoxCls = isLight
-        ? "rounded-2xl border border-black/10 bg-white shadow-2xl overflow-hidden"
-        : "rounded-2xl border border-white/10 bg-[#020617] shadow-2xl overflow-hidden";
+        ? "rounded-2xl border border-[#D8DDE5] bg-[#F7F8FA] shadow-2xl overflow-hidden"
+        : "rounded-2xl border border-white/10 bg-[#262626] shadow-2xl overflow-hidden";
 
     useEffect(() => {
         (async () => {
@@ -2061,12 +2061,12 @@ export function ChatPanel({
     const visibleMessages = useMemo(() => messages.slice(-VISIBLE_MESSAGE_LIMIT), [messages]);
     const modalMessage = reactionDetails.open ? messagesRef.current.find((m) => m.id === reactionDetails.messageId) || null : null;
     const modalMessageMain = modalMessage ? parseReplyBody(modalMessage.body).main : "";
-    const modalBg = isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10";
+    const modalBg = isLight ? "bg-[#F7F8FA] border border-[#D8DDE5]" : "bg-[#262626] border border-white/10";
     const modalTextPrimary = isLight ? "text-black/85" : "text-white/90";
     const modalTextSecondary = isLight ? "text-black/55" : "text-white/55";
     const modalBtn = isLight
-        ? "bg-black/5 hover:bg-black/10 border border-black/10 text-black/70"
-        : "bg-white/5 hover:bg-white/10 border border-white/10 text-white/75";
+        ? "bg-[#ECEFF3] hover:bg-[#E2E6EC] border border-[#D8DDE5] text-black/70"
+        : "bg-[#3A3A3A] hover:bg-[#454545] border border-white/10 text-white/75";
     const modalPrimaryBtn = "bg-emerald-600 hover:bg-emerald-700 text-white";
     const canToggleInModal = !!reactionDetails.open && !!reactionDetails.messageId && !!reactionDetails.emoji;
     const myReactedInModal = canToggleInModal && !!myReactions?.[reactionDetails.messageId]?.[reactionDetails.emoji];
@@ -2109,7 +2109,7 @@ export function ChatPanel({
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center">
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeReactionDetails} />
                     <div className={"relative w-[92vw] max-w-[520px] rounded-2xl shadow-2xl " + modalBg}>
-                        <div className={"px-5 py-4 border-b " + (isLight ? "border-black/10" : "border-white/10")}>
+                        <div className={"px-5 py-4 border-b " + (isLight ? "border-[#D8DDE5]" : "border-white/10")}>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <div className={"text-[14px] font-semibold " + modalTextPrimary}>{reactionDetails.emoji} Reactions</div>
@@ -2121,7 +2121,7 @@ export function ChatPanel({
                             </div>
 
                             {modalMessage && (
-                                <div className={"mt-3 rounded-xl px-3 py-2 text-[12px] " + (isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10")}>
+                                <div className={"mt-3 rounded-xl px-3 py-2 text-[12px] " + (isLight ? "bg-[#ECEFF3] border border-[#D8DDE5]" : "bg-[#3A3A3A] border border-white/10")}>
                                     <div className={"text-[11px] mb-1 " + modalTextSecondary}>Message</div>
                                     <div className={modalTextPrimary + " whitespace-pre-wrap break-words"}>
                                         {collapseWs(modalMessageMain).slice(0, 260) + (collapseWs(modalMessageMain).length > 260 ? "…" : "")}
@@ -2170,7 +2170,7 @@ export function ChatPanel({
                                             const prof = profilesByIdRef.current[uid] || (uid === userId ? meProfileRef.current : null) || ({ id: uid, full_name: "Participant", avatar_url: null } as Profile);
                                             const displayName = uid === userId ? "You" : prof?.full_name || "Participant";
                                             return (
-                                                <div key={uid} className={"flex items-center gap-3 rounded-xl px-3 py-2 border " + (isLight ? "bg-white border-black/10" : "bg-[#0B1220]/40 border-white/10")}>
+                                                <div key={uid} className={"flex items-center gap-3 rounded-xl px-3 py-2 border " + (isLight ? "bg-[#F7F8FA] border-[#D8DDE5]" : "bg-[#3A3A3A]/40 border-white/10")}>
                                                     <img src={avatarFromProfile(prof)} className="w-9 h-9 rounded-full object-cover" alt="" />
                                                     <div className="min-w-0">
                                                         <div className={modalTextPrimary + " text-[13px] truncate"}>{displayName}</div>
@@ -2264,7 +2264,7 @@ export function ChatPanel({
                         type="button"
                         className={
                             "pointer-events-auto px-4 py-2 rounded-full shadow-xl text-[12px] font-semibold border transition " +
-                            (isLight ? "bg-white/95 border-black/10 text-black/80 hover:bg-white" : "bg-[#0B1220]/95 border-white/10 text-white/85 hover:bg-[#0B1220]")
+                            (isLight ? "bg-[#F3F4F6]/95 border-[#D8DDE5] text-black/80 hover:bg-[#F7F8FA]" : "bg-[#3A3A3A]/95 border-white/10 text-white/85 hover:bg-[#3A3A3A]")
                         }
                         onClick={() => {
                             atBottomRef.current = true;
