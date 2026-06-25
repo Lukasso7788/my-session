@@ -183,8 +183,8 @@ export function LiveKitBottomBar(props: {
         "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
         (aiHostOpen
             ? isLight
-                ? "bg-[#2F2F2F] hover:bg-[#333333] text-white"
-                : "bg-[#2F2F2F] hover:bg-[#333333] text-white"
+                ? "bg-[#242424] hover:bg-[#2E2E2E] text-white"
+                : "bg-[#242424] hover:bg-[#2E2E2E] text-white"
             : ctlBtnBase);
 
     const layoutDesktopBtn =
@@ -212,7 +212,7 @@ export function LiveKitBottomBar(props: {
                 <span
                     className={[
                         "absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center",
-                        isLight ? "bg-[#2F2F2F] text-white" : "bg-[#2F2F2F] text-white",
+                        isLight ? "bg-[#1B1B1B] text-white" : "bg-[#1B1B1B] text-white",
                     ].join(" ")}
                 >
                     {unreadChat > 99 ? "99+" : unreadChat}
@@ -242,8 +242,8 @@ export function LiveKitBottomBar(props: {
                     "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
                     (pipActive
                         ? isLight
-                            ? "bg-[#2F2F2F] hover:bg-[#333333] text-white"
-                            : "bg-[#2F2F2F] hover:bg-[#333333] text-white"
+                            ? "bg-[#242424] hover:bg-[#2E2E2E] text-white"
+                            : "bg-[#242424] hover:bg-[#2E2E2E] text-white"
                         : ctlBtnBase)
                 }
                 title={pipActive ? "Close picture-in-picture" : "Open picture-in-picture"}
@@ -276,7 +276,7 @@ export function LiveKitBottomBar(props: {
                             {showMoreMenu && (
                                 <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
                                     <div
-                                        className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-[#ECEEF0] border border-[#D4D7DC]" : "bg-[#2F2F2F] border border-transparent"
+                                        className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight ? "bg-[#F3F3F3] border border-[#D0D0D0]" : "bg-[#1B1B1B] border border-transparent"
                                             }`}
                                     >
                                         {showAIHost && onOpenAIHost ? (
@@ -287,8 +287,8 @@ export function LiveKitBottomBar(props: {
                                                 }}
                                                 className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${aiHostOpen
                                                     ? isLight
-                                                        ? "bg-[#2F2F2F] text-white"
-                                                        : "bg-[#2F2F2F] text-white"
+                                                        ? "bg-[#1B1B1B] text-white"
+                                                        : "bg-[#1B1B1B] text-white"
                                                     : isLight
                                                         ? "text-black/75 hover:bg-[#E1E3E6]"
                                                         : "text-white/85 hover:bg-[#F2F3F5]/5"
@@ -343,7 +343,7 @@ export function LiveKitBottomBar(props: {
                                                 <span
                                                     className={[
                                                         "ml-auto min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center",
-                                                        isLight ? "bg-[#2F2F2F] text-white" : "bg-[#2F2F2F] text-white",
+                                                        isLight ? "bg-[#1B1B1B] text-white" : "bg-[#1B1B1B] text-white",
                                                     ].join(" ")}
                                                 >
                                                     {unreadChat > 99 ? "99+" : unreadChat}
@@ -387,8 +387,8 @@ export function LiveKitBottomBar(props: {
                                                 }}
                                                 className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${pipActive
                                                     ? isLight
-                                                        ? "bg-[#2F2F2F] text-white"
-                                                        : "bg-[#2F2F2F] text-white"
+                                                        ? "bg-[#1B1B1B] text-white"
+                                                        : "bg-[#1B1B1B] text-white"
                                                     : isLight
                                                         ? "text-black/75 hover:bg-[#E1E3E6]"
                                                         : "text-white/85 hover:bg-[#F2F3F5]/5"
@@ -447,7 +447,7 @@ export function LiveKitBottomBar(props: {
                             disabled={!connected}
                             className={
                                 "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " +
-                                (!micOn ? "bg-red-600 hover:bg-red-700 text-white" : ctlBtnBase)
+                                (!micOn ? "bg-[#F65252] hover:bg-[#E64545] text-white" : ctlBtnBase)
                             }
                             title="Toggle mic"
                             type="button"
@@ -464,7 +464,7 @@ export function LiveKitBottomBar(props: {
                             disabled={!connected}
                             className={
                                 "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " +
-                                (!camOn ? "bg-red-600 hover:bg-red-700 text-white" : ctlBtnBase)
+                                (!camOn ? "bg-[#F65252] hover:bg-[#E64545] text-white" : ctlBtnBase)
                             }
                             title="Toggle camera"
                             type="button"
@@ -481,7 +481,7 @@ export function LiveKitBottomBar(props: {
                             disabled={!connected}
                             className={
                                 "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " +
-                                (screenShareOn ? "bg-[#2F2F2F] hover:bg-[#333333] text-white" : ctlBtnBase)
+                                (screenShareOn ? "bg-[#242424] hover:bg-[#2E2E2E] text-white" : ctlBtnBase)
                             }
                             title="Share screen"
                             type="button"
@@ -505,7 +505,7 @@ export function LiveKitBottomBar(props: {
 
                             {showReactionsMenu && (
                                 <div
-                                    className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex items-center gap-2 text-[26px] shadow-xl whitespace-nowrap ${isLight ? "bg-[#ECEEF0] border border-[#D4D7DC]" : "bg-[#2F2F2F] border border-transparent"
+                                    className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex items-center gap-2 text-[26px] shadow-xl whitespace-nowrap ${isLight ? "bg-[#F3F3F3] border border-[#D0D0D0]" : "bg-[#1B1B1B] border border-transparent"
                                         }`}
                                 >
                                     {REACTION_MENU_ITEMS.map((t) => (
@@ -529,7 +529,7 @@ export function LiveKitBottomBar(props: {
                     <div className="flex items-center justify-end gap-2 sm:gap-3">
                         <button
                             onClick={onLeave}
-                            className="hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 bg-red-600 hover:bg-red-700 text-white"
+                            className="hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 bg-[#F65252] hover:bg-[#E64545] text-white"
                             title="Leave"
                             type="button"
                         >
@@ -539,7 +539,7 @@ export function LiveKitBottomBar(props: {
 
                         <button
                             onClick={onLeave}
-                            className="sm:hidden w-10 h-10 rounded-2xl bg-red-600 hover:bg-red-700 text-white flex items-center justify-center"
+                            className="sm:hidden w-10 h-10 rounded-2xl bg-[#F65252] hover:bg-[#E64545] text-white flex items-center justify-center"
                             title="Leave"
                             type="button"
                         >

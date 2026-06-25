@@ -158,8 +158,8 @@ function IconButton({
 }) {
   const isLight = theme === "light";
   const base = isLight
-    ? "bg-[#DDE0E5] hover:bg-[#D2D6DC] text-black/70"
-    : "bg-[#2F2F2F] hover:bg-[#333333] text-white/80";
+    ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/70"
+    : "bg-[#1B1B1B] hover:bg-[#242424] text-white/80";
 
   return (
     <button
@@ -224,7 +224,7 @@ function applyOverlayBaseStyles(doc: Document, isLight: boolean) {
     doc.documentElement.style.height = "100%";
     doc.body.style.height = "100%";
     doc.body.style.margin = "0";
-    doc.body.style.background = isLight ? "#F6F7F8" : "#2F2F2F";
+    doc.body.style.background = isLight ? "#F3F3F3" : "#1B1B1B";
     doc.body.style.fontFamily = OVERLAY_FONT_FAMILY;
   } catch { }
 }
@@ -315,39 +315,39 @@ export function IntentionsPanel({
 
   const titleText = isLight ? "text-black/85" : "text-white/85";
   const mutedText = isLight ? "text-black/50" : "text-white/45";
-  const divider = isLight ? "bg-[#D2D6DC]" : "bg-[#333333]";
+  const divider = isLight ? "bg-[#DCDCDC]" : "bg-[#242424]";
 
-  const panelBg = isLight ? "bg-[#E8EAED]" : "bg-[#2F2F2F]";
-  const headerBg = isLight ? "bg-[#E8EAED]" : "bg-[#2F2F2F]";
-  const headerBorder = isLight ? "border-[#D4D7DC]" : "border-[#2F2F2F]";
+  const panelBg = isLight ? "bg-[#F3F3F3]" : "bg-[#171717]";
+  const headerBg = isLight ? "bg-[#F3F3F3]" : "bg-[#171717]";
+  const headerBorder = isLight ? "border-[#D4D4D4]" : "border-[#171717]";
 
   const inputCls = isLight
     ? `
-      bg-[#ECEEF0] border border-[#D4D7DC] rounded-xl
+      bg-[#F3F3F3] border border-[#C9C9C9] rounded-xl
       px-3 py-3 text-[13px] text-black/85 placeholder:text-black/35
-      outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
+      outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
       font-inter
     `
     : `
-      bg-[#333333]/70 border border-[#3A3A3A] rounded-xl
+      bg-[#242424] border border-[#2B2B2B] rounded-xl
       px-3 py-3 text-[13px] text-white/85 placeholder:text-white/35
-      outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
+      outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
       font-inter
     `;
 
   const myCardCls = isLight
-    ? "group rounded-xl border border-[#D4D7DC] px-3 py-2.5 bg-[#F7F7F8] hover:bg-[#ECEEF0] transition cursor-pointer"
-    : "group rounded-xl border border-[#363636] px-3 py-2.5 bg-[#333333] hover:bg-[#3A3A3A] transition cursor-pointer";
+    ? "group rounded-xl border border-[#C9C9C9] px-3 py-2.5 bg-[#F9F9F9] hover:bg-[#EFEFEF] transition cursor-pointer"
+    : "group rounded-xl border border-[#2B2B2B] px-3 py-2.5 bg-[#202020] hover:bg-[#262626] transition cursor-pointer";
 
   const teamCardCls = isLight
-    ? "rounded-xl border border-[#D4D7DC] px-3 py-2.5 bg-[#F7F7F8] hover:bg-[#ECEEF0] transition"
-    : "rounded-xl border border-[#363636] px-3 py-2.5 bg-[#333333] hover:bg-[#3A3A3A] transition";
+    ? "relative rounded-xl border border-[#C9C9C9] px-3 py-2.5 bg-[#F9F9F9] hover:bg-[#EFEFEF] transition"
+    : "relative rounded-xl border border-[#2B2B2B] px-3 py-2.5 bg-[#202020] hover:bg-[#262626] transition";
 
   const ghostBtn = isLight
-    ? "border border-[#D4D7DC] bg-transparent hover:bg-[#E7EAF0] text-black/75"
-    : "border border-[#3A3A3A] bg-transparent hover:bg-[#3F3F3F] text-white/80";
+    ? "border border-[#CFCFCF] bg-transparent hover:bg-[#E8E8E8] text-black/75"
+    : "border border-[#2B2B2B] bg-transparent hover:bg-[#303030] text-white/80";
 
-  const primaryBtn = "bg-[#2F2F2F] hover:bg-[#333333] text-white font-semibold";
+  const primaryBtn = "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white font-semibold";
 
   const stopRoomBubbling = useCallback((e: any) => {
     e?.stopPropagation?.();
@@ -1120,7 +1120,7 @@ export function IntentionsPanel({
     );
   }
 
-  const timerPillCls = isLight ? "bg-[#DDE0E5] border border-[#D4D7DC] text-black/80" : "bg-[#333333] border border-[#3A3A3A] text-white/80";
+  const timerPillCls = isLight ? "bg-[#E6E6E6] border border-[#CFCFCF] text-black/80" : "bg-[#242424] border border-[#2B2B2B] text-white/80";
   const headerTitle = isLight ? "text-black/85" : "text-white/85";
   const timerTextCls = `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
 
@@ -1128,13 +1128,13 @@ export function IntentionsPanel({
     ? (() => {
       const modalDoc = getPortalDocument();
 
-      const backdropBg = isLight ? "bg-black/40" : "bg-[#DDE0E5]";
-      const modalBg = isLight ? "bg-[#ECEEF0]" : "bg-[#2F2F2F]";
-      const modalBorder = isLight ? "border-[#D4D7DC]" : "border-[#3A3A3A]";
+      const backdropBg = isLight ? "bg-black/40" : "bg-[#E6E6E6]";
+      const modalBg = isLight ? "bg-[#F3F3F3]" : "bg-[#1B1B1B]";
+      const modalBorder = isLight ? "border-[#CFCFCF]" : "border-[#2B2B2B]";
       const modalTitle = isLight ? "text-black/85" : "text-white/85";
       const modalSub = isLight ? "text-black/50" : "text-white/45";
-      const rowBg = isLight ? "bg-[#F7F7F8] hover:bg-[#ECEEF0]" : "bg-[#333333] hover:bg-[#3A3A3A]";
-      const rowBorder = isLight ? "border-[#D4D7DC]" : "border-[#3A3A3A]";
+      const rowBg = isLight ? "bg-[#FAFAFA] hover:bg-[#F3F3F3]" : "bg-[#242424] hover:bg-[#2B2B2B]";
+      const rowBorder = isLight ? "border-[#CFCFCF]" : "border-[#2B2B2B]";
 
       return createPortal(
         <div
@@ -1217,8 +1217,8 @@ export function IntentionsPanel({
                       onChange={(e) => setSelectedPlanId(e.target.value)}
                       className={
                         isLight
-                          ? "w-full h-11 px-3 rounded-xl border border-[#D4D7DC] bg-[#ECEEF0] text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-emerald-500"
-                          : "w-full h-11 px-3 rounded-xl border border-[#3A3A3A] bg-[#333333]/70 text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-emerald-500"
+                          ? "w-full h-11 px-3 rounded-xl border border-[#CFCFCF] bg-[#F3F3F3] text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-[#81DB86]"
+                          : "w-full h-11 px-3 rounded-xl border border-[#2B2B2B] bg-[#242424] text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-[#81DB86]"
                       }
                     >
                       {plans.map((p) => (
@@ -1233,7 +1233,7 @@ export function IntentionsPanel({
                       <div
                         className={[
                           "h-11 w-11 rounded-xl border flex items-center justify-center",
-                          isLight ? "border-[#D4D7DC] bg-[#ECEEF0]" : "border-[#3A3A3A] bg-[#333333]/70",
+                          isLight ? "border-[#CFCFCF] bg-[#F3F3F3]" : "border-[#2B2B2B] bg-[#242424]",
                         ].join(" ")}
                       >
                         <Search size={16} className={isLight ? "text-black/40" : "text-white/45"} />
@@ -1292,7 +1292,7 @@ export function IntentionsPanel({
                                   <div
                                     className={[
                                       "h-10 px-3 rounded-xl text-[12px] font-semibold inline-flex items-center gap-2",
-                                      isLight ? "bg-[#DDE0E5] text-black/60 border border-[#D4D7DC]" : "bg-[#333333] text-white/70 border border-[#3A3A3A]",
+                                      isLight ? "bg-[#E6E6E6] text-black/60 border border-[#CFCFCF]" : "bg-[#242424] text-white/70 border border-[#2B2B2B]",
                                     ].join(" ")}
                                     title="Already attached to panel"
                                   >
@@ -1360,6 +1360,7 @@ export function IntentionsPanel({
 
             <IconButton
               theme={theme}
+              className={isLight ? "border border-[#5286F6] bg-transparent text-[#5286F6] hover:bg-[#5286F6]/10" : "border border-[#5286F6]/45 bg-[#202020] text-[#5286F6] hover:bg-[#242424]"}
               title="Attach from Focus plan to panel"
               onClick={(e) => {
                 e.preventDefault();
@@ -1372,6 +1373,7 @@ export function IntentionsPanel({
             {pictureInPictureSupported && onOpenPictureInPicture ? (
               <IconButton
                 theme={theme}
+                className={isLight ? "border border-[#81DB86] bg-transparent text-[#81DB86] hover:bg-[#81DB86]/10" : "border border-[#81DB86]/45 bg-[#202020] text-[#81DB86] hover:bg-[#242424]"}
                 title={pictureInPictureOpen ? "Close Picture-in-Picture video" : "Open video Picture-in-Picture"}
                 onClick={(e) => {
                   e.preventDefault();
@@ -1384,6 +1386,7 @@ export function IntentionsPanel({
 
             <IconButton
               theme={theme}
+              className={isLight ? "border border-[#F65252] bg-transparent text-[#F65252] hover:bg-[#F65252]/10" : "border border-[#F65252]/45 bg-[#202020] text-[#F65252] hover:bg-[#242424]"}
               title={overlayOpen ? "Unpin" : "Pin (always on top if supported)"}
               onClick={(e) => {
                 e.preventDefault();
@@ -1414,12 +1417,10 @@ export function IntentionsPanel({
 
             <button
               onClick={handleAddPanelIntention}
-              className="
-                h-11 px-4 rounded-xl
-                bg-emerald-500 hover:bg-emerald-600
-                text-[#02140B] font-semibold text-[13px]
-                font-inter
-              "
+              className={[
+                "h-11 px-4 rounded-xl font-semibold text-[13px] font-inter transition",
+                isLight ? "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white" : "bg-[#81DB86] hover:bg-[#6ECF74] text-[#102313]",
+              ].join(" ")}
               type="button"
               title="Add"
             >
@@ -1444,15 +1445,15 @@ export function IntentionsPanel({
 
                 const editInputCls = isLight
                   ? `
-                    w-full bg-[#ECEEF0] border border-[#D4D7DC] rounded-xl
+                    w-full bg-[#F3F3F3] border border-[#C9C9C9] rounded-xl
                     px-3 py-2 text-[13px] text-black/85
-                    outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
+                    outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
                     font-inter
                   `
                   : `
-                    w-full bg-[#2F2F2F] border border-[#3A3A3A] rounded-xl
+                    w-full bg-[#1B1B1B] border border-[#2B2B2B] rounded-xl
                     px-3 py-2 text-[13px] text-white/85
-                    outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500
+                    outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
                     font-inter
                   `;
 
@@ -1464,7 +1465,7 @@ export function IntentionsPanel({
                   >
                     <div className="flex items-center gap-2">
                       <div className="shrink-0">
-                        {i.completed ? <CheckCircle size={18} className="text-emerald-500" /> : <Circle size={18} className={circleCls} />}
+                        {i.completed ? <CheckCircle size={18} className="text-[#81DB86]" /> : <Circle size={18} className={circleCls} />}
                       </div>
 
                       <div className="flex-1 min-w-0">
@@ -1517,7 +1518,7 @@ export function IntentionsPanel({
                                   e.stopPropagation();
                                   void deletePanelIntention(i.id);
                                 }}
-                                className="hover:text-red-500"
+                                className="hover:text-[#F65252]"
                               >
                                 <Trash2 size={16} />
                               </IconButton>
@@ -1590,7 +1591,15 @@ export function IntentionsPanel({
                     </div>
 
                     <div className="shrink-0 mt-1">
-                      {item.completed ? <CheckCircle size={16} className="text-emerald-500" /> : <Circle size={16} className={circleCls} />}
+                      {item.completed ? <CheckCircle size={16} className="text-[#81DB86]" /> : <Circle size={16} className={circleCls} />}
+                    </div>
+
+                    <div
+                      className="absolute -right-2 -bottom-2 flex h-6 w-6 items-center justify-center rounded-full text-[17px] shadow-sm"
+                      title="Encouragement"
+                      aria-label="Encouragement"
+                    >
+                      🤩
                     </div>
                   </div>
                 </div>
@@ -1625,7 +1634,7 @@ export function IntentionsPanel({
               onClick={closeOverlay}
               className={`
                 mt-4 px-4 py-2 rounded-xl border
-                ${isLight ? "border-black/15 text-black/80 hover:bg-[#E7EAF0]" : "border-[#3A3A3A] text-white/80 hover:bg-[#3F3F3F]"}
+                ${isLight ? "border-black/15 text-black/80 hover:bg-[#E8E8E8]" : "border-[#2B2B2B] text-white/80 hover:bg-[#303030]"}
                 transition inline-flex items-center gap-2 text-[13px] font-semibold font-inter
               `}
             >

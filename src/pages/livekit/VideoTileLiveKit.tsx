@@ -59,8 +59,8 @@ function getStatusClass(status: unknown, isLight: boolean): string {
 
     if (key === "afk") {
         return isLight
-            ? "bg-neutral-200 text-neutral-700 border-[#D4D7DC]"
-            : "bg-white/10 text-white/80 border-[#3A3A3A]";
+            ? "bg-neutral-200 text-neutral-700 border-[#CFCFCF]"
+            : "bg-white/10 text-white/80 border-[#2B2B2B]";
     }
 
     if (key === "break") {
@@ -78,7 +78,7 @@ function getStatusClass(status: unknown, isLight: boolean): string {
     if (key === "call") {
         return isLight
             ? "bg-neutral-200 text-neutral-800 border-neutral-300/70"
-            : "bg-white/10 text-white/80 border-[#3A3A3A]";
+            : "bg-white/10 text-white/80 border-[#2B2B2B]";
     }
 
     if (key === "eating") {
@@ -94,8 +94,8 @@ function getStatusClass(status: unknown, isLight: boolean): string {
     }
 
     return isLight
-        ? "bg-neutral-100 text-neutral-700 border-[#D4D7DC]"
-        : "bg-white/10 text-white/80 border-[#3A3A3A]";
+        ? "bg-neutral-100 text-neutral-700 border-[#CFCFCF]"
+        : "bg-white/10 text-white/80 border-[#2B2B2B]";
 }
 
 function Icon({
@@ -185,12 +185,12 @@ function MicBadgeWithBarVisualizer({
     const isSelfMutedBadge = !!isLocal && !!micMuted;
 
     const badgeBaseClass = isSelfMutedBadge
-        ? "bg-red-600 border-red-700/70 text-white shadow-sm"
+        ? "bg-[#F65252] border-red-700/70 text-white shadow-sm"
         : hasCameraOn
-            ? "bg-[#333333] border-[#3A3A3A] text-white shadow-sm"
+            ? "bg-[#242424] border-[#2B2B2B] text-white shadow-sm"
             : isLight
-                ? "bg-[#F4F5F6] border-[#D4D7DC] text-neutral-800 shadow-sm"
-                : "bg-[#333333] border-[#3A3A3A] text-white shadow-sm";
+                ? "bg-[#F5F5F5] border-[#CFCFCF] text-neutral-800 shadow-sm"
+                : "bg-[#242424] border-[#2B2B2B] text-white shadow-sm";
 
     const micIconTheme: RoomTheme = isSelfMutedBadge || hasCameraOn ? "dark" : isLight ? "light" : "dark";
 
@@ -274,26 +274,26 @@ function VideoTileInner({
     const isLight = theme === "light";
     const isCompact = density === "compact";
 
-    const tileBgClass = isLight ? "bg-[#F4F5F6]" : "bg-[#2F2F2F]";
-    const mediaBgColor = isLight ? "#F4F5F6" : "#2F2F2F";
-    const offStateClass = isLight ? "text-black/60 bg-[#ECEEF0]" : "text-white/70 bg-[#2F2F2F]";
+    const tileBgClass = isLight ? "bg-[#F8F8F8]" : "bg-[#1E1E1E]";
+    const mediaBgColor = isLight ? "#F8F8F8" : "#1E1E1E";
+    const offStateClass = isLight ? "text-black/60 bg-[#F3F3F3]" : "text-white/70 bg-[#1E1E1E]";
     const initialsBgClass = isLight
-        ? "bg-neutral-200 text-neutral-800 border-[#D4D7DC]"
-        : "bg-emerald-500/80 text-[#F6F7F8] border-[#3A3A3A]";
+        ? "bg-neutral-200 text-neutral-800 border-[#CFCFCF]"
+        : "bg-[#81DB86]/80 text-[#F3F3F3] border-[#2B2B2B]";
 
     const hasCameraOn = !!videoTrack;
 
     const namePillClass = hasCameraOn
-        ? "bg-[#2F2F2F]/70 border-[#3A3A3A] text-white shadow-sm"
+        ? "bg-[#242424] border-[#2B2B2B] text-white shadow-sm"
         : isLight
-            ? "bg-[#F4F5F6] border-[#D4D7DC] text-neutral-900 shadow-sm"
-            : "bg-[#2F2F2F]/70 border-[#3A3A3A] text-white shadow-sm";
+            ? "bg-[#F5F5F5] border-[#CFCFCF] text-neutral-900 shadow-sm"
+            : "bg-[#242424] border-[#2B2B2B] text-white shadow-sm";
 
     const nameTextClass = hasCameraOn ? "!text-white" : isLight ? "text-neutral-900" : "text-white";
 
     const menuBtnClass = isLight
-        ? "bg-[#F4F5F6] border-[#D4D7DC] text-black/85 hover:bg-[#F2F3F5]"
-        : "bg-[#333333] border-[#3A3A3A] text-white hover:bg-[#333333]";
+        ? "bg-[#F5F5F5] border-[#CFCFCF] text-black/85 hover:bg-[#F2F3F5]"
+        : "bg-[#242424] border-[#2B2B2B] text-white hover:bg-[#242424]";
 
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const [sizeText, setSizeText] = useState<string>("");
@@ -439,7 +439,7 @@ function VideoTileInner({
             className={
                 "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border " +
                 (isCompact ? "rounded-xl " : "rounded-2xl ") +
-                (isLight ? "border-[#D4D7DC]" : "border-[#3A3A3A]") +
+                (isLight ? "border-[#CFCFCF]" : "border-[#2B2B2B]") +
                 " " +
                 tileBgClass
             }
@@ -459,7 +459,7 @@ function VideoTileInner({
                             <img
                                 src={normalizedAvatarUrl}
                                 alt={label || "User"}
-                                className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)]"} rounded-full object-cover border shadow-2xl ${isLight ? "border-[#D4D7DC]" : "border-[#3A3A3A]"
+                                className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)]"} rounded-full object-cover border shadow-2xl ${isLight ? "border-[#CFCFCF]" : "border-[#2B2B2B]"
                                     }`}
                                 referrerPolicy="no-referrer"
                                 onError={() => setAvatarBroken(true)}
@@ -486,8 +486,8 @@ function VideoTileInner({
                         className={
                             "absolute left-2 top-2 px-2 py-1 rounded-lg text-[10px] border " +
                             (isLight
-                                ? "bg-[#F4F5F6] text-black border-[#D4D7DC]"
-                                : "bg-[#333333] text-white border-[#3A3A3A]")
+                                ? "bg-[#F5F5F5] text-black border-[#CFCFCF]"
+                                : "bg-[#242424] text-white border-[#2B2B2B]")
                         }
                         title="Tile size (debug)"
                     >
@@ -533,8 +533,8 @@ function VideoTileInner({
                                 className={
                                     "px-2 py-1 rounded-lg text-[11px] border flex items-center gap-1 " +
                                     (isLight
-                                        ? "bg-[#F4F5F6] text-black border-[#D4D7DC] disabled:opacity-50"
-                                        : "bg-[#2F2F2F]/80 text-white border-[#3A3A3A] disabled:opacity-50")
+                                        ? "bg-[#F5F5F5] text-black border-[#CFCFCF] disabled:opacity-50"
+                                        : "bg-[#242424] text-white border-[#2B2B2B] disabled:opacity-50")
                                 }
                                 title="Mute / unmute remote microphone (host action)"
                             >
@@ -554,8 +554,8 @@ function VideoTileInner({
                                 className={
                                     "px-2 py-1 rounded-lg text-[11px] border flex items-center gap-1 " +
                                     (isLight
-                                        ? "bg-[#F4F5F6] text-black border-[#D4D7DC] disabled:opacity-50"
-                                        : "bg-[#2F2F2F]/80 text-white border-[#3A3A3A] disabled:opacity-50")
+                                        ? "bg-[#F5F5F5] text-black border-[#CFCFCF] disabled:opacity-50"
+                                        : "bg-[#242424] text-white border-[#2B2B2B] disabled:opacity-50")
                                 }
                                 title="Mute / unmute remote camera (host action)"
                             >
@@ -572,7 +572,7 @@ function VideoTileInner({
                             <button
                                 onClick={hostActions.onKick}
                                 disabled={hostActions.busy}
-                                className="px-2 py-1 rounded-lg text-[11px] bg-red-600/90 hover:bg-red-700 text-white disabled:opacity-50"
+                                className="px-2 py-1 rounded-lg text-[11px] bg-[#F65252]/90 hover:bg-[#E64545] text-white disabled:opacity-50"
                                 title="Remove participant from room"
                             >
                                 Kick

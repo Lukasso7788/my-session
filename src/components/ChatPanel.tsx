@@ -412,36 +412,36 @@ function MessageCardInner({
     const metaTimeCls = isLight ? "text-black/35" : "text-white/35";
     const actionBtnCls = isLight ? "text-black/45 hover:text-emerald-700" : "text-white/45 hover:text-emerald-300";
     const dangerBtnCls = isLight ? "text-black/40 hover:text-red-700" : "text-white/40 hover:text-red-300";
-    const menuCls = isLight ? "bg-[#ECEEF0] border border-[#D4D7DC]" : "bg-[#2F2F2F] border border-[#3A3A3A]";
+    const menuCls = isLight ? "bg-[#F3F3F3] border border-[#D0D0D0]" : "bg-[#202020] border border-[#2B2B2B]";
 
     const bubbleCls =
         "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
         (mine
             ? isLight
-                ? "bg-emerald-500/15 border-emerald-600/25 text-black/85"
-                : "bg-emerald-500/15 border-emerald-400/20 text-white/90"
+                ? "bg-[#81DB86]/15 border-emerald-600/25 text-black/85"
+                : "bg-[#81DB86]/15 border-emerald-400/20 text-white/90"
             : isLight
-                ? "bg-[#DDE0E5] border-[#D4D7DC] text-black/80"
-                : "bg-[#333333] border-[#3A3A3A] text-white/85") +
+                ? "bg-[#E6E6E6] border-[#CFCFCF] text-black/80"
+                : "bg-[#242424] border-[#2B2B2B] text-white/85") +
         (highlighted ? (isLight ? " ring-2 ring-[#6B7280]/55" : " ring-2 ring-emerald-400/55") : "");
 
     const quoteBoxCls = isLight
-        ? "bg-[#F7F7F8] border border-[#D4D7DC] text-black/70 hover:bg-[#E8EAED]/90"
-        : "bg-black/25 border border-[#3A3A3A] text-white/70 hover:bg-[#333333]";
+        ? "bg-[#FAFAFA] border border-[#CFCFCF] text-black/70 hover:bg-[#F1F1F1]/90"
+        : "bg-black/25 border border-[#2B2B2B] text-white/70 hover:bg-[#242424]";
 
     const reactionPillBase = isLight
-        ? "px-2 py-1 rounded-xl bg-[#DDE0E5] border border-[#D4D7DC] text-[12px] text-black/70 flex items-center gap-1.5 transition"
-        : "px-2 py-1 rounded-xl bg-[#333333] border border-[#3A3A3A] text-[12px] text-white/80 flex items-center gap-1.5 transition";
+        ? "px-2 py-1 rounded-xl bg-[#E6E6E6] border border-[#CFCFCF] text-[12px] text-black/70 flex items-center gap-1.5 transition"
+        : "px-2 py-1 rounded-xl bg-[#242424] border border-[#2B2B2B] text-[12px] text-white/80 flex items-center gap-1.5 transition";
 
     const reactionPillMine = isLight
-        ? "bg-emerald-500/12 ring-2 ring-emerald-400/70 border-emerald-500/55 text-emerald-900"
+        ? "bg-[#81DB86]/12 ring-2 ring-emerald-400/70 border-emerald-500/55 text-emerald-900"
         : "bg-emerald-400/12 ring-2 ring-emerald-300/55 border-emerald-300/45 text-white";
 
     const reactionCountCls = isLight ? "text-black/50" : "text-white/60";
 
     const inputCls = isLight
-        ? "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#ECEEF0] border border-[#D4D7DC] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
-        : "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#333333] border border-[#3A3A3A] text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500";
+        ? "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#F3F3F3] border border-[#CFCFCF] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]"
+        : "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#242424] border border-[#2B2B2B] text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]";
 
     const { quote, quoteMessageId, main } = useMemo(() => parseReplyBody(msg.body), [msg.body]);
 
@@ -531,11 +531,11 @@ function MessageCardInner({
                                                             "h-8 w-8 rounded-xl hover:scale-[1.05] transition leading-none flex items-center justify-center " +
                                                             (isMine
                                                                 ? isLight
-                                                                    ? "bg-emerald-500/12 ring-1 ring-emerald-500/35"
+                                                                    ? "bg-[#81DB86]/12 ring-1 ring-emerald-500/35"
                                                                     : "bg-emerald-400/12 ring-1 ring-emerald-300/25"
                                                                 : isLight
-                                                                    ? "hover:bg-[#E7EAF0]"
-                                                                    : "hover:bg-[#3F3F3F]")
+                                                                    ? "hover:bg-[#E8E8E8]"
+                                                                    : "hover:bg-[#303030]")
                                                         }
                                                         title={isMine ? `Remove ${e}` : e}
                                                         type="button"
@@ -624,8 +624,8 @@ function MessageCardInner({
                                 }}
                                 className={
                                     isLight
-                                        ? "px-3 h-9 rounded-xl bg-[#DDE0E5] hover:bg-[#D2D6DC] border border-[#D4D7DC] text-black/70 text-sm"
-                                        : "px-3 h-9 rounded-xl bg-[#333333] hover:bg-[#3D3D3D] border border-[#3A3A3A] text-white/75 text-sm"
+                                        ? "px-3 h-9 rounded-xl bg-[#E6E6E6] hover:bg-[#DCDCDC] border border-[#CFCFCF] text-black/70 text-sm"
+                                        : "px-3 h-9 rounded-xl bg-[#242424] hover:bg-[#303030] border border-[#2B2B2B] text-white/75 text-sm"
                                 }
                                 disabled={savingEdit}
                                 title="Cancel"
@@ -1029,26 +1029,26 @@ export function ChatPanel({
         externalDirectPeerUserId,
     ]);
 
-    const headerBorder = isLight ? "border-[#D4D7DC]" : "border-[#2F2F2F]";
+    const headerBorder = isLight ? "border-[#D0D0D0]" : "border-[#171717]";
     const titleText = isLight ? "text-black/85" : "text-white/85";
     const subText = isLight ? "text-black/50" : "text-white/45";
-    const headerCloseBtnCls = isLight ? "bg-[#DDE0E5] hover:bg-[#D2D6DC] text-black/60" : "bg-[#333333] hover:bg-[#3D3D3D] text-white/70";
-    const replyBoxCls = isLight ? "bg-[#DDE0E5] border-[#D4D7DC]" : "bg-[#333333] border-[#3A3A3A]";
-    const replyingLabel = "text-[11px] text-emerald-500/90 font-medium";
+    const headerCloseBtnCls = isLight ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60" : "bg-[#242424] hover:bg-[#303030] text-white/70";
+    const replyBoxCls = isLight ? "bg-[#E6E6E6] border-[#CFCFCF]" : "bg-[#242424] border-[#2B2B2B]";
+    const replyingLabel = "text-[11px] text-[#81DB86]/90 font-medium";
     const replyingText = isLight ? "text-black/55" : "text-white/55";
-    const cancelBtnCls = isLight ? "bg-[#DDE0E5] hover:bg-[#D2D6DC] text-black/60" : "bg-[#2F2F2F] hover:bg-[#333333] text-white/70";
+    const cancelBtnCls = isLight ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60" : "bg-[#1B1B1B] hover:bg-[#242424] text-white/70";
     const hintText = isLight ? "text-black/40" : "text-white/35";
     const sendBtnActive = "bg-emerald-600 hover:bg-emerald-700 text-white";
-    const sendBtnDisabled = isLight ? "bg-[#D2D6DC] text-black/35" : "bg-[#3D3D3D] text-white/35";
+    const sendBtnDisabled = isLight ? "bg-[#DCDCDC] text-black/35" : "bg-[#303030] text-white/35";
     const composerInputCls = isLight
-        ? "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#ECEEF0] border border-[#D4D7DC] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500"
-        : "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#333333] border border-[#3A3A3A] text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500";
+        ? "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#F3F3F3] border border-[#CFCFCF] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]"
+        : "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#242424] border border-[#2B2B2B] text-white/85 placeholder:text-white/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]";
     const composerEmojiBtnCls = isLight
-        ? "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#ECEEF0] border-[#D4D7DC] text-black/60 hover:bg-[#E7EAF0] hover:text-black/80"
-        : "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#333333]/70 border-[#3A3A3A] text-white/70 hover:bg-[#3F3F3F] hover:text-white/90";
+        ? "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#F3F3F3] border-[#CFCFCF] text-black/60 hover:bg-[#E8E8E8] hover:text-black/80"
+        : "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#242424] border-[#2B2B2B] text-white/70 hover:bg-[#303030] hover:text-white/90";
     const portalBoxCls = isLight
-        ? "rounded-2xl border border-[#D4D7DC] bg-[#ECEEF0] shadow-2xl overflow-hidden"
-        : "rounded-2xl border border-transparent bg-[#2F2F2F] shadow-2xl overflow-hidden";
+        ? "rounded-2xl border border-[#CFCFCF] bg-[#F3F3F3] shadow-2xl overflow-hidden"
+        : "rounded-2xl border border-[#252525] bg-[#171717] shadow-2xl overflow-hidden";
 
     useEffect(() => {
         (async () => {
@@ -2061,12 +2061,12 @@ export function ChatPanel({
     const visibleMessages = useMemo(() => messages.slice(-VISIBLE_MESSAGE_LIMIT), [messages]);
     const modalMessage = reactionDetails.open ? messagesRef.current.find((m) => m.id === reactionDetails.messageId) || null : null;
     const modalMessageMain = modalMessage ? parseReplyBody(modalMessage.body).main : "";
-    const modalBg = isLight ? "bg-[#ECEEF0] border border-[#D4D7DC]" : "bg-[#2F2F2F] border border-[#3A3A3A]";
+    const modalBg = isLight ? "bg-[#F3F3F3] border border-[#CFCFCF]" : "bg-[#1B1B1B] border border-[#2B2B2B]";
     const modalTextPrimary = isLight ? "text-black/85" : "text-white/90";
     const modalTextSecondary = isLight ? "text-black/55" : "text-white/55";
     const modalBtn = isLight
-        ? "bg-[#DDE0E5] hover:bg-[#D2D6DC] border border-[#D4D7DC] text-black/70"
-        : "bg-[#333333] hover:bg-[#3D3D3D] border border-[#3A3A3A] text-white/75";
+        ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] border border-[#CFCFCF] text-black/70"
+        : "bg-[#242424] hover:bg-[#303030] border border-[#2B2B2B] text-white/75";
     const modalPrimaryBtn = "bg-emerald-600 hover:bg-emerald-700 text-white";
     const canToggleInModal = !!reactionDetails.open && !!reactionDetails.messageId && !!reactionDetails.emoji;
     const myReactedInModal = canToggleInModal && !!myReactions?.[reactionDetails.messageId]?.[reactionDetails.emoji];
@@ -2109,7 +2109,7 @@ export function ChatPanel({
                 <div className="fixed inset-0 z-[9999] flex items-center justify-center">
                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeReactionDetails} />
                     <div className={"relative w-[92vw] max-w-[520px] rounded-2xl shadow-2xl " + modalBg}>
-                        <div className={"px-5 py-4 border-b " + (isLight ? "border-[#D4D7DC]" : "border-[#3A3A3A]")}>
+                        <div className={"px-5 py-4 border-b " + (isLight ? "border-[#CFCFCF]" : "border-[#2B2B2B]")}>
                             <div className="flex items-start justify-between gap-3">
                                 <div className="min-w-0">
                                     <div className={"text-[14px] font-semibold " + modalTextPrimary}>{reactionDetails.emoji} Reactions</div>
@@ -2121,7 +2121,7 @@ export function ChatPanel({
                             </div>
 
                             {modalMessage && (
-                                <div className={"mt-3 rounded-xl px-3 py-2 text-[12px] " + (isLight ? "bg-[#DDE0E5] border border-[#D4D7DC]" : "bg-[#333333] border border-[#3A3A3A]")}>
+                                <div className={"mt-3 rounded-xl px-3 py-2 text-[12px] " + (isLight ? "bg-[#E6E6E6] border border-[#CFCFCF]" : "bg-[#242424] border border-[#2B2B2B]")}>
                                     <div className={"text-[11px] mb-1 " + modalTextSecondary}>Message</div>
                                     <div className={modalTextPrimary + " whitespace-pre-wrap break-words"}>
                                         {collapseWs(modalMessageMain).slice(0, 260) + (collapseWs(modalMessageMain).length > 260 ? "…" : "")}
@@ -2156,7 +2156,7 @@ export function ChatPanel({
                             <div className="mt-4 max-h-[46vh] overflow-y-auto custom-scrollbar pr-1">
                                 {reactionDetails.loading && (
                                     <div className="py-6 flex items-center justify-center">
-                                        <div className={"w-7 h-7 rounded-full border-2 animate-spin " + (isLight ? "border-black/20 border-t-black/60" : "border-[#4A4A4A] border-t-white/70")} />
+                                        <div className={"w-7 h-7 rounded-full border-2 animate-spin " + (isLight ? "border-black/20 border-t-black/60" : "border-[#333333] border-t-white/70")} />
                                     </div>
                                 )}
 
@@ -2170,7 +2170,7 @@ export function ChatPanel({
                                             const prof = profilesByIdRef.current[uid] || (uid === userId ? meProfileRef.current : null) || ({ id: uid, full_name: "Participant", avatar_url: null } as Profile);
                                             const displayName = uid === userId ? "You" : prof?.full_name || "Participant";
                                             return (
-                                                <div key={uid} className={"flex items-center gap-3 rounded-xl px-3 py-2 border " + (isLight ? "bg-[#ECEEF0] border-[#D4D7DC]" : "bg-[#333333] border-[#3A3A3A]")}>
+                                                <div key={uid} className={"flex items-center gap-3 rounded-xl px-3 py-2 border " + (isLight ? "bg-[#F3F3F3] border-[#CFCFCF]" : "bg-[#242424] border-[#2B2B2B]")}>
                                                     <img src={avatarFromProfile(prof)} className="w-9 h-9 rounded-full object-cover" alt="" />
                                                     <div className="min-w-0">
                                                         <div className={modalTextPrimary + " text-[13px] truncate"}>{displayName}</div>
@@ -2264,7 +2264,7 @@ export function ChatPanel({
                         type="button"
                         className={
                             "pointer-events-auto px-4 py-2 rounded-full shadow-xl text-[12px] font-semibold border transition " +
-                            (isLight ? "bg-[#E8EAED]/95 border-[#D4D7DC] text-black/80 hover:bg-[#ECEEF0]" : "bg-[#333333]/95 border-[#3A3A3A] text-white/85 hover:bg-[#333333]")
+                            (isLight ? "bg-[#F1F1F1]/95 border-[#CFCFCF] text-black/80 hover:bg-[#F3F3F3]" : "bg-[#242424]/95 border-[#2B2B2B] text-white/85 hover:bg-[#242424]")
                         }
                         onClick={() => {
                             atBottomRef.current = true;
