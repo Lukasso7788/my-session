@@ -10513,25 +10513,17 @@ export function RoomPageLiveKit({
 
       {rightPanelOpen && rightTab === "chat" && (
         <div className="flex flex-col h-full">
-          <div
-            className={
-              "flex items-center gap-2 px-3 py-2 border-b min-h-[52px] " +
-              (isLight
-                ? "border-[#CFCFCF] bg-[#FAFAFA]"
-                : "border-[#2B2B2B] bg-[#242424]/72")
-            }
-          >
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-[#D8D0D0] bg-[#F3F1F1] min-h-[52px]">
             <div className="flex items-center gap-2 shrink-0 mr-1">
               <img
-                src={isLight ? "/icons/chat-light.svg" : "/icons/chat-dark.svg"}
+                src="/icons/chat-light.svg"
                 alt="Chat"
                 className="w-4 h-4 shrink-0"
                 draggable={false}
               />
               <span
                 className={
-                  "text-[13px] font-semibold shrink-0 " +
-                  (isLight ? "text-black/85" : "text-white/88")
+                  "text-[13px] font-semibold shrink-0 text-black/85"
                 }
               >
                 Chat
@@ -10545,12 +10537,8 @@ export function RoomPageLiveKit({
                 className={
                   "relative h-8 px-3 rounded-full text-xs font-medium transition border shrink-0 " +
                   (chatViewMode === "general"
-                    ? isLight
-                      ? "bg-[#1B1B1B] border-[#1B1B1B] text-white"
-                      : "bg-[#252525] border-[#444444] text-white"
-                    : isLight
-                      ? "bg-transparent border-[#CFCFCF] text-black/65 hover:bg-[#E8E8E8]"
-                      : "bg-transparent border-[#2B2B2B] text-white/65 hover:bg-[#303030]")
+                    ? "bg-[#1B1B1B] border-[#1B1B1B] text-white"
+                    : "bg-transparent border-[#CFCFCF] text-black/65 hover:bg-[#E8E8E8]")
                 }
               >
                 <span className="inline-flex items-center gap-1.5">
@@ -10561,9 +10549,7 @@ export function RoomPageLiveKit({
                         "inline-flex min-w-[16px] h-4 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none " +
                         (chatViewMode === "general"
                           ? "bg-[#F65252] text-white"
-                          : isLight
-                            ? "bg-[#F65252] text-white"
-                            : "bg-[#F65252] text-white")
+                          : "bg-[#F65252] text-white")
                       }
                       title={`${unreadGeneralChat} new chat message${unreadGeneralChat === 1 ? "" : "s"}`}
                     >
@@ -10579,12 +10565,8 @@ export function RoomPageLiveKit({
                 className={
                   "relative h-8 px-3 rounded-full text-xs font-medium transition border shrink-0 " +
                   (chatViewMode === "host"
-                    ? isLight
-                      ? "bg-[#1B1B1B] border-[#1B1B1B] text-white"
-                      : "bg-[#252525] border-[#444444] text-white"
-                    : isLight
-                      ? "bg-transparent border-[#CFCFCF] text-black/65 hover:bg-[#E8E8E8]"
-                      : "bg-transparent border-[#2B2B2B] text-white/65 hover:bg-[#303030]")
+                    ? "bg-[#1B1B1B] border-[#1B1B1B] text-white"
+                    : "bg-transparent border-[#CFCFCF] text-black/65 hover:bg-[#E8E8E8]")
                 }
               >
                 <span className="inline-flex items-center gap-1.5">
@@ -10716,9 +10698,7 @@ export function RoomPageLiveKit({
               }}
               className={
                 "w-8 h-8 rounded-xl flex items-center justify-center transition shrink-0 " +
-                (isLight
-                  ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
-                  : "bg-[#242424] hover:bg-[#303030] text-white/70")
+                "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
               }
               title="Close chat"
             >
@@ -10745,21 +10725,15 @@ export function RoomPageLiveKit({
 
       {rightTab === "intentions" && (
         <div className="h-full min-h-0 flex flex-col">
-          <div
-            className={`px-5 py-4 border-b flex items-center justify-between ${isLight ? "border-[#CFCFCF]" : "border-[#2A2A2A]"
-              }`}
-          >
+          <div className="px-5 py-4 border-b border-[#D8D0D0] bg-[#F3F1F1] flex items-center justify-between">
             <div
-              className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}
+              className="text-black/85 font-inter font-semibold"
             >
               Intentions
             </div>
             <button
               onClick={() => openRightTab(null)}
-              className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                  ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
-                  : "bg-[#1B1B1B] hover:bg-[#242424] text-white/80"
-                }`}
+              className="w-9 h-9 rounded-xl flex items-center justify-center transition bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
               title="Close"
             >
               ✕
@@ -10768,23 +10742,18 @@ export function RoomPageLiveKit({
 
           <div className="flex-1 min-h-0 overflow-hidden p-4">
             <div
-              className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight
-                  ? "bg-[#FAFAFA] border border-[#CFCFCF]"
-                  : "bg-[#1B1B1B]/40 border border-[#2B2B2B]"
-                }`}
+              className="h-full min-h-0 overflow-hidden rounded-xl bg-[#F3F1F1] border border-[#D8D0D0]"
             >
               <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
                 <div
-                  data-theme={theme}
-                  style={{ colorScheme: theme }}
-                  className={
-                    theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"
-                  }
+                  data-theme="light"
+                  style={{ colorScheme: "light" }}
+                  className="h-full min-h-0"
                 >
                   {session?.id ? (
                     <IntentionsPanel
-                      key={`intentions-${session.id}-${theme}`}
-                      theme={theme}
+                      key={`intentions-${session.id}`}
+                      theme="light"
                       sessionId={session.id}
                       timerText={remainingTime || "--:--"}
                       pictureInPictureSupported={connected && pipSupported}

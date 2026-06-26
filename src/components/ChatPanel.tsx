@@ -1177,29 +1177,17 @@ export function ChatPanel({
     const headerBorder = "border-[#D8D0D0]";
     const titleText = "text-black/85";
     const subText = "text-black/50";
-    const headerCloseBtnCls = isLight
-        ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60"
-        : "bg-[#F7F5F5] hover:bg-[#303030] text-black/70";
-    const replyBoxCls = isLight
-        ? "bg-[#ECEAEA] border-[#D8D0D0]"
-        : "bg-[#F7F5F5] border-[#D8D0D0]";
+    const headerCloseBtnCls = "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60";
+    const replyBoxCls = "bg-[#ECEAEA] border-[#D8D0D0]";
     const replyingLabel = "text-[11px] text-[#81DB86]/90 font-medium";
     const replyingText = "text-black/55";
-    const cancelBtnCls = isLight
-        ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60"
-        : "bg-[#F3F1F1] hover:bg-[#F7F5F5] text-black/70";
+    const cancelBtnCls = "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60";
     const hintText = "text-black/40";
     const sendBtnActive = "bg-emerald-600 hover:bg-emerald-700 text-white";
     const sendBtnDisabled = "bg-[#DCDCDC] text-black/35";
-    const composerInputCls = isLight
-        ? "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]"
-        : "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#F7F5F5] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]";
-    const composerEmojiBtnCls = isLight
-        ? "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#F3F1F1] border-[#D8D0D0] text-black/60 hover:bg-[#E8E8E8] hover:text-black/80"
-        : "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#F7F5F5] border-[#D8D0D0] text-black/70 hover:bg-[#303030] hover:text-black/90";
-    const portalBoxCls = isLight
-        ? "rounded-2xl border border-[#D8D0D0] bg-[#F3F1F1] shadow-2xl overflow-hidden"
-        : "rounded-2xl border border-[#D8D0D0] bg-[#171717] shadow-2xl overflow-hidden";
+    const composerInputCls = "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]";
+    const composerEmojiBtnCls = "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#F3F1F1] border-[#D8D0D0] text-black/60 hover:bg-[#E8E8E8] hover:text-black/80";
+    const portalBoxCls = "rounded-2xl border border-[#D8D0D0] bg-[#F3F1F1] shadow-2xl overflow-hidden";
 
     useEffect(() => {
         (async () => {
@@ -2476,7 +2464,7 @@ export function ChatPanel({
                         >
                             <Picker
                                 data={emojiData}
-                                theme={theme === "light" ? "light" : "dark"}
+                                theme="light"
                                 set="native"
                                 previewPosition="none"
                                 searchPosition="sticky"

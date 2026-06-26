@@ -14,6 +14,8 @@ import {
   ListPlus,
   RefreshCw,
   Search,
+  Lock,
+  Unlock,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
@@ -41,6 +43,7 @@ type PanelIntention = {
   completed: boolean;
   created_at: string;
   updated_at: string;
+  visibility?: "public" | "room" | "private" | string | null;
 };
 
 type FocusPlan = {
@@ -114,6 +117,42 @@ const TEAM_INTENTIONS_RENDER_LIMIT = 50;
 const PLAN_ITEMS_RENDER_LIMIT = 40;
 const FOCUS_PLAN_ITEMS_FETCH_LIMIT = 120;
 const FOCUS_PLANS_FETCH_LIMIT = 40;
+
+function normalizeIntentionVisibility(value: unknown): "public" | "room" | "private" {
+  const v = String(value || "").trim().toLowerCase();
+  if (v === "private" || v === "self" || v === "hidden") return "private";
+  if (v === "room" || v === "session" || v === "room_only" || v === "room-only") return "room";
+  return "public";
+}
+
+function isPanelIntentionVisibleInRoom(item?: { visibility?: unknown } | null) {
+  return normalizeIntentionVisibility(item?.visibility) !== "private";
+}
+
+function isPanelIntentionPublic(item?: { visibility?: unknown } | null) {
+  return normalizeIntentionVisibility(item?.visibility) === "public";
+}
+
+function getNextIntentionVisibility(value: unknown): "public" | "room" | "private" {
+  const current = normalizeIntentionVisibility(value);
+  if (current === "public") return "room";
+  if (current === "room") return "private";
+  return "public";
+}
+
+function getVisibilityLabel(value: unknown) {
+  const v = normalizeIntentionVisibility(value);
+  if (v === "public") return "Public";
+  if (v === "room") return "Room";
+  return "Private";
+}
+
+function getVisibilityTitle(value: unknown) {
+  const v = normalizeIntentionVisibility(value);
+  if (v === "public") return "Public — click to make visible only in this room";
+  if (v === "room") return "Visible in this room — click to make private";
+  return "Private — click to make public";
+}
 
 function PanelSmartIcon({
   name,
@@ -294,7 +333,8 @@ export function IntentionsPanel({
   const { id: idOrSlugFromUrl } = useParams<{ id: string }>();
   const rawSessionId = (sessionIdProp || idOrSlugFromUrl || "").trim();
 
-  const isLight = theme === "light";
+  const panelTheme: RoomTheme = "light";
+  const isLight = true;
 
   const [user, setUser] = useState<any>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -461,9 +501,7 @@ export function IntentionsPanel({
     try {
       const { data, error } = await supabase
         .from(PANEL_INTENTIONS_TABLE)
-        .select(
-          "id,user_id,text,focus_plan_item_id,completed,created_at,updated_at",
-        )
+        .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(PANEL_INTENTIONS_FETCH_LIMIT);
@@ -1009,6 +1047,7 @@ export function IntentionsPanel({
               text,
               focus_plan_item_id: item.id,
               completed: Boolean(item.completed),
+              visibility: "public",
             } as any);
           }
         }
@@ -1043,6 +1082,7 @@ export function IntentionsPanel({
       completed: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
+      visibility: "public",
     };
 
     setPanelIntentions((prev) =>
@@ -1052,10 +1092,8 @@ export function IntentionsPanel({
     try {
       const { data, error } = await supabase
         .from(PANEL_INTENTIONS_TABLE)
-        .insert({ user_id: user.id, text, completed: false } as any)
-        .select(
-          "id,user_id,text,focus_plan_item_id,completed,created_at,updated_at",
-        )
+        .insert({ user_id: user.id, text, completed: false, visibility: "public" } as any)
+        .select("*")
         .single();
 
       if (error || !data) {
@@ -1098,11 +1136,13 @@ export function IntentionsPanel({
         void syncFocusPlanItemCompleted(String(it.focus_plan_item_id), next);
       }
 
-      void upsertOwnSessionIntention({
-        matchText: it.text,
-        text: it.text,
-        completed: next,
-      });
+      if (isPanelIntentionPublic(it)) {
+        void upsertOwnSessionIntention({
+          matchText: it.text,
+          text: it.text,
+          completed: next,
+        });
+      }
     } catch {
       setPanelIntentions((prev) =>
         prev.map((x) => (x.id === it.id ? { ...x, completed: !next } : x)),
@@ -1173,11 +1213,50 @@ export function IntentionsPanel({
       setEditingId(null);
       setEditingText("");
 
-      void upsertOwnSessionIntention({
-        matchText: prevText,
-        text,
-        completed: prevCompleted,
-      });
+      if (isPanelIntentionVisibleInRoom(prevItem)) {
+        void upsertOwnSessionIntention({
+          matchText: prevText,
+          text,
+          completed: prevCompleted,
+        });
+      }
+    } catch {
+      setPanelIntentions(prev);
+    }
+  };
+
+  const togglePanelVisibility = async (it: PanelIntention) => {
+    if (!user?.id) return;
+    if (!it?.id) return;
+
+    const nextVisibility = getNextIntentionVisibility(it.visibility);
+    const nextVisibleInRoom = nextVisibility !== "private";
+    const prev = panelIntentions;
+
+    setPanelIntentions((items) =>
+      items.map((x) =>
+        x.id === it.id ? { ...x, visibility: nextVisibility } : x,
+      ),
+    );
+
+    try {
+      const { error } = await supabase
+        .from(PANEL_INTENTIONS_TABLE)
+        .update({ visibility: nextVisibility })
+        .eq("id", it.id)
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+
+      if (nextVisibleInRoom) {
+        void upsertOwnSessionIntention({
+          matchText: it.text,
+          text: it.text,
+          completed: Boolean(it.completed),
+        });
+      } else {
+        void deleteOwnSessionIntentionByText(it.text);
+      }
     } catch {
       setPanelIntentions(prev);
     }
@@ -1660,7 +1739,7 @@ export function IntentionsPanel({
               }
               title="Timer"
             >
-              <TimerSmartIcon theme={theme} className="w-4 h-4 opacity-80" />
+              <TimerSmartIcon theme={panelTheme} className="w-4 h-4 opacity-80" />
               <span
                 className={timerTextCls + " leading-none"}
                 style={{ fontFamily: OVERLAY_FONT_FAMILY }}
@@ -1670,7 +1749,7 @@ export function IntentionsPanel({
             </div>
 
             <IconButton
-              theme={theme}
+              theme={panelTheme}
               className={
                 isLight
                   ? "border border-[#5286F6] bg-transparent text-[#5286F6] hover:bg-[#5286F6]/10"
@@ -1684,7 +1763,7 @@ export function IntentionsPanel({
             >
               <PanelSmartIcon
                 name="focus-plan"
-                theme={theme}
+                theme={panelTheme}
                 className="w-4 h-4"
                 alt="Focus plan"
               />
@@ -1692,7 +1771,7 @@ export function IntentionsPanel({
 
             {pictureInPictureSupported && onOpenPictureInPicture ? (
               <IconButton
-                theme={theme}
+                theme={panelTheme}
                 className={
                   isLight
                     ? "border border-[#81DB86] bg-transparent text-[#81DB86] hover:bg-[#81DB86]/10"
@@ -1710,7 +1789,7 @@ export function IntentionsPanel({
               >
                 <PanelSmartIcon
                   name="pip-intentions"
-                  theme={theme}
+                  theme={panelTheme}
                   className="w-4 h-4"
                   alt="Picture-in-Picture"
                 />
@@ -1718,7 +1797,7 @@ export function IntentionsPanel({
             ) : null}
 
             <IconButton
-              theme={theme}
+              theme={panelTheme}
               className={
                 isLight
                   ? "border border-[#F65252] bg-transparent text-[#F65252] hover:bg-[#F65252]/10"
@@ -1733,7 +1812,7 @@ export function IntentionsPanel({
             >
               <PanelSmartIcon
                 name="pin"
-                theme={theme}
+                theme={panelTheme}
                 className="w-4 h-4"
                 alt="Pin"
               />
@@ -1764,9 +1843,7 @@ export function IntentionsPanel({
               onClick={handleAddPanelIntention}
               className={[
                 "h-11 px-4 rounded-xl font-semibold text-[13px] font-inter transition",
-                isLight
-                  ? "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white"
-                  : "bg-[#81DB86] hover:bg-[#6ECF74] text-[#102313]",
+                "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white",
               ].join(" ")}
               type="button"
               title="Add"
@@ -1780,9 +1857,14 @@ export function IntentionsPanel({
             <div className="flex-1 min-w-0 text-[13px] text-black/85">
               Keep it visible while you work
             </div>
-            <div className="shrink-0 text-[15px]" title="Visible only to you">
+            <button
+              type="button"
+              className="shrink-0 h-7 w-7 rounded-full border border-[#CFC6C6] bg-[#F3F1F1] text-[13px] flex items-center justify-center hover:bg-[#ECEAEA] transition"
+              title="Private example"
+              onClick={(e) => e.stopPropagation()}
+            >
               🔒
-            </div>
+            </button>
           </div>
 
           {panelLoading ? (
@@ -1798,24 +1880,13 @@ export function IntentionsPanel({
               {panelIntentions.map((i) => {
                 const isEditing = editingId === i.id;
 
-                const circleCls = isLight ? "text-black/40" : "text-white/45";
-                const textDoneCls = isLight
-                  ? "text-black/45 line-through"
-                  : "text-white/50 line-through";
-                const textActiveCls = isLight
-                  ? "text-black/80"
-                  : "text-white/80";
+                const circleCls = "text-black/40";
+                const textDoneCls = "text-black/45 line-through";
+                const textActiveCls = "text-black/80";
 
-                const editInputCls = isLight
-                  ? `
+                const editInputCls = `
                     w-full bg-[#F3F3F3] border border-[#C9C9C9] rounded-xl
                     px-3 py-2 text-[13px] text-black/85
-                    outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
-                    font-inter
-                  `
-                  : `
-                    w-full bg-[#1B1B1B] border border-[#2B2B2B] rounded-xl
-                    px-3 py-2 text-[13px] text-white/85
                     outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
                     font-inter
                   `;
@@ -1869,9 +1940,33 @@ export function IntentionsPanel({
                       <div className="flex items-center gap-2 shrink-0">
                         {!isEditing ? (
                           <>
+                            <button
+                              type="button"
+                              title={getVisibilityTitle(i.visibility)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void togglePanelVisibility(i);
+                              }}
+                              className={[
+                                "h-8 shrink-0 rounded-full border px-2 text-[11px] font-semibold transition inline-flex items-center gap-1.5",
+                                normalizeIntentionVisibility(i.visibility) === "public"
+                                  ? "border-[#81DB86] bg-[#81DB86]/15 text-[#248A3D] hover:bg-[#81DB86]/25"
+                                  : normalizeIntentionVisibility(i.visibility) === "room"
+                                    ? "border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/18"
+                                    : "border-[#CFC6C6] bg-[#F3F1F1] text-black/55 hover:bg-[#ECEAEA]",
+                              ].join(" ")}
+                            >
+                              {normalizeIntentionVisibility(i.visibility) === "private" ? (
+                                <Lock size={13} />
+                              ) : (
+                                <Unlock size={13} />
+                              )}
+                              <span>{getVisibilityLabel(i.visibility)}</span>
+                            </button>
+
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                               <IconButton
-                                theme={theme}
+                                theme={panelTheme}
                                 title="Edit"
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -1884,7 +1979,7 @@ export function IntentionsPanel({
 
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                               <IconButton
-                                theme={theme}
+                                theme={panelTheme}
                                 title="Delete"
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -1899,7 +1994,7 @@ export function IntentionsPanel({
                         ) : (
                           <>
                             <IconButton
-                              theme={theme}
+                              theme={panelTheme}
                               title="Save"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -1911,7 +2006,7 @@ export function IntentionsPanel({
                             </IconButton>
 
                             <IconButton
-                              theme={theme}
+                              theme={panelTheme}
                               title="Cancel"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -2057,13 +2152,13 @@ export function IntentionsPanel({
               onClick={closeOverlay}
               className={`
                 mt-4 px-4 py-2 rounded-xl border
-                ${isLight ? "border-black/15 text-black/80 hover:bg-[#E8E8E8]" : "border-[#2B2B2B] text-white/80 hover:bg-[#303030]"}
+                ${"border-black/15 text-black/80 hover:bg-[#E8E8E8]"}
                 transition inline-flex items-center gap-2 text-[13px] font-semibold font-inter
               `}
             >
               <PanelSmartIcon
                 name="pin"
-                theme={theme}
+                theme={panelTheme}
                 className="w-4 h-4"
                 alt="Pin"
               />
