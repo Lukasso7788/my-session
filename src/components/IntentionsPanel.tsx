@@ -647,7 +647,7 @@ export function IntentionsPanel({
     try {
       const { data, error } = await supabase
         .from(INTENTION_ENCOURAGEMENTS_TABLE)
-        .select("session_intention_id,user_id,emoji")
+        .select("session_intention_id,intention_id,user_id,emoji")
         .in("session_intention_id", ids);
 
       if (error || !Array.isArray(data)) {
@@ -663,7 +663,7 @@ export function IntentionsPanel({
       const userIds: string[] = [];
 
       data.forEach((row) => {
-        const intentionId = String(row?.session_intention_id || "");
+        const intentionId = String(row?.session_intention_id || row?.intention_id || "");
         const rowUserId = String(row?.user_id || "");
 
         if (!intentionId || !ids.includes(intentionId)) return;
@@ -683,7 +683,7 @@ export function IntentionsPanel({
       const nextUsersByIntention: Record<string, EncouragementUser[]> = {};
 
       data.forEach((row) => {
-        const intentionId = String(row?.session_intention_id || "");
+        const intentionId = String(row?.session_intention_id || row?.intention_id || "");
         const rowUserId = String(row?.user_id || "");
 
         if (!intentionId || !ids.includes(intentionId) || !rowUserId) return;
@@ -757,7 +757,7 @@ export function IntentionsPanel({
           const { error } = await supabase
             .from(INTENTION_ENCOURAGEMENTS_TABLE)
             .delete()
-            .eq("session_intention_id", id)
+            .eq("intention_id", id)
             .eq("user_id", uid);
 
           if (error) throw error;
@@ -767,11 +767,12 @@ export function IntentionsPanel({
             .upsert(
               {
                 session_id: sessionId,
+                intention_id: id,
                 session_intention_id: id,
                 user_id: uid,
                 emoji: ENCOURAGEMENT_EMOJI,
               } as any,
-              { onConflict: "session_intention_id,user_id" },
+              { onConflict: "intention_id,user_id" },
             );
 
           if (error) throw error;
