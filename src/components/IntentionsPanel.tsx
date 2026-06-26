@@ -383,26 +383,26 @@ export function IntentionsPanel({
   const [importingItemId, setImportingItemId] = useState<string | null>(null);
   const [lastPlansLoadedAt, setLastPlansLoadedAt] = useState<string>("");
 
-  const titleText = "text-black/90";
+  const titleText = "text-black/95";
   const mutedText = "text-black/55";
   const divider = "bg-[#D8D0D0]";
 
   const panelBg = "bg-[#F3F1F1] text-black";
-  const headerBg = "bg-[#F3F1F1]";
+  const headerBg = "bg-[#F7F5F5]";
   const headerBorder = "border-[#D8D0D0]";
 
   const inputCls = `
-      bg-[#F3F1F1] border border-[#CFC6C6] rounded-[14px]
-      px-3 py-3 text-[13px] text-black/85 placeholder:text-black/35
+      h-12 bg-[#F7F5F5] border border-[#CFC6C6] rounded-[18px]
+      px-4 text-[14px] text-black/85 placeholder:text-black/35
       outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
       font-inter
     `;
 
   const myCardCls =
-    "group rounded-[14px] border border-[#CFC6C6] px-3 py-2.5 bg-[#F7F5F5] hover:bg-[#ECEAEA] transition cursor-pointer";
+    "group relative rounded-[18px] border border-[#CFC6C6] px-4 py-3 bg-[#F7F5F5] hover:bg-[#ECEAEA] transition cursor-pointer";
 
   const teamCardCls =
-    "relative rounded-[14px] border border-[#CFC6C6] px-3 py-2.5 bg-[#F7F5F5] hover:bg-[#ECEAEA] transition";
+    "relative rounded-[18px] border border-[#CFC6C6] px-3 py-2.5 bg-[#F7F5F5] hover:bg-[#ECEAEA] transition";
 
   const ghostBtn =
     "border border-[#CFC6C6] bg-transparent hover:bg-[#ECEAEA] text-black/75";
@@ -1821,110 +1821,114 @@ export function IntentionsPanel({
       onMouseDown={stopRoomBubbling}
       onClick={stopRoomBubbling}
     >
-      <div
-        className={
-          "px-4 pt-4 pb-3 shrink-0 border-b " + headerBorder + " " + headerBg
-        }
-      >
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className={"font-inter font-semibold text-[13px] " + headerTitle}>
-              Intentions
-            </div>
-            <div className={"text-[11px] font-inter leading-4 " + mutedText}>
-              Keep it visible while you work
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0 font-inter">
-            <div
-              className={
-                "inline-flex items-center gap-2 px-3 py-2 rounded-xl " +
-                timerPillCls
-              }
-              title="Timer"
-            >
-              <TimerSmartIcon
-                theme={panelTheme}
-                className="w-4 h-4 opacity-80"
-              />
-              <span
-                className={timerTextCls + " leading-none"}
-                style={{ fontFamily: OVERLAY_FONT_FAMILY }}
+      <div className="px-4 pt-4 pb-2 shrink-0">
+        <div
+          className={
+            "rounded-[22px] border px-4 py-3 " + headerBorder + " " + headerBg
+          }
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div
+                className={"font-inter font-bold text-[16px] leading-5 " + headerTitle}
               >
-                {timerText || "--:--"}
-              </span>
+                Intentions
+              </div>
+              <div className={"mt-1 text-[13px] leading-5 font-inter " + titleText}>
+                Keep it visible while you work
+              </div>
             </div>
 
-            <IconButton
-              theme={panelTheme}
-              className={
-                "border border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
-              }
-              title="Attach from Focus plan to panel"
-              onClick={(e) => {
-                e.preventDefault();
-                openImportModal();
-              }}
-            >
-              <PanelSmartIcon
-                name="focus-plan"
-                theme={panelTheme}
-                className="w-4 h-4"
-                alt="Focus plan"
-              />
-            </IconButton>
+            <div className="flex items-center gap-2 shrink-0 font-inter">
+              <div
+                className={
+                  "inline-flex items-center gap-2 px-3 py-2 rounded-xl " +
+                  timerPillCls
+                }
+                title="Timer"
+              >
+                <TimerSmartIcon
+                  theme={panelTheme}
+                  className="w-4 h-4 opacity-80"
+                />
+                <span
+                  className={timerTextCls + " leading-none"}
+                  style={{ fontFamily: OVERLAY_FONT_FAMILY }}
+                >
+                  {timerText || "--:--"}
+                </span>
+              </div>
 
-            {pictureInPictureSupported && onOpenPictureInPicture ? (
               <IconButton
                 theme={panelTheme}
-                className="border border-[#81DB86] bg-[#81DB86]/10 text-[#2FA84F] hover:bg-[#81DB86]/15"
-                title={
-                  pictureInPictureOpen
-                    ? "Close Picture-in-Picture video"
-                    : "Open video Picture-in-Picture"
+                className={
+                  "border border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
                 }
+                title="Attach from Focus plan to panel"
                 onClick={(e) => {
                   e.preventDefault();
-                  onOpenPictureInPicture();
+                  openImportModal();
                 }}
               >
                 <PanelSmartIcon
-                  name="pip-intentions"
+                  name="focus-plan"
                   theme={panelTheme}
                   className="w-4 h-4"
-                  alt="Picture-in-Picture"
+                  alt="Focus plan"
                 />
               </IconButton>
-            ) : null}
 
-            <IconButton
-              theme={panelTheme}
-              className={
-                "border border-[#F65252] bg-[#F65252]/10 text-[#F65252] hover:bg-[#F65252]/15"
-              }
-              title={overlayOpen ? "Unpin" : "Pin (always on top if supported)"}
-              onClick={(e) => {
-                e.preventDefault();
-                if (overlayOpen) closeOverlay();
-                else void openOverlay();
-              }}
-            >
-              <PanelSmartIcon
-                name="pin"
+              {pictureInPictureSupported && onOpenPictureInPicture ? (
+                <IconButton
+                  theme={panelTheme}
+                  className="border border-[#81DB86] bg-[#81DB86]/10 text-[#2FA84F] hover:bg-[#81DB86]/15"
+                  title={
+                    pictureInPictureOpen
+                      ? "Close Picture-in-Picture video"
+                      : "Open video Picture-in-Picture"
+                  }
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onOpenPictureInPicture();
+                  }}
+                >
+                  <PanelSmartIcon
+                    name="pip-intentions"
+                    theme={panelTheme}
+                    className="w-4 h-4"
+                    alt="Picture-in-Picture"
+                  />
+                </IconButton>
+              ) : null}
+
+              <IconButton
                 theme={panelTheme}
-                className="w-4 h-4"
-                alt="Pin"
-              />
-            </IconButton>
+                className={
+                  "border border-[#F65252] bg-[#F65252]/10 text-[#F65252] hover:bg-[#F65252]/15"
+                }
+                title={overlayOpen ? "Unpin" : "Pin (always on top if supported)"}
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (overlayOpen) closeOverlay();
+                  else void openOverlay();
+                }}
+              >
+                <PanelSmartIcon
+                  name="pin"
+                  theme={panelTheme}
+                  className="w-4 h-4"
+                  alt="Pin"
+                />
+              </IconButton>
+            </div>
           </div>
         </div>
       </div>
 
-      <div className="px-4 pb-4 pt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar font-inter">
+      <div className="px-4 pb-4 pt-5 min-h-0 flex-1 overflow-y-auto custom-scrollbar font-inter">
         <div className="mb-5">
           <div
-            className={titleText + " font-inter font-semibold text-[13px] mb-3"}
+            className={titleText + " font-inter font-bold text-[17px] mb-5"}
           >
             My intentions
           </div>
@@ -1942,7 +1946,7 @@ export function IntentionsPanel({
             <button
               onClick={handleAddPanelIntention}
               className={[
-                "h-11 px-4 rounded-xl font-semibold text-[13px] font-inter transition",
+                "h-12 px-5 rounded-[18px] font-semibold text-[14px] font-inter transition",
                 "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white",
               ].join(" ")}
               type="button"
@@ -2037,7 +2041,7 @@ export function IntentionsPanel({
                                 void togglePanelVisibility(i);
                               }}
                               className={[
-                                "h-8 w-8 shrink-0 rounded-full border text-[13px] font-semibold transition inline-flex items-center justify-center",
+                                "h-9 w-9 shrink-0 rounded-full border text-[13px] font-semibold transition inline-flex items-center justify-center",
                                 normalizeIntentionVisibility(i.visibility) ===
                                   "public"
                                   ? "border-[#81DB86] bg-[#81DB86]/15 text-[#248A3D] hover:bg-[#81DB86]/25"
@@ -2052,7 +2056,7 @@ export function IntentionsPanel({
                               )}
                             </button>
 
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="absolute right-[54px] top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                               <IconButton
                                 theme={panelTheme}
                                 title="Edit"
@@ -2065,7 +2069,7 @@ export function IntentionsPanel({
                               </IconButton>
                             </div>
 
-                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="absolute right-[10px] top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                               <IconButton
                                 theme={panelTheme}
                                 title="Delete"
@@ -2117,7 +2121,7 @@ export function IntentionsPanel({
         <div className={"h-px my-5 " + divider} />
 
         <div
-          className={titleText + " font-inter font-semibold text-[13px] mb-3"}
+          className={titleText + " font-inter font-bold text-[17px] mb-4"}
         >
           Team intentions
         </div>
@@ -2195,7 +2199,7 @@ export function IntentionsPanel({
                           void toggleEncouragement(item.id);
                         }}
                         className={[
-                          "h-8 rounded-full border px-2.5 inline-flex items-center gap-1.5 transition",
+                          "h-8 min-w-8 rounded-full border px-2 inline-flex items-center justify-center transition",
                           encouragedByMe
                             ? "border-[#CFC6C6] bg-[#E6E6E6]"
                             : "border-[#CFC6C6] bg-[#F3F1F1] hover:bg-[#ECEAEA]",
@@ -2221,7 +2225,7 @@ export function IntentionsPanel({
                         className={[
                           "h-8 min-w-8 rounded-full border px-2 text-[12px] font-semibold transition",
                           encouragementCount > 0
-                            ? "border-[#CFC6C6] bg-[#252525] text-white hover:bg-[#303030]"
+                            ? "border-[#CFC6C6] bg-[#F3F1F1] text-black/65 hover:bg-[#ECEAEA]"
                             : "border-[#CFC6C6] bg-[#F3F1F1] text-black/30 cursor-default",
                         ].join(" ")}
                         title={
