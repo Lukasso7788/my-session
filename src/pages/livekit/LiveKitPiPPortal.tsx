@@ -51,31 +51,31 @@ export default function LiveKitPiPPortal({
 }) {
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
 
-    const shellBg = isLight ? "bg-[#F6F7FB] text-[#0B1220]" : "bg-[#050F1A] text-white";
+    const shellBg = isLight ? "bg-[#F3F1F1] text-[#1F1F1F]" : "bg-[#1B1B1B] text-white";
     const headerBg = isLight
-        ? "border-black/10 bg-white/85"
-        : "border-white/10 bg-[#020617]/88";
+        ? "border-[#D8D0D0] bg-[#F3F1F1]"
+        : "border-[#252525] bg-[#1B1B1B]";
     const footerBg = isLight
-        ? "border-black/10 bg-white/88"
-        : "border-white/10 bg-[#020617]/90";
+        ? "border-[#D8D0D0] bg-[#F3F1F1]"
+        : "border-[#252525] bg-[#1B1B1B]";
 
-    const pillActive = isLight ? "bg-black text-white" : "bg-white text-black";
+    const pillActive = isLight ? "bg-[#1B1B1B] text-white" : "bg-[#F3F1F1] text-[#1B1B1B]";
     const pillIdle = isLight
-        ? "bg-black/5 text-black/70 hover:bg-black/10"
-        : "bg-white/10 text-white/75 hover:bg-white/15";
+        ? "bg-[#E6E6E6] text-black/70 hover:bg-[#DCDCDC]"
+        : "bg-[#242424] text-white/80 hover:bg-[#303030]";
 
     const ctlBtnBase = useMemo(
         () =>
             `relative flex h-[2.9rem] w-[2.9rem] items-center justify-center rounded-full border transition ${isLight
-                ? "border-black/10 bg-white text-black hover:bg-black/5"
-                : "border-white/10 bg-white/5 text-white hover:bg-white/10"
+                ? "border-[#D8D0D0] bg-[#E6E6E6] text-black/75 hover:bg-[#DCDCDC]"
+                : "border-[#252525] bg-[#242424] text-white/90 hover:bg-[#303030]"
             }`,
         [isLight]
     );
 
     const reactionMenuSurface = isLight
-        ? "border-black/10 bg-white text-black shadow-[0_12px_32px_rgba(15,23,42,0.12)]"
-        : "border-white/10 bg-[#020617] text-white shadow-[0_16px_40px_rgba(0,0,0,0.45)]";
+        ? "border-[#D8D0D0] bg-[#F3F1F1] text-black shadow-[0_12px_32px_rgba(15,23,42,0.12)]"
+        : "border-[#252525] bg-[#1B1B1B] text-white shadow-[0_16px_40px_rgba(0,0,0,0.45)]";
 
     const reactionTypes = Object.keys(REACTION_EMOJI) as ReactionType[];
 
@@ -106,7 +106,7 @@ export default function LiveKitPiPPortal({
                             {sessionTitle}
                         </div>
                         <div
-                            className={`text-[clamp(0.56rem,1.05vw,0.67rem)] ${isLight ? "text-black/50" : "text-white/50"
+                            className={`text-[clamp(0.56rem,1.05vw,0.67rem)] ${isLight ? "text-black/55" : "text-white/55"
                                 }`}
                         >
                             {participantsCount} participants
@@ -158,7 +158,7 @@ export default function LiveKitPiPPortal({
                         ))}
                     </div>
                 ) : (
-                    <div className={`flex h-full items-center justify-center text-[0.8rem] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                    <div className={`flex h-full items-center justify-center text-[0.8rem] ${isLight ? "text-black/45" : "text-white/50"}`}>
                         No video tiles yet
                     </div>
                 )}
@@ -243,8 +243,8 @@ export default function LiveKitPiPPortal({
                                                 onSendReaction(reactionType);
                                             }}
                                             className={`flex h-[2.85rem] items-center justify-center rounded-xl border text-[1.1rem] transition ${isLight
-                                                ? "border-black/10 bg-black/5 hover:bg-black/10"
-                                                : "border-white/10 bg-white/5 hover:bg-white/10"
+                                                ? "border-[#D8D0D0] bg-[#E6E6E6] hover:bg-[#DCDCDC]"
+                                                : "border-[#252525] bg-[#242424] hover:bg-[#303030]"
                                                 }`}
                                             title={reactionType}
                                             aria-label={reactionType}

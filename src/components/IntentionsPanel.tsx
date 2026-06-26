@@ -16,6 +16,7 @@ import {
   Search,
   Lock,
   Unlock,
+  TimerReset,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
@@ -2183,11 +2184,12 @@ export function IntentionsPanel({
                             : "border-[#5286F6] text-[#5286F6] bg-[#5286F6]/10",
                         ].join(" ")}
                         title={statusText}
+                        aria-label={statusText}
                       >
                         {item.completed ? (
                           <CheckCircle size={15} />
                         ) : (
-                          <Circle size={15} className="text-[#5286F6]" />
+                          <TimerReset size={15} />
                         )}
                       </div>
 

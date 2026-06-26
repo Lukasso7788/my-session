@@ -10229,18 +10229,16 @@ export function RoomPageLiveKit({
       {rightTab === "participants" && (
         <div className="h-full min-h-0 flex flex-col">
           <div
-            className={`${roomPanelHeaderClass} border-b flex items-center justify-between ${isLight ? "border-[#CFCFCF]" : "border-[#2A2A2A]"
-              }`}
+            className={`${roomPanelHeaderClass} border-b flex items-center justify-between border-[#D8D0D0] bg-[#F3F1F1]`}
           >
             <div className="flex items-center gap-2 min-w-0">
               <span
-                className={`${isLight ? "text-black/80" : "text-white/85"
-                  } font-inter font-semibold truncate`}
+                className="text-black/85 font-inter font-semibold truncate"
               >
                 Participants
               </span>
               <span
-                className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}
+                className="text-black/50 text-sm"
               >
                 ({participantsCount})
               </span>
@@ -10248,9 +10246,9 @@ export function RoomPageLiveKit({
             <div className="flex items-center gap-2">
               <button
                 onClick={openEditName}
-                className={`px-3 h-9 rounded-xl text-[12px] font-semibold border transition ${isLight
-                    ? "bg-[#E6E6E6] border-[#CFCFCF] hover:bg-[#DCDCDC] text-black/70"
-                    : "bg-[#242424] border-[#2B2B2B] hover:bg-[#303030] text-white/85"
+                className={`px-3 h-9 rounded-xl text-[12px] font-semibold border transition ${true
+                    ? "bg-[#1B1B1B] border-[#1B1B1B] hover:bg-[#242424] text-white"
+                    : "bg-[#1B1B1B] border-[#1B1B1B] hover:bg-[#242424] text-white"
                   }`}
                 title="Edit my name"
               >
@@ -10259,9 +10257,9 @@ export function RoomPageLiveKit({
 
               <button
                 onClick={() => openRightTab(null)}
-                className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
+                className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${true
                     ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
-                    : "bg-[#1B1B1B] hover:bg-[#242424] text-white/80"
+                    : "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
                   }`}
                 title="Close"
               >
@@ -10272,25 +10270,25 @@ export function RoomPageLiveKit({
 
           <div className="p-4">
             <div
-              className={`rounded-xl px-3 py-2 ${isLight
+              className={`rounded-xl px-3 py-2 ${true
                   ? "bg-[#E6E6E6] border border-[#CFCFCF]"
-                  : "bg-[#242424] border border-[#2B2B2B]"
+                  : "bg-[#E6E6E6] border border-[#CFCFCF]"
                 }`}
             >
               <input
                 value={participantsSearch}
                 onChange={(e) => setParticipantsSearch(e.target.value)}
                 placeholder="Search participants..."
-                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${isLight
+                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${true
                     ? "text-black/80 placeholder:text-black/40"
-                    : "text-white/85 placeholder:text-white/35"
+                    : "text-black/80 placeholder:text-black/40"
                   }`}
               />
             </div>
 
             {rolesError ? (
               <div
-                className={`mt-2 text-[12px] ${isLight ? "text-red-600" : "text-red-300"}`}
+                className={`mt-2 text-[12px] ${"text-red-600"}`}
               >
                 {rolesError}
               </div>
@@ -10334,7 +10332,7 @@ export function RoomPageLiveKit({
                 return (
                   <div
                     key={p.id}
-                    className={`px-3 py-2 rounded-xl transition ${isLight ? "hover:bg-[#E8E8E8]" : "hover:bg-[#303030]"
+                    className={`px-3 py-2 rounded-xl transition ${true ? "hover:bg-[#E8E8E8]" : "hover:bg-[#E8E8E8]"
                       }`}
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -10353,9 +10351,9 @@ export function RoomPageLiveKit({
                           />
                         ) : (
                           <div
-                            className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${isLight
+                            className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${true
                                 ? "bg-[#1B1B1B]/15 text-[#5286F6]"
-                                : "bg-[#81DB86]/80 text-[#02140B]"
+                                : "bg-[#1B1B1B]/15 text-[#5286F6]"
                               }`}
                           >
                             {p.kind === "screen" ? "🖥️" : initials}
@@ -10364,7 +10362,7 @@ export function RoomPageLiveKit({
 
                         <div className="min-w-0">
                           <div
-                            className={`text-[13px] font-medium truncate ${isLight ? "text-black/85" : "text-white/90"
+                            className={`text-[13px] font-medium truncate ${true ? "text-black/85" : "text-black/85"
                               }`}
                           >
                             <div className="min-w-0 flex items-center gap-2">
@@ -10406,7 +10404,7 @@ export function RoomPageLiveKit({
                             ) : null}
                           </div>
                           <div
-                            className={`text-[11px] truncate ${isLight ? "text-black/45" : "text-white/45"
+                            className={`text-[11px] truncate ${true ? "text-black/45" : "text-black/45"
                               }`}
                           >
                             {roleText}
@@ -10428,9 +10426,9 @@ export function RoomPageLiveKit({
                                 );
                                 setScreenSharePinned(!isThisPinnedScreen);
                               }}
-                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
+                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${true
                                   ? "border-[#CFCFCF] bg-[#F3F3F3] hover:bg-[#E8E8E8] text-black/80"
-                                  : "border-[#2B2B2B] bg-[#242424] hover:bg-[#303030] text-white/85"
+                                  : "border-[#CFCFCF] bg-[#F3F3F3] hover:bg-[#E8E8E8] text-black/80"
                                 }`}
                               title={
                                 screenSharePinned &&
@@ -10457,9 +10455,9 @@ export function RoomPageLiveKit({
                           <>
                             <button
                               onClick={() => togglePin(p.id)}
-                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
-                                  ? "border-[#CFCFCF] bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/70"
-                                  : "border-[#2B2B2B] bg-[#242424] hover:bg-[#303030] text-white/85"
+                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${true
+                                  ? "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
+                                  : "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
                                 }`}
                               title={isPinned ? "Unpin" : "Pin"}
                             >
@@ -10468,9 +10466,9 @@ export function RoomPageLiveKit({
 
                             <button
                               onClick={() => toggleHide(p.id)}
-                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${isLight
-                                  ? "border-[#CFCFCF] bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/70"
-                                  : "border-[#2B2B2B] bg-[#242424] hover:bg-[#303030] text-white/85"
+                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${true
+                                  ? "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
+                                  : "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
                                 }`}
                               title={isHidden ? "Unhide" : "Hide"}
                             >
@@ -10487,7 +10485,7 @@ export function RoomPageLiveKit({
           </div>
 
           <div
-            className={`p-4 border-t ${isLight ? "border-[#CFCFCF]" : "border-[#2A2A2A]"}`}
+            className={`p-4 border-t ${true ? "border-[#CFCFCF]" : "border-[#CFCFCF]"}`}
           >
             <button
               onClick={() => {
@@ -10629,7 +10627,7 @@ export function RoomPageLiveKit({
                   <div
                     className={
                       "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] " +
-                      (isLight ? "text-black/45" : "text-white/45")
+                      (true ? "text-black/45" : "text-black/45")
                     }
                   >
                     ▾
@@ -10897,7 +10895,7 @@ export function RoomPageLiveKit({
             </button>
 
             <div
-              className={`mt-3 text-[12px] ${isLight ? "text-black/45" : "text-white/45"}`}
+              className={`mt-3 text-[12px] ${true ? "text-black/45" : "text-black/45"}`}
             >
               Return to the sessions page to book or join another session.
             </div>
@@ -11314,7 +11312,7 @@ export function RoomPageLiveKit({
 
                     {frozenLocalVideoFrame ? (
                       <div
-                        className={`mt-3 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}
+                        className={`mt-3 text-[11px] ${true ? "text-black/45" : "text-black/45"}`}
                       >
                         Showing your last video frame while media restores.
                       </div>
@@ -11433,7 +11431,7 @@ export function RoomPageLiveKit({
 
                     {remoteAudioBlockedReason ? (
                       <div
-                        className={`mt-2 text-[11px] break-words ${isLight ? "text-black/45" : "text-white/45"}`}
+                        className={`mt-2 text-[11px] break-words ${true ? "text-black/45" : "text-black/45"}`}
                       >
                         {remoteAudioBlockedReason}
                       </div>
@@ -11761,7 +11759,7 @@ export function RoomPageLiveKit({
                 }`}
             >
               <div
-                className={`text-[16px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}
+                className={`text-[16px] font-semibold ${true ? "text-black/85" : "text-black/85"}`}
               >
                 Edit your name
               </div>
@@ -12002,7 +12000,7 @@ export function RoomPageLiveKit({
                         />
 
                         <div
-                          className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}
+                          className={`px-4 py-2 text-[11px] ${true ? "text-black/45" : "text-black/45"}`}
                         >
                           Roles
                         </div>
@@ -12049,7 +12047,7 @@ export function RoomPageLiveKit({
                           />
 
                           <div
-                            className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}
+                            className={`px-4 py-2 text-[11px] ${true ? "text-black/45" : "text-black/45"}`}
                           >
                             Participant actions
                           </div>
@@ -12257,7 +12255,7 @@ export function RoomPageLiveKit({
                         />
 
                         <div
-                          className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}
+                          className={`px-4 py-2 text-[11px] ${true ? "text-black/45" : "text-black/45"}`}
                         >
                           Status
                         </div>
@@ -12394,7 +12392,7 @@ export function RoomPageLiveKit({
                         />
 
                         <div
-                          className={`px-4 py-2 text-[11px] ${isLight ? "text-black/45" : "text-white/45"}`}
+                          className={`px-4 py-2 text-[11px] ${true ? "text-black/45" : "text-black/45"}`}
                         >
                           Remote audio for everyone
                         </div>
