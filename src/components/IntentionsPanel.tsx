@@ -1834,7 +1834,7 @@ export function IntentionsPanel({
               >
                 Intentions
               </div>
-              <div className={"mt-1 text-[10px] leading-5 font-inter " + titleText}>
+              <div className={"text-[10px] leading-[12px] font-inter " + titleText}>
                 Keep it visible while you work
               </div>
             </div>
@@ -2177,7 +2177,7 @@ export function IntentionsPanel({
                     <div className="shrink-0 flex items-center gap-2">
                       <div
                         className={[
-                          "h-8 rounded-full border px-3 text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap",
+                          "h-8 w-8 rounded-full border text-[12px] font-medium inline-flex items-center justify-center shrink-0",
                           item.completed
                             ? "border-[#81DB86] text-[#2FA84F] bg-[#81DB86]/10"
                             : "border-[#5286F6] text-[#5286F6] bg-[#5286F6]/10",
@@ -2185,11 +2185,10 @@ export function IntentionsPanel({
                         title={statusText}
                       >
                         {item.completed ? (
-                          <CheckCircle size={14} />
+                          <CheckCircle size={15} />
                         ) : (
-                          <Circle size={14} className={circleCls} />
+                          <Circle size={15} className="text-[#5286F6]" />
                         )}
-                        <span>{statusText}</span>
                       </div>
 
                       <button
