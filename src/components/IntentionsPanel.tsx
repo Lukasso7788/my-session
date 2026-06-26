@@ -402,7 +402,7 @@ export function IntentionsPanel({
     "group relative rounded-[18px] border border-[#CFC6C6] px-4 py-3 bg-[#F7F5F5] hover:bg-[#ECEAEA] transition cursor-pointer";
 
   const teamCardCls =
-    "relative rounded-[18px] border border-[#CFC6C6] px-3 py-2.5 bg-[#F7F5F5] hover:bg-[#ECEAEA] transition";
+    "relative rounded-[18px] border border-[#CFC6C6] px-3 py-3 bg-[#F7F5F5] hover:bg-[#ECEAEA] transition";
 
   const ghostBtn =
     "border border-[#CFC6C6] bg-transparent hover:bg-[#ECEAEA] text-black/75";
@@ -1834,7 +1834,7 @@ export function IntentionsPanel({
               >
                 Intentions
               </div>
-              <div className={"mt-1 text-[11px] leading-5 font-inter " + titleText}>
+              <div className={"mt-1 text-[10px] leading-5 font-inter " + titleText}>
                 Keep it visible while you work
               </div>
             </div>
@@ -2030,7 +2030,7 @@ export function IntentionsPanel({
                         ) : null}
                       </div>
 
-                      <div className="shrink-0 flex items-center gap-1.5 rounded-full bg-[#F7F5F5]">
+                      <div className="shrink-0 flex items-center gap-1.5 rounded-full bg-transparent">
                         {!isEditing ? (
                           <>
                             <button
@@ -2157,7 +2157,7 @@ export function IntentionsPanel({
                     <div className="flex-1 min-w-0">
                       <div
                         className={
-                          "text-[13px] font-medium truncate font-inter " +
+                          "text-[13px] font-semibold truncate font-inter " +
                           nameCls
                         }
                       >
@@ -2166,7 +2166,7 @@ export function IntentionsPanel({
 
                       <div
                         className={
-                          "text-[13px] truncate leading-5 font-inter " +
+                          "text-[13px] leading-5 font-inter break-words " +
                           (item.completed ? bodyDone : bodyActive)
                         }
                       >
@@ -2177,7 +2177,7 @@ export function IntentionsPanel({
                     <div className="shrink-0 flex items-center gap-2">
                       <div
                         className={[
-                          "h-8 rounded-full border px-3 text-[12px] font-medium inline-flex items-center gap-1.5",
+                          "h-8 rounded-full border px-3 text-[12px] font-medium inline-flex items-center gap-1.5 whitespace-nowrap",
                           item.completed
                             ? "border-[#81DB86] text-[#2FA84F] bg-[#81DB86]/10"
                             : "border-[#5286F6] text-[#5286F6] bg-[#5286F6]/10",
@@ -2196,15 +2196,27 @@ export function IntentionsPanel({
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (encouragementCount > 0 && (e.altKey || e.metaKey || e.ctrlKey)) {
+                            setEncouragementModalIntentionId(item.id);
+                            return;
+                          }
                           void toggleEncouragement(item.id);
                         }}
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          if (encouragementCount > 0) setEncouragementModalIntentionId(item.id);
+                        }}
                         className={[
-                          "h-8 min-w-8 rounded-full border px-2 inline-flex items-center justify-center transition",
+                          "relative h-8 min-w-8 rounded-full border px-2 inline-flex items-center justify-center transition",
                           encouragedByMe
                             ? "border-[#CFC6C6] bg-[#E6E6E6]"
                             : "border-[#CFC6C6] bg-[#F3F1F1] hover:bg-[#ECEAEA]",
                         ].join(" ")}
-                        title="Send encouragement"
+                        title={
+                          encouragementCount > 0
+                            ? "Send encouragement. Double-click to see who sent it."
+                            : "Send encouragement"
+                        }
                         aria-label="Send encouragement"
                       >
                         <PanelSmartIcon
@@ -2213,28 +2225,18 @@ export function IntentionsPanel({
                           className="w-5 h-5"
                           alt="Encouragement"
                         />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setEncouragementModalIntentionId(item.id);
-                        }}
-                        disabled={encouragementCount <= 0}
-                        className={[
-                          "h-8 min-w-8 rounded-full border px-2 text-[12px] font-semibold transition",
-                          encouragementCount > 0
-                            ? "border-[#CFC6C6] bg-[#F3F1F1] text-black/65 hover:bg-[#ECEAEA]"
-                            : "border-[#CFC6C6] bg-[#F3F1F1] text-black/30 cursor-default",
-                        ].join(" ")}
-                        title={
-                          encouragementCount > 0
-                            ? "See who sent encouragement"
-                            : "No encouragements yet"
-                        }
-                      >
-                        {encouragementCount > 99 ? "99+" : encouragementCount}
+                        {encouragementCount > 0 ? (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEncouragementModalIntentionId(item.id);
+                            }}
+                            className="absolute -right-1 -bottom-1 min-w-[16px] h-[16px] rounded-full bg-[#252525] px-1 text-[10px] font-bold leading-[16px] text-white shadow-sm"
+                            title="See who sent encouragement"
+                          >
+                            {encouragementCount > 99 ? "99+" : encouragementCount}
+                          </span>
+                        ) : null}
                       </button>
                     </div>
                   </div>

@@ -207,8 +207,8 @@ function MicBadgeWithBarVisualizer({
 
     const micGlowClass = speaking
         ? isLight
-            ? "shadow-[0_0_0.8rem_rgba(76,160,255,0.28)]"
-            : "shadow-[0_0_0.8rem_rgba(52,211,153,0.28)]"
+            ? "shadow-[0_0_0.8rem_rgba(82,134,246,0.30)]"
+            : "shadow-[0_0_0.8rem_rgba(82,134,246,0.32)]"
         : "";
 
     return (
@@ -239,8 +239,8 @@ function MicBadgeWithBarVisualizer({
                                 className={
                                     "lk-audio-bar block h-full w-full rounded-none transition-all duration-75 " +
                                     (hasCameraOn || !isLight
-                                        ? "bg-[#34D399]/18 data-[lk-highlighted=true]:bg-[#34D399]/95"
-                                        : "bg-[#6B7280]/18 data-[lk-highlighted=true]:bg-[#6B7280]/95")
+                                        ? "bg-[#5286F6]/18 data-[lk-highlighted=true]:bg-[#5286F6]/95"
+                                        : "bg-[#5286F6]/16 data-[lk-highlighted=true]:bg-[#5286F6]/90")
                                 }
                             />
                         </BarVisualizer>
