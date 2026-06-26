@@ -82,6 +82,10 @@ type ProfileMini = {
   avatar_url?: string;
 };
 
+type EncouragementUser = ProfileMini & {
+  emoji?: string;
+};
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -152,7 +156,7 @@ function PanelSmartIcon({
   className = "w-4 h-4",
   alt,
 }: {
-  name: "focus-plan" | "pip-intentions" | "pin";
+  name: "focus-plan" | "pip-intentions" | "pin" | "encouragement";
   theme: RoomTheme;
   className?: string;
   alt?: string;
@@ -344,6 +348,10 @@ export function IntentionsPanel({
   const [myEncouragedIds, setMyEncouragedIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [encouragementUsersByIntention, setEncouragementUsersByIntention] =
+    useState<Record<string, EncouragementUser[]>>({});
+  const [encouragementModalIntentionId, setEncouragementModalIntentionId] =
+    useState<string | null>(null);
 
   const [newIntention, setNewIntention] = useState("");
 
@@ -630,6 +638,7 @@ export function IntentionsPanel({
     if (!sessionId || ids.length === 0) {
       setEncouragementCounts({});
       setMyEncouragedIds(new Set());
+      setEncouragementUsersByIntention({});
       return;
     }
 
@@ -659,17 +668,43 @@ export function IntentionsPanel({
       const nextCounts: Record<string, number> = {};
       const nextMine = new Set<string>();
       const allowed = new Set(ids);
+      const userIds: string[] = [];
 
       data.forEach((row) => {
         const intentionId = String(row?.session_intention_id || "");
+        const rowUserId = String(row?.user_id || "");
         if (!intentionId || !allowed.has(intentionId)) return;
         nextCounts[intentionId] = (nextCounts[intentionId] || 0) + 1;
-        if (String(row?.user_id || "") === String(user?.id || ""))
-          nextMine.add(intentionId);
+        if (rowUserId) userIds.push(rowUserId);
+        if (rowUserId === String(user?.id || "")) nextMine.add(intentionId);
+      });
+
+      const profileMap = await fetchProfilesMap(userIds);
+      const nextUsersByIntention: Record<string, EncouragementUser[]> = {};
+
+      data.forEach((row) => {
+        const intentionId = String(row?.session_intention_id || "");
+        const rowUserId = String(row?.user_id || "");
+        if (!intentionId || !allowed.has(intentionId) || !rowUserId) return;
+
+        const profile = profileMap.get(rowUserId);
+        const list = nextUsersByIntention[intentionId] || [];
+
+        if (!list.some((x) => x.id === rowUserId)) {
+          list.push({
+            id: rowUserId,
+            full_name: profile?.full_name || "Participant",
+            avatar_url: profile?.avatar_url,
+            emoji: String(row?.emoji || ENCOURAGEMENT_EMOJI),
+          });
+        }
+
+        nextUsersByIntention[intentionId] = list;
       });
 
       setEncouragementCounts(nextCounts);
       setMyEncouragedIds(nextMine);
+      setEncouragementUsersByIntention(nextUsersByIntention);
     } catch {
       // Encouragements are optional. Never break the panel if this table is missing.
     }
@@ -1705,6 +1740,80 @@ export function IntentionsPanel({
     })()
     : null;
 
+  const encouragementModalItem = encouragementModalIntentionId
+    ? teamIntentions.find((x) => x.id === encouragementModalIntentionId) || null
+    : null;
+
+  const EncouragementModal = encouragementModalIntentionId
+    ? createPortal(
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/35 font-inter"
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget) setEncouragementModalIntentionId(null);
+        }}
+      >
+        <div
+          className="w-[min(360px,calc(100vw-24px))] rounded-2xl border border-[#CFC6C6] bg-[#F3F1F1] shadow-xl overflow-hidden"
+          onMouseDown={stopRoomBubbling}
+          onPointerDown={stopRoomBubbling}
+          onClick={stopRoomBubbling}
+        >
+          <div className="px-4 py-3 border-b border-[#D8D0D0] flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold text-black/90">Encouragements</div>
+              <div className="text-[11px] text-black/50 truncate">
+                {encouragementModalItem?.text || "Team intention"}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setEncouragementModalIntentionId(null)}
+              className="w-8 h-8 rounded-xl border border-[#CFC6C6] bg-[#ECEAEA] hover:bg-[#E3E0E0] flex items-center justify-center"
+              title="Close"
+            >
+              <X size={15} />
+            </button>
+          </div>
+
+          <div className="p-3 max-h-[360px] overflow-y-auto custom-scrollbar">
+            {(encouragementUsersByIntention[encouragementModalIntentionId] || []).length === 0 ? (
+              <div className="text-[12px] italic text-black/55 px-1 py-2">
+                No encouragements yet.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {(encouragementUsersByIntention[encouragementModalIntentionId] || []).map((u) => (
+                  <div
+                    key={u.id}
+                    className="flex items-center gap-3 rounded-xl border border-[#CFC6C6] bg-[#F7F5F5] px-3 py-2"
+                  >
+                    <img
+                      src={getAvatar(u)}
+                      className="w-8 h-8 rounded-full object-cover shrink-0"
+                      alt=""
+                    />
+                    <div className="min-w-0 flex-1 text-[13px] font-medium text-black/85 truncate">
+                      {u.full_name || "Participant"}
+                    </div>
+                    <div className="shrink-0 h-8 min-w-8 rounded-full bg-[#E6E6E6] flex items-center justify-center px-2">
+                      <PanelSmartIcon
+                        name="encouragement"
+                        theme={panelTheme}
+                        className="w-5 h-5"
+                        alt="Encouragement"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>,
+      getPortalDocument().body,
+    )
+    : null;
+
   const PanelUI = (
     <div
       className={"h-full flex flex-col min-h-0 font-inter " + panelBg}
@@ -1719,10 +1828,11 @@ export function IntentionsPanel({
       >
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <div
-              className={"font-inter font-semibold text-[13px] " + headerTitle}
-            >
+            <div className={"font-inter font-semibold text-[13px] " + headerTitle}>
               Intentions
+            </div>
+            <div className={"text-[11px] font-inter leading-4 " + mutedText}>
+              Keep it visible while you work
             </div>
           </div>
 
@@ -2029,13 +2139,14 @@ export function IntentionsPanel({
               const circleCls = "text-black/25";
               const encouragementCount = encouragementCounts[item.id] || 0;
               const encouragedByMe = myEncouragedIds.has(item.id);
+              const statusText = item.completed ? "Completed" : "In progress";
 
               return (
                 <div key={item.id} className={teamCardCls + " font-inter"}>
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
                     <img
                       src={getAvatar(item.profiles)}
-                      className="w-9 h-9 rounded-full object-cover"
+                      className="w-9 h-9 rounded-full object-cover shrink-0"
                       alt=""
                     />
 
@@ -2051,7 +2162,7 @@ export function IntentionsPanel({
 
                       <div
                         className={
-                          "text-[13px] break-words leading-5 font-inter " +
+                          "text-[13px] truncate leading-5 font-inter " +
                           (item.completed ? bodyDone : bodyActive)
                         }
                       >
@@ -2059,12 +2170,23 @@ export function IntentionsPanel({
                       </div>
                     </div>
 
-                    <div className="shrink-0 mt-1 flex flex-col items-center gap-1.5">
-                      {item.completed ? (
-                        <CheckCircle size={16} className="text-[#81DB86]" />
-                      ) : (
-                        <Circle size={16} className={circleCls} />
-                      )}
+                    <div className="shrink-0 flex items-center gap-2">
+                      <div
+                        className={[
+                          "h-8 rounded-full border px-3 text-[12px] font-medium inline-flex items-center gap-1.5",
+                          item.completed
+                            ? "border-[#81DB86] text-[#2FA84F] bg-[#81DB86]/10"
+                            : "border-[#5286F6] text-[#5286F6] bg-[#5286F6]/10",
+                        ].join(" ")}
+                        title={statusText}
+                      >
+                        {item.completed ? (
+                          <CheckCircle size={14} />
+                        ) : (
+                          <Circle size={14} className={circleCls} />
+                        )}
+                        <span>{statusText}</span>
+                      </div>
 
                       <button
                         type="button"
@@ -2073,22 +2195,42 @@ export function IntentionsPanel({
                           void toggleEncouragement(item.id);
                         }}
                         className={[
-                          "relative h-7 min-w-7 rounded-full px-1.5 text-[17px] leading-none flex items-center justify-center transition",
+                          "h-8 rounded-full border px-2.5 inline-flex items-center gap-1.5 transition",
                           encouragedByMe
-                            ? "bg-[#E6E6E6]"
-                            : "bg-transparent hover:bg-[#ECEAEA]",
+                            ? "border-[#CFC6C6] bg-[#E6E6E6]"
+                            : "border-[#CFC6C6] bg-[#F3F1F1] hover:bg-[#ECEAEA]",
                         ].join(" ")}
                         title="Send encouragement"
                         aria-label="Send encouragement"
                       >
-                        <span>{ENCOURAGEMENT_EMOJI}</span>
-                        {encouragementCount > 0 ? (
-                          <span className="absolute -right-1 -bottom-1 min-w-[16px] h-[16px] rounded-full bg-[#252525] px-1 text-[10px] font-bold leading-[16px] text-white">
-                            {encouragementCount > 99
-                              ? "99+"
-                              : encouragementCount}
-                          </span>
-                        ) : null}
+                        <PanelSmartIcon
+                          name="encouragement"
+                          theme={panelTheme}
+                          className="w-5 h-5"
+                          alt="Encouragement"
+                        />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEncouragementModalIntentionId(item.id);
+                        }}
+                        disabled={encouragementCount <= 0}
+                        className={[
+                          "h-8 min-w-8 rounded-full border px-2 text-[12px] font-semibold transition",
+                          encouragementCount > 0
+                            ? "border-[#CFC6C6] bg-[#252525] text-white hover:bg-[#303030]"
+                            : "border-[#CFC6C6] bg-[#F3F1F1] text-black/30 cursor-default",
+                        ].join(" ")}
+                        title={
+                          encouragementCount > 0
+                            ? "See who sent encouragement"
+                            : "No encouragements yet"
+                        }
+                      >
+                        {encouragementCount > 99 ? "99+" : encouragementCount}
                       </button>
                     </div>
                   </div>
@@ -2100,6 +2242,7 @@ export function IntentionsPanel({
       </div>
 
       {ImportModal}
+      {EncouragementModal}
     </div>
   );
 

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Track, LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
 import { BarVisualizer } from "@livekit/components-react";
+import { Pencil } from "lucide-react";
 
 type RoomTheme = "dark" | "light";
 
@@ -276,6 +277,7 @@ function VideoTileInner({
     density = "normal",
     onToggleMenu,
     onOpenProfile,
+    onEditName,
 }: VideoTileProps) {
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const mediaHostRef = useRef<HTMLDivElement | null>(null);
@@ -310,6 +312,10 @@ function VideoTileInner({
     const menuBtnClass = isLight
         ? "bg-[#F5F5F5] border-[#D8D0D0] text-black/85 hover:bg-[#F2F3F5]"
         : "bg-[#1B1B1B] border-[#2B2B2B] text-white hover:bg-[#1B1B1B]";
+
+    const editNameBtnClass = isLight
+        ? "bg-[#F5F5F5] border-[#D8D0D0] text-black/85 hover:bg-[#F2F3F5]"
+        : "bg-[#F3F1F1] border-[#D8D0D0] text-[#252525] hover:bg-[#ECEAEA]";
 
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const [sizeText, setSizeText] = useState<string>("");
@@ -528,6 +534,21 @@ function VideoTileInner({
                     </div>
                 ) : null}
 
+                {onEditName ? (
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onEditName();
+                        }}
+                        className={`absolute left-[0.55rem] top-[0.55rem] z-20 flex h-[2.1rem] w-[2.1rem] items-center justify-center rounded-full border backdrop-blur-md transition ${editNameBtnClass}`}
+                        aria-label="Edit name"
+                        title="Edit name"
+                    >
+                        <Pencil size={15} strokeWidth={2.2} />
+                    </button>
+                ) : null}
+
                 {showMenuButton ? (
                     <button
                         type="button"
@@ -667,6 +688,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.density === next.density &&
         prev.onToggleMenu === next.onToggleMenu &&
         prev.onOpenProfile === next.onOpenProfile &&
+        prev.onEditName === next.onEditName &&
         prev.hostActions?.canMuteMic === next.hostActions?.canMuteMic &&
         prev.hostActions?.canMuteCam === next.hostActions?.canMuteCam &&
         prev.hostActions?.micMuted === next.hostActions?.micMuted &&
