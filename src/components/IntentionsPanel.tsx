@@ -6,8 +6,8 @@ import { createPortal } from "react-dom";
 import {
   CheckCircle,
   Circle,
-  Trash2,
   Pencil,
+  Trash2,
   X,
   Check,
   ExternalLink,
@@ -43,7 +43,7 @@ type PanelIntention = {
   completed: boolean;
   created_at: string;
   updated_at: string;
-  visibility?: "public" | "room" | "private" | string | null;
+  visibility?: "public" | "private" | string | null;
 };
 
 type FocusPlan = {
@@ -118,10 +118,11 @@ const PLAN_ITEMS_RENDER_LIMIT = 40;
 const FOCUS_PLAN_ITEMS_FETCH_LIMIT = 120;
 const FOCUS_PLANS_FETCH_LIMIT = 40;
 
-function normalizeIntentionVisibility(value: unknown): "public" | "room" | "private" {
-  const v = String(value || "").trim().toLowerCase();
+function normalizeIntentionVisibility(value: unknown): "public" | "private" {
+  const v = String(value || "")
+    .trim()
+    .toLowerCase();
   if (v === "private" || v === "self" || v === "hidden") return "private";
-  if (v === "room" || v === "session" || v === "room_only" || v === "room-only") return "room";
   return "public";
 }
 
@@ -133,25 +134,16 @@ function isPanelIntentionPublic(item?: { visibility?: unknown } | null) {
   return normalizeIntentionVisibility(item?.visibility) === "public";
 }
 
-function getNextIntentionVisibility(value: unknown): "public" | "room" | "private" {
+function getNextIntentionVisibility(value: unknown): "public" | "private" {
   const current = normalizeIntentionVisibility(value);
-  if (current === "public") return "room";
-  if (current === "room") return "private";
-  return "public";
-}
-
-function getVisibilityLabel(value: unknown) {
-  const v = normalizeIntentionVisibility(value);
-  if (v === "public") return "Public";
-  if (v === "room") return "Room";
-  return "Private";
+  return current === "public" ? "private" : "public";
 }
 
 function getVisibilityTitle(value: unknown) {
   const v = normalizeIntentionVisibility(value);
-  if (v === "public") return "Public — click to make visible only in this room";
-  if (v === "room") return "Visible in this room — click to make private";
-  return "Private — click to make public";
+  if (v === "public")
+    return "Public — visible to everyone in the room. Click to make private.";
+  return "Private — visible only to you. Click to make public.";
 }
 
 function PanelSmartIcon({
@@ -1092,7 +1084,12 @@ export function IntentionsPanel({
     try {
       const { data, error } = await supabase
         .from(PANEL_INTENTIONS_TABLE)
-        .insert({ user_id: user.id, text, completed: false, visibility: "public" } as any)
+        .insert({
+          user_id: user.id,
+          text,
+          completed: false,
+          visibility: "public",
+        } as any)
         .select("*")
         .single();
 
@@ -1155,6 +1152,7 @@ export function IntentionsPanel({
 
     const prev = panelIntentions;
     const target = panelIntentions.find((x) => x.id === id) || null;
+
     setPanelIntentions((p) => p.filter((x) => x.id !== id));
 
     try {
@@ -1166,7 +1164,7 @@ export function IntentionsPanel({
 
       if (error) throw error;
 
-      if (target?.text) {
+      if (target?.text && normalizeIntentionVisibility(target.visibility) === "public") {
         void deleteOwnSessionIntentionByText(target.text);
       }
     } catch {
@@ -1726,9 +1724,6 @@ export function IntentionsPanel({
             >
               Intentions
             </div>
-            <div className={"text-[11px] font-inter " + mutedText}>
-              Keep it visible while you work
-            </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0 font-inter">
@@ -1739,7 +1734,10 @@ export function IntentionsPanel({
               }
               title="Timer"
             >
-              <TimerSmartIcon theme={panelTheme} className="w-4 h-4 opacity-80" />
+              <TimerSmartIcon
+                theme={panelTheme}
+                className="w-4 h-4 opacity-80"
+              />
               <span
                 className={timerTextCls + " leading-none"}
                 style={{ fontFamily: OVERLAY_FONT_FAMILY }}
@@ -1751,9 +1749,7 @@ export function IntentionsPanel({
             <IconButton
               theme={panelTheme}
               className={
-                isLight
-                  ? "border border-[#5286F6] bg-transparent text-[#5286F6] hover:bg-[#5286F6]/10"
-                  : "border border-[#5286F6]/45 bg-[#202020] text-[#5286F6] hover:bg-[#242424]"
+                "border border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
               }
               title="Attach from Focus plan to panel"
               onClick={(e) => {
@@ -1772,11 +1768,7 @@ export function IntentionsPanel({
             {pictureInPictureSupported && onOpenPictureInPicture ? (
               <IconButton
                 theme={panelTheme}
-                className={
-                  isLight
-                    ? "border border-[#81DB86] bg-transparent text-[#81DB86] hover:bg-[#81DB86]/10"
-                    : "border border-[#81DB86]/45 bg-[#202020] text-[#81DB86] hover:bg-[#242424]"
-                }
+                className="border border-[#81DB86] bg-[#81DB86]/10 text-[#2FA84F] hover:bg-[#81DB86]/15"
                 title={
                   pictureInPictureOpen
                     ? "Close Picture-in-Picture video"
@@ -1799,9 +1791,7 @@ export function IntentionsPanel({
             <IconButton
               theme={panelTheme}
               className={
-                isLight
-                  ? "border border-[#F65252] bg-transparent text-[#F65252] hover:bg-[#F65252]/10"
-                  : "border border-[#F65252]/45 bg-[#202020] text-[#F65252] hover:bg-[#242424]"
+                "border border-[#F65252] bg-[#F65252]/10 text-[#F65252] hover:bg-[#F65252]/15"
               }
               title={overlayOpen ? "Unpin" : "Pin (always on top if supported)"}
               onClick={(e) => {
@@ -1852,21 +1842,6 @@ export function IntentionsPanel({
             </button>
           </div>
 
-          <div className="mb-3 rounded-[14px] border border-[#CFC6C6] bg-[#F7F5F5] px-3 py-2.5 flex items-center gap-3">
-            <Circle size={18} className="text-black/25 shrink-0" />
-            <div className="flex-1 min-w-0 text-[13px] text-black/85">
-              Keep it visible while you work
-            </div>
-            <button
-              type="button"
-              className="shrink-0 h-7 w-7 rounded-full border border-[#CFC6C6] bg-[#F3F1F1] text-[13px] flex items-center justify-center hover:bg-[#ECEAEA] transition"
-              title="Private example"
-              onClick={(e) => e.stopPropagation()}
-            >
-              🔒
-            </button>
-          </div>
-
           {panelLoading ? (
             <div className={"text-[12px] italic font-inter " + mutedText}>
               Loading...
@@ -1896,6 +1871,10 @@ export function IntentionsPanel({
                     key={i.id}
                     className={myCardCls + " font-inter"}
                     onClick={() => togglePanelCompleted(i)}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      startEdit(i.id, i.text);
+                    }}
                   >
                     <div className="flex items-center gap-2">
                       <div className="shrink-0">
@@ -1948,20 +1927,19 @@ export function IntentionsPanel({
                                 void togglePanelVisibility(i);
                               }}
                               className={[
-                                "h-8 shrink-0 rounded-full border px-2 text-[11px] font-semibold transition inline-flex items-center gap-1.5",
-                                normalizeIntentionVisibility(i.visibility) === "public"
+                                "h-8 w-8 shrink-0 rounded-full border text-[13px] font-semibold transition inline-flex items-center justify-center",
+                                normalizeIntentionVisibility(i.visibility) ===
+                                  "public"
                                   ? "border-[#81DB86] bg-[#81DB86]/15 text-[#248A3D] hover:bg-[#81DB86]/25"
-                                  : normalizeIntentionVisibility(i.visibility) === "room"
-                                    ? "border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/18"
-                                    : "border-[#CFC6C6] bg-[#F3F1F1] text-black/55 hover:bg-[#ECEAEA]",
+                                  : "border-[#CFC6C6] bg-[#F3F1F1] text-black/55 hover:bg-[#ECEAEA]",
                               ].join(" ")}
                             >
-                              {normalizeIntentionVisibility(i.visibility) === "private" ? (
-                                <Lock size={13} />
+                              {normalizeIntentionVisibility(i.visibility) ===
+                                "private" ? (
+                                <Lock size={14} />
                               ) : (
-                                <Unlock size={13} />
+                                <Unlock size={14} />
                               )}
-                              <span>{getVisibilityLabel(i.visibility)}</span>
                             </button>
 
                             <div className="opacity-0 group-hover:opacity-100 transition-opacity">
@@ -2097,7 +2075,7 @@ export function IntentionsPanel({
                         className={[
                           "relative h-7 min-w-7 rounded-full px-1.5 text-[17px] leading-none flex items-center justify-center transition",
                           encouragedByMe
-                            ? "bg-[#FFF1B8]"
+                            ? "bg-[#E6E6E6]"
                             : "bg-transparent hover:bg-[#ECEAEA]",
                         ].join(" ")}
                         title="Send encouragement"
