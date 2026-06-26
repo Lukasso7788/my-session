@@ -418,8 +418,13 @@ export function SessionStageBar({
 
   const tooltipCardClass =
     theme === "light"
-      ? "border border-slate-200 bg-white/95 text-slate-900 shadow-[0_12px_28px_rgba(15,23,42,0.18)] backdrop-blur-md"
-      : "border border-white/10 bg-slate-900/95 text-white shadow-[0_12px_28px_rgba(0,0,0,0.4)] backdrop-blur-md";
+      ? "border border-[#D8D0D0] bg-[#F7F5F5]/95 text-[#252525] shadow-[0_12px_28px_rgba(15,23,42,0.16)] backdrop-blur-md"
+      : "border border-[#2B2B2B] bg-[#252525]/96 text-white shadow-[0_12px_28px_rgba(0,0,0,0.42)] backdrop-blur-md";
+
+  const tooltipArrowClass =
+    theme === "light"
+      ? "border-r border-b border-[#D8D0D0] bg-[#F7F5F5]/95"
+      : "border-r border-b border-[#2B2B2B] bg-[#252525]/96";
 
   const markerLeftPercent = clamp(cycleProgress * 100, 0.5, 99.5);
 
@@ -513,10 +518,7 @@ export function SessionStageBar({
                     </div>
 
                     <div
-                      className={`absolute left-1/2 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 ${theme === "light"
-                        ? "border-r border-b border-slate-200 bg-white/95"
-                        : "border-r border-b border-white/10 bg-slate-900/95"
-                        }`}
+                      className={`absolute left-1/2 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 ${tooltipArrowClass}`}
                     />
                   </div>
                 </div>
@@ -546,6 +548,6 @@ export function SessionStageBar({
       )}
     </div>
   );
-} 
+}
 
 export default SessionStageBar;
