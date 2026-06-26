@@ -1834,7 +1834,7 @@ export function IntentionsPanel({
               >
                 Intentions
               </div>
-              <div className={"mt-1 text-[13px] leading-5 font-inter " + titleText}>
+              <div className={"mt-1 text-[11px] leading-5 font-inter " + titleText}>
                 Keep it visible while you work
               </div>
             </div>
@@ -1990,7 +1990,7 @@ export function IntentionsPanel({
                       startEdit(i.id, i.text);
                     }}
                   >
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3 min-w-0">
                       <div className="shrink-0">
                         {i.completed ? (
                           <CheckCircle size={18} className="text-[#81DB86]" />
@@ -2030,7 +2030,7 @@ export function IntentionsPanel({
                         ) : null}
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="shrink-0 flex items-center gap-1.5 rounded-full bg-[#F7F5F5]">
                         {!isEditing ? (
                           <>
                             <button
@@ -2056,7 +2056,7 @@ export function IntentionsPanel({
                               )}
                             </button>
 
-                            <div className="absolute right-[54px] top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                            <div className="max-w-0 overflow-hidden opacity-0 transition-all duration-150 group-hover:max-w-[44px] group-hover:opacity-100 focus-within:max-w-[44px] focus-within:opacity-100">
                               <IconButton
                                 theme={panelTheme}
                                 title="Edit"
@@ -2069,7 +2069,7 @@ export function IntentionsPanel({
                               </IconButton>
                             </div>
 
-                            <div className="absolute right-[10px] top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                            <div className="max-w-0 overflow-hidden opacity-0 transition-all duration-150 group-hover:max-w-[44px] group-hover:opacity-100 focus-within:max-w-[44px] focus-within:opacity-100">
                               <IconButton
                                 theme={panelTheme}
                                 title="Delete"
