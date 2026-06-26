@@ -157,7 +157,7 @@ function PanelSmartIcon({
   className = "w-4 h-4",
   alt,
 }: {
-  name: "focus-plan" | "pip-intentions" | "pin" | "encouragement";
+  name: "focus-plan" | "pip-intentions" | "pin" | "encouragement" | "in-progress";
   theme: RoomTheme;
   className?: string;
   alt?: string;
@@ -636,7 +636,8 @@ export function IntentionsPanel({
     const ids = sessionIntentions
       .map((x) => String(x.id || ""))
       .filter(Boolean);
-    if (!sessionId || ids.length === 0) {
+
+    if (!ids.length) {
       setEncouragementCounts({});
       setMyEncouragedIds(new Set());
       setEncouragementUsersByIntention({});
@@ -644,40 +645,38 @@ export function IntentionsPanel({
     }
 
     try {
-      let data: any[] | null = null;
-      let error: any = null;
-
-      const bySession = await supabase
+      const { data, error } = await supabase
         .from(INTENTION_ENCOURAGEMENTS_TABLE)
         .select("session_intention_id,user_id,emoji")
-        .eq("session_id", sessionId);
+        .in("session_intention_id", ids);
 
-      data = (bySession.data as any[]) || null;
-      error = bySession.error;
-
-      if (error) {
-        const byIds = await supabase
-          .from(INTENTION_ENCOURAGEMENTS_TABLE)
-          .select("session_intention_id,user_id,emoji")
-          .in("session_intention_id", ids);
-        data = (byIds.data as any[]) || null;
-        error = byIds.error;
+      if (error || !Array.isArray(data)) {
+        console.error("loadEncouragements error:", error);
+        setEncouragementCounts({});
+        setMyEncouragedIds(new Set());
+        setEncouragementUsersByIntention({});
+        return;
       }
-
-      if (error || !Array.isArray(data)) return;
 
       const nextCounts: Record<string, number> = {};
       const nextMine = new Set<string>();
-      const allowed = new Set(ids);
       const userIds: string[] = [];
 
       data.forEach((row) => {
         const intentionId = String(row?.session_intention_id || "");
         const rowUserId = String(row?.user_id || "");
-        if (!intentionId || !allowed.has(intentionId)) return;
+
+        if (!intentionId || !ids.includes(intentionId)) return;
+
         nextCounts[intentionId] = (nextCounts[intentionId] || 0) + 1;
-        if (rowUserId) userIds.push(rowUserId);
-        if (rowUserId === String(user?.id || "")) nextMine.add(intentionId);
+
+        if (rowUserId) {
+          userIds.push(rowUserId);
+        }
+
+        if (rowUserId === String(user?.id || "")) {
+          nextMine.add(intentionId);
+        }
       });
 
       const profileMap = await fetchProfilesMap(userIds);
@@ -686,7 +685,8 @@ export function IntentionsPanel({
       data.forEach((row) => {
         const intentionId = String(row?.session_intention_id || "");
         const rowUserId = String(row?.user_id || "");
-        if (!intentionId || !allowed.has(intentionId) || !rowUserId) return;
+
+        if (!intentionId || !ids.includes(intentionId) || !rowUserId) return;
 
         const profile = profileMap.get(rowUserId);
         const list = nextUsersByIntention[intentionId] || [];
@@ -706,10 +706,10 @@ export function IntentionsPanel({
       setEncouragementCounts(nextCounts);
       setMyEncouragedIds(nextMine);
       setEncouragementUsersByIntention(nextUsersByIntention);
-    } catch {
-      // Encouragements are optional. Never break the panel if this table is missing.
+    } catch (e) {
+      console.error("loadEncouragements crashed:", e);
     }
-  }, [sessionId, sessionIntentions, user?.id]);
+  }, [sessionIntentions, user?.id]);
 
   useEffect(() => {
     void loadEncouragements();
@@ -736,7 +736,7 @@ export function IntentionsPanel({
     async (intentionId: string) => {
       const id = String(intentionId || "");
       const uid = String(user?.id || "");
-      if (!id || !uid || !sessionId) return;
+      if (!id || !uid) return;
 
       const had = myEncouragedIds.has(id);
 
@@ -759,19 +759,27 @@ export function IntentionsPanel({
             .delete()
             .eq("session_intention_id", id)
             .eq("user_id", uid);
+
           if (error) throw error;
         } else {
           const { error } = await supabase
             .from(INTENTION_ENCOURAGEMENTS_TABLE)
-            .insert({
-              session_id: sessionId,
-              session_intention_id: id,
-              user_id: uid,
-              emoji: ENCOURAGEMENT_EMOJI,
-            } as any);
+            .upsert(
+              {
+                session_id: sessionId,
+                session_intention_id: id,
+                user_id: uid,
+                emoji: ENCOURAGEMENT_EMOJI,
+              } as any,
+              { onConflict: "session_intention_id,user_id" },
+            );
+
           if (error) throw error;
         }
-      } catch {
+
+        void loadEncouragements();
+      } catch (e) {
+        console.error("toggleEncouragement error:", e);
         void loadEncouragements();
       }
     },
