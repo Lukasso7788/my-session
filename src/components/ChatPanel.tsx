@@ -75,6 +75,11 @@ const REACTION_EMOJIS = [
     "🎉",
 ] as const;
 
+const BRAND_GREEN = "#81DB86";
+const BRAND_GREEN_HOVER = "#72CF78";
+const BRAND_GREEN_SOFT = "rgba(129,219,134,0.14)";
+const BRAND_GREEN_BORDER = "rgba(129,219,134,0.48)";
+
 function avatarFromProfile(profile?: Profile | null) {
     return (
         profile?.avatar_url ||
@@ -387,18 +392,17 @@ function MessageCardInner({
         if (!reactionButtonRef.current) return;
 
         const rect = reactionButtonRef.current.getBoundingClientRect();
-        const menuWidth = 236;
-        const menuHeight = 58;
+        const vw = window.innerWidth || 360;
+        const vh = window.innerHeight || 640;
         const margin = 8;
+        const menuWidth = Math.max(280, Math.min(352, vw - margin * 2));
+        const menuHeight = Math.min(460, Math.max(320, vh - margin * 2));
 
         let left = rect.right - menuWidth;
-        left = Math.max(
-            margin,
-            Math.min(left, window.innerWidth - menuWidth - margin),
-        );
+        left = Math.max(margin, Math.min(left, vw - menuWidth - margin));
 
         let top = rect.bottom + 8;
-        if (top + menuHeight > window.innerHeight - margin) {
+        if (top + menuHeight > vh - margin) {
             top = Math.max(margin, rect.top - menuHeight - 8);
         }
 
@@ -456,7 +460,7 @@ function MessageCardInner({
 
     const metaNameCls = "text-black/55";
     const metaTimeCls = "text-black/35";
-    const actionBtnCls = "text-black/45 hover:text-emerald-700";
+    const actionBtnCls = "text-black/45 hover:text-[#2FA84F]";
     const dangerBtnCls = "text-black/40 hover:text-red-700";
     const menuCls = "bg-[#F3F1F1] border border-[#D8D0D0]";
 
@@ -464,15 +468,15 @@ function MessageCardInner({
         "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
         (mine
             ? isLight
-                ? "bg-[#81DB86]/15 border-emerald-600/25 text-black/85"
-                : "bg-[#81DB86]/15 border-emerald-400/20 text-black/90"
+                ? "bg-[#81DB86]/15 border-[#81DB86]/50 text-black/85"
+                : "bg-[#81DB86]/15 border-[#81DB86]/45 text-black/90"
             : isLight
                 ? "bg-[#ECEAEA] border-[#D8D0D0] text-black/80"
                 : "bg-[#F7F5F5] border-[#D8D0D0] text-black/85") +
         (highlighted
             ? isLight
                 ? " ring-2 ring-[#6B7280]/55"
-                : " ring-2 ring-emerald-400/55"
+                : " ring-2 ring-[#81DB86]/70"
             : "");
 
     const quoteBoxCls = isLight
@@ -484,8 +488,8 @@ function MessageCardInner({
         : "px-2 py-1 rounded-xl bg-[#F7F5F5] border border-[#D8D0D0] text-[12px] text-black/80 flex items-center gap-1.5 transition";
 
     const reactionPillMine = isLight
-        ? "bg-[#81DB86]/12 ring-2 ring-emerald-400/70 border-emerald-500/55 text-emerald-900"
-        : "bg-emerald-400/12 ring-2 ring-emerald-300/55 border-emerald-300/45 text-white";
+        ? "bg-[#81DB86]/18 ring-2 ring-[#81DB86]/70 border-[#81DB86]/70 text-[#246B2A]"
+        : "bg-[#81DB86]/18 ring-2 ring-[#81DB86]/70 border-[#81DB86]/55 text-black/85";
 
     const reactionCountCls = "text-black/50";
 
@@ -588,42 +592,69 @@ function MessageCardInner({
                                         <div
                                             ref={reactionMenuRef}
                                             className={
-                                                "fixed z-[99999] rounded-2xl px-2.5 py-2 flex gap-1.5 shadow-xl " +
+                                                "fixed z-[99999] rounded-2xl shadow-xl overflow-hidden " +
                                                 menuCls
                                             }
                                             style={{
                                                 top: reactionMenuPos.top,
                                                 left: reactionMenuPos.left,
+                                                width: Math.max(
+                                                    280,
+                                                    Math.min(352, window.innerWidth - 16),
+                                                ),
+                                                maxHeight: Math.min(460, window.innerHeight - 16),
                                             }}
                                             onMouseDown={(e) => e.stopPropagation()}
                                         >
-                                            {REACTION_EMOJIS.map((e) => {
-                                                const isMine = !!myReactions?.[e];
-                                                return (
-                                                    <button
-                                                        key={e}
-                                                        onClick={() => {
-                                                            onToggleReaction(msg.id, e);
-                                                        }}
-                                                        className={
-                                                            "h-8 w-8 rounded-xl hover:scale-[1.05] transition leading-none flex items-center justify-center " +
-                                                            (isMine
-                                                                ? isLight
-                                                                    ? "bg-[#81DB86]/12 ring-1 ring-emerald-500/35"
-                                                                    : "bg-emerald-400/12 ring-1 ring-emerald-300/25"
-                                                                : isLight
-                                                                    ? "hover:bg-[#E8E8E8]"
-                                                                    : "hover:bg-[#303030]")
-                                                        }
-                                                        title={isMine ? `Remove ${e}` : e}
-                                                        type="button"
-                                                    >
-                                                        <span className="inline-block align-middle text-[16px] leading-none">
-                                                            {e}
-                                                        </span>
-                                                    </button>
-                                                );
-                                            })}
+                                            <div className="px-2.5 pt-2 pb-2 border-b border-[#D8D0D0]">
+                                                <div className="mb-1.5 text-[11px] font-semibold text-black/55">
+                                                    Quick reactions
+                                                </div>
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    {REACTION_EMOJIS.map((e) => {
+                                                        const isMine = !!myReactions?.[e];
+                                                        return (
+                                                            <button
+                                                                key={e}
+                                                                onClick={() => {
+                                                                    onToggleReaction(msg.id, e);
+                                                                    setOpenReactions(false);
+                                                                }}
+                                                                className={
+                                                                    "h-8 w-8 rounded-xl hover:scale-[1.05] transition leading-none flex items-center justify-center " +
+                                                                    (isMine
+                                                                        ? "bg-[#81DB86]/18 ring-1 ring-[#81DB86]/65"
+                                                                        : "hover:bg-[#E8E8E8]")
+                                                                }
+                                                                title={isMine ? `Remove ${e}` : e}
+                                                                type="button"
+                                                            >
+                                                                <span className="inline-block align-middle text-[16px] leading-none">
+                                                                    {e}
+                                                                </span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                            <div className="max-h-[360px] overflow-hidden">
+                                                <Picker
+                                                    data={emojiData}
+                                                    theme="light"
+                                                    set="native"
+                                                    previewPosition="none"
+                                                    searchPosition="sticky"
+                                                    navPosition="bottom"
+                                                    skinTonePosition="preview"
+                                                    onEmojiSelect={(emojiEvent: any) => {
+                                                        const native =
+                                                            emojiEvent?.native || emojiEvent?.emoji || "";
+                                                        if (!native) return;
+                                                        onToggleReaction(msg.id, String(native));
+                                                        setOpenReactions(false);
+                                                    }}
+                                                />
+                                            </div>
                                         </div>,
                                         document.body,
                                     )}
@@ -731,7 +762,7 @@ function MessageCardInner({
                                 className={
                                     "px-3 h-9 rounded-xl text-sm font-semibold inline-flex items-center gap-2 " +
                                     (savingEdit ? "opacity-70 cursor-not-allowed " : "") +
-                                    "bg-emerald-600 hover:bg-emerald-700 text-white"
+                                    "bg-[#81DB86] hover:bg-[#72CF78] text-black"
                                 }
                                 disabled={savingEdit || !draft.trim()}
                                 title="Save"
@@ -1183,11 +1214,14 @@ export function ChatPanel({
     const replyingText = "text-black/55";
     const cancelBtnCls = "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60";
     const hintText = "text-black/40";
-    const sendBtnActive = "bg-emerald-600 hover:bg-emerald-700 text-white";
+    const sendBtnActive = "bg-[#81DB86] hover:bg-[#72CF78] text-black";
     const sendBtnDisabled = "bg-[#DCDCDC] text-black/35";
-    const composerInputCls = "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]";
-    const composerEmojiBtnCls = "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#F3F1F1] border-[#D8D0D0] text-black/60 hover:bg-[#E8E8E8] hover:text-black/80";
-    const portalBoxCls = "rounded-2xl border border-[#D8D0D0] bg-[#F3F1F1] shadow-2xl overflow-hidden";
+    const composerInputCls =
+        "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]";
+    const composerEmojiBtnCls =
+        "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#F3F1F1] border-[#D8D0D0] text-black/60 hover:bg-[#E8E8E8] hover:text-black/80";
+    const portalBoxCls =
+        "rounded-2xl border border-[#D8D0D0] bg-[#F3F1F1] shadow-2xl overflow-hidden";
 
     useEffect(() => {
         (async () => {
@@ -2426,7 +2460,7 @@ export function ChatPanel({
     const modalBtn = isLight
         ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] border border-[#D8D0D0] text-black/70"
         : "bg-[#F7F5F5] hover:bg-[#303030] border border-[#D8D0D0] text-black/75";
-    const modalPrimaryBtn = "bg-emerald-600 hover:bg-emerald-700 text-white";
+    const modalPrimaryBtn = "bg-[#81DB86] hover:bg-[#72CF78] text-black";
     const canToggleInModal =
         !!reactionDetails.open &&
         !!reactionDetails.messageId &&
@@ -2565,7 +2599,7 @@ export function ChatPanel({
                                             "px-3 h-9 rounded-xl text-[13px] font-semibold border transition " +
                                             (myReactedInModal
                                                 ? modalBtn
-                                                : modalPrimaryBtn + " border-emerald-500/40")
+                                                : modalPrimaryBtn + " border-[#81DB86]/50")
                                         }
                                         onClick={async () => {
                                             await toggleReaction(
@@ -2886,7 +2920,7 @@ export function ChatPanel({
                             "w-11 h-11 rounded-xl flex items-center justify-center transition border " +
                             (text.trim() &&
                                 !(activeMode === "direct" && isHost && !activeDirectPeerId)
-                                ? sendBtnActive + " border-emerald-500/40"
+                                ? sendBtnActive + " border-[#81DB86]/50"
                                 : sendBtnDisabled + " border-transparent cursor-not-allowed")
                         }
                         type="button"
