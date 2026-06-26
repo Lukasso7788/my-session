@@ -107,11 +107,11 @@ function ToggleRow(props: {
                     "relative shrink-0 w-[50px] h-[30px] rounded-full transition border disabled:opacity-50",
                     checked
                         ? isLight
-                            ? "bg-blue-600 border-blue-600"
-                            : "bg-emerald-500 border-emerald-500"
+                            ? "bg-[#81DB86] border-[#81DB86]"
+                            : "bg-[#81DB86] border-[#81DB86]"
                         : isLight
-                            ? "bg-black/5 border-black/10"
-                            : "bg-white/5 border-white/10",
+                            ? "bg-[#F3F1F1] border-[#D8D0D0]"
+                            : "bg-[#3F3F46] border-[#3F3F46]",
                 ].join(" ")}
                 aria-pressed={checked}
                 title={label}
@@ -144,7 +144,7 @@ function SelectField(props: {
                 onChange={(e) => onChange(e.target.value)}
                 className={[
                     "w-full h-11 rounded-xl px-3 outline-none border text-[13px]",
-                    isLight ? "bg-white border-black/10 text-black/85" : "bg-[#0b1220] border-white/10 text-white/90",
+                    isLight ? "bg-[#F3F1F1] border-[#D8D0D0] text-black/85" : "bg-[#27272A] border-[#3F3F46] text-white/90",
                 ].join(" ")}
             >
                 {options.map((opt) => (
@@ -317,14 +317,14 @@ function RecoveryGuideModal(props: {
     const panelCls = isLight
         ? "bg-white text-black border-black/10"
         : "bg-[#06101f] text-white border-white/10";
-    const subtleText = isLight ? "text-black/60" : "text-white/60";
-    const stepCls = isLight ? "bg-black/[0.035] border-black/10" : "bg-white/[0.055] border-white/10";
+    const subtleText = isLight ? "text-black/55" : "text-white/55";
+    const stepCls = isLight ? "bg-white border-[#D8D0D0]" : "bg-[#27272A] border-[#3F3F46]";
 
     return (
         <div className="fixed inset-0 z-[1010] flex items-center justify-center px-4 py-6">
             <div className="absolute inset-0 bg-black/55" onClick={onClose} />
             <div className={`relative w-full max-w-[560px] rounded-3xl border shadow-2xl overflow-hidden ${panelCls}`}>
-                <div className={`px-5 py-4 border-b ${isLight ? "border-black/10" : "border-white/10"}`}>
+                <div className={`px-5 py-4 border-b ${isLight ? "border-[#D8D0D0]" : "border-[#3F3F46]"}`}>
                     <div className="flex items-start justify-between gap-4">
                         <div>
                             <div className={`text-[11px] font-semibold uppercase tracking-[0.14em] ${subtleText}`}>
@@ -355,7 +355,7 @@ function RecoveryGuideModal(props: {
                                     <div
                                         className={[
                                             "mt-0.5 w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-[12px] font-bold",
-                                            isLight ? "bg-blue-600 text-white" : "bg-emerald-400 text-[#04130b]",
+                                            isLight ? "bg-[#5286F6] text-white" : "bg-[#81DB86] text-[#0D2610]",
                                         ].join(" ")}
                                     >
                                         {index + 1}
@@ -371,8 +371,8 @@ function RecoveryGuideModal(props: {
                             className={[
                                 "mt-4 rounded-2xl border px-4 py-3 text-[12px] leading-5",
                                 isLight
-                                    ? "bg-blue-50 border-blue-100 text-blue-900"
-                                    : "bg-emerald-400/10 border-emerald-300/15 text-emerald-50",
+                                    ? "bg-[#5286F6]/10 border-[#5286F6]/25 text-[#244E9E]"
+                                    : "bg-[#27272A] border-[#3F3F46] text-white/80",
                             ].join(" ")}
                         >
                             {guide.note}
@@ -451,7 +451,7 @@ function VideoPreviewBox(props: {
             <div
                 className={[
                     "rounded-2xl overflow-hidden border aspect-video w-full",
-                    isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-[#0b1220]",
+                    isLight ? "border-[#D8D0D0] bg-white" : "border-[#3F3F46] bg-[#27272A]",
                 ].join(" ")}
             >
                 {track ? (
@@ -954,7 +954,7 @@ function SoundTestSection(props: {
                     ) : null}
                 </div>
 
-                <div className="border-t border-white/10 pt-5">
+                <div className="border-t border-[#3F3F46] pt-5">
                     <div className={`text-[13px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
                         Test microphone
                     </div>
@@ -1013,7 +1013,7 @@ function SoundTestSection(props: {
                         <div
                             className={[
                                 "h-3 rounded-full overflow-hidden border",
-                                isLight ? "bg-black/5 border-black/10" : "bg-white/5 border-white/10",
+                                isLight ? "bg-[#F3F1F1] border-[#D8D0D0]" : "bg-[#27272A] border-[#3F3F46]",
                             ].join(" ")}
                         >
                             <div
@@ -1145,7 +1145,7 @@ export function RoomSettingsModalLiveKit({
     onChangeVideoTileLayoutRows?: (v: number) => void;
     showMobileLayoutSwitcher?: boolean;
     onChangeShowMobileLayoutSwitcher?: (v: boolean) => void;
-    
+
 
     devices: {
         videoInputs: MediaDeviceInfo[];
@@ -1283,13 +1283,13 @@ export function RoomSettingsModalLiveKit({
     const card = [
         "relative w-full sm:max-w-[1100px] rounded-none sm:rounded-3xl shadow-2xl overflow-hidden",
         "max-h-[100dvh] sm:max-h-[92vh] flex flex-col",
-        isLight ? "bg-white text-black border border-black/10" : "bg-[#020617] text-white border border-white/10",
+        isLight ? "bg-[#F5F5F5] text-black border border-[#D8D0D0]" : "bg-[#18181B] text-white border border-[#3F3F46]",
     ].join(" ");
 
-    const sectionCls = isLight ? "bg-black/5 border border-black/10" : "bg-white/5 border border-white/10";
-    const ghostBtn = isLight ? "bg-black/5 hover:bg-black/10 text-black/80" : "bg-white/5 hover:bg-white/10 text-white/85";
-    const activeBtn = isLight ? "bg-blue-600 text-white" : "bg-emerald-500 text-[#03110a]";
-    const subtleText = isLight ? "text-black/60" : "text-white/60";
+    const sectionCls = isLight ? "bg-white border border-[#D8D0D0]" : "bg-[#27272A] border border-[#3F3F46]";
+    const ghostBtn = isLight ? "border border-[#D8D0D0] bg-[#F3F1F1] hover:bg-[#ECEAEA] text-black/80" : "border border-[#3F3F46] bg-[#3F3F46] hover:bg-[#52525B] text-white/85";
+    const activeBtn = isLight ? "bg-[#1F1F1F] text-white" : "bg-white text-[#18181B]";
+    const subtleText = isLight ? "text-black/55" : "text-white/55";
 
     const audioInputOptions = [
         { value: "", label: devices.audioInputs?.length ? "Default microphone" : "No microphones found" },
@@ -1343,7 +1343,7 @@ export function RoomSettingsModalLiveKit({
             <div className={backdrop} onClick={onClose} />
 
             <div className={card}>
-                <div className={`px-5 sm:px-6 py-4 sm:py-5 border-b ${isLight ? "border-black/10" : "border-white/10"}`}>
+                <div className={`px-5 sm:px-6 py-4 sm:py-5 border-b ${isLight ? "border-[#D8D0D0]" : "border-[#3F3F46]"}`}>
                     <div className="flex items-center justify-between gap-3">
                         <div>
                             <div className="font-semibold text-[16px]">Settings</div>
@@ -1415,7 +1415,7 @@ export function RoomSettingsModalLiveKit({
                         <div className={`mt-3 text-[12px] leading-5 ${subtleText}`}>
                             Columns win first. If columns are Auto, forced rows can rebalance the grid. Horizontal strip is useful for narrow phones and landscape mode.
                         </div>
-                        <div className={`mt-4 pt-4 border-t ${isLight ? "border-black/10" : "border-white/10"}`}>
+                        <div className={`mt-4 pt-4 border-t ${isLight ? "border-[#D8D0D0]" : "border-[#3F3F46]"}`}>
                             <ToggleRow
                                 label="Show mobile layout switcher"
                                 description="Shows the floating Auto / 1 / 2 layout buttons on phones and tablets."
@@ -1585,7 +1585,7 @@ export function RoomSettingsModalLiveKit({
                                         valueSuffix="%"
                                     />
 
-                                    <div className="border-t border-white/10 pt-4">
+                                    <div className="border-t border-[#3F3F46] pt-4">
                                         <SliderField
                                             label="Default remote volume"
                                             description="Boost everyone at once, then fine-tune individual people separately."
@@ -1761,7 +1761,7 @@ export function RoomSettingsModalLiveKit({
                                         <div
                                             className={[
                                                 "rounded-2xl overflow-hidden border",
-                                                isLight ? "border-black/10 bg-white" : "border-white/10 bg-[#0b1220]",
+                                                isLight ? "border-[#D8D0D0] bg-white" : "border-[#3F3F46] bg-[#27272A]",
                                             ].join(" ")}
                                         >
                                             <div className="aspect-video w-full">
@@ -1818,8 +1818,8 @@ export function RoomSettingsModalLiveKit({
                                                                     ? "border-blue-500 ring-2 ring-blue-300"
                                                                     : "border-emerald-400 ring-2 ring-emerald-300/25"
                                                                 : isLight
-                                                                    ? "border-black/10"
-                                                                    : "border-white/10")
+                                                                    ? "border-[#D8D0D0]"
+                                                                    : "border-[#3F3F46]")
                                                         }
                                                         title={p.label}
                                                         disabled={effectiveFxApplying}
@@ -1828,7 +1828,7 @@ export function RoomSettingsModalLiveKit({
                                                         <div className="aspect-video w-full">
                                                             <img src={p.url} alt={p.label} className="w-full h-full object-cover" />
                                                         </div>
-                                                        <div className={`px-2 py-2 text-[12px] ${isLight ? "bg-white" : "bg-[#0b1220]"}`}>{p.label}</div>
+                                                        <div className={`px-2 py-2 text-[12px] ${isLight ? "bg-white" : "bg-[#27272A]"}`}>{p.label}</div>
                                                     </button>
                                                 );
                                             })}
@@ -1887,7 +1887,7 @@ export function RoomSettingsModalLiveKit({
                     </div>
                 </div>
 
-                <div className={`px-5 sm:px-6 py-4 border-t flex items-center justify-end gap-3 ${isLight ? "border-black/10" : "border-white/10"}`}>
+                <div className={`px-5 sm:px-6 py-4 border-t flex items-center justify-end gap-3 ${isLight ? "border-[#D8D0D0]" : "border-[#3F3F46]"}`}>
                     <button
                         onClick={onClose}
                         className={`h-10 px-4 rounded-xl text-[13px] font-semibold ${ghostBtn}`}

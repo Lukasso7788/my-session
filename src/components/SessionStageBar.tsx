@@ -546,6 +546,6 @@ export function SessionStageBar({
       )}
     </div>
   );
-}
+} 
 
 export default SessionStageBar;
