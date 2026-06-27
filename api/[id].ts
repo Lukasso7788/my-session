@@ -10,6 +10,153 @@ function safeJsonParse(raw: string): any | null {
   }
 }
 
+function json(res: any, status: number, payload: any) {
+  return res.status(status).json(payload);
+}
+
+async function supabaseRest(path: string, opts: any = {}) {
+  const url = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
+  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+
+  if (!url || !key) {
+    throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  }
+
+  const response = await fetch(`${url}/rest/v1/${path}`, {
+    ...opts,
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+      Prefer: opts.prefer || "return=representation",
+      ...(opts.headers || {}),
+    },
+  });
+
+  const text = await response.text();
+  const data = text ? safeJsonParse(text) ?? text : null;
+
+  if (!response.ok) {
+    throw new Error(
+      `Supabase REST failed ${response.status}: ${typeof data === "string" ? data : JSON.stringify(data)}`
+    );
+  }
+
+  return data;
+}
+
+async function handleDiscordPresenceBroadcast(req: any, res: any) {
+  if (req.method !== "POST") {
+    return json(res, 405, { error: "Method not allowed" });
+  }
+
+  const webhookUrl = String(process.env.DISCORD_PRESENCE_WEBHOOK_URL || "").trim();
+  if (!webhookUrl) {
+    return json(res, 200, { ok: false, skipped: "missing_webhook" });
+  }
+
+  const minParticipants = Number(req.body?.minParticipants || 2);
+  const cooldownMinutes = Number(req.body?.cooldownMinutes || 45);
+
+  try {
+    const rooms = await supabaseRest("rpc/get_active_infinite_rooms_for_discord", {
+      method: "POST",
+      body: JSON.stringify({ min_participants: minParticipants }),
+    });
+
+    const list = Array.isArray(rooms) ? rooms : [];
+    if (!list.length) {
+      return json(res, 200, { ok: true, posted: false, skipped: "no_active_rooms" });
+    }
+
+    const picked = list[0];
+    const sessionId = String(picked.session_id || picked.id || "").trim();
+    const title = cleanText(picked.title || "focus room", "focus room");
+    const count = Number(picked.participant_count || 0);
+    const link =
+      cleanText(picked.room_url) ||
+      `${String(process.env.NEXT_PUBLIC_APP_URL || "https://mysession.app").replace(/\/$/, "")}/sessions/${sessionId}`;
+
+    if (!sessionId || count < minParticipants) {
+      return json(res, 200, { ok: true, posted: false, skipped: "below_threshold" });
+    }
+
+    const sinceIso = new Date(Date.now() - cooldownMinutes * 60 * 1000).toISOString();
+
+    const recent = await supabaseRest(
+      `discord_presence_broadcasts?room_session_id=eq.${encodeURIComponent(
+        sessionId
+      )}&sent_at=gte.${encodeURIComponent(sinceIso)}&select=id,sent_at&limit=1`,
+      { method: "GET" }
+    );
+
+    if (Array.isArray(recent) && recent.length > 0) {
+      return json(res, 200, {
+        ok: true,
+        posted: false,
+        skipped: "cooldown",
+        sessionId,
+        participantCount: count,
+      });
+    }
+
+    const message =
+      count >= 5
+        ? `🔥 ${count} people are focusing right now in **${title}**.\nJoin us: ${link}`
+        : `🟢 ${count} people are focusing right now in **${title}**.\nJoin if you want to work with us: ${link}`;
+
+    const discordRes = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: message,
+        allowed_mentions: { parse: [] },
+      }),
+    });
+
+    const discordText = await discordRes.text();
+
+    if (!discordRes.ok) {
+      console.error("[discord_presence_broadcast] Discord failed:", {
+        status: discordRes.status,
+        body: discordText.slice(0, 500),
+      });
+
+      return json(res, 200, {
+        ok: false,
+        posted: false,
+        error: "discord_failed",
+        status: discordRes.status,
+      });
+    }
+
+    await supabaseRest("discord_presence_broadcasts", {
+      method: "POST",
+      body: JSON.stringify({
+        room_session_id: sessionId,
+        participant_count: count,
+        message,
+        discord_webhook_url: webhookUrl.slice(0, 120),
+      }),
+    });
+
+    return json(res, 200, {
+      ok: true,
+      posted: true,
+      sessionId,
+      title,
+      participantCount: count,
+      message,
+    });
+  } catch (error: any) {
+    console.error("[discord_presence_broadcast] error:", error);
+    return json(res, 500, {
+      ok: false,
+      error: error?.message || "Internal server error",
+    });
+  }
+}
+
 async function handleAiHost(req: any, res: any) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -125,9 +272,14 @@ Rules:
 
 export default async function handler(req: any, res: any) {
   const id = String(req.query?.id || "").trim();
+  const action = String(req.body?.action || "").trim();
 
-  if (id === "default" && req.body?.action === "respond") {
+  if (id === "default" && action === "respond") {
     return handleAiHost(req, res);
+  }
+
+  if (id === "default" && action === "discord_presence_broadcast") {
+    return handleDiscordPresenceBroadcast(req, res);
   }
 
   if (req.method === "POST") {
