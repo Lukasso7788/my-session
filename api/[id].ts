@@ -14,6 +14,17 @@ function json(res: any, status: number, payload: any) {
   return res.status(status).json(payload);
 }
 
+function assertCronSecret(req: any) {
+  const expected = String(process.env.MYSSESSION_CRON_SECRET || "").trim();
+
+  if (!expected) {
+    return true;
+  }
+
+  const got = String(req.headers["x-cron-secret"] || "").trim();
+  return got === expected;
+}
+
 async function supabaseRest(path: string, opts: any = {}) {
   const url = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
   const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
@@ -38,7 +49,9 @@ async function supabaseRest(path: string, opts: any = {}) {
 
   if (!response.ok) {
     throw new Error(
-      `Supabase REST failed ${response.status}: ${typeof data === "string" ? data : JSON.stringify(data)}`
+      `Supabase REST failed ${response.status}: ${
+        typeof data === "string" ? data : JSON.stringify(data)
+      }`,
     );
   }
 
@@ -50,7 +63,10 @@ async function handleDiscordPresenceBroadcast(req: any, res: any) {
     return json(res, 405, { error: "Method not allowed" });
   }
 
-  const webhookUrl = String(process.env.DISCORD_PRESENCE_WEBHOOK_URL || "").trim();
+  const webhookUrl = String(
+    process.env.DISCORD_PRESENCE_WEBHOOK_URL || "",
+  ).trim();
+
   if (!webhookUrl) {
     return json(res, 200, { ok: false, skipped: "missing_webhook" });
   }
@@ -65,8 +81,13 @@ async function handleDiscordPresenceBroadcast(req: any, res: any) {
     });
 
     const list = Array.isArray(rooms) ? rooms : [];
+
     if (!list.length) {
-      return json(res, 200, { ok: true, posted: false, skipped: "no_active_rooms" });
+      return json(res, 200, {
+        ok: true,
+        posted: false,
+        skipped: "no_active_rooms",
+      });
     }
 
     const picked = list[0];
@@ -75,19 +96,30 @@ async function handleDiscordPresenceBroadcast(req: any, res: any) {
     const count = Number(picked.participant_count || 0);
     const link =
       cleanText(picked.room_url) ||
-      `${String(process.env.NEXT_PUBLIC_APP_URL || "https://mysession.app").replace(/\/$/, "")}/sessions/${sessionId}`;
+      `${String(process.env.NEXT_PUBLIC_APP_URL || "https://mysession.app").replace(
+        /\/$/,
+        "",
+      )}/sessions/${sessionId}`;
 
     if (!sessionId || count < minParticipants) {
-      return json(res, 200, { ok: true, posted: false, skipped: "below_threshold" });
+      return json(res, 200, {
+        ok: true,
+        posted: false,
+        skipped: "below_threshold",
+      });
     }
 
-    const sinceIso = new Date(Date.now() - cooldownMinutes * 60 * 1000).toISOString();
+    const sinceIso = new Date(
+      Date.now() - cooldownMinutes * 60 * 1000,
+    ).toISOString();
 
     const recent = await supabaseRest(
       `discord_presence_broadcasts?room_session_id=eq.${encodeURIComponent(
-        sessionId
-      )}&sent_at=gte.${encodeURIComponent(sinceIso)}&select=id,sent_at&limit=1`,
-      { method: "GET" }
+        sessionId,
+      )}&sent_at=gte.${encodeURIComponent(
+        sinceIso,
+      )}&select=id,sent_at&limit=1`,
+      { method: "GET" },
     );
 
     if (Array.isArray(recent) && recent.length > 0) {
@@ -219,7 +251,7 @@ Rules:
 `.trim();
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-    model
+    model,
   )}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   try {
@@ -279,6 +311,10 @@ export default async function handler(req: any, res: any) {
   }
 
   if (id === "default" && action === "discord_presence_broadcast") {
+    if (!assertCronSecret(req)) {
+      return json(res, 401, { error: "Unauthorized" });
+    }
+
     return handleDiscordPresenceBroadcast(req, res);
   }
 
