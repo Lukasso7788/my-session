@@ -214,7 +214,7 @@ async function rewardReferrerForFirstPayment(params: {
   });
 }
 
-async function markHostSupportPaymentAvailable(session: Stripe.Checkout.Session) {
+async function markHostSupportPaymentAvailable(session: any) {
   const metadata = session.metadata || {};
   const supportPaymentId = String(metadata.supportPaymentId || "").trim();
 
@@ -303,7 +303,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     );
 
     if (event.type === "checkout.session.completed") {
-      const session = event.data.object as Stripe.Checkout.Session;
+      const session = event.data.object as any;
       const checkoutKind = String(session.metadata?.checkout_kind || session.metadata?.kind || "").trim();
 
       if (checkoutKind === "host_support") {
