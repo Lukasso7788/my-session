@@ -418,13 +418,13 @@ export function SessionStageBar({
 
   const tooltipCardClass =
     theme === "light"
-      ? "border border-[#D8D0D0] bg-[#F7F5F5]/95 text-[#252525] shadow-[0_12px_28px_rgba(15,23,42,0.16)] backdrop-blur-md"
-      : "border border-[#2B2B2B] bg-[#252525]/96 text-white shadow-[0_12px_28px_rgba(0,0,0,0.42)] backdrop-blur-md";
+      ? "border border-[#D8D0D0] bg-[#F7F5F5] text-[#252525] shadow-[0_16px_36px_rgba(15,23,42,0.22)] backdrop-blur-xl"
+      : "border border-[#2B2B2B] bg-[#252525] text-white shadow-[0_16px_36px_rgba(0,0,0,0.62)] backdrop-blur-xl";
 
   const tooltipArrowClass =
     theme === "light"
-      ? "border-r border-b border-[#D8D0D0] bg-[#F7F5F5]/95"
-      : "border-r border-b border-[#2B2B2B] bg-[#252525]/96";
+      ? "border-r border-b border-[#D8D0D0] bg-[#F7F5F5]"
+      : "border-r border-b border-[#2B2B2B] bg-[#252525]";
 
   const markerLeftPercent = clamp(cycleProgress * 100, 0.5, 99.5);
 
@@ -498,7 +498,7 @@ export function SessionStageBar({
               />
 
               {isHovered && (
-                <div className="pointer-events-none absolute bottom-full left-1/2 z-[80] mb-3 flex -translate-x-1/2">
+                <div className="pointer-events-none absolute bottom-full left-1/2 z-[9999] mb-3 flex -translate-x-1/2">
                   <div className={`relative min-w-[150px] rounded-xl px-3 py-2 ${tooltipCardClass}`}>
                     <div className="flex items-start gap-2">
                       <div
