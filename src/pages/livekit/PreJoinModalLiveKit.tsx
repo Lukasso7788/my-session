@@ -214,7 +214,7 @@ export function PreJoinModal({
       : "";
 
   const overlay =
-    "fixed inset-0 z-[10000] flex items-stretch justify-center px-0 py-0 sm:items-center sm:px-3 sm:py-6 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]";
+    "fixed inset-0 z-[2147483647] flex items-stretch justify-center px-0 py-0 sm:items-center sm:px-3 sm:py-6 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]";
 
   const card = [
     "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-2xl sm:max-h-[92dvh] sm:max-w-[980px] sm:rounded-3xl",
@@ -299,10 +299,23 @@ export function PreJoinModal({
   if (!open) return null;
 
   return (
-    <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
-      <div className="absolute inset-0 bg-black/55" onClick={onCancel} />
+    <div
+      className={overlay}
+      data-theme={theme}
+      style={{
+        colorScheme: theme,
+        zIndex: 2147483647,
+      }}
+    >
+      <div
+        className="absolute inset-0 z-0 bg-black/55"
+        onClick={onCancel}
+      />
 
-      <div className={card} onClick={(e) => e.stopPropagation()}>
+      <div
+        className={`${card} z-10`}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className={`border-b px-5 py-4 sm:px-6 sm:py-5 ${border}`}>
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
