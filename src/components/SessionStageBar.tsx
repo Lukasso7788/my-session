@@ -429,10 +429,7 @@ export function SessionStageBar({
   const markerLeftPercent = clamp(cycleProgress * 100, 0.5, 99.5);
 
   return (
-    <div
-      className="relative w-full h-2 overflow-visible isolate"
-      style={{ zIndex: 999 }}
-    >
+    <div className="relative w-full h-2 overflow-visible">
       <div
         className={`absolute inset-x-0 top-0 h-2 flex rounded-full overflow-visible ${trackBgClass}`}
       >
@@ -501,7 +498,7 @@ export function SessionStageBar({
               />
 
               {isHovered && (
-                <div className="pointer-events-none absolute bottom-full left-1/2 z-[9999] mb-3 flex -translate-x-1/2">
+                <div className="pointer-events-none absolute bottom-full left-1/2 z-[80] mb-3 flex -translate-x-1/2">
                   <div className={`relative min-w-[150px] rounded-xl px-3 py-2 ${tooltipCardClass}`}>
                     <div className="flex items-start gap-2">
                       <div

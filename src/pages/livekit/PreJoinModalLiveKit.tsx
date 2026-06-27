@@ -214,7 +214,7 @@ export function PreJoinModal({
       : "";
 
   const overlay =
-    "fixed inset-0 z-[999] flex items-stretch justify-center px-0 py-0 sm:items-center sm:px-3 sm:py-6 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]";
+    "fixed inset-0 z-[10000] flex items-stretch justify-center px-0 py-0 sm:items-center sm:px-3 sm:py-6 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]";
 
   const card = [
     "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-2xl sm:max-h-[92dvh] sm:max-w-[980px] sm:rounded-3xl",
