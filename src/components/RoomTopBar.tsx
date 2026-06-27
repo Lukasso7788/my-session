@@ -92,11 +92,13 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         showStageBar && !!canEditTimeline && typeof onEditTimeline === "function";
 
     return (
-        <div className={`flex w-full rounded-2xl overflow-visible ${topBarBg}`}>
+        <div
+            className={`relative isolate flex w-full rounded-2xl overflow-visible ${topBarBg}`}
+        >
             <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4 overflow-visible">
                 <div className="flex flex-col gap-2 max-[480px]:gap-2 overflow-visible">
                     {/* row 1 */}
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="relative z-10 flex items-center justify-between gap-3">
                         <div className="min-w-0">
                             <div className="flex items-center gap-2 min-w-0">
                                 <p
@@ -119,7 +121,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                         </div>
 
                         {/* desktop */}
-                        <div className="hidden min-[481px]:flex items-center gap-2 shrink-0">
+                        <div className="relative z-10 hidden min-[481px]:flex items-center gap-2 shrink-0">
                             {showTimer && (
                                 <div
                                     className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}
@@ -159,8 +161,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                 <button
                                     onClick={onOpenHostProfile}
                                     className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
-                                            ? "border-[#CFCFCF] bg-[#E1E3E6] hover:bg-[#E0E0E0] text-black/75"
-                                            : "border-[#2B2B2B] bg-[#1B1B1B]/60 hover:bg-[#242424] text-[#F1F1F1]/85"
+                                        ? "border-[#CFCFCF] bg-[#E1E3E6] hover:bg-[#E0E0E0] text-black/75"
+                                        : "border-[#2B2B2B] bg-[#1B1B1B]/60 hover:bg-[#242424] text-[#F1F1F1]/85"
                                         }`}
                                     title="Host profile"
                                     type="button"
@@ -181,7 +183,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                     </div>
 
                     {/* row 2 mobile */}
-                    <div className="min-[481px]:hidden flex items-center justify-start gap-2">
+                    <div className="relative z-10 min-[481px]:hidden flex items-center justify-start gap-2">
                         {showTimer && (
                             <div
                                 className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}
@@ -221,8 +223,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                             <button
                                 onClick={onOpenHostProfile}
                                 className={`w-10 h-10 rounded-2xl flex items-center justify-center border transition ${isLight
-                                        ? "border-[#CFCFCF] bg-[#E1E3E6] hover:bg-[#E0E0E0] text-black/70"
-                                        : "border-[#2B2B2B] bg-[#1B1B1B]/60 hover:bg-[#242424] text-white/85"
+                                    ? "border-[#CFCFCF] bg-[#E1E3E6] hover:bg-[#E0E0E0] text-black/70"
+                                    : "border-[#2B2B2B] bg-[#1B1B1B]/60 hover:bg-[#242424] text-white/85"
                                     }`}
                                 title={`Host: ${String(hostProfile.full_name || "Host")}`}
                                 aria-label="Host profile"
@@ -238,8 +240,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
 
                     {/* row 3 stage bar */}
                     {showStageBar && (
-                        <div className="mt-1 max-[480px]:mt-1 w-full overflow-visible pt-1">
-                            <div className="group relative">
+                        <div className="relative z-30 mt-1 max-[480px]:mt-1 w-full overflow-visible pt-1">
+                            <div className="group relative z-30 overflow-visible">
                                 {showEditTimeline && (
                                     <button
                                         type="button"
