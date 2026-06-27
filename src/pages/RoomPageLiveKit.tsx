@@ -414,7 +414,7 @@ function phaseToStageType(phaseName: string): Stage["type"] {
 
 const STAGE_COLORS: Record<string, string> = {
   intro: "#81DB86",
-  intentions: "#5286F6",
+  intentions: "#ADD3FF",
   focus: "#5286F6",
   break: "#F65252",
   outro: "#81DB86",
