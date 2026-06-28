@@ -47,6 +47,7 @@ import AdhdBodyDoublingPage from "./pages/seo/AdhdBodyDoublingPage";
 import StudyTogetherPage from "./pages/seo/StudyTogetherPage";
 import ProcrastinationPage from "./pages/seo/ProcrastinationPage";
 import HowItWorksPage from "./pages/seo/HowItWorksPage";
+import FaqPage from "./pages/seo/FaqPage";
 
 import NotFoundPage from "./pages/NotFoundPage";
 import SessionCardsPlayground from "./SessionCardsPlayground";
@@ -184,50 +185,67 @@ export default function App() {
 
           {/* SEO pages */}
           <Route path="/body-doubling" element={<BodyDoublingPage />} />
+
           <Route
             path="/adhd-body-doubling"
             element={<AdhdBodyDoublingPage />}
           />
+
           <Route
             path="/adhd-productivity"
             element={<AdhdProductivityPage />}
           />
+
           <Route
             path="/online-coworking"
             element={<OnlineCoworkingPage />}
           />
+
           <Route
             path="/virtual-coworking"
             element={<OnlineCoworkingPage />}
           />
+
           <Route
             path="/group-focus-sessions"
             element={<GroupFocusSessionsPage />}
           />
+
           <Route
             path="/focus-sessions"
             element={<GroupFocusSessionsPage />}
           />
+
           <Route
             path="/silent-coworking"
             element={<SilentCoworkingPage />}
           />
+
           <Route
             path="/study-together"
             element={<StudyTogetherPage />}
           />
+
           <Route
             path="/procrastination"
             element={<ProcrastinationPage />}
           />
+
           <Route
             path="/how-it-works"
             element={<HowItWorksPage />}
           />
+
+          <Route
+            path="/faq"
+            element={<FaqPage />}
+          />
+
           <Route
             path="/focusmate-alternatives"
             element={<FocusmateAlternativesPage />}
           />
+
           <Route path="/ai-assistant" element={<AIAssistantPage />} />
 
           <Route path="*" element={<NotFoundPage />} />
