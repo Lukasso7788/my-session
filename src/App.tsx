@@ -40,6 +40,13 @@ import OnlineCoworkingPage from "./pages/seo/OnlineCoworkingPage";
 import GroupFocusSessionsPage from "./pages/seo/GroupFocusSessionsPage";
 import SilentCoworkingPage from "./pages/seo/SilentCoworkingPage";
 import AdhdProductivityPage from "./pages/seo/AdhdProductivityPage";
+import AIAssistantPage from "./pages/seo/AIAssistantPage";
+import FocusmateAlternativesPage from "./pages/seo/FocusmateAlternativesPage";
+
+import AdhdBodyDoublingPage from "./pages/seo/AdhdBodyDoublingPage";
+import StudyTogetherPage from "./pages/seo/StudyTogetherPage";
+import ProcrastinationPage from "./pages/seo/ProcrastinationPage";
+import HowItWorksPage from "./pages/seo/HowItWorksPage";
 
 import NotFoundPage from "./pages/NotFoundPage";
 import SessionCardsPlayground from "./SessionCardsPlayground";
@@ -58,9 +65,10 @@ function BlogIndexPlaceholder() {
           </h1>
 
           <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[#606060]">
-            Explore practical guides on body doubling, online coworking, deep work,
-            structured focus sessions, accountability, and ADHD-friendly productivity —
-            designed to help you work with more consistency and less friction.
+            Explore practical guides on body doubling, online coworking, deep
+            work, structured focus sessions, accountability, and ADHD-friendly
+            productivity — designed to help you work with more consistency and
+            less friction.
           </p>
 
           <div className="mt-6 flex flex-wrap gap-3">
@@ -98,8 +106,8 @@ function BlogPostPlaceholder() {
           </h1>
 
           <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[#606060]">
-            This route works. Replace this placeholder with your real blog post page
-            when you are ready.
+            This route works. Replace this placeholder with your real blog post
+            page when you are ready.
           </p>
 
           <div className="mt-6 flex flex-wrap gap-3">
@@ -154,7 +162,11 @@ export default function App() {
             element={<DailyScheduleEmailAdminPage />}
           />
 
-          <Route path="/email/unsubscribe" element={<DailyScheduleUnsubscribePage />} />
+          <Route
+            path="/email/unsubscribe"
+            element={<DailyScheduleUnsubscribePage />}
+          />
+
           <Route path="/focus-plan" element={<FocusPlanPage />} />
           <Route path="/focus-shield" element={<FocusShieldPage />} />
 
@@ -170,13 +182,53 @@ export default function App() {
           <Route path="/blog" element={<BlogIndexPlaceholder />} />
           <Route path="/blog/:slug" element={<BlogPostPlaceholder />} />
 
+          {/* SEO pages */}
           <Route path="/body-doubling" element={<BodyDoublingPage />} />
-          <Route path="/online-coworking" element={<OnlineCoworkingPage />} />
-          <Route path="/group-focus-sessions" element={<GroupFocusSessionsPage />} />
-          <Route path="/silent-coworking" element={<SilentCoworkingPage />} />
-          <Route path="/adhd-productivity" element={<AdhdProductivityPage />} />
-
-          <Route path="/ai-assistant" element={<SessionsPage />} />
+          <Route
+            path="/adhd-body-doubling"
+            element={<AdhdBodyDoublingPage />}
+          />
+          <Route
+            path="/adhd-productivity"
+            element={<AdhdProductivityPage />}
+          />
+          <Route
+            path="/online-coworking"
+            element={<OnlineCoworkingPage />}
+          />
+          <Route
+            path="/virtual-coworking"
+            element={<OnlineCoworkingPage />}
+          />
+          <Route
+            path="/group-focus-sessions"
+            element={<GroupFocusSessionsPage />}
+          />
+          <Route
+            path="/focus-sessions"
+            element={<GroupFocusSessionsPage />}
+          />
+          <Route
+            path="/silent-coworking"
+            element={<SilentCoworkingPage />}
+          />
+          <Route
+            path="/study-together"
+            element={<StudyTogetherPage />}
+          />
+          <Route
+            path="/procrastination"
+            element={<ProcrastinationPage />}
+          />
+          <Route
+            path="/how-it-works"
+            element={<HowItWorksPage />}
+          />
+          <Route
+            path="/focusmate-alternatives"
+            element={<FocusmateAlternativesPage />}
+          />
+          <Route path="/ai-assistant" element={<AIAssistantPage />} />
 
           <Route path="*" element={<NotFoundPage />} />
         </Route>
