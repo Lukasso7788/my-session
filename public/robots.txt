@@ -1,4 +1,18 @@
 User-agent: *
 Allow: /
 
+Disallow: /admin
+Disallow: /admin/
+Disallow: /profile
+Disallow: /profile/
+Disallow: /room-iframe
+Disallow: /room-iframe/
+Disallow: /room-livekit
+Disallow: /room-livekit/
+Disallow: /auth
+Disallow: /auth/
+Disallow: /update-password
+Disallow: /data-deletion
+Disallow: /ui-playground
+
 Sitemap: https://mysession.club/sitemap.xml
