@@ -316,8 +316,8 @@ function VideoTileInner({
         : "bg-[#1B1B1B] border-[#2B2B2B] text-white hover:bg-[#1B1B1B]";
 
     const editNameBtnClass = isLight
-        ? "bg-[#F5F5F5] border-[#D8D0D0] text-black/85 hover:bg-[#F2F3F5]"
-        : "bg-[#1B1B1B]/90 border-[#2B2B2B] text-white/90 hover:bg-[#242424]";
+        ? "!bg-[#F5F5F5] !border-[#D8D0D0] !text-black/85 hover:!bg-[#F2F3F5]"
+        : "!bg-[#1B1B1B]/95 !border-[#2B2B2B] !text-white/90 hover:!bg-[#242424]";
 
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const safeCurrentIntention = String(currentIntention || "").trim();
@@ -544,7 +544,7 @@ function VideoTileInner({
                             e.stopPropagation();
                             onEditName();
                         }}
-                        className={`absolute left-[0.55rem] top-[0.55rem] z-20 flex h-[2.1rem] w-[2.1rem] items-center justify-center rounded-full border backdrop-blur-md transition ${editNameBtnClass}`}
+                        className={`absolute left-[0.55rem] top-[0.55rem] z-20 flex h-[2.1rem] w-[2.1rem] items-center justify-center rounded-full border shadow-sm backdrop-blur-md transition ${editNameBtnClass}`}
                         aria-label="Edit name"
                         title="Edit name"
                     >
