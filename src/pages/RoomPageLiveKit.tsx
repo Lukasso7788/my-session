@@ -2734,7 +2734,7 @@ function AccountabilityWall({
             type="button"
             onClick={onOpenIntentions}
             className={[
-              "rounded-2xl px-4 py-2 text-[13px] font-bold transition",
+              "inline-flex h-9 items-center justify-center rounded-2xl px-3 font-inter text-[12px] font-normal leading-none transition",
               isLight
                 ? "bg-[#242424] text-white hover:bg-[#303030]"
                 : "bg-[#81DB86] text-black hover:brightness-95",
@@ -2747,7 +2747,7 @@ function AccountabilityWall({
             type="button"
             onClick={onSwitchBackToVideo}
             className={[
-              "inline-flex items-center gap-2 rounded-2xl border px-4 py-2 font-inter text-[13px] font-bold transition",
+              "inline-flex h-9 items-center justify-center gap-1.5 rounded-2xl border px-3 font-inter text-[12px] font-normal leading-none transition",
               isLight
                 ? "border-[#CFC6C6] bg-[#F7F5F5] text-black/70 hover:bg-[#ECEAEA]"
                 : "border-[#2B2B2B] bg-[#242424] text-white/80 hover:bg-white/[0.06]",
@@ -2757,7 +2757,7 @@ function AccountabilityWall({
             <img
               src={isLight ? "/icons/pip-intentions-light.svg" : "/icons/pip-intentions-dark.svg"}
               alt=""
-              className="h-4 w-4"
+              className="h-3.5 w-3.5 opacity-85"
               draggable={false}
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).style.display = "none";
