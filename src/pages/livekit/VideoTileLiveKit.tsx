@@ -317,7 +317,7 @@ function VideoTileInner({
 
     const editNameBtnClass = isLight
         ? "bg-[#F5F5F5] border-[#D8D0D0] text-black/85 hover:bg-[#F2F3F5]"
-        : "bg-[#F3F1F1] border-[#D8D0D0] text-[#252525] hover:bg-[#ECEAEA]";
+        : "bg-[#1B1B1B]/90 border-[#2B2B2B] text-white/90 hover:bg-[#242424]";
 
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const safeCurrentIntention = String(currentIntention || "").trim();
@@ -647,14 +647,8 @@ function VideoTileInner({
                     ].join(" ")}
                     title={safeCurrentIntention}
                 >
-                    <div className="mb-1 flex items-center gap-1.5 font-inter text-[11px] font-bold leading-none opacity-70">
-                        <Icon
-                            name="intentions"
-                            theme={hasCameraOn || !isLight ? "dark" : "light"}
-                            className="h-3.5 w-3.5 opacity-90"
-                            alt=""
-                        />
-                        <span>Current intention</span>
+                    <div className="mb-1 font-inter text-[11px] font-bold leading-none opacity-75">
+                        Intention
                     </div>
                     <div className="line-clamp-3 font-inter text-[12px] font-normal leading-4">
                         {safeCurrentIntention}
