@@ -2445,6 +2445,7 @@ function AccountabilityWall({
   theme,
   isLight,
   onOpenIntentions,
+  onSwitchBackToVideo,
 }: {
   sessionId?: string | null;
   tiles: TileModel[];
@@ -2453,9 +2454,12 @@ function AccountabilityWall({
   theme: RoomTheme;
   isLight: boolean;
   onOpenIntentions: () => void;
+  onSwitchBackToVideo: () => void;
 }) {
   const [intentions, setIntentions] = useState<AccountabilityWallIntention[]>([]);
   const [loading, setLoading] = useState(false);
+  const [newWallTask, setNewWallTask] = useState("");
+  const [wallTaskBusy, setWallTaskBusy] = useState<string | null>(null);
 
   const loadIntentions = useCallback(async () => {
     const sid = String(sessionId || "").trim();
@@ -2567,31 +2571,136 @@ function AccountabilityWall({
   const cardBg = isLight
     ? "border-[#D8D0D0] bg-[#F7F5F5] text-black"
     : "border-[#2B2B2B] bg-[#1B1B1B] text-white";
-  const mutedText = isLight ? "text-black/50" : "text-white/50";
+  const mutedText = isLight ? "text-black/55" : "text-white/55";
+  const taskIconSrc = isLight
+    ? "/icons/accountability-wall-light.svg"
+    : "/icons/accountability-wall-dark.svg";
+
+  const addOwnWallTask = async () => {
+    const uid = String(authUserId || "").trim();
+    const sid = String(sessionId || "").trim();
+    const text = String(newWallTask || "").trim();
+
+    if (!uid || !sid || !text || wallTaskBusy) return;
+
+    const optimisticId = `wall-optimistic-${Date.now()}`;
+    const optimistic: AccountabilityWallIntention = {
+      id: optimisticId,
+      text,
+      user_id: uid,
+      session_id: sid,
+      created_at: new Date().toISOString(),
+      completed: false,
+      profiles: null,
+    };
+
+    setWallTaskBusy("add");
+    setNewWallTask("");
+    setIntentions((prev) => [optimistic, ...prev].slice(0, 160));
+
+    try {
+      const { data, error } = await supabase
+        .from("intentions")
+        .insert({
+          user_id: uid,
+          session_id: sid,
+          text,
+          completed: false,
+        })
+        .select("id,text,user_id,session_id,created_at,completed")
+        .single();
+
+      if (error || !data) throw error || new Error("No intention returned");
+
+      setIntentions((prev) =>
+        [data as AccountabilityWallIntention, ...prev.filter((x) => x.id !== optimisticId)].slice(0, 160),
+      );
+    } catch (e) {
+      console.warn("addOwnWallTask failed:", e);
+      setIntentions((prev) => prev.filter((x) => x.id !== optimisticId));
+      void loadIntentions();
+    } finally {
+      setWallTaskBusy(null);
+    }
+  };
+
+  const toggleOwnWallTask = async (item: AccountabilityWallIntention) => {
+    const uid = String(authUserId || "").trim();
+    const sid = String(sessionId || "").trim();
+    if (!uid || !sid || String(item.user_id || "").trim().toLowerCase() !== uid.toLowerCase() || wallTaskBusy) return;
+
+    const nextCompleted = !Boolean(item.completed);
+    setWallTaskBusy(item.id);
+    setIntentions((prev) =>
+      prev.map((x) => (x.id === item.id ? { ...x, completed: nextCompleted } : x)),
+    );
+
+    try {
+      const { error } = await supabase
+        .from("intentions")
+        .update({ completed: nextCompleted })
+        .eq("id", item.id)
+        .eq("user_id", uid)
+        .eq("session_id", sid);
+
+      if (error) throw error;
+    } catch (e) {
+      console.warn("toggleOwnWallTask failed:", e);
+      void loadIntentions();
+    } finally {
+      setWallTaskBusy(null);
+    }
+  };
 
   return (
     <div className="h-full w-full min-h-0 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className={`text-[12px] font-bold uppercase tracking-[0.16em] ${mutedText}`}>
+          <div className={`font-inter text-[15px] font-bold ${isLight ? "text-black/85" : "text-white/90"}`}>
             Accountability Wall
           </div>
-          <div className={`mt-1 text-[14px] ${mutedText}`}>
+          <div className={`mt-1 font-inter text-[14px] font-normal ${mutedText}`}>
             Everyone’s current intentions, visible while you work.
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onOpenIntentions}
-          className={[
-            "rounded-2xl px-4 py-2 text-[13px] font-bold transition",
-            isLight
-              ? "bg-[#242424] text-white hover:bg-[#303030]"
-              : "bg-[#81DB86] text-black hover:brightness-95",
-          ].join(" ")}
-        >
-          Add / edit intentions
-        </button>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenIntentions}
+            className={[
+              "rounded-2xl px-4 py-2 text-[13px] font-bold transition",
+              isLight
+                ? "bg-[#242424] text-white hover:bg-[#303030]"
+                : "bg-[#81DB86] text-black hover:brightness-95",
+            ].join(" ")}
+          >
+            Add / edit intentions
+          </button>
+
+          <button
+            type="button"
+            onClick={onSwitchBackToVideo}
+            className={[
+              "inline-flex items-center gap-2 rounded-2xl border px-4 py-2 font-inter text-[13px] font-bold transition",
+              isLight
+                ? "border-[#CFC6C6] bg-[#F7F5F5] text-black/70 hover:bg-[#ECEAEA]"
+                : "border-[#2B2B2B] bg-[#242424] text-white/80 hover:bg-white/[0.06]",
+            ].join(" ")}
+            title="Switch back to videos"
+          >
+            <img
+              src={isLight ? "/icons/pip-intentions-light.svg" : "/icons/pip-intentions-dark.svg"}
+              alt=""
+              className="h-4 w-4"
+              draggable={false}
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).style.display = "none";
+              }}
+            />
+            <span>Switch back to videos</span>
+          </button>
+        </div>
       </div>
 
       {participantTiles.length === 0 ? (
@@ -2648,7 +2757,7 @@ function AccountabilityWall({
                     )}
 
                     <div className="min-w-0">
-                      <div className="truncate text-[15px] font-black leading-tight">
+                      <div className="truncate font-inter text-[15px] font-bold leading-tight">
                         {name}
                       </div>
                       <div className={`mt-1 text-[12px] ${mutedText}`}>
@@ -2659,12 +2768,12 @@ function AccountabilityWall({
 
                   <div
                     className={[
-                      "shrink-0 rounded-2xl px-2.5 py-1 text-[11px] font-bold",
+                      "shrink-0 rounded-2xl border px-2.5 py-1 font-inter text-[11px] font-medium",
                       activeCount > 0
-                        ? "bg-[#81DB86]/20 text-[#2FA84F]"
+                        ? "border-[#81DB86]/55 bg-[#81DB86]/10 text-[#2FA84F]"
                         : isLight
-                          ? "bg-black/5 text-black/45"
-                          : "bg-white/10 text-white/45",
+                          ? "border-black/10 bg-black/5 text-black/45"
+                          : "border-white/10 bg-white/10 text-white/45",
                     ].join(" ")}
                   >
                     {activeCount > 0 ? `${activeCount} active` : completedCount > 0 ? "Done" : "No task"}
@@ -2672,8 +2781,36 @@ function AccountabilityWall({
                 </div>
 
                 <div className="mt-5 space-y-2">
+                  {isLocalCard ? (
+                    <div className="mb-3 flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newWallTask}
+                        onChange={(e) => setNewWallTask(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void addOwnWallTask();
+                        }}
+                        placeholder="Add a task"
+                        className={[
+                          "h-11 min-w-0 flex-1 rounded-2xl border px-3 font-inter text-[13px] outline-none transition",
+                          isLight
+                            ? "border-[#CFC6C6] bg-[#F7F5F5] text-black/85 placeholder:text-black/35 focus:border-[#81DB86] focus:ring-1 focus:ring-[#81DB86]"
+                            : "border-white/10 bg-white/[0.05] text-white/90 placeholder:text-white/35 focus:border-[#81DB86]/70 focus:ring-1 focus:ring-[#81DB86]/50",
+                        ].join(" ")}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void addOwnWallTask()}
+                        disabled={!newWallTask.trim() || !!wallTaskBusy}
+                        className="h-11 rounded-2xl bg-[#81DB86] px-4 font-inter text-[13px] font-bold text-black transition hover:brightness-95 disabled:opacity-50"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  ) : null}
+
                   {loading && !userIntentions.length ? (
-                    <div className={`rounded-2xl border border-dashed px-4 py-3 text-[13px] ${mutedText}`}>
+                    <div className={`rounded-2xl border border-dashed px-4 py-3 font-inter text-[13px] ${mutedText}`}>
                       Loading intentions…
                     </div>
                   ) : userIntentions.length ? (
@@ -2681,7 +2818,7 @@ function AccountabilityWall({
                       <div
                         key={item.id}
                         className={[
-                          "rounded-2xl border px-3 py-3 text-[14px] leading-5",
+                          "flex items-start gap-2 rounded-2xl border px-3 py-3 font-inter text-[14px] font-normal leading-5",
                           item.completed
                             ? isLight
                               ? "border-black/10 bg-black/[0.02] text-black/35 line-through"
@@ -2691,21 +2828,42 @@ function AccountabilityWall({
                               : "border-white/10 bg-white/[0.06] text-white/90",
                         ].join(" ")}
                       >
-                        {item.text}
+                        <button
+                          type="button"
+                          onClick={() => void toggleOwnWallTask(item)}
+                          disabled={!isLocalCard || !!wallTaskBusy}
+                          className={[
+                            "mt-[1px] flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border transition",
+                            isLocalCard ? "pointer-events-auto" : "pointer-events-none",
+                            item.completed
+                              ? "border-[#81DB86]/70 bg-[#81DB86]/15"
+                              : isLight
+                                ? "border-black/15 bg-black/[0.02]"
+                                : "border-white/15 bg-white/[0.04]",
+                          ].join(" ")}
+                          title={isLocalCard ? "Toggle task" : "Task"}
+                        >
+                          {item.completed ? (
+                            <span className="text-[11px] leading-none text-[#2FA84F]">✓</span>
+                          ) : (
+                            <img src={taskIconSrc} alt="" className="h-3.5 w-3.5 opacity-55" draggable={false} />
+                          )}
+                        </button>
+                        <span className="min-w-0">{item.text}</span>
                       </div>
                     ))
                   ) : (
                     <button
                       type="button"
-                      onClick={onOpenIntentions}
+                      onClick={isLocalCard ? undefined : onOpenIntentions}
                       className={[
-                        "w-full rounded-2xl border border-dashed px-4 py-4 text-left text-[14px] transition",
+                        "w-full rounded-2xl border border-dashed px-4 py-4 text-left font-inter text-[14px] font-normal transition",
                         isLight
                           ? "border-black/15 text-black/45 hover:bg-black/[0.03]"
                           : "border-white/15 text-white/45 hover:bg-white/[0.05]",
                       ].join(" ")}
                     >
-                      No intention yet{isLocalCard ? " — add yours" : ""}
+                      No intention yet{isLocalCard ? " — add yours above" : ""}
                     </button>
                   )}
                 </div>
@@ -10260,6 +10418,7 @@ export function RoomPageLiveKit({
       theme={theme}
       isLight={isLight}
       onOpenIntentions={() => openRightTab("intentions")}
+      onSwitchBackToVideo={() => setMainViewMode("video")}
     />
   ) : useFeaturedLayout ? (
     <div

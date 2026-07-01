@@ -1958,9 +1958,7 @@ export function IntentionsPanel({
                 onClick={onToggleAccountabilityWall}
                 className={[
                   "h-9 shrink-0 rounded-2xl border px-3 text-[12px] font-bold transition inline-flex items-center gap-2 font-inter",
-                  accountabilityWallOpen
-                    ? "border-[#5286F6]/35 bg-[#5286F6]/10 text-[#1E5FD7] hover:bg-[#5286F6]/15"
-                    : "border-[#CFC6C6] bg-[#F7F5F5] text-black/65 hover:bg-[#ECEAEA]",
+                  "border-[#CFC6C6] bg-[#F7F5F5] text-black/65 hover:bg-[#ECEAEA]",
                 ].join(" ")}
                 title={
                   accountabilityWallOpen
