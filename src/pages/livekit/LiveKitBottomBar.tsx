@@ -52,6 +52,27 @@ function LayoutIcon({
     );
 }
 
+function BugReportIcon({
+    isLight,
+    className = "w-5 h-5",
+}: {
+    isLight: boolean;
+    className?: string;
+}) {
+    return (
+        <img
+            src={
+                isLight
+                    ? "/icons/bug-report-light.svg"
+                    : "/icons/bug-report-dark.svg"
+            }
+            alt="Report a problem"
+            className={className}
+            draggable={false}
+        />
+    );
+}
+
 export function LiveKitBottomBar(props: {
     theme: RoomTheme;
     isLight: boolean;
@@ -86,6 +107,8 @@ export function LiveKitBottomBar(props: {
     onOpenIntentions: () => void;
     onOpenSettings: () => void;
 
+    onOpenBugReport?: () => void;
+
     onSendReaction: (type: ReactionType) => void;
 }) {
     const {
@@ -118,6 +141,7 @@ export function LiveKitBottomBar(props: {
         onOpenChat,
         onOpenIntentions,
         onOpenSettings,
+        onOpenBugReport,
         onSendReaction,
     } = props;
 
@@ -191,6 +215,18 @@ export function LiveKitBottomBar(props: {
                 ? "bg-[#242424] hover:bg-[#2E2E2E] text-white"
                 : "bg-[#242424] hover:bg-[#2E2E2E] text-white"
             : ctlBtnBase);
+
+    const bugReportDesktopBtn = onOpenBugReport ? (
+        <button
+            onClick={onOpenBugReport}
+            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+            title="Report a problem"
+            type="button"
+        >
+            <BugReportIcon isLight={isLight} />
+            <span className="sr-only">Report a problem</span>
+        </button>
+    ) : null;
 
     const layoutDesktopBtn =
         showLayoutControls && onOpenLayoutControls ? (
@@ -286,10 +322,30 @@ export function LiveKitBottomBar(props: {
                                 <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
                                     <div
                                         className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight
-                                                ? "bg-[#F3F1F1] border border-[#D8D0D0]"
-                                                : "bg-[#1B1B1B] border border-transparent"
+                                            ? "bg-[#F3F1F1] border border-[#D8D0D0]"
+                                            : "bg-[#1B1B1B] border border-transparent"
                                             }`}
                                     >
+                                        {onOpenBugReport ? (
+                                            <button
+                                                onClick={() => {
+                                                    onOpenBugReport();
+                                                    setShowMoreMenu(false);
+                                                }}
+                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
+                                                    ? "text-black/75 hover:bg-[#E1E3E6]"
+                                                    : "text-white/85 hover:bg-[#F2F3F5]/5"
+                                                    }`}
+                                                type="button"
+                                            >
+                                                <BugReportIcon
+                                                    isLight={isLight}
+                                                    className="w-4 h-4 opacity-90"
+                                                />
+                                                <span>Report a problem</span>
+                                            </button>
+                                        ) : null}
+
                                         {showAIHost && onOpenAIHost ? (
                                             <button
                                                 onClick={() => {
@@ -297,12 +353,12 @@ export function LiveKitBottomBar(props: {
                                                     setShowMoreMenu(false);
                                                 }}
                                                 className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${aiHostOpen
-                                                        ? isLight
-                                                            ? "bg-[#1B1B1B] text-white"
-                                                            : "bg-[#1B1B1B] text-white"
-                                                        : isLight
-                                                            ? "text-black/75 hover:bg-[#E1E3E6]"
-                                                            : "text-white/85 hover:bg-[#F2F3F5]/5"
+                                                    ? isLight
+                                                        ? "bg-[#1B1B1B] text-white"
+                                                        : "bg-[#1B1B1B] text-white"
+                                                    : isLight
+                                                        ? "text-black/75 hover:bg-[#E1E3E6]"
+                                                        : "text-white/85 hover:bg-[#F2F3F5]/5"
                                                     }`}
                                                 type="button"
                                             >
@@ -323,8 +379,8 @@ export function LiveKitBottomBar(props: {
                                                     setShowMoreMenu(false);
                                                 }}
                                                 className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
-                                                        ? "text-black/75 hover:bg-[#E1E3E6]"
-                                                        : "text-white/85 hover:bg-[#F2F3F5]/5"
+                                                    ? "text-black/75 hover:bg-[#E1E3E6]"
+                                                    : "text-white/85 hover:bg-[#F2F3F5]/5"
                                                     }`}
                                                 type="button"
                                             >
@@ -342,8 +398,8 @@ export function LiveKitBottomBar(props: {
                                                 setShowMoreMenu(false);
                                             }}
                                             className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
-                                                    ? "text-black/75 hover:bg-[#E1E3E6]"
-                                                    : "text-white/85 hover:bg-[#F2F3F5]/5"
+                                                ? "text-black/75 hover:bg-[#E1E3E6]"
+                                                : "text-white/85 hover:bg-[#F2F3F5]/5"
                                                 }`}
                                             type="button"
                                         >
@@ -361,8 +417,8 @@ export function LiveKitBottomBar(props: {
                                                 setShowMoreMenu(false);
                                             }}
                                             className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
-                                                    ? "text-black/75 hover:bg-[#E1E3E6]"
-                                                    : "text-white/85 hover:bg-[#F2F3F5]/5"
+                                                ? "text-black/75 hover:bg-[#E1E3E6]"
+                                                : "text-white/85 hover:bg-[#F2F3F5]/5"
                                                 }`}
                                             type="button"
                                         >
@@ -392,8 +448,8 @@ export function LiveKitBottomBar(props: {
                                                 setShowMoreMenu(false);
                                             }}
                                             className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
-                                                    ? "text-black/75 hover:bg-[#E1E3E6]"
-                                                    : "text-white/85 hover:bg-[#F2F3F5]/5"
+                                                ? "text-black/75 hover:bg-[#E1E3E6]"
+                                                : "text-white/85 hover:bg-[#F2F3F5]/5"
                                                 }`}
                                             type="button"
                                         >
@@ -417,8 +473,8 @@ export function LiveKitBottomBar(props: {
                                                 setShowMoreMenu(false);
                                             }}
                                             className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
-                                                    ? "text-black/75 hover:bg-[#E1E3E6]"
-                                                    : "text-white/85 hover:bg-[#F2F3F5]/5"
+                                                ? "text-black/75 hover:bg-[#E1E3E6]"
+                                                : "text-white/85 hover:bg-[#F2F3F5]/5"
                                                 }`}
                                             type="button"
                                         >
@@ -437,12 +493,12 @@ export function LiveKitBottomBar(props: {
                                                     setShowMoreMenu(false);
                                                 }}
                                                 className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${pipActive
-                                                        ? isLight
-                                                            ? "bg-[#1B1B1B] text-white"
-                                                            : "bg-[#1B1B1B] text-white"
-                                                        : isLight
-                                                            ? "text-black/75 hover:bg-[#E1E3E6]"
-                                                            : "text-white/85 hover:bg-[#F2F3F5]/5"
+                                                    ? isLight
+                                                        ? "bg-[#1B1B1B] text-white"
+                                                        : "bg-[#1B1B1B] text-white"
+                                                    : isLight
+                                                        ? "text-black/75 hover:bg-[#E1E3E6]"
+                                                        : "text-white/85 hover:bg-[#F2F3F5]/5"
                                                     }`}
                                                 type="button"
                                             >
@@ -460,6 +516,7 @@ export function LiveKitBottomBar(props: {
                         </div>
 
                         <div className="hidden md:flex items-center gap-2">
+                            {bugReportDesktopBtn}
                             {aiHostDesktopBtn}
                             {layoutDesktopBtn}
 
@@ -567,8 +624,8 @@ export function LiveKitBottomBar(props: {
                             {showReactionsMenu && (
                                 <div
                                     className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex items-center gap-2 text-[26px] shadow-xl whitespace-nowrap ${isLight
-                                            ? "bg-[#F3F1F1] border border-[#D8D0D0]"
-                                            : "bg-[#1B1B1B] border border-transparent"
+                                        ? "bg-[#F3F1F1] border border-[#D8D0D0]"
+                                        : "bg-[#1B1B1B] border border-transparent"
                                         }`}
                                 >
                                     {REACTION_MENU_ITEMS.map((t) => (

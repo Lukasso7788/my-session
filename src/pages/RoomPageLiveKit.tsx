@@ -40,6 +40,7 @@ import { getPaywallDecision } from "../lib/paywall";
 import { getCurrentUserActiveBan, type ActiveBan } from "../lib/bans";
 import PaywallModal from "../components/PaywallModal";
 import ActiveBanModal from "../components/ActiveBanModal";
+import BugReportModal from "../components/BugReportModal";
 import { PAYWALL_ENABLED } from "../lib/flags";
 
 import ChatPanel from "../components/ChatPanel";
@@ -4736,6 +4737,7 @@ export function RoomPageLiveKit({
   const [fxApplying, setFxApplying] = useState(false);
   const [fxStatusText, setFxStatusText] = useState<string>("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [bugReportOpen, setBugReportOpen] = useState(false);
   const [settingsPreviewVersion, setSettingsPreviewVersion] = useState(0);
   const [blurStrength, setBlurStrength] = useState<number>(12);
   const firefoxSafeFx = useMemo(() => isFirefoxLike(), []);
@@ -11500,6 +11502,16 @@ export function RoomPageLiveKit({
           showAIHost={aiHostedEnabled}
           aiHostOpen={aiHostInputOpen}
           onOpenAIHost={() => setAiHostInputOpen(true)}
+        />
+
+        <BugReportModal
+          open={bugReportOpen}
+          theme={theme}
+          isLight={isLight}
+          onClose={() => setBugReportOpen(false)}
+          sessionId={session?.id || null}
+          roomName={session?.title || session?.id || null}
+          userId={authUserId || null}
         />
 
         <RoomSettingsModalLiveKit
