@@ -11498,6 +11498,7 @@ export function RoomPageLiveKit({
             setSettingsOpen(true);
             setSettingsPreviewVersion((v) => v + 1);
           }}
+          onOpenBugReport={() => setBugReportOpen(true)}
           onSendReaction={sendReaction}
           showAIHost={aiHostedEnabled}
           aiHostOpen={aiHostInputOpen}
