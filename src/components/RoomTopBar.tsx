@@ -71,11 +71,11 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         : "bg-[#1B1B1B] border border-[#252525]";
 
     const strongText = isLight ? "text-black/85" : "text-[#F1F1F1]/90";
-
     const mutedText = isLight ? "text-black/65" : "text-white/80";
 
     const switchTrack =
         "w-[84px] max-[480px]:w-[78px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
+
     const switchTrackCls = isLight
         ? "bg-[#E1E3E6] border-[#CFCFCF] hover:bg-[#E0E0E0]"
         : "bg-white/5 border-[#2B2B2B] hover:bg-[#F2F3F5]/10";
@@ -88,6 +88,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
     const showTimer = !isSilentRoom && stages.length > 0 && !!stagebarStartTime;
     const showStageBar =
         !isSilentRoom && stages.length > 0 && !!stagebarStartTime;
+
     const showEditTimeline =
         showStageBar && !!canEditTimeline && typeof onEditTimeline === "function";
 
@@ -97,7 +98,6 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         >
             <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4 overflow-visible">
                 <div className="flex flex-col gap-2 max-[480px]:gap-2 overflow-visible">
-                    {/* row 1 */}
                     <div className="relative z-10 flex items-center justify-between gap-3">
                         <div className="min-w-0">
                             <div className="flex items-center gap-2 min-w-0">
@@ -120,7 +120,6 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                             </div>
                         </div>
 
-                        {/* desktop */}
                         <div className="relative z-10 hidden min-[481px]:flex items-center gap-2 shrink-0">
                             {showTimer && (
                                 <div
@@ -182,7 +181,6 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                         </div>
                     </div>
 
-                    {/* row 2 mobile */}
                     <div className="relative z-10 min-[481px]:hidden flex items-center justify-start gap-2">
                         {showTimer && (
                             <div
@@ -238,7 +236,6 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                         )}
                     </div>
 
-                    {/* row 3 stage bar */}
                     {showStageBar && (
                         <div className="relative z-30 mt-1 max-[480px]:mt-1 w-full overflow-visible pt-1">
                             <div className="group relative z-30 overflow-visible">
@@ -275,3 +272,4 @@ export default function RoomTopBar(props: RoomTopBarProps) {
             </div>
         </div>
     );
+}
