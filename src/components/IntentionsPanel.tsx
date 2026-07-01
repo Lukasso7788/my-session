@@ -534,6 +534,15 @@ export function IntentionsPanel({
     if (!user?.id) return;
     void loadPanelIntentions();
 
+    const onExternalIntentionsUpdated = () => {
+      void loadPanelIntentions();
+    };
+
+    window.addEventListener(
+      "mysession:intentions-updated",
+      onExternalIntentionsUpdated,
+    );
+
     const ch = supabase
       .channel(`panel_intentions_${user.id}`)
       .on(
@@ -549,6 +558,10 @@ export function IntentionsPanel({
       .subscribe();
 
     return () => {
+      window.removeEventListener(
+        "mysession:intentions-updated",
+        onExternalIntentionsUpdated,
+      );
       supabase.removeChannel(ch);
     };
   }, [user?.id, loadPanelIntentions]);

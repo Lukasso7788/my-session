@@ -634,7 +634,7 @@ function VideoTileInner({
                 />
             </div>
 
-            {safeCurrentIntention ? (
+            {safeCurrentIntention && !isLocal ? (
                 <div
                     className={[
                         "pointer-events-none absolute z-[13] translate-y-1 rounded-2xl border px-3 py-2 opacity-0 shadow-lg backdrop-blur-xl transition duration-150 group-hover:translate-y-0 group-hover:opacity-100",
@@ -647,10 +647,16 @@ function VideoTileInner({
                     ].join(" ")}
                     title={safeCurrentIntention}
                 >
-                    <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] opacity-60">
-                        Current intention
+                    <div className="mb-1 flex items-center gap-1.5 font-inter text-[11px] font-bold leading-none opacity-70">
+                        <Icon
+                            name="intentions"
+                            theme={hasCameraOn || !isLight ? "dark" : "light"}
+                            className="h-3.5 w-3.5 opacity-90"
+                            alt=""
+                        />
+                        <span>Current intention</span>
                     </div>
-                    <div className="line-clamp-3 text-[12px] font-semibold leading-4">
+                    <div className="line-clamp-3 font-inter text-[12px] font-normal leading-4">
                         {safeCurrentIntention}
                     </div>
                 </div>

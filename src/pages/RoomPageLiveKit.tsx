@@ -2573,8 +2573,49 @@ function AccountabilityWall({
     : "border-[#2B2B2B] bg-[#1B1B1B] text-white";
   const mutedText = isLight ? "text-black/55" : "text-white/55";
   const taskIconSrc = isLight
-    ? "/icons/accountability-wall-light.svg"
-    : "/icons/accountability-wall-dark.svg";
+    ? "/icons/intentions-light.svg"
+    : "/icons/intentions-dark.svg";
+
+  const syncOwnWallTaskToPanelIntentions = async (args: {
+    userId: string;
+    text: string;
+    completed?: boolean;
+  }) => {
+    const userId = String(args.userId || "").trim();
+    const text = String(args.text || "").trim();
+    if (!userId || !text) return;
+
+    try {
+      const { data: existingRows } = await supabase
+        .from("panel_intentions")
+        .select("id,text,user_id,completed,visibility")
+        .eq("user_id", userId)
+        .ilike("text", text)
+        .limit(1);
+
+      const existing = Array.isArray(existingRows) ? existingRows[0] : null;
+      if (existing?.id) {
+        await supabase
+          .from("panel_intentions")
+          .update({
+            completed: typeof args.completed === "boolean" ? args.completed : Boolean(existing.completed),
+            visibility: "public",
+          } as any)
+          .eq("id", existing.id)
+          .eq("user_id", userId);
+        return;
+      }
+
+      await supabase.from("panel_intentions").insert({
+        user_id: userId,
+        text,
+        completed: typeof args.completed === "boolean" ? args.completed : false,
+        visibility: "public",
+      } as any);
+    } catch (e) {
+      console.warn("syncOwnWallTaskToPanelIntentions failed:", e);
+    }
+  };
 
   const addOwnWallTask = async () => {
     const uid = String(authUserId || "").trim();
@@ -2615,6 +2656,18 @@ function AccountabilityWall({
       setIntentions((prev) =>
         [data as AccountabilityWallIntention, ...prev.filter((x) => x.id !== optimisticId)].slice(0, 160),
       );
+
+      void syncOwnWallTaskToPanelIntentions({
+        userId: uid,
+        text,
+        completed: false,
+      });
+
+      try {
+        window.dispatchEvent(new CustomEvent("mysession:intentions-updated"));
+      } catch {
+        // best effort only
+      }
     } catch (e) {
       console.warn("addOwnWallTask failed:", e);
       setIntentions((prev) => prev.filter((x) => x.id !== optimisticId));
@@ -2644,6 +2697,18 @@ function AccountabilityWall({
         .eq("session_id", sid);
 
       if (error) throw error;
+
+      void syncOwnWallTaskToPanelIntentions({
+        userId: uid,
+        text: item.text,
+        completed: nextCompleted,
+      });
+
+      try {
+        window.dispatchEvent(new CustomEvent("mysession:intentions-updated"));
+      } catch {
+        // best effort only
+      }
     } catch (e) {
       console.warn("toggleOwnWallTask failed:", e);
       void loadIntentions();
@@ -10958,8 +11023,7 @@ export function RoomPageLiveKit({
                             ) : null}
                           </div>
                           <div
-                            className={`text-[11px] truncate ${true ? "text-black/45" : "text-black/45"
-                              }`}
+                            className={`text-[11px] truncate ${isLight ? "text-black/55" : "text-white/55"}`}
                           >
                             {roleText}
                           </div>
@@ -11181,7 +11245,7 @@ export function RoomPageLiveKit({
                   <div
                     className={
                       "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[10px] " +
-                      (true ? "text-black/45" : "text-black/45")
+                      (isLight ? "text-black/55" : "text-white/55")
                     }
                   >
                     ▾
@@ -11455,7 +11519,7 @@ export function RoomPageLiveKit({
             </button>
 
             <div
-              className={`mt-3 text-[12px] ${true ? "text-black/45" : "text-black/45"}`}
+              className={`mt-3 text-[12px] ${isLight ? "text-black/55" : "text-white/55"}`}
             >
               Return to the sessions page to book or join another session.
             </div>
@@ -11872,7 +11936,7 @@ export function RoomPageLiveKit({
 
                     {frozenLocalVideoFrame ? (
                       <div
-                        className={`mt-3 text-[11px] ${true ? "text-black/45" : "text-black/45"}`}
+                        className={`mt-3 text-[11px] ${isLight ? "text-black/55" : "text-white/55"}`}
                       >
                         Showing your last video frame while media restores.
                       </div>
@@ -11991,7 +12055,7 @@ export function RoomPageLiveKit({
 
                     {remoteAudioBlockedReason ? (
                       <div
-                        className={`mt-2 text-[11px] break-words ${true ? "text-black/45" : "text-black/45"}`}
+                        className={`mt-2 text-[11px] break-words ${isLight ? "text-black/55" : "text-white/55"}`}
                       >
                         {remoteAudioBlockedReason}
                       </div>
@@ -12571,7 +12635,7 @@ export function RoomPageLiveKit({
                         />
 
                         <div
-                          className={`px-4 py-2 text-[11px] ${true ? "text-black/45" : "text-black/45"}`}
+                          className={`px-4 py-2 text-[11px] ${isLight ? "text-black/55" : "text-white/55"}`}
                         >
                           Roles
                         </div>
@@ -12618,7 +12682,7 @@ export function RoomPageLiveKit({
                           />
 
                           <div
-                            className={`px-4 py-2 text-[11px] ${true ? "text-black/45" : "text-black/45"}`}
+                            className={`px-4 py-2 font-inter text-[12px] font-bold ${isLight ? "text-black/55" : "text-white/55"}`}
                           >
                             Participant actions
                           </div>
@@ -12826,7 +12890,7 @@ export function RoomPageLiveKit({
                         />
 
                         <div
-                          className={`px-4 py-2 text-[11px] ${true ? "text-black/45" : "text-black/45"}`}
+                          className={`px-4 py-2 font-inter text-[12px] font-bold ${isLight ? "text-black/55" : "text-white/55"}`}
                         >
                           Status
                         </div>
@@ -12963,7 +13027,7 @@ export function RoomPageLiveKit({
                         />
 
                         <div
-                          className={`px-4 py-2 text-[11px] ${true ? "text-black/45" : "text-black/45"}`}
+                          className={`px-4 py-2 text-[11px] ${isLight ? "text-black/55" : "text-white/55"}`}
                         >
                           Remote audio for everyone
                         </div>
