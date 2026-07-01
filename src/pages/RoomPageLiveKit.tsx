@@ -190,6 +190,7 @@ type SessionRoleAssignmentRow = {
 
 type RightPanelTab = "participants" | "chat" | "intentions" | null;
 type PiPMode = "focus" | "gallery";
+type RoomMainViewMode = "video" | "accountability";
 
 type FloatingReaction = {
   id: number;
@@ -2378,8 +2379,8 @@ function RoomAuthModal({
         {error ? (
           <div
             className={`mt-4 rounded-2xl border px-4 py-3 text-[13px] leading-5 ${isLight
-                ? "border-red-200 bg-red-50 text-red-700"
-                : "border-red-500/20 bg-red-500/10 text-red-200"
+              ? "border-red-200 bg-red-50 text-red-700"
+              : "border-red-500/20 bg-red-500/10 text-red-200"
               }`}
           >
             {error}
@@ -2389,8 +2390,8 @@ function RoomAuthModal({
         {message ? (
           <div
             className={`mt-4 rounded-2xl border px-4 py-3 text-[13px] leading-5 ${isLight
-                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                : "border-emerald-500/20 bg-[#81DB86]/10 text-emerald-200"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-emerald-500/20 bg-[#81DB86]/10 text-emerald-200"
               }`}
           >
             {message}
@@ -2402,6 +2403,317 @@ function RoomAuthModal({
           continue automatically after sign-in.
         </div>
       </div>
+    </div>
+  );
+}
+
+
+type AccountabilityWallIntention = {
+  id: string;
+  text: string;
+  user_id: string;
+  session_id: string;
+  created_at?: string | null;
+  completed?: boolean | null;
+  profiles?: {
+    full_name?: string | null;
+    avatar_url?: string | null;
+  } | null;
+};
+
+function getTilePersonKey(tile: TileModel) {
+  const userId = String(tile.participantUserId || "")
+    .trim()
+    .toLowerCase();
+  if (userId) return userId;
+
+  const identityBase = extractBaseUserIdFromIdentity(
+    String(tile.participantIdentity || ""),
+  )
+    .trim()
+    .toLowerCase();
+  if (identityBase) return identityBase;
+
+  return String(tile.id || "").trim().toLowerCase();
+}
+
+function AccountabilityWall({
+  sessionId,
+  tiles,
+  profilesById,
+  authUserId,
+  theme,
+  isLight,
+  onOpenIntentions,
+}: {
+  sessionId?: string | null;
+  tiles: TileModel[];
+  profilesById: Record<string, HostProfile>;
+  authUserId?: string | null;
+  theme: RoomTheme;
+  isLight: boolean;
+  onOpenIntentions: () => void;
+}) {
+  const [intentions, setIntentions] = useState<AccountabilityWallIntention[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const loadIntentions = useCallback(async () => {
+    const sid = String(sessionId || "").trim();
+    if (!sid) {
+      setIntentions([]);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const { data, error } = await supabase
+        .from("intentions")
+        .select("id,text,user_id,session_id,created_at,completed")
+        .eq("session_id", sid)
+        .order("created_at", { ascending: false })
+        .limit(160);
+
+      if (error || !Array.isArray(data)) {
+        setIntentions([]);
+        return;
+      }
+
+      const rows = data as AccountabilityWallIntention[];
+      const userIds = Array.from(
+        new Set(rows.map((r) => String(r.user_id || "").trim()).filter(Boolean)),
+      );
+
+      let profileMap = new Map<string, HostProfile>();
+      if (userIds.length) {
+        try {
+          const { data: profiles } = await supabase
+            .from("profiles")
+            .select("id,full_name,avatar_url,bio")
+            .in("id", userIds);
+
+          if (Array.isArray(profiles)) {
+            profileMap = new Map(
+              profiles.map((p: any) => [String(p.id || "").toLowerCase(), p as HostProfile]),
+            );
+          }
+        } catch {
+          // best effort only
+        }
+      }
+
+      setIntentions(
+        rows.map((row) => ({
+          ...row,
+          profiles: profileMap.get(String(row.user_id || "").toLowerCase()) || null,
+        })),
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    void loadIntentions();
+  }, [loadIntentions]);
+
+  useEffect(() => {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return;
+
+    const ch = supabase
+      .channel(`accountability-wall-intentions:${sid}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "intentions", filter: `session_id=eq.${sid}` },
+        () => void loadIntentions(),
+      )
+      .subscribe();
+
+    return () => {
+      safeRemoveRealtimeChannel(ch);
+    };
+  }, [sessionId, loadIntentions]);
+
+  const participantTiles = useMemo(() => {
+    const out: TileModel[] = [];
+    const seen = new Set<string>();
+
+    for (const tile of tiles || []) {
+      if (tile.kind === "screen") continue;
+      const key = getTilePersonKey(tile);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(tile);
+    }
+
+    return out;
+  }, [tiles]);
+
+  const intentionsByUserId = useMemo(() => {
+    const map = new Map<string, AccountabilityWallIntention[]>();
+
+    for (const item of intentions || []) {
+      const userId = String(item.user_id || "").trim().toLowerCase();
+      if (!userId) continue;
+      const list = map.get(userId) || [];
+      list.push(item);
+      map.set(userId, list);
+    }
+
+    return map;
+  }, [intentions]);
+
+  const cardBg = isLight
+    ? "border-[#D8D0D0] bg-[#F7F5F5] text-black"
+    : "border-[#2B2B2B] bg-[#1B1B1B] text-white";
+  const mutedText = isLight ? "text-black/50" : "text-white/50";
+
+  return (
+    <div className="h-full w-full min-h-0 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className={`text-[12px] font-bold uppercase tracking-[0.16em] ${mutedText}`}>
+            Accountability Wall
+          </div>
+          <div className={`mt-1 text-[14px] ${mutedText}`}>
+            Everyone’s current intentions, visible while you work.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenIntentions}
+          className={[
+            "rounded-2xl px-4 py-2 text-[13px] font-bold transition",
+            isLight
+              ? "bg-[#242424] text-white hover:bg-[#303030]"
+              : "bg-[#81DB86] text-black hover:brightness-95",
+          ].join(" ")}
+        >
+          Add / edit intentions
+        </button>
+      </div>
+
+      {participantTiles.length === 0 ? (
+        <div
+          className={[
+            "flex min-h-[260px] items-center justify-center rounded-[28px] border text-[14px]",
+            cardBg,
+          ].join(" ")}
+        >
+          No participants yet
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {participantTiles.map((tile) => {
+            const userId = getTilePersonKey(tile);
+            const profile =
+              profilesById[userId] ||
+              profilesById[String(tile.participantIdentity || "").toLowerCase()] ||
+              null;
+            const name =
+              String(tile.metadataDisplayName || profile?.full_name || tile.label || "Participant").trim() ||
+              "Participant";
+            const avatarUrl = String(profile?.avatar_url || "").trim();
+            const userIntentions = (intentionsByUserId.get(userId) || []).slice(0, 4);
+            const activeCount = userIntentions.filter((x) => !x.completed).length;
+            const completedCount = userIntentions.filter((x) => !!x.completed).length;
+            const isLocalCard = String(userId).toLowerCase() === String(authUserId || "").toLowerCase();
+
+            return (
+              <div
+                key={`accountability-${tile.id}`}
+                className={[
+                  "min-h-[220px] rounded-[28px] border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg",
+                  cardBg,
+                ].join(" ")}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    {avatarUrl ? (
+                      <img
+                        src={avatarUrl}
+                        alt=""
+                        className="h-12 w-12 shrink-0 rounded-2xl object-cover"
+                      />
+                    ) : (
+                      <div
+                        className={[
+                          "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-[16px] font-black",
+                          isLight ? "bg-black/5 text-black/75" : "bg-white/10 text-white/85",
+                        ].join(" ")}
+                      >
+                        {getInitials(name)}
+                      </div>
+                    )}
+
+                    <div className="min-w-0">
+                      <div className="truncate text-[15px] font-black leading-tight">
+                        {name}
+                      </div>
+                      <div className={`mt-1 text-[12px] ${mutedText}`}>
+                        {tile.status ? getStatusLabel(tile.status) || tile.status : tile.isLocal ? "You" : "In room"}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className={[
+                      "shrink-0 rounded-2xl px-2.5 py-1 text-[11px] font-bold",
+                      activeCount > 0
+                        ? "bg-[#81DB86]/20 text-[#2FA84F]"
+                        : isLight
+                          ? "bg-black/5 text-black/45"
+                          : "bg-white/10 text-white/45",
+                    ].join(" ")}
+                  >
+                    {activeCount > 0 ? `${activeCount} active` : completedCount > 0 ? "Done" : "No task"}
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-2">
+                  {loading && !userIntentions.length ? (
+                    <div className={`rounded-2xl border border-dashed px-4 py-3 text-[13px] ${mutedText}`}>
+                      Loading intentions…
+                    </div>
+                  ) : userIntentions.length ? (
+                    userIntentions.map((item) => (
+                      <div
+                        key={item.id}
+                        className={[
+                          "rounded-2xl border px-3 py-3 text-[14px] leading-5",
+                          item.completed
+                            ? isLight
+                              ? "border-black/10 bg-black/[0.02] text-black/35 line-through"
+                              : "border-white/10 bg-white/[0.04] text-white/35 line-through"
+                            : isLight
+                              ? "border-[#CFC6C6] bg-white text-black/85"
+                              : "border-white/10 bg-white/[0.06] text-white/90",
+                        ].join(" ")}
+                      >
+                        {item.text}
+                      </div>
+                    ))
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={onOpenIntentions}
+                      className={[
+                        "w-full rounded-2xl border border-dashed px-4 py-4 text-left text-[14px] transition",
+                        isLight
+                          ? "border-black/15 text-black/45 hover:bg-black/[0.03]"
+                          : "border-white/15 text-white/45 hover:bg-white/[0.05]",
+                      ].join(" ")}
+                    >
+                      No intention yet{isLocalCard ? " — add yours" : ""}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -4738,6 +5050,8 @@ export function RoomPageLiveKit({
   const [fxStatusText, setFxStatusText] = useState<string>("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [bugReportOpen, setBugReportOpen] = useState(false);
+  const [mainViewMode, setMainViewMode] =
+    useState<RoomMainViewMode>("video");
   const [settingsPreviewVersion, setSettingsPreviewVersion] = useState(0);
   const [blurStrength, setBlurStrength] = useState<number>(12);
   const firefoxSafeFx = useMemo(() => isFirefoxLike(), []);
@@ -9574,6 +9888,7 @@ export function RoomPageLiveKit({
             micMuted={micMuted}
             mirrorVideo={t.isLocal ? previewMirrored : false}
             audioLevel={t.audioLevel || 0}
+            currentIntention={getCurrentIntentionForTile(t)}
             onToggleMenu={(tileId, anchorEl) => {
               if (!anchorEl) return;
 
@@ -9669,6 +9984,7 @@ export function RoomPageLiveKit({
           micMuted={micMuted}
           mirrorVideo={t.isLocal ? previewMirrored : false}
           audioLevel={t.audioLevel || 0}
+          currentIntention={getCurrentIntentionForTile(t)}
           density="compact"
           onToggleMenu={(tileId, anchorEl) => {
             if (!anchorEl) return;
@@ -9752,6 +10068,73 @@ export function RoomPageLiveKit({
 
     return allTilesForRender;
   }, [allTilesForRender, activeScreenShareTile, screenSharePinned]);
+
+  const [tileIntentionsByUserId, setTileIntentionsByUserId] = useState<Record<string, string>>({});
+
+  const loadTileIntentions = useCallback(async () => {
+    const sid = String(session?.id || "").trim();
+    if (!sid) {
+      setTileIntentionsByUserId({});
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from("intentions")
+        .select("id,text,user_id,session_id,created_at,completed")
+        .eq("session_id", sid)
+        .eq("completed", false)
+        .order("created_at", { ascending: false })
+        .limit(160);
+
+      if (error || !Array.isArray(data)) {
+        setTileIntentionsByUserId({});
+        return;
+      }
+
+      const next: Record<string, string> = {};
+      for (const row of data as any[]) {
+        const userId = String(row?.user_id || "").trim().toLowerCase();
+        const text = String(row?.text || "").trim();
+        if (!userId || !text || next[userId]) continue;
+        next[userId] = text;
+      }
+
+      setTileIntentionsByUserId(next);
+    } catch {
+      setTileIntentionsByUserId({});
+    }
+  }, [session?.id]);
+
+  useEffect(() => {
+    void loadTileIntentions();
+  }, [loadTileIntentions]);
+
+  useEffect(() => {
+    const sid = String(session?.id || "").trim();
+    if (!sid) return;
+
+    const ch = supabase
+      .channel(`tile-intentions:${sid}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "intentions", filter: `session_id=eq.${sid}` },
+        () => void loadTileIntentions(),
+      )
+      .subscribe();
+
+    return () => {
+      safeRemoveRealtimeChannel(ch);
+    };
+  }, [session?.id, loadTileIntentions]);
+
+  const getCurrentIntentionForTile = useCallback(
+    (tile: TileModel) => {
+      const userId = getTilePersonKey(tile);
+      return tileIntentionsByUserId[userId] || "";
+    },
+    [tileIntentionsByUserId],
+  );
 
   const pinnedParticipantTile = useMemo(() => {
     if (!pinnedTileId) return null;
@@ -9868,7 +10251,17 @@ export function RoomPageLiveKit({
     );
   };
 
-  const videoLayout = useFeaturedLayout ? (
+  const videoLayout = mainViewMode === "accountability" ? (
+    <AccountabilityWall
+      sessionId={session?.id || null}
+      tiles={layoutTilesForRender}
+      profilesById={profilesById}
+      authUserId={authUserId || null}
+      theme={theme}
+      isLight={isLight}
+      onOpenIntentions={() => openRightTab("intentions")}
+    />
+  ) : useFeaturedLayout ? (
     <div
       className="h-full w-full min-w-0 min-h-0 grid gap-2 sm:gap-3 p-2 sm:p-3 overflow-hidden"
       style={{
@@ -9888,8 +10281,8 @@ export function RoomPageLiveKit({
         {sidebarTiles.length === 0 ? (
           <div
             className={`min-h-[160px] rounded-2xl border flex items-center justify-center ${isLight
-                ? "border-[#CFCFCF] bg-[#E6E6E6] text-black/50"
-                : "border-[#2B2B2B] bg-[#242424] text-white/55"
+              ? "border-[#CFCFCF] bg-[#E6E6E6] text-black/50"
+              : "border-[#2B2B2B] bg-[#242424] text-white/55"
               }`}
           >
             No other participants
@@ -9975,7 +10368,7 @@ export function RoomPageLiveKit({
 
   const videoContent = (
     <div className="w-full h-full min-w-0 min-h-0 relative overflow-hidden">
-      {showMobileLayoutControls && showMobileLayoutSwitcher ? (
+      {mainViewMode !== "accountability" && showMobileLayoutControls && showMobileLayoutSwitcher ? (
         <div className="absolute right-2 top-2 z-20 flex items-center gap-1.5 rounded-2xl p-1 backdrop-blur-xl pointer-events-auto">
           <MobileLayoutButton
             mode="auto"
@@ -10249,8 +10642,8 @@ export function RoomPageLiveKit({
               <button
                 onClick={openEditName}
                 className={`px-3 h-9 rounded-xl text-[12px] font-semibold border transition ${true
-                    ? "bg-[#1B1B1B] border-[#1B1B1B] hover:bg-[#242424] text-white"
-                    : "bg-[#1B1B1B] border-[#1B1B1B] hover:bg-[#242424] text-white"
+                  ? "bg-[#1B1B1B] border-[#1B1B1B] hover:bg-[#242424] text-white"
+                  : "bg-[#1B1B1B] border-[#1B1B1B] hover:bg-[#242424] text-white"
                   }`}
                 title="Edit my name"
               >
@@ -10260,8 +10653,8 @@ export function RoomPageLiveKit({
               <button
                 onClick={() => openRightTab(null)}
                 className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${true
-                    ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
-                    : "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
+                  ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
+                  : "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
                   }`}
                 title="Close"
               >
@@ -10273,8 +10666,8 @@ export function RoomPageLiveKit({
           <div className="p-4">
             <div
               className={`rounded-xl px-3 py-2 ${true
-                  ? "bg-[#E6E6E6] border border-[#CFCFCF]"
-                  : "bg-[#E6E6E6] border border-[#CFCFCF]"
+                ? "bg-[#E6E6E6] border border-[#CFCFCF]"
+                : "bg-[#E6E6E6] border border-[#CFCFCF]"
                 }`}
             >
               <input
@@ -10282,8 +10675,8 @@ export function RoomPageLiveKit({
                 onChange={(e) => setParticipantsSearch(e.target.value)}
                 placeholder="Search participants..."
                 className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${true
-                    ? "text-black/80 placeholder:text-black/40"
-                    : "text-black/80 placeholder:text-black/40"
+                  ? "text-black/80 placeholder:text-black/40"
+                  : "text-black/80 placeholder:text-black/40"
                   }`}
               />
             </div>
@@ -10354,8 +10747,8 @@ export function RoomPageLiveKit({
                         ) : (
                           <div
                             className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${true
-                                ? "bg-[#1B1B1B]/15 text-[#5286F6]"
-                                : "bg-[#1B1B1B]/15 text-[#5286F6]"
+                              ? "bg-[#1B1B1B]/15 text-[#5286F6]"
+                              : "bg-[#1B1B1B]/15 text-[#5286F6]"
                               }`}
                           >
                             {p.kind === "screen" ? "🖥️" : initials}
@@ -10373,24 +10766,24 @@ export function RoomPageLiveKit({
                               {statusLabel ? (
                                 <span
                                   className={`shrink-0 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${statusTone === "yellow"
+                                    ? isLight
+                                      ? "bg-yellow-100 text-yellow-800 border-yellow-300/60"
+                                      : "bg-yellow-400/15 text-yellow-200 border-yellow-300/25"
+                                    : statusTone === "purple"
                                       ? isLight
-                                        ? "bg-yellow-100 text-yellow-800 border-yellow-300/60"
-                                        : "bg-yellow-400/15 text-yellow-200 border-yellow-300/25"
-                                      : statusTone === "purple"
+                                        ? "bg-purple-100 text-purple-800 border-purple-300/60"
+                                        : "bg-purple-400/15 text-purple-200 border-purple-300/25"
+                                      : statusTone === "blue"
                                         ? isLight
-                                          ? "bg-purple-100 text-purple-800 border-purple-300/60"
-                                          : "bg-purple-400/15 text-purple-200 border-purple-300/25"
-                                        : statusTone === "blue"
+                                          ? "bg-blue-100 text-blue-800 border-blue-300/60"
+                                          : "bg-blue-400/15 text-blue-200 border-blue-300/25"
+                                        : statusTone === "orange"
                                           ? isLight
-                                            ? "bg-blue-100 text-blue-800 border-blue-300/60"
-                                            : "bg-blue-400/15 text-blue-200 border-blue-300/25"
-                                          : statusTone === "orange"
-                                            ? isLight
-                                              ? "bg-orange-100 text-orange-800 border-orange-300/60"
-                                              : "bg-orange-400/15 text-orange-200 border-orange-300/25"
-                                            : isLight
-                                              ? "bg-neutral-100 text-neutral-700 border-neutral-300/60"
-                                              : "bg-[#303030] text-white/80 border-[#2B2B2B]"
+                                            ? "bg-orange-100 text-orange-800 border-orange-300/60"
+                                            : "bg-orange-400/15 text-orange-200 border-orange-300/25"
+                                          : isLight
+                                            ? "bg-neutral-100 text-neutral-700 border-neutral-300/60"
+                                            : "bg-[#303030] text-white/80 border-[#2B2B2B]"
                                     }`}
                                   title={statusLabel}
                                 >
@@ -10429,8 +10822,8 @@ export function RoomPageLiveKit({
                                 setScreenSharePinned(!isThisPinnedScreen);
                               }}
                               className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${true
-                                  ? "border-[#CFCFCF] bg-[#F3F3F3] hover:bg-[#E8E8E8] text-black/80"
-                                  : "border-[#CFCFCF] bg-[#F3F3F3] hover:bg-[#E8E8E8] text-black/80"
+                                ? "border-[#CFCFCF] bg-[#F3F3F3] hover:bg-[#E8E8E8] text-black/80"
+                                : "border-[#CFCFCF] bg-[#F3F3F3] hover:bg-[#E8E8E8] text-black/80"
                                 }`}
                               title={
                                 screenSharePinned &&
@@ -10458,8 +10851,8 @@ export function RoomPageLiveKit({
                             <button
                               onClick={() => togglePin(p.id)}
                               className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${true
-                                  ? "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
-                                  : "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
+                                ? "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
+                                : "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
                                 }`}
                               title={isPinned ? "Unpin" : "Pin"}
                             >
@@ -10469,8 +10862,8 @@ export function RoomPageLiveKit({
                             <button
                               onClick={() => toggleHide(p.id)}
                               className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${true
-                                  ? "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
-                                  : "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
+                                ? "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
+                                : "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
                                 }`}
                               title={isHidden ? "Unhide" : "Hide"}
                             >
@@ -10500,8 +10893,8 @@ export function RoomPageLiveKit({
                 }
               }}
               className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight
-                  ? "bg-[#1B1B1B] hover:bg-[#242424] text-white"
-                  : "bg-[#1B1B1B] hover:bg-[#242424] text-white"
+                ? "bg-[#1B1B1B] hover:bg-[#242424] text-white"
+                : "bg-[#1B1B1B] hover:bg-[#242424] text-white"
                 }`}
             >
               <span className="text-lg">⎘</span>
@@ -10771,6 +11164,12 @@ export function RoomPageLiveKit({
                           );
                         });
                       }}
+                      accountabilityWallOpen={mainViewMode === "accountability"}
+                      onToggleAccountabilityWall={() => {
+                        setMainViewMode((v) =>
+                          v === "accountability" ? "video" : "accountability",
+                        );
+                      }}
                     />
                   ) : null}
                 </div>
@@ -10862,8 +11261,8 @@ export function RoomPageLiveKit({
         >
           <div
             className={`w-full max-w-[560px] rounded-[28px] border p-6 text-center shadow-2xl ${isLight
-                ? "border-[#CFCFCF] bg-[#F3F3F3] text-black"
-                : "border-[#2B2B2B] bg-[#242424] text-white"
+              ? "border-[#CFCFCF] bg-[#F3F3F3] text-black"
+              : "border-[#2B2B2B] bg-[#242424] text-white"
               }`}
           >
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/10 text-[24px]">
@@ -10889,8 +11288,8 @@ export function RoomPageLiveKit({
               type="button"
               onClick={() => navigate("/sessions", { replace: true })}
               className={`mt-6 h-11 rounded-full px-5 text-[14px] font-semibold transition ${isLight
-                  ? "bg-black text-white hover:bg-black/85"
-                  : "bg-[#F3F3F3] text-black hover:bg-[#F1F1F1]/90"
+                ? "bg-black text-white hover:bg-black/85"
+                : "bg-[#F3F3F3] text-black hover:bg-[#F1F1F1]/90"
                 }`}
             >
               Return to sessions
@@ -10975,8 +11374,8 @@ export function RoomPageLiveKit({
         >
           <div
             className={`w-full max-w-[560px] rounded-[28px] border p-6 text-center shadow-2xl ${isLight
-                ? "border-[#CFCFCF] bg-[#F3F3F3] text-black"
-                : "border-[#2B2B2B] bg-[#242424] text-white"
+              ? "border-[#CFCFCF] bg-[#F3F3F3] text-black"
+              : "border-[#2B2B2B] bg-[#242424] text-white"
               }`}
           >
             <div className="text-[22px] font-bold">
@@ -10997,8 +11396,8 @@ export function RoomPageLiveKit({
                 type="button"
                 onClick={() => navigate("/sessions", { replace: true })}
                 className={`mt-6 h-11 rounded-full px-5 text-[14px] font-semibold transition ${isLight
-                    ? "bg-black text-white hover:bg-black/85"
-                    : "bg-[#F3F3F3] text-black hover:bg-[#F1F1F1]/90"
+                  ? "bg-black text-white hover:bg-black/85"
+                  : "bg-[#F3F3F3] text-black hover:bg-[#F1F1F1]/90"
                   }`}
               >
                 Back to sessions
@@ -11270,8 +11669,8 @@ export function RoomPageLiveKit({
                 videoSizerRef(el);
               }}
               className={`ms-video-stage relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight
-                  ? "bg-[#F3F1F1] border border-[#D8D0D0]"
-                  : "bg-[#1B1B1B] border border-[#252525]"
+                ? "bg-[#F3F1F1] border border-[#D8D0D0]"
+                : "bg-[#1B1B1B] border border-[#252525]"
                 }`}
             >
               {videoContent}
@@ -11346,8 +11745,8 @@ export function RoomPageLiveKit({
                         scheduleRebuildTiles();
                       }}
                       className={`mt-2 h-9 w-full rounded-2xl text-[12px] font-semibold transition disabled:opacity-60 ${isLight
-                          ? "border border-[#CFCFCF] bg-black/[0.03] text-black/65 hover:bg-black/[0.06]"
-                          : "border border-[#2B2B2B] bg-[#252525] text-white/70 hover:bg-[#424242]"
+                        ? "border border-[#CFCFCF] bg-black/[0.03] text-black/65 hover:bg-black/[0.06]"
+                        : "border border-[#2B2B2B] bg-[#252525] text-white/70 hover:bg-[#424242]"
                         }`}
                     >
                       I can see/hear everything
@@ -11364,8 +11763,8 @@ export function RoomPageLiveKit({
               {mediaWarning && connected && (
                 <div
                   className={`rounded-2xl border px-3 py-2 text-sm ${isLight
-                      ? "border-amber-200 bg-amber-50 text-amber-800"
-                      : "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                    ? "border-amber-200 bg-amber-50 text-amber-800"
+                    : "border-amber-500/30 bg-amber-500/10 text-amber-200"
                     }`}
                 >
                   <div className="break-words">
@@ -11668,8 +12067,8 @@ export function RoomPageLiveKit({
         {settingsOpen && deviceError ? (
           <div
             className={`fixed left-1/2 top-[88px] z-[91] -translate-x-1/2 rounded-xl px-3 py-2 text-[12px] shadow-lg ${isLight
-                ? "bg-red-50 border border-red-200 text-red-700"
-                : "bg-red-500/10 border border-red-500/20 text-red-200"
+              ? "bg-red-50 border border-red-200 text-red-700"
+              : "bg-red-500/10 border border-red-500/20 text-red-200"
               }`}
           >
             {deviceError}
@@ -11686,8 +12085,8 @@ export function RoomPageLiveKit({
             />
             <div
               className={`relative w-[92%] max-w-[520px] rounded-2xl border shadow-2xl p-5 ${isLight
-                  ? "bg-[#F3F3F3] border-[#CFCFCF] text-black/85"
-                  : "bg-[#1B1B1B] border-[#2B2B2B] text-white/90"
+                ? "bg-[#F3F3F3] border-[#CFCFCF] text-black/85"
+                : "bg-[#1B1B1B] border-[#2B2B2B] text-white/90"
                 }`}
             >
               <div className="flex items-start justify-between gap-3">
@@ -11707,8 +12106,8 @@ export function RoomPageLiveKit({
                     type="button"
                     onClick={closeSystemNotice}
                     className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                        ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/70"
-                        : "bg-[#242424] hover:bg-[#303030] text-white/80"
+                      ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/70"
+                      : "bg-[#242424] hover:bg-[#303030] text-white/80"
                       }`}
                     title="Close"
                   >
@@ -11728,8 +12127,8 @@ export function RoomPageLiveKit({
                     }
                   }}
                   className={`px-4 h-10 rounded-xl font-semibold ${isLight
-                      ? "bg-[#1B1B1B] hover:bg-[#242424] text-white"
-                      : "bg-[#1B1B1B] hover:bg-[#242424] text-white"
+                    ? "bg-[#1B1B1B] hover:bg-[#242424] text-white"
+                    : "bg-[#1B1B1B] hover:bg-[#242424] text-white"
                     }`}
                 >
                   OK
@@ -11767,8 +12166,8 @@ export function RoomPageLiveKit({
             />
             <div
               className={`relative w-[92%] max-w-[480px] rounded-2xl border shadow-2xl p-5 ${isLight
-                  ? "bg-[#F3F3F3] border-[#CFCFCF]"
-                  : "bg-[#1B1B1B] border-[#2B2B2B]"
+                ? "bg-[#F3F3F3] border-[#CFCFCF]"
+                : "bg-[#1B1B1B] border-[#2B2B2B]"
                 }`}
             >
               <div
@@ -11787,8 +12186,8 @@ export function RoomPageLiveKit({
                 onChange={(e) => setEditNameValue(e.target.value)}
                 placeholder="Your name"
                 className={`mt-4 w-full rounded-xl px-3 py-2 outline-none border ${isLight
-                    ? "bg-[#F3F3F3] border-[#CFCFCF] text-black/85"
-                    : "bg-[#1B1B1B] border-[#2B2B2B] text-white/90"
+                  ? "bg-[#F3F3F3] border-[#CFCFCF] text-black/85"
+                  : "bg-[#1B1B1B] border-[#2B2B2B] text-white/90"
                   }`}
               />
 
@@ -11796,8 +12195,8 @@ export function RoomPageLiveKit({
                 <button
                   onClick={() => setEditNameOpen(false)}
                   className={`px-4 h-10 rounded-xl font-semibold ${isLight
-                      ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/75"
-                      : "bg-[#242424] hover:bg-[#303030] text-white/85"
+                    ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/75"
+                    : "bg-[#242424] hover:bg-[#303030] text-white/85"
                     }`}
                 >
                   Cancel
@@ -11805,8 +12204,8 @@ export function RoomPageLiveKit({
                 <button
                   onClick={() => saveEditName().catch(() => { })}
                   className={`px-4 h-10 rounded-xl font-semibold ${isLight
-                      ? "bg-[#1B1B1B] hover:bg-[#242424] text-white"
-                      : "bg-[#1B1B1B] hover:bg-[#242424] text-white"
+                    ? "bg-[#1B1B1B] hover:bg-[#242424] text-white"
+                    : "bg-[#1B1B1B] hover:bg-[#242424] text-white"
                     }`}
                 >
                   Save
@@ -11847,8 +12246,8 @@ export function RoomPageLiveKit({
             <div
               data-lk-admin-menu-surface="true"
               className={`pointer-events-auto fixed w-[min(22rem,calc(100vw-1rem))] max-h-[min(78vh,34rem)] overflow-y-auto overflow-x-hidden rounded-2xl border shadow-2xl ${isLight
-                  ? "bg-[#F3F3F3] border-[#CFCFCF] text-black/85"
-                  : "bg-[#1B1B1B] border-[#2B2B2B] text-white/90"
+                ? "bg-[#F3F3F3] border-[#CFCFCF] text-black/85"
+                : "bg-[#1B1B1B] border-[#2B2B2B] text-white/90"
                 }`}
               style={{
                 left: Math.max(
@@ -11988,13 +12387,13 @@ export function RoomPageLiveKit({
                   !remoteCamTrackSid;
 
                 const participantActionButtonCls = `w-full px-4 py-3 text-left text-[13px] transition ${isLight
-                    ? "text-black/85 hover:bg-[#E8E8E8]"
-                    : "text-white/90 hover:bg-[#303030]"
+                  ? "text-black/85 hover:bg-[#E8E8E8]"
+                  : "text-white/90 hover:bg-[#303030]"
                   }`;
 
                 const participantActionButtonDisabledCls = `w-full px-4 py-3 text-left text-[13px] transition disabled:cursor-not-allowed disabled:opacity-50 ${isLight
-                    ? "text-black/55 bg-transparent"
-                    : "text-white/55 bg-transparent"
+                  ? "text-black/55 bg-transparent"
+                  : "text-white/55 bg-transparent"
                   }`;
 
                 const isPinned = pinnedTileId === targetTile.id;
@@ -12134,8 +12533,8 @@ export function RoomPageLiveKit({
                               closeTileMenu();
                             }}
                             className={`block w-full px-4 py-3 text-left text-[13px] transition ${isLight
-                                ? "text-black/85 hover:bg-[#E8E8E8]"
-                                : "text-white/90 hover:bg-[#303030]"
+                              ? "text-black/85 hover:bg-[#E8E8E8]"
+                              : "text-white/90 hover:bg-[#303030]"
                               }`}
                           >
                             {isPinned ? "Unpin participant" : "Pin participant"}
@@ -12148,8 +12547,8 @@ export function RoomPageLiveKit({
                               closeTileMenu();
                             }}
                             className={`block w-full px-4 py-3 text-left text-[13px] transition ${isLight
-                                ? "text-black/85 hover:bg-[#E8E8E8]"
-                                : "text-white/90 hover:bg-[#303030]"
+                              ? "text-black/85 hover:bg-[#E8E8E8]"
+                              : "text-white/90 hover:bg-[#303030]"
                               }`}
                           >
                             {isHidden
@@ -12168,8 +12567,8 @@ export function RoomPageLiveKit({
                                 closeTileMenu();
                               }}
                               className={`block w-full px-4 py-3 text-left text-[13px] transition ${isLight
-                                  ? "text-black/85 hover:bg-[#E8E8E8]"
-                                  : "text-white/90 hover:bg-[#303030]"
+                                ? "text-black/85 hover:bg-[#E8E8E8]"
+                                : "text-white/90 hover:bg-[#303030]"
                                 }`}
                             >
                               Report participant
@@ -12191,8 +12590,8 @@ export function RoomPageLiveKit({
                                 );
                               }}
                               className={`w-full px-4 py-3 text-left text-[13px] transition disabled:cursor-not-allowed disabled:opacity-50 ${isLight
-                                  ? "text-red-600 hover:bg-red-50"
-                                  : "text-red-300 hover:bg-red-500/10"
+                                ? "text-red-600 hover:bg-red-50"
+                                : "text-red-300 hover:bg-red-500/10"
                                 }`}
                             >
                               Kick participant
@@ -12233,8 +12632,8 @@ export function RoomPageLiveKit({
                             closeTileMenu();
                           }}
                           className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight
-                              ? "text-black/85 hover:bg-[#E8E8E8]"
-                              : "text-white/90 hover:bg-[#303030]"
+                            ? "text-black/85 hover:bg-[#E8E8E8]"
+                            : "text-white/90 hover:bg-[#303030]"
                             }`}
                         >
                           {screenSharePinned &&

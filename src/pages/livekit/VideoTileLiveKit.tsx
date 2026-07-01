@@ -170,6 +170,7 @@ type VideoTileProps = {
     onOpenProfile?: () => void;
     onEditName?: () => void;
     density?: "normal" | "compact";
+    currentIntention?: string | null;
 };
 
 function MicBadgeWithBarVisualizer({
@@ -275,6 +276,7 @@ function VideoTileInner({
     audioLevel = 0,
     showMenuButton = false,
     density = "normal",
+    currentIntention,
     onToggleMenu,
     onOpenProfile,
     onEditName,
@@ -318,6 +320,7 @@ function VideoTileInner({
         : "bg-[#F3F1F1] border-[#D8D0D0] text-[#252525] hover:bg-[#ECEAEA]";
 
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
+    const safeCurrentIntention = String(currentIntention || "").trim();
     const [sizeText, setSizeText] = useState<string>("");
 
     useEffect(() => {
@@ -631,6 +634,28 @@ function VideoTileInner({
                 />
             </div>
 
+            {safeCurrentIntention ? (
+                <div
+                    className={[
+                        "pointer-events-none absolute z-[13] translate-y-1 rounded-2xl border px-3 py-2 opacity-0 shadow-lg backdrop-blur-xl transition duration-150 group-hover:translate-y-0 group-hover:opacity-100",
+                        isCompact ? "inset-x-[0.28rem] top-[0.28rem]" : "inset-x-[0.4rem] top-[0.4rem]",
+                        hasCameraOn
+                            ? "border-white/15 bg-[#1B1B1B]/75 text-white"
+                            : isLight
+                                ? "border-[#D8D0D0] bg-[#F7F5F5]/95 text-black/80"
+                                : "border-[#2B2B2B] bg-[#1B1B1B]/95 text-white/85",
+                    ].join(" ")}
+                    title={safeCurrentIntention}
+                >
+                    <div className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] opacity-60">
+                        Current intention
+                    </div>
+                    <div className="line-clamp-3 text-[12px] font-semibold leading-4">
+                        {safeCurrentIntention}
+                    </div>
+                </div>
+            ) : null}
+
             <div
                 className={`pointer-events-none absolute z-[12] flex min-w-0 items-end justify-between gap-[0.35rem] ${isCompact ? "inset-x-[0.28rem] bottom-[0.28rem]" : "inset-x-[0.4rem] bottom-[0.4rem]"}`}
             >
@@ -686,6 +711,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.audioLevel === next.audioLevel &&
         prev.showMenuButton === next.showMenuButton &&
         prev.density === next.density &&
+        prev.currentIntention === next.currentIntention &&
         prev.onToggleMenu === next.onToggleMenu &&
         prev.onOpenProfile === next.onOpenProfile &&
         prev.onEditName === next.onEditName &&

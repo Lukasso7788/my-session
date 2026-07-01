@@ -275,4 +275,3 @@ export default function RoomTopBar(props: RoomTopBarProps) {
             </div>
         </div>
     );
-}

@@ -75,6 +75,8 @@ type IntentionsPanelProps = {
   pictureInPictureSupported?: boolean;
   pictureInPictureOpen?: boolean;
   onOpenPictureInPicture?: () => void;
+  accountabilityWallOpen?: boolean;
+  onToggleAccountabilityWall?: () => void;
 };
 
 type ProfileMini = {
@@ -157,7 +159,13 @@ function PanelSmartIcon({
   className = "w-4 h-4",
   alt,
 }: {
-  name: "focus-plan" | "pip-intentions" | "pin" | "encouragement" | "in-progress";
+  name:
+  | "focus-plan"
+  | "pip-intentions"
+  | "pin"
+  | "encouragement"
+  | "in-progress"
+  | "accountability-wall";
   theme: RoomTheme;
   className?: string;
   alt?: string;
@@ -326,6 +334,8 @@ export function IntentionsPanel({
   pictureInPictureSupported = false,
   pictureInPictureOpen = false,
   onOpenPictureInPicture,
+  accountabilityWallOpen = false,
+  onToggleAccountabilityWall,
 }: IntentionsPanelProps) {
   const { id: idOrSlugFromUrl } = useParams<{ id: string }>();
   const rawSessionId = (sessionIdProp || idOrSlugFromUrl || "").trim();
@@ -1937,10 +1947,36 @@ export function IntentionsPanel({
 
       <div className="px-4 pb-4 pt-5 min-h-0 flex-1 overflow-y-auto custom-scrollbar font-inter">
         <div className="mb-5">
-          <div
-            className={titleText + " font-inter font-bold text-[17px] mb-5"}
-          >
-            My intentions
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <div className={titleText + " font-inter font-bold text-[17px]"}>
+              My intentions
+            </div>
+
+            {onToggleAccountabilityWall ? (
+              <button
+                type="button"
+                onClick={onToggleAccountabilityWall}
+                className={[
+                  "h-9 shrink-0 rounded-2xl border px-3 text-[12px] font-bold transition inline-flex items-center gap-2 font-inter",
+                  accountabilityWallOpen
+                    ? "border-[#5286F6]/35 bg-[#5286F6]/10 text-[#1E5FD7] hover:bg-[#5286F6]/15"
+                    : "border-[#CFC6C6] bg-[#F7F5F5] text-black/65 hover:bg-[#ECEAEA]",
+                ].join(" ")}
+                title={
+                  accountabilityWallOpen
+                    ? "Back to video grid"
+                    : "Switch to Accountability Wall"
+                }
+              >
+                <PanelSmartIcon
+                  name={accountabilityWallOpen ? "pip-intentions" : "accountability-wall"}
+                  theme={panelTheme}
+                  className="w-4 h-4"
+                  alt=""
+                />
+                <span>{accountabilityWallOpen ? "Intentions" : "Wall"}</span>
+              </button>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-2 mb-3">
