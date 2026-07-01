@@ -10157,7 +10157,7 @@ export function RoomPageLiveKit({
                   : "opacity-0 group-hover:opacity-100",
                 isLight
                   ? "bg-[#F1F1F1]/90 border border-[#CFCFCF] text-black/75 hover:bg-[#F3F3F3]"
-                  : "bg-[#E6E6E6] border border-[#2B2B2B] text-white/90 hover:bg-[#2B2B2B]",
+                  : "bg-[#1B1B1B]/95 border border-[#2B2B2B] text-white/90 hover:bg-[#242424]",
               ].join(" ")}
             >
               <span className="text-[15px] leading-none">✎</span>
