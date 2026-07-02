@@ -1962,7 +1962,7 @@ export function TasksPanel({
         <div className="mb-5">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className={titleText + " font-inter font-bold text-[17px]"}>
-              My tasks
+              My Tasks
             </div>
 
             {onToggleAccountabilityWall ? (
@@ -2180,7 +2180,7 @@ export function TasksPanel({
         <div
           className={titleText + " font-inter font-bold text-[17px] mb-4"}
         >
-          Team tasks
+          Team Tasks
         </div>
 
         {sessionLoading ? (
