@@ -1,4 +1,4 @@
-// src/components/IntentionsPanel.tsx
+// src/components/TasksPanel.tsx
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { ReactNode, MouseEvent } from "react";
@@ -23,7 +23,7 @@ import { useParams } from "react-router-dom";
 
 type RoomTheme = "dark" | "light";
 
-type SessionIntention = {
+type SessionTask = {
   id: string;
   text: string;
   user_id: string;
@@ -36,7 +36,7 @@ type SessionIntention = {
   };
 };
 
-type PanelIntention = {
+type PanelTask = {
   id: string;
   user_id: string;
   text: string;
@@ -67,7 +67,7 @@ type FocusPlanItem = {
   sort_order: number;
 };
 
-type IntentionsPanelProps = {
+type TasksPanelProps = {
   sessionId?: string; // uuid or slug
   theme?: RoomTheme;
   timerText?: string;
@@ -108,9 +108,9 @@ declare global {
 const OVERLAY_FONT_FAMILY =
   'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"';
 
-const PANEL_INTENTIONS_TABLE = "panel_intentions";
-const SESSION_INTENTIONS_TABLE = "intentions";
-const INTENTION_ENCOURAGEMENTS_TABLE = "intention_encouragements";
+const PANEL_TASKS_TABLE = "panel_intentions";
+const SESSION_TASKS_TABLE = "intentions";
+const TASK_ENCOURAGEMENTS_TABLE = "intention_encouragements";
 const ENCOURAGEMENT_EMOJI = "🤩";
 
 /**
@@ -118,14 +118,14 @@ const ENCOURAGEMENT_EMOJI = "🤩";
  * - enough for normal usage
  * - lighter queries + lighter render
  */
-const PANEL_INTENTIONS_FETCH_LIMIT = 120;
-const SESSION_INTENTIONS_FETCH_LIMIT = 80;
-const TEAM_INTENTIONS_RENDER_LIMIT = 50;
+const PANEL_TASKS_FETCH_LIMIT = 120;
+const SESSION_TASKS_FETCH_LIMIT = 80;
+const TEAM_TASKS_RENDER_LIMIT = 50;
 const PLAN_ITEMS_RENDER_LIMIT = 40;
 const FOCUS_PLAN_ITEMS_FETCH_LIMIT = 120;
 const FOCUS_PLANS_FETCH_LIMIT = 40;
 
-function normalizeIntentionVisibility(value: unknown): "public" | "private" {
+function normalizeTaskVisibility(value: unknown): "public" | "private" {
   const v = String(value || "")
     .trim()
     .toLowerCase();
@@ -133,21 +133,21 @@ function normalizeIntentionVisibility(value: unknown): "public" | "private" {
   return "public";
 }
 
-function isPanelIntentionVisibleInRoom(item?: { visibility?: unknown } | null) {
-  return normalizeIntentionVisibility(item?.visibility) !== "private";
+function isPanelTaskVisibleInRoom(item?: { visibility?: unknown } | null) {
+  return normalizeTaskVisibility(item?.visibility) !== "private";
 }
 
-function isPanelIntentionPublic(item?: { visibility?: unknown } | null) {
-  return normalizeIntentionVisibility(item?.visibility) === "public";
+function isPanelTaskPublic(item?: { visibility?: unknown } | null) {
+  return normalizeTaskVisibility(item?.visibility) === "public";
 }
 
-function getNextIntentionVisibility(value: unknown): "public" | "private" {
-  const current = normalizeIntentionVisibility(value);
+function getNextTaskVisibility(value: unknown): "public" | "private" {
+  const current = normalizeTaskVisibility(value);
   return current === "public" ? "private" : "public";
 }
 
 function getVisibilityTitle(value: unknown) {
-  const v = normalizeIntentionVisibility(value);
+  const v = normalizeTaskVisibility(value);
   if (v === "public")
     return "Public — visible to everyone in the room. Click to make private.";
   return "Private — visible only to you. Click to make public.";
@@ -326,7 +326,7 @@ async function fetchProfilesMap(
   return map;
 }
 
-export function IntentionsPanel({
+export function TasksPanel({
   sessionId: sessionIdProp,
   theme = "dark",
   timerText: timerTextProp,
@@ -336,7 +336,7 @@ export function IntentionsPanel({
   onOpenPictureInPicture,
   accountabilityWallOpen = false,
   onToggleAccountabilityWall,
-}: IntentionsPanelProps) {
+}: TasksPanelProps) {
   const { id: idOrSlugFromUrl } = useParams<{ id: string }>();
   const rawSessionId = (sessionIdProp || idOrSlugFromUrl || "").trim();
 
@@ -346,11 +346,11 @@ export function IntentionsPanel({
   const [user, setUser] = useState<any>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
-  const [panelIntentions, setPanelIntentions] = useState<PanelIntention[]>([]);
+  const [panelTasks, setPanelTasks] = useState<PanelTask[]>([]);
   const [panelLoading, setPanelLoading] = useState(true);
 
-  const [sessionIntentions, setSessionIntentions] = useState<
-    SessionIntention[]
+  const [sessionTasks, setSessionTasks] = useState<
+    SessionTask[]
   >([]);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [encouragementCounts, setEncouragementCounts] = useState<
@@ -359,12 +359,12 @@ export function IntentionsPanel({
   const [myEncouragedIds, setMyEncouragedIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const [encouragementUsersByIntention, setEncouragementUsersByIntention] =
+  const [encouragementUsersByTask, setEncouragementUsersByTask] =
     useState<Record<string, EncouragementUser[]>>({});
-  const [encouragementModalIntentionId, setEncouragementModalIntentionId] =
+  const [encouragementModalTaskId, setEncouragementModalTaskId] =
     useState<string | null>(null);
 
-  const [newIntention, setNewIntention] = useState("");
+  const [newTask, setNewTask] = useState("");
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>("");
@@ -503,7 +503,7 @@ export function IntentionsPanel({
     profile?.avatar_url ||
     `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
 
-  const loadPanelIntentions = useCallback(async () => {
+  const loadPanelTasks = useCallback(async () => {
     if (!user?.id) return;
 
     const seq = ++panelSeqRef.current;
@@ -511,20 +511,20 @@ export function IntentionsPanel({
 
     try {
       const { data, error } = await supabase
-        .from(PANEL_INTENTIONS_TABLE)
+        .from(PANEL_TASKS_TABLE)
         .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
-        .limit(PANEL_INTENTIONS_FETCH_LIMIT);
+        .limit(PANEL_TASKS_FETCH_LIMIT);
 
       if (seq !== panelSeqRef.current) return;
 
       if (error || !Array.isArray(data)) {
-        setPanelIntentions([]);
+        setPanelTasks([]);
         return;
       }
 
-      setPanelIntentions(data as PanelIntention[]);
+      setPanelTasks(data as PanelTask[]);
     } finally {
       if (seq === panelSeqRef.current) setPanelLoading(false);
     }
@@ -532,15 +532,15 @@ export function IntentionsPanel({
 
   useEffect(() => {
     if (!user?.id) return;
-    void loadPanelIntentions();
+    void loadPanelTasks();
 
-    const onExternalIntentionsUpdated = () => {
-      void loadPanelIntentions();
+    const onExternalTasksUpdated = () => {
+      void loadPanelTasks();
     };
 
     window.addEventListener(
-      "mysession:intentions-updated",
-      onExternalIntentionsUpdated,
+      "mysession:tasks-updated",
+      onExternalTasksUpdated,
     );
 
     const ch = supabase
@@ -550,23 +550,23 @@ export function IntentionsPanel({
         {
           event: "*",
           schema: "public",
-          table: PANEL_INTENTIONS_TABLE,
+          table: PANEL_TASKS_TABLE,
           filter: `user_id=eq.${user.id}`,
         },
-        () => void loadPanelIntentions(),
+        () => void loadPanelTasks(),
       )
       .subscribe();
 
     return () => {
       window.removeEventListener(
-        "mysession:intentions-updated",
-        onExternalIntentionsUpdated,
+        "mysession:tasks-updated",
+        onExternalTasksUpdated,
       );
       supabase.removeChannel(ch);
     };
-  }, [user?.id, loadPanelIntentions]);
+  }, [user?.id, loadPanelTasks]);
 
-  const loadSessionIntentions = useCallback(
+  const loadSessionTasks = useCallback(
     async (sid?: string | null) => {
       const s = String(sid || sessionId || "");
       if (!s) return;
@@ -576,20 +576,20 @@ export function IntentionsPanel({
 
       try {
         const { data, error } = await supabase
-          .from(SESSION_INTENTIONS_TABLE)
+          .from(SESSION_TASKS_TABLE)
           .select("id, text, user_id, session_id, created_at, completed")
           .eq("session_id", s)
           .order("created_at", { ascending: false })
-          .limit(SESSION_INTENTIONS_FETCH_LIMIT);
+          .limit(SESSION_TASKS_FETCH_LIMIT);
 
         if (seq !== loadSeqRef.current) return;
 
         if (error || !Array.isArray(data)) {
-          setSessionIntentions([]);
+          setSessionTasks([]);
           return;
         }
 
-        const rows = data as SessionIntention[];
+        const rows = data as SessionTask[];
         const profileMap = await fetchProfilesMap(rows.map((r) => r.user_id));
 
         if (seq !== loadSeqRef.current) return;
@@ -599,7 +599,7 @@ export function IntentionsPanel({
           profiles: profileMap.get(String(row.user_id)) || undefined,
         }));
 
-        setSessionIntentions(merged);
+        setSessionTasks(merged);
       } finally {
         if (seq === loadSeqRef.current) setSessionLoading(false);
       }
@@ -607,7 +607,7 @@ export function IntentionsPanel({
     [sessionId],
   );
 
-  const scheduleSessionIntentionsReload = useCallback(
+  const scheduleSessionTasksReload = useCallback(
     (sid?: string | null) => {
       const targetSid = String(sid || sessionId || "");
       if (!targetSid) return;
@@ -618,29 +618,29 @@ export function IntentionsPanel({
 
       sessionReloadTimerRef.current = window.setTimeout(() => {
         sessionReloadTimerRef.current = null;
-        void loadSessionIntentions(targetSid);
+        void loadSessionTasks(targetSid);
       }, 120);
     },
-    [sessionId, loadSessionIntentions],
+    [sessionId, loadSessionTasks],
   );
 
   useEffect(() => {
     if (!sessionId) return;
 
-    void loadSessionIntentions(sessionId);
+    void loadSessionTasks(sessionId);
 
     const channel = supabase
       .channel(`intentions_realtime_${sessionId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: SESSION_INTENTIONS_TABLE },
+        { event: "*", schema: "public", table: SESSION_TASKS_TABLE },
         (payload: any) => {
           const payloadSessionId = String(
             payload?.new?.session_id || payload?.old?.session_id || "",
           ).trim();
 
           if (!payloadSessionId || payloadSessionId === String(sessionId)) {
-            scheduleSessionIntentionsReload(sessionId);
+            scheduleSessionTasksReload(sessionId);
           }
         },
       )
@@ -653,23 +653,23 @@ export function IntentionsPanel({
       }
       supabase.removeChannel(channel);
     };
-  }, [sessionId, loadSessionIntentions, scheduleSessionIntentionsReload]);
+  }, [sessionId, loadSessionTasks, scheduleSessionTasksReload]);
 
   const loadEncouragements = useCallback(async () => {
-    const ids = sessionIntentions
+    const ids = sessionTasks
       .map((x) => String(x.id || ""))
       .filter(Boolean);
 
     if (!ids.length) {
       setEncouragementCounts({});
       setMyEncouragedIds(new Set());
-      setEncouragementUsersByIntention({});
+      setEncouragementUsersByTask({});
       return;
     }
 
     try {
       const { data, error } = await supabase
-        .from(INTENTION_ENCOURAGEMENTS_TABLE)
+        .from(TASK_ENCOURAGEMENTS_TABLE)
         .select("session_intention_id,intention_id,user_id,emoji")
         .in("session_intention_id", ids);
 
@@ -677,7 +677,7 @@ export function IntentionsPanel({
         console.error("loadEncouragements error:", error);
         setEncouragementCounts({});
         setMyEncouragedIds(new Set());
-        setEncouragementUsersByIntention({});
+        setEncouragementUsersByTask({});
         return;
       }
 
@@ -686,19 +686,19 @@ export function IntentionsPanel({
       const userIds: string[] = [];
 
       data.forEach((row) => {
-        const intentionId = String(row?.session_intention_id || row?.intention_id || "");
+        const taskId = String(row?.session_intention_id || row?.intention_id || "");
         const rowUserId = String(row?.user_id || "");
 
-        if (!intentionId || !ids.includes(intentionId)) return;
+        if (!taskId || !ids.includes(taskId)) return;
 
-        nextCounts[intentionId] = (nextCounts[intentionId] || 0) + 1;
+        nextCounts[taskId] = (nextCounts[taskId] || 0) + 1;
 
         if (rowUserId) {
           userIds.push(rowUserId);
         }
 
         if (rowUserId === String(user?.id || "")) {
-          nextMine.add(intentionId);
+          nextMine.add(taskId);
         }
       });
 
@@ -706,13 +706,13 @@ export function IntentionsPanel({
       const nextUsersByIntention: Record<string, EncouragementUser[]> = {};
 
       data.forEach((row) => {
-        const intentionId = String(row?.session_intention_id || row?.intention_id || "");
+        const taskId = String(row?.session_intention_id || row?.intention_id || "");
         const rowUserId = String(row?.user_id || "");
 
-        if (!intentionId || !ids.includes(intentionId) || !rowUserId) return;
+        if (!taskId || !ids.includes(taskId) || !rowUserId) return;
 
         const profile = profileMap.get(rowUserId);
-        const list = nextUsersByIntention[intentionId] || [];
+        const list = nextUsersByIntention[taskId] || [];
 
         if (!list.some((x) => x.id === rowUserId)) {
           list.push({
@@ -723,16 +723,16 @@ export function IntentionsPanel({
           });
         }
 
-        nextUsersByIntention[intentionId] = list;
+        nextUsersByIntention[taskId] = list;
       });
 
       setEncouragementCounts(nextCounts);
       setMyEncouragedIds(nextMine);
-      setEncouragementUsersByIntention(nextUsersByIntention);
+      setEncouragementUsersByTask(nextUsersByIntention);
     } catch (e) {
       console.error("loadEncouragements crashed:", e);
     }
-  }, [sessionIntentions, user?.id]);
+  }, [sessionTasks, user?.id]);
 
   useEffect(() => {
     void loadEncouragements();
@@ -745,7 +745,7 @@ export function IntentionsPanel({
       .channel(`intention_encouragements_${sessionId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: INTENTION_ENCOURAGEMENTS_TABLE },
+        { event: "*", schema: "public", table: TASK_ENCOURAGEMENTS_TABLE },
         () => void loadEncouragements(),
       )
       .subscribe();
@@ -756,8 +756,8 @@ export function IntentionsPanel({
   }, [sessionId, loadEncouragements]);
 
   const toggleEncouragement = useCallback(
-    async (intentionId: string) => {
-      const id = String(intentionId || "");
+    async (taskId: string) => {
+      const id = String(taskId || "");
       const uid = String(user?.id || "");
       if (!id || !uid) return;
 
@@ -778,7 +778,7 @@ export function IntentionsPanel({
       try {
         if (had) {
           const { error } = await supabase
-            .from(INTENTION_ENCOURAGEMENTS_TABLE)
+            .from(TASK_ENCOURAGEMENTS_TABLE)
             .delete()
             .eq("intention_id", id)
             .eq("user_id", uid);
@@ -786,7 +786,7 @@ export function IntentionsPanel({
           if (error) throw error;
         } else {
           const { error } = await supabase
-            .from(INTENTION_ENCOURAGEMENTS_TABLE)
+            .from(TASK_ENCOURAGEMENTS_TABLE)
             .upsert(
               {
                 session_id: sessionId,
@@ -810,7 +810,7 @@ export function IntentionsPanel({
     [loadEncouragements, myEncouragedIds, sessionId, user?.id],
   );
 
-  const findOwnSessionIntentionLocal = useCallback(
+  const findOwnSessionTaskLocal = useCallback(
     (text: string) => {
       const uid = String(user?.id || "");
       const sid = String(sessionId || "");
@@ -818,7 +818,7 @@ export function IntentionsPanel({
       if (!uid || !sid || !norm) return null;
 
       return (
-        sessionIntentions.find(
+        sessionTasks.find(
           (x) =>
             String(x.user_id) === uid &&
             String(x.session_id) === sid &&
@@ -826,10 +826,10 @@ export function IntentionsPanel({
         ) || null
       );
     },
-    [user?.id, sessionId, sessionIntentions],
+    [user?.id, sessionId, sessionTasks],
   );
 
-  const upsertOwnSessionIntention = useCallback(
+  const upsertOwnSessionTask = useCallback(
     async ({
       matchText,
       text,
@@ -845,8 +845,8 @@ export function IntentionsPanel({
       if (!nextText) return null;
 
       const existing =
-        (matchText ? findOwnSessionIntentionLocal(matchText) : null) ||
-        findOwnSessionIntentionLocal(nextText);
+        (matchText ? findOwnSessionTaskLocal(matchText) : null) ||
+        findOwnSessionTaskLocal(nextText);
 
       if (existing) {
         const updates: any = {};
@@ -863,7 +863,7 @@ export function IntentionsPanel({
 
         try {
           const { error } = await supabase
-            .from(SESSION_INTENTIONS_TABLE)
+            .from(SESSION_TASKS_TABLE)
             .update(updates)
             .eq("id", existing.id)
             .eq("user_id", user.id)
@@ -871,11 +871,11 @@ export function IntentionsPanel({
 
           if (error) throw error;
         } catch {
-          void loadSessionIntentions(sessionId);
+          void loadSessionTasks(sessionId);
           return null;
         }
 
-        void loadSessionIntentions(sessionId);
+        void loadSessionTasks(sessionId);
         return existing.id;
       }
 
@@ -888,7 +888,7 @@ export function IntentionsPanel({
         };
 
         const { data, error } = await supabase
-          .from(SESSION_INTENTIONS_TABLE)
+          .from(SESSION_TASKS_TABLE)
           .insert(payload)
           .select("id, text, user_id, session_id, created_at, completed")
           .single();
@@ -896,36 +896,36 @@ export function IntentionsPanel({
         if (error) throw error;
 
         if (data) {
-          setSessionIntentions((prev) =>
-            [data as SessionIntention, ...prev].slice(
+          setSessionTasks((prev) =>
+            [data as SessionTask, ...prev].slice(
               0,
-              SESSION_INTENTIONS_FETCH_LIMIT,
+              SESSION_TASKS_FETCH_LIMIT,
             ),
           );
         }
 
-        void loadSessionIntentions(sessionId);
+        void loadSessionTasks(sessionId);
         return data?.id || null;
       } catch {
-        void loadSessionIntentions(sessionId);
+        void loadSessionTasks(sessionId);
         return null;
       }
     },
-    [user?.id, sessionId, findOwnSessionIntentionLocal, loadSessionIntentions],
+    [user?.id, sessionId, findOwnSessionTaskLocal, loadSessionTasks],
   );
 
-  const deleteOwnSessionIntentionByText = useCallback(
+  const deleteOwnSessionTaskByText = useCallback(
     async (text: string) => {
       if (!user?.id || !sessionId) return;
 
-      const existing = findOwnSessionIntentionLocal(text);
+      const existing = findOwnSessionTaskLocal(text);
       if (!existing) return;
 
-      setSessionIntentions((prev) => prev.filter((x) => x.id !== existing.id));
+      setSessionTasks((prev) => prev.filter((x) => x.id !== existing.id));
 
       try {
         const { error } = await supabase
-          .from(SESSION_INTENTIONS_TABLE)
+          .from(SESSION_TASKS_TABLE)
           .delete()
           .eq("id", existing.id)
           .eq("user_id", user.id)
@@ -933,18 +933,18 @@ export function IntentionsPanel({
 
         if (error) throw error;
       } catch {
-        void loadSessionIntentions(sessionId);
+        void loadSessionTasks(sessionId);
         return;
       }
 
-      scheduleSessionIntentionsReload(sessionId);
+      scheduleSessionTasksReload(sessionId);
     },
     [
       user?.id,
       sessionId,
-      findOwnSessionIntentionLocal,
-      loadSessionIntentions,
-      scheduleSessionIntentionsReload,
+      findOwnSessionTaskLocal,
+      loadSessionTasks,
+      scheduleSessionTasksReload,
     ],
   );
 
@@ -1067,12 +1067,12 @@ export function IntentionsPanel({
 
   const panelTextSet = useMemo(() => {
     const s = new Set<string>();
-    for (const it of panelIntentions) {
+    for (const it of panelTasks) {
       const t = normalizeTextForMatch(it.text);
       if (t) s.add(t);
     }
     return s;
-  }, [panelIntentions]);
+  }, [panelTasks]);
 
   const importPlanItemToPanel = useCallback(
     async (item: FocusPlanItem) => {
@@ -1086,23 +1086,23 @@ export function IntentionsPanel({
       setImportingItemId(item.id);
 
       try {
-        const alreadyById = panelIntentions.some(
+        const alreadyById = panelTasks.some(
           (p) => String(p.focus_plan_item_id || "") === String(item.id),
         );
         if (!alreadyById) {
           const existingSameText =
-            panelIntentions.find(
+            panelTasks.find(
               (p) => normalizeTextForMatch(p.text) === norm,
             ) || null;
 
           if (existingSameText) {
             await supabase
-              .from(PANEL_INTENTIONS_TABLE)
+              .from(PANEL_TASKS_TABLE)
               .update({ focus_plan_item_id: item.id })
               .eq("id", existingSameText.id)
               .eq("user_id", user.id);
           } else {
-            await supabase.from(PANEL_INTENTIONS_TABLE).insert({
+            await supabase.from(PANEL_TASKS_TABLE).insert({
               user_id: user.id,
               text,
               focus_plan_item_id: item.id,
@@ -1112,8 +1112,8 @@ export function IntentionsPanel({
           }
         }
 
-        void loadPanelIntentions();
-        void upsertOwnSessionIntention({
+        void loadPanelTasks();
+        void upsertOwnSessionTask({
           matchText: text,
           text,
           completed: Boolean(item.completed),
@@ -1122,19 +1122,19 @@ export function IntentionsPanel({
         setImportingItemId(null);
       }
     },
-    [user?.id, panelIntentions, loadPanelIntentions, upsertOwnSessionIntention],
+    [user?.id, panelTasks, loadPanelTasks, upsertOwnSessionTask],
   );
 
-  const handleAddPanelIntention = async () => {
+  const handleAddPanelTask = async () => {
     if (!user?.id) return;
 
-    const text = safeTrim(newIntention);
+    const text = safeTrim(newTask);
     if (!text) return;
 
-    setNewIntention("");
+    setNewTask("");
 
     const optimisticId = `optimistic-${Date.now()}`;
-    const optimistic: PanelIntention = {
+    const optimistic: PanelTask = {
       id: optimisticId,
       user_id: user.id,
       text,
@@ -1145,13 +1145,13 @@ export function IntentionsPanel({
       visibility: "public",
     };
 
-    setPanelIntentions((prev) =>
-      [optimistic, ...prev].slice(0, PANEL_INTENTIONS_FETCH_LIMIT),
+    setPanelTasks((prev) =>
+      [optimistic, ...prev].slice(0, PANEL_TASKS_FETCH_LIMIT),
     );
 
     try {
       const { data, error } = await supabase
-        .from(PANEL_INTENTIONS_TABLE)
+        .from(PANEL_TASKS_TABLE)
         .insert({
           user_id: user.id,
           text,
@@ -1162,35 +1162,35 @@ export function IntentionsPanel({
         .single();
 
       if (error || !data) {
-        setPanelIntentions((prev) => prev.filter((x) => x.id !== optimisticId));
+        setPanelTasks((prev) => prev.filter((x) => x.id !== optimisticId));
         return;
       }
 
-      setPanelIntentions((prev) =>
+      setPanelTasks((prev) =>
         [
-          data as PanelIntention,
+          data as PanelTask,
           ...prev.filter((x) => x.id !== optimisticId),
-        ].slice(0, PANEL_INTENTIONS_FETCH_LIMIT),
+        ].slice(0, PANEL_TASKS_FETCH_LIMIT),
       );
-      void upsertOwnSessionIntention({ text, completed: false });
+      void upsertOwnSessionTask({ text, completed: false });
     } catch {
-      setPanelIntentions((prev) => prev.filter((x) => x.id !== optimisticId));
+      setPanelTasks((prev) => prev.filter((x) => x.id !== optimisticId));
     }
   };
 
-  const togglePanelCompleted = async (it: PanelIntention) => {
+  const togglePanelCompleted = async (it: PanelTask) => {
     if (!user?.id) return;
     if (editingId === it.id) return;
 
     const next = !Boolean(it.completed);
 
-    setPanelIntentions((prev) =>
+    setPanelTasks((prev) =>
       prev.map((x) => (x.id === it.id ? { ...x, completed: next } : x)),
     );
 
     try {
       const { error } = await supabase
-        .from(PANEL_INTENTIONS_TABLE)
+        .from(PANEL_TASKS_TABLE)
         .update({ completed: next })
         .eq("id", it.id)
         .eq("user_id", user.id);
@@ -1201,42 +1201,42 @@ export function IntentionsPanel({
         void syncFocusPlanItemCompleted(String(it.focus_plan_item_id), next);
       }
 
-      if (isPanelIntentionPublic(it)) {
-        void upsertOwnSessionIntention({
+      if (isPanelTaskPublic(it)) {
+        void upsertOwnSessionTask({
           matchText: it.text,
           text: it.text,
           completed: next,
         });
       }
     } catch {
-      setPanelIntentions((prev) =>
+      setPanelTasks((prev) =>
         prev.map((x) => (x.id === it.id ? { ...x, completed: !next } : x)),
       );
     }
   };
 
-  const deletePanelIntention = async (id: string) => {
+  const deletePanelTask = async (id: string) => {
     if (!user?.id) return;
 
-    const prev = panelIntentions;
-    const target = panelIntentions.find((x) => x.id === id) || null;
+    const prev = panelTasks;
+    const target = panelTasks.find((x) => x.id === id) || null;
 
-    setPanelIntentions((p) => p.filter((x) => x.id !== id));
+    setPanelTasks((p) => p.filter((x) => x.id !== id));
 
     try {
       const { error } = await supabase
-        .from(PANEL_INTENTIONS_TABLE)
+        .from(PANEL_TASKS_TABLE)
         .delete()
         .eq("id", id)
         .eq("user_id", user.id);
 
       if (error) throw error;
 
-      if (target?.text && normalizeIntentionVisibility(target.visibility) === "public") {
-        void deleteOwnSessionIntentionByText(target.text);
+      if (target?.text && normalizeTaskVisibility(target.visibility) === "public") {
+        void deleteOwnSessionTaskByText(target.text);
       }
     } catch {
-      setPanelIntentions(prev);
+      setPanelTasks(prev);
     }
   };
 
@@ -1258,18 +1258,18 @@ export function IntentionsPanel({
     if (!text) return;
 
     const targetId = editingId;
-    const prev = panelIntentions;
-    const prevItem = panelIntentions.find((x) => x.id === targetId) || null;
+    const prev = panelTasks;
+    const prevItem = panelTasks.find((x) => x.id === targetId) || null;
     const prevText = prevItem?.text || text;
     const prevCompleted = Boolean(prevItem?.completed);
 
-    setPanelIntentions((p) =>
+    setPanelTasks((p) =>
       p.map((x) => (x.id === targetId ? { ...x, text } : x)),
     );
 
     try {
       const { error } = await supabase
-        .from(PANEL_INTENTIONS_TABLE)
+        .from(PANEL_TASKS_TABLE)
         .update({ text })
         .eq("id", targetId)
         .eq("user_id", user.id);
@@ -1279,27 +1279,27 @@ export function IntentionsPanel({
       setEditingId(null);
       setEditingText("");
 
-      if (isPanelIntentionVisibleInRoom(prevItem)) {
-        void upsertOwnSessionIntention({
+      if (isPanelTaskVisibleInRoom(prevItem)) {
+        void upsertOwnSessionTask({
           matchText: prevText,
           text,
           completed: prevCompleted,
         });
       }
     } catch {
-      setPanelIntentions(prev);
+      setPanelTasks(prev);
     }
   };
 
-  const togglePanelVisibility = async (it: PanelIntention) => {
+  const togglePanelVisibility = async (it: PanelTask) => {
     if (!user?.id) return;
     if (!it?.id) return;
 
-    const nextVisibility = getNextIntentionVisibility(it.visibility);
+    const nextVisibility = getNextTaskVisibility(it.visibility);
     const nextVisibleInRoom = nextVisibility !== "private";
-    const prev = panelIntentions;
+    const prev = panelTasks;
 
-    setPanelIntentions((items) =>
+    setPanelTasks((items) =>
       items.map((x) =>
         x.id === it.id ? { ...x, visibility: nextVisibility } : x,
       ),
@@ -1307,7 +1307,7 @@ export function IntentionsPanel({
 
     try {
       const { error } = await supabase
-        .from(PANEL_INTENTIONS_TABLE)
+        .from(PANEL_TASKS_TABLE)
         .update({ visibility: nextVisibility })
         .eq("id", it.id)
         .eq("user_id", user.id);
@@ -1315,16 +1315,16 @@ export function IntentionsPanel({
       if (error) throw error;
 
       if (nextVisibleInRoom) {
-        void upsertOwnSessionIntention({
+        void upsertOwnSessionTask({
           matchText: it.text,
           text: it.text,
           completed: Boolean(it.completed),
         });
       } else {
-        void deleteOwnSessionIntentionByText(it.text);
+        void deleteOwnSessionTaskByText(it.text);
       }
     } catch {
-      setPanelIntentions(prev);
+      setPanelTasks(prev);
     }
   };
 
@@ -1348,7 +1348,7 @@ export function IntentionsPanel({
           width: 420,
           height: 720,
         });
-        pipWin.document.title = "Intentions";
+        pipWin.document.title = "Tasks";
         applyOverlayBaseStyles(pipWin.document, isLight);
         copyStylesToDocument(document, pipWin.document);
 
@@ -1368,12 +1368,12 @@ export function IntentionsPanel({
 
       const w = window.open(
         "",
-        "mysession_intentions",
+        "mysession_tasks",
         "popup,width=420,height=720",
       );
       if (!w) return;
 
-      w.document.title = "Intentions";
+      w.document.title = "Tasks";
       applyOverlayBaseStyles(w.document, isLight);
       copyStylesToDocument(document, w.document);
 
@@ -1403,19 +1403,19 @@ export function IntentionsPanel({
   }, [closeOverlay]);
 
   useEffect(() => {
-    const onOpenPinnedIntentions = () => {
+    const onOpenPinnedTasks = () => {
       void openOverlay();
     };
 
     window.addEventListener(
-      "mysession:intentions-open-pinned",
-      onOpenPinnedIntentions,
+      "mysession:tasks-open-pinned",
+      onOpenPinnedTasks,
     );
 
     return () => {
       window.removeEventListener(
-        "mysession:intentions-open-pinned",
-        onOpenPinnedIntentions,
+        "mysession:tasks-open-pinned",
+        onOpenPinnedTasks,
       );
     };
   }, [openOverlay]);
@@ -1446,9 +1446,9 @@ export function IntentionsPanel({
     return () => win.removeEventListener("keydown", onKeyDown);
   }, [importModalOpen, closeImportModal, getPortalDocument]);
 
-  const teamIntentions = useMemo(() => {
-    return sessionIntentions.slice(0, TEAM_INTENTIONS_RENDER_LIMIT);
-  }, [sessionIntentions]);
+  const teamTasks = useMemo(() => {
+    return sessionTasks.slice(0, TEAM_TASKS_RENDER_LIMIT);
+  }, [sessionTasks]);
 
   if (!rawSessionId) {
     return (
@@ -1527,10 +1527,10 @@ export function IntentionsPanel({
                       " ",
                     )}
                   >
-                    Attach to Intention Panel
+                    Attach to Tasks Panel
                   </div>
                   <div className={["text-[11px] mt-0.5", modalSub].join(" ")}>
-                    Imports Focus plan items into your global panel intentions
+                    Imports Focus plan items into your global panel tasks
                     (visible in every session).
                   </div>
                 </div>
@@ -1669,7 +1669,7 @@ export function IntentionsPanel({
                     <div className="flex flex-col gap-2">
                       {renderedPlanItems.map((it) => {
                         const text = safeTrim(it.text);
-                        const inPanelById = panelIntentions.some(
+                        const inPanelById = panelTasks.some(
                           (p) =>
                             String(p.focus_plan_item_id || "") ===
                             String(it.id),
@@ -1760,7 +1760,7 @@ export function IntentionsPanel({
                   )}
 
                   <div className={"mt-4 text-[11px] " + mutedText}>
-                    Tip: this is your “always-on” intentions list. It stays
+                    Tip: this is your “always-on” tasks list. It stays
                     the same across sessions.
                   </div>
                 </>
@@ -1773,16 +1773,16 @@ export function IntentionsPanel({
     })()
     : null;
 
-  const encouragementModalItem = encouragementModalIntentionId
-    ? teamIntentions.find((x) => x.id === encouragementModalIntentionId) || null
+  const encouragementModalItem = encouragementModalTaskId
+    ? teamTasks.find((x) => x.id === encouragementModalTaskId) || null
     : null;
 
-  const EncouragementModal = encouragementModalIntentionId
+  const EncouragementModal = encouragementModalTaskId
     ? createPortal(
       <div
         className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/35 font-inter"
         onMouseDown={(e) => {
-          if (e.target === e.currentTarget) setEncouragementModalIntentionId(null);
+          if (e.target === e.currentTarget) setEncouragementModalTaskId(null);
         }}
       >
         <div
@@ -1795,12 +1795,12 @@ export function IntentionsPanel({
             <div className="min-w-0">
               <div className="text-[13px] font-semibold text-black/90">Encouragements</div>
               <div className="text-[11px] text-black/50 truncate">
-                {encouragementModalItem?.text || "Team intention"}
+                {encouragementModalItem?.text || "Team task"}
               </div>
             </div>
             <button
               type="button"
-              onClick={() => setEncouragementModalIntentionId(null)}
+              onClick={() => setEncouragementModalTaskId(null)}
               className="w-8 h-8 rounded-xl border border-[#CFC6C6] bg-[#ECEAEA] hover:bg-[#E3E0E0] flex items-center justify-center"
               title="Close"
             >
@@ -1809,13 +1809,13 @@ export function IntentionsPanel({
           </div>
 
           <div className="p-3 max-h-[360px] overflow-y-auto custom-scrollbar">
-            {(encouragementUsersByIntention[encouragementModalIntentionId] || []).length === 0 ? (
+            {(encouragementUsersByTask[encouragementModalTaskId] || []).length === 0 ? (
               <div className="text-[12px] italic text-black/55 px-1 py-2">
                 No encouragements yet.
               </div>
             ) : (
               <div className="flex flex-col gap-2">
-                {(encouragementUsersByIntention[encouragementModalIntentionId] || []).map((u) => (
+                {(encouragementUsersByTask[encouragementModalTaskId] || []).map((u) => (
                   <div
                     key={u.id}
                     className="flex items-center gap-3 rounded-xl border border-[#CFC6C6] bg-[#F7F5F5] px-3 py-2"
@@ -1865,7 +1865,7 @@ export function IntentionsPanel({
               <div
                 className={"font-inter font-bold text-[16px] leading-5 " + headerTitle}
               >
-                Intentions
+                Tasks
               </div>
               <div className={"text-[10px] leading-[12px] font-inter " + titleText}>
                 Keep it visible while you work
@@ -1962,7 +1962,7 @@ export function IntentionsPanel({
         <div className="mb-5">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className={titleText + " font-inter font-bold text-[17px]"}>
-              My intentions
+              My tasks
             </div>
 
             {onToggleAccountabilityWall ? (
@@ -1985,7 +1985,7 @@ export function IntentionsPanel({
                   className="w-4 h-4"
                   alt=""
                 />
-                <span>{accountabilityWallOpen ? "Intentions" : "Wall"}</span>
+                <span>{accountabilityWallOpen ? "Tasks" : "Wall"}</span>
               </button>
             ) : null}
           </div>
@@ -1993,15 +1993,15 @@ export function IntentionsPanel({
           <div className="flex items-center gap-2 mb-3">
             <input
               type="text"
-              value={newIntention}
-              onChange={(e) => setNewIntention(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddPanelIntention()}
-              placeholder="Add an intention"
+              value={newTask}
+              onChange={(e) => setNewTask(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAddPanelTask()}
+              placeholder="Add a task"
               className={"flex-1 " + inputCls}
             />
 
             <button
-              onClick={handleAddPanelIntention}
+              onClick={handleAddPanelTask}
               className={[
                 "h-12 px-5 rounded-[18px] font-semibold text-[14px] font-inter transition",
                 "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white",
@@ -2017,13 +2017,13 @@ export function IntentionsPanel({
             <div className={"text-[12px] italic font-inter " + mutedText}>
               Loading...
             </div>
-          ) : panelIntentions.length === 0 ? (
+          ) : panelTasks.length === 0 ? (
             <div className={"text-[12px] italic font-inter " + mutedText}>
-              No panel intentions yet. Attach from Focus plan or add manually.
+              No panel tasks yet. Attach from Focus plan or add manually.
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              {panelIntentions.map((i) => {
+              {panelTasks.map((i) => {
                 const isEditing = editingId === i.id;
 
                 const circleCls = "text-black/40";
@@ -2099,13 +2099,13 @@ export function IntentionsPanel({
                               }}
                               className={[
                                 "h-9 w-9 shrink-0 rounded-full border text-[13px] font-semibold transition inline-flex items-center justify-center",
-                                normalizeIntentionVisibility(i.visibility) ===
+                                normalizeTaskVisibility(i.visibility) ===
                                   "public"
                                   ? "border-[#81DB86] bg-[#81DB86]/15 text-[#248A3D] hover:bg-[#81DB86]/25"
                                   : "border-[#CFC6C6] bg-[#F3F1F1] text-black/55 hover:bg-[#ECEAEA]",
                               ].join(" ")}
                             >
-                              {normalizeIntentionVisibility(i.visibility) ===
+                              {normalizeTaskVisibility(i.visibility) ===
                                 "private" ? (
                                 <Lock size={14} />
                               ) : (
@@ -2132,7 +2132,7 @@ export function IntentionsPanel({
                                 title="Delete"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  void deletePanelIntention(i.id);
+                                  void deletePanelTask(i.id);
                                 }}
                                 className="hover:text-[#F65252]"
                               >
@@ -2180,20 +2180,20 @@ export function IntentionsPanel({
         <div
           className={titleText + " font-inter font-bold text-[17px] mb-4"}
         >
-          Team intentions
+          Team tasks
         </div>
 
         {sessionLoading ? (
           <div className={"text-[12px] italic font-inter " + mutedText}>
             Loading...
           </div>
-        ) : teamIntentions.length === 0 ? (
+        ) : teamTasks.length === 0 ? (
           <div className={"text-[12px] italic font-inter " + mutedText}>
-            No team intentions
+            No team tasks
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            {teamIntentions.map((item) => {
+            {teamTasks.map((item) => {
               const nameCls = "text-black/90";
               const bodyActive = "text-black/85";
               const bodyDone = "text-black/35 line-through";
@@ -2254,14 +2254,14 @@ export function IntentionsPanel({
                         onClick={(e) => {
                           e.stopPropagation();
                           if (encouragementCount > 0 && (e.altKey || e.metaKey || e.ctrlKey)) {
-                            setEncouragementModalIntentionId(item.id);
+                            setEncouragementModalTaskId(item.id);
                             return;
                           }
                           void toggleEncouragement(item.id);
                         }}
                         onDoubleClick={(e) => {
                           e.stopPropagation();
-                          if (encouragementCount > 0) setEncouragementModalIntentionId(item.id);
+                          if (encouragementCount > 0) setEncouragementModalTaskId(item.id);
                         }}
                         className={[
                           "relative h-8 min-w-8 rounded-full border px-2 inline-flex items-center justify-center transition",
@@ -2286,7 +2286,7 @@ export function IntentionsPanel({
                           <span
                             onClick={(e) => {
                               e.stopPropagation();
-                              setEncouragementModalIntentionId(item.id);
+                              setEncouragementModalTaskId(item.id);
                             }}
                             className="absolute -right-1 -bottom-1 min-w-[16px] h-[16px] rounded-full bg-[#252525] px-1 text-[10px] font-bold leading-[16px] text-white shadow-sm"
                             title="See who sent encouragement"
@@ -2329,7 +2329,7 @@ export function IntentionsPanel({
           <div className="text-center font-inter">
             <div className={"text-[12px] font-inter " + titleText}>Pinned</div>
             <div className={"text-[12px] italic mt-1 font-inter " + mutedText}>
-              Intentions are opened in a floating window.
+              Tasks are opened in a floating window.
             </div>
             <button
               type="button"
@@ -2355,4 +2355,4 @@ export function IntentionsPanel({
   );
 }
 
-export default IntentionsPanel;
+export default TasksPanel;

@@ -26,7 +26,7 @@ export default function LiveKitPiPPortal({
     onToggleScreenShare,
     onSendReaction,
     onSetPipMode,
-    onOpenIntentionsPanel,
+    onOpenTasksPanel,
 }: {
     isLight: boolean;
     theme: RoomTheme;
@@ -47,7 +47,7 @@ export default function LiveKitPiPPortal({
     onToggleScreenShare: () => void;
     onSendReaction: (type: ReactionType) => void;
     onSetPipMode: (mode: "focus" | "gallery") => void;
-    onOpenIntentionsPanel?: () => void;
+    onOpenTasksPanel?: () => void;
 }) {
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
 
@@ -122,15 +122,15 @@ export default function LiveKitPiPPortal({
                             Gallery
                         </div>
 
-                        {onOpenIntentionsPanel ? (
+                        {onOpenTasksPanel ? (
                             <button
                                 type="button"
-                                onClick={onOpenIntentionsPanel}
+                                onClick={onOpenTasksPanel}
                                 className={`rounded-xl px-[0.68rem] py-[0.42rem] text-[0.7rem] font-medium transition ${pillIdle}`}
-                                title="Switch back to Intentions"
-                                aria-label="Switch back to Intentions"
+                                title="Switch back to Tasks"
+                                aria-label="Switch back to Tasks"
                             >
-                                Intentions
+                                Tasks
                             </button>
                         ) : null}
                     </div>

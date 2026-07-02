@@ -44,7 +44,7 @@ import BugReportModal from "../components/BugReportModal";
 import { PAYWALL_ENABLED } from "../lib/flags";
 
 import ChatPanel from "../components/ChatPanel";
-import { IntentionsPanel } from "../components/IntentionsPanel";
+import { TasksPanel } from "../components/TasksPanel";
 import AIHostedRoomController from "../components/ai-host/AIHostedRoomController";
 import JoinGateModal from "../components/JoinGateModal";
 import { UserProfileModal } from "../components/UserProfileModal";
@@ -188,7 +188,7 @@ type SessionRoleAssignmentRow = {
   created_at?: string;
 };
 
-type RightPanelTab = "participants" | "chat" | "intentions" | null;
+type RightPanelTab = "participants" | "chat" | "tasks" | null;
 type PiPMode = "focus" | "gallery";
 type RoomMainViewMode = "video" | "accountability";
 
@@ -2408,7 +2408,7 @@ function RoomAuthModal({
 }
 
 
-type AccountabilityWallIntention = {
+type AccountabilityWallTask = {
   id: string;
   text: string;
   user_id: string;
@@ -2444,7 +2444,7 @@ function AccountabilityWall({
   authUserId,
   theme,
   isLight,
-  onOpenIntentions,
+  onOpenTasks,
   onSwitchBackToVideo,
 }: {
   sessionId?: string | null;
@@ -2453,18 +2453,18 @@ function AccountabilityWall({
   authUserId?: string | null;
   theme: RoomTheme;
   isLight: boolean;
-  onOpenIntentions: () => void;
+  onOpenTasks: () => void;
   onSwitchBackToVideo: () => void;
 }) {
-  const [intentions, setIntentions] = useState<AccountabilityWallIntention[]>([]);
+  const [wallTasks, setWallTasks] = useState<AccountabilityWallTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [newWallTask, setNewWallTask] = useState("");
   const [wallTaskBusy, setWallTaskBusy] = useState<string | null>(null);
 
-  const loadIntentions = useCallback(async () => {
+  const loadTasks = useCallback(async () => {
     const sid = String(sessionId || "").trim();
     if (!sid) {
-      setIntentions([]);
+      setWallTasks([]);
       return;
     }
 
@@ -2479,11 +2479,11 @@ function AccountabilityWall({
         .limit(160);
 
       if (error || !Array.isArray(data)) {
-        setIntentions([]);
+        setWallTasks([]);
         return;
       }
 
-      const rows = data as AccountabilityWallIntention[];
+      const rows = data as AccountabilityWallTask[];
       const userIds = Array.from(
         new Set(rows.map((r) => String(r.user_id || "").trim()).filter(Boolean)),
       );
@@ -2506,7 +2506,7 @@ function AccountabilityWall({
         }
       }
 
-      setIntentions(
+      setWallTasks(
         rows.map((row) => ({
           ...row,
           profiles: profileMap.get(String(row.user_id || "").toLowerCase()) || null,
@@ -2518,8 +2518,8 @@ function AccountabilityWall({
   }, [sessionId]);
 
   useEffect(() => {
-    void loadIntentions();
-  }, [loadIntentions]);
+    void loadTasks();
+  }, [loadTasks]);
 
   useEffect(() => {
     const sid = String(sessionId || "").trim();
@@ -2530,14 +2530,14 @@ function AccountabilityWall({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "intentions", filter: `session_id=eq.${sid}` },
-        () => void loadIntentions(),
+        () => void loadTasks(),
       )
       .subscribe();
 
     return () => {
       safeRemoveRealtimeChannel(ch);
     };
-  }, [sessionId, loadIntentions]);
+  }, [sessionId, loadTasks]);
 
   const participantTiles = useMemo(() => {
     const out: TileModel[] = [];
@@ -2554,10 +2554,10 @@ function AccountabilityWall({
     return out;
   }, [tiles]);
 
-  const intentionsByUserId = useMemo(() => {
-    const map = new Map<string, AccountabilityWallIntention[]>();
+  const tasksByUserId = useMemo(() => {
+    const map = new Map<string, AccountabilityWallTask[]>();
 
-    for (const item of intentions || []) {
+    for (const item of wallTasks || []) {
       const userId = String(item.user_id || "").trim().toLowerCase();
       if (!userId) continue;
       const list = map.get(userId) || [];
@@ -2566,7 +2566,7 @@ function AccountabilityWall({
     }
 
     return map;
-  }, [intentions]);
+  }, [wallTasks]);
 
   const cardBg = isLight
     ? "border-[#D8D0D0] bg-[#F7F5F5] text-black"
@@ -2576,7 +2576,7 @@ function AccountabilityWall({
     ? "/icons/intentions-light.svg"
     : "/icons/intentions-dark.svg";
 
-  const syncOwnWallTaskToPanelIntentions = async (args: {
+  const syncOwnWallTaskToPanelTasks = async (args: {
     userId: string;
     text: string;
     completed?: boolean;
@@ -2613,7 +2613,7 @@ function AccountabilityWall({
         visibility: "public",
       } as any);
     } catch (e) {
-      console.warn("syncOwnWallTaskToPanelIntentions failed:", e);
+      console.warn("syncOwnWallTaskToPanelTasks failed:", e);
     }
   };
 
@@ -2625,7 +2625,7 @@ function AccountabilityWall({
     if (!uid || !sid || !text || wallTaskBusy) return;
 
     const optimisticId = `wall-optimistic-${Date.now()}`;
-    const optimistic: AccountabilityWallIntention = {
+    const optimistic: AccountabilityWallTask = {
       id: optimisticId,
       text,
       user_id: uid,
@@ -2637,7 +2637,7 @@ function AccountabilityWall({
 
     setWallTaskBusy("add");
     setNewWallTask("");
-    setIntentions((prev) => [optimistic, ...prev].slice(0, 160));
+    setWallTasks((prev) => [optimistic, ...prev].slice(0, 160));
 
     try {
       const { data, error } = await supabase
@@ -2651,40 +2651,40 @@ function AccountabilityWall({
         .select("id,text,user_id,session_id,created_at,completed")
         .single();
 
-      if (error || !data) throw error || new Error("No intention returned");
+      if (error || !data) throw error || new Error("No task returned");
 
-      setIntentions((prev) =>
-        [data as AccountabilityWallIntention, ...prev.filter((x) => x.id !== optimisticId)].slice(0, 160),
+      setWallTasks((prev) =>
+        [data as AccountabilityWallTask, ...prev.filter((x) => x.id !== optimisticId)].slice(0, 160),
       );
 
-      void syncOwnWallTaskToPanelIntentions({
+      void syncOwnWallTaskToPanelTasks({
         userId: uid,
         text,
         completed: false,
       });
 
       try {
-        window.dispatchEvent(new CustomEvent("mysession:intentions-updated"));
+        window.dispatchEvent(new CustomEvent("mysession:tasks-updated"));
       } catch {
         // best effort only
       }
     } catch (e) {
       console.warn("addOwnWallTask failed:", e);
-      setIntentions((prev) => prev.filter((x) => x.id !== optimisticId));
-      void loadIntentions();
+      setWallTasks((prev) => prev.filter((x) => x.id !== optimisticId));
+      void loadTasks();
     } finally {
       setWallTaskBusy(null);
     }
   };
 
-  const toggleOwnWallTask = async (item: AccountabilityWallIntention) => {
+  const toggleOwnWallTask = async (item: AccountabilityWallTask) => {
     const uid = String(authUserId || "").trim();
     const sid = String(sessionId || "").trim();
     if (!uid || !sid || String(item.user_id || "").trim().toLowerCase() !== uid.toLowerCase() || wallTaskBusy) return;
 
     const nextCompleted = !Boolean(item.completed);
     setWallTaskBusy(item.id);
-    setIntentions((prev) =>
+    setWallTasks((prev) =>
       prev.map((x) => (x.id === item.id ? { ...x, completed: nextCompleted } : x)),
     );
 
@@ -2698,20 +2698,20 @@ function AccountabilityWall({
 
       if (error) throw error;
 
-      void syncOwnWallTaskToPanelIntentions({
+      void syncOwnWallTaskToPanelTasks({
         userId: uid,
         text: item.text,
         completed: nextCompleted,
       });
 
       try {
-        window.dispatchEvent(new CustomEvent("mysession:intentions-updated"));
+        window.dispatchEvent(new CustomEvent("mysession:tasks-updated"));
       } catch {
         // best effort only
       }
     } catch (e) {
       console.warn("toggleOwnWallTask failed:", e);
-      void loadIntentions();
+      void loadTasks();
     } finally {
       setWallTaskBusy(null);
     }
@@ -2725,14 +2725,14 @@ function AccountabilityWall({
             Accountability Wall
           </div>
           <div className={`mt-1 font-inter text-[14px] font-normal ${mutedText}`}>
-            Everyone’s current intentions, visible while you work.
+            Everyone’s current tasks, visible while you work.
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={onOpenIntentions}
+            onClick={onOpenTasks}
             className={[
               "inline-flex h-9 items-center justify-center rounded-2xl px-3 font-inter text-[12px] font-normal leading-none transition",
               isLight
@@ -2740,7 +2740,7 @@ function AccountabilityWall({
                 : "bg-[#81DB86] text-black hover:brightness-95",
             ].join(" ")}
           >
-            Add / edit intentions
+            Add / edit tasks
           </button>
 
           <button
@@ -2789,9 +2789,9 @@ function AccountabilityWall({
               String(tile.metadataDisplayName || profile?.full_name || tile.label || "Participant").trim() ||
               "Participant";
             const avatarUrl = String(profile?.avatar_url || "").trim();
-            const userIntentions = (intentionsByUserId.get(userId) || []).slice(0, 4);
-            const activeCount = userIntentions.filter((x) => !x.completed).length;
-            const completedCount = userIntentions.filter((x) => !!x.completed).length;
+            const userTasks = (tasksByUserId.get(userId) || []).slice(0, 4);
+            const activeCount = userTasks.filter((x) => !x.completed).length;
+            const completedCount = userTasks.filter((x) => !!x.completed).length;
             const isLocalCard = String(userId).toLowerCase() === String(authUserId || "").toLowerCase();
 
             return (
@@ -2874,12 +2874,12 @@ function AccountabilityWall({
                     </div>
                   ) : null}
 
-                  {loading && !userIntentions.length ? (
+                  {loading && !userTasks.length ? (
                     <div className={`rounded-2xl border border-dashed px-4 py-3 font-inter text-[13px] ${mutedText}`}>
-                      Loading intentions…
+                      Loading tasks…
                     </div>
-                  ) : userIntentions.length ? (
-                    userIntentions.map((item) => (
+                  ) : userTasks.length ? (
+                    userTasks.map((item) => (
                       <div
                         key={item.id}
                         className={[
@@ -2920,7 +2920,7 @@ function AccountabilityWall({
                   ) : (
                     <button
                       type="button"
-                      onClick={isLocalCard ? undefined : onOpenIntentions}
+                      onClick={isLocalCard ? undefined : onOpenTasks}
                       className={[
                         "w-full rounded-2xl border border-dashed px-4 py-4 text-left font-inter text-[14px] font-normal transition",
                         isLight
@@ -2928,7 +2928,7 @@ function AccountabilityWall({
                           : "border-white/15 text-white/45 hover:bg-white/[0.05]",
                       ].join(" ")}
                     >
-                      No intention yet{isLocalCard ? " — add yours above" : ""}
+                      No task yet{isLocalCard ? " — add yours above" : ""}
                     </button>
                   )}
                 </div>
@@ -3683,7 +3683,7 @@ export function RoomPageLiveKit({
 
   const roomPanelIconClass = roomUiScale === "md" ? "w-3.5 h-3.5" : "w-4 h-4";
 
-  const [rightTab, setRightTab] = useState<RightPanelTab>("intentions");
+  const [rightTab, setRightTab] = useState<RightPanelTab>("tasks");
   const [chatViewMode, setChatViewMode] = useState<"general" | "host">(
     "general",
   );
@@ -4526,7 +4526,7 @@ export function RoomPageLiveKit({
             : type === "intentions"
               ? isCheckInLikeLabel(rawPhaseName)
                 ? "Check-in"
-                : "Intentions"
+                : "Tasks"
               : type === "break"
                 ? "Break"
                 : type === "intro"
@@ -4730,7 +4730,7 @@ export function RoomPageLiveKit({
               : type === "intentions"
                 ? isCheckInLikeLabel(rawPhaseName)
                   ? "Check-in"
-                  : "Intentions"
+                  : "Tasks"
                 : type === "break"
                   ? "Break"
                   : type === "intro"
@@ -5281,6 +5281,10 @@ export function RoomPageLiveKit({
   const [connected, setConnected] = useState(false);
   const [mobileMediaRestoreOpen, setMobileMediaRestoreOpen] = useState(false);
   const [mobileMediaRestoreBusy, setMobileMediaRestoreBusy] = useState(false);
+  const [mobileRestoreMode, setMobileRestoreMode] = useState<
+    "restoring" | "needs_action"
+  >("restoring");
+  const mobileRestoreEscalationTimerRef = useRef<number | null>(null);
   const [frozenLocalVideoFrame, setFrozenLocalVideoFrame] =
     useState<string>("");
 
@@ -6611,6 +6615,54 @@ export function RoomPageLiveKit({
   const [clientError, setClientError] = useState<string>("");
   const [mediaWarning, setMediaWarning] = useState<string>("");
 
+  const getLiveKitRoomState = () => {
+    const room: any = roomRef.current as any;
+    return String(room?.state || "").toLowerCase();
+  };
+
+  const roomIsActuallyConnected = () => {
+    return !!roomRef.current && getLiveKitRoomState() === "connected";
+  };
+
+  const roomIsRecovering = () => {
+    const state = getLiveKitRoomState();
+    return (
+      !!roomRef.current &&
+      (state === "connecting" ||
+        state === "reconnecting" ||
+        state === "signalreconnecting")
+    );
+  };
+
+  const clearMobileRestoreEscalationTimer = () => {
+    if (!mobileRestoreEscalationTimerRef.current) return;
+    window.clearTimeout(mobileRestoreEscalationTimerRef.current);
+    mobileRestoreEscalationTimerRef.current = null;
+  };
+
+  const openMobileRestoreState = (
+    mode: "restoring" | "needs_action" = "restoring",
+  ) => {
+    clearMobileRestoreEscalationTimer();
+    setMobileRestoreMode(mode);
+    setMobileMediaRestoreOpen(true);
+    setPrejoinOpen(false);
+
+    if (mode === "restoring") {
+      mobileRestoreEscalationTimerRef.current = window.setTimeout(() => {
+        if (!roomIsActuallyConnected()) {
+          setMobileRestoreMode("needs_action");
+        }
+      }, 12_000);
+    }
+  };
+
+  const closeMobileRestoreState = () => {
+    clearMobileRestoreEscalationTimer();
+    setMobileMediaRestoreOpen(false);
+    setMobileRestoreMode("restoring");
+  };
+
   const logRoomDiagnostic = useCallback(
     async (eventType: string, payload: Record<string, unknown> = {}) => {
       try {
@@ -7013,15 +7065,9 @@ export function RoomPageLiveKit({
   const [screenShareTiles, setScreenShareTiles] = useState<TileModel[]>([]);
 
   useEffect(() => {
-    const roomLooksConnected = () => {
-      const room: any = roomRef.current as any;
-      const state = String(room?.state || "").toLowerCase();
-      return !!room && (connectedRef.current || state === "connected");
-    };
-
     const shouldShowMobileRestore = () => {
       if (!lowPowerMobileMode) return false;
-      if (roomLooksConnected()) return false;
+      if (roomIsActuallyConnected()) return false;
       return joinRequestedRef.current || returningFromBackgroundRef.current;
     };
 
@@ -7049,8 +7095,8 @@ export function RoomPageLiveKit({
       if (!pageHiddenAtRef.current && !returningFromBackgroundRef.current)
         return;
 
-      if (roomLooksConnected()) {
-        setMobileMediaRestoreOpen(false);
+      if (roomIsActuallyConnected()) {
+        closeMobileRestoreState();
         setMediaWarning("");
         void ensureRoomAudioPlaybackUnlocked("mobile-visible").catch(() => { });
         scheduleRebuildTiles();
@@ -7061,9 +7107,18 @@ export function RoomPageLiveKit({
         return;
       }
 
+      if (roomIsRecovering()) {
+        openMobileRestoreState("restoring");
+        setMediaWarning(
+          "Restoring your connection… Mobile browsers may pause the room after you switch apps.",
+        );
+        scheduleRebuildTiles();
+        window.setTimeout(() => scheduleRebuildTiles(), 120);
+        return;
+      }
+
       if (shouldShowMobileRestore()) {
-        setMobileMediaRestoreOpen(true);
-        setPrejoinOpen(false);
+        openMobileRestoreState("needs_action");
         scheduleRebuildTiles();
         window.setTimeout(() => scheduleRebuildTiles(), 120);
       }
@@ -7088,7 +7143,9 @@ export function RoomPageLiveKit({
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pageshow", onPageShow);
+      clearMobileRestoreEscalationTimer();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lowPowerMobileMode]);
 
   const [adminBusyKey, setAdminBusyKey] = useState<string>("");
@@ -7725,6 +7782,9 @@ export function RoomPageLiveKit({
   const disconnectRoom = async (opts?: {
     skipNavigate?: boolean;
     preserveKickNotice?: boolean;
+    preserveAttendance?: boolean;
+    preserveTabPresence?: boolean;
+    preserveJoinRequested?: boolean;
   }) => {
     try {
       const r = roomRef.current;
@@ -7748,15 +7808,21 @@ export function RoomPageLiveKit({
       setFxError("");
       setFxApplying(false);
       setOpenTileAdminMenuId(null);
-      setJoinRequested(false);
+      if (!opts?.preserveJoinRequested) {
+        setJoinRequested(false);
+      }
       connectInFlightRef.current = false;
 
       if (!opts?.preserveKickNotice) {
         setSystemNotice((prev) => ({ ...prev, open: false }));
       }
 
-      await leaveAttendanceOnce({ keepalive: false });
-      releaseTabPresence();
+      if (!opts?.preserveAttendance) {
+        await leaveAttendanceOnce({ keepalive: false });
+      }
+      if (!opts?.preserveTabPresence) {
+        releaseTabPresence();
+      }
       await closePictureInPicture().catch(() => { });
     }
   };
@@ -7923,7 +7989,12 @@ export function RoomPageLiveKit({
     }
   };
 
-  const connectRoom = async () => {
+  const connectRoom = async (opts: {
+    forceReconnect?: boolean;
+    preserveAttendance?: boolean;
+    preserveTabPresence?: boolean;
+    preserveJoinRequested?: boolean;
+  } = {}) => {
     if (!lkServerUrl || !lkToken) return;
     if (connectInFlightRef.current) return;
 
@@ -7934,10 +8005,7 @@ export function RoomPageLiveKit({
     // returning to the tab can re-trigger joinRequested/effects while the original
     // LiveKit room is still connected. Do NOT disconnect/reconnect in that case,
     // because that causes the visible local video tile reload.
-    if (
-      existingRoom &&
-      (connectedRef.current || existingState === "connected")
-    ) {
+    if (existingRoom && existingState === "connected" && !opts.forceReconnect) {
       setConnected(true);
       setPrejoinOpen(false);
       setMobileMediaRestoreOpen(false);
@@ -7949,8 +8017,12 @@ export function RoomPageLiveKit({
 
     if (
       existingRoom &&
-      (existingState === "connecting" || existingState === "reconnecting")
+      !opts.forceReconnect &&
+      (existingState === "connecting" ||
+        existingState === "reconnecting" ||
+        existingState === "signalreconnecting")
     ) {
+      openMobileRestoreState("restoring");
       return;
     }
 
@@ -7968,7 +8040,11 @@ export function RoomPageLiveKit({
     const failAfter = window.setTimeout(() => {
       if (connectAttemptIdRef.current !== attemptId) return;
       setClientError("Connecting to LiveKit timed out. Please try again.");
-      void disconnectRoom();
+      void disconnectRoom({
+        preserveAttendance: opts.preserveAttendance,
+        preserveTabPresence: opts.preserveTabPresence,
+        preserveJoinRequested: opts.preserveJoinRequested,
+      });
       setPrejoinOpen(true);
       setJoinRequested(false);
     }, 15000);
@@ -7977,7 +8053,11 @@ export function RoomPageLiveKit({
     setFxError("");
     setMediaWarning("");
 
-    await disconnectRoom();
+    await disconnectRoom({
+      preserveAttendance: opts.preserveAttendance,
+      preserveTabPresence: opts.preserveTabPresence,
+      preserveJoinRequested: opts.preserveJoinRequested,
+    });
 
     try {
       const pj = prejoinRef.current;
@@ -8003,6 +8083,12 @@ export function RoomPageLiveKit({
         });
 
         setConnected(true);
+        if (returningFromBackgroundRef.current || mobileMediaRestoreOpen) {
+          closeMobileRestoreState();
+          returningFromBackgroundRef.current = false;
+          pageHiddenAtRef.current = null;
+          setMediaWarning("");
+        }
         refresh();
       });
 
@@ -8025,10 +8111,9 @@ export function RoomPageLiveKit({
         setOpenTileAdminMenuId(null);
 
         if (likelyBackgroundDisconnect) {
-          setMobileMediaRestoreOpen(true);
-          setPrejoinOpen(false);
+          openMobileRestoreState("needs_action");
           setMediaWarning(
-            "Mobile browser paused the room while you were using another app. Tap Restore audio/video to continue.",
+            "Mobile browser paused the room while you were using another app. Rejoin the room to continue.",
           );
           return;
         }
@@ -8051,6 +8136,19 @@ export function RoomPageLiveKit({
         void writeConnectionDiagnostic("livekit.reconnecting", {
           roomState: String((r as any)?.state || ""),
         });
+
+        if (
+          !explicitLeaveRequestedRef.current &&
+          !kickedBySignalRef.current &&
+          (returningFromBackgroundRef.current ||
+            !!pageHiddenAtRef.current ||
+            document.visibilityState === "visible")
+        ) {
+          openMobileRestoreState("restoring");
+          setMediaWarning(
+            "Restoring your connection… Mobile browsers may pause the room after you switch apps.",
+          );
+        }
       });
 
       r.on(RoomEvent.Reconnected, () => {
@@ -8058,6 +8156,11 @@ export function RoomPageLiveKit({
           roomState: String((r as any)?.state || ""),
         });
 
+        setConnected(true);
+        closeMobileRestoreState();
+        returningFromBackgroundRef.current = false;
+        pageHiddenAtRef.current = null;
+        setMediaWarning("");
         refresh();
       });
       r.on(RoomEvent.ParticipantConnected, () => {
@@ -8236,7 +8339,11 @@ export function RoomPageLiveKit({
 
       if (!connectedToRoom) {
         setClientError(msg);
-        await disconnectRoom();
+        await disconnectRoom({
+          preserveAttendance: opts.preserveAttendance,
+          preserveTabPresence: opts.preserveTabPresence,
+          preserveJoinRequested: opts.preserveJoinRequested,
+        });
       } else {
         setMediaWarning(normalizeMediaWarningMessage(msg));
         console.warn(
@@ -8688,18 +8795,18 @@ export function RoomPageLiveKit({
     await openPictureInPicture();
   }, [pipOpen, connected, pipSupported, theme, session?.title]);
 
-  const openIntentionsFromPictureInPicture = useCallback(() => {
+  const openTasksFromPictureInPicture = useCallback(() => {
     closePictureInPicture().catch(() => { });
 
-    // Open the normal Intentions tab just long enough to ensure the component is mounted,
-    // then ask IntentionsPanel to open itself in its pinned/PiP overlay format.
-    setRightTab("intentions");
+    // Open the normal Tasks tab just long enough to ensure the component is mounted,
+    // then ask TasksPanel to open itself in its pinned/PiP overlay format.
+    setRightTab("tasks");
     setRightPanelOpen(true);
 
     window.setTimeout(() => {
       try {
         window.dispatchEvent(
-          new CustomEvent("mysession:intentions-open-pinned"),
+          new CustomEvent("mysession:tasks-open-pinned"),
         );
       } catch {
         // ignore
@@ -8732,22 +8839,22 @@ export function RoomPageLiveKit({
 
     try {
       setMobileMediaRestoreBusy(true);
+      setMobileRestoreMode("needs_action");
       setClientError("");
       setTokenError("");
       setMediaWarning("");
 
-      returningFromBackgroundRef.current = false;
-      pageHiddenAtRef.current = null;
-
       await loadBrowserDevices({ preserveSelection: true }).catch(() => { });
       await attendanceHeartbeat().catch(() => { });
 
-      if (roomRef.current && connectedRef.current) {
+      if (roomIsActuallyConnected()) {
         await ensureRoomAudioPlaybackUnlocked("mobile-restore").catch(() => { });
         scheduleRebuildTiles();
         window.setTimeout(() => scheduleRebuildTiles(), 120);
         window.setTimeout(() => scheduleRebuildTiles(), 360);
-        setMobileMediaRestoreOpen(false);
+        closeMobileRestoreState();
+        returningFromBackgroundRef.current = false;
+        pageHiddenAtRef.current = null;
         return;
       }
 
@@ -8755,7 +8862,12 @@ export function RoomPageLiveKit({
       setJoinRequested(true);
 
       if (lkToken && lkServerUrl) {
-        await connectRoom().catch((e) => {
+        await connectRoom({
+          forceReconnect: true,
+          preserveAttendance: true,
+          preserveTabPresence: true,
+          preserveJoinRequested: true,
+        }).catch((e) => {
           console.warn("mobile restore reconnect failed:", e);
           setClientError(
             String((e as any)?.message || e || "restore_reconnect_failed"),
@@ -8775,7 +8887,18 @@ export function RoomPageLiveKit({
       ).catch(() => { });
       scheduleRebuildTiles();
       window.setTimeout(() => scheduleRebuildTiles(), 160);
-      setMobileMediaRestoreOpen(false);
+
+      if (roomIsActuallyConnected()) {
+        closeMobileRestoreState();
+        returningFromBackgroundRef.current = false;
+        pageHiddenAtRef.current = null;
+      } else {
+        setMobileRestoreMode("needs_action");
+        setMobileMediaRestoreOpen(true);
+        setMediaWarning(
+          "Still reconnecting. Tap Rejoin room, or reload only if it does not recover.",
+        );
+      }
     } finally {
       setMobileMediaRestoreBusy(false);
     }
@@ -10292,12 +10415,12 @@ export function RoomPageLiveKit({
     return allTilesForRender;
   }, [allTilesForRender, activeScreenShareTile, screenSharePinned]);
 
-  const [tileIntentionsByUserId, setTileIntentionsByUserId] = useState<Record<string, string>>({});
+  const [tileTasksByUserId, setTileTasksByUserId] = useState<Record<string, string>>({});
 
-  const loadTileIntentions = useCallback(async () => {
+  const loadTileTasks = useCallback(async () => {
     const sid = String(session?.id || "").trim();
     if (!sid) {
-      setTileIntentionsByUserId({});
+      setTileTasksByUserId({});
       return;
     }
 
@@ -10311,7 +10434,7 @@ export function RoomPageLiveKit({
         .limit(160);
 
       if (error || !Array.isArray(data)) {
-        setTileIntentionsByUserId({});
+        setTileTasksByUserId({});
         return;
       }
 
@@ -10323,15 +10446,15 @@ export function RoomPageLiveKit({
         next[userId] = text;
       }
 
-      setTileIntentionsByUserId(next);
+      setTileTasksByUserId(next);
     } catch {
-      setTileIntentionsByUserId({});
+      setTileTasksByUserId({});
     }
   }, [session?.id]);
 
   useEffect(() => {
-    void loadTileIntentions();
-  }, [loadTileIntentions]);
+    void loadTileTasks();
+  }, [loadTileTasks]);
 
   useEffect(() => {
     const sid = String(session?.id || "").trim();
@@ -10342,21 +10465,21 @@ export function RoomPageLiveKit({
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "intentions", filter: `session_id=eq.${sid}` },
-        () => void loadTileIntentions(),
+        () => void loadTileTasks(),
       )
       .subscribe();
 
     return () => {
       safeRemoveRealtimeChannel(ch);
     };
-  }, [session?.id, loadTileIntentions]);
+  }, [session?.id, loadTileTasks]);
 
   const getCurrentIntentionForTile = useCallback(
     (tile: TileModel) => {
       const userId = getTilePersonKey(tile);
-      return tileIntentionsByUserId[userId] || "";
+      return tileTasksByUserId[userId] || "";
     },
-    [tileIntentionsByUserId],
+    [tileTasksByUserId],
   );
 
   const pinnedParticipantTile = useMemo(() => {
@@ -10482,7 +10605,7 @@ export function RoomPageLiveKit({
       authUserId={authUserId || null}
       theme={theme}
       isLight={isLight}
-      onOpenIntentions={() => openRightTab("intentions")}
+      onOpenTasks={() => openRightTab("tasks")}
       onSwitchBackToVideo={() => setMainViewMode("video")}
     />
   ) : useFeaturedLayout ? (
@@ -10808,7 +10931,7 @@ export function RoomPageLiveKit({
           sendReaction(reactionType);
         }}
         onSetPipMode={() => setPipMode("gallery")}
-        onOpenIntentionsPanel={openIntentionsFromPictureInPicture}
+        onOpenIntentionsPanel={openTasksFromPictureInPicture}
       />,
       pipMountEl,
     )
@@ -11339,13 +11462,13 @@ export function RoomPageLiveKit({
         </div>
       )}
 
-      {rightTab === "intentions" && (
+      {rightTab === "tasks" && (
         <div className="h-full min-h-0 flex flex-col">
           <div className="px-5 py-4 border-b border-[#D8D0D0] bg-[#F3F1F1] flex items-center justify-between">
             <div
               className="text-black/85 font-inter font-semibold"
             >
-              Intentions
+              Tasks
             </div>
             <button
               onClick={() => openRightTab(null)}
@@ -11367,8 +11490,8 @@ export function RoomPageLiveKit({
                   className="h-full min-h-0"
                 >
                   {session?.id ? (
-                    <IntentionsPanel
-                      key={`intentions-${session.id}`}
+                    <TasksPanel
+                      key={`tasks-${session.id}`}
                       theme="light"
                       sessionId={session.id}
                       timerText={remainingTime || "--:--"}
@@ -11377,7 +11500,7 @@ export function RoomPageLiveKit({
                       onOpenPictureInPicture={() => {
                         togglePictureInPicture().catch((e) => {
                           console.error(
-                            "open Picture-in-Picture from intentions failed",
+                            "open Picture-in-Picture from tasks failed",
                             e,
                           );
                           alert(
@@ -11924,14 +12047,17 @@ export function RoomPageLiveKit({
                     </div>
 
                     <div className="mt-3 text-[20px] font-bold leading-tight">
-                      You are still in the room
+                      {mobileRestoreMode === "restoring"
+                        ? "Restoring your connection…"
+                        : "Rejoin the room"}
                     </div>
 
                     <div
                       className={`mt-2 text-[13px] leading-5 ${isLight ? "text-black/60" : "text-white/65"}`}
                     >
-                      Mobile browsers can pause camera, microphone, or room
-                      audio when you switch apps. Your room is still here.
+                      {mobileRestoreMode === "restoring"
+                        ? "Mobile browsers may pause the room after you switch apps. Please wait a few seconds while MySession reconnects."
+                        : "Your browser paused the room while you were away. Rejoin to continue with your camera and microphone."}
                     </div>
 
                     {frozenLocalVideoFrame ? (
@@ -11954,8 +12080,10 @@ export function RoomPageLiveKit({
                       ].join(" ")}
                     >
                       {mobileMediaRestoreBusy
-                        ? "Restoring…"
-                        : "Tap to restore audio/video"}
+                        ? "Rejoining…"
+                        : mobileRestoreMode === "restoring"
+                          ? "Reconnect now"
+                          : "Rejoin room"}
                     </button>
 
                     <button
@@ -12115,7 +12243,7 @@ export function RoomPageLiveKit({
           onLeave={() => leave().catch(() => { })}
           onOpenParticipants={() => openRightTab("participants")}
           onOpenChat={() => openRightTab("chat")}
-          onOpenIntentions={() => openRightTab("intentions")}
+          onOpenIntentions={() => openRightTab("tasks")}
           onOpenSettings={() => {
             setSettingsOpen(true);
             setSettingsPreviewVersion((v) => v + 1);

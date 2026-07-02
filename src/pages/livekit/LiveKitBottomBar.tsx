@@ -104,7 +104,7 @@ export function LiveKitBottomBar(props: {
 
     onOpenParticipants: () => void;
     onOpenChat: () => void;
-    onOpenIntentions: () => void;
+    onOpenTasks: () => void;
     onOpenSettings: () => void;
 
     onOpenBugReport?: () => void;
@@ -139,7 +139,7 @@ export function LiveKitBottomBar(props: {
         onLeave,
         onOpenParticipants,
         onOpenChat,
-        onOpenIntentions,
+        onOpenTasks,
         onOpenSettings,
         onOpenBugReport,
         onSendReaction,
@@ -444,7 +444,7 @@ export function LiveKitBottomBar(props: {
 
                                         <button
                                             onClick={() => {
-                                                onOpenIntentions();
+                                                onOpenTasks();
                                                 setShowMoreMenu(false);
                                             }}
                                             className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${isLight
@@ -454,11 +454,11 @@ export function LiveKitBottomBar(props: {
                                             type="button"
                                         >
                                             <Icon
-                                                name="intentions"
+                                                name="tasks"
                                                 theme={theme}
                                                 className="w-4 h-4 opacity-90"
                                             />
-                                            <span>Intentions</span>
+                                            <span>Tasks</span>
                                         </button>
 
                                         <div
@@ -532,12 +532,12 @@ export function LiveKitBottomBar(props: {
                             {chatBtn}
 
                             <button
-                                onClick={onOpenIntentions}
+                                onClick={onOpenTasks}
                                 className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                title="Intentions"
+                                title="Tasks"
                                 type="button"
                             >
-                                <Icon name="intentions" theme={theme} className="w-5 h-5" />
+                                <Icon name="tasks" theme={theme} className="w-5 h-5" />
                             </button>
 
                             <button
