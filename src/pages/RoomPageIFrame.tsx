@@ -70,7 +70,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
-import { IntentionsPanel } from "../components/IntentionsPanel";
+import { TasksPanel } from "../components/TasksPanel";
 import { UserProfileModal } from "../components/UserProfileModal";
 import ChatPanel from "../components/ChatPanel";
 
