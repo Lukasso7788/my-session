@@ -17,6 +17,7 @@ import {
   Lock,
   Unlock,
   TimerReset,
+  GripVertical,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
@@ -303,6 +304,9 @@ type TaskTimerState = {
 type TaskTimerMap = Record<string, TaskTimerState>;
 
 const TASK_TIMER_EVENT = "mysession:task-timers-updated";
+const TASK_TIMER_VISIBILITY_EVENT = "mysession:task-timer-visibility-changed";
+const TASK_ORDER_STORAGE_PREFIX = "mysession_task_order_v1";
+const TASK_TIMER_ENABLED_STORAGE_PREFIX = "mysession_task_timer_enabled_v1";
 const TASK_TIMER_STORAGE_PREFIX = "mysession_task_timers_v1";
 
 function makeTaskTimerStorageKey(sessionId: string | null | undefined, userId: string | null | undefined) {
@@ -504,9 +508,61 @@ export function TasksPanel({
   const [taskTimers, setTaskTimers] = useState<TaskTimerMap>({});
   const [taskTimerTickMs, setTaskTimerTickMs] = useState(() => Date.now());
 
+  const taskOrderStorageKey = useMemo(
+    () => `${TASK_ORDER_STORAGE_PREFIX}:${String(user?.id || "anonymous")}`,
+    [user?.id],
+  );
+  const taskTimerEnabledStorageKey = useMemo(
+    () => `${TASK_TIMER_ENABLED_STORAGE_PREFIX}:${String(user?.id || "anonymous")}`,
+    [user?.id],
+  );
+
+  const [panelTaskOrder, setPanelTaskOrder] = useState<string[]>([]);
+  const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
+  const [taskTimersEnabled, setTaskTimersEnabled] = useState<boolean>(false);
+
   useEffect(() => {
     setTaskTimers(readTaskTimers(taskTimerStorageKey));
   }, [taskTimerStorageKey]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(taskOrderStorageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      setPanelTaskOrder(Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : []);
+    } catch {
+      setPanelTaskOrder([]);
+    }
+  }, [taskOrderStorageKey]);
+
+  useEffect(() => {
+    try {
+      setTaskTimersEnabled(localStorage.getItem(taskTimerEnabledStorageKey) === "true");
+    } catch {
+      setTaskTimersEnabled(false);
+    }
+  }, [taskTimerEnabledStorageKey]);
+
+  useEffect(() => {
+    const ids = panelTasks.map((task) => String(task.id || "")).filter(Boolean);
+    if (!ids.length) {
+      if (panelTaskOrder.length) setPanelTaskOrder([]);
+      return;
+    }
+
+    const idSet = new Set(ids);
+    const next = [
+      ...panelTaskOrder.filter((id) => idSet.has(id)),
+      ...ids.filter((id) => !panelTaskOrder.includes(id)),
+    ];
+
+    if (next.join("|") === panelTaskOrder.join("|")) return;
+    setPanelTaskOrder(next);
+    try {
+      localStorage.setItem(taskOrderStorageKey, JSON.stringify(next));
+    } catch { }
+  }, [panelTasks, panelTaskOrder, taskOrderStorageKey]);
 
   useEffect(() => {
     const refresh = () => {
@@ -1701,6 +1757,61 @@ export function TasksPanel({
   }, [sessionTasks]);
 
 
+  const toggleTaskTimersEnabled = useCallback(() => {
+    const next = !taskTimersEnabled;
+    setTaskTimersEnabled(next);
+    try {
+      localStorage.setItem(taskTimerEnabledStorageKey, String(next));
+      window.dispatchEvent(
+        new CustomEvent(TASK_TIMER_VISIBILITY_EVENT, {
+          detail: { enabled: next, userId: user?.id || "" },
+        }),
+      );
+    } catch { }
+  }, [taskTimerEnabledStorageKey, taskTimersEnabled, user?.id]);
+
+  const persistPanelTaskOrder = useCallback(
+    (nextOrder: string[]) => {
+      setPanelTaskOrder(nextOrder);
+      try {
+        localStorage.setItem(taskOrderStorageKey, JSON.stringify(nextOrder));
+      } catch { }
+    },
+    [taskOrderStorageKey],
+  );
+
+  const reorderPanelTask = useCallback(
+    (fromId: string, toId: string) => {
+      if (!fromId || !toId || fromId === toId) return;
+
+      const currentIds = panelTasks.map((task) => task.id);
+      const base = [
+        ...panelTaskOrder.filter((id) => currentIds.includes(id)),
+        ...currentIds.filter((id) => !panelTaskOrder.includes(id)),
+      ];
+
+      const fromIndex = base.indexOf(fromId);
+      const toIndex = base.indexOf(toId);
+      if (fromIndex < 0 || toIndex < 0) return;
+
+      const next = [...base];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      persistPanelTaskOrder(next);
+    },
+    [panelTaskOrder, panelTasks, persistPanelTaskOrder],
+  );
+
+  const orderedPanelTasks = useMemo(() => {
+    const indexById = new Map(panelTaskOrder.map((id, index) => [id, index]));
+    return [...panelTasks].sort((a, b) => {
+      const ai = indexById.has(a.id) ? Number(indexById.get(a.id)) : Number.MAX_SAFE_INTEGER;
+      const bi = indexById.has(b.id) ? Number(indexById.get(b.id)) : Number.MAX_SAFE_INTEGER;
+      if (ai !== bi) return ai - bi;
+      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+    });
+  }, [panelTaskOrder, panelTasks]);
+
   const renderTaskTimerControls = useCallback(
     ({
       ownerUserId,
@@ -1713,6 +1824,8 @@ export function TasksPanel({
       fallbackId?: unknown;
       compact?: boolean;
     }) => {
+      if (!taskTimersEnabled) return null;
+
       const timerId = makeTaskTimerId(ownerUserId, text, fallbackId);
       const timer = taskTimers[timerId] || null;
       const elapsedMs = getTaskTimerDisplayMs(timer, taskTimerTickMs);
@@ -1736,7 +1849,7 @@ export function TasksPanel({
             className={[
               "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-bold tabular-nums",
               running
-                ? "border-[#81DB86] bg-[#81DB86]/15 text-[#248A3D]"
+                ? "border-[#81DB86] bg-[#81DB86]/15 text-[#81DB86]"
                 : "border-[#CFC6C6] bg-[#F3F1F1] text-black/60",
             ].join(" ")}
             title="Time spent on this task"
@@ -1753,8 +1866,8 @@ export function TasksPanel({
                 className={[
                   buttonBase,
                   running
-                    ? "border-[#F65252]/50 bg-[#F65252]/10 text-[#C73535] hover:bg-[#F65252]/15"
-                    : "border-[#81DB86] bg-[#81DB86]/15 text-[#248A3D] hover:bg-[#81DB86]/25",
+                    ? "border-[#F65252]/50 bg-[#F65252]/10 text-[#F65252] hover:bg-[#F65252]/15"
+                    : "border-[#81DB86] bg-[#81DB86]/15 text-[#81DB86] hover:bg-[#81DB86]/25",
                 ].join(" ")}
                 title={running ? "Pause timer" : "Start timer"}
               >
@@ -1776,7 +1889,7 @@ export function TasksPanel({
         </div>
       );
     },
-    [resetTaskTimer, taskTimerTickMs, taskTimers, toggleTaskTimer, user?.id],
+    [resetTaskTimer, taskTimerTickMs, taskTimers, taskTimersEnabled, toggleTaskTimer, user?.id],
   );
 
   if (!rawSessionId) {
@@ -2124,7 +2237,7 @@ export function TasksPanel({
             <div className="min-w-0">
               <div className="text-[13px] font-semibold text-black/90">Encouragements</div>
               <div className="text-[11px] text-black/50 truncate">
-                {encouragementModalItem?.text || "Team task"}
+                {encouragementModalItem?.text || "Team Task"}
               </div>
             </div>
             <button
@@ -2243,7 +2356,7 @@ export function TasksPanel({
               {pictureInPictureSupported && onOpenPictureInPicture ? (
                 <IconButton
                   theme={panelTheme}
-                  className="border border-[#81DB86] bg-[#81DB86]/10 text-[#2FA84F] hover:bg-[#81DB86]/15"
+                  className="border border-[#81DB86] bg-[#81DB86]/10 text-[#81DB86] hover:bg-[#81DB86]/15"
                   title={
                     pictureInPictureOpen
                       ? "Close Picture-in-Picture video"
@@ -2291,7 +2404,7 @@ export function TasksPanel({
         <div className="mb-5">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className={titleText + " font-inter font-bold text-[17px]"}>
-              My tasks
+              My Tasks
             </div>
 
             {onToggleAccountabilityWall ? (
@@ -2330,6 +2443,22 @@ export function TasksPanel({
             />
 
             <button
+              type="button"
+              onClick={toggleTaskTimersEnabled}
+              className={[
+                "h-12 w-12 shrink-0 rounded-[18px] border transition inline-flex items-center justify-center",
+                taskTimersEnabled
+                  ? "border-[#81DB86] bg-[#81DB86]/10 text-[#81DB86] hover:bg-[#81DB86]/15"
+                  : "border-[#CFC6C6] bg-[#F7F5F5] text-black/45 hover:bg-[#ECEAEA]",
+              ].join(" ")}
+              title={taskTimersEnabled ? "Disable Timer" : "Enable Timer"}
+              aria-label={taskTimersEnabled ? "Disable Timer" : "Enable Timer"}
+              aria-pressed={taskTimersEnabled}
+            >
+              <TimerReset size={18} />
+            </button>
+
+            <button
               onClick={handleAddPanelTask}
               className={[
                 "h-12 px-5 rounded-[18px] font-semibold text-[14px] font-inter transition",
@@ -2352,7 +2481,7 @@ export function TasksPanel({
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              {panelTasks.map((i) => {
+              {orderedPanelTasks.map((i) => {
                 const isEditing = editingId === i.id;
 
                 const circleCls = "text-black/40";
@@ -2369,7 +2498,47 @@ export function TasksPanel({
                 return (
                   <div
                     key={i.id}
-                    className={myCardCls + " font-inter"}
+                    draggable={!isEditing}
+                    className={[
+                      myCardCls,
+                      "font-inter",
+                      draggedTaskId === i.id ? "opacity-45" : "",
+                      dragOverTaskId === i.id && draggedTaskId !== i.id
+                        ? "ring-2 ring-[#5286F6]/40"
+                        : "",
+                    ].join(" ")}
+                    onDragStart={(e) => {
+                      if (isEditing) {
+                        e.preventDefault();
+                        return;
+                      }
+                      setDraggedTaskId(i.id);
+                      setDragOverTaskId(null);
+                      try {
+                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.setData("text/plain", i.id);
+                      } catch { }
+                    }}
+                    onDragOver={(e) => {
+                      if (!draggedTaskId || draggedTaskId === i.id) return;
+                      e.preventDefault();
+                      setDragOverTaskId(i.id);
+                      try {
+                        e.dataTransfer.dropEffect = "move";
+                      } catch { }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const fromId = draggedTaskId || e.dataTransfer.getData("text/plain");
+                      reorderPanelTask(fromId, i.id);
+                      setDraggedTaskId(null);
+                      setDragOverTaskId(null);
+                    }}
+                    onDragEnd={() => {
+                      setDraggedTaskId(null);
+                      setDragOverTaskId(null);
+                    }}
                     onClick={() => togglePanelCompleted(i)}
                     onDoubleClick={(e) => {
                       e.stopPropagation();
@@ -2377,6 +2546,18 @@ export function TasksPanel({
                     }}
                   >
                     <div className="flex items-center gap-3 min-w-0">
+                      {!isEditing ? (
+                        <div
+                          className="shrink-0 cursor-grab active:cursor-grabbing text-black/25 group-hover:text-black/45 transition"
+                          title="Drag to reorder"
+                          aria-label="Drag to reorder"
+                          onClick={(e) => e.stopPropagation()}
+                          onDoubleClick={(e) => e.stopPropagation()}
+                        >
+                          <GripVertical size={17} />
+                        </div>
+                      ) : null}
+
                       <div className="shrink-0">
                         {i.completed ? (
                           <CheckCircle size={18} className="text-[#81DB86]" />
@@ -2438,7 +2619,7 @@ export function TasksPanel({
                                 "h-9 w-9 shrink-0 rounded-full border text-[13px] font-semibold transition inline-flex items-center justify-center",
                                 normalizeTaskVisibility(i.visibility) ===
                                   "public"
-                                  ? "border-[#81DB86] bg-[#81DB86]/15 text-[#248A3D] hover:bg-[#81DB86]/25"
+                                  ? "border-[#81DB86] bg-[#81DB86]/15 text-[#81DB86] hover:bg-[#81DB86]/25"
                                   : "border-[#CFC6C6] bg-[#F3F1F1] text-black/55 hover:bg-[#ECEAEA]",
                               ].join(" ")}
                             >
@@ -2517,7 +2698,7 @@ export function TasksPanel({
         <div
           className={titleText + " font-inter font-bold text-[17px] mb-4"}
         >
-          Team tasks
+          Team Tasks
         </div>
 
         {sessionLoading ? (
@@ -2526,7 +2707,7 @@ export function TasksPanel({
           </div>
         ) : teamTasks.length === 0 ? (
           <div className={"text-[12px] italic font-inter " + mutedText}>
-            No team tasks
+            No Team Tasks
           </div>
         ) : (
           <div className="flex flex-col gap-2">
@@ -2580,7 +2761,7 @@ export function TasksPanel({
                         className={[
                           "h-8 w-8 rounded-full border text-[12px] font-medium inline-flex items-center justify-center shrink-0",
                           item.completed
-                            ? "border-[#81DB86] text-[#2FA84F] bg-[#81DB86]/10"
+                            ? "border-[#81DB86] text-[#81DB86] bg-[#81DB86]/10"
                             : "border-[#5286F6] text-[#5286F6] bg-[#5286F6]/10",
                         ].join(" ")}
                         title={statusText}
