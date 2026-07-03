@@ -293,6 +293,108 @@ function normalizeTextForMatch(x: unknown) {
     .toLowerCase();
 }
 
+
+type TaskTimerState = {
+  elapsed_ms: number;
+  running_since_ms: number | null;
+  updated_at?: string;
+};
+
+type TaskTimerMap = Record<string, TaskTimerState>;
+
+const TASK_TIMER_EVENT = "mysession:task-timers-updated";
+const TASK_TIMER_STORAGE_PREFIX = "mysession_task_timers_v1";
+
+function makeTaskTimerStorageKey(sessionId: string | null | undefined, userId: string | null | undefined) {
+  const sid = String(sessionId || "global").trim() || "global";
+  const uid = String(userId || "anon").trim().toLowerCase() || "anon";
+  return `${TASK_TIMER_STORAGE_PREFIX}:${sid}:${uid}`;
+}
+
+function makeTaskTimerId(ownerUserId: unknown, text: unknown, fallbackId?: unknown) {
+  const owner = String(ownerUserId || "")
+    .trim()
+    .toLowerCase();
+  const normalizedText = normalizeTextForMatch(text);
+  const textKey = normalizedText ? encodeURIComponent(normalizedText).slice(0, 240) : "";
+  const fallback = String(fallbackId || "")
+    .trim()
+    .toLowerCase();
+  return `${owner || "unknown"}:${textKey || `id:${fallback || "unknown"}`}`;
+}
+
+function sanitizeTaskTimerState(raw: unknown): TaskTimerState {
+  const value = raw && typeof raw === "object" ? (raw as any) : {};
+  const elapsed = Math.max(0, Math.round(Number(value.elapsed_ms || 0)));
+  const runningSinceRaw = Number(value.running_since_ms || 0);
+  const runningSince = Number.isFinite(runningSinceRaw) && runningSinceRaw > 0 ? runningSinceRaw : null;
+
+  return {
+    elapsed_ms: elapsed,
+    running_since_ms: runningSince,
+    updated_at: typeof value.updated_at === "string" ? value.updated_at : undefined,
+  };
+}
+
+function readTaskTimers(storageKey: string): TaskTimerMap {
+  if (!storageKey || typeof window === "undefined") return {};
+
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return {};
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+
+    const out: TaskTimerMap = {};
+    Object.entries(parsed as Record<string, unknown>).forEach(([key, value]) => {
+      if (!key) return;
+      out[key] = sanitizeTaskTimerState(value);
+    });
+
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function writeTaskTimers(storageKey: string, timers: TaskTimerMap) {
+  if (!storageKey || typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(timers || {}));
+  } catch { }
+}
+
+function getTaskTimerDisplayMs(timer: TaskTimerState | null | undefined, nowMs: number) {
+  if (!timer) return 0;
+
+  const base = Math.max(0, Math.round(Number(timer.elapsed_ms || 0)));
+  const runningSince = Number(timer.running_since_ms || 0);
+
+  if (!runningSince || !Number.isFinite(runningSince)) return base;
+
+  return Math.max(0, base + Math.max(0, nowMs - runningSince));
+}
+
+function formatTaskTimer(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function isTaskTimerRunning(timer: TaskTimerState | null | undefined) {
+  return !!timer?.running_since_ms;
+}
+
 async function fetchProfilesMap(
   userIds: string[],
 ): Promise<Map<string, ProfileMini>> {
@@ -393,6 +495,147 @@ export function TasksPanel({
   const [planSearch, setPlanSearch] = useState("");
   const [importingItemId, setImportingItemId] = useState<string | null>(null);
   const [lastPlansLoadedAt, setLastPlansLoadedAt] = useState<string>("");
+
+
+  const taskTimerStorageKey = useMemo(
+    () => makeTaskTimerStorageKey(sessionId || rawSessionId || "global", user?.id || ""),
+    [sessionId, rawSessionId, user?.id],
+  );
+  const [taskTimers, setTaskTimers] = useState<TaskTimerMap>({});
+  const [taskTimerTickMs, setTaskTimerTickMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    setTaskTimers(readTaskTimers(taskTimerStorageKey));
+  }, [taskTimerStorageKey]);
+
+  useEffect(() => {
+    const refresh = () => {
+      setTaskTimers(readTaskTimers(taskTimerStorageKey));
+    };
+
+    const onTimerEvent = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail || {};
+      if (!detail?.storageKey || detail.storageKey === taskTimerStorageKey) refresh();
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === taskTimerStorageKey) refresh();
+    };
+
+    window.addEventListener(TASK_TIMER_EVENT, onTimerEvent as EventListener);
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      window.removeEventListener(TASK_TIMER_EVENT, onTimerEvent as EventListener);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [taskTimerStorageKey]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setTaskTimerTickMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const persistTaskTimers = useCallback(
+    (next: TaskTimerMap) => {
+      setTaskTimers(next);
+      writeTaskTimers(taskTimerStorageKey, next);
+      try {
+        window.dispatchEvent(
+          new CustomEvent(TASK_TIMER_EVENT, {
+            detail: { storageKey: taskTimerStorageKey, sessionId, userId: user?.id || "" },
+          }),
+        );
+      } catch { }
+    },
+    [sessionId, taskTimerStorageKey, user?.id],
+  );
+
+  const updateTaskTimer = useCallback(
+    (timerId: string, updater: (prev: TaskTimerState | null) => TaskTimerState | null) => {
+      if (!timerId) return;
+
+      const prevMap = readTaskTimers(taskTimerStorageKey);
+      const nextValue = updater(prevMap[timerId] || null);
+      const nextMap = { ...prevMap };
+
+      if (nextValue) nextMap[timerId] = nextValue;
+      else delete nextMap[timerId];
+
+      persistTaskTimers(nextMap);
+    },
+    [persistTaskTimers, taskTimerStorageKey],
+  );
+
+  const toggleTaskTimer = useCallback(
+    (ownerUserId: unknown, text: unknown, fallbackId?: unknown) => {
+      const timerId = makeTaskTimerId(ownerUserId, text, fallbackId);
+      const now = Date.now();
+
+      updateTaskTimer(timerId, (prev) => {
+        const safePrev = sanitizeTaskTimerState(prev || {});
+
+        if (safePrev.running_since_ms) {
+          return {
+            elapsed_ms: getTaskTimerDisplayMs(safePrev, now),
+            running_since_ms: null,
+            updated_at: new Date(now).toISOString(),
+          };
+        }
+
+        return {
+          elapsed_ms: safePrev.elapsed_ms,
+          running_since_ms: now,
+          updated_at: new Date(now).toISOString(),
+        };
+      });
+    },
+    [updateTaskTimer],
+  );
+
+  const pauseTaskTimer = useCallback(
+    (ownerUserId: unknown, text: unknown, fallbackId?: unknown) => {
+      const timerId = makeTaskTimerId(ownerUserId, text, fallbackId);
+      const now = Date.now();
+
+      updateTaskTimer(timerId, (prev) => {
+        const safePrev = sanitizeTaskTimerState(prev || {});
+        if (!safePrev.running_since_ms) return safePrev.elapsed_ms > 0 ? safePrev : null;
+        return {
+          elapsed_ms: getTaskTimerDisplayMs(safePrev, now),
+          running_since_ms: null,
+          updated_at: new Date(now).toISOString(),
+        };
+      });
+    },
+    [updateTaskTimer],
+  );
+
+  const resetTaskTimer = useCallback(
+    (ownerUserId: unknown, text: unknown, fallbackId?: unknown) => {
+      const timerId = makeTaskTimerId(ownerUserId, text, fallbackId);
+      updateTaskTimer(timerId, () => null);
+    },
+    [updateTaskTimer],
+  );
+
+  const moveTaskTimer = useCallback(
+    (ownerUserId: unknown, fromText: unknown, toText: unknown, fallbackId?: unknown) => {
+      const fromId = makeTaskTimerId(ownerUserId, fromText, fallbackId);
+      const toId = makeTaskTimerId(ownerUserId, toText, fallbackId);
+      if (!fromId || !toId || fromId === toId) return;
+
+      const prevMap = readTaskTimers(taskTimerStorageKey);
+      const existing = prevMap[fromId];
+      if (!existing) return;
+
+      const nextMap = { ...prevMap };
+      delete nextMap[fromId];
+      nextMap[toId] = existing;
+      persistTaskTimers(nextMap);
+    },
+    [persistTaskTimers, taskTimerStorageKey],
+  );
 
   const titleText = "text-black/95";
   const mutedText = "text-black/55";
@@ -1201,6 +1444,10 @@ export function TasksPanel({
         void syncFocusPlanItemCompleted(String(it.focus_plan_item_id), next);
       }
 
+      if (next) {
+        pauseTaskTimer(user.id, it.text, it.id);
+      }
+
       if (isPanelTaskPublic(it)) {
         void upsertOwnSessionTask({
           matchText: it.text,
@@ -1278,6 +1525,9 @@ export function TasksPanel({
 
       setEditingId(null);
       setEditingText("");
+      if (prevText !== text) {
+        moveTaskTimer(user.id, prevText, text, targetId);
+      }
 
       if (isPanelTaskVisibleInRoom(prevItem)) {
         void upsertOwnSessionTask({
@@ -1449,6 +1699,85 @@ export function TasksPanel({
   const teamTasks = useMemo(() => {
     return sessionTasks.slice(0, TEAM_TASKS_RENDER_LIMIT);
   }, [sessionTasks]);
+
+
+  const renderTaskTimerControls = useCallback(
+    ({
+      ownerUserId,
+      text,
+      fallbackId,
+      compact = false,
+    }: {
+      ownerUserId: unknown;
+      text: unknown;
+      fallbackId?: unknown;
+      compact?: boolean;
+    }) => {
+      const timerId = makeTaskTimerId(ownerUserId, text, fallbackId);
+      const timer = taskTimers[timerId] || null;
+      const elapsedMs = getTaskTimerDisplayMs(timer, taskTimerTickMs);
+      const running = isTaskTimerRunning(timer);
+      const isMine = String(ownerUserId || "").trim().toLowerCase() === String(user?.id || "").trim().toLowerCase();
+
+      if (!isMine && elapsedMs <= 0) return null;
+
+      const buttonBase = "h-7 rounded-full border px-2 text-[11px] font-bold transition inline-flex items-center justify-center";
+      const shellBase = compact
+        ? "mt-2 flex flex-wrap items-center gap-1.5"
+        : "mt-2 flex flex-wrap items-center gap-2";
+
+      return (
+        <div
+          className={shellBase}
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <div
+            className={[
+              "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-bold tabular-nums",
+              running
+                ? "border-[#81DB86] bg-[#81DB86]/15 text-[#248A3D]"
+                : "border-[#CFC6C6] bg-[#F3F1F1] text-black/60",
+            ].join(" ")}
+            title="Time spent on this task"
+          >
+            <TimerReset size={13} />
+            <span>{formatTaskTimer(elapsedMs)}</span>
+          </div>
+
+          {isMine ? (
+            <>
+              <button
+                type="button"
+                onClick={() => toggleTaskTimer(ownerUserId, text, fallbackId)}
+                className={[
+                  buttonBase,
+                  running
+                    ? "border-[#F65252]/50 bg-[#F65252]/10 text-[#C73535] hover:bg-[#F65252]/15"
+                    : "border-[#81DB86] bg-[#81DB86]/15 text-[#248A3D] hover:bg-[#81DB86]/25",
+                ].join(" ")}
+                title={running ? "Pause timer" : "Start timer"}
+              >
+                {running ? "Pause" : "Start"}
+              </button>
+
+              {elapsedMs > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => resetTaskTimer(ownerUserId, text, fallbackId)}
+                  className={`${buttonBase} border-[#CFC6C6] bg-[#F7F5F5] text-black/55 hover:bg-[#ECEAEA]`}
+                  title="Reset timer"
+                >
+                  Reset
+                </button>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      );
+    },
+    [resetTaskTimer, taskTimerTickMs, taskTimers, toggleTaskTimer, user?.id],
+  );
 
   if (!rawSessionId) {
     return (
@@ -1962,7 +2291,7 @@ export function TasksPanel({
         <div className="mb-5">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className={titleText + " font-inter font-bold text-[17px]"}>
-              My Tasks
+              My tasks
             </div>
 
             {onToggleAccountabilityWall ? (
@@ -2085,6 +2414,14 @@ export function TasksPanel({
                             Linked to Focus plan item
                           </div>
                         ) : null}
+
+                        {!isEditing
+                          ? renderTaskTimerControls({
+                            ownerUserId: user?.id || i.user_id,
+                            text: i.text,
+                            fallbackId: i.id,
+                          })
+                          : null}
                       </div>
 
                       <div className="shrink-0 flex items-center gap-1.5 rounded-full bg-transparent">
@@ -2180,7 +2517,7 @@ export function TasksPanel({
         <div
           className={titleText + " font-inter font-bold text-[17px] mb-4"}
         >
-          Team Tasks
+          Team tasks
         </div>
 
         {sessionLoading ? (
@@ -2229,6 +2566,13 @@ export function TasksPanel({
                       >
                         {item.text}
                       </div>
+
+                      {renderTaskTimerControls({
+                        ownerUserId: item.user_id,
+                        text: item.text,
+                        fallbackId: item.id,
+                        compact: true,
+                      })}
                     </div>
 
                     <div className="shrink-0 flex items-center gap-2">

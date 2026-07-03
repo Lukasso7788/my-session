@@ -2421,6 +2421,111 @@ type AccountabilityWallTask = {
   } | null;
 };
 
+
+type TaskTimerState = {
+  elapsed_ms: number;
+  running_since_ms: number | null;
+  updated_at?: string;
+};
+
+type TaskTimerMap = Record<string, TaskTimerState>;
+
+const TASK_TIMER_EVENT = "mysession:task-timers-updated";
+const TASK_TIMER_STORAGE_PREFIX = "mysession_task_timers_v1";
+
+function makeTaskTimerStorageKey(sessionId: string | null | undefined, userId: string | null | undefined) {
+  const sid = String(sessionId || "global").trim() || "global";
+  const uid = String(userId || "anon").trim().toLowerCase() || "anon";
+  return `${TASK_TIMER_STORAGE_PREFIX}:${sid}:${uid}`;
+}
+
+function makeTaskTimerId(ownerUserId: unknown, text: unknown, fallbackId?: unknown) {
+  const owner = String(ownerUserId || "")
+    .trim()
+    .toLowerCase();
+  const normalizedText = String(text || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const textKey = normalizedText ? encodeURIComponent(normalizedText).slice(0, 240) : "";
+  const fallback = String(fallbackId || "")
+    .trim()
+    .toLowerCase();
+  return `${owner || "unknown"}:${textKey || `id:${fallback || "unknown"}`}`;
+}
+
+function sanitizeTaskTimerState(raw: unknown): TaskTimerState {
+  const value = raw && typeof raw === "object" ? (raw as any) : {};
+  const elapsed = Math.max(0, Math.round(Number(value.elapsed_ms || 0)));
+  const runningSinceRaw = Number(value.running_since_ms || 0);
+  const runningSince = Number.isFinite(runningSinceRaw) && runningSinceRaw > 0 ? runningSinceRaw : null;
+
+  return {
+    elapsed_ms: elapsed,
+    running_since_ms: runningSince,
+    updated_at: typeof value.updated_at === "string" ? value.updated_at : undefined,
+  };
+}
+
+function readTaskTimers(storageKey: string): TaskTimerMap {
+  if (!storageKey || typeof window === "undefined") return {};
+
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return {};
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+
+    const out: TaskTimerMap = {};
+    Object.entries(parsed as Record<string, unknown>).forEach(([key, value]) => {
+      if (!key) return;
+      out[key] = sanitizeTaskTimerState(value);
+    });
+
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function writeTaskTimers(storageKey: string, timers: TaskTimerMap) {
+  if (!storageKey || typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(timers || {}));
+  } catch { }
+}
+
+function getTaskTimerDisplayMs(timer: TaskTimerState | null | undefined, nowMs: number) {
+  if (!timer) return 0;
+
+  const base = Math.max(0, Math.round(Number(timer.elapsed_ms || 0)));
+  const runningSince = Number(timer.running_since_ms || 0);
+
+  if (!runningSince || !Number.isFinite(runningSince)) return base;
+
+  return Math.max(0, base + Math.max(0, nowMs - runningSince));
+}
+
+function formatTaskTimer(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function isTaskTimerRunning(timer: TaskTimerState | null | undefined) {
+  return !!timer?.running_since_ms;
+}
+
 function getTilePersonKey(tile: TileModel) {
   const userId = String(tile.participantUserId || "")
     .trim()
@@ -2460,6 +2565,132 @@ function AccountabilityWall({
   const [loading, setLoading] = useState(false);
   const [newWallTask, setNewWallTask] = useState("");
   const [wallTaskBusy, setWallTaskBusy] = useState<string | null>(null);
+
+
+  const taskTimerStorageKey = useMemo(
+    () => makeTaskTimerStorageKey(sessionId || "global", authUserId || ""),
+    [authUserId, sessionId],
+  );
+  const [taskTimers, setTaskTimers] = useState<TaskTimerMap>({});
+  const [taskTimerTickMs, setTaskTimerTickMs] = useState(() => Date.now());
+
+  useEffect(() => {
+    setTaskTimers(readTaskTimers(taskTimerStorageKey));
+  }, [taskTimerStorageKey]);
+
+  useEffect(() => {
+    const refresh = () => setTaskTimers(readTaskTimers(taskTimerStorageKey));
+
+    const onTimerEvent = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail || {};
+      if (!detail?.storageKey || detail.storageKey === taskTimerStorageKey) refresh();
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === taskTimerStorageKey) refresh();
+    };
+
+    window.addEventListener(TASK_TIMER_EVENT, onTimerEvent as EventListener);
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      window.removeEventListener(TASK_TIMER_EVENT, onTimerEvent as EventListener);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [taskTimerStorageKey]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setTaskTimerTickMs(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const persistTaskTimers = useCallback(
+    (next: TaskTimerMap) => {
+      setTaskTimers(next);
+      writeTaskTimers(taskTimerStorageKey, next);
+      try {
+        window.dispatchEvent(
+          new CustomEvent(TASK_TIMER_EVENT, {
+            detail: { storageKey: taskTimerStorageKey, sessionId, userId: authUserId || "" },
+          }),
+        );
+      } catch { }
+    },
+    [authUserId, sessionId, taskTimerStorageKey],
+  );
+
+  const updateTaskTimer = useCallback(
+    (timerId: string, updater: (prev: TaskTimerState | null) => TaskTimerState | null) => {
+      if (!timerId) return;
+
+      const prevMap = readTaskTimers(taskTimerStorageKey);
+      const nextValue = updater(prevMap[timerId] || null);
+      const nextMap = { ...prevMap };
+
+      if (nextValue) nextMap[timerId] = nextValue;
+      else delete nextMap[timerId];
+
+      persistTaskTimers(nextMap);
+    },
+    [persistTaskTimers, taskTimerStorageKey],
+  );
+
+  const toggleTaskTimer = useCallback(
+    (item: AccountabilityWallTask) => {
+      const uid = String(authUserId || "").trim();
+      if (!uid || String(item.user_id || "").trim().toLowerCase() !== uid.toLowerCase()) return;
+
+      const timerId = makeTaskTimerId(item.user_id, item.text, item.id);
+      const now = Date.now();
+
+      updateTaskTimer(timerId, (prev) => {
+        const safePrev = sanitizeTaskTimerState(prev || {});
+
+        if (safePrev.running_since_ms) {
+          return {
+            elapsed_ms: getTaskTimerDisplayMs(safePrev, now),
+            running_since_ms: null,
+            updated_at: new Date(now).toISOString(),
+          };
+        }
+
+        return {
+          elapsed_ms: safePrev.elapsed_ms,
+          running_since_ms: now,
+          updated_at: new Date(now).toISOString(),
+        };
+      });
+    },
+    [authUserId, updateTaskTimer],
+  );
+
+  const pauseTaskTimer = useCallback(
+    (item: AccountabilityWallTask) => {
+      const timerId = makeTaskTimerId(item.user_id, item.text, item.id);
+      const now = Date.now();
+
+      updateTaskTimer(timerId, (prev) => {
+        const safePrev = sanitizeTaskTimerState(prev || {});
+        if (!safePrev.running_since_ms) return safePrev.elapsed_ms > 0 ? safePrev : null;
+        return {
+          elapsed_ms: getTaskTimerDisplayMs(safePrev, now),
+          running_since_ms: null,
+          updated_at: new Date(now).toISOString(),
+        };
+      });
+    },
+    [updateTaskTimer],
+  );
+
+  const resetTaskTimer = useCallback(
+    (item: AccountabilityWallTask) => {
+      const uid = String(authUserId || "").trim();
+      if (!uid || String(item.user_id || "").trim().toLowerCase() !== uid.toLowerCase()) return;
+      const timerId = makeTaskTimerId(item.user_id, item.text, item.id);
+      updateTaskTimer(timerId, () => null);
+    },
+    [authUserId, updateTaskTimer],
+  );
 
   const loadTasks = useCallback(async () => {
     const sid = String(sessionId || "").trim();
@@ -2573,8 +2804,8 @@ function AccountabilityWall({
     : "border-[#2B2B2B] bg-[#1B1B1B] text-white";
   const mutedText = isLight ? "text-black/55" : "text-white/55";
   const taskIconSrc = isLight
-    ? "/icons/intentions-light.svg"
-    : "/icons/intentions-dark.svg";
+    ? "/icons/tasks-light.svg"
+    : "/icons/tasks-dark.svg";
 
   const syncOwnWallTaskToPanelTasks = async (args: {
     userId: string;
@@ -2697,6 +2928,10 @@ function AccountabilityWall({
         .eq("session_id", sid);
 
       if (error) throw error;
+
+      if (nextCompleted) {
+        pauseTaskTimer(item);
+      }
 
       void syncOwnWallTaskToPanelTasks({
         userId: uid,
@@ -2879,44 +3114,113 @@ function AccountabilityWall({
                       Loading tasks…
                     </div>
                   ) : userTasks.length ? (
-                    userTasks.map((item) => (
-                      <div
-                        key={item.id}
-                        className={[
-                          "flex items-start gap-2 rounded-2xl border px-3 py-3 font-inter text-[14px] font-normal leading-5",
-                          item.completed
-                            ? isLight
-                              ? "border-black/10 bg-black/[0.02] text-black/35 line-through"
-                              : "border-white/10 bg-white/[0.04] text-white/35 line-through"
-                            : isLight
-                              ? "border-[#CFC6C6] bg-white text-black/85"
-                              : "border-white/10 bg-white/[0.06] text-white/90",
-                        ].join(" ")}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => void toggleOwnWallTask(item)}
-                          disabled={!isLocalCard || !!wallTaskBusy}
+                    userTasks.map((item) => {
+                      const timerId = makeTaskTimerId(item.user_id, item.text, item.id);
+                      const timer = taskTimers[timerId] || null;
+                      const elapsedMs = getTaskTimerDisplayMs(timer, taskTimerTickMs);
+                      const timerRunning = isTaskTimerRunning(timer);
+                      const shouldShowTimer = isLocalCard || elapsedMs > 0;
+
+                      return (
+                        <div
+                          key={item.id}
                           className={[
-                            "mt-[1px] flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border transition",
-                            isLocalCard ? "pointer-events-auto" : "pointer-events-none",
+                            "flex items-start gap-2 rounded-2xl border px-3 py-3 font-inter text-[14px] font-normal leading-5",
                             item.completed
-                              ? "border-[#81DB86]/70 bg-[#81DB86]/15"
+                              ? isLight
+                                ? "border-black/10 bg-black/[0.02] text-black/35"
+                                : "border-white/10 bg-white/[0.04] text-white/35"
                               : isLight
-                                ? "border-black/15 bg-black/[0.02]"
-                                : "border-white/15 bg-white/[0.04]",
+                                ? "border-[#CFC6C6] bg-white text-black/85"
+                                : "border-white/10 bg-white/[0.06] text-white/90",
                           ].join(" ")}
-                          title={isLocalCard ? "Toggle task" : "Task"}
                         >
-                          {item.completed ? (
-                            <span className="text-[11px] leading-none text-[#2FA84F]">✓</span>
-                          ) : (
-                            <img src={taskIconSrc} alt="" className="h-3.5 w-3.5 opacity-55" draggable={false} />
-                          )}
-                        </button>
-                        <span className="min-w-0">{item.text}</span>
-                      </div>
-                    ))
+                          <button
+                            type="button"
+                            onClick={() => void toggleOwnWallTask(item)}
+                            disabled={!isLocalCard || !!wallTaskBusy}
+                            className={[
+                              "mt-[1px] flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border transition",
+                              isLocalCard ? "pointer-events-auto" : "pointer-events-none",
+                              item.completed
+                                ? "border-[#81DB86]/70 bg-[#81DB86]/15"
+                                : isLight
+                                  ? "border-black/15 bg-black/[0.02]"
+                                  : "border-white/15 bg-white/[0.04]",
+                            ].join(" ")}
+                            title={isLocalCard ? "Toggle task" : "Task"}
+                          >
+                            {item.completed ? (
+                              <span className="text-[11px] leading-none text-[#2FA84F]">✓</span>
+                            ) : (
+                              <img src={taskIconSrc} alt="" className="h-3.5 w-3.5 opacity-55" draggable={false} />
+                            )}
+                          </button>
+
+                          <div className="min-w-0 flex-1">
+                            <div className={item.completed ? "line-through" : ""}>{item.text}</div>
+
+                            {shouldShowTimer ? (
+                              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                <div
+                                  className={[
+                                    "inline-flex h-7 items-center rounded-full border px-2.5 text-[11px] font-bold tabular-nums",
+                                    timerRunning
+                                      ? "border-[#81DB86] bg-[#81DB86]/15 text-[#248A3D]"
+                                      : isLight
+                                        ? "border-[#CFC6C6] bg-[#F7F5F5] text-black/60"
+                                        : "border-white/10 bg-white/[0.05] text-white/65",
+                                  ].join(" ")}
+                                  title="Time spent on this task"
+                                >
+                                  {formatTaskTimer(elapsedMs)}
+                                </div>
+
+                                {isLocalCard ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleTaskTimer(item);
+                                      }}
+                                      className={[
+                                        "h-7 rounded-full border px-2 text-[11px] font-bold transition",
+                                        timerRunning
+                                          ? "border-[#F65252]/50 bg-[#F65252]/10 text-[#C73535] hover:bg-[#F65252]/15"
+                                          : "border-[#81DB86] bg-[#81DB86]/15 text-[#248A3D] hover:bg-[#81DB86]/25",
+                                      ].join(" ")}
+                                      title={timerRunning ? "Pause timer" : "Start timer"}
+                                    >
+                                      {timerRunning ? "Pause" : "Start"}
+                                    </button>
+
+                                    {elapsedMs > 0 ? (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          resetTaskTimer(item);
+                                        }}
+                                        className={[
+                                          "h-7 rounded-full border px-2 text-[11px] font-bold transition",
+                                          isLight
+                                            ? "border-[#CFC6C6] bg-[#F7F5F5] text-black/55 hover:bg-[#ECEAEA]"
+                                            : "border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.08]",
+                                        ].join(" ")}
+                                        title="Reset timer"
+                                      >
+                                        Reset
+                                      </button>
+                                    ) : null}
+                                  </>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })
                   ) : (
                     <button
                       type="button"
