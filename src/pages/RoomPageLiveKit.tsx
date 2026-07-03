@@ -10931,7 +10931,7 @@ export function RoomPageLiveKit({
           sendReaction(reactionType);
         }}
         onSetPipMode={() => setPipMode("gallery")}
-        onOpenIntentionsPanel={openTasksFromPictureInPicture}
+        onOpenTasksPanel={openTasksFromPictureInPicture}
       />,
       pipMountEl,
     )
@@ -12240,7 +12240,7 @@ export function RoomPageLiveKit({
           onLeave={() => leave().catch(() => { })}
           onOpenParticipants={() => openRightTab("participants")}
           onOpenChat={() => openRightTab("chat")}
-          onOpenIntentions={() => openRightTab("tasks")}
+          onOpenTasks={() => openRightTab("tasks")}
           onOpenSettings={() => {
             setSettingsOpen(true);
             setSettingsPreviewVersion((v) => v + 1);
