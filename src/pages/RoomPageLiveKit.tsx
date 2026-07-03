@@ -7239,10 +7239,10 @@ export function RoomPageLiveKit({
       try {
         const raw = Number(
           localStorage.getItem("mysession_lk_default_remote_volume_pct") ||
-          "125",
+          "100",
         );
-        if (!Number.isFinite(raw)) return 125;
-        return Math.max(25, Math.min(300, Math.round(raw)));
+        if (!Number.isFinite(raw)) return 100;
+        return Math.max(0, Math.min(300, Math.round(raw)));
       } catch {
         return 125;
       }
@@ -7379,7 +7379,7 @@ export function RoomPageLiveKit({
   }, []);
 
   const applyDefaultRemoteVolumePreset = useCallback((pct: number) => {
-    setDefaultRemoteVolumePct(clamp(Math.round(pct), 25, 300));
+    setDefaultRemoteVolumePct(clamp(Math.round(pct), 0, 300));
   }, []);
 
   const roomNameForApi = useMemo(() => {
@@ -7551,7 +7551,7 @@ export function RoomPageLiveKit({
         (x: any) => x.source === Track.Source.Microphone,
       ) as any;
       const tr = micPub?.track as any;
-      const vol = clamp(pct, 0, 100) / 100;
+      const vol = clamp(pct, 0, 300) / 100;
       if (tr?.setVolume) tr.setVolume(vol);
       else if (typeof (tr as any)?.volume === "number")
         (tr as any).volume = vol;
@@ -7559,7 +7559,7 @@ export function RoomPageLiveKit({
   };
 
   const setParticipantVolumePct = (tile: TileModel, pct: number) => {
-    const v = clamp(Math.round(pct), 0, 100);
+    const v = clamp(Math.round(pct), 0, 300);
     const key = getParticipantVolumeKey(tile);
 
     setVolumePctByParticipantKey((prev) => ({ ...prev, [key]: v }));
@@ -7753,7 +7753,7 @@ export function RoomPageLiveKit({
       });
 
       const pct = Number(
-        volumePctByParticipantKey[volumeKey] ?? defaultRemoteVolumePct,
+        volumePctByParticipantKey[volumeKey] ?? 100,
       );
       if (Number.isFinite(pct)) {
         applyVolumeToRemoteParticipant(tileId, pct);
@@ -12149,10 +12149,7 @@ export function RoomPageLiveKit({
           <>
             <RoomAudioRenderer
               room={roomState}
-              volume={Math.max(
-                0,
-                Math.min(1, Number(defaultRemoteVolumePct || 100) / 100),
-              )}
+              volume={1}
             />
             <div className="fixed bottom-[5.25rem] left-1/2 z-[80] -translate-x-1/2">
               <StartAudio
@@ -12273,9 +12270,6 @@ export function RoomPageLiveKit({
           onBlurStrengthChange={setBlurStrength}
           bgImageUrl={bgImageUrl}
           onSetBgImageUrl={setBgImageUrl}
-          defaultRemoteVolumePct={defaultRemoteVolumePct}
-          onDefaultRemoteVolumePctChange={setDefaultRemoteVolumePct}
-          onResetAllParticipantVolumes={resetAllParticipantVolumesToDefault}
           onApplyMode={async (m) => {
             await applyVideoFx(m);
           }}
@@ -12681,7 +12675,7 @@ export function RoomPageLiveKit({
                 const participantVolumePct = Number.isFinite(
                   Number(participantVolumePctRaw),
                 )
-                  ? clamp(Number(participantVolumePctRaw), 0, 100)
+                  ? clamp(Number(participantVolumePctRaw), 0, 300)
                   : 100;
 
                 const roleBusy = !!pidBase
@@ -12952,6 +12946,74 @@ export function RoomPageLiveKit({
                       )}
                     </>
 
+                    {!targetTile.isLocal && targetTile.kind !== "screen" ? (
+                      <>
+                        <div
+                          className={
+                            isLight
+                              ? "border-t border-[#CFCFCF]"
+                              : "border-t border-[#2B2B2B]"
+                          }
+                        />
+
+                        <div
+                          className={`px-4 pb-3 pt-3 ${isLight ? "text-black/85" : "text-white/90"}`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="font-inter text-[12px] font-bold">
+                                Participant volume
+                              </div>
+                              <div className={`mt-1 text-[11px] ${isLight ? "text-black/50" : "text-white/50"}`}>
+                                Only changes what you hear.
+                              </div>
+                            </div>
+                            <div className={`shrink-0 rounded-xl border px-2 py-1 text-[12px] font-semibold tabular-nums ${isLight ? "border-[#CFCFCF] bg-[#F7F7F7] text-black/75" : "border-[#2B2B2B] bg-[#242424] text-white/80"}`}>
+                              {participantVolumePct}%
+                            </div>
+                          </div>
+
+                          <input
+                            type="range"
+                            min={0}
+                            max={300}
+                            step={5}
+                            value={participantVolumePct}
+                            onChange={(e) => {
+                              setParticipantVolumePct(
+                                targetTile,
+                                Number(e.currentTarget.value),
+                              );
+                            }}
+                            className="mt-3 w-full accent-[#5286F6]"
+                            aria-label="Participant volume"
+                          />
+
+                          <div className="mt-2 grid grid-cols-6 gap-1.5">
+                            {[0, 50, 100, 150, 200, 300].map((pct) => (
+                              <button
+                                key={pct}
+                                type="button"
+                                onClick={() => {
+                                  setParticipantVolumePct(targetTile, pct);
+                                }}
+                                className={`rounded-xl border px-2 py-1.5 text-[11px] font-semibold transition ${participantVolumePct === pct
+                                  ? isLight
+                                    ? "border-black bg-black text-white"
+                                    : "border-white bg-white text-black"
+                                  : isLight
+                                    ? "border-[#CFCFCF] bg-[#F7F7F7] text-black/70 hover:bg-[#E8E8E8]"
+                                    : "border-[#2B2B2B] bg-[#242424] text-white/75 hover:bg-[#303030]"
+                                  }`}
+                              >
+                                {pct}%
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
+
                     <div
                       className={
                         isLight
@@ -13144,48 +13206,6 @@ export function RoomPageLiveKit({
                       </>
                     )}
 
-                    {isHost && (
-                      <>
-                        <div
-                          className={
-                            isLight
-                              ? "border-t border-[#CFCFCF]"
-                              : "border-t border-[#2B2B2B]"
-                          }
-                        />
-
-                        <div
-                          className={`px-4 py-2 text-[11px] ${isLight ? "text-black/55" : "text-white/55"}`}
-                        >
-                          Remote audio for everyone
-                        </div>
-
-                        {[100, 150, 200, 300].map((pct) => (
-                          <button
-                            key={pct}
-                            type="button"
-                            onClick={() => {
-                              setDefaultRemoteVolumePct(pct);
-                              closeTileMenu();
-                            }}
-                            className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
-                          >
-                            Set default remote volume to {pct}%
-                          </button>
-                        ))}
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            resetAllParticipantVolumesToDefault();
-                            closeTileMenu();
-                          }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
-                        >
-                          Reset all participant volumes
-                        </button>
-                      </>
-                    )}
                   </>
                 );
               })()}
