@@ -2358,7 +2358,7 @@ export function TasksPanel({
             "rounded-[22px] border px-4 py-3 " + headerBorder + " " + headerBg
           }
         >
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-3 min-[1280px]:flex-row min-[1280px]:items-center min-[1280px]:justify-between">
             <div className="min-w-0">
               <div
                 className={"font-inter font-bold text-[16px] leading-5 " + headerTitle}
@@ -2370,10 +2370,10 @@ export function TasksPanel({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0 font-inter">
+            <div className="grid w-full grid-cols-3 gap-2 font-inter min-[1280px]:w-auto min-[1280px]:grid-cols-none min-[1280px]:auto-cols-max min-[1280px]:grid-flow-col min-[1280px]:items-center">
               <div
                 className={
-                  "inline-flex items-center gap-2 px-3 py-2 rounded-xl " +
+                  "col-span-3 flex h-9 w-full items-center justify-center gap-2 rounded-xl px-3 min-[1280px]:col-span-1 min-[1280px]:w-auto " +
                   timerPillCls
                 }
                 title="Timer"
@@ -2393,7 +2393,7 @@ export function TasksPanel({
               <IconButton
                 theme={panelTheme}
                 className={
-                  "border border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
+                  "w-full min-[1280px]:w-9 border border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
                 }
                 title="Attach from Focus plan to panel"
                 onClick={(e) => {
@@ -2412,7 +2412,7 @@ export function TasksPanel({
               {pictureInPictureSupported && onOpenPictureInPicture ? (
                 <IconButton
                   theme={panelTheme}
-                  className="border border-[#81DB86] bg-[#81DB86]/10 text-[#81DB86] hover:bg-[#81DB86]/15"
+                  className="w-full min-[1280px]:w-9 border border-[#81DB86] bg-[#81DB86]/10 text-[#81DB86] hover:bg-[#81DB86]/15"
                   title={
                     pictureInPictureOpen
                       ? "Close Picture-in-Picture video"
@@ -2435,7 +2435,7 @@ export function TasksPanel({
               <IconButton
                 theme={panelTheme}
                 className={
-                  "border border-[#F65252] bg-[#F65252]/10 text-[#F65252] hover:bg-[#F65252]/15"
+                  "w-full min-[1280px]:w-9 border border-[#F65252] bg-[#F65252]/10 text-[#F65252] hover:bg-[#F65252]/15"
                 }
                 title={overlayOpen ? "Unpin" : "Pin (always on top if supported)"}
                 onClick={(e) => {
