@@ -2358,7 +2358,7 @@ export function TasksPanel({
             "rounded-[22px] border px-4 py-3 " + headerBorder + " " + headerBg
           }
         >
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-3">
             <div className="min-w-0">
               <div
                 className={"font-inter font-bold text-[16px] leading-5 " + headerTitle}
@@ -2370,7 +2370,7 @@ export function TasksPanel({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0 font-inter">
+            <div className="flex flex-wrap items-center gap-2 font-inter">
               <div
                 className={
                   "inline-flex items-center gap-2 px-3 py-2 rounded-xl " +
@@ -2488,14 +2488,14 @@ export function TasksPanel({
             ) : null}
           </div>
 
-          <div className="flex items-center gap-2 mb-3">
+          <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_48px_auto] items-center gap-2 mb-3">
             <input
               type="text"
               value={newTask}
               onChange={(e) => setNewTask(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAddPanelTask()}
               placeholder="Add a task"
-              className={"flex-1 " + inputCls}
+              className={"min-w-0 w-full " + inputCls}
             />
 
             <button
@@ -2517,7 +2517,7 @@ export function TasksPanel({
             <button
               onClick={handleAddPanelTask}
               className={[
-                "h-12 px-5 rounded-[18px] font-semibold text-[14px] font-inter transition",
+                "h-12 shrink-0 px-4 rounded-[18px] font-semibold text-[14px] font-inter transition",
                 "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white",
               ].join(" ")}
               type="button"
