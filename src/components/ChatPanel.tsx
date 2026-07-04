@@ -574,7 +574,7 @@ function MessageCardInner({
                             <button
                                 ref={readReceiptButtonRef}
                                 type="button"
-                                className="inline-flex items-center gap-1 text-[#5286F6] transition hover:opacity-80"
+                                className="inline-flex items-center gap-1 text-[#81DB86] transition hover:opacity-80"
                                 title={
                                     readers.length === 1
                                         ? `Read by ${readers[0]?.fullName || "Participant"}`
@@ -598,47 +598,88 @@ function MessageCardInner({
                                 ) : null}
                             </button>
 
-                            {readersOpen ? (
-                                <div
-                                    className="absolute right-0 top-full z-[80] mt-2 w-[220px] rounded-2xl border border-[#D8D0D0] bg-[#F3F1F1] p-2 shadow-[0_18px_50px_rgba(0,0,0,0.18)]"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-black/40">
-                                        Read by
-                                    </div>
+                            {readersOpen && typeof document !== "undefined"
+                                ? createPortal(
+                                    <div
+                                        className="fixed inset-0 z-[220] flex items-center justify-center p-4"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setReadersOpen(false);
+                                        }}
+                                    >
+                                        <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
 
-                                    <div className="max-h-[220px] overflow-y-auto">
-                                        {readers.map((reader) => (
-                                            <div
-                                                key={reader.userId}
-                                                className="flex items-center gap-2 rounded-xl px-2 py-2 hover:bg-[#ECEAEA]"
-                                            >
-                                                <img
-                                                    src={
-                                                        reader.avatarUrl ||
-                                                        `https://ui-avatars.com/api/?name=${encodeURIComponent(reader.fullName || "Participant")}`
-                                                    }
-                                                    className="h-7 w-7 rounded-full object-cover"
-                                                    alt=""
-                                                />
-                                                <div className="min-w-0 flex-1">
-                                                    <div className="truncate text-[12px] font-medium text-black/80">
-                                                        {reader.fullName || "Participant"}
+                                        <div
+                                            className="relative z-[1] w-full max-w-[360px] rounded-[24px] border border-[#D8D0D0] bg-[#F3F1F1] p-4 shadow-[0_28px_90px_rgba(0,0,0,0.28)]"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <div className="mb-3 flex items-center justify-between gap-3">
+                                                <div>
+                                                    <div className="text-[16px] font-semibold text-black/90">
+                                                        Read by
                                                     </div>
-                                                    {reader.readAt ? (
-                                                        <div className="text-[10px] text-black/35">
-                                                            {new Date(reader.readAt).toLocaleTimeString([], {
-                                                                hour: "2-digit",
-                                                                minute: "2-digit",
-                                                            })}
-                                                        </div>
-                                                    ) : null}
+                                                    <div className="mt-0.5 text-[12px] text-black/45">
+                                                        {readers.length === 1
+                                                            ? "1 participant"
+                                                            : `${readers.length} participants`}
+                                                    </div>
                                                 </div>
+
+                                                <button
+                                                    type="button"
+                                                    className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#E6E6E6] text-black/55 transition hover:bg-[#DCDCDC] hover:text-black/80"
+                                                    onClick={() => setReadersOpen(false)}
+                                                    aria-label="Close"
+                                                    title="Close"
+                                                >
+                                                    <X size={16} strokeWidth={2.2} />
+                                                </button>
                                             </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            ) : null}
+
+                                            <div className="max-h-[55vh] overflow-y-auto">
+                                                {readers.map((reader) => (
+                                                    <div
+                                                        key={reader.userId}
+                                                        className="flex items-center gap-3 rounded-2xl px-2 py-2.5 hover:bg-[#ECEAEA]"
+                                                    >
+                                                        <img
+                                                            src={
+                                                                reader.avatarUrl ||
+                                                                `https://ui-avatars.com/api/?name=${encodeURIComponent(reader.fullName || "Participant")}`
+                                                            }
+                                                            className="h-10 w-10 rounded-full object-cover"
+                                                            alt=""
+                                                        />
+
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="truncate text-[13px] font-medium text-black/85">
+                                                                {reader.fullName || "Participant"}
+                                                            </div>
+
+                                                            {reader.readAt ? (
+                                                                <div className="mt-0.5 text-[11px] text-black/40">
+                                                                    Read at{" "}
+                                                                    {new Date(reader.readAt).toLocaleTimeString([], {
+                                                                        hour: "2-digit",
+                                                                        minute: "2-digit",
+                                                                    })}
+                                                                </div>
+                                                            ) : null}
+                                                        </div>
+
+                                                        <CheckCheck
+                                                            size={17}
+                                                            strokeWidth={2.2}
+                                                            className="shrink-0 text-[#81DB86]"
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>,
+                                    document.body,
+                                )
+                                : null}
                         </div>
                     ) : null}
 
