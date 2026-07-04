@@ -11,6 +11,7 @@ import emojiData from "@emoji-mart/data";
 import { supabase } from "../lib/supabase";
 import {
     Check,
+    CheckCheck,
     CornerUpLeft,
     Pencil,
     SendHorizontal,
@@ -56,6 +57,9 @@ type ReactionRow = {
 
 const MSG_TABLE = "session_chat_messages";
 const REACTIONS_TABLE = "session_chat_message_reactions";
+const CHAT_READ_RECEIPT_EVENT = "message-read";
+const CHAT_READ_RECEIPT_CHANNEL_PREFIX = "chat-read-receipts";
+const CHAT_READ_RECEIPT_STORAGE_PREFIX = "mysession_chat_read_receipts_v1";
 
 const MESSAGE_BOOTSTRAP_LIMIT = 150;
 const REACTIONS_BOOTSTRAP_LIMIT = 120;
@@ -355,6 +359,7 @@ type MessageCardProps = {
     onDeleteMessage: (messageId: string) => Promise<void>;
     onJumpToMessage: (messageId: string) => void;
     highlighted: boolean;
+    read: boolean;
 };
 
 function MessageCardInner({
@@ -371,6 +376,7 @@ function MessageCardInner({
     onDeleteMessage,
     onJumpToMessage,
     highlighted,
+    read,
 }: MessageCardProps) {
     const name = mine ? "You" : msg.profile?.full_name || "Participant";
     const time = formatTime(msg.created_at);
@@ -551,6 +557,16 @@ function MessageCardInner({
                 >
                     <div className={"text-[11px] truncate " + metaNameCls}>{name}</div>
                     <div className={"text-[11px] " + metaTimeCls}>{time}</div>
+
+                    {mine && read ? (
+                        <span
+                            className="inline-flex items-center text-[#5286F6]"
+                            title="Read"
+                            aria-label="Read"
+                        >
+                            <CheckCheck size={14} strokeWidth={2.2} />
+                        </span>
+                    ) : null}
 
                     {!isEditing && (
                         <>
@@ -842,7 +858,8 @@ const areMessageCardPropsEqual = (
         prev.onUpdateMessage === next.onUpdateMessage &&
         prev.onDeleteMessage === next.onDeleteMessage &&
         prev.onJumpToMessage === next.onJumpToMessage &&
-        prev.highlighted === next.highlighted
+        prev.highlighted === next.highlighted &&
+        prev.read === next.read
     );
 };
 
@@ -924,6 +941,61 @@ export function ChatPanel({
     useEffect(() => {
         messagesRef.current = messages;
     }, [messages]);
+
+    const [readMessageIds, setReadMessageIds] = useState<Set<string>>(
+        () => new Set(),
+    );
+    const readReceiptChannelRef = useRef<any>(null);
+    const readReceiptReadyRef = useRef(false);
+    const reportedReadIdsRef = useRef<Set<string>>(new Set());
+
+    const readReceiptStorageKey = useMemo(() => {
+        const sid = String(sessionId || "").trim();
+        const uid = String(userId || "").trim().toLowerCase();
+        if (!sid || !uid) return "";
+        return `${CHAT_READ_RECEIPT_STORAGE_PREFIX}:${sid}:${uid}`;
+    }, [sessionId, userId]);
+
+    useEffect(() => {
+        if (!readReceiptStorageKey) {
+            setReadMessageIds(new Set());
+            return;
+        }
+
+        try {
+            const raw = sessionStorage.getItem(readReceiptStorageKey);
+            const parsed = raw ? JSON.parse(raw) : [];
+            setReadMessageIds(
+                new Set(Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : []),
+            );
+        } catch {
+            setReadMessageIds(new Set());
+        }
+    }, [readReceiptStorageKey]);
+
+    const rememberReadMessageIds = useCallback(
+        (ids: string[]) => {
+            const normalized = ids.map(String).filter(Boolean);
+            if (!normalized.length) return;
+
+            setReadMessageIds((prev) => {
+                const next = new Set(prev);
+                normalized.forEach((id) => next.add(id));
+
+                if (readReceiptStorageKey) {
+                    try {
+                        sessionStorage.setItem(
+                            readReceiptStorageKey,
+                            JSON.stringify(Array.from(next).slice(-500)),
+                        );
+                    } catch { }
+                }
+
+                return next;
+            });
+        },
+        [readReceiptStorageKey],
+    );
 
     const [reactions, setReactions] = useState<
         Record<string, Record<string, number>>
@@ -1014,6 +1086,56 @@ export function ChatPanel({
         if (!activeDirectPeerId) return null;
         return profilesById[activeDirectPeerId] || null;
     }, [activeDirectPeerId, profilesById]);
+
+    useEffect(() => {
+        if (!sessionId || !userId) return;
+
+        reportedReadIdsRef.current = new Set();
+
+        readReceiptReadyRef.current = false;
+
+        const channel = supabase
+            .channel(`${CHAT_READ_RECEIPT_CHANNEL_PREFIX}:${sessionId}`)
+            .on(
+                "broadcast",
+                { event: CHAT_READ_RECEIPT_EVENT },
+                (payload: any) => {
+                    const data = payload?.payload || payload || {};
+                    const readerUserId = String(data?.readerUserId || "").trim();
+                    if (!readerUserId || readerUserId === userId) return;
+
+                    const ids = Array.isArray(data?.messageIds)
+                        ? data.messageIds.map(String).filter(Boolean)
+                        : [];
+
+                    if (!ids.length) return;
+
+                    const myMessageIds = new Set(
+                        messagesRef.current
+                            .filter((message) => message.user_id === userId)
+                            .map((message) => message.id),
+                    );
+
+                    rememberReadMessageIds(ids.filter((id) => myMessageIds.has(id)));
+                },
+            )
+            .subscribe((status: string) => {
+                readReceiptReadyRef.current = status === "SUBSCRIBED";
+            });
+
+        readReceiptChannelRef.current = channel;
+
+        return () => {
+            readReceiptReadyRef.current = false;
+            readReceiptChannelRef.current = null;
+            try {
+                void channel.unsubscribe?.();
+            } catch { }
+            try {
+                void (supabase as any).removeChannel?.(channel);
+            } catch { }
+        };
+    }, [sessionId, userId, rememberReadMessageIds]);
 
     const activeSubtitle = useMemo(() => {
         if (activeMode === "general") return subtitle;
@@ -2445,6 +2567,53 @@ export function ChatPanel({
         () => messages.slice(-VISIBLE_MESSAGE_LIMIT),
         [messages],
     );
+
+    useEffect(() => {
+        if (!sessionId || !userId) return;
+        if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+
+        const unreadForMe = visibleMessages.filter((message) => {
+            if (!message.id || message.id.startsWith("optimistic-")) return false;
+            if (message.user_id === userId) return false;
+            return !reportedReadIdsRef.current.has(message.id);
+        });
+
+        if (!unreadForMe.length) return;
+
+        const messageIds = unreadForMe.map((message) => message.id);
+
+        const channel = readReceiptChannelRef.current;
+        if (!channel || !readReceiptReadyRef.current) return;
+
+        const timer = window.setTimeout(() => {
+            if (!readReceiptReadyRef.current) return;
+
+            messageIds.forEach((id) => reportedReadIdsRef.current.add(id));
+
+            try {
+                void channel.send({
+                    type: "broadcast",
+                    event: CHAT_READ_RECEIPT_EVENT,
+                    payload: {
+                        readerUserId: userId,
+                        messageIds,
+                        mode: activeMode,
+                        directPeerUserId: activeDirectPeerId,
+                        at: Date.now(),
+                    },
+                });
+            } catch { }
+        }, 120);
+
+        return () => window.clearTimeout(timer);
+    }, [
+        sessionId,
+        userId,
+        visibleMessages,
+        activeMode,
+        activeDirectPeerId,
+    ]);
+
     const modalMessage = reactionDetails.open
         ? messagesRef.current.find((m) => m.id === reactionDetails.messageId) ||
         null
@@ -2813,6 +2982,7 @@ export function ChatPanel({
                                 onDeleteMessage={deleteMessage}
                                 onJumpToMessage={jumpToMessage}
                                 highlighted={highlightedMessageId === m.id}
+                                read={mine && readMessageIds.has(m.id)}
                             />
                         </div>
                     );
