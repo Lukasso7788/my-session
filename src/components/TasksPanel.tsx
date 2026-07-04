@@ -2370,10 +2370,10 @@ export function TasksPanel({
               </div>
             </div>
 
-            <div className="grid w-full grid-cols-3 gap-2 font-inter min-[1280px]:w-auto min-[1280px]:grid-cols-none min-[1280px]:auto-cols-max min-[1280px]:grid-flow-col min-[1280px]:items-center">
+            <div className="flex w-full items-center gap-2 font-inter min-[1280px]:w-auto">
               <div
                 className={
-                  "col-span-3 flex h-9 w-full items-center justify-center gap-2 rounded-xl px-3 min-[1280px]:col-span-1 min-[1280px]:w-auto " +
+                  "flex h-9 min-w-0 flex-1 items-center justify-center gap-2 rounded-xl px-3 min-[1280px]:flex-none min-[1280px]:w-auto " +
                   timerPillCls
                 }
                 title="Timer"
@@ -2412,7 +2412,7 @@ export function TasksPanel({
               {pictureInPictureSupported && onOpenPictureInPicture ? (
                 <IconButton
                   theme={panelTheme}
-                  className="w-full min-[1280px]:w-9 border border-[#81DB86] bg-[#81DB86]/10 text-[#81DB86] hover:bg-[#81DB86]/15"
+                  className="w-9 shrink-0 border border-[#81DB86] bg-[#81DB86]/10 text-[#81DB86] hover:bg-[#81DB86]/15"
                   title={
                     pictureInPictureOpen
                       ? "Close Picture-in-Picture video"
