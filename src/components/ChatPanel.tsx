@@ -46,6 +46,15 @@ type MsgRow = {
 
 type Msg = MsgRow & { profile?: Profile | null };
 
+type ReadReceiptReader = {
+    userId: string;
+    fullName: string;
+    avatarUrl?: string | null;
+    readAt?: number;
+};
+
+type ReadReceiptMap = Record<string, ReadReceiptReader[]>;
+
 type ReactionRow = {
     id: string;
     session_id: string;
@@ -359,7 +368,7 @@ type MessageCardProps = {
     onDeleteMessage: (messageId: string) => Promise<void>;
     onJumpToMessage: (messageId: string) => void;
     highlighted: boolean;
-    read: boolean;
+    readers: ReadReceiptReader[];
 };
 
 function MessageCardInner({
@@ -376,7 +385,7 @@ function MessageCardInner({
     onDeleteMessage,
     onJumpToMessage,
     highlighted,
-    read,
+    readers,
 }: MessageCardProps) {
     const name = mine ? "You" : msg.profile?.full_name || "Participant";
     const time = formatTime(msg.created_at);
@@ -393,6 +402,8 @@ function MessageCardInner({
     const [draft, setDraft] = useState(msg.body);
     const [savingEdit, setSavingEdit] = useState(false);
     const [deleting, setDeleting] = useState(false);
+    const [readersOpen, setReadersOpen] = useState(false);
+    const readReceiptButtonRef = useRef<HTMLButtonElement | null>(null);
 
     const updateReactionMenuPos = useCallback(() => {
         if (!reactionButtonRef.current) return;
@@ -558,14 +569,77 @@ function MessageCardInner({
                     <div className={"text-[11px] truncate " + metaNameCls}>{name}</div>
                     <div className={"text-[11px] " + metaTimeCls}>{time}</div>
 
-                    {mine && read ? (
-                        <span
-                            className="inline-flex items-center text-[#5286F6]"
-                            title="Read"
-                            aria-label="Read"
-                        >
-                            <CheckCheck size={14} strokeWidth={2.2} />
-                        </span>
+                    {mine && readers.length > 0 ? (
+                        <div className="relative">
+                            <button
+                                ref={readReceiptButtonRef}
+                                type="button"
+                                className="inline-flex items-center gap-1 text-[#5286F6] transition hover:opacity-80"
+                                title={
+                                    readers.length === 1
+                                        ? `Read by ${readers[0]?.fullName || "Participant"}`
+                                        : `Read by ${readers.length} people`
+                                }
+                                aria-label={
+                                    readers.length === 1
+                                        ? `Read by ${readers[0]?.fullName || "Participant"}`
+                                        : `Read by ${readers.length} people`
+                                }
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setReadersOpen((v) => !v);
+                                }}
+                            >
+                                <CheckCheck size={14} strokeWidth={2.2} />
+                                {readers.length > 1 ? (
+                                    <span className="text-[10px] font-semibold leading-none">
+                                        {readers.length}
+                                    </span>
+                                ) : null}
+                            </button>
+
+                            {readersOpen ? (
+                                <div
+                                    className="absolute right-0 top-full z-[80] mt-2 w-[220px] rounded-2xl border border-[#D8D0D0] bg-[#F3F1F1] p-2 shadow-[0_18px_50px_rgba(0,0,0,0.18)]"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-black/40">
+                                        Read by
+                                    </div>
+
+                                    <div className="max-h-[220px] overflow-y-auto">
+                                        {readers.map((reader) => (
+                                            <div
+                                                key={reader.userId}
+                                                className="flex items-center gap-2 rounded-xl px-2 py-2 hover:bg-[#ECEAEA]"
+                                            >
+                                                <img
+                                                    src={
+                                                        reader.avatarUrl ||
+                                                        `https://ui-avatars.com/api/?name=${encodeURIComponent(reader.fullName || "Participant")}`
+                                                    }
+                                                    className="h-7 w-7 rounded-full object-cover"
+                                                    alt=""
+                                                />
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="truncate text-[12px] font-medium text-black/80">
+                                                        {reader.fullName || "Participant"}
+                                                    </div>
+                                                    {reader.readAt ? (
+                                                        <div className="text-[10px] text-black/35">
+                                                            {new Date(reader.readAt).toLocaleTimeString([], {
+                                                                hour: "2-digit",
+                                                                minute: "2-digit",
+                                                            })}
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ) : null}
+                        </div>
                     ) : null}
 
                     {!isEditing && (
@@ -859,7 +933,7 @@ const areMessageCardPropsEqual = (
         prev.onDeleteMessage === next.onDeleteMessage &&
         prev.onJumpToMessage === next.onJumpToMessage &&
         prev.highlighted === next.highlighted &&
-        prev.read === next.read
+        prev.readers === next.readers
     );
 };
 
@@ -942,9 +1016,7 @@ export function ChatPanel({
         messagesRef.current = messages;
     }, [messages]);
 
-    const [readMessageIds, setReadMessageIds] = useState<Set<string>>(
-        () => new Set(),
-    );
+    const [readersByMessage, setReadersByMessage] = useState<ReadReceiptMap>({});
     const readReceiptChannelRef = useRef<any>(null);
     const readReceiptReadyRef = useRef(false);
     const reportedReadIdsRef = useRef<Set<string>>(new Set());
@@ -958,35 +1030,98 @@ export function ChatPanel({
 
     useEffect(() => {
         if (!readReceiptStorageKey) {
-            setReadMessageIds(new Set());
+            setReadersByMessage({});
             return;
         }
 
         try {
             const raw = sessionStorage.getItem(readReceiptStorageKey);
-            const parsed = raw ? JSON.parse(raw) : [];
-            setReadMessageIds(
-                new Set(Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : []),
-            );
+            const parsed = raw ? JSON.parse(raw) : {};
+
+            // Backward compatibility with the previous format, which stored only message ids.
+            if (Array.isArray(parsed)) {
+                const legacyMap: ReadReceiptMap = {};
+                parsed.map(String).filter(Boolean).forEach((messageId) => {
+                    legacyMap[messageId] = [
+                        {
+                            userId: "legacy-reader",
+                            fullName: "Participant",
+                        },
+                    ];
+                });
+                setReadersByMessage(legacyMap);
+                return;
+            }
+
+            const next: ReadReceiptMap = {};
+            if (parsed && typeof parsed === "object") {
+                Object.entries(parsed as Record<string, unknown>).forEach(
+                    ([messageId, rawReaders]) => {
+                        if (!messageId || !Array.isArray(rawReaders)) return;
+
+                        const readers = rawReaders
+                            .map((reader: any) => ({
+                                userId: String(reader?.userId || "").trim(),
+                                fullName: String(reader?.fullName || "Participant").trim() || "Participant",
+                                avatarUrl: reader?.avatarUrl ? String(reader.avatarUrl) : null,
+                                readAt: Number(reader?.readAt || 0) || undefined,
+                            }))
+                            .filter((reader) => !!reader.userId);
+
+                        if (readers.length) next[messageId] = readers;
+                    },
+                );
+            }
+
+            setReadersByMessage(next);
         } catch {
-            setReadMessageIds(new Set());
+            setReadersByMessage({});
         }
     }, [readReceiptStorageKey]);
 
-    const rememberReadMessageIds = useCallback(
-        (ids: string[]) => {
-            const normalized = ids.map(String).filter(Boolean);
-            if (!normalized.length) return;
+    const rememberMessageReaders = useCallback(
+        (messageIds: string[], reader: ReadReceiptReader) => {
+            const normalizedIds = messageIds.map(String).filter(Boolean);
+            const readerUserId = String(reader?.userId || "").trim();
 
-            setReadMessageIds((prev) => {
-                const next = new Set(prev);
-                normalized.forEach((id) => next.add(id));
+            if (!normalizedIds.length || !readerUserId) return;
+
+            setReadersByMessage((prev) => {
+                const next: ReadReceiptMap = { ...prev };
+
+                normalizedIds.forEach((messageId) => {
+                    const existing = Array.isArray(next[messageId])
+                        ? [...next[messageId]]
+                        : [];
+
+                    const index = existing.findIndex(
+                        (item) => item.userId === readerUserId,
+                    );
+
+                    if (index >= 0) {
+                        existing[index] = {
+                            ...existing[index],
+                            ...reader,
+                            userId: readerUserId,
+                        };
+                    } else {
+                        existing.push({
+                            ...reader,
+                            userId: readerUserId,
+                        });
+                    }
+
+                    next[messageId] = existing
+                        .filter((item) => !!item.userId)
+                        .slice(-100);
+                });
 
                 if (readReceiptStorageKey) {
                     try {
+                        const entries = Object.entries(next).slice(-500);
                         sessionStorage.setItem(
                             readReceiptStorageKey,
-                            JSON.stringify(Array.from(next).slice(-500)),
+                            JSON.stringify(Object.fromEntries(entries)),
                         );
                     } catch { }
                 }
@@ -1116,7 +1251,25 @@ export function ChatPanel({
                             .map((message) => message.id),
                     );
 
-                    rememberReadMessageIds(ids.filter((id) => myMessageIds.has(id)));
+                    const matchingIds = ids.filter((id) => myMessageIds.has(id));
+                    if (!matchingIds.length) return;
+
+                    const profile =
+                        profilesByIdRef.current[readerUserId] ||
+                        null;
+
+                    rememberMessageReaders(matchingIds, {
+                        userId: readerUserId,
+                        fullName:
+                            String(data?.readerName || "").trim() ||
+                            String(profile?.full_name || "").trim() ||
+                            "Participant",
+                        avatarUrl:
+                            String(data?.readerAvatarUrl || "").trim() ||
+                            profile?.avatar_url ||
+                            null,
+                        readAt: Number(data?.at || Date.now()),
+                    });
                 },
             )
             .subscribe((status: string) => {
@@ -1135,7 +1288,7 @@ export function ChatPanel({
                 void (supabase as any).removeChannel?.(channel);
             } catch { }
         };
-    }, [sessionId, userId, rememberReadMessageIds]);
+    }, [sessionId, userId, rememberMessageReaders]);
 
     const activeSubtitle = useMemo(() => {
         if (activeMode === "general") return subtitle;
@@ -2596,6 +2749,12 @@ export function ChatPanel({
                     event: CHAT_READ_RECEIPT_EVENT,
                     payload: {
                         readerUserId: userId,
+                        readerName:
+                            String(meProfileRef.current?.full_name || "").trim() ||
+                            "Participant",
+                        readerAvatarUrl:
+                            String(meProfileRef.current?.avatar_url || "").trim() ||
+                            null,
                         messageIds,
                         mode: activeMode,
                         directPeerUserId: activeDirectPeerId,
@@ -2982,7 +3141,7 @@ export function ChatPanel({
                                 onDeleteMessage={deleteMessage}
                                 onJumpToMessage={jumpToMessage}
                                 highlighted={highlightedMessageId === m.id}
-                                read={mine && readMessageIds.has(m.id)}
+                                readers={mine ? readersByMessage[m.id] || [] : []}
                             />
                         </div>
                     );
