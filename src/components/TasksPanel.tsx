@@ -308,6 +308,22 @@ const TASK_TIMER_VISIBILITY_EVENT = "mysession:task-timer-visibility-changed";
 const TASK_ORDER_STORAGE_PREFIX = "mysession_task_order_v1";
 const TASK_TIMER_ENABLED_STORAGE_PREFIX = "mysession_task_timer_enabled_v1";
 const TASK_TIMER_STORAGE_PREFIX = "mysession_task_timers_v1";
+const TASKS_SYNC_EVENT = "mysession:tasks-synced";
+
+function emitTasksSync(detail: Record<string, unknown> = {}) {
+  try {
+    window.dispatchEvent(
+      new CustomEvent(TASKS_SYNC_EVENT, {
+        detail: { ...detail, at: Date.now() },
+      }),
+    );
+    window.dispatchEvent(
+      new CustomEvent("mysession:tasks-updated", {
+        detail: { ...detail, at: Date.now() },
+      }),
+    );
+  } catch { }
+}
 
 function makeTaskTimerStorageKey(sessionId: string | null | undefined, userId: string | null | undefined) {
   const sid = String(sessionId || "global").trim() || "global";
@@ -954,6 +970,28 @@ export function TasksPanel({
     };
   }, [sessionId, loadSessionTasks, scheduleSessionTasksReload]);
 
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const refreshFromSharedTaskChange = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail || {};
+      const eventSessionId = String(detail?.sessionId || "").trim();
+
+      if (eventSessionId && eventSessionId !== String(sessionId)) return;
+
+      void loadPanelTasks();
+      scheduleSessionTasksReload(sessionId);
+    };
+
+    window.addEventListener(TASKS_SYNC_EVENT, refreshFromSharedTaskChange as EventListener);
+    window.addEventListener("mysession:tasks-updated", refreshFromSharedTaskChange as EventListener);
+
+    return () => {
+      window.removeEventListener(TASKS_SYNC_EVENT, refreshFromSharedTaskChange as EventListener);
+      window.removeEventListener("mysession:tasks-updated", refreshFromSharedTaskChange as EventListener);
+    };
+  }, [sessionId, loadPanelTasks, scheduleSessionTasksReload]);
+
   const loadEncouragements = useCallback(async () => {
     const ids = sessionTasks
       .map((x) => String(x.id || ""))
@@ -1174,6 +1212,12 @@ export function TasksPanel({
           return null;
         }
 
+        emitTasksSync({
+          action: "update",
+          sessionId,
+          userId: user.id,
+          taskId: existing.id,
+        });
         void loadSessionTasks(sessionId);
         return existing.id;
       }
@@ -1203,6 +1247,12 @@ export function TasksPanel({
           );
         }
 
+        emitTasksSync({
+          action: "insert",
+          sessionId,
+          userId: user.id,
+          taskId: data?.id || null,
+        });
         void loadSessionTasks(sessionId);
         return data?.id || null;
       } catch {
@@ -1236,6 +1286,12 @@ export function TasksPanel({
         return;
       }
 
+      emitTasksSync({
+        action: "delete",
+        sessionId,
+        userId: user.id,
+        taskId: existing.id,
+      });
       scheduleSessionTasksReload(sessionId);
     },
     [

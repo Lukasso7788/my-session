@@ -2432,6 +2432,27 @@ type TaskTimerMap = Record<string, TaskTimerState>;
 
 const TASK_TIMER_EVENT = "mysession:task-timers-updated";
 const TASK_TIMER_STORAGE_PREFIX = "mysession_task_timers_v1";
+const TASKS_SYNC_EVENT = "mysession:tasks-synced";
+
+function emitRoomTasksSync(detail: Record<string, unknown> = {}) {
+  try {
+    const payload = { ...detail, at: Date.now() };
+
+    window.dispatchEvent(
+      new CustomEvent(TASKS_SYNC_EVENT, {
+        detail: payload,
+      }),
+    );
+
+    window.dispatchEvent(
+      new CustomEvent("mysession:tasks-updated", {
+        detail: payload,
+      }),
+    );
+  } catch {
+    // best effort only
+  }
+}
 
 function makeTaskTimerStorageKey(sessionId: string | null | undefined, userId: string | null | undefined) {
   const sid = String(sessionId || "global").trim() || "global";
@@ -2565,6 +2586,7 @@ function AccountabilityWall({
   const [loading, setLoading] = useState(false);
   const [newWallTask, setNewWallTask] = useState("");
   const [wallTaskBusy, setWallTaskBusy] = useState<string | null>(null);
+  const localTasksSyncTimerRef = useRef<number | null>(null);
 
 
   const taskTimerStorageKey = useMemo(
@@ -2770,6 +2792,52 @@ function AccountabilityWall({
     };
   }, [sessionId, loadTasks]);
 
+  useEffect(() => {
+    const sid = String(sessionId || "").trim();
+    if (!sid) return;
+
+    const refreshFromTasksPanel = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail || {};
+      const eventSessionId = String(detail?.sessionId || "").trim();
+
+      if (eventSessionId && eventSessionId !== sid) return;
+
+      if (localTasksSyncTimerRef.current) {
+        window.clearTimeout(localTasksSyncTimerRef.current);
+      }
+
+      localTasksSyncTimerRef.current = window.setTimeout(() => {
+        localTasksSyncTimerRef.current = null;
+        void loadTasks();
+      }, 40);
+    };
+
+    window.addEventListener(
+      TASKS_SYNC_EVENT,
+      refreshFromTasksPanel as EventListener,
+    );
+    window.addEventListener(
+      "mysession:tasks-updated",
+      refreshFromTasksPanel as EventListener,
+    );
+
+    return () => {
+      if (localTasksSyncTimerRef.current) {
+        window.clearTimeout(localTasksSyncTimerRef.current);
+        localTasksSyncTimerRef.current = null;
+      }
+
+      window.removeEventListener(
+        TASKS_SYNC_EVENT,
+        refreshFromTasksPanel as EventListener,
+      );
+      window.removeEventListener(
+        "mysession:tasks-updated",
+        refreshFromTasksPanel as EventListener,
+      );
+    };
+  }, [sessionId, loadTasks]);
+
   const participantTiles = useMemo(() => {
     const out: TileModel[] = [];
     const seen = new Set<string>();
@@ -2894,11 +2962,12 @@ function AccountabilityWall({
         completed: false,
       });
 
-      try {
-        window.dispatchEvent(new CustomEvent("mysession:tasks-updated"));
-      } catch {
-        // best effort only
-      }
+      emitRoomTasksSync({
+        action: "insert",
+        sessionId: sid,
+        userId: uid,
+        taskId: String((data as any)?.id || ""),
+      });
     } catch (e) {
       console.warn("addOwnWallTask failed:", e);
       setWallTasks((prev) => prev.filter((x) => x.id !== optimisticId));
@@ -2939,11 +3008,12 @@ function AccountabilityWall({
         completed: nextCompleted,
       });
 
-      try {
-        window.dispatchEvent(new CustomEvent("mysession:tasks-updated"));
-      } catch {
-        // best effort only
-      }
+      emitRoomTasksSync({
+        action: "update",
+        sessionId: sid,
+        userId: uid,
+        taskId: item.id,
+      });
     } catch (e) {
       console.warn("toggleOwnWallTask failed:", e);
       void loadTasks();
