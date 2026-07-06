@@ -1,11 +1,12 @@
-const DEBUG = true;
+const DEBUG = false;
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
 import ActiveBanModal from "../components/ActiveBanModal";
 import SupportMySessionModal from "../components/SupportMySessionModal";
+import InviteFriendsModal from "../components/InviteFriendsModal";
 import HostSessionPromptModal, { type HostPromptKind } from "../components/HostSessionPromptModal";
 import CommunityPromptModal from "../components/CommunityPromptModal";
 import { SessionsDateFilter } from "../components/SessionsDateFilter";
@@ -31,9 +32,6 @@ type CurrentProfile = BookingProfile & {
 type SessionBookingRow = {
   user_id: string;
   profiles?: BookingProfile | null;
-  created_at?: string | null;
-  booked_start_time?: string | null;
-  booked_end_time?: string | null;
 };
 
 type SessionWithRelations = Session & {
@@ -56,7 +54,6 @@ type SessionWithRelations = Session & {
   session_bookings?: SessionBookingRow[];
 
   live_count?: number;
-  attendance_count?: number;
 };
 
 
@@ -90,8 +87,14 @@ type HostPromptStats = {
 const COMMUNITY_WHATSAPP_URL = "https://chat.whatsapp.com/JjoQhL64NOMITOi7mrG6EC";
 const COMMUNITY_DISCORD_URL = "https://discord.gg/j42NkFmmEj";
 
+function getAppOrigin() {
+  if (typeof window === "undefined") return "https://www.mysession.club";
+  return window.location.origin;
+}
+
 const COMMUNITY_PROMPT_DISMISSED_KEY = "mysession_community_prompt_dismissed_at";
 const COMMUNITY_PROMPT_JOINED_KEY = "mysession_community_prompt_joined_at";
+const INVITE_FRIEND_DISMISSED_KEY = "mysession_invite_friend_popup_dismissed_at";
 
 function toLocalYMDFromISO(iso: string) {
   const d = new Date(iso);
@@ -252,86 +255,6 @@ function resolveSessionType(
   if (String(s.format || "").toLowerCase() === "body") return "body";
 
   return "group";
-}
-
-
-function getSessionStartMs(s: SessionWithRelations) {
-  if (!s.start_time) return Number.MAX_SAFE_INTEGER;
-
-  const ms = new Date(s.start_time).getTime();
-  return Number.isFinite(ms) ? ms : Number.MAX_SAFE_INTEGER;
-}
-
-function getSessionAttendanceCount(s: SessionWithRelations) {
-  const n = Number((s as any).attendance_count || 0);
-  return Number.isFinite(n) ? Math.max(0, n) : 0;
-}
-
-function getSessionTitleSortValue(s: SessionWithRelations) {
-  return String((s as any).title || "").trim().toLowerCase();
-}
-
-
-function getBookingEndMs(row: SessionBookingRow) {
-  const value = String(row?.booked_end_time || "").trim();
-  if (!value) return Number.POSITIVE_INFINITY;
-
-  const ms = new Date(value).getTime();
-  return Number.isFinite(ms) ? ms : Number.POSITIVE_INFINITY;
-}
-
-function getBookingStartMs(row: SessionBookingRow) {
-  const value = String(row?.booked_start_time || row?.created_at || "").trim();
-  if (!value) return Number.MAX_SAFE_INTEGER;
-
-  const ms = new Date(value).getTime();
-  return Number.isFinite(ms) ? ms : Number.MAX_SAFE_INTEGER;
-}
-
-function normalizeBookingsForSession(
-  session: SessionWithRelations,
-  rows: SessionBookingRow[]
-) {
-  const type = resolveSessionType(session);
-
-  if (type !== "infinite") {
-    // Scheduled group/body sessions: keep legacy bookings even when time range is null.
-    return [...rows].sort((a, b) => getBookingStartMs(a) - getBookingStartMs(b));
-  }
-
-  const now = Date.now();
-
-  // Infinite rooms: time-ranged bookings are reservations. Hide expired reservations.
-  return [...rows]
-    .filter((row) => getBookingEndMs(row) > now)
-    .sort((a, b) => getBookingStartMs(a) - getBookingStartMs(b));
-}
-
-function sortSessionsForSessionsPage(items: SessionWithRelations[]) {
-  return [...items].sort((a, b) => {
-    const aType = resolveSessionType(a);
-    const bType = resolveSessionType(b);
-
-    // Infinite rooms stay above dated group/body sessions when the list is mixed.
-    if (aType === "infinite" && bType !== "infinite") return -1;
-    if (aType !== "infinite" && bType === "infinite") return 1;
-
-    // Infinite rooms: sort ONLY by durable attendance popularity.
-    // Bookings must not affect room order.
-    if (aType === "infinite" && bType === "infinite") {
-      const attendanceDiff = getSessionAttendanceCount(b) - getSessionAttendanceCount(a);
-      if (attendanceDiff !== 0) return attendanceDiff;
-
-      return getSessionTitleSortValue(a).localeCompare(getSessionTitleSortValue(b));
-    }
-
-    // Group/body sessions: chronological only.
-    // Bookings and attendance must not affect scheduled session order.
-    const startDiff = getSessionStartMs(a) - getSessionStartMs(b);
-    if (startDiff !== 0) return startDiff;
-
-    return getSessionTitleSortValue(a).localeCompare(getSessionTitleSortValue(b));
-  });
 }
 
 function InfinityIcon({ className = "w-5 h-5" }: { className?: string }) {
@@ -540,6 +463,32 @@ function buildBodySchedule(duration: 25 | 50) {
 }
 
 
+const SESSIONS_BASE_TIMEOUT_MS = 12_000;
+const SESSIONS_ENRICHMENT_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(
+  promise: PromiseLike<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> {
+  let timeoutId: number | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label}_timeout`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([
+    Promise.resolve(promise),
+    timeoutPromise,
+  ]).finally(() => {
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+    }
+  });
+}
+
 
 export function SessionsPage() {
   const navigate = useNavigate();
@@ -549,22 +498,28 @@ export function SessionsPage() {
 
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionsLoadError, setSessionsLoadError] = useState<string | null>(null);
+
+  const sessionsFetchGenerationRef = useRef(0);
+  const hasLoadedSessionsOnceRef = useRef(false);
+
   const [activeBan, setActiveBan] = useState<ActiveBan | null>(null);
   const [banChecking, setBanChecking] = useState(false);
 
   const [sessionTypeTab, setSessionTypeTab] = useState<
     "group" | "infinite" | "body"
-  >("infinite");
+  >("group");
 
   const [dateFilter, setDateFilter] = useState<string | null>(null);
   const [currentProfile, setCurrentProfile] = useState<CurrentProfile | null>(
     null
   );
-  const [howItWorksOpen, setHowItWorksOpen] = useState(false);
 
   const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
   const [lifetimeSessionsCount, setLifetimeSessionsCount] = useState<number | null>(null);
   const [supportModalOpen, setSupportModalOpen] = useState(false);
+  const [inviteFriendsOpen, setInviteFriendsOpen] = useState(false);
+  const [referralCode, setReferralCode] = useState("");
   const [hostPromptStats, setHostPromptStats] = useState<HostPromptStats | null>(null);
   const [hostPromptOpen, setHostPromptOpen] = useState(false);
   const [hostPromptKind, setHostPromptKind] = useState<HostPromptKind>("never_hosted");
@@ -598,6 +553,45 @@ export function SessionsPage() {
     PostSessionSessionOption[]
   >([]);
   const [postSessionBookingBusyId, setPostSessionBookingBusyId] = useState("");
+
+  const referralLink = useMemo(() => {
+    const origin = getAppOrigin();
+    const code = String(referralCode || "").trim();
+
+    if (!code) return origin;
+
+    return `${origin}/?ref=${encodeURIComponent(code)}`;
+  }, [referralCode]);
+
+  useEffect(() => {
+    if (!user?.id) {
+      setReferralCode("");
+      return;
+    }
+
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const { data, error } = await supabase.rpc("get_or_create_referral_code");
+
+        if (error) throw error;
+
+        if (!cancelled) {
+          setReferralCode(String((data as any)?.code || ""));
+        }
+      } catch (e) {
+        if (DEBUG) console.warn("[sessions-invite] referral code load failed:", e);
+        if (!cancelled) setReferralCode("");
+      }
+    };
+
+    void run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   const checkSessionsPageBan = useCallback(async () => {
     if (!user?.id) {
@@ -784,7 +778,6 @@ export function SessionsPage() {
     if (activeBan) return;
     if (supportModalOpen) return;
     if (postSessionPrompt.open) return;
-    if (howItWorksOpen) return;
 
     if (!hostPromptStats) return;
 
@@ -838,7 +831,6 @@ export function SessionsPage() {
     activeBan,
     supportModalOpen,
     postSessionPrompt.open,
-    howItWorksOpen,
     hostPromptStats,
     sessions,
   ]);
@@ -848,8 +840,39 @@ export function SessionsPage() {
     if (activeBan) return;
     if (supportModalOpen) return;
     if (hostPromptOpen) return;
+    if (communityPromptOpen) return;
     if (postSessionPrompt.open) return;
-    if (howItWorksOpen) return;
+
+    const lastDismissed = Number(
+      localStorage.getItem(INVITE_FRIEND_DISMISSED_KEY) || 0
+    );
+
+    const oneDayMs = 24 * 60 * 60 * 1000;
+
+    if (lastDismissed && Date.now() - lastDismissed < oneDayMs) return;
+
+    const timer = window.setTimeout(() => {
+      setInviteFriendsOpen(true);
+    }, 4200);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    user?.id,
+    activeBan,
+    supportModalOpen,
+    hostPromptOpen,
+    communityPromptOpen,
+    postSessionPrompt.open,
+  ]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (activeBan) return;
+    if (supportModalOpen) return;
+    if (hostPromptOpen) return;
+    if (postSessionPrompt.open) return;
 
     const now = Date.now();
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
@@ -876,7 +899,6 @@ export function SessionsPage() {
     supportModalOpen,
     hostPromptOpen,
     postSessionPrompt.open,
-    howItWorksOpen,
   ]);
 
   useEffect(() => {
@@ -896,18 +918,6 @@ export function SessionsPage() {
     void checkSessionsPageBan();
     return false;
   }, [activeBan, checkSessionsPageBan]);
-
-  useEffect(() => {
-    if (!howItWorksOpen) return;
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setHowItWorksOpen(false);
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [howItWorksOpen]);
 
   const closePostSessionPrompt = useCallback(() => {
     setPostSessionPrompt({
@@ -1174,68 +1184,125 @@ export function SessionsPage() {
   }, []);
 
   const fetchSessions = useCallback(async () => {
-    if (DEBUG) console.log("[DEBUG Sessions] Fetch sessions…");
+    const requestGeneration = ++sessionsFetchGenerationRef.current;
+    const isCurrentRequest = () =>
+      requestGeneration === sessionsFetchGenerationRef.current;
+
+    if (DEBUG) {
+      console.log("[Sessions] Fetch started:", requestGeneration);
+    }
+
+    /**
+     * Only show the full-page loader on the initial load.
+     *
+     * Refreshes after booking/editing/creating keep the current cards visible.
+     */
+    if (!hasLoadedSessionsOnceRef.current) {
+      setIsLoading(true);
+    }
+
+    setSessionsLoadError(null);
 
     try {
-      setIsLoading(true);
-
       /**
-       * Public-safe query.
+       * CRITICAL REQUEST.
        *
-       * Do NOT nested-select session_bookings/profiles/email here.
-       * If anon RLS blocks any nested relation, the whole session list can fail.
+       * This is the only request allowed to block the initial SessionsPage render.
        */
-      const { data, error } = await supabase
-        .from("sessions")
-        .select(
+      const { data, error } = await withTimeout(
+        supabase
+          .from("sessions")
+          .select(
+            `
+            id,
+            title,
+            host_id,
+            host_name,
+            duration_minutes,
+            format,
+            start_time,
+            status,
+            created_at,
+            custom_slug,
+            session_format_type,
+            is_silent,
+            max_participants
           `
-          id,
-          title,
-          host_id,
-          host_name,
-          duration_minutes,
-          format,
-          start_time,
-          status,
-          created_at,
-          description,
-          custom_slug,
-          schedule,
-          session_format_type,
-          is_silent,
-          max_participants
-        `
-        )
-        .order("start_time", { ascending: true });
+          )
+          .or(
+            `session_format_type.eq.infinite,start_time.gte.${new Date(
+              Date.now() - 12 * 60 * 60 * 1000
+            ).toISOString()}`
+          )
+          .order("start_time", { ascending: true })
+          .limit(120),
+        SESSIONS_BASE_TIMEOUT_MS,
+        "sessions_base_load"
+      );
+
+      if (!isCurrentRequest()) {
+        if (DEBUG) {
+          console.log(
+            "[Sessions] Ignoring stale base response:",
+            requestGeneration
+          );
+        }
+
+        return;
+      }
 
       if (error) throw error;
 
       const rows = (data || []) as unknown as SessionWithRelations[];
 
-      if (DEBUG) console.log("[DEBUG Sessions] Loaded public sessions:", rows);
-
       const ids = rows
-        .map((s) => String((s as any).id || ""))
-        .filter((x) => x.length > 0);
+        .map((session) => String(session.id || "").trim())
+        .filter(Boolean);
 
       /**
-       * Optional public slug enrichment.
+       * Render base session cards immediately.
        *
-       * Reusable public links now live in public_url_slugs, where owner_id points
-       * to the current session. The sessions row may still have an old/null
-       * custom_slug, so cards must receive the slug from public_url_slugs too.
+       * Slugs, bookings and live counts are intentionally not required here.
        */
-      let publicSlugBySessionId = new Map<string, string>();
+      const baseRows = rows.map((session) => ({
+        ...session,
+        session_bookings: session.session_bookings || [],
+        live_count: session.live_count ?? 0,
+      }));
 
-      if (ids.length) {
+      setSessions(baseRows);
+      hasLoadedSessionsOnceRef.current = true;
+      setIsLoading(false);
+
+      if (DEBUG) {
+        console.log("[Sessions] Base sessions rendered:", baseRows.length);
+      }
+
+      if (!ids.length) return;
+
+      /**
+       * OPTIONAL ENRICHMENT 1:
+       * public slugs
+       *
+       * Never blocks page rendering.
+       */
+      const loadPublicSlugs = async () => {
         try {
-          const { data: slugRows, error: slugError } = await supabase
-            .from("public_url_slugs")
-            .select("slug, owner_id")
-            .eq("owner_type", "session")
-            .in("owner_id", ids);
+          const { data: slugRows, error: slugError } = await withTimeout(
+            supabase
+              .from("public_url_slugs")
+              .select("slug, owner_id")
+              .eq("owner_type", "session")
+              .in("owner_id", ids),
+            SESSIONS_ENRICHMENT_TIMEOUT_MS,
+            "sessions_slug_enrichment"
+          );
+
+          if (!isCurrentRequest()) return;
 
           if (slugError) throw slugError;
+
+          const publicSlugBySessionId = new Map<string, string>();
 
           for (const row of (slugRows || []) as any[]) {
             const ownerId = String(row?.owner_id || "").trim();
@@ -1245,69 +1312,80 @@ export function SessionsPage() {
               publicSlugBySessionId.set(ownerId, slug);
             }
           }
-        } catch (slugErr) {
+
+          setSessions((previousSessions) =>
+            previousSessions.map((session) => {
+              const sessionId = String(session.id || "").trim();
+              const publicSlug =
+                publicSlugBySessionId.get(sessionId) || "";
+
+              if (!publicSlug) return session;
+
+              return {
+                ...session,
+                public_slug: publicSlug,
+                public_url_slug: {
+                  slug: publicSlug,
+                },
+                public_url_slugs: [
+                  {
+                    slug: publicSlug,
+                    owner_type: "session",
+                    owner_id: sessionId,
+                  },
+                ],
+              };
+            })
+          );
+        } catch (error) {
           if (DEBUG) {
             console.warn(
-              "[DEBUG Sessions] Optional public slug load failed. Cards will fall back to session id:",
-              slugErr
+              "[Sessions] Optional slug enrichment failed:",
+              error
             );
           }
-
-          publicSlugBySessionId = new Map();
         }
-      }
+      };
 
       /**
-       * Optional enrichment.
+       * OPTIONAL ENRICHMENT 2:
+       * booked users / avatars
        *
-       * If anon RLS blocks session_bookings/profiles, we do NOT fail the page.
-       * Session cards still render; booked avatars/count just won't be enriched.
-       *
-       * Important: older public_session_bookings views may not have
-       * booked_start_time/booked_end_time yet. In that case we retry with
-       * the old column list so normal group bookings do not disappear.
+       * Never blocks page rendering.
        */
-      let bookingsBySessionId = new Map<string, SessionBookingRow[]>();
-
-      if (ids.length) {
+      const loadPublicBookings = async () => {
         try {
-          let bookingsData: any[] | null = null;
+          const { data: bookingsData, error: bookingsError } =
+            await withTimeout(
+              supabase
+                .from("public_session_bookings")
+                .select(
+                  "session_id, user_id, full_name, avatar_url"
+                )
+                .in("session_id", ids),
+              SESSIONS_ENRICHMENT_TIMEOUT_MS,
+              "sessions_bookings_enrichment"
+            );
 
-          const withRange = await supabase
-            .from("public_session_bookings")
-            .select("session_id, user_id, full_name, avatar_url, created_at, booked_start_time, booked_end_time")
-            .in("session_id", ids);
+          if (!isCurrentRequest()) return;
 
-          if (withRange.error) {
-            if (DEBUG) {
-              console.warn(
-                "[DEBUG Sessions] public_session_bookings range columns unavailable; retrying old view shape:",
-                withRange.error
-              );
-            }
+          if (bookingsError) throw bookingsError;
 
-            const legacy = await supabase
-              .from("public_session_bookings")
-              .select("session_id, user_id, full_name, avatar_url, created_at")
-              .in("session_id", ids);
+          const bookingsBySessionId = new Map<
+            string,
+            SessionBookingRow[]
+          >();
 
-            if (legacy.error) throw legacy.error;
-            bookingsData = (legacy.data || []) as any[];
-          } else {
-            bookingsData = (withRange.data || []) as any[];
-          }
+          for (const row of (bookingsData || []) as any[]) {
+            const sessionId = String(row?.session_id || "").trim();
 
-          for (const row of bookingsData || []) {
-            const sid = String(row?.session_id || "");
-            if (!sid) continue;
+            if (!sessionId) continue;
 
-            const prev = bookingsBySessionId.get(sid) || [];
+            const previousBookings =
+              bookingsBySessionId.get(sessionId) || [];
 
-            prev.push({
+            previousBookings.push({
               user_id: String(row?.user_id || ""),
-              created_at: row?.created_at || null,
-              booked_start_time: row?.booked_start_time || null,
-              booked_end_time: row?.booked_end_time || null,
               profiles: {
                 id: String(row?.user_id || ""),
                 full_name: row?.full_name || null,
@@ -1315,103 +1393,59 @@ export function SessionsPage() {
               },
             });
 
-            bookingsBySessionId.set(sid, prev);
-          }
-        } catch (bookingsErr) {
-          if (DEBUG) {
-            console.warn(
-              "[DEBUG Sessions] Optional bookings load failed. Public sessions will still render:",
-              bookingsErr
+            bookingsBySessionId.set(
+              sessionId,
+              previousBookings
             );
           }
 
-          bookingsBySessionId = new Map();
+          setSessions((previousSessions) =>
+            previousSessions.map((session) => ({
+              ...session,
+              session_bookings:
+                bookingsBySessionId.get(String(session.id)) || [],
+            }))
+          );
+        } catch (error) {
+          if (DEBUG) {
+            console.warn(
+              "[Sessions] Optional bookings enrichment failed:",
+              error
+            );
+          }
         }
-      }
+      };
 
       /**
-       * Popularity enrichment. Used only for infinite-room sorting.
+       * Start all optional enrichment in parallel.
        *
-       * Important:
-       * - Do NOT sort group/body sessions by bookings or attendance.
-       * - For infinite rooms, the durable popularity signal is total session_attendance count.
-       * - Prefer the public aggregate view because direct session_attendance can be incomplete
-       *   under client-side RLS.
+       * IMPORTANT:
+       * No await here.
        */
-      let attendanceCountBySessionId = new Map<string, number>();
+      void loadPublicSlugs();
+      void loadPublicBookings();
+      void fetchLiveCounts(ids);
+    } catch (error) {
+      if (!isCurrentRequest()) return;
 
-      if (ids.length) {
-        try {
-          const fromView = await supabase
-            .from("public_session_attendance_counts")
-            .select("session_id, attendance_count")
-            .in("session_id", ids);
+      console.error(
+        "[Sessions] Critical base session load failed:",
+        error
+      );
 
-          if (!fromView.error) {
-            for (const row of (fromView.data || []) as any[]) {
-              const sid = String(row?.session_id || "");
-              if (!sid) continue;
-              attendanceCountBySessionId.set(sid, Number(row?.attendance_count || 0));
-            }
-          } else {
-            if (DEBUG) {
-              console.warn(
-                "[DEBUG Sessions] public_session_attendance_counts unavailable; falling back to direct session_attendance count:",
-                fromView.error
-              );
-            }
-
-            const { data: attendanceRows, error: attendanceError } = await supabase
-              .from("session_attendance")
-              .select("session_id")
-              .in("session_id", ids)
-              .limit(50000);
-
-            if (attendanceError) throw attendanceError;
-
-            for (const row of (attendanceRows || []) as any[]) {
-              const sid = String(row?.session_id || "");
-              if (!sid) continue;
-              attendanceCountBySessionId.set(sid, (attendanceCountBySessionId.get(sid) || 0) + 1);
-            }
-          }
-        } catch (attendanceErr) {
-          if (DEBUG) {
-            console.warn(
-              "[DEBUG Sessions] Optional attendance popularity load failed. Infinite rooms may fall back to title order:",
-              attendanceErr
-            );
-          }
-
-          attendanceCountBySessionId = new Map();
-        }
+      /**
+       * Keep already loaded sessions visible during a failed refresh.
+       *
+       * Only show an empty/error state when the first load itself fails.
+       */
+      if (!hasLoadedSessionsOnceRef.current) {
+        setSessions([]);
       }
 
-      const hydratedRows = rows.map((s) => {
-        const sessionId = String((s as any).id || "").trim();
-        const publicSlug = publicSlugBySessionId.get(sessionId) || "";
+      setSessionsLoadError(
+        "We couldn't load the sessions. Please try again."
+      );
 
-        return {
-          ...s,
-          public_slug: publicSlug || (s as any).public_slug || null,
-          public_url_slug: publicSlug
-            ? { slug: publicSlug }
-            : (s as any).public_url_slug || null,
-          public_url_slugs: publicSlug
-            ? [{ slug: publicSlug, owner_type: "session", owner_id: sessionId }]
-            : (s as any).public_url_slugs || [],
-          session_bookings: normalizeBookingsForSession(s, bookingsBySessionId.get(sessionId) || []),
-          attendance_count: attendanceCountBySessionId.get(sessionId) || 0,
-        };
-      });
-
-      setSessions(hydratedRows);
-
-      await fetchLiveCounts(ids);
-    } catch (err) {
-      console.error("[DEBUG Sessions] FAILED LOADING:", err);
-      setSessions([]);
-    } finally {
       setIsLoading(false);
     }
   }, [fetchLiveCounts]);
@@ -1442,7 +1476,7 @@ export function SessionsPage() {
       void fetchLiveCounts(sessionIds);
     };
 
-    const t = window.setInterval(run, 60_000);
+    const t = window.setInterval(run, 90_000);
 
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
@@ -1471,7 +1505,7 @@ export function SessionsPage() {
   };
 
   const activeSessions = useMemo(
-    () => sortSessionsForSessionsPage(sessions.filter((s) => !isExpired(s))),
+    () => sessions.filter((s) => !isExpired(s)),
     [sessions]
   );
 
@@ -1485,22 +1519,15 @@ export function SessionsPage() {
     sessionTypeTab === "group" && isAllDatesValue(dateFilter);
 
   const visibleSessions = useMemo(() => {
-    if (sessionTypeTab === "infinite") {
-      return sortSessionsForSessionsPage(typeFilteredSessions);
-    }
+    if (sessionTypeTab === "infinite") return typeFilteredSessions;
+    if (isAllDatesValue(dateFilter)) return typeFilteredSessions;
 
-    if (isAllDatesValue(dateFilter)) {
-      return sortSessionsForSessionsPage(typeFilteredSessions);
-    }
+    return typeFilteredSessions.filter((s) => {
+      if (!s.start_time) return false;
 
-    return sortSessionsForSessionsPage(
-      typeFilteredSessions.filter((s) => {
-        if (!s.start_time) return false;
-
-        const ymd = toLocalYMDFromISO(s.start_time);
-        return ymd === dateFilter;
-      })
-    );
+      const ymd = toLocalYMDFromISO(s.start_time);
+      return ymd === dateFilter;
+    });
   }, [typeFilteredSessions, dateFilter, sessionTypeTab]);
 
   const groupedVisibleSessions = useMemo(() => {
@@ -1537,31 +1564,18 @@ export function SessionsPage() {
     navigate(next);
   };
 
-  const book = async (
-    id: string,
-    opts?: {
-      booked_start_time?: string | null;
-      booked_end_time?: string | null;
-      booking_note?: string | null;
-    }
-  ) => {
+  const book = async (id: string) => {
     if (showBanModal()) return;
 
     if (!user) {
       return navigate(`/login?next=${encodeURIComponent("/sessions")}`);
     }
 
-    const payload: any = {
-      session_id: id,
-      user_id: user.id,
-    };
-
-    if (opts?.booked_start_time) payload.booked_start_time = opts.booked_start_time;
-    if (opts?.booked_end_time) payload.booked_end_time = opts.booked_end_time;
-    if (opts?.booking_note) payload.booking_note = opts.booking_note;
-
     try {
-      const { error } = await supabase.from("session_bookings").insert(payload);
+      const { error } = await supabase.from("session_bookings").insert({
+        session_id: id,
+        user_id: user.id,
+      });
 
       if (error) throw error;
 
@@ -1999,6 +2013,38 @@ export function SessionsPage() {
                 {isLoading ? (
                   <div className="text-center py-12">
                     <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brandBlack" />
+
+                    <p className="mt-4 text-[13px] text-[#606060]">
+                      Loading sessions...
+                    </p>
+                  </div>
+                ) : sessionsLoadError && sessions.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+                    <div className="text-[16px] font-semibold text-brandBlack">
+                      Couldn't load sessions
+                    </div>
+
+                    <p className="mt-2 max-w-[420px] text-[13px] leading-relaxed text-[#606060]">
+                      The connection took too long or something interrupted the request.
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void fetchSessions();
+                      }}
+                      className="
+                        mt-5
+                        rounded-full
+                        bg-[#111827]
+                        px-5 py-2.5
+                        text-[13px] font-semibold text-white
+                        transition
+                        hover:opacity-90
+                      "
+                    >
+                      Try again
+                    </button>
                   </div>
                 ) : visibleSessions.length === 0 ? (
                   <div className="p-2 text-center">
@@ -2048,41 +2094,37 @@ export function SessionsPage() {
 
       <button
         type="button"
-        onClick={() => setHowItWorksOpen(true)}
+        onClick={() => {
+          if (!user) {
+            navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+            return;
+          }
+
+          setInviteFriendsOpen(true);
+        }}
         className="
-          fixed bottom-6 right-6 z-[60]
-          rounded-full border border-[#111827]
+          fixed bottom-6 left-6 z-[60]
+          rounded-full border border-[#DBD8D8]
           bg-white text-[#111827]
           px-5 py-3
-          shadow-[0_10px_25px_rgba(0,0,0,0.12)]
-          hover:bg-[#111827] hover:text-white
+          shadow-[0_10px_25px_rgba(0,0,0,0.10)]
+          hover:bg-[#111827] hover:text-white hover:border-[#111827]
           transition
           flex items-center gap-2
         "
-        aria-label="How it works"
-        title="How it works"
+        aria-label="Invite a friend"
+        title="Invite a friend"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <path
-            d="M12 18h.01"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-          <path
-            d="M9.09 9a3 3 0 1 1 4.82 2.33c-.66.49-1.41 1.08-1.41 2.17V14"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10Z"
-            stroke="currentColor"
-            strokeWidth="2"
-          />
-        </svg>
-        <span className="text-[14px] font-semibold">How it works</span>
+        <span className="text-[16px]" aria-hidden>🤝</span>
+        <span className="text-[14px] font-semibold">Invite a friend</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setInviteFriendsOpen(true)}
+        className="inline-flex items-center justify-center rounded-full border border-[#2F2F2F] bg-white px-6 py-3 text-[15px] font-semibold text-[#2F2F2F] transition hover:bg-[#F5F5F5]"
+      >
+        Invite a friend
       </button>
 
       {howItWorksOpen && (
@@ -2324,6 +2366,15 @@ export function SessionsPage() {
       <SupportMySessionModal
         open={supportModalOpen}
         onClose={closeSupportModal}
+      />
+
+      <InviteFriendsModal
+        open={inviteFriendsOpen}
+        onClose={() => {
+          localStorage.setItem(INVITE_FRIEND_DISMISSED_KEY, String(Date.now()));
+          setInviteFriendsOpen(false);
+        }}
+        referralLink={referralLink}
       />
 
       <HostSessionPromptModal
