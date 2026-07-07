@@ -502,7 +502,7 @@ export function SessionsPage() {
 
   const [sessionTypeTab, setSessionTypeTab] = useState<
     "group" | "infinite" | "body"
-  >("group");
+  >("infinite");
 
   const [dateFilter, setDateFilter] = useState<string | null>(null);
   const [currentProfile, setCurrentProfile] = useState<CurrentProfile | null>(
