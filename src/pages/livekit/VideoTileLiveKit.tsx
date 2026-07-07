@@ -647,10 +647,7 @@ function VideoTileInner({
                     ].join(" ")}
                     title={safeCurrentIntention}
                 >
-                    <div className="mb-1 font-inter text-[11px] font-bold leading-none opacity-75">
-                        Intention
-                    </div>
-                    <div className="line-clamp-3 font-inter text-[12px] font-normal leading-4">
+                    <div className="font-inter text-[12px] font-medium leading-4 line-clamp-3">
                         {safeCurrentIntention}
                     </div>
                 </div>
