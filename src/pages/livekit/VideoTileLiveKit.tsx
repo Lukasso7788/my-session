@@ -121,6 +121,7 @@ function Icon({
     | "participants"
     | "chat"
     | "intentions"
+    | "tasks"
     | "settings"
     | "theme-sun"
     | "theme-moon"
@@ -645,10 +646,13 @@ function VideoTileInner({
                                 ? "border-[#D8D0D0] bg-[#F7F5F5]/95 text-black/80"
                                 : "border-[#2B2B2B] bg-[#1B1B1B]/95 text-white/85",
                     ].join(" ")}
-                    title={safeCurrentIntention}
+                    title={`Task: ${safeCurrentIntention}`}
                 >
-                    <div className="font-inter text-[12px] font-medium leading-4 line-clamp-3">
-                        {safeCurrentIntention}
+                    <div className="flex min-w-0 items-center gap-1 font-inter text-[12px] leading-4">
+                        <span className="shrink-0 font-bold opacity-75">Task:</span>
+                        <span className="min-w-0 truncate font-normal">
+                            {safeCurrentIntention}
+                        </span>
                     </div>
                 </div>
             ) : null}
