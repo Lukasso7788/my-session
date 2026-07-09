@@ -11918,7 +11918,7 @@ export function RoomPageLiveKit({
                           setSelectedHostChatPeerId(item.userId);
                         }}
                         className={
-                          "h-8 max-w-[150px] rounded-full border px-2.5 text-[11px] font-semibold transition flex items-center gap-1.5 shrink-0 " +
+                          "h-8 max-w-[115px] rounded-full border px-2.5 text-[11px] font-semibold transition flex items-center gap-1.5 shrink-0 " +
                           (isLight
                             ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
                             : "border-red-500/25 bg-red-500/10 text-red-200 hover:bg-red-500/15")
