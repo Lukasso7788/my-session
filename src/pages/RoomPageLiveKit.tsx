@@ -11757,10 +11757,10 @@ export function RoomPageLiveKit({
                     type="button"
                     onClick={() => setHostDmDropdownOpen((v) => !v)}
                     className={
-                      "flex h-8 min-w-[170px] max-w-[220px] items-center justify-between gap-2 rounded-full border px-3 text-xs font-semibold outline-none transition " +
+                      "flex h-8 w-[136px] min-w-0 max-w-[136px] items-center justify-between gap-2 rounded-full border px-3 text-xs font-semibold outline-none transition sm:w-[148px] sm:max-w-[148px] xl:w-[160px] xl:max-w-[160px] " +
                       (isLight
-                        ? "border-[#CFCFCF] bg-[#F3F3F3] text-black/80 shadow-sm hover:border-black/20 hover:bg-white"
-                        : "border-[#2B2B2B] bg-[#242424]/90 text-white/85 shadow-[0_10px_30px_rgba(0,0,0,0.22)] hover:border-[#3A3A3A] hover:bg-[#2A2A2A]")
+                        ? "border-[#D8D0D0] bg-[#F7F5F5] text-black/80 hover:border-[#C9C1C1] hover:bg-white"
+                        : "border-[#2B2B2B] bg-[#242424] text-white/85 hover:border-[#3A3A3A] hover:bg-[#2A2A2A]")
                     }
                     aria-haspopup="listbox"
                     aria-expanded={hostDmDropdownOpen}
@@ -11806,10 +11806,10 @@ export function RoomPageLiveKit({
                     <div
                       role="listbox"
                       className={
-                        "absolute right-0 top-[calc(100%+6px)] z-[90] w-[220px] origin-top-right overflow-hidden rounded-2xl border p-1 shadow-2xl " +
+                        "absolute right-0 top-[calc(100%+6px)] z-[90] w-[190px] origin-top-right overflow-hidden rounded-2xl border p-1 shadow-[0_14px_34px_rgba(0,0,0,0.18)] sm:w-[204px] " +
                         (isLight
-                          ? "border-[#D8D0D0] bg-white text-black"
-                          : "border-[#2B2B2B] bg-[#1F1F1F] text-white")
+                          ? "border-[#D8D0D0] bg-[#F7F5F5] text-black"
+                          : "border-[#2B2B2B] bg-[#242424] text-white")
                       }
                       style={{
                         animation:
@@ -11828,14 +11828,14 @@ export function RoomPageLiveKit({
                           "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold transition " +
                           (!selectedHostChatPeerId
                             ? isLight
-                              ? "bg-[#1F1F1F] text-white"
-                              : "bg-white text-[#18181B]"
+                              ? "bg-white text-black shadow-sm"
+                              : "bg-[#1B1B1B] text-white"
                             : isLight
-                              ? "text-black/75 hover:bg-black/[0.05]"
-                              : "text-white/75 hover:bg-white/[0.07]")
+                              ? "text-black/70 hover:bg-white"
+                              : "text-white/70 hover:bg-[#2E2E2E]")
                         }
                       >
-                        <span>
+                        <span className="min-w-0 truncate">
                           {liveHostChatOptions.length ? "Choose DM" : "No one live"}
                         </span>
                       </button>
@@ -11860,11 +11860,11 @@ export function RoomPageLiveKit({
                               "mt-1 flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition " +
                               (selected
                                 ? isLight
-                                  ? "bg-[#1F1F1F] text-white"
-                                  : "bg-white text-[#18181B]"
+                                  ? "bg-white text-black shadow-sm"
+                                  : "bg-[#1B1B1B] text-white"
                                 : isLight
-                                  ? "text-black/75 hover:bg-black/[0.05]"
-                                  : "text-white/75 hover:bg-white/[0.07]")
+                                  ? "text-black/70 hover:bg-white"
+                                  : "text-white/70 hover:bg-[#2E2E2E]")
                             }
                             title={item.label}
                           >
