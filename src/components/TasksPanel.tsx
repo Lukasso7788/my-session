@@ -15,9 +15,11 @@ import {
   RefreshCw,
   Search,
   Lock,
-  Unlock,
+  Globe2,
   TimerReset,
   GripVertical,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
@@ -150,8 +152,8 @@ function getNextTaskVisibility(value: unknown): "public" | "private" {
 function getVisibilityTitle(value: unknown) {
   const v = normalizeTaskVisibility(value);
   if (v === "public")
-    return "Public — visible to everyone in the room. Click to make private.";
-  return "Private — visible only to you. Click to make public.";
+    return "Public — visible to everyone in the room. Click the lock to make private.";
+  return "Private — visible only to you. Click the globe to make public.";
 }
 
 function PanelSmartIcon({
@@ -308,6 +310,8 @@ const TASK_TIMER_VISIBILITY_EVENT = "mysession:task-timer-visibility-changed";
 const TASK_ORDER_STORAGE_PREFIX = "mysession_task_order_v1";
 const TASK_TIMER_ENABLED_STORAGE_PREFIX = "mysession_task_timer_enabled_v1";
 const TASK_TIMER_STORAGE_PREFIX = "mysession_task_timers_v1";
+const TASK_TIME_MEASUREMENTS_STORAGE_PREFIX = "mysession_task_time_measurements_v1";
+const HIDE_TEAM_TASKS_STORAGE_PREFIX = "mysession_hide_team_tasks_v1";
 const TASKS_SYNC_EVENT = "mysession:tasks-synced";
 
 function emitTasksSync(detail: Record<string, unknown> = {}) {
@@ -413,6 +417,66 @@ function formatTaskTimer(ms: number) {
 
 function isTaskTimerRunning(timer: TaskTimerState | null | undefined) {
   return !!timer?.running_since_ms;
+}
+
+type TaskTimeMeasurement = {
+  id: string;
+  user_id: string;
+  session_id: string | null;
+  session_intention_id: string | null;
+  focus_plan_item_id: string | null;
+  task_text: string;
+  elapsed_ms: number;
+  saved_at: string;
+};
+
+function makeTaskTimeMeasurementsStorageKey(userId: string | null | undefined) {
+  const uid = String(userId || "anon").trim().toLowerCase() || "anon";
+  return `${TASK_TIME_MEASUREMENTS_STORAGE_PREFIX}:${uid}`;
+}
+
+function readTaskTimeMeasurements(storageKey: string): TaskTimeMeasurement[] {
+  if (!storageKey || typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((item: any) => ({
+        id: String(item?.id || ""),
+        user_id: String(item?.user_id || ""),
+        session_id: item?.session_id ? String(item.session_id) : null,
+        session_intention_id: item?.session_intention_id
+          ? String(item.session_intention_id)
+          : null,
+        focus_plan_item_id: item?.focus_plan_item_id
+          ? String(item.focus_plan_item_id)
+          : null,
+        task_text: String(item?.task_text || "").trim(),
+        elapsed_ms: Math.max(0, Math.round(Number(item?.elapsed_ms || 0))),
+        saved_at: String(item?.saved_at || ""),
+      }))
+      .filter((item) => item.id && item.task_text && item.elapsed_ms > 0)
+      .slice(0, 500);
+  } catch {
+    return [];
+  }
+}
+
+function writeTaskTimeMeasurements(
+  storageKey: string,
+  measurements: TaskTimeMeasurement[],
+) {
+  if (!storageKey || typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify((measurements || []).slice(0, 500)),
+    );
+  } catch { }
 }
 
 async function fetchProfilesMap(
@@ -523,6 +587,8 @@ export function TasksPanel({
   );
   const [taskTimers, setTaskTimers] = useState<TaskTimerMap>({});
   const [taskTimerTickMs, setTaskTimerTickMs] = useState(() => Date.now());
+  const [savedTimerFeedbackId, setSavedTimerFeedbackId] = useState<string | null>(null);
+  const [hideTeamTasks, setHideTeamTasks] = useState(false);
 
   const taskOrderStorageKey = useMemo(
     () => `${TASK_ORDER_STORAGE_PREFIX}:${String(user?.id || "anonymous")}`,
@@ -530,6 +596,16 @@ export function TasksPanel({
   );
   const taskTimerEnabledStorageKey = useMemo(
     () => `${TASK_TIMER_ENABLED_STORAGE_PREFIX}:${String(user?.id || "anonymous")}`,
+    [user?.id],
+  );
+
+  const hideTeamTasksStorageKey = useMemo(
+    () => `${HIDE_TEAM_TASKS_STORAGE_PREFIX}:${String(user?.id || "anonymous")}`,
+    [user?.id],
+  );
+
+  const taskTimeMeasurementsStorageKey = useMemo(
+    () => makeTaskTimeMeasurementsStorageKey(user?.id || ""),
     [user?.id],
   );
 
@@ -559,6 +635,14 @@ export function TasksPanel({
       setTaskTimersEnabled(false);
     }
   }, [taskTimerEnabledStorageKey]);
+
+  useEffect(() => {
+    try {
+      setHideTeamTasks(localStorage.getItem(hideTeamTasksStorageKey) === "true");
+    } catch {
+      setHideTeamTasks(false);
+    }
+  }, [hideTeamTasksStorageKey]);
 
   useEffect(() => {
     const ids = panelTasks.map((task) => String(task.id || "")).filter(Boolean);
@@ -689,6 +773,90 @@ export function TasksPanel({
       updateTaskTimer(timerId, () => null);
     },
     [updateTaskTimer],
+  );
+
+
+  const saveTaskTimerMeasurement = useCallback(
+    async ({
+      ownerUserId,
+      text,
+      fallbackId,
+      focusPlanItemId = null,
+      sessionTaskId = null,
+    }: {
+      ownerUserId: unknown;
+      text: unknown;
+      fallbackId?: unknown;
+      focusPlanItemId?: string | null;
+      sessionTaskId?: string | null;
+    }) => {
+      const uid = String(user?.id || "").trim();
+      const owner = String(ownerUserId || "").trim();
+      const taskText = safeTrim(text);
+
+      if (!uid || !owner || uid !== owner || !taskText) return;
+
+      const timerId = makeTaskTimerId(ownerUserId, text, fallbackId);
+      const prevMap = readTaskTimers(taskTimerStorageKey);
+      const timer = prevMap[timerId] || null;
+      const now = Date.now();
+      const elapsedMs = getTaskTimerDisplayMs(timer, now);
+
+      if (elapsedMs <= 0) return;
+
+      const pausedTimer: TaskTimerState = {
+        elapsed_ms: elapsedMs,
+        running_since_ms: null,
+        updated_at: new Date(now).toISOString(),
+      };
+      const nextTimerMap = { ...prevMap, [timerId]: pausedTimer };
+      persistTaskTimers(nextTimerMap);
+
+      const measurement: TaskTimeMeasurement = {
+        id: `${now}-${Math.random().toString(36).slice(2, 10)}`,
+        user_id: uid,
+        session_id: sessionId || null,
+        session_intention_id: sessionTaskId || null,
+        focus_plan_item_id: focusPlanItemId || null,
+        task_text: taskText,
+        elapsed_ms: elapsedMs,
+        saved_at: new Date(now).toISOString(),
+      };
+
+      const prevMeasurements = readTaskTimeMeasurements(taskTimeMeasurementsStorageKey);
+      writeTaskTimeMeasurements(taskTimeMeasurementsStorageKey, [
+        measurement,
+        ...prevMeasurements,
+      ]);
+
+      setSavedTimerFeedbackId(timerId);
+      window.setTimeout(() => {
+        setSavedTimerFeedbackId((current) => (current === timerId ? null : current));
+      }, 1400);
+
+      try {
+        window.dispatchEvent(
+          new CustomEvent("mysession:task-time-measurements-updated", {
+            detail: { userId: uid, sessionId, measurement },
+          }),
+        );
+      } catch { }
+
+      try {
+        await supabase.from("task_time_measurements").insert({
+          user_id: uid,
+          session_id: sessionId || null,
+          session_intention_id: sessionTaskId || null,
+          focus_plan_item_id: focusPlanItemId || null,
+          task_text: taskText,
+          elapsed_ms: elapsedMs,
+          saved_at: measurement.saved_at,
+        } as any);
+      } catch {
+        // Local save is the source of truth for MVP; DB table can be added later.
+      }
+    },
+    [persistTaskTimers, sessionId, taskTimeMeasurementsStorageKey, taskTimerStorageKey, user?.id],
   );
 
   const moveTaskTimer = useCallback(
@@ -1809,8 +1977,13 @@ export function TasksPanel({
   }, [importModalOpen, closeImportModal, getPortalDocument]);
 
   const teamTasks = useMemo(() => {
-    return sessionTasks.slice(0, TEAM_TASKS_RENDER_LIMIT);
-  }, [sessionTasks]);
+    const uid = String(user?.id || "").trim();
+    const base = hideTeamTasks
+      ? sessionTasks.filter((task) => String(task.user_id || "") === uid)
+      : sessionTasks;
+
+    return base.slice(0, TEAM_TASKS_RENDER_LIMIT);
+  }, [hideTeamTasks, sessionTasks, user?.id]);
 
 
   const toggleTaskTimersEnabled = useCallback(() => {
@@ -1825,6 +1998,15 @@ export function TasksPanel({
       );
     } catch { }
   }, [taskTimerEnabledStorageKey, taskTimersEnabled, user?.id]);
+
+
+  const toggleHideTeamTasks = useCallback(() => {
+    const next = !hideTeamTasks;
+    setHideTeamTasks(next);
+    try {
+      localStorage.setItem(hideTeamTasksStorageKey, String(next));
+    } catch { }
+  }, [hideTeamTasks, hideTeamTasksStorageKey]);
 
   const persistPanelTaskOrder = useCallback(
     (nextOrder: string[]) => {
@@ -1874,11 +2056,15 @@ export function TasksPanel({
       text,
       fallbackId,
       compact = false,
+      focusPlanItemId = null,
+      sessionTaskId = null,
     }: {
       ownerUserId: unknown;
       text: unknown;
       fallbackId?: unknown;
       compact?: boolean;
+      focusPlanItemId?: string | null;
+      sessionTaskId?: string | null;
     }) => {
       if (!taskTimersEnabled) return null;
 
@@ -1887,6 +2073,7 @@ export function TasksPanel({
       const elapsedMs = getTaskTimerDisplayMs(timer, taskTimerTickMs);
       const running = isTaskTimerRunning(timer);
       const isMine = String(ownerUserId || "").trim().toLowerCase() === String(user?.id || "").trim().toLowerCase();
+      const saved = savedTimerFeedbackId === timerId;
 
       if (!isMine && elapsedMs <= 0) return null;
 
@@ -1933,6 +2120,28 @@ export function TasksPanel({
               {elapsedMs > 0 ? (
                 <button
                   type="button"
+                  onClick={() =>
+                    void saveTaskTimerMeasurement({
+                      ownerUserId,
+                      text,
+                      fallbackId,
+                      focusPlanItemId,
+                      sessionTaskId,
+                    })
+                  }
+                  className={`${buttonBase} ${saved
+                    ? "border-[#81DB86] bg-[#81DB86]/15 text-[#81DB86]"
+                    : "border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
+                    }`}
+                  title="Save this time measurement to Focus plan"
+                >
+                  {saved ? "Saved" : "Save"}
+                </button>
+              ) : null}
+
+              {elapsedMs > 0 ? (
+                <button
+                  type="button"
                   onClick={() => resetTaskTimer(ownerUserId, text, fallbackId)}
                   className={`${buttonBase} border-[#CFC6C6] bg-[#F7F5F5] text-black/55 hover:bg-[#ECEAEA]`}
                   title="Reset timer"
@@ -1945,7 +2154,7 @@ export function TasksPanel({
         </div>
       );
     },
-    [resetTaskTimer, taskTimerTickMs, taskTimers, taskTimersEnabled, toggleTaskTimer, user?.id],
+    [resetTaskTimer, saveTaskTimerMeasurement, savedTimerFeedbackId, taskTimerTickMs, taskTimers, taskTimersEnabled, toggleTaskTimer, user?.id],
   );
 
   if (!rawSessionId) {
@@ -2657,6 +2866,7 @@ export function TasksPanel({
                             ownerUserId: user?.id || i.user_id,
                             text: i.text,
                             fallbackId: i.id,
+                            focusPlanItemId: i.focus_plan_item_id || null,
                           })
                           : null}
                       </div>
@@ -2683,7 +2893,7 @@ export function TasksPanel({
                                 "private" ? (
                                 <Lock size={14} />
                               ) : (
-                                <Unlock size={14} />
+                                <Globe2 size={14} />
                               )}
                             </button>
 
@@ -2751,10 +2961,30 @@ export function TasksPanel({
 
         <div className={"h-px my-5 " + divider} />
 
-        <div
-          className={titleText + " font-inter font-bold text-[17px] mb-4"}
-        >
-          Team Tasks
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className={titleText + " font-inter font-bold text-[17px]"}>
+            Team Tasks
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleHideTeamTasks}
+            className={[
+              "h-9 shrink-0 rounded-2xl border px-3 text-[12px] font-bold transition inline-flex items-center gap-2 font-inter",
+              hideTeamTasks
+                ? "border-[#81DB86] bg-[#81DB86]/10 text-[#2F8F3B] hover:bg-[#81DB86]/15"
+                : "border-[#CFC6C6] bg-[#F7F5F5] text-black/65 hover:bg-[#ECEAEA]",
+            ].join(" ")}
+            title={
+              hideTeamTasks
+                ? "Show other participants' tasks"
+                : "Hide other participants' tasks"
+            }
+            aria-pressed={hideTeamTasks}
+          >
+            {hideTeamTasks ? <EyeOff size={15} /> : <Eye size={15} />}
+            <span>{hideTeamTasks ? "Mine only" : "Hide others"}</span>
+          </button>
         </div>
 
         {sessionLoading ? (
@@ -2808,6 +3038,7 @@ export function TasksPanel({
                         ownerUserId: item.user_id,
                         text: item.text,
                         fallbackId: item.id,
+                        sessionTaskId: item.id,
                         compact: true,
                       })}
                     </div>

@@ -1551,7 +1551,7 @@ function normalizeVideoTileLayoutPreset(raw: unknown): VideoTileLayoutPreset {
   ) {
     return s;
   }
-  return "auto";
+  return "one";
 }
 
 function readStoredLayoutNumber(key: string) {
@@ -3341,11 +3341,12 @@ export function RoomPageLiveKit({
   const [aiHostInputOpen, setAiHostInputOpen] = useState(true);
   const [videoTileLayoutPreset, setVideoTileLayoutPreset] =
     useState<VideoTileLayoutPreset>(() => {
-      if (typeof window === "undefined") return "auto";
-      return normalizeVideoTileLayoutPreset(
+      if (typeof window === "undefined") return "one";
+      const storedPreset = normalizeVideoTileLayoutPreset(
         window.localStorage.getItem(VIDEO_TILE_LAYOUT_PRESET_KEY) ||
         window.localStorage.getItem("mysession_mobile_video_layout_mode"),
       );
+      return storedPreset === "auto" ? "one" : storedPreset;
     });
   const [showMobileLayoutSwitcher, setShowMobileLayoutSwitcher] = useState(
     () => {
@@ -11124,16 +11125,10 @@ export function RoomPageLiveKit({
       {mainViewMode !== "accountability" && showMobileLayoutControls && showMobileLayoutSwitcher ? (
         <div className="absolute right-2 top-2 z-20 flex items-center gap-1.5 rounded-2xl p-1 backdrop-blur-xl pointer-events-auto">
           <MobileLayoutButton
-            mode="auto"
-            icon="layout-auto"
-            label="Auto"
-            title="Auto mobile video layout"
-          />
-          <MobileLayoutButton
             mode="one"
-            icon="layout-one-column"
-            label="1"
-            title="One-column video layout"
+            icon="layout-one-line"
+            label="One line"
+            title="One-line mobile video layout"
           />
           <MobileLayoutButton
             mode="two"
@@ -11806,12 +11801,13 @@ export function RoomPageLiveKit({
                     <div
                       role="listbox"
                       className={
-                        "absolute right-0 top-[calc(100%+6px)] z-[90] w-[190px] origin-top-right overflow-hidden rounded-2xl border p-1 shadow-[0_14px_34px_rgba(0,0,0,0.18)] sm:w-[204px] " +
+                        "absolute right-0 top-[calc(100%+6px)] z-[90] w-[190px] origin-top-right overflow-hidden rounded-2xl border p-1 shadow-[0_10px_24px_rgba(0,0,0,0.12)] sm:w-[204px] " +
                         (isLight
-                          ? "border-[#D8D0D0] bg-[#F7F5F5] text-black"
+                          ? "border-[#D8D0D0]/80 bg-[#F7F5F5] text-black"
                           : "border-[#2B2B2B] bg-[#242424] text-white")
                       }
                       style={{
+                        borderWidth: 1,
                         animation:
                           "mysessionHostDmDropdownIn 140ms ease-out both",
                       }}
@@ -11828,7 +11824,7 @@ export function RoomPageLiveKit({
                           "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold transition " +
                           (!selectedHostChatPeerId
                             ? isLight
-                              ? "bg-white text-black shadow-sm"
+                              ? "bg-white text-black shadow-[0_1px_4px_rgba(0,0,0,0.04)]"
                               : "bg-[#1B1B1B] text-white"
                             : isLight
                               ? "text-black/70 hover:bg-white"
@@ -11860,7 +11856,7 @@ export function RoomPageLiveKit({
                               "mt-1 flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition " +
                               (selected
                                 ? isLight
-                                  ? "bg-white text-black shadow-sm"
+                                  ? "bg-white text-black shadow-[0_1px_4px_rgba(0,0,0,0.04)]"
                                   : "bg-[#1B1B1B] text-white"
                                 : isLight
                                   ? "text-black/70 hover:bg-white"

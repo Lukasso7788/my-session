@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { Check, Trash2, Plus, ExternalLink, RefreshCw } from "lucide-react";
+import { Check, Trash2, Plus, ExternalLink, RefreshCw, TimerReset } from "lucide-react";
 
 type FocusPlan = {
     id: string;
@@ -45,8 +45,71 @@ type IntentionRow = {
     };
 };
 
+type TaskTimeMeasurement = {
+    id: string;
+    user_id: string;
+    session_id: string | null;
+    session_intention_id: string | null;
+    focus_plan_item_id: string | null;
+    task_text: string;
+    elapsed_ms: number;
+    saved_at: string;
+};
+
 const UUID_RE =
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const TASK_TIME_MEASUREMENTS_STORAGE_PREFIX = "mysession_task_time_measurements_v1";
+
+function makeTaskTimeMeasurementsStorageKey(userId: string | null | undefined) {
+    const uid = String(userId || "anon").trim().toLowerCase() || "anon";
+    return `${TASK_TIME_MEASUREMENTS_STORAGE_PREFIX}:${uid}`;
+}
+
+function readTaskTimeMeasurements(storageKey: string): TaskTimeMeasurement[] {
+    if (!storageKey || typeof window === "undefined") return [];
+
+    try {
+        const raw = window.localStorage.getItem(storageKey);
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(parsed)) return [];
+
+        return parsed
+            .map((item: any) => ({
+                id: String(item?.id || ""),
+                user_id: String(item?.user_id || ""),
+                session_id: item?.session_id ? String(item.session_id) : null,
+                session_intention_id: item?.session_intention_id ? String(item.session_intention_id) : null,
+                focus_plan_item_id: item?.focus_plan_item_id ? String(item.focus_plan_item_id) : null,
+                task_text: String(item?.task_text || "").trim(),
+                elapsed_ms: Math.max(0, Math.round(Number(item?.elapsed_ms || 0))),
+                saved_at: String(item?.saved_at || ""),
+            }))
+            .filter((item) => item.id && item.task_text && item.elapsed_ms > 0)
+            .slice(0, 500);
+    } catch {
+        return [];
+    }
+}
+
+function normalizeTaskText(x: unknown) {
+    return String(x || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+}
+
+function fmtDuration(ms: number) {
+    const totalSeconds = Math.max(0, Math.floor(Number(ms || 0) / 1000));
+    const seconds = totalSeconds % 60;
+    const totalMinutes = Math.floor(totalSeconds / 60);
+    const minutes = totalMinutes % 60;
+    const hours = Math.floor(totalMinutes / 60);
+
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    if (minutes > 0) return `${minutes}m ${seconds}s`;
+    return `${seconds}s`;
+}
 
 function safeLower(x: any) {
     return String(x || "").toLowerCase();
@@ -113,6 +176,7 @@ export default function FocusPlanPage() {
     const [library, setLibrary] = useState<IntentionRow[]>([]);
     const [loadingLibrary, setLoadingLibrary] = useState(false);
     const [deletingLibraryText, setDeletingLibraryText] = useState<string | null>(null);
+    const [taskMeasurements, setTaskMeasurements] = useState<TaskTimeMeasurement[]>([]);
 
     // plans + items (Supabase)
     const [plans, setPlans] = useState<FocusPlan[]>([]);
@@ -157,6 +221,32 @@ export default function FocusPlanPage() {
             sub.subscription.unsubscribe();
         };
     }, []);
+
+
+    useEffect(() => {
+        if (!user?.id) {
+            setTaskMeasurements([]);
+            return;
+        }
+
+        const storageKey = makeTaskTimeMeasurementsStorageKey(user.id);
+        const refresh = () => setTaskMeasurements(readTaskTimeMeasurements(storageKey));
+
+        refresh();
+
+        const onStorage = (event: StorageEvent) => {
+            if (event.key === storageKey) refresh();
+        };
+        const onMeasurements = () => refresh();
+
+        window.addEventListener("storage", onStorage);
+        window.addEventListener("mysession:task-time-measurements-updated", onMeasurements);
+
+        return () => {
+            window.removeEventListener("storage", onStorage);
+            window.removeEventListener("mysession:task-time-measurements-updated", onMeasurements);
+        };
+    }, [user?.id]);
 
     // ===== sessions list =====
     useEffect(() => {
@@ -749,6 +839,32 @@ export default function FocusPlanPage() {
     const inputPill =
         "h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] text-[#111827] outline-none focus:border-[#111827] bg-white";
 
+    const planMeasurements = useMemo(() => {
+        const itemIds = new Set(items.map((item) => String(item.id || "")).filter(Boolean));
+        const itemTextSet = new Set(items.map((item) => normalizeTaskText(item.text)).filter(Boolean));
+
+        return taskMeasurements.filter((measurement) => {
+            const focusItemId = String(measurement.focus_plan_item_id || "");
+            if (focusItemId && itemIds.has(focusItemId)) return true;
+            return itemTextSet.has(normalizeTaskText(measurement.task_text));
+        });
+    }, [items, taskMeasurements]);
+
+    const planMeasuredMs = useMemo(
+        () => planMeasurements.reduce((sum, measurement) => sum + Math.max(0, Number(measurement.elapsed_ms || 0)), 0),
+        [planMeasurements],
+    );
+
+    const getMeasurementsForItem = (item: FocusPlanItem) => {
+        const itemId = String(item.id || "");
+        const itemText = normalizeTaskText(item.text);
+
+        return taskMeasurements.filter((measurement) => {
+            if (measurement.focus_plan_item_id && String(measurement.focus_plan_item_id) === itemId) return true;
+            return normalizeTaskText(measurement.task_text) === itemText;
+        });
+    };
+
     if (!user?.id) {
         return (
             <div className={pageWrap}>
@@ -1010,6 +1126,52 @@ export default function FocusPlanPage() {
                                     </button>
                                 </div>
 
+                                {/* time measurements */}
+                                <div className="mt-5 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5 bg-[#FAFAFA]">
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                        <div>
+                                            <div className="text-[14px] font-bold text-[#111827] inline-flex items-center gap-2">
+                                                <TimerReset size={16} />
+                                                Task time measurements
+                                            </div>
+                                            <div className="mt-1 text-[12px] text-[#606060]">
+                                                Saved from the Tasks panel timer via Save.
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-full border border-[#E5E7EB] bg-white px-4 py-2 text-[12px] font-bold text-[#111827]">
+                                            {fmtDuration(planMeasuredMs)} total
+                                        </div>
+                                    </div>
+
+                                    {planMeasurements.length === 0 ? (
+                                        <div className="mt-3 text-[12px] text-[#606060] italic">
+                                            No saved time yet. Start a task timer in a room, then press Save.
+                                        </div>
+                                    ) : (
+                                        <div className="mt-3 flex flex-col gap-2">
+                                            {planMeasurements.slice(0, 8).map((measurement) => (
+                                                <div
+                                                    key={measurement.id}
+                                                    className="flex items-center justify-between gap-3 rounded-[16px] border border-[#F0F0F0] bg-white px-4 py-3"
+                                                >
+                                                    <div className="min-w-0">
+                                                        <div className="truncate text-[13px] font-semibold text-[#111827]">
+                                                            {measurement.task_text}
+                                                        </div>
+                                                        <div className="mt-1 text-[11px] text-[#606060]">
+                                                            {measurement.saved_at ? `Saved: ${fmtWhen(measurement.saved_at)}` : "Saved time"}
+                                                        </div>
+                                                    </div>
+                                                    <div className="shrink-0 rounded-full bg-[#111827] px-3 py-1.5 text-[12px] font-bold text-white">
+                                                        {fmtDuration(measurement.elapsed_ms)}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
                                 {/* add item */}
                                 <div className="mt-5 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5">
                                     <div className="text-[14px] font-bold text-[#111827]">Add item</div>
@@ -1233,6 +1395,38 @@ export default function FocusPlanPage() {
                                                                 </div>
                                                             </div>
                                                         )}
+
+                                                        {!isEditing && (() => {
+                                                            const measurements = getMeasurementsForItem(it);
+                                                            const totalMs = measurements.reduce((sum, measurement) => sum + Math.max(0, Number(measurement.elapsed_ms || 0)), 0);
+
+                                                            if (!measurements.length) return null;
+
+                                                            return (
+                                                                <div className="mt-3 rounded-[16px] border border-[#E5E7EB] bg-[#FAFAFA] px-4 py-3">
+                                                                    <div className="flex items-center justify-between gap-3">
+                                                                        <div className="inline-flex items-center gap-2 text-[12px] font-bold text-[#111827]">
+                                                                            <TimerReset size={15} />
+                                                                            Time saved
+                                                                        </div>
+                                                                        <div className="rounded-full bg-[#111827] px-3 py-1 text-[11px] font-bold text-white">
+                                                                            {fmtDuration(totalMs)}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                                                        {measurements.slice(0, 5).map((measurement) => (
+                                                                            <span
+                                                                                key={measurement.id}
+                                                                                className="rounded-full border border-[#E5E7EB] bg-white px-2 py-1 text-[11px] text-[#606060]"
+                                                                                title={measurement.saved_at ? fmtWhen(measurement.saved_at) : "Saved time"}
+                                                                            >
+                                                                                {fmtDuration(measurement.elapsed_ms)}
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })()}
 
                                                         {/* secondary actions row */}
                                                         {!isEditing ? (
