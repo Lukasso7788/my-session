@@ -1642,17 +1642,6 @@ export function RoomSettingsModalLiveKit({
                                     />
                                 </div>
                             </div>
-
-                            {!isDesktopFx && (
-                                <div className={`rounded-2xl p-4 ${sectionCls}`}>
-                                    <div className={`text-[13px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>
-                                        FX unavailable on mobile / tablet
-                                    </div>
-                                    <div className={`mt-2 text-[12px] ${subtleText}`}>
-                                        Blur, background replacement and color correction are disabled on mobile and tablet for stability.
-                                    </div>
-                                </div>
-                            )}
                         </div>
 
                         <div className="flex flex-col gap-5 min-w-0 xl:sticky xl:top-0">
