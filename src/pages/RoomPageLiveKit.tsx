@@ -1540,6 +1540,7 @@ const CONNECTION_DIAGNOSTICS_LOCAL_MAX = 120;
 
 function normalizeVideoTileLayoutPreset(raw: unknown): VideoTileLayoutPreset {
   const s = String(raw || "").trim();
+  if (s === "auto") return "one";
   if (
     s === "one" ||
     s === "two" ||
@@ -3342,11 +3343,10 @@ export function RoomPageLiveKit({
   const [videoTileLayoutPreset, setVideoTileLayoutPreset] =
     useState<VideoTileLayoutPreset>(() => {
       if (typeof window === "undefined") return "one";
-      const storedPreset = normalizeVideoTileLayoutPreset(
+      return normalizeVideoTileLayoutPreset(
         window.localStorage.getItem(VIDEO_TILE_LAYOUT_PRESET_KEY) ||
         window.localStorage.getItem("mysession_mobile_video_layout_mode"),
       );
-      return storedPreset === "auto" ? "one" : storedPreset;
     });
   const [showMobileLayoutSwitcher, setShowMobileLayoutSwitcher] = useState(
     () => {
@@ -11126,15 +11126,21 @@ export function RoomPageLiveKit({
         <div className="absolute right-2 top-2 z-20 flex items-center gap-1.5 rounded-2xl p-1 backdrop-blur-xl pointer-events-auto">
           <MobileLayoutButton
             mode="one"
-            icon="layout-one-line"
-            label="One line"
-            title="One-line mobile video layout"
+            icon="layout-one-column"
+            label="1"
+            title="One-column video layout"
           />
           <MobileLayoutButton
             mode="two"
             icon="layout-two-columns"
             label="2"
             title="Two-column video layout"
+          />
+          <MobileLayoutButton
+            mode="strip"
+            icon="layout-one-line"
+            label="One line"
+            title="Horizontal-scroll one-line video layout"
           />
           <button
             type="button"
