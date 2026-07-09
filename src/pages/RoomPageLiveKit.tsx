@@ -3869,8 +3869,8 @@ export function RoomPageLiveKit({
   }, [isMobileQuery, isTabletQuery, isChromeOS]);
 
   const shouldDisableBackgroundFx = useMemo(() => {
-    return lowPowerMobileMode;
-  }, [lowPowerMobileMode]);
+    return isMobileQuery || isTabletQuery;
+  }, [isMobileQuery, isTabletQuery]);
 
   const prejoinPreviewPreset = useMemo(() => {
     if (lowPowerMobileMode) {
@@ -6097,7 +6097,7 @@ export function RoomPageLiveKit({
       return;
     }
 
-    if (isMobileQuery || isTabletQuery || deviceTier === "weak") return;
+    if (isMobileQuery || isTabletQuery) return;
 
     (async () => {
       try {
@@ -6121,7 +6121,7 @@ export function RoomPageLiveKit({
     if (!settingsOpen) return;
     if (!prejoinOpen) return;
     if (!prejoinRef.current.videoEnabled) return;
-    if (isMobileQuery || isTabletQuery || deviceTier === "weak") return;
+    if (isMobileQuery || isTabletQuery) return;
 
     if (prejoinPreparedVideoTrackRef.current) {
       setSettingsPreviewVersion((v) => v + 1);
@@ -6176,7 +6176,7 @@ export function RoomPageLiveKit({
   useEffect(() => {
     if (!prejoinOpen) return;
     if (!prejoin.videoEnabled) return;
-    if (deviceTier === "weak") return;
+    if (shouldDisableBackgroundFx) return;
     if (videoFxMode === "off") return;
     if (!prejoinPreparedVideoTrackRef.current) return;
 
@@ -6189,7 +6189,7 @@ export function RoomPageLiveKit({
     bgImageUrl,
     prejoinOpen,
     prejoin.videoEnabled,
-    deviceTier,
+    shouldDisableBackgroundFx,
   ]);
 
   const isHost = useMemo(() => {

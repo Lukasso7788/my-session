@@ -1190,7 +1190,7 @@ export function RoomSettingsModalLiveKit({
             ? true
             : window.matchMedia("(min-width: 1024px)").matches;
 
-    const disableFxControls = hideBackgroundFx || !isDesktopFx;
+    const disableFxControls = hideBackgroundFx;
 
     const [blurDraft, setBlurDraft] = React.useState(() =>
         normalizeBlurDraft(blurStrength, firefoxSafeUi)

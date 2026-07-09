@@ -35,8 +35,13 @@ export function detectDeviceTier(args: {
   const cores = Number(nav.hardwareConcurrency || 0);
   const chromeOS = isChromeOSLike();
 
-  if (!chromeOS && args.isMobile) return "weak";
-  if (!chromeOS && args.isTablet && (mem <= 4 || cores <= 4)) return "weak";
+  if (chromeOS) {
+    if (mem >= 8 && cores >= 8) return "strong";
+    return "normal";
+  }
+
+  if (args.isMobile) return "weak";
+  if (args.isTablet && (mem <= 4 || cores <= 4)) return "weak";
   if ((mem > 0 && mem <= 4) || (cores > 0 && cores <= 4)) return "weak";
   if (mem >= 8 && cores >= 8 && !args.isMobile) return "strong";
 
@@ -60,7 +65,7 @@ export function shouldUseLowPowerMode(args: {
   isTablet: boolean;
   tier: DeviceTier;
 }) {
-  if (isChromeOSLike()) return args.tier === "weak";
+  if (isChromeOSLike()) return false;
   return args.isMobile || args.isTablet || args.tier === "weak";
 }
 
@@ -69,6 +74,5 @@ export function shouldHideBackgroundFx(args: {
   isTablet: boolean;
   tier: DeviceTier;
 }) {
-  if (isChromeOSLike()) return false;
-  return args.isMobile || args.isTablet || args.tier === "weak";
+  return args.isMobile || args.isTablet;
 }
