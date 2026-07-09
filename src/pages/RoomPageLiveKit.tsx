@@ -1540,8 +1540,9 @@ const CONNECTION_DIAGNOSTICS_LOCAL_MAX = 120;
 
 function normalizeVideoTileLayoutPreset(raw: unknown): VideoTileLayoutPreset {
   const s = String(raw || "").trim();
-  if (s === "auto") return "one";
+
   if (
+    s === "auto" ||
     s === "one" ||
     s === "two" ||
     s === "three" ||
@@ -1552,7 +1553,8 @@ function normalizeVideoTileLayoutPreset(raw: unknown): VideoTileLayoutPreset {
   ) {
     return s;
   }
-  return "one";
+
+  return "auto";
 }
 
 function readStoredLayoutNumber(key: string) {
