@@ -74,6 +74,13 @@ function BlogIndexPlaceholder() {
 
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
+              to="/blog/best-focusmate-alternatives"
+              className="rounded-xl border border-black/10 bg-[#81DB86]/25 px-4 py-2 text-[14px] font-medium text-[#245C29] transition hover:bg-[#81DB86]/35"
+            >
+              Best Focusmate alternatives
+            </Link>
+
+            <Link
               to="/updates"
               className="rounded-xl border border-black/10 bg-black/[0.03] px-4 py-2 text-[14px] text-[#2F2F2F] transition hover:bg-black/[0.06]"
             >
@@ -181,6 +188,12 @@ export default function App() {
           <Route path="/rules" element={<RulesPage />} />
 
           <Route path="/blog" element={<BlogIndexPlaceholder />} />
+
+          <Route
+            path="/blog/best-focusmate-alternatives"
+            element={<FocusmateAlternativesPage />}
+          />
+
           <Route path="/blog/:slug" element={<BlogPostPlaceholder />} />
 
           {/* SEO pages */}
@@ -221,25 +234,16 @@ export default function App() {
             element={<SilentCoworkingPage />}
           />
 
-          <Route
-            path="/study-together"
-            element={<StudyTogetherPage />}
-          />
+          <Route path="/study-together" element={<StudyTogetherPage />} />
 
           <Route
             path="/procrastination"
             element={<ProcrastinationPage />}
           />
 
-          <Route
-            path="/how-it-works"
-            element={<HowItWorksPage />}
-          />
+          <Route path="/how-it-works" element={<HowItWorksPage />} />
 
-          <Route
-            path="/faq"
-            element={<FaqPage />}
-          />
+          <Route path="/faq" element={<FaqPage />} />
 
           <Route
             path="/focusmate-alternatives"

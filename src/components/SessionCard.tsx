@@ -606,17 +606,31 @@ function isCustomStudioSession(session: any): boolean {
 }
 
 function tryParseJson<T = any>(x: any): T | null {
-    if (!x) return null;
+    if (x == null) return null;
     if (typeof x === "object") return x as T;
+
     if (typeof x === "string") {
-        const s = x.trim();
-        if (!s) return null;
-        try {
-            return JSON.parse(s) as T;
-        } catch {
-            return null;
+        let current: any = x.trim();
+        if (!current) return null;
+
+        // A few legacy rows contain JSON stored as a JSON string. Parse at
+        // most twice so both normal and double-encoded schedules work.
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            if (typeof current !== "string") return current as T;
+
+            const value = current.trim();
+            if (!value) return null;
+
+            try {
+                current = JSON.parse(value);
+            } catch {
+                return null;
+            }
         }
+
+        return current as T;
     }
+
     return null;
 }
 
@@ -736,12 +750,18 @@ function tryStagesFromSchedule(scheduleAny: any): SessionStage[] {
         (schedule as any)?.timer?.timeline ||
         (schedule as any)?.timer?.stages ||
         (schedule as any)?.timer?.segments ||
+        (schedule as any)?.timer?.blocks ||
         (schedule as any)?.phases ||
         (schedule as any)?.timeline ||
         (schedule as any)?.stages ||
         (schedule as any)?.segments ||
-        (schedule as any)?.timer?.blocks ||
-        (schedule as any)?.blocks;
+        (schedule as any)?.blocks ||
+        (schedule as any)?.script?.phases ||
+        (schedule as any)?.script?.stages ||
+        (schedule as any)?.script?.blocks ||
+        (schedule as any)?.schedule?.phases ||
+        (schedule as any)?.schedule?.stages ||
+        (schedule as any)?.schedule?.blocks;
 
     if (Array.isArray(phases) && phases.length) return phasesToStages(phases);
 
@@ -793,29 +813,60 @@ async function fetchSessionExtrasForStages(sessionId: string): Promise<any | nul
     if (!sid) return null;
     if (!looksLikeUuid(sid)) return null;
 
-    if (_sessionExtrasById.has(sid)) return _sessionExtrasById.get(sid) || null;
+    if (_sessionExtrasById.has(sid)) {
+        return _sessionExtrasById.get(sid) || null;
+    }
 
     const sb = getSupabase();
-    if (!sb) {
-        _sessionExtrasById.set(sid, null);
-        return null;
-    }
+    if (!sb) return null;
 
     await ensureAuthReady(sb);
 
-    const { data, error } = await sb
+    /**
+     * IMPORTANT:
+     * Sessions created by CreateSessionModal store the selected template in
+     * `template_id`. Some older deployments do not have `session_template_id`.
+     *
+     * Selecting a missing Postgres column makes the whole request fail, which
+     * previously caused the info popover to fall back to one solid
+     * `duration_minutes` stage.
+     */
+    const primary = await sb
         .from("sessions")
-        .select("id, schedule, session_template_id, template_id")
+        .select("id, schedule, template_id")
         .eq("id", sid)
         .maybeSingle();
 
-    if (error || !data) {
-        _sessionExtrasById.set(sid, null);
-        return null;
+    if (!primary.error && primary.data) {
+        _sessionExtrasById.set(sid, primary.data);
+        return primary.data;
     }
 
-    _sessionExtrasById.set(sid, data);
-    return data;
+    /**
+     * Very old schemas may not expose template_id either. The schedule itself
+     * is enough to render a SessionStageBar, so retry with the smallest safe
+     * selection instead of collapsing the timeline.
+     */
+    const fallback = await sb
+        .from("sessions")
+        .select("id, schedule")
+        .eq("id", sid)
+        .maybeSingle();
+
+    if (!fallback.error && fallback.data) {
+        _sessionExtrasById.set(sid, fallback.data);
+        return fallback.data;
+    }
+
+    console.warn("[SessionCard] Unable to load session schedule:", {
+        sessionId: sid,
+        primaryError: primary.error,
+        fallbackError: fallback.error,
+    });
+
+    // Do not cache failures. A transient auth/network error should be retryable
+    // the next time the user opens the info popover.
+    return null;
 }
 
 async function fetchSessionDescriptionById(sessionId: string): Promise<string> {

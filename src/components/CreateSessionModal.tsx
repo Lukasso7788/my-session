@@ -286,6 +286,37 @@ type PublicSlugRow = {
   updated_at?: string | null;
 };
 
+type ExistingHostedSessionRow = {
+  id: string;
+  title?: string | null;
+  start_time?: string | null;
+  duration_minutes?: number | null;
+  status?: string | null;
+  session_format_type?: string | null;
+};
+
+type SessionTimeRange = {
+  start: Date;
+  end: Date;
+  label: string;
+};
+
+function rangesOverlap(a: SessionTimeRange, b: SessionTimeRange) {
+  // Touching boundaries are allowed: 10:00-11:00 and 11:00-12:00.
+  return a.start.getTime() < b.end.getTime() &&
+    a.end.getTime() > b.start.getTime();
+}
+
+function formatOverlapTime(date: Date) {
+  return date.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function uid() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const c: any = (globalThis as any)?.crypto;
@@ -2462,6 +2493,136 @@ export function CreateSessionModal({
         );
       }
 
+      /**
+       * Prevent the host from creating overlapping scheduled sessions.
+       *
+       * We validate both:
+       * 1. new occurrences against one another; and
+       * 2. every new occurrence against the host's existing scheduled sessions.
+       *
+       * Even a one-minute overlap is rejected. Back-to-back sessions are valid.
+       */
+      const normalizedDurationMinutes = Math.max(
+        1,
+        Math.round(Number(durationMinutes) || 1),
+      );
+
+      const newRanges: SessionTimeRange[] = datesLocal.map((date, index) => {
+        const start = new Date(date);
+        const end = new Date(
+          start.getTime() + normalizedDurationMinutes * 60 * 1000,
+        );
+
+        return {
+          start,
+          end,
+          label:
+            datesLocal.length > 1
+              ? `Occurrence ${index + 1}`
+              : title.trim() || "New session",
+        };
+      });
+
+      for (let leftIndex = 0; leftIndex < newRanges.length; leftIndex += 1) {
+        for (
+          let rightIndex = leftIndex + 1;
+          rightIndex < newRanges.length;
+          rightIndex += 1
+        ) {
+          const left = newRanges[leftIndex];
+          const right = newRanges[rightIndex];
+
+          if (rangesOverlap(left, right)) {
+            throw new Error(
+              `${left.label} overlaps ${right.label}. Reduce the duration or choose a different recurrence schedule.`,
+            );
+          }
+        }
+      }
+
+      const earliestStartMs = Math.min(
+        ...newRanges.map((range) => range.start.getTime()),
+      );
+      const latestEndMs = Math.max(
+        ...newRanges.map((range) => range.end.getTime()),
+      );
+
+      // Session Studio allows blocks up to 24 hours. A two-day look-back safely
+      // catches an older long session that extends into the new time range.
+      const existingSearchStart = new Date(
+        earliestStartMs - 2 * 24 * 60 * 60 * 1000,
+      );
+      const existingSearchEnd = new Date(latestEndMs);
+
+      const { data: existingHostedSessions, error: existingHostedSessionsError } =
+        await supabase
+          .from("sessions")
+          .select(
+            "id, title, start_time, duration_minutes, status, session_format_type",
+          )
+          .eq("host_id", profile.id)
+          .gte("start_time", existingSearchStart.toISOString())
+          .lt("start_time", existingSearchEnd.toISOString())
+          .order("start_time", { ascending: true })
+          .limit(500);
+
+      if (existingHostedSessionsError) {
+        throw new Error(
+          `Could not verify session availability: ${existingHostedSessionsError.message}`,
+        );
+      }
+
+      const existingRanges: SessionTimeRange[] = (
+        (existingHostedSessions || []) as ExistingHostedSessionRow[]
+      )
+        .filter((row) => {
+          const status = String(row.status || "").trim().toLowerCase();
+          const sessionType = String(row.session_format_type || "")
+            .trim()
+            .toLowerCase();
+
+          if (status === "cancelled" || status === "canceled") return false;
+          // Always-open rooms do not reserve one scheduled host time slot.
+          if (sessionType === "infinite") return false;
+          return !!row.start_time;
+        })
+        .map((row) => {
+          const start = new Date(String(row.start_time));
+          const duration = Math.max(
+            1,
+            Math.round(Number(row.duration_minutes) || 1),
+          );
+          const end = new Date(start.getTime() + duration * 60 * 1000);
+
+          return {
+            start,
+            end,
+            label: String(row.title || "Existing session"),
+          };
+        })
+        .filter(
+          (range) =>
+            Number.isFinite(range.start.getTime()) &&
+            Number.isFinite(range.end.getTime()),
+        );
+
+      for (const nextRange of newRanges) {
+        const conflict = existingRanges.find((existingRange) =>
+          rangesOverlap(nextRange, existingRange),
+        );
+
+        if (conflict) {
+          throw new Error(
+            `This session overlaps "${conflict.label}" (${formatOverlapTime(
+              conflict.start,
+            )}–${conflict.end.toLocaleTimeString(undefined, {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}). Choose a start time after the existing session ends.`,
+          );
+        }
+      }
+
       const isSeries = scheduleMode !== "single";
       const slugsForInsert =
         baseSlug && isSeries
@@ -2741,15 +2902,17 @@ export function CreateSessionModal({
         );
 
         if (rpcSlugError) {
+          // The session already exists at this point. A secondary public-link
+          // registry failure must not leave the modal open and invite a second
+          // click that creates a duplicate session.
           console.error("❌ Reusable public slug RPC failed:", rpcSlugError);
-          throw rpcSlugError;
+        } else if (!updatedSlugRows || updatedSlugRows.length === 0) {
+          console.error(
+            "❌ Reusable public link owner_id update returned no rows.",
+          );
+        } else {
+          setOwnedPublicSlugs(updatedSlugRows as PublicSlugRow[]);
         }
-
-        if (!updatedSlugRows || updatedSlugRows.length === 0) {
-          throw new Error("Reusable public link owner_id update returned no rows.");
-        }
-
-        setOwnedPublicSlugs(updatedSlugRows as PublicSlugRow[]);
       }
 
       if (baseSlug && isSeries) {
@@ -2768,9 +2931,17 @@ export function CreateSessionModal({
             .from("public_url_slugs")
             .upsert(publicSlugRows, { onConflict: "slug" });
 
-          if (publicSlugError) throw publicSlugError;
-
-          setOwnedPublicSlugs(publicSlugRows.slice(0, 1));
+          if (publicSlugError) {
+            // Sessions are already created. Do not keep the modal open after a
+            // non-critical registry failure, otherwise the host can click
+            // Create again and accidentally duplicate the whole series.
+            console.error(
+              "❌ Series public slug registry failed:",
+              publicSlugError,
+            );
+          } else {
+            setOwnedPublicSlugs(publicSlugRows.slice(0, 1));
+          }
         }
       }
 
@@ -2821,13 +2992,31 @@ export function CreateSessionModal({
       setSaveTemplateDescription("");
       setNotice(null);
 
-      onSessionCreated();
-      onClose();
+      /**
+       * Close first and treat the parent refresh as best-effort.
+       *
+       * Previously, if onSessionCreated() rejected/threw after the database
+       * insert had already succeeded, execution never reached onClose(). The
+       * visible modal then encouraged the host to click Create again.
+       */
+      try {
+        onClose();
+      } catch (closeError) {
+        console.error("❌ Failed to close Create Session modal:", closeError);
+      }
+
+      try {
+        await Promise.resolve(onSessionCreated());
+      } catch (refreshError) {
+        console.error(
+          "⚠️ Session was created, but the sessions list refresh callback failed:",
+          refreshError,
+        );
+      }
 
       // Keep the user on the canonical sessions listing after successful creation.
-      // This also guarantees the modal disappears even if parent state refresh is slow.
       try {
-        navigate("/sessions");
+        navigate("/sessions", { replace: true });
       } catch {
         if (typeof window !== "undefined") {
           window.location.assign("/sessions");
