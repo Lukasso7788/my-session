@@ -38,6 +38,7 @@ import {
   Target,
   Info,
   Pencil,
+  ChevronDown,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { assignServerForSession } from "../lib/livekitPlacement";
@@ -1184,6 +1185,7 @@ export function CreateSessionModal({
   const [isSavingUserTemplate, setIsSavingUserTemplate] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [activeStep, setActiveStep] = useState<0 | 1 | 2>(0);
 
   // ---------- Scheduling in advance ----------
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("single");
@@ -1238,6 +1240,9 @@ export function CreateSessionModal({
 
   // Scroll container ref (modal body)
   const modalScrollRef = useRef<HTMLDivElement | null>(null);
+  const basicSectionRef = useRef<HTMLElement | null>(null);
+  const scheduleSectionRef = useRef<HTMLDetailsElement | null>(null);
+  const summarySectionRef = useRef<HTMLElement | null>(null);
 
   // Auto-scroll while dragging
   const autoScrollRafRef = useRef<number | null>(null);
@@ -1269,6 +1274,7 @@ export function CreateSessionModal({
     setIsSavingUserTemplate(false);
     setError(null);
     setNotice(null);
+    setActiveStep(0);
 
     setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
     setCustomSlugInput("");
@@ -2290,6 +2296,25 @@ export function CreateSessionModal({
     };
   }, [isOpen]);
 
+  const goToStep = useCallback((step: 0 | 1 | 2) => {
+    setActiveStep(step);
+
+    if (step === 1 && scheduleSectionRef.current) {
+      scheduleSectionRef.current.open = true;
+    }
+
+    window.requestAnimationFrame(() => {
+      const target =
+        step === 0
+          ? basicSectionRef.current
+          : step === 1
+            ? scheduleSectionRef.current
+            : summarySectionRef.current;
+
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, []);
+
   const dynamicMaxOccurrences = useMemo(() => {
     const hardCap =
       scheduleMode === "weekly" ? 3 : scheduleMode === "daily" ? 14 : 1;
@@ -3265,26 +3290,38 @@ export function CreateSessionModal({
                     ["1", "Basic"],
                     ["2", "Schedule"],
                     ["3", "Summary"],
-                  ].map(([number, label], index) => (
-                    <div
-                      key={label}
-                      className={
-                        "relative flex items-center justify-center gap-2.5 pb-5 font-inter text-[14px] font-semibold " +
-                        (index === 0 ? "text-[#2F2F2F]" : "text-[#667085]")
-                      }
-                    >
-                      <span
+                  ].map(([number, label], index) => {
+                    const step = index as 0 | 1 | 2;
+                    const isActive = activeStep === step;
+
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => goToStep(step)}
                         className={
-                          "flex h-6 w-6 items-center justify-center rounded-full border text-[12px] " +
-                          (index === 0 ? "border-[#2F2F2F] text-[#2F2F2F]" : "border-[#98A2B3] text-[#667085]")
+                          "relative flex items-center justify-center gap-2.5 pb-5 font-inter text-[14px] font-semibold transition-colors " +
+                          (isActive ? "text-[#2F2F2F]" : "text-[#667085] hover:text-[#2F2F2F]")
                         }
+                        aria-current={isActive ? "step" : undefined}
                       >
-                        {number}
-                      </span>
-                      {label}
-                      {index === 0 && <span className="absolute bottom-[-1px] left-0 right-0 h-[3px] bg-[#2F2F2F]" />}
-                    </div>
-                  ))}
+                        <span
+                          className={
+                            "flex h-6 w-6 items-center justify-center rounded-full border text-[12px] transition-colors " +
+                            (isActive
+                              ? "border-[#2F2F2F] text-[#2F2F2F]"
+                              : "border-[#98A2B3] text-[#667085]")
+                          }
+                        >
+                          {number}
+                        </span>
+                        {label}
+                        {isActive && (
+                          <span className="absolute bottom-[-1px] left-0 right-0 h-[3px] bg-[#2F2F2F]" />
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {notice && (
@@ -3294,7 +3331,7 @@ export function CreateSessionModal({
                 )}
 
                 {/* 1. Session details */}
-                <section className="mt-7">
+                <section ref={basicSectionRef} className="mt-7 scroll-mt-6">
                   <h3 className="font-inter text-[18px] font-bold text-[#15171A]">1. Session details</h3>
 
                   <label className="mt-5 block font-inter text-[13px] font-semibold text-[#15171A]">
@@ -3442,7 +3479,7 @@ export function CreateSessionModal({
                 </section>
 
                 {/* Advanced settings preserved */}
-                <details className="mt-6 rounded-[12px] border border-[#E6E8EC] bg-[#FAFAFA]">
+                <details ref={scheduleSectionRef} className="mt-6 scroll-mt-6 rounded-[12px] border border-[#E6E8EC] bg-[#FAFAFA]">
                   <summary className="cursor-pointer px-4 py-3 font-inter text-[13px] font-semibold text-[#344054]">Advanced settings</summary>
                   <div className="space-y-5 border-t border-[#E6E8EC] p-4">
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -3619,7 +3656,7 @@ export function CreateSessionModal({
               </div>
 
               {/* Right column */}
-              <aside className="bg-[#FCFCFD] px-7 py-8 sm:px-8">
+              <aside ref={summarySectionRef} className="scroll-mt-6 bg-[#FCFCFD] px-7 py-8 sm:px-8">
                 <h3 className="font-inter text-[17px] font-bold text-[#15171A]">Session preview</h3>
 
                 <div className="mt-5 rounded-[12px] border border-[#2F2F2F]/20 bg-[#2F2F2F]/[0.025] p-5">
@@ -3666,11 +3703,77 @@ export function CreateSessionModal({
 
                 <h4 className="font-inter text-[14px] font-bold text-[#15171A]">Scheduling</h4>
                 <div className="mt-3 rounded-[11px] border border-[#E0E3E8] bg-white p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 font-inter text-[13px] text-[#344054]"><CalendarDays size={17} className="text-[#667085]" /><span>{scheduleMode === "single" ? "Single session" : "In advance"}</span></div>
-                    <span className="rounded-[8px] border border-[#E0E3E8] px-3 py-2 font-inter text-[12px] text-[#344054]">{occurrencesCount} {occurrencesCount === 1 ? "session" : "sessions"}⌄</span>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-center gap-3 font-inter text-[13px] text-[#344054]">
+                      <CalendarDays size={17} className="shrink-0 text-[#667085]" />
+                      <div className="relative min-w-[148px]">
+                        <select
+                          value={scheduleMode}
+                          onChange={(event) => {
+                            const mode = event.target.value as ScheduleMode;
+                            setScheduleMode(mode);
+                            setActiveStep(1);
+                          }}
+                          className="h-10 w-full appearance-none rounded-[8px] border border-[#E0E3E8] bg-white pl-3 pr-9 font-inter text-[12px] font-medium text-[#344054] outline-none transition focus:border-[#2F2F2F]"
+                          aria-label="Scheduling mode"
+                        >
+                          <option value="single">Single session</option>
+                          <option value="daily">In advance · Daily</option>
+                          <option value="weekly">In advance · Weekly</option>
+                        </select>
+                        <ChevronDown
+                          size={15}
+                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#667085]"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="relative min-w-[126px]">
+                      <select
+                        value={occurrencesCount}
+                        disabled={scheduleMode === "single"}
+                        onChange={(event) => {
+                          const count = clamp(
+                            Number(event.target.value) || 1,
+                            1,
+                            dynamicMaxOccurrences,
+                          );
+                          if (scheduleMode === "daily") setDailyDays(count);
+                          if (scheduleMode === "weekly") setWeeklyCount(count);
+                          setActiveStep(1);
+                        }}
+                        className="h-10 w-full appearance-none rounded-[8px] border border-[#E0E3E8] bg-white pl-3 pr-9 font-inter text-[12px] text-[#344054] outline-none transition focus:border-[#2F2F2F] disabled:cursor-default disabled:bg-[#FAFAFA]"
+                        aria-label="Number of sessions"
+                      >
+                        {Array.from(
+                          { length: scheduleMode === "single" ? 1 : dynamicMaxOccurrences },
+                          (_, index) => index + 1,
+                        ).map((count) => (
+                          <option key={count} value={count}>
+                            {count} {count === 1 ? "session" : "sessions"}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        size={15}
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#667085]"
+                      />
+                    </div>
                   </div>
-                  <p className="mt-3 font-inter text-[12px] leading-5 text-[#667085]">{scheduleMode === "single" ? "Choose a date and time in Advanced settings." : `We'll create ${occurrencesCount} sessions within the next ${MAX_ADVANCE_DAYS} days.`}</p>
+
+                  <p className="mt-3 font-inter text-[12px] leading-5 text-[#667085]">
+                    {scheduleMode === "single"
+                      ? "Choose one date and time in Schedule settings."
+                      : `We'll create ${occurrencesCount} sessions within the next ${MAX_ADVANCE_DAYS} days.`}
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => goToStep(1)}
+                    className="mt-3 font-inter text-[12px] font-semibold text-[#2F2F2F] underline underline-offset-2"
+                  >
+                    Edit schedule settings
+                  </button>
                 </div>
 
                 <h4 className="mt-6 font-inter text-[14px] font-bold text-[#15171A]">Quick summary</h4>
