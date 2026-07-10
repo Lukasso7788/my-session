@@ -34,6 +34,10 @@ import {
   Bookmark,
   Save,
   History,
+  Zap,
+  Target,
+  Info,
+  Pencil,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { assignServerForSession } from "../lib/livekitPlacement";
@@ -3096,7 +3100,7 @@ export function CreateSessionModal({
     !slugValid || slugStatus === "taken"
       ? "text-red-600"
       : slugStatus === "available" || slugStatus === "owned"
-        ? "text-emerald-600"
+        ? "text-[#2F2F2F]"
         : "text-gray-500";
 
   const createDisabled =
@@ -3111,20 +3115,84 @@ export function CreateSessionModal({
     !!scheduleAdvanceError ||
     isCreating;
 
+  const selectedTemplateBlocks = (() => {
+    if (!selectedTemplateObj) return [];
+    const fromBlocks = normalizeTemplateBlocks((selectedTemplateObj as any)?.blocks);
+    if (fromBlocks.length) return fromBlocks;
+    return normalizeTemplateBlocks((selectedTemplateObj as any)?.schedule);
+  })();
+
+  const sessionFlowPreview = studioEnabled ? studioBlocks : selectedTemplateBlocks;
+
+  const openSessionStudio = () => {
+    setStudioEnabled(true);
+    window.requestAnimationFrame(() => {
+      document
+        .getElementById("session-studio")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+
+  const overlapError =
+    error && /overlap/i.test(error) ? error : null;
+
   const overlayClass =
     "fixed inset-0 bg-black/50 z-50 p-2 sm:p-3 md:p-4 flex items-center justify-center";
 
   const panelClass =
-    "bg-white w-full h-full rounded-[20px] shadow-2xl flex flex-col overflow-hidden";
+    "bg-white w-full max-w-[1320px] h-[min(94vh,980px)] rounded-[24px] shadow-2xl flex flex-col overflow-hidden";
 
   return (
     <div className={overlayClass}>
+      {overlapError && (
+        <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/45 p-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="overlap-warning-title"
+            className="w-full max-w-[460px] rounded-[22px] border border-gray-200 bg-white p-5 shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3
+                  id="overlap-warning-title"
+                  className="font-inter text-[17px] font-semibold text-[#2F2F2F]"
+                >
+                  Session time overlaps
+                </h3>
+                <p className="mt-2 font-inter text-[13px] leading-5 text-gray-600">
+                  {overlapError}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition hover:bg-gray-50 hover:text-[#2F2F2F]"
+                aria-label="Close overlap warning"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setError(null)}
+                className="rounded-full bg-[#2F2F2F] px-5 py-2.5 font-inter text-[13px] font-medium text-white transition hover:bg-black"
+              >
+                Change time
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className={panelClass}>
         {/* HEADER */}
         <div className="px-3 sm:px-6 pt-4 sm:pt-5">
           <div className="flex justify-between items-center">
             <h2 className="text-[20px] font-bold text-brandBlack font-inter">
-              Create focus session
+              Create session
             </h2>
 
             <button
@@ -3153,7 +3221,7 @@ export function CreateSessionModal({
             <div className="space-y-4 sm:space-y-5">
               {/* Notices */}
               {notice && (
-                <div className="rounded-[16px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-[13px] text-emerald-700 font-inter">
+                <div className="rounded-[16px] border border-[#2F2F2F]/15 bg-[#2F2F2F]/[0.04] px-4 py-3 text-[13px] text-[#2F2F2F] font-inter">
                   {notice}
                 </div>
               )}
@@ -3227,7 +3295,7 @@ export function CreateSessionModal({
                           className={
                             "px-3 py-2 rounded-full border text-[12px] font-inter transition " +
                             (scheduleMode === "single"
-                              ? "border-brandBlack bg-brandBlack text-white"
+                              ? "border-brandBlack bg-[#2F2F2F] text-white"
                               : "border-gray-200 hover:bg-gray-50 text-brandBlack")
                           }
                         >
@@ -3240,7 +3308,7 @@ export function CreateSessionModal({
                           className={
                             "px-3 py-2 rounded-full border text-[12px] font-inter transition inline-flex items-center gap-2 " +
                             (scheduleMode === "weekly"
-                              ? "border-brandBlack bg-brandBlack text-white"
+                              ? "border-brandBlack bg-[#2F2F2F] text-white"
                               : "border-gray-200 hover:bg-gray-50 text-brandBlack")
                           }
                         >
@@ -3254,7 +3322,7 @@ export function CreateSessionModal({
                           className={
                             "px-3 py-2 rounded-full border text-[12px] font-inter transition inline-flex items-center gap-2 " +
                             (scheduleMode === "daily"
-                              ? "border-brandBlack bg-brandBlack text-white"
+                              ? "border-brandBlack bg-[#2F2F2F] text-white"
                               : "border-gray-200 hover:bg-gray-50 text-brandBlack")
                           }
                         >
@@ -3525,60 +3593,175 @@ export function CreateSessionModal({
                 </div>
               </div>
 
-              {/* Global templates */}
-              <div>
-                <label className="block text-[14px] font-medium text-brandBlack mb-2 font-inter">
-                  Session format
-                </label>
-
-                <div className="max-h-48 overflow-y-auto pr-2 space-y-3">
-                  {templates.length > 0 ? (
-                    templates.map((t) => (
-                      <label
-                        key={t.id}
-                        className="flex items-center gap-3 cursor-pointer"
-                        onClick={() => {
-                          setSelectedTemplate(t.id);
-                          if (!title) setTitle((t as any).name || "");
-                          setSelectedUserTemplateId("");
-                          setSelectedPreviousSessionId("");
-                        }}
-                      >
-                        <input
-                          type="radio"
-                          name="session-template"
-                          value={t.id}
-                          checked={selectedTemplate === t.id}
-                          onChange={() => { }}
-                          className="w-4 h-4 text-brandBlack"
-                        />
-
-                        <img
-                          src={`/icons/${(t as any).icon || String(t.name || "template").toLowerCase()}.svg`}
-                          className="w-4 h-4"
-                          alt=""
-                          draggable={false}
-                        />
-
-                        <span className="text-[16px] text-brandBlack font-inter">
-                          {String(t.name || "Template")} (
-                          {(t as any).total_duration} min)
+              {/* Choose a structure */}
+              <div className="rounded-[20px] border border-gray-200 bg-white p-3 sm:p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="font-inter text-[16px] font-semibold text-[#2F2F2F]">
+                      Choose a structure
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1.5 font-inter text-[12px] text-gray-500">
+                      <span>Pick a proven flow or build your own in Session Studio.</span>
+                      <span className="group relative inline-flex">
+                        <Info size={14} className="cursor-help text-gray-400" />
+                        <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-64 -translate-x-1/2 rounded-[12px] bg-[#2F2F2F] px-3 py-2 text-[11px] leading-4 text-white shadow-xl group-hover:block">
+                          Session Studio lets you create a custom structure with your own focus blocks, breaks, check-ins, intentions, and recap stages.
                         </span>
-                      </label>
-                    ))
-                  ) : (
-                    <p className="text-sm text-gray-500 font-inter">
-                      Loading templates...
-                    </p>
-                  )}
+                      </span>
+                    </div>
+                  </div>
                 </div>
 
-                {studioEnabled && (
-                  <p className="mt-2 text-[12px] text-gray-500 font-inter">
-                    Tip: when Session Studio is enabled, selecting a format is
-                    optional, but keeping a base format is still useful.
-                  </p>
-                )}
+                <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                  {templates.length > 0 ? (
+                    templates.map((t) => {
+                      const templateName = String(t.name || "Template");
+                      const normalizedName = templateName.toLowerCase();
+                      const duration = Number((t as any).total_duration) || 0;
+                      const isSelected = selectedTemplate === t.id && !studioEnabled;
+                      const isLightning =
+                        normalizedName.includes("15 / 3") ||
+                        normalizedName.includes("15/3");
+                      const isTarget =
+                        normalizedName.includes("50 / 10") ||
+                        normalizedName.includes("50/10");
+
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedTemplate(t.id);
+                            setStudioEnabled(false);
+                            if (!title) setTitle(templateName);
+                            setSelectedUserTemplateId("");
+                            setSelectedPreviousSessionId("");
+                          }}
+                          className={
+                            "relative min-h-[112px] rounded-[16px] border px-3 py-3 text-center transition " +
+                            (isSelected
+                              ? "border-[#2F2F2F] bg-[#2F2F2F]/[0.045] shadow-[inset_0_0_0_1px_#2F2F2F]"
+                              : "border-gray-200 bg-white hover:border-gray-400 hover:bg-gray-50")
+                          }
+                        >
+                          <span
+                            className={
+                              "absolute left-3 top-3 h-4 w-4 rounded-full border " +
+                              (isSelected
+                                ? "border-[#2F2F2F] bg-[#2F2F2F] shadow-[inset_0_0_0_3px_white]"
+                                : "border-gray-300 bg-white")
+                            }
+                          />
+
+                          <div className="mx-auto flex h-7 items-center justify-center text-[#2F2F2F]">
+                            {isLightning ? (
+                              <Zap size={23} strokeWidth={2.2} />
+                            ) : isTarget ? (
+                              <Target size={23} strokeWidth={2.2} />
+                            ) : (
+                              <span className="text-[22px] leading-none" aria-hidden="true">
+                                🍅
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="mt-1 font-inter text-[15px] font-semibold text-[#2F2F2F]">
+                            {templateName}
+                          </div>
+                          <div className="mt-0.5 font-inter text-[11px] text-gray-500">
+                            {duration ? `${duration} min total` : "Ready-made flow"}
+                          </div>
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <div className="col-span-full rounded-[16px] border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500 font-inter">
+                      Loading structures...
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={openSessionStudio}
+                    className={
+                      "relative min-h-[112px] rounded-[16px] border px-3 py-3 text-center transition " +
+                      (studioEnabled
+                        ? "border-[#2F2F2F] bg-[#2F2F2F]/[0.045] shadow-[inset_0_0_0_1px_#2F2F2F]"
+                        : "border-gray-200 bg-white hover:border-gray-400 hover:bg-gray-50")
+                    }
+                  >
+                    <span
+                      className={
+                        "absolute left-3 top-3 h-4 w-4 rounded-full border " +
+                        (studioEnabled
+                          ? "border-[#2F2F2F] bg-[#2F2F2F] shadow-[inset_0_0_0_3px_white]"
+                          : "border-gray-300 bg-white")
+                      }
+                    />
+                    <div className="mx-auto flex h-7 items-center justify-center">
+                      <Layers size={23} className="text-[#2F2F2F]" />
+                    </div>
+                    <div className="mt-1 font-inter text-[15px] font-semibold text-[#2F2F2F]">
+                      Custom
+                    </div>
+                    <div className="mt-0.5 font-inter text-[11px] text-gray-500">
+                      Session Studio
+                    </div>
+                  </button>
+                </div>
+
+                <div className="mt-3 rounded-[16px] border border-gray-200 bg-gray-50/70 px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="font-inter text-[13px] font-semibold text-[#2F2F2F]">
+                        Session Flow
+                      </div>
+                      <span className="group relative inline-flex">
+                        <Info size={14} className="cursor-help text-gray-400" />
+                        <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-60 -translate-x-1/2 rounded-[12px] bg-[#2F2F2F] px-3 py-2 text-[11px] leading-4 text-white shadow-xl group-hover:block">
+                          Open Session Studio to customize block order, durations, breaks, intentions, check-ins, and recap stages.
+                        </span>
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={openSessionStudio}
+                      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-gray-300 bg-white px-3 font-inter text-[12px] font-medium text-[#2F2F2F] transition hover:border-[#2F2F2F] hover:bg-gray-50"
+                    >
+                      <Pencil size={13} />
+                      Edit
+                    </button>
+                  </div>
+
+                  {sessionFlowPreview.length > 0 ? (
+                    <div className="mt-2 grid grid-cols-1 gap-x-5 gap-y-1 sm:grid-cols-2">
+                      {sessionFlowPreview.slice(0, 8).map((block, index) => (
+                        <div
+                          key={`${block.id}-${index}`}
+                          className="flex min-w-0 items-center justify-between gap-3 py-0.5"
+                        >
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span
+                              className="h-2 w-2 shrink-0 rounded-full"
+                              style={{ backgroundColor: getBlockColor(block) }}
+                            />
+                            <span className="truncate font-inter text-[12px] text-[#2F2F2F]">
+                              {block.title}
+                            </span>
+                          </div>
+                          <span className="shrink-0 font-inter text-[11px] text-gray-500">
+                            {block.minutes} min
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-2 font-inter text-[12px] text-gray-500">
+                      Select a structure to preview its flow.
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* My templates + previous sessions */}
@@ -3762,7 +3945,7 @@ export function CreateSessionModal({
               </div>
 
               {/* SESSION STUDIO */}
-              <div className="border border-[#DBD8D8] rounded-[18px] bg-white p-3 sm:p-4">
+              <div id="session-studio" className="scroll-mt-4 border border-[#DBD8D8] rounded-[18px] bg-white p-3 sm:p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0">
                     <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
@@ -3773,8 +3956,14 @@ export function CreateSessionModal({
                       <div className="font-inter font-semibold text-[14px] text-brandBlack">
                         Session Studio
                       </div>
-                      <div className="font-inter text-[12px] text-gray-500">
-                        Build a custom session script.
+                      <div className="flex items-center gap-1.5 font-inter text-[12px] text-gray-500">
+                        <span>Create a custom structure with your own blocks and durations.</span>
+                        <span className="group relative inline-flex">
+                          <Info size={14} className="cursor-help text-gray-400" />
+                          <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-64 -translate-x-1/2 rounded-[12px] bg-[#2F2F2F] px-3 py-2 text-[11px] leading-4 text-white shadow-xl group-hover:block">
+                            Customize focus blocks, breaks, intentions, check-ins, recaps, and their durations.
+                          </span>
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -3782,7 +3971,7 @@ export function CreateSessionModal({
                   {studioEnabled && (
                     <button
                       onClick={() => setStudioEnabled(false)}
-                      className="px-4 py-2 rounded-full bg-brandBlack text-white text-[12px] font-inter hover:bg-black transition shrink-0"
+                      className="px-4 py-2 rounded-full bg-[#2F2F2F] text-white text-[12px] font-inter hover:bg-black transition shrink-0"
                       type="button"
                     >
                       Close
@@ -3809,10 +3998,6 @@ export function CreateSessionModal({
                   </div>
                 </div>
 
-                <div className="mt-2 text-[12px] text-gray-500 font-inter">
-                  Script saved into{" "}
-                  <span className="font-medium">sessions.schedule</span>
-                </div>
 
                 {/* Save current studio as my template */}
                 {studioEnabled && (
@@ -3875,7 +4060,7 @@ export function CreateSessionModal({
                           studioBlocks.length === 0 ||
                           !String(saveTemplateName || title || "").trim()
                         }
-                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-brandBlack text-white text-[12px] font-inter hover:bg-black disabled:bg-gray-300 transition"
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#2F2F2F] text-white text-[12px] font-inter hover:bg-black disabled:bg-gray-300 transition"
                       >
                         <Save size={14} />
                         {isSavingUserTemplate
@@ -4533,7 +4718,7 @@ export function CreateSessionModal({
                   </div>
                 )}
 
-                {error && (
+                {error && !overlapError && (
                   <p className="text-red-600 text-sm font-inter mt-4">
                     {error}
                   </p>
@@ -4549,7 +4734,7 @@ export function CreateSessionModal({
             <button
               onClick={handleCreate}
               disabled={createDisabled}
-              className="w-full bg-brandBlack text-white py-3 rounded-[42px] font-medium text-[15px] font-inter hover:bg-black disabled:bg-gray-300 transition"
+              className="w-full bg-[#2F2F2F] text-white py-3 rounded-[42px] font-medium text-[15px] font-inter hover:bg-black disabled:bg-gray-300 transition"
               type="button"
             >
               {isCreating
