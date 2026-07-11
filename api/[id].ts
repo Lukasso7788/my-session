@@ -15,10 +15,17 @@ function json(res: any, status: number, payload: any) {
 }
 
 function assertCronSecret(req: any) {
-  const expected = String(process.env.MYSSESSION_CRON_SECRET || "").trim();
+  const expected = String(
+    process.env.MYSESSION_CRON_SECRET ||
+      process.env.MYSSESSION_CRON_SECRET ||
+      "",
+  ).trim();
 
   if (!expected) {
-    return true;
+    console.error(
+      "[discord_presence_broadcast] Missing MYSESSION_CRON_SECRET",
+    );
+    return false;
   }
 
   const got = String(req.headers["x-cron-secret"] || "").trim();
@@ -68,44 +75,107 @@ async function handleDiscordPresenceBroadcast(req: any, res: any) {
   ).trim();
 
   if (!webhookUrl) {
-    return json(res, 200, { ok: false, skipped: "missing_webhook" });
+    return json(res, 200, {
+      ok: false,
+      posted: false,
+      skipped: "missing_webhook",
+    });
   }
 
-  const minParticipants = Number(req.body?.minParticipants || 2);
-  const cooldownMinutes = Number(req.body?.cooldownMinutes || 45);
+  const requestedMinParticipants = Number(
+    req.body?.minParticipants ?? 2,
+  );
+  const requestedCooldownMinutes = Number(
+    req.body?.cooldownMinutes ?? 45,
+  );
+
+  const minParticipants = Number.isFinite(requestedMinParticipants)
+    ? Math.max(1, Math.min(100, Math.round(requestedMinParticipants)))
+    : 2;
+
+  const cooldownMinutes = Number.isFinite(requestedCooldownMinutes)
+    ? Math.max(5, Math.min(24 * 60, Math.round(requestedCooldownMinutes)))
+    : 45;
 
   try {
-    const rooms = await supabaseRest("rpc/get_active_infinite_rooms_for_discord", {
-      method: "POST",
-      body: JSON.stringify({ min_participants: minParticipants }),
-    });
+    const rooms = await supabaseRest(
+      "rpc/get_active_infinite_rooms_for_discord",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          min_participants: minParticipants,
+        }),
+      },
+    );
 
-    const list = Array.isArray(rooms) ? rooms : [];
+    const list = Array.isArray(rooms)
+      ? rooms
+          .filter(
+            (room: any) =>
+              room?.is_private !== true &&
+              Number(room?.participant_count || 0) >= minParticipants,
+          )
+          .sort(
+            (a: any, b: any) =>
+              Number(b?.participant_count || 0) -
+              Number(a?.participant_count || 0),
+          )
+      : [];
 
     if (!list.length) {
       return json(res, 200, {
         ok: true,
         posted: false,
-        skipped: "no_active_rooms",
+        skipped: "no_active_public_rooms",
+        minParticipants,
       });
     }
 
     const picked = list[0];
-    const sessionId = String(picked.session_id || picked.id || "").trim();
-    const title = cleanText(picked.title || "focus room", "focus room");
-    const count = Number(picked.participant_count || 0);
-    const link =
-      cleanText(picked.room_url) ||
-      `${String(process.env.NEXT_PUBLIC_APP_URL || "https://mysession.app").replace(
-        /\/$/,
-        "",
-      )}/sessions/${sessionId}`;
+    const sessionId = String(
+      picked?.session_id || picked?.id || "",
+    ).trim();
+    const title = cleanText(
+      picked?.title || "Focus room",
+      "Focus room",
+    );
+    const count = Number(picked?.participant_count || 0);
 
-    if (!sessionId || count < minParticipants) {
+    const appBaseUrl = String(
+      process.env.APP_URL ||
+        process.env.NEXT_PUBLIC_APP_URL ||
+        "https://mysession.club",
+    ).replace(/\/+$/, "");
+
+    const link =
+      cleanText(picked?.room_url) ||
+      `${appBaseUrl}/room-livekit/${encodeURIComponent(sessionId)}`;
+
+    if (!sessionId) {
+      return json(res, 200, {
+        ok: true,
+        posted: false,
+        skipped: "missing_session_id",
+      });
+    }
+
+    if (picked?.is_private === true) {
+      return json(res, 200, {
+        ok: true,
+        posted: false,
+        skipped: "private_session",
+        sessionId,
+      });
+    }
+
+    if (!Number.isFinite(count) || count < minParticipants) {
       return json(res, 200, {
         ok: true,
         posted: false,
         skipped: "below_threshold",
+        sessionId,
+        participantCount: count,
+        minParticipants,
       });
     }
 
@@ -114,11 +184,12 @@ async function handleDiscordPresenceBroadcast(req: any, res: any) {
     ).toISOString();
 
     const recent = await supabaseRest(
-      `discord_presence_broadcasts?room_session_id=eq.${encodeURIComponent(
-        sessionId,
-      )}&sent_at=gte.${encodeURIComponent(
-        sinceIso,
-      )}&select=id,sent_at&limit=1`,
+      `discord_presence_broadcasts` +
+        `?room_session_id=eq.${encodeURIComponent(sessionId)}` +
+        `&sent_at=gte.${encodeURIComponent(sinceIso)}` +
+        `&select=id,sent_at` +
+        `&order=sent_at.desc` +
+        `&limit=1`,
       { method: "GET" },
     );
 
@@ -129,13 +200,17 @@ async function handleDiscordPresenceBroadcast(req: any, res: any) {
         skipped: "cooldown",
         sessionId,
         participantCount: count,
+        cooldownMinutes,
+        lastBroadcastAt: recent[0]?.sent_at || null,
       });
     }
 
     const message =
       count >= 5
-        ? `🔥 ${count} people are focusing right now in **${title}**.\nJoin us: ${link}`
-        : `🟢 ${count} people are focusing right now in **${title}**.\nJoin if you want to work with us: ${link}`;
+        ? `🔥 **${count} people are focusing right now** in **${title}**.\n\nJoin the session:\n${link}`
+        : count === 1
+          ? `🟢 **Someone is focusing right now** in **${title}**.\n\nJoin them:\n${link}`
+          : `🟢 **${count} people are focusing right now** in **${title}**.\n\nJoin them:\n${link}`;
 
     const discordRes = await fetch(webhookUrl, {
       method: "POST",
@@ -154,11 +229,12 @@ async function handleDiscordPresenceBroadcast(req: any, res: any) {
         body: discordText.slice(0, 500),
       });
 
-      return json(res, 200, {
+      return json(res, 502, {
         ok: false,
         posted: false,
         error: "discord_failed",
         status: discordRes.status,
+        details: discordText.slice(0, 500),
       });
     }
 
@@ -169,6 +245,7 @@ async function handleDiscordPresenceBroadcast(req: any, res: any) {
         participant_count: count,
         message,
         discord_webhook_url: webhookUrl.slice(0, 120),
+        sent_at: new Date().toISOString(),
       }),
     });
 
@@ -178,12 +255,17 @@ async function handleDiscordPresenceBroadcast(req: any, res: any) {
       sessionId,
       title,
       participantCount: count,
+      minParticipants,
+      cooldownMinutes,
       message,
+      link,
     });
   } catch (error: any) {
     console.error("[discord_presence_broadcast] error:", error);
+
     return json(res, 500, {
       ok: false,
+      posted: false,
       error: error?.message || "Internal server error",
     });
   }
