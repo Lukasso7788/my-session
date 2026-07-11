@@ -635,7 +635,7 @@ function VideoTileInner({
                 />
             </div>
 
-            {safeCurrentIntention && !isLocal ? (
+            {safeCurrentIntention ? (
                 <div
                     className={[
                         "pointer-events-none absolute z-[13] translate-y-1 rounded-2xl border px-3 py-2 opacity-0 shadow-lg backdrop-blur-xl transition duration-150 group-hover:translate-y-0 group-hover:opacity-100",
