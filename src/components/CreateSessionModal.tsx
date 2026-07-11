@@ -38,11 +38,17 @@ import {
   Target,
   Info,
   Pencil,
+  ChevronDown,
+  Lock,
+  Globe2,
+  Minus,
+  Plus,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { assignServerForSession } from "../lib/livekitPlacement";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { resolveStageVisual } from "./SessionStageBar";
 
 interface CreateSessionModalProps {
   isOpen: boolean;
@@ -66,6 +72,43 @@ function nowLocalForDatetimeInput(): string {
   d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
   return d.toISOString().slice(0, 16);
 }
+
+function getScheduledDatePart(value: string) {
+  return String(value || "").slice(0, 10);
+}
+
+function getScheduledTimePart(value: string) {
+  return String(value || "").slice(11, 16);
+}
+
+function combineScheduledDateTime(args: {
+  current: string;
+  date?: string;
+  time?: string;
+}) {
+  const currentDate = getScheduledDatePart(args.current);
+  const currentTime = getScheduledTimePart(args.current);
+  const fallback = nowLocalForDatetimeInput();
+  const date = String(args.date ?? currentDate ?? "").trim();
+  const time = String(args.time ?? currentTime ?? "").trim();
+
+  if (!date && !time) return "";
+
+  return `${date || fallback.slice(0, 10)}T${time || fallback.slice(11, 16)}`;
+}
+
+const SESSION_TIME_OPTIONS = Array.from({ length: 96 }, (_, index) => {
+  const totalMinutes = index * 15;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const value = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  const label = new Date(2000, 0, 1, hours, minutes).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+
+  return { value, label };
+});
 
 // ===============================
 // Scheduling in advance helpers
@@ -230,6 +273,106 @@ const MAX_PARTICIPANTS = 64;
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
+}
+
+type PresetKey = "15-3" | "25-5" | "50-10";
+type AccessMode = "public" | "private";
+
+const CREATE_SESSION_ACCENT = "#2F2F2F";
+
+const SESSION_PRESETS: Array<{
+  key: PresetKey;
+  label: string;
+  focus: string;
+  breakLabel: string;
+  focusMinutes: number;
+  breakMinutes: number;
+  icon: "zap" | "tomato" | "target";
+}> = [
+    {
+      key: "15-3",
+      label: "15 / 3",
+      focus: "15m focus",
+      breakLabel: "3m break",
+      focusMinutes: 15,
+      breakMinutes: 3,
+      icon: "zap",
+    },
+    {
+      key: "25-5",
+      label: "25 / 5",
+      focus: "25m focus",
+      breakLabel: "5m break",
+      focusMinutes: 25,
+      breakMinutes: 5,
+      icon: "tomato",
+    },
+    {
+      key: "50-10",
+      label: "50 / 10",
+      focus: "50m focus",
+      breakLabel: "10m break",
+      focusMinutes: 50,
+      breakMinutes: 10,
+      icon: "target",
+    },
+  ];
+
+function templateMatchesPreset(
+  template: SessionTemplate,
+  preset: (typeof SESSION_PRESETS)[number],
+) {
+  const name = String(template?.name || "").toLowerCase();
+  const compactName = name.replace(/\s+/g, "");
+
+  if (
+    compactName.includes(`${preset.focusMinutes}/${preset.breakMinutes}`) ||
+    compactName.includes(`${preset.focusMinutes}-${preset.breakMinutes}`)
+  ) {
+    return true;
+  }
+
+  const blocks = normalizeTemplateBlocks(
+    (template as any)?.blocks || (template as any)?.schedule,
+  );
+
+  const firstFocus = blocks.find((block) => block.kind === "focus");
+  const firstBreak = blocks.find((block) => block.kind === "break");
+
+  return (
+    Number(firstFocus?.minutes) === preset.focusMinutes &&
+    Number(firstBreak?.minutes) === preset.breakMinutes
+  );
+}
+
+function buildPresetCycleBlocks(
+  preset: (typeof SESSION_PRESETS)[number],
+  cycles: number,
+): StudioBlock[] {
+  const safeCycles = clamp(Math.round(Number(cycles) || 1), 1, 12);
+  const blocks: StudioBlock[] = [];
+
+  for (let index = 0; index < safeCycles; index += 1) {
+    blocks.push({
+      id: `preset-${preset.key}-focus-${index + 1}`,
+      kind: "focus",
+      title: `Focus ${index + 1}`,
+      note: `${preset.focusMinutes}-minute focus block`,
+      minutes: preset.focusMinutes,
+      color: getDefaultBlockColor("focus"),
+    });
+
+    blocks.push({
+      id: `preset-${preset.key}-break-${index + 1}`,
+      kind: "break",
+      title: index === safeCycles - 1 ? "Break & check-in" : "Break & check-in",
+      note: `${preset.breakMinutes}-minute break and quick check-in`,
+      minutes: preset.breakMinutes,
+      color: getDefaultBlockColor("break"),
+    });
+  }
+
+  return blocks;
 }
 
 // ===============================
@@ -1184,6 +1327,10 @@ export function CreateSessionModal({
   const [isSavingUserTemplate, setIsSavingUserTemplate] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [activeStep, setActiveStep] = useState<0 | 1 | 2>(0);
+  const [selectedPresetKey, setSelectedPresetKey] = useState<PresetKey | null>(null);
+  const [presetCycles, setPresetCycles] = useState<number>(3);
+  const [accessMode, setAccessMode] = useState<AccessMode>("public");
 
   // ---------- Scheduling in advance ----------
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("single");
@@ -1238,6 +1385,9 @@ export function CreateSessionModal({
 
   // Scroll container ref (modal body)
   const modalScrollRef = useRef<HTMLDivElement | null>(null);
+  const basicSectionRef = useRef<HTMLElement | null>(null);
+  const scheduleSectionRef = useRef<HTMLElement | null>(null);
+  const summarySectionRef = useRef<HTMLElement | null>(null);
 
   // Auto-scroll while dragging
   const autoScrollRafRef = useRef<number | null>(null);
@@ -1269,6 +1419,10 @@ export function CreateSessionModal({
     setIsSavingUserTemplate(false);
     setError(null);
     setNotice(null);
+    setActiveStep(0);
+    setSelectedPresetKey(null);
+    setPresetCycles(3);
+    setAccessMode("public");
 
     setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
     setCustomSlugInput("");
@@ -2290,6 +2444,21 @@ export function CreateSessionModal({
     };
   }, [isOpen]);
 
+  const goToStep = useCallback((step: 0 | 1 | 2) => {
+    setActiveStep(step);
+
+    window.requestAnimationFrame(() => {
+      const target =
+        step === 0
+          ? basicSectionRef.current
+          : step === 1
+            ? scheduleSectionRef.current
+            : summarySectionRef.current;
+
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, []);
+
   const dynamicMaxOccurrences = useMemo(() => {
     const hardCap =
       scheduleMode === "weekly" ? 3 : scheduleMode === "daily" ? 14 : 1;
@@ -2391,7 +2560,7 @@ export function CreateSessionModal({
       return;
     }
 
-    if (!studioEnabled && !selectedTemplate) {
+    if (!studioEnabled && !selectedTemplate && !selectedPresetKey) {
       setError("Please select a session format (template).");
       return;
     }
@@ -2435,7 +2604,7 @@ export function CreateSessionModal({
     }
 
     const baseTemplateId =
-      selectedTemplate || (studioEnabled ? (templates[0]?.id ?? "") : "");
+      selectedTemplate || ((studioEnabled || selectedPresetKey) ? (templates[0]?.id ?? "") : "");
 
     if (studioEnabled && !baseTemplateId) {
       setError(
@@ -2444,13 +2613,11 @@ export function CreateSessionModal({
       return;
     }
 
-    const effectiveMaxParticipants = studioEnabled
-      ? clamp(
-        Number(maxParticipants) || DEFAULT_MAX_PARTICIPANTS,
-        MIN_PARTICIPANTS,
-        MAX_PARTICIPANTS,
-      )
-      : DEFAULT_MAX_PARTICIPANTS;
+    const effectiveMaxParticipants = clamp(
+      Number(maxParticipants) || DEFAULT_MAX_PARTICIPANTS,
+      MIN_PARTICIPANTS,
+      MAX_PARTICIPANTS,
+    );
 
     setIsCreating(true);
     setError(null);
@@ -2468,17 +2635,24 @@ export function CreateSessionModal({
 
       const durationMinutes = studioEnabled
         ? studioTotal
-        : ((template as any)?.total_duration ?? 60);
+        : generatedPresetBlocks.length
+          ? generatedPresetBlocks.reduce(
+            (sum, block) => sum + (Number(block.minutes) || 0),
+            0,
+          )
+          : ((template as any)?.total_duration ?? 60);
 
       const schedulePayload = studioEnabled
         ? exportStudioToSchedule(studioBlocks)
-        : (template as any)?.blocks || (template as any)?.schedule || [];
+        : generatedPresetBlocks.length
+          ? exportStudioToSchedule(generatedPresetBlocks)
+          : (template as any)?.blocks || (template as any)?.schedule || [];
 
       const formatLabel = studioEnabled
         ? template?.name
           ? `${template.name} (Studio)`
           : "Session Studio"
-        : template?.name || "Unspecified";
+        : selectedPreset?.label || template?.name || "Unspecified";
 
       const normalizedDescription = String(description || "").trim() || null;
 
@@ -2781,6 +2955,7 @@ export function CreateSessionModal({
           jitsi_domain: FIXED_JITSI_DOMAIN,
 
           max_participants: effectiveMaxParticipants,
+          is_private: accessMode === "private",
           assigned_server_id: placement.server.id,
           placement_weight: placement.placementWeight,
           assigned_at: new Date().toISOString(),
@@ -3051,6 +3226,9 @@ export function CreateSessionModal({
 
   const hostName = profile?.full_name || user?.email || "Unknown host";
   const minDateTime = nowLocalForDatetimeInput();
+  const minScheduleDate = minDateTime.slice(0, 10);
+  const scheduledDatePart = getScheduledDatePart(scheduledAt);
+  const scheduledTimePart = getScheduledTimePart(scheduledAt);
 
   const origin =
     typeof window !== "undefined" && window.location?.origin
@@ -3106,7 +3284,7 @@ export function CreateSessionModal({
   const createDisabled =
     !title ||
     !scheduledAt ||
-    (!studioEnabled && !selectedTemplate) ||
+    (!studioEnabled && !selectedTemplate && !selectedPresetKey) ||
     (studioEnabled && studioBlocks.length === 0) ||
     (sanitizedSlug ? !slugValid : false) ||
     (scheduleMode === "single" && sanitizedSlug
@@ -3125,6 +3303,7 @@ export function CreateSessionModal({
   const sessionFlowPreview = studioEnabled ? studioBlocks : selectedTemplateBlocks;
 
   const openSessionStudio = () => {
+    setSelectedPresetKey(null);
     setStudioEnabled(true);
     window.requestAnimationFrame(() => {
       document
@@ -3142,24 +3321,39 @@ export function CreateSessionModal({
   const panelClass =
     "bg-white w-full max-w-[1320px] h-[min(94vh,980px)] rounded-[24px] shadow-2xl flex flex-col overflow-hidden";
 
-  const presetMeta = [
-    { label: "15 / 3", focus: "15m focus", breakLabel: "3m break", icon: "zap" as const },
-    { label: "25 / 5", focus: "25m focus", breakLabel: "5m break", icon: "tomato" as const },
-    { label: "50 / 10", focus: "50m focus", breakLabel: "10m break", icon: "target" as const },
-  ];
+  const presetMeta = SESSION_PRESETS;
 
-  const previewBlocks = sessionFlowPreview.length
-    ? sessionFlowPreview
-    : [
-      { id: "preview-welcome", kind: "welcome" as StudioBlockKind, title: "Welcome & Check-in", minutes: 5 },
-      { id: "preview-intentions", kind: "intentions" as StudioBlockKind, title: "Intentions", minutes: 5 },
-      { id: "preview-focus-1", kind: "focus" as StudioBlockKind, title: "Focus 1", minutes: 25 },
-      { id: "preview-break-1", kind: "break" as StudioBlockKind, title: "Break", minutes: 5 },
-      { id: "preview-focus-2", kind: "focus" as StudioBlockKind, title: "Focus 2", minutes: 25 },
-      { id: "preview-break-2", kind: "break" as StudioBlockKind, title: "Break", minutes: 5 },
-      { id: "preview-focus-3", kind: "focus" as StudioBlockKind, title: "Focus 3", minutes: 25 },
-      { id: "preview-recap", kind: "recap" as StudioBlockKind, title: "Wrap-up & Recap", minutes: 5 },
-    ];
+  const presetTemplateMap = Object.fromEntries(
+    SESSION_PRESETS.map((preset) => [
+      preset.key,
+      templates.find((template) => templateMatchesPreset(template, preset)) || null,
+    ]),
+  ) as Record<PresetKey, SessionTemplate | null>;
+
+  const selectedPreset = selectedPresetKey
+    ? SESSION_PRESETS.find((preset) => preset.key === selectedPresetKey) || null
+    : null;
+
+  const generatedPresetBlocks = selectedPreset
+    ? buildPresetCycleBlocks(selectedPreset, presetCycles)
+    : [];
+
+  const previewBlocks = studioEnabled
+    ? studioBlocks
+    : generatedPresetBlocks.length
+      ? generatedPresetBlocks
+      : sessionFlowPreview.length
+        ? sessionFlowPreview
+        : [
+          { id: "preview-welcome", kind: "welcome" as StudioBlockKind, title: "Welcome & Check-in", minutes: 5 },
+          { id: "preview-intentions", kind: "intentions" as StudioBlockKind, title: "Intentions", minutes: 5 },
+          { id: "preview-focus-1", kind: "focus" as StudioBlockKind, title: "Focus 1", minutes: 25 },
+          { id: "preview-break-1", kind: "break" as StudioBlockKind, title: "Break", minutes: 5 },
+          { id: "preview-focus-2", kind: "focus" as StudioBlockKind, title: "Focus 2", minutes: 25 },
+          { id: "preview-break-2", kind: "break" as StudioBlockKind, title: "Break", minutes: 5 },
+          { id: "preview-focus-3", kind: "focus" as StudioBlockKind, title: "Focus 3", minutes: 25 },
+          { id: "preview-recap", kind: "recap" as StudioBlockKind, title: "Wrap-up & Recap", minutes: 5 },
+        ];
 
   const previewFocusMinutes = previewBlocks
     .filter((block) => block.kind === "focus")
@@ -3219,7 +3413,7 @@ export function CreateSessionModal({
               <button
                 type="button"
                 onClick={() => setError(null)}
-                className="rounded-[10px] bg-[#2F2F2F] px-5 py-2.5 font-inter text-[13px] font-semibold text-white hover:bg-[#1F1F1F]"
+                className="rounded-[14px] bg-[#2F2F2F] px-5 py-2.5 font-inter text-[13px] font-semibold text-white hover:bg-[#1F1F1F]"
               >
                 Change time
               </button>
@@ -3228,11 +3422,11 @@ export function CreateSessionModal({
         </div>
       )}
 
-      <div className="flex h-[min(96vh,1080px)] w-full max-w-[1280px] flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_30px_90px_rgba(0,0,0,0.35)]">
+      <div className="flex h-[min(96vh,1080px)] w-full max-w-[1280px] flex-col overflow-hidden rounded-[24px] bg-white shadow-[0_30px_90px_rgba(0,0,0,0.35)]">
         {/* Header */}
         <div className="flex h-[108px] shrink-0 items-center justify-between border-b border-[#E6E8EC] px-7 sm:px-10">
           <div className="flex items-center gap-5">
-            <div className="flex h-16 w-16 items-center justify-center rounded-[18px] bg-[#2F2F2F]/[0.08] text-[#2F2F2F]">
+            <div className="flex h-16 w-16 items-center justify-center rounded-[18px] bg-[#2F2F2F]/[0.10] text-[#2F2F2F]">
               <CalendarDays size={34} strokeWidth={1.8} />
             </div>
             <div>
@@ -3265,37 +3459,269 @@ export function CreateSessionModal({
                     ["1", "Basic"],
                     ["2", "Schedule"],
                     ["3", "Summary"],
-                  ].map(([number, label], index) => (
-                    <div
-                      key={label}
-                      className={
-                        "relative flex items-center justify-center gap-2.5 pb-5 font-inter text-[14px] font-semibold " +
-                        (index === 0 ? "text-[#2F2F2F]" : "text-[#667085]")
-                      }
-                    >
-                      <span
+                  ].map(([number, label], index) => {
+                    const step = index as 0 | 1 | 2;
+                    const isActive = activeStep === step;
+
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => goToStep(step)}
                         className={
-                          "flex h-6 w-6 items-center justify-center rounded-full border text-[12px] " +
-                          (index === 0 ? "border-[#2F2F2F] text-[#2F2F2F]" : "border-[#98A2B3] text-[#667085]")
+                          "relative flex items-center justify-center gap-2.5 pb-5 font-inter text-[14px] font-semibold transition-colors " +
+                          (isActive ? "text-[#2F2F2F]" : "text-[#667085] hover:text-[#2F2F2F]")
                         }
+                        aria-current={isActive ? "step" : undefined}
                       >
-                        {number}
-                      </span>
-                      {label}
-                      {index === 0 && <span className="absolute bottom-[-1px] left-0 right-0 h-[3px] bg-[#2F2F2F]" />}
-                    </div>
-                  ))}
+                        <span
+                          className={
+                            "flex h-6 w-6 items-center justify-center rounded-full border text-[12px] transition-colors " +
+                            (isActive
+                              ? "border-[#2F2F2F] text-[#2F2F2F]"
+                              : "border-[#98A2B3] text-[#667085]")
+                          }
+                        >
+                          {number}
+                        </span>
+                        {label}
+                        {isActive && (
+                          <span className="absolute bottom-[-1px] left-0 right-0 h-[3px] bg-[#2F2F2F]" />
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
 
                 {notice && (
-                  <div className="mt-5 rounded-[12px] border border-[#2F2F2F]/15 bg-[#2F2F2F]/[0.04] px-4 py-3 font-inter text-[13px] text-[#2F2F2F]">
+                  <div className="mt-5 rounded-[12px] border border-[#2F2F2F]/20 bg-[#2F2F2F]/[0.05] px-4 py-3 font-inter text-[13px] text-[#2F2F2F]">
                     {notice}
                   </div>
                 )}
 
-                {/* 1. Session details */}
-                <section className="mt-7">
-                  <h3 className="font-inter text-[18px] font-bold text-[#15171A]">1. Session details</h3>
+                {/* 1. Date & scheduling */}
+                <section
+                  ref={scheduleSectionRef}
+                  className="mt-7 scroll-mt-6 rounded-[20px] border border-[#E3E5E8] bg-[#FAFAFA] p-5 sm:p-6"
+                  aria-labelledby="create-session-schedule-heading"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3
+                        id="create-session-schedule-heading"
+                        className="font-inter text-[18px] font-bold text-[#15171A]"
+                      >
+                        1. Date &amp; scheduling
+                      </h3>
+                      <p className="mt-1 font-inter text-[12px] leading-5 text-[#667085]">
+                        Choose when the session starts and whether to schedule more sessions in advance.
+                      </p>
+                    </div>
+                    <CalendarDays size={20} className="mt-0.5 text-[#667085]" />
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label
+                        htmlFor="create-session-date"
+                        className="block font-inter text-[13px] font-semibold text-[#15171A]"
+                      >
+                        Date <span className="text-[#E5484D]">*</span>
+                      </label>
+                      <div className="relative mt-2">
+                        <CalendarDays
+                          size={18}
+                          className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#667085]"
+                        />
+                        <input
+                          id="create-session-date"
+                          type="date"
+                          value={scheduledDatePart}
+                          min={minScheduleDate}
+                          onChange={(event) =>
+                            setScheduledAt(
+                              combineScheduledDateTime({
+                                current: scheduledAt,
+                                date: event.target.value,
+                              }),
+                            )
+                          }
+                          className="h-[50px] w-full rounded-[14px] border border-[#D8DCE3] bg-white pl-11 pr-4 font-inter text-[14px] text-[#344054] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label
+                        htmlFor="create-session-time"
+                        className="block font-inter text-[13px] font-semibold text-[#15171A]"
+                      >
+                        Start time <span className="text-[#E5484D]">*</span>
+                      </label>
+                      <div className="relative mt-2">
+                        <select
+                          id="create-session-time"
+                          value={scheduledTimePart}
+                          onChange={(event) =>
+                            setScheduledAt(
+                              combineScheduledDateTime({
+                                current: scheduledAt,
+                                time: event.target.value,
+                              }),
+                            )
+                          }
+                          className="h-[50px] w-full appearance-none rounded-[14px] border border-[#D8DCE3] bg-white px-4 pr-11 font-inter text-[14px] text-[#344054] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
+                        >
+                          <option value="">Choose time</option>
+                          {SESSION_TIME_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown
+                          size={17}
+                          className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#667085]"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <fieldset className="mt-5">
+                    <legend className="font-inter text-[13px] font-semibold text-[#15171A]">
+                      Scheduling
+                    </legend>
+                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {([
+                        ["single", "Single session", "Create it once"],
+                        ["daily", "Daily", "Schedule in advance"],
+                        ["weekly", "Weekly", "Schedule in advance"],
+                      ] as Array<[ScheduleMode, string, string]>).map(
+                        ([mode, label, helper]) => {
+                          const selected = scheduleMode === mode;
+
+                          return (
+                            <button
+                              key={mode}
+                              type="button"
+                              onClick={() => {
+                                setScheduleMode(mode);
+                                setActiveStep(1);
+                              }}
+                              className={[
+                                "min-h-[60px] rounded-[14px] border px-4 py-3 text-left transition",
+                                selected
+                                  ? "border-[#2F2F2F] bg-[#2F2F2F] text-white shadow-sm"
+                                  : "border-[#D8DCE3] bg-white text-[#344054] hover:border-[#AEB4BD]",
+                              ].join(" ")}
+                              aria-pressed={selected}
+                            >
+                              <span className="block font-inter text-[13px] font-semibold">
+                                {label}
+                              </span>
+                              <span
+                                className={[
+                                  "mt-0.5 block font-inter text-[11px]",
+                                  selected ? "text-white/70" : "text-[#98A2B3]",
+                                ].join(" ")}
+                              >
+                                {helper}
+                              </span>
+                            </button>
+                          );
+                        },
+                      )}
+                    </div>
+                  </fieldset>
+
+                  {scheduleMode !== "single" && (
+                    <div className="mt-4 grid grid-cols-1 gap-4 rounded-[16px] border border-[#E3E5E8] bg-white p-4 sm:grid-cols-2">
+                      <div>
+                        <label
+                          htmlFor="create-session-occurrences"
+                          className="block font-inter text-[12px] font-semibold text-[#344054]"
+                        >
+                          Number of sessions
+                        </label>
+                        <div className="relative mt-2">
+                          <select
+                            id="create-session-occurrences"
+                            value={occurrencesCount}
+                            onChange={(event) => {
+                              const count = clamp(
+                                Number(event.target.value) || 1,
+                                1,
+                                dynamicMaxOccurrences,
+                              );
+                              if (scheduleMode === "daily") setDailyDays(count);
+                              if (scheduleMode === "weekly") setWeeklyCount(count);
+                            }}
+                            className="h-11 w-full appearance-none rounded-[12px] border border-[#D8DCE3] bg-white px-3 pr-10 font-inter text-[13px] text-[#344054] outline-none focus:border-[#2F2F2F]"
+                          >
+                            {Array.from(
+                              { length: dynamicMaxOccurrences },
+                              (_, index) => index + 1,
+                            ).map((count) => (
+                              <option key={count} value={count}>
+                                {count} {count === 1 ? "session" : "sessions"}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown
+                            size={15}
+                            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#667085]"
+                          />
+                        </div>
+                      </div>
+
+                      {scheduleMode === "daily" ? (
+                        <label className="flex min-h-11 items-center gap-3 self-end rounded-[12px] border border-[#D8DCE3] bg-[#FAFAFA] px-3 font-inter text-[12px] text-[#344054]">
+                          <input
+                            type="checkbox"
+                            checked={dailyWeekdaysOnly}
+                            onChange={(event) =>
+                              setDailyWeekdaysOnly(event.target.checked)
+                            }
+                            className="h-4 w-4 accent-[#2F2F2F]"
+                          />
+                          Weekdays only
+                        </label>
+                      ) : (
+                        <div className="self-end rounded-[12px] border border-[#E3E5E8] bg-[#FAFAFA] px-3 py-2.5 font-inter text-[11px] leading-4 text-[#667085]">
+                          Repeats every 7 days from the selected date.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {scheduleAdvanceError ? (
+                    <div
+                      role="alert"
+                      className="mt-4 rounded-[14px] border border-red-200 bg-red-50 px-4 py-3 font-inter text-[12px] leading-5 text-red-700"
+                    >
+                      {scheduleAdvanceError}
+                    </div>
+                  ) : null}
+
+                  {occurrencesPreview.length > 0 ? (
+                    <div className="mt-4 rounded-[16px] border border-[#E3E5E8] bg-white p-4">
+                      <div className="font-inter text-[12px] font-semibold text-[#344054]">
+                        {scheduleMode === "single" ? "Session time" : "Session dates"}
+                      </div>
+                      <div className="mt-2 grid gap-1.5 font-inter text-[11px] text-[#667085] sm:grid-cols-2">
+                        {occurrencesPreview.map((item) => (
+                          <div key={item} className="rounded-[14px] bg-[#F7F7F8] px-3 py-2">
+                            {item}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
+
+                {/* 2. Session details */}
+                <section ref={basicSectionRef} className="mt-8 scroll-mt-6">
+                  <h3 className="font-inter text-[18px] font-bold text-[#15171A]">2. Session details</h3>
 
                   <label className="mt-5 block font-inter text-[13px] font-semibold text-[#15171A]">
                     Title <span className="text-[#E5484D]">*</span>
@@ -3306,7 +3732,7 @@ export function CreateSessionModal({
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       placeholder="e.g. Deep Work Session"
-                      className="h-[52px] w-full rounded-[10px] border border-[#D8DCE3] bg-white px-4 pr-12 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
+                      className="h-[52px] w-full rounded-[14px] border border-[#D8DCE3] bg-white px-4 pr-12 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
                     />
                     <Pencil className="absolute right-4 top-1/2 -translate-y-1/2 text-[#2F2F2F]" size={18} />
                   </div>
@@ -3318,41 +3744,42 @@ export function CreateSessionModal({
                       onChange={(e) => setDescription(e.target.value.slice(0, 300))}
                       placeholder="What will you focus on together?"
                       rows={4}
-                      className="min-h-[108px] w-full resize-none rounded-[10px] border border-[#D8DCE3] bg-white px-4 py-3 pb-8 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
+                      className="min-h-[108px] w-full resize-none rounded-[14px] border border-[#D8DCE3] bg-white px-4 py-3 pb-8 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
                     />
                     <span className="absolute bottom-3 right-4 font-inter text-[12px] text-[#667085]">{description.length}/300</span>
                   </div>
                 </section>
 
-                {/* 2. Choose a structure */}
+                {/* 3. Choose a structure */}
                 <section className="mt-8">
-                  <h3 className="font-inter text-[18px] font-bold text-[#15171A]">2. Choose a structure</h3>
+                  <h3 className="font-inter text-[18px] font-bold text-[#15171A]">3. Choose a structure</h3>
                   <div className="mt-1.5 flex items-center gap-2 font-inter text-[13px] text-[#667085]">
                     <span>Pick a proven flow or build your own in Session Studio.</span>
                     <span className="group relative inline-flex">
                       <Info size={16} className="cursor-help" />
-                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[260px] -translate-x-1/2 rounded-[10px] bg-[#2F2F2F] px-3 py-2 text-center text-[11px] leading-4 text-white shadow-xl group-hover:block">
+                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[260px] -translate-x-1/2 rounded-[14px] bg-[#2F2F2F] px-3 py-2 text-center text-[11px] leading-4 text-white shadow-xl group-hover:block">
                         Session Studio lets you create a custom structure with your own focus blocks, breaks, check-ins, intentions, and recap stages.
                       </span>
                     </span>
                   </div>
 
                   <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    {presetMeta.map((preset, index) => {
-                      const template = templates[index];
-                      const isSelected = !!template && selectedTemplate === template.id && !studioEnabled;
+                    {presetMeta.map((preset) => {
+                      const template = presetTemplateMap[preset.key];
+                      const isSelected =
+                        selectedPresetKey === preset.key &&
+                        !studioEnabled;
                       return (
                         <button
                           key={preset.label}
                           type="button"
-                          disabled={!template}
                           onClick={() => {
-                            if (!template) return;
-                            setSelectedTemplate(template.id);
+                            setSelectedTemplate(template?.id || templates[0]?.id || "");
+                            setSelectedPresetKey(preset.key);
                             setStudioEnabled(false);
                           }}
                           className={
-                            "relative flex min-h-[150px] flex-col items-center justify-center rounded-[11px] border bg-white px-3 py-4 text-center transition disabled:cursor-not-allowed disabled:opacity-50 " +
+                            "relative flex min-h-[150px] flex-col items-center justify-center rounded-[14px] border bg-white px-3 py-4 text-center transition " +
                             (isSelected
                               ? "border-[#2F2F2F] shadow-[inset_0_0_0_1px_#2F2F2F]"
                               : "border-[#D8DCE3] hover:border-[#2F2F2F]/55")
@@ -3383,7 +3810,7 @@ export function CreateSessionModal({
                       type="button"
                       onClick={openSessionStudio}
                       className={
-                        "relative flex min-h-[150px] flex-col items-center justify-center rounded-[11px] border bg-white px-3 py-4 text-center transition " +
+                        "relative flex min-h-[150px] flex-col items-center justify-center rounded-[14px] border bg-white px-3 py-4 text-center transition " +
                         (studioEnabled
                           ? "border-[#2F2F2F] shadow-[inset_0_0_0_1px_#2F2F2F]"
                           : "border-[#D8DCE3] hover:border-[#2F2F2F]/55")
@@ -3392,7 +3819,7 @@ export function CreateSessionModal({
                       <span className={"absolute left-3 top-3 h-5 w-5 rounded-full border " + (studioEnabled ? "border-[#2F2F2F] bg-[#2F2F2F]" : "border-[#B8C0CC]")}>
                         {studioEnabled && <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />}
                       </span>
-                      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-[10px] bg-[#2F2F2F]/[0.08] text-[#2F2F2F]">
+                      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#2F2F2F]/[0.10] text-[#2F2F2F]">
                         <Layers size={23} />
                       </div>
                       <div className="font-inter text-[16px] font-bold text-[#15171A]">Custom</div>
@@ -3400,107 +3827,138 @@ export function CreateSessionModal({
                     </button>
                   </div>
 
+                  {selectedPreset && !studioEnabled && (
+                    <div className="mt-4 flex flex-col gap-3 rounded-[14px] border border-[#E3E3E3] bg-[#F7F7F7] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="font-inter text-[13px] font-semibold text-[#15171A]">
+                          Number of cycles
+                        </div>
+                        <div className="mt-1 font-inter text-[12px] text-[#667085]">
+                          Each cycle adds {selectedPreset.focusMinutes} minutes of focus and a {selectedPreset.breakMinutes}-minute break &amp; check-in.
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setPresetCycles((value) => clamp(value - 1, 1, 12))}
+                          disabled={presetCycles <= 1}
+                          className="flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#D5D5D5] bg-white text-[#2F2F2F] disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Decrease cycles"
+                        >
+                          <Minus size={16} />
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          max={12}
+                          value={presetCycles}
+                          onChange={(event) =>
+                            setPresetCycles(clamp(Number(event.target.value) || 1, 1, 12))
+                          }
+                          className="h-10 w-16 rounded-[12px] border border-[#D5D5D5] bg-white px-2 text-center font-inter text-[14px] font-semibold text-[#15171A] outline-none focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
+                          aria-label="Number of cycles"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setPresetCycles((value) => clamp(value + 1, 1, 12))}
+                          disabled={presetCycles >= 12}
+                          className="flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#D5D5D5] bg-white text-[#2F2F2F] disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label="Increase cycles"
+                        >
+                          <Plus size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <button
                     type="button"
                     onClick={openSessionStudio}
-                    className="mt-4 flex w-full items-center gap-3 rounded-[10px] border border-[#2F2F2F]/10 bg-[#2F2F2F]/[0.035] px-4 py-3 text-left font-inter text-[13px] text-[#344054]"
+                    className="mt-4 flex w-full items-center gap-3 rounded-[14px] border border-[#2F2F2F]/15 bg-[#2F2F2F]/[0.045] px-4 py-3 text-left font-inter text-[13px] text-[#344054]"
                   >
                     <Wand2 size={17} className="text-[#2F2F2F]" />
                     <span>Add check-ins, intentions, and more in <span className="font-semibold underline">Session Studio</span>.</span>
                   </button>
                 </section>
 
-                {/* 3. Guests & capacity */}
+                {/* 4. Guests & capacity */}
                 <section className="mt-8">
-                  <h3 className="font-inter text-[18px] font-bold text-[#15171A]">3. Guests &amp; capacity</h3>
+                  <h3 className="font-inter text-[18px] font-bold text-[#15171A]">4. Guests &amp; capacity</h3>
                   <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="block font-inter text-[13px] font-semibold text-[#15171A]">Max participants</label>
                       <div className="relative mt-2">
                         <Users className="absolute left-4 top-1/2 -translate-y-1/2 text-[#667085]" size={18} />
-                        <select
+                        <input
+                          type="number"
+                          min={MIN_PARTICIPANTS}
+                          max={MAX_PARTICIPANTS}
+                          step={1}
                           value={maxParticipants}
-                          onChange={(e) => setMaxParticipants(clamp(Number(e.target.value), MIN_PARTICIPANTS, MAX_PARTICIPANTS))}
-                          className="h-[48px] w-full appearance-none rounded-[10px] border border-[#D8DCE3] bg-white pl-11 pr-10 font-inter text-[13px] text-[#344054] outline-none focus:border-[#2F2F2F]"
-                        >
-                          {[8, 12, 16, 24, 32, 48, 64].map((value) => (
-                            <option key={value} value={value}>{value} people</option>
-                          ))}
-                        </select>
-                        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#667085]">⌄</span>
+                          onChange={(event) =>
+                            setMaxParticipants(
+                              clamp(
+                                Number(event.target.value) || MIN_PARTICIPANTS,
+                                MIN_PARTICIPANTS,
+                                MAX_PARTICIPANTS,
+                              ),
+                            )
+                          }
+                          onBlur={() =>
+                            setMaxParticipants((value) =>
+                              clamp(
+                                Number(value) || DEFAULT_MAX_PARTICIPANTS,
+                                MIN_PARTICIPANTS,
+                                MAX_PARTICIPANTS,
+                              ),
+                            )
+                          }
+                          className="h-[48px] w-full rounded-[14px] border border-[#D8DCE3] bg-white pl-11 pr-4 font-inter text-[13px] text-[#344054] outline-none focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
+                          aria-label="Maximum participants"
+                        />
                       </div>
+                      <p className="mt-1.5 font-inter text-[11px] text-[#98A2B3]">
+                        Enter any number from {MIN_PARTICIPANTS} to {MAX_PARTICIPANTS}.
+                      </p>
                     </div>
+
                     <div>
                       <label className="block font-inter text-[13px] font-semibold text-[#15171A]">Who can join</label>
                       <div className="relative mt-2">
-                        <Link2 className="absolute left-4 top-1/2 -translate-y-1/2 text-[#667085]" size={18} />
-                        <div className="flex h-[48px] items-center rounded-[10px] border border-[#D8DCE3] bg-white pl-11 pr-10 font-inter text-[13px] text-[#344054]">Anyone with the link</div>
-                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[#667085]">⌄</span>
+                        {accessMode === "private" ? (
+                          <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-[#667085]" size={18} />
+                        ) : (
+                          <Globe2 className="absolute left-4 top-1/2 -translate-y-1/2 text-[#667085]" size={18} />
+                        )}
+                        <select
+                          value={accessMode}
+                          onChange={(event) => setAccessMode(event.target.value as AccessMode)}
+                          className="h-[48px] w-full appearance-none rounded-[14px] border border-[#D8DCE3] bg-white pl-11 pr-10 font-inter text-[13px] text-[#344054] outline-none focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
+                        >
+                          <option value="public">Anyone with the link</option>
+                          <option value="private">Private · link only</option>
+                        </select>
+                        <ChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#667085]" size={16} />
                       </div>
+                      <p className="mt-1.5 font-inter text-[11px] text-[#98A2B3]">
+                        {accessMode === "private"
+                          ? "Hidden from the public sessions list. Share the direct link to invite someone."
+                          : "Visible on the sessions page and joinable through its link."}
+                      </p>
                     </div>
                   </div>
                 </section>
 
-                {/* Advanced settings preserved */}
-                <details className="mt-6 rounded-[12px] border border-[#E6E8EC] bg-[#FAFAFA]">
-                  <summary className="cursor-pointer px-4 py-3 font-inter text-[13px] font-semibold text-[#344054]">Advanced settings</summary>
-                  <div className="space-y-5 border-t border-[#E6E8EC] p-4">
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div>
-                        <label className="block font-inter text-[12px] font-semibold text-[#344054]">Start time</label>
-                        <input
-                          type="datetime-local"
-                          value={scheduledAt}
-                          onChange={(e) => setScheduledAt(e.target.value)}
-                          min={minDateTime}
-                          className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px] outline-none focus:border-[#2F2F2F]"
-                        />
-                        {scheduleAdvanceError && <p className="mt-2 font-inter text-[12px] text-red-600">{scheduleAdvanceError}</p>}
-                      </div>
-                      <div>
-                        <label className="block font-inter text-[12px] font-semibold text-[#344054]">Scheduling</label>
-                        <div className="mt-2 grid grid-cols-3 gap-2">
-                          {(["single", "daily", "weekly"] as ScheduleMode[]).map((mode) => (
-                            <button
-                              key={mode}
-                              type="button"
-                              onClick={() => setScheduleMode(mode)}
-                              className={"h-11 rounded-[9px] border px-3 font-inter text-[12px] font-semibold capitalize " + (scheduleMode === mode ? "border-[#2F2F2F] bg-[#2F2F2F] text-white" : "border-[#D8DCE3] bg-white text-[#344054]")}
-                            >
-                              {mode}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {scheduleMode === "daily" && (
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <label className="font-inter text-[12px] font-semibold text-[#344054]">
-                          Number of sessions
-                          <input type="number" min={1} max={dynamicMaxOccurrences} value={dailyDays} onChange={(e) => setDailyDays(clamp(Number(e.target.value) || 1, 1, dynamicMaxOccurrences))} className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3" />
-                        </label>
-                        <label className="mt-6 flex items-center gap-2 font-inter text-[12px] text-[#344054]">
-                          <input type="checkbox" checked={dailyWeekdaysOnly} onChange={(e) => setDailyWeekdaysOnly(e.target.checked)} /> Weekdays only
-                        </label>
-                      </div>
-                    )}
-                    {scheduleMode === "weekly" && (
-                      <label className="block font-inter text-[12px] font-semibold text-[#344054]">
-                        Number of sessions
-                        <input type="number" min={1} max={dynamicMaxOccurrences} value={weeklyCount} onChange={(e) => setWeeklyCount(clamp(Number(e.target.value) || 1, 1, dynamicMaxOccurrences))} className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3" />
-                      </label>
-                    )}
-
-                    {occurrencesPreview.length > 0 && (
-                      <div className="rounded-[9px] border border-[#E6E8EC] bg-white p-3">
-                        <div className="font-inter text-[12px] font-semibold text-[#344054]">Session dates</div>
-                        <div className="mt-2 space-y-1 font-inter text-[11px] text-[#667085]">
-                          {occurrencesPreview.map((item) => <div key={item}>{item}</div>)}
-                        </div>
-                      </div>
-                    )}
-
+                {/* Optional settings */}
+                <details className="mt-6 rounded-[18px] border border-[#E3E5E8] bg-[#FAFAFA]">
+                  <summary className="cursor-pointer list-none px-5 py-4 font-inter text-[13px] font-semibold text-[#344054] marker:hidden">
+                    <span className="flex items-center justify-between gap-3">
+                      More options
+                      <ChevronDown size={16} className="text-[#667085]" />
+                    </span>
+                  </summary>
+                  <div className="space-y-5 border-t border-[#E3E5E8] p-5">
                     <div>
                       <label className="block font-inter text-[12px] font-semibold text-[#344054]">Custom public link</label>
                       {ownedSlugValues.length > 0 && (
@@ -3510,7 +3968,7 @@ export function CreateSessionModal({
                             const value = e.target.value;
                             setCustomSlugInput(value === "__custom__" ? "" : value);
                           }}
-                          className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px]"
+                          className="mt-2 h-11 w-full rounded-[12px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px]"
                         >
                           <option value="">No custom link</option>
                           {ownedSlugValues.map((slug) => <option key={slug} value={slug}>{slug}</option>)}
@@ -3522,7 +3980,7 @@ export function CreateSessionModal({
                         value={customSlugInput}
                         onChange={(e) => setCustomSlugInput(e.target.value)}
                         placeholder="your-link"
-                        className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px] outline-none focus:border-[#2F2F2F]"
+                        className="mt-2 h-11 w-full rounded-[12px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px] outline-none focus:border-[#2F2F2F]"
                       />
                       <p className={"mt-1.5 font-inter text-[11px] " + slugHintColor}>{slugHint}</p>
                       <p className="mt-1 font-inter text-[11px] text-[#98A2B3]">{linkPreview}</p>
@@ -3539,7 +3997,7 @@ export function CreateSessionModal({
                                 const row = userTemplates.find((item) => item.id === e.target.value);
                                 if (row) applyUserTemplate(row);
                               }}
-                              className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px]"
+                              className="mt-2 h-11 w-full rounded-[12px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px]"
                             >
                               <option value="">Choose template</option>
                               {userTemplates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
@@ -3555,7 +4013,7 @@ export function CreateSessionModal({
                                 const row = previousSessions.find((item) => item.id === e.target.value);
                                 if (row) applyPreviousSession(row);
                               }}
-                              className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px]"
+                              className="mt-2 h-11 w-full rounded-[12px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px]"
                             >
                               <option value="">Choose session</option>
                               {previousSessions.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
@@ -3564,6 +4022,7 @@ export function CreateSessionModal({
                         )}
                       </div>
                     )}
+
                   </div>
                 </details>
 
@@ -3575,9 +4034,9 @@ export function CreateSessionModal({
                         <p className="mt-1 font-inter text-[12px] text-[#667085]">Build a custom flow with your own blocks and durations.</p>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={importFromTemplate} className="rounded-[8px] border border-[#D8DCE3] px-3 py-2 font-inter text-[12px] font-semibold text-[#344054]">Import preset</button>
-                        <button type="button" onClick={resetDefaultStudio} className="rounded-[8px] border border-[#D8DCE3] px-3 py-2 font-inter text-[12px] font-semibold text-[#344054]">Reset</button>
-                        <button type="button" onClick={clearStudio} className="rounded-[8px] border border-[#D8DCE3] px-3 py-2 font-inter text-[12px] font-semibold text-[#344054]">Clear</button>
+                        <button type="button" onClick={importFromTemplate} className="rounded-[12px] border border-[#D8DCE3] px-3 py-2 font-inter text-[12px] font-semibold text-[#344054]">Import preset</button>
+                        <button type="button" onClick={resetDefaultStudio} className="rounded-[12px] border border-[#D8DCE3] px-3 py-2 font-inter text-[12px] font-semibold text-[#344054]">Reset</button>
+                        <button type="button" onClick={clearStudio} className="rounded-[12px] border border-[#D8DCE3] px-3 py-2 font-inter text-[12px] font-semibold text-[#344054]">Clear</button>
                       </div>
                     </div>
 
@@ -3606,9 +4065,9 @@ export function CreateSessionModal({
                     />
 
                     <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto]">
-                      <input value={saveTemplateName} onChange={(e) => setSaveTemplateName(e.target.value)} placeholder="Template name" className="h-11 rounded-[9px] border border-[#D8DCE3] px-3 font-inter text-[13px]" />
-                      <input value={saveTemplateDescription} onChange={(e) => setSaveTemplateDescription(e.target.value)} placeholder="Template description" className="h-11 rounded-[9px] border border-[#D8DCE3] px-3 font-inter text-[13px]" />
-                      <button type="button" onClick={handleSaveCurrentAsUserTemplate} disabled={isSavingUserTemplate} className="h-11 rounded-[9px] bg-[#2F2F2F] px-4 font-inter text-[12px] font-semibold text-white disabled:opacity-50">
+                      <input value={saveTemplateName} onChange={(e) => setSaveTemplateName(e.target.value)} placeholder="Template name" className="h-11 rounded-[12px] border border-[#D8DCE3] px-3 font-inter text-[13px]" />
+                      <input value={saveTemplateDescription} onChange={(e) => setSaveTemplateDescription(e.target.value)} placeholder="Template description" className="h-11 rounded-[12px] border border-[#D8DCE3] px-3 font-inter text-[13px]" />
+                      <button type="button" onClick={handleSaveCurrentAsUserTemplate} disabled={isSavingUserTemplate} className="h-11 rounded-[12px] bg-[#2F2F2F] px-4 font-inter text-[12px] font-semibold text-white disabled:opacity-50">
                         {isSavingUserTemplate ? "Saving..." : "Save template"}
                       </button>
                     </div>
@@ -3619,21 +4078,29 @@ export function CreateSessionModal({
               </div>
 
               {/* Right column */}
-              <aside className="bg-[#FCFCFD] px-7 py-8 sm:px-8">
+              <aside ref={summarySectionRef} className="scroll-mt-6 bg-[#FCFCFD] px-7 py-8 sm:px-8">
                 <h3 className="font-inter text-[17px] font-bold text-[#15171A]">Session preview</h3>
 
-                <div className="mt-5 rounded-[12px] border border-[#2F2F2F]/20 bg-[#2F2F2F]/[0.025] p-5">
+                <div className="mt-5 rounded-[12px] border border-[#2F2F2F]/25 bg-[#2F2F2F]/[0.035] p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 font-inter text-[14px] font-medium text-[#344054]">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2F2F2F]/[0.08] text-[#2F2F2F]"><Users size={18} /></span>
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2F2F2F]/[0.10] text-[#2F2F2F]"><Users size={18} /></span>
                       Group session
                     </div>
-                    <span className="rounded-full bg-[#2F2F2F]/[0.08] px-2.5 py-1 font-inter text-[11px] font-semibold text-[#2F2F2F]">Structured</span>
+                    <span className="rounded-full bg-[#2F2F2F]/[0.10] px-2.5 py-1 font-inter text-[11px] font-semibold text-[#2F2F2F]">Structured</span>
                   </div>
                   <div className="mt-5 space-y-3 font-inter text-[13px] text-[#344054]">
                     <div className="flex items-center gap-3"><CalendarDays size={18} className="text-[#667085]" /><span>{previewDateLabel} · {previewTimeLabel}</span></div>
-                    <div className="flex items-center gap-3"><Repeat size={18} className="text-[#667085]" /><span>{studioEnabled ? "Custom structure" : `Based on ${presetMeta[Math.max(0, templates.findIndex((item) => item.id === selectedTemplate))]?.label || "selected structure"}`}</span></div>
+                    <div className="flex items-center gap-3"><Repeat size={18} className="text-[#667085]" /><span>{studioEnabled
+                      ? "Custom structure"
+                      : selectedPreset
+                        ? `Based on ${selectedPreset.label} · ${presetCycles} ${presetCycles === 1 ? "cycle" : "cycles"}`
+                        : "Based on selected structure"}</span></div>
                     <div className="flex items-center gap-3"><Users size={18} className="text-[#667085]" /><span>Up to {maxParticipants} participants</span></div>
+                    <div className="flex items-center gap-3">
+                      {accessMode === "private" ? <Lock size={18} className="text-[#667085]" /> : <Globe2 size={18} className="text-[#667085]" />}
+                      <span>{accessMode === "private" ? "Private · direct link only" : "Public session"}</span>
+                    </div>
                   </div>
                 </div>
 
@@ -3642,20 +4109,26 @@ export function CreateSessionModal({
                     <h4 className="font-inter text-[15px] font-bold text-[#15171A]">Session Flow</h4>
                     <span className="group relative inline-flex text-[#667085]">
                       <Info size={16} />
-                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[230px] -translate-x-1/2 rounded-[9px] bg-[#2F2F2F] px-3 py-2 text-center font-inter text-[11px] leading-4 text-white group-hover:block">Edit the structure, durations, breaks, check-ins, and recap in Session Studio.</span>
+                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[230px] -translate-x-1/2 rounded-[12px] bg-[#2F2F2F] px-3 py-2 text-center font-inter text-[11px] leading-4 text-white group-hover:block">Edit the structure, durations, breaks, check-ins, and recap in Session Studio.</span>
                     </span>
                   </div>
-                  <button type="button" onClick={openSessionStudio} className="inline-flex h-10 items-center gap-2 rounded-[9px] border border-[#D8DCE3] bg-white px-3.5 font-inter text-[12px] font-semibold text-[#344054] hover:border-[#2F2F2F]">
+                  <button type="button" onClick={openSessionStudio} className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#D8DCE3] bg-white px-3.5 font-inter text-[12px] font-semibold text-[#344054] hover:border-[#2F2F2F]">
                     <Pencil size={15} /> Edit
                   </button>
                 </div>
 
                 <div className="mt-4 space-y-3.5">
                   {previewBlocks.map((block, index) => {
-                    const dotClass = block.kind === "break" ? "bg-[#F04438]" : block.kind === "intentions" || block.kind === "recap" ? "bg-[#2E90FA]" : "bg-[#2F2F2F]";
+                    const visual = resolveStageVisual(block);
                     return (
                       <div key={`${block.id}-${index}`} className="flex items-center justify-between gap-4 font-inter text-[13px]">
-                        <div className="flex min-w-0 items-center gap-3 text-[#344054]"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`} /><span className="truncate">{block.title}</span></div>
+                        <div className="flex min-w-0 items-center gap-3 text-[#344054]">
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: visual.color }}
+                          />
+                          <span className="truncate">{visual.name || block.title}</span>
+                        </div>
                         <span className="shrink-0 text-[#667085]">{block.minutes} min</span>
                       </div>
                     );
@@ -3664,17 +4137,8 @@ export function CreateSessionModal({
 
                 <div className="my-6 h-px bg-[#E6E8EC]" />
 
-                <h4 className="font-inter text-[14px] font-bold text-[#15171A]">Scheduling</h4>
-                <div className="mt-3 rounded-[11px] border border-[#E0E3E8] bg-white p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 font-inter text-[13px] text-[#344054]"><CalendarDays size={17} className="text-[#667085]" /><span>{scheduleMode === "single" ? "Single session" : "In advance"}</span></div>
-                    <span className="rounded-[8px] border border-[#E0E3E8] px-3 py-2 font-inter text-[12px] text-[#344054]">{occurrencesCount} {occurrencesCount === 1 ? "session" : "sessions"}⌄</span>
-                  </div>
-                  <p className="mt-3 font-inter text-[12px] leading-5 text-[#667085]">{scheduleMode === "single" ? "Choose a date and time in Advanced settings." : `We'll create ${occurrencesCount} sessions within the next ${MAX_ADVANCE_DAYS} days.`}</p>
-                </div>
-
                 <h4 className="mt-6 font-inter text-[14px] font-bold text-[#15171A]">Quick summary</h4>
-                <div className="mt-3 rounded-[11px] border border-[#E0E3E8] bg-white p-4">
+                <div className="mt-3 rounded-[14px] border border-[#E0E3E8] bg-white p-4">
                   <div className="space-y-2 font-inter text-[12px] text-[#667085]">
                     <div className="flex justify-between gap-4"><span>Focus time</span><strong className="font-medium text-[#344054]">{previewFocusMinutes} min</strong></div>
                     <div className="flex justify-between gap-4"><span>Break time</span><strong className="font-medium text-[#344054]">{previewBreakMinutes} min</strong></div>
@@ -3690,12 +4154,12 @@ export function CreateSessionModal({
         {/* Footer */}
         {!loading && user && (
           <div className="flex h-[76px] shrink-0 items-center justify-between border-t border-[#E6E8EC] bg-white px-7 sm:px-10">
-            <button type="button" onClick={onClose} className="h-11 rounded-[9px] border border-[#D8DCE3] bg-white px-5 font-inter text-[13px] font-semibold text-[#344054] hover:bg-[#F7F7F7]">Cancel</button>
+            <button type="button" onClick={onClose} className="h-11 rounded-[12px] border border-[#D8DCE3] bg-white px-5 font-inter text-[13px] font-semibold text-[#344054] hover:bg-[#F7F7F7]">Cancel</button>
             <button
               type="button"
               onClick={handleCreate}
               disabled={createDisabled}
-              className="inline-flex h-11 items-center gap-2 rounded-[9px] bg-[#2F2F2F] px-5 font-inter text-[13px] font-semibold text-white hover:bg-[#1F1F1F] disabled:cursor-not-allowed disabled:bg-[#D0D5DD]"
+              className="inline-flex h-11 items-center gap-2 rounded-[12px] bg-[#2F2F2F] px-5 font-inter text-[13px] font-semibold text-white hover:bg-[#1F1F1F] disabled:cursor-not-allowed disabled:bg-[#D0D5DD]"
             >
               <CalendarDays size={16} />
               {isCreating ? "Creating..." : scheduleMode === "single" ? "Schedule it" : "Schedule series"}
