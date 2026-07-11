@@ -48,6 +48,7 @@ import { supabase } from "../lib/supabase";
 import { assignServerForSession } from "../lib/livekitPlacement";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { resolveStageVisual } from "./SessionStageBar";
 
 interface CreateSessionModalProps {
   isOpen: boolean;
@@ -240,7 +241,7 @@ function clamp(n: number, min: number, max: number) {
 type PresetKey = "15-3" | "25-5" | "50-10";
 type AccessMode = "public" | "private";
 
-const CREATE_SESSION_ACCENT = "#24A148";
+const CREATE_SESSION_ACCENT = "#2F2F2F";
 
 const SESSION_PRESETS: Array<{
   key: PresetKey;
@@ -2526,7 +2527,7 @@ export function CreateSessionModal({
       return;
     }
 
-    if (!studioEnabled && !selectedTemplate) {
+    if (!studioEnabled && !selectedTemplate && !selectedPresetKey) {
       setError("Please select a session format (template).");
       return;
     }
@@ -2570,7 +2571,7 @@ export function CreateSessionModal({
     }
 
     const baseTemplateId =
-      selectedTemplate || (studioEnabled ? (templates[0]?.id ?? "") : "");
+      selectedTemplate || ((studioEnabled || selectedPresetKey) ? (templates[0]?.id ?? "") : "");
 
     if (studioEnabled && !baseTemplateId) {
       setError(
@@ -2618,7 +2619,7 @@ export function CreateSessionModal({
         ? template?.name
           ? `${template.name} (Studio)`
           : "Session Studio"
-        : template?.name || "Unspecified";
+        : selectedPreset?.label || template?.name || "Unspecified";
 
       const normalizedDescription = String(description || "").trim() || null;
 
@@ -3247,7 +3248,7 @@ export function CreateSessionModal({
   const createDisabled =
     !title ||
     !scheduledAt ||
-    (!studioEnabled && !selectedTemplate) ||
+    (!studioEnabled && !selectedTemplate && !selectedPresetKey) ||
     (studioEnabled && studioBlocks.length === 0) ||
     (sanitizedSlug ? !slugValid : false) ||
     (scheduleMode === "single" && sanitizedSlug
@@ -3389,7 +3390,7 @@ export function CreateSessionModal({
         {/* Header */}
         <div className="flex h-[108px] shrink-0 items-center justify-between border-b border-[#E6E8EC] px-7 sm:px-10">
           <div className="flex items-center gap-5">
-            <div className="flex h-16 w-16 items-center justify-center rounded-[18px] bg-[#24A148]/[0.10] text-[#24A148]">
+            <div className="flex h-16 w-16 items-center justify-center rounded-[18px] bg-[#2F2F2F]/[0.10] text-[#2F2F2F]">
               <CalendarDays size={34} strokeWidth={1.8} />
             </div>
             <div>
@@ -3433,7 +3434,7 @@ export function CreateSessionModal({
                         onClick={() => goToStep(step)}
                         className={
                           "relative flex items-center justify-center gap-2.5 pb-5 font-inter text-[14px] font-semibold transition-colors " +
-                          (isActive ? "text-[#24A148]" : "text-[#667085] hover:text-[#24A148]")
+                          (isActive ? "text-[#2F2F2F]" : "text-[#667085] hover:text-[#2F2F2F]")
                         }
                         aria-current={isActive ? "step" : undefined}
                       >
@@ -3441,7 +3442,7 @@ export function CreateSessionModal({
                           className={
                             "flex h-6 w-6 items-center justify-center rounded-full border text-[12px] transition-colors " +
                             (isActive
-                              ? "border-[#24A148] text-[#24A148]"
+                              ? "border-[#2F2F2F] text-[#2F2F2F]"
                               : "border-[#98A2B3] text-[#667085]")
                           }
                         >
@@ -3449,7 +3450,7 @@ export function CreateSessionModal({
                         </span>
                         {label}
                         {isActive && (
-                          <span className="absolute bottom-[-1px] left-0 right-0 h-[3px] bg-[#24A148]" />
+                          <span className="absolute bottom-[-1px] left-0 right-0 h-[3px] bg-[#2F2F2F]" />
                         )}
                       </button>
                     );
@@ -3457,7 +3458,7 @@ export function CreateSessionModal({
                 </div>
 
                 {notice && (
-                  <div className="mt-5 rounded-[12px] border border-[#24A148]/20 bg-[#24A148]/[0.05] px-4 py-3 font-inter text-[13px] text-[#1D7A38]">
+                  <div className="mt-5 rounded-[12px] border border-[#2F2F2F]/20 bg-[#2F2F2F]/[0.05] px-4 py-3 font-inter text-[13px] text-[#2F2F2F]">
                     {notice}
                   </div>
                 )}
@@ -3475,7 +3476,7 @@ export function CreateSessionModal({
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       placeholder="e.g. Deep Work Session"
-                      className="h-[52px] w-full rounded-[10px] border border-[#D8DCE3] bg-white px-4 pr-12 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#24A148] focus:ring-2 focus:ring-[#24A148]/10"
+                      className="h-[52px] w-full rounded-[10px] border border-[#D8DCE3] bg-white px-4 pr-12 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
                     />
                     <Pencil className="absolute right-4 top-1/2 -translate-y-1/2 text-[#2F2F2F]" size={18} />
                   </div>
@@ -3487,7 +3488,7 @@ export function CreateSessionModal({
                       onChange={(e) => setDescription(e.target.value.slice(0, 300))}
                       placeholder="What will you focus on together?"
                       rows={4}
-                      className="min-h-[108px] w-full resize-none rounded-[10px] border border-[#D8DCE3] bg-white px-4 py-3 pb-8 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#24A148] focus:ring-2 focus:ring-[#24A148]/10"
+                      className="min-h-[108px] w-full resize-none rounded-[10px] border border-[#D8DCE3] bg-white px-4 py-3 pb-8 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
                     />
                     <span className="absolute bottom-3 right-4 font-inter text-[12px] text-[#667085]">{description.length}/300</span>
                   </div>
@@ -3510,32 +3511,28 @@ export function CreateSessionModal({
                     {presetMeta.map((preset) => {
                       const template = presetTemplateMap[preset.key];
                       const isSelected =
-                        !!template &&
-                        selectedTemplate === template.id &&
                         selectedPresetKey === preset.key &&
                         !studioEnabled;
                       return (
                         <button
                           key={preset.label}
                           type="button"
-                          disabled={!template}
                           onClick={() => {
-                            if (!template) return;
-                            setSelectedTemplate(template.id);
+                            setSelectedTemplate(template?.id || templates[0]?.id || "");
                             setSelectedPresetKey(preset.key);
                             setStudioEnabled(false);
                           }}
                           className={
-                            "relative flex min-h-[150px] flex-col items-center justify-center rounded-[11px] border bg-white px-3 py-4 text-center transition disabled:cursor-not-allowed disabled:opacity-50 " +
+                            "relative flex min-h-[150px] flex-col items-center justify-center rounded-[11px] border bg-white px-3 py-4 text-center transition " +
                             (isSelected
-                              ? "border-[#24A148] shadow-[inset_0_0_0_1px_#24A148]"
-                              : "border-[#D8DCE3] hover:border-[#24A148]/55")
+                              ? "border-[#2F2F2F] shadow-[inset_0_0_0_1px_#2F2F2F]"
+                              : "border-[#D8DCE3] hover:border-[#2F2F2F]/55")
                           }
                         >
-                          <span className={"absolute left-3 top-3 h-5 w-5 rounded-full border " + (isSelected ? "border-[#24A148] bg-[#24A148]" : "border-[#B8C0CC]")}>
+                          <span className={"absolute left-3 top-3 h-5 w-5 rounded-full border " + (isSelected ? "border-[#2F2F2F] bg-[#2F2F2F]" : "border-[#B8C0CC]")}>
                             {isSelected && <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />}
                           </span>
-                          <div className="mb-2 flex h-10 items-center justify-center text-[#24A148]">
+                          <div className="mb-2 flex h-10 items-center justify-center text-[#2F2F2F]">
                             {preset.icon === "zap" ? (
                               <Zap size={30} strokeWidth={1.9} />
                             ) : preset.icon === "target" ? (
@@ -3559,14 +3556,14 @@ export function CreateSessionModal({
                       className={
                         "relative flex min-h-[150px] flex-col items-center justify-center rounded-[11px] border bg-white px-3 py-4 text-center transition " +
                         (studioEnabled
-                          ? "border-[#24A148] shadow-[inset_0_0_0_1px_#24A148]"
-                          : "border-[#D8DCE3] hover:border-[#24A148]/55")
+                          ? "border-[#2F2F2F] shadow-[inset_0_0_0_1px_#2F2F2F]"
+                          : "border-[#D8DCE3] hover:border-[#2F2F2F]/55")
                       }
                     >
-                      <span className={"absolute left-3 top-3 h-5 w-5 rounded-full border " + (studioEnabled ? "border-[#24A148] bg-[#24A148]" : "border-[#B8C0CC]")}>
+                      <span className={"absolute left-3 top-3 h-5 w-5 rounded-full border " + (studioEnabled ? "border-[#2F2F2F] bg-[#2F2F2F]" : "border-[#B8C0CC]")}>
                         {studioEnabled && <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />}
                       </span>
-                      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-[10px] bg-[#24A148]/[0.10] text-[#24A148]">
+                      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-[10px] bg-[#2F2F2F]/[0.10] text-[#2F2F2F]">
                         <Layers size={23} />
                       </div>
                       <div className="font-inter text-[16px] font-bold text-[#15171A]">Custom</div>
@@ -3575,7 +3572,7 @@ export function CreateSessionModal({
                   </div>
 
                   {selectedPreset && !studioEnabled && (
-                    <div className="mt-4 flex flex-col gap-3 rounded-[11px] border border-[#D8EBDD] bg-[#F7FCF8] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="mt-4 flex flex-col gap-3 rounded-[11px] border border-[#E3E3E3] bg-[#F7F7F7] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <div className="font-inter text-[13px] font-semibold text-[#15171A]">
                           Number of cycles
@@ -3590,7 +3587,7 @@ export function CreateSessionModal({
                           type="button"
                           onClick={() => setPresetCycles((value) => clamp(value - 1, 1, 12))}
                           disabled={presetCycles <= 1}
-                          className="flex h-10 w-10 items-center justify-center rounded-[9px] border border-[#C9DECE] bg-white text-[#24A148] disabled:cursor-not-allowed disabled:opacity-40"
+                          className="flex h-10 w-10 items-center justify-center rounded-[9px] border border-[#D5D5D5] bg-white text-[#2F2F2F] disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Decrease cycles"
                         >
                           <Minus size={16} />
@@ -3603,14 +3600,14 @@ export function CreateSessionModal({
                           onChange={(event) =>
                             setPresetCycles(clamp(Number(event.target.value) || 1, 1, 12))
                           }
-                          className="h-10 w-16 rounded-[9px] border border-[#C9DECE] bg-white px-2 text-center font-inter text-[14px] font-semibold text-[#15171A] outline-none focus:border-[#24A148] focus:ring-2 focus:ring-[#24A148]/10"
+                          className="h-10 w-16 rounded-[9px] border border-[#D5D5D5] bg-white px-2 text-center font-inter text-[14px] font-semibold text-[#15171A] outline-none focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
                           aria-label="Number of cycles"
                         />
                         <button
                           type="button"
                           onClick={() => setPresetCycles((value) => clamp(value + 1, 1, 12))}
                           disabled={presetCycles >= 12}
-                          className="flex h-10 w-10 items-center justify-center rounded-[9px] border border-[#C9DECE] bg-white text-[#24A148] disabled:cursor-not-allowed disabled:opacity-40"
+                          className="flex h-10 w-10 items-center justify-center rounded-[9px] border border-[#D5D5D5] bg-white text-[#2F2F2F] disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label="Increase cycles"
                         >
                           <Plus size={16} />
@@ -3622,9 +3619,9 @@ export function CreateSessionModal({
                   <button
                     type="button"
                     onClick={openSessionStudio}
-                    className="mt-4 flex w-full items-center gap-3 rounded-[10px] border border-[#24A148]/15 bg-[#24A148]/[0.045] px-4 py-3 text-left font-inter text-[13px] text-[#344054]"
+                    className="mt-4 flex w-full items-center gap-3 rounded-[10px] border border-[#2F2F2F]/15 bg-[#2F2F2F]/[0.045] px-4 py-3 text-left font-inter text-[13px] text-[#344054]"
                   >
-                    <Wand2 size={17} className="text-[#24A148]" />
+                    <Wand2 size={17} className="text-[#2F2F2F]" />
                     <span>Add check-ins, intentions, and more in <span className="font-semibold underline">Session Studio</span>.</span>
                   </button>
                 </section>
@@ -3661,7 +3658,7 @@ export function CreateSessionModal({
                               ),
                             )
                           }
-                          className="h-[48px] w-full rounded-[10px] border border-[#D8DCE3] bg-white pl-11 pr-4 font-inter text-[13px] text-[#344054] outline-none focus:border-[#24A148] focus:ring-2 focus:ring-[#24A148]/10"
+                          className="h-[48px] w-full rounded-[10px] border border-[#D8DCE3] bg-white pl-11 pr-4 font-inter text-[13px] text-[#344054] outline-none focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
                           aria-label="Maximum participants"
                         />
                       </div>
@@ -3681,7 +3678,7 @@ export function CreateSessionModal({
                         <select
                           value={accessMode}
                           onChange={(event) => setAccessMode(event.target.value as AccessMode)}
-                          className="h-[48px] w-full appearance-none rounded-[10px] border border-[#D8DCE3] bg-white pl-11 pr-10 font-inter text-[13px] text-[#344054] outline-none focus:border-[#24A148] focus:ring-2 focus:ring-[#24A148]/10"
+                          className="h-[48px] w-full appearance-none rounded-[10px] border border-[#D8DCE3] bg-white pl-11 pr-10 font-inter text-[13px] text-[#344054] outline-none focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
                         >
                           <option value="public">Anyone with the link</option>
                           <option value="private">Private · link only</option>
@@ -3709,7 +3706,7 @@ export function CreateSessionModal({
                           value={scheduledAt}
                           onChange={(e) => setScheduledAt(e.target.value)}
                           min={minDateTime}
-                          className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px] outline-none focus:border-[#24A148]"
+                          className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px] outline-none focus:border-[#2F2F2F]"
                         />
                         {scheduleAdvanceError && <p className="mt-2 font-inter text-[12px] text-red-600">{scheduleAdvanceError}</p>}
                       </div>
@@ -3721,7 +3718,7 @@ export function CreateSessionModal({
                               key={mode}
                               type="button"
                               onClick={() => setScheduleMode(mode)}
-                              className={"h-11 rounded-[9px] border px-3 font-inter text-[12px] font-semibold capitalize " + (scheduleMode === mode ? "border-[#24A148] bg-[#24A148] text-white" : "border-[#D8DCE3] bg-white text-[#344054]")}
+                              className={"h-11 rounded-[9px] border px-3 font-inter text-[12px] font-semibold capitalize " + (scheduleMode === mode ? "border-[#2F2F2F] bg-[#2F2F2F] text-white" : "border-[#D8DCE3] bg-white text-[#344054]")}
                             >
                               {mode}
                             </button>
@@ -3778,7 +3775,7 @@ export function CreateSessionModal({
                         value={customSlugInput}
                         onChange={(e) => setCustomSlugInput(e.target.value)}
                         placeholder="your-link"
-                        className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px] outline-none focus:border-[#24A148]"
+                        className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px] outline-none focus:border-[#2F2F2F]"
                       />
                       <p className={"mt-1.5 font-inter text-[11px] " + slugHintColor}>{slugHint}</p>
                       <p className="mt-1 font-inter text-[11px] text-[#98A2B3]">{linkPreview}</p>
@@ -3843,7 +3840,7 @@ export function CreateSessionModal({
                           key={block.id}
                           type="button"
                           onClick={() => addFromLibrary(block)}
-                          className="rounded-full border border-[#D8DCE3] bg-white px-3 py-1.5 font-inter text-[11px] text-[#344054] hover:border-[#24A148]"
+                          className="rounded-full border border-[#D8DCE3] bg-white px-3 py-1.5 font-inter text-[11px] text-[#344054] hover:border-[#2F2F2F]"
                         >
                           + {block.title}
                         </button>
@@ -3864,7 +3861,7 @@ export function CreateSessionModal({
                     <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto]">
                       <input value={saveTemplateName} onChange={(e) => setSaveTemplateName(e.target.value)} placeholder="Template name" className="h-11 rounded-[9px] border border-[#D8DCE3] px-3 font-inter text-[13px]" />
                       <input value={saveTemplateDescription} onChange={(e) => setSaveTemplateDescription(e.target.value)} placeholder="Template description" className="h-11 rounded-[9px] border border-[#D8DCE3] px-3 font-inter text-[13px]" />
-                      <button type="button" onClick={handleSaveCurrentAsUserTemplate} disabled={isSavingUserTemplate} className="h-11 rounded-[9px] bg-[#24A148] px-4 font-inter text-[12px] font-semibold text-white disabled:opacity-50">
+                      <button type="button" onClick={handleSaveCurrentAsUserTemplate} disabled={isSavingUserTemplate} className="h-11 rounded-[9px] bg-[#2F2F2F] px-4 font-inter text-[12px] font-semibold text-white disabled:opacity-50">
                         {isSavingUserTemplate ? "Saving..." : "Save template"}
                       </button>
                     </div>
@@ -3878,13 +3875,13 @@ export function CreateSessionModal({
               <aside ref={summarySectionRef} className="scroll-mt-6 bg-[#FCFCFD] px-7 py-8 sm:px-8">
                 <h3 className="font-inter text-[17px] font-bold text-[#15171A]">Session preview</h3>
 
-                <div className="mt-5 rounded-[12px] border border-[#24A148]/25 bg-[#24A148]/[0.035] p-5">
+                <div className="mt-5 rounded-[12px] border border-[#2F2F2F]/25 bg-[#2F2F2F]/[0.035] p-5">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 font-inter text-[14px] font-medium text-[#344054]">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#24A148]/[0.10] text-[#24A148]"><Users size={18} /></span>
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2F2F2F]/[0.10] text-[#2F2F2F]"><Users size={18} /></span>
                       Group session
                     </div>
-                    <span className="rounded-full bg-[#24A148]/[0.10] px-2.5 py-1 font-inter text-[11px] font-semibold text-[#1D7A38]">Structured</span>
+                    <span className="rounded-full bg-[#2F2F2F]/[0.10] px-2.5 py-1 font-inter text-[11px] font-semibold text-[#2F2F2F]">Structured</span>
                   </div>
                   <div className="mt-5 space-y-3 font-inter text-[13px] text-[#344054]">
                     <div className="flex items-center gap-3"><CalendarDays size={18} className="text-[#667085]" /><span>{previewDateLabel} · {previewTimeLabel}</span></div>
@@ -3909,17 +3906,23 @@ export function CreateSessionModal({
                       <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[230px] -translate-x-1/2 rounded-[9px] bg-[#2F2F2F] px-3 py-2 text-center font-inter text-[11px] leading-4 text-white group-hover:block">Edit the structure, durations, breaks, check-ins, and recap in Session Studio.</span>
                     </span>
                   </div>
-                  <button type="button" onClick={openSessionStudio} className="inline-flex h-10 items-center gap-2 rounded-[9px] border border-[#D8DCE3] bg-white px-3.5 font-inter text-[12px] font-semibold text-[#344054] hover:border-[#24A148]">
+                  <button type="button" onClick={openSessionStudio} className="inline-flex h-10 items-center gap-2 rounded-[9px] border border-[#D8DCE3] bg-white px-3.5 font-inter text-[12px] font-semibold text-[#344054] hover:border-[#2F2F2F]">
                     <Pencil size={15} /> Edit
                   </button>
                 </div>
 
                 <div className="mt-4 space-y-3.5">
                   {previewBlocks.map((block, index) => {
-                    const dotClass = block.kind === "break" ? "bg-[#F04438]" : block.kind === "intentions" || block.kind === "recap" ? "bg-[#2E90FA]" : "bg-[#24A148]";
+                    const visual = resolveStageVisual(block);
                     return (
                       <div key={`${block.id}-${index}`} className="flex items-center justify-between gap-4 font-inter text-[13px]">
-                        <div className="flex min-w-0 items-center gap-3 text-[#344054]"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`} /><span className="truncate">{block.title}</span></div>
+                        <div className="flex min-w-0 items-center gap-3 text-[#344054]">
+                          <span
+                            className="h-2.5 w-2.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: visual.color }}
+                          />
+                          <span className="truncate">{visual.name || block.title}</span>
+                        </div>
                         <span className="shrink-0 text-[#667085]">{block.minutes} min</span>
                       </div>
                     );
@@ -3941,7 +3944,7 @@ export function CreateSessionModal({
                             setScheduleMode(mode);
                             setActiveStep(1);
                           }}
-                          className="h-10 w-full appearance-none rounded-[8px] border border-[#E0E3E8] bg-white pl-3 pr-9 font-inter text-[12px] font-medium text-[#344054] outline-none transition focus:border-[#24A148]"
+                          className="h-10 w-full appearance-none rounded-[8px] border border-[#E0E3E8] bg-white pl-3 pr-9 font-inter text-[12px] font-medium text-[#344054] outline-none transition focus:border-[#2F2F2F]"
                           aria-label="Scheduling mode"
                         >
                           <option value="single">Single session</option>
@@ -3997,7 +4000,7 @@ export function CreateSessionModal({
                   <button
                     type="button"
                     onClick={() => goToStep(1)}
-                    className="mt-3 font-inter text-[12px] font-semibold text-[#24A148] underline underline-offset-2"
+                    className="mt-3 font-inter text-[12px] font-semibold text-[#2F2F2F] underline underline-offset-2"
                   >
                     Edit schedule settings
                   </button>
