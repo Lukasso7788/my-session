@@ -3499,7 +3499,39 @@ export function CreateSessionModal({
                   </div>
                 )}
 
-                {/* 1. Date & scheduling */}
+                {/* 1. Session details */}
+                <section ref={basicSectionRef} className="mt-8 scroll-mt-6">
+                  <h3 className="font-inter text-[18px] font-bold text-[#15171A]">1. Session details</h3>
+
+                  <label className="mt-5 block font-inter text-[13px] font-semibold text-[#15171A]">
+                    Title <span className="text-[#E5484D]">*</span>
+                  </label>
+                  <div className="relative mt-2">
+                    <input
+                      type="text"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="e.g. Deep Work Session"
+                      className="h-[52px] w-full rounded-[14px] border border-[#D8DCE3] bg-white px-4 pr-12 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
+                    />
+                    <Pencil className="absolute right-4 top-1/2 -translate-y-1/2 text-[#2F2F2F]" size={18} />
+                  </div>
+
+                  <label className="mt-5 block font-inter text-[13px] font-semibold text-[#15171A]">Description (optional)</label>
+                  <div className="relative mt-2">
+                    <textarea
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value.slice(0, 300))}
+                      placeholder="What will you focus on together?"
+                      rows={4}
+                      className="min-h-[108px] w-full resize-none rounded-[14px] border border-[#D8DCE3] bg-white px-4 py-3 pb-8 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
+                    />
+                    <span className="absolute bottom-3 right-4 font-inter text-[12px] text-[#667085]">{description.length}/300</span>
+                  </div>
+                </section>
+
+
+                {/* 2. Date & scheduling */}
                 <section
                   ref={scheduleSectionRef}
                   className="mt-7 scroll-mt-6 rounded-[20px] border border-[#E3E5E8] bg-[#FAFAFA] p-5 sm:p-6"
@@ -3511,7 +3543,7 @@ export function CreateSessionModal({
                         id="create-session-schedule-heading"
                         className="font-inter text-[18px] font-bold text-[#15171A]"
                       >
-                        1. Date &amp; scheduling
+                        2. Date &amp; scheduling
                       </h3>
                       <p className="mt-1 font-inter text-[12px] leading-5 text-[#667085]">
                         Choose when the session starts and whether to schedule more sessions in advance.
@@ -3717,37 +3749,6 @@ export function CreateSessionModal({
                       </div>
                     </div>
                   ) : null}
-                </section>
-
-                {/* 2. Session details */}
-                <section ref={basicSectionRef} className="mt-8 scroll-mt-6">
-                  <h3 className="font-inter text-[18px] font-bold text-[#15171A]">2. Session details</h3>
-
-                  <label className="mt-5 block font-inter text-[13px] font-semibold text-[#15171A]">
-                    Title <span className="text-[#E5484D]">*</span>
-                  </label>
-                  <div className="relative mt-2">
-                    <input
-                      type="text"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="e.g. Deep Work Session"
-                      className="h-[52px] w-full rounded-[14px] border border-[#D8DCE3] bg-white px-4 pr-12 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
-                    />
-                    <Pencil className="absolute right-4 top-1/2 -translate-y-1/2 text-[#2F2F2F]" size={18} />
-                  </div>
-
-                  <label className="mt-5 block font-inter text-[13px] font-semibold text-[#15171A]">Description (optional)</label>
-                  <div className="relative mt-2">
-                    <textarea
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value.slice(0, 300))}
-                      placeholder="What will you focus on together?"
-                      rows={4}
-                      className="min-h-[108px] w-full resize-none rounded-[14px] border border-[#D8DCE3] bg-white px-4 py-3 pb-8 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
-                    />
-                    <span className="absolute bottom-3 right-4 font-inter text-[12px] text-[#667085]">{description.length}/300</span>
-                  </div>
                 </section>
 
                 {/* 3. Choose a structure */}
