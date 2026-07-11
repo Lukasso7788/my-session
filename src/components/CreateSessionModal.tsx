@@ -38,7 +38,6 @@ import {
   Target,
   Info,
   Pencil,
-  ChevronDown,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { assignServerForSession } from "../lib/livekitPlacement";
@@ -1185,7 +1184,6 @@ export function CreateSessionModal({
   const [isSavingUserTemplate, setIsSavingUserTemplate] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [activeStep, setActiveStep] = useState<0 | 1 | 2>(0);
 
   // ---------- Scheduling in advance ----------
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("single");
@@ -1240,9 +1238,6 @@ export function CreateSessionModal({
 
   // Scroll container ref (modal body)
   const modalScrollRef = useRef<HTMLDivElement | null>(null);
-  const basicSectionRef = useRef<HTMLElement | null>(null);
-  const scheduleSectionRef = useRef<HTMLDetailsElement | null>(null);
-  const summarySectionRef = useRef<HTMLElement | null>(null);
 
   // Auto-scroll while dragging
   const autoScrollRafRef = useRef<number | null>(null);
@@ -1274,7 +1269,6 @@ export function CreateSessionModal({
     setIsSavingUserTemplate(false);
     setError(null);
     setNotice(null);
-    setActiveStep(0);
 
     setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
     setCustomSlugInput("");
@@ -2296,25 +2290,6 @@ export function CreateSessionModal({
     };
   }, [isOpen]);
 
-  const goToStep = useCallback((step: 0 | 1 | 2) => {
-    setActiveStep(step);
-
-    if (step === 1 && scheduleSectionRef.current) {
-      scheduleSectionRef.current.open = true;
-    }
-
-    window.requestAnimationFrame(() => {
-      const target =
-        step === 0
-          ? basicSectionRef.current
-          : step === 1
-            ? scheduleSectionRef.current
-            : summarySectionRef.current;
-
-      target?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-  }, []);
-
   const dynamicMaxOccurrences = useMemo(() => {
     const hardCap =
       scheduleMode === "weekly" ? 3 : scheduleMode === "daily" ? 14 : 1;
@@ -3167,84 +3142,43 @@ export function CreateSessionModal({
   const panelClass =
     "bg-white w-full max-w-[1320px] h-[min(94vh,980px)] rounded-[24px] shadow-2xl flex flex-col overflow-hidden";
 
-  const presetMeta = [
-    { label: "15 / 3", focus: "15m focus", breakLabel: "3m break", icon: "zap" as const },
-    { label: "25 / 5", focus: "25m focus", breakLabel: "5m break", icon: "tomato" as const },
-    { label: "50 / 10", focus: "50m focus", breakLabel: "10m break", icon: "target" as const },
-  ];
-
-  const previewBlocks = sessionFlowPreview.length
-    ? sessionFlowPreview
-    : [
-      { id: "preview-welcome", kind: "welcome" as StudioBlockKind, title: "Welcome & Check-in", minutes: 5 },
-      { id: "preview-intentions", kind: "intentions" as StudioBlockKind, title: "Intentions", minutes: 5 },
-      { id: "preview-focus-1", kind: "focus" as StudioBlockKind, title: "Focus 1", minutes: 25 },
-      { id: "preview-break-1", kind: "break" as StudioBlockKind, title: "Break", minutes: 5 },
-      { id: "preview-focus-2", kind: "focus" as StudioBlockKind, title: "Focus 2", minutes: 25 },
-      { id: "preview-break-2", kind: "break" as StudioBlockKind, title: "Break", minutes: 5 },
-      { id: "preview-focus-3", kind: "focus" as StudioBlockKind, title: "Focus 3", minutes: 25 },
-      { id: "preview-recap", kind: "recap" as StudioBlockKind, title: "Wrap-up & Recap", minutes: 5 },
-    ];
-
-  const previewFocusMinutes = previewBlocks
-    .filter((block) => block.kind === "focus")
-    .reduce((sum, block) => sum + (Number(block.minutes) || 0), 0);
-  const previewBreakMinutes = previewBlocks
-    .filter((block) => block.kind === "break")
-    .reduce((sum, block) => sum + (Number(block.minutes) || 0), 0);
-  const previewTotalMinutes = previewBlocks.reduce(
-    (sum, block) => sum + (Number(block.minutes) || 0),
-    0,
-  );
-
-  const previewDate = scheduledAt ? new Date(scheduledAt) : null;
-  const previewDateLabel =
-    previewDate && !Number.isNaN(previewDate.getTime())
-      ? previewDate.toLocaleDateString(undefined, {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      })
-      : "Choose date";
-  const previewTimeLabel =
-    previewDate && !Number.isNaN(previewDate.getTime())
-      ? previewDate.toLocaleTimeString(undefined, {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-      : "Choose time";
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#111827]/80 p-3 sm:p-5">
+    <div className={overlayClass}>
       {overlapError && (
-        <div className="absolute inset-0 z-[80] flex items-center justify-center bg-black/45 p-4">
+        <div className="absolute inset-0 z-[70] flex items-center justify-center bg-black/45 p-4">
           <div
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="overlap-warning-title"
-            className="w-full max-w-[460px] rounded-[22px] border border-[#E5E7EB] bg-white p-6 shadow-2xl"
+            className="w-full max-w-[460px] rounded-[22px] border border-gray-200 bg-white p-5 shadow-2xl"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 id="overlap-warning-title" className="font-inter text-[18px] font-semibold text-[#2F2F2F]">
+                <h3
+                  id="overlap-warning-title"
+                  className="font-inter text-[17px] font-semibold text-[#2F2F2F]"
+                >
                   Session time overlaps
                 </h3>
-                <p className="mt-2 font-inter text-[13px] leading-5 text-[#667085]">{overlapError}</p>
+                <p className="mt-2 font-inter text-[13px] leading-5 text-gray-600">
+                  {overlapError}
+                </p>
               </div>
               <button
                 type="button"
                 onClick={() => setError(null)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#E5E7EB] text-[#667085] hover:bg-[#F7F7F7]"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition hover:bg-gray-50 hover:text-[#2F2F2F]"
                 aria-label="Close overlap warning"
               >
                 <X size={17} />
               </button>
             </div>
+
             <div className="mt-5 flex justify-end">
               <button
                 type="button"
                 onClick={() => setError(null)}
-                className="rounded-[10px] bg-[#2F2F2F] px-5 py-2.5 font-inter text-[13px] font-semibold text-white hover:bg-[#1F1F1F]"
+                className="rounded-full bg-[#2F2F2F] px-5 py-2.5 font-inter text-[13px] font-medium text-white transition hover:bg-black"
               >
                 Change time
               </button>
@@ -3253,384 +3187,960 @@ export function CreateSessionModal({
         </div>
       )}
 
-      <div className="flex h-[min(96vh,1080px)] w-full max-w-[1280px] flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_30px_90px_rgba(0,0,0,0.35)]">
-        {/* Header */}
-        <div className="flex h-[108px] shrink-0 items-center justify-between border-b border-[#E6E8EC] px-7 sm:px-10">
-          <div className="flex items-center gap-5">
-            <div className="flex h-16 w-16 items-center justify-center rounded-[18px] bg-[#2F2F2F]/[0.08] text-[#2F2F2F]">
-              <CalendarDays size={34} strokeWidth={1.8} />
-            </div>
-            <div>
-              <h2 className="font-inter text-[27px] font-bold tracking-[-0.7px] text-[#15171A]">Create session</h2>
-              <p className="mt-1 font-inter text-[15px] text-[#667085]">Set up your focus session in a few steps</p>
-            </div>
+      <div className={panelClass}>
+        {/* HEADER */}
+        <div className="px-3 sm:px-6 pt-4 sm:pt-5">
+          <div className="flex justify-between items-center">
+            <h2 className="text-[20px] font-bold text-brandBlack font-inter">
+              Create session
+            </h2>
+
+            <button
+              onClick={onClose}
+              className="text-gray-500 hover:text-gray-700 transition"
+              aria-label="Close"
+              type="button"
+            >
+              <X size={22} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-11 w-11 items-center justify-center rounded-full text-[#344054] hover:bg-[#F4F4F5]"
-            aria-label="Close"
-          >
-            <X size={25} strokeWidth={1.8} />
-          </button>
         </div>
 
-        {loading || !user ? (
-          <div className="flex flex-1 items-center justify-center p-8 font-inter text-sm text-[#667085]">
-            {loading ? "Checking your account..." : "You must be logged in to create a session."}
-          </div>
-        ) : (
-          <div ref={modalScrollRef} className="min-h-0 flex-1 overflow-y-auto">
-            <div className="grid min-h-full grid-cols-1 lg:grid-cols-[minmax(0,1.82fr)_minmax(360px,1fr)]">
-              {/* Left column */}
-              <div className="border-b border-[#E6E8EC] px-7 py-7 sm:px-10 lg:border-b-0 lg:border-r">
-                {/* Steps */}
-                <div className="grid grid-cols-3 border-b border-[#E6E8EC]">
-                  {[
-                    ["1", "Basic"],
-                    ["2", "Schedule"],
-                    ["3", "Summary"],
-                  ].map(([number, label], index) => {
-                    const step = index as 0 | 1 | 2;
-                    const isActive = activeStep === step;
+        {/* BODY */}
+        <div
+          ref={modalScrollRef}
+          className="px-3 sm:px-6 pb-3 sm:pb-4 pt-3 sm:pt-4 flex-1 overflow-y-auto"
+        >
+          {loading || !user ? (
+            <p className="text-sm text-gray-500 font-inter">
+              {loading
+                ? "Checking your account..."
+                : "You must be logged in to create a session."}
+            </p>
+          ) : (
+            <div className="space-y-4 sm:space-y-5">
+              {/* Notices */}
+              {notice && (
+                <div className="rounded-[16px] border border-[#2F2F2F]/15 bg-[#2F2F2F]/[0.04] px-4 py-3 text-[13px] text-[#2F2F2F] font-inter">
+                  {notice}
+                </div>
+              )}
 
-                    return (
-                      <button
-                        key={label}
-                        type="button"
-                        onClick={() => goToStep(step)}
-                        className={
-                          "relative flex items-center justify-center gap-2.5 pb-5 font-inter text-[14px] font-semibold transition-colors " +
-                          (isActive ? "text-[#2F2F2F]" : "text-[#667085] hover:text-[#2F2F2F]")
-                        }
-                        aria-current={isActive ? "step" : undefined}
-                      >
-                        <span
-                          className={
-                            "flex h-6 w-6 items-center justify-center rounded-full border text-[12px] transition-colors " +
-                            (isActive
-                              ? "border-[#2F2F2F] text-[#2F2F2F]"
-                              : "border-[#98A2B3] text-[#667085]")
-                          }
-                        >
-                          {number}
-                        </span>
-                        {label}
-                        {isActive && (
-                          <span className="absolute bottom-[-1px] left-0 right-0 h-[3px] bg-[#2F2F2F]" />
-                        )}
-                      </button>
-                    );
-                  })}
+              {/* Row 1: Title + Start time */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+                <div>
+                  <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+                    Session title
+                  </label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g., Deep Work Session"
+                    className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
+                  />
                 </div>
 
-                {notice && (
-                  <div className="mt-5 rounded-[12px] border border-[#2F2F2F]/15 bg-[#2F2F2F]/[0.04] px-4 py-3 font-inter text-[13px] text-[#2F2F2F]">
-                    {notice}
-                  </div>
-                )}
-
-                {/* 1. Session details */}
-                <section ref={basicSectionRef} className="mt-7 scroll-mt-6">
-                  <h3 className="font-inter text-[18px] font-bold text-[#15171A]">1. Session details</h3>
-
-                  <label className="mt-5 block font-inter text-[13px] font-semibold text-[#15171A]">
-                    Title <span className="text-[#E5484D]">*</span>
+                <div>
+                  <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+                    Start time
                   </label>
-                  <div className="relative mt-2">
-                    <input
-                      type="text"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="e.g. Deep Work Session"
-                      className="h-[52px] w-full rounded-[10px] border border-[#D8DCE3] bg-white px-4 pr-12 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
-                    />
-                    <Pencil className="absolute right-4 top-1/2 -translate-y-1/2 text-[#2F2F2F]" size={18} />
-                  </div>
+                  <input
+                    type="datetime-local"
+                    value={scheduledAt}
+                    onChange={(e) => setScheduledAt(e.target.value)}
+                    min={minDateTime}
+                    className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
+                  />
+                </div>
+              </div>
 
-                  <label className="mt-5 block font-inter text-[13px] font-semibold text-[#15171A]">Description (optional)</label>
-                  <div className="relative mt-2">
-                    <textarea
-                      value={description}
-                      onChange={(e) => setDescription(e.target.value.slice(0, 300))}
-                      placeholder="What will you focus on together?"
-                      rows={4}
-                      className="min-h-[108px] w-full resize-none rounded-[10px] border border-[#D8DCE3] bg-white px-4 py-3 pb-8 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
-                    />
-                    <span className="absolute bottom-3 right-4 font-inter text-[12px] text-[#667085]">{description.length}/300</span>
-                  </div>
-                </section>
+              {/* Description */}
+              <div>
+                <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
+                  Description
+                </label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Optional. Describe what this session is about, who it’s for, or what people should expect."
+                  rows={4}
+                  className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter resize-y"
+                />
+              </div>
 
-                {/* 2. Choose a structure */}
-                <section className="mt-8">
-                  <h3 className="font-inter text-[18px] font-bold text-[#15171A]">2. Choose a structure</h3>
-                  <div className="mt-1.5 flex items-center gap-2 font-inter text-[13px] text-[#667085]">
-                    <span>Pick a proven flow or build your own in Session Studio.</span>
-                    <span className="group relative inline-flex">
-                      <Info size={16} className="cursor-help" />
-                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[260px] -translate-x-1/2 rounded-[10px] bg-[#2F2F2F] px-3 py-2 text-center text-[11px] leading-4 text-white shadow-xl group-hover:block">
-                        Session Studio lets you create a custom structure with your own focus blocks, breaks, check-ins, intentions, and recap stages.
-                      </span>
-                    </span>
-                  </div>
+              {/* Row 2: Scheduling + Custom link */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+                {/* Scheduling */}
+                <div className="border border-gray-200 rounded-[18px] bg-white p-3 sm:p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
+                      <CalendarDays size={18} />
+                    </div>
 
-                  <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    {presetMeta.map((preset, index) => {
-                      const template = templates[index];
-                      const isSelected = !!template && selectedTemplate === template.id && !studioEnabled;
-                      return (
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                          Scheduling (in advance)
+                        </div>
+                        <div className="font-inter text-[12px] text-gray-500 whitespace-nowrap">
+                          Max: {MAX_ADVANCE_DAYS} days
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center gap-2 flex-wrap">
                         <button
-                          key={preset.label}
                           type="button"
-                          disabled={!template}
-                          onClick={() => {
-                            if (!template) return;
-                            setSelectedTemplate(template.id);
-                            setStudioEnabled(false);
-                          }}
+                          onClick={() => setScheduleMode("single")}
                           className={
-                            "relative flex min-h-[150px] flex-col items-center justify-center rounded-[11px] border bg-white px-3 py-4 text-center transition disabled:cursor-not-allowed disabled:opacity-50 " +
-                            (isSelected
-                              ? "border-[#2F2F2F] shadow-[inset_0_0_0_1px_#2F2F2F]"
-                              : "border-[#D8DCE3] hover:border-[#2F2F2F]/55")
+                            "px-3 py-2 rounded-full border text-[12px] font-inter transition " +
+                            (scheduleMode === "single"
+                              ? "border-brandBlack bg-[#2F2F2F] text-white"
+                              : "border-gray-200 hover:bg-gray-50 text-brandBlack")
                           }
                         >
-                          <span className={"absolute left-3 top-3 h-5 w-5 rounded-full border " + (isSelected ? "border-[#2F2F2F] bg-[#2F2F2F]" : "border-[#B8C0CC]")}>
-                            {isSelected && <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />}
+                          Single
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setScheduleMode("weekly")}
+                          className={
+                            "px-3 py-2 rounded-full border text-[12px] font-inter transition inline-flex items-center gap-2 " +
+                            (scheduleMode === "weekly"
+                              ? "border-brandBlack bg-[#2F2F2F] text-white"
+                              : "border-gray-200 hover:bg-gray-50 text-brandBlack")
+                          }
+                        >
+                          <Repeat size={14} />
+                          Weekly
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setScheduleMode("daily")}
+                          className={
+                            "px-3 py-2 rounded-full border text-[12px] font-inter transition inline-flex items-center gap-2 " +
+                            (scheduleMode === "daily"
+                              ? "border-brandBlack bg-[#2F2F2F] text-white"
+                              : "border-gray-200 hover:bg-gray-50 text-brandBlack")
+                          }
+                        >
+                          <Repeat size={14} />
+                          Daily
+                        </button>
+
+                        <div className="w-full sm:w-auto sm:ml-auto font-inter text-[12px] text-gray-500">
+                          Creates:{" "}
+                          <span className="font-semibold text-brandBlack">
+                            {occurrencesCount}
                           </span>
-                          <div className="mb-2 flex h-10 items-center justify-center text-[#2F2F2F]">
-                            {preset.icon === "zap" ? (
-                              <Zap size={30} strokeWidth={1.9} />
-                            ) : preset.icon === "target" ? (
-                              <Target size={30} strokeWidth={1.9} />
+                        </div>
+                      </div>
+
+                      {scheduleMode === "weekly" && (
+                        <div className="mt-3">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => setWeeklyCount(2)}
+                                className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                disabled={dynamicMaxOccurrences < 2}
+                              >
+                                2 sessions
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setWeeklyCount(3)}
+                                className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                disabled={dynamicMaxOccurrences < 3}
+                              >
+                                3 sessions
+                              </button>
+                            </div>
+
+                            <div className="font-inter text-[12px] text-gray-600">
+                              Sessions:{" "}
+                              <span className="font-semibold text-brandBlack">
+                                {clamp(
+                                  Number(weeklyCount) || 1,
+                                  1,
+                                  dynamicMaxOccurrences,
+                                )}
+                              </span>
+                            </div>
+                          </div>
+
+                          <input
+                            type="range"
+                            min={1}
+                            max={dynamicMaxOccurrences}
+                            value={clamp(
+                              Number(weeklyCount) || 1,
+                              1,
+                              dynamicMaxOccurrences,
+                            )}
+                            onChange={(e) =>
+                              setWeeklyCount(
+                                clamp(
+                                  Number(e.target.value) || 1,
+                                  1,
+                                  dynamicMaxOccurrences,
+                                ),
+                              )
+                            }
+                            className="mt-3 w-full"
+                          />
+
+                          <div className="mt-2 text-[12px] font-inter text-gray-500">
+                            Same weekday and time every week.
+                          </div>
+                        </div>
+                      )}
+
+                      {scheduleMode === "daily" && (
+                        <div className="mt-3">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => setDailyDays(7)}
+                                className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                disabled={dynamicMaxOccurrences < 7}
+                              >
+                                7 days
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setDailyDays(14)}
+                                className="px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                                disabled={dynamicMaxOccurrences < 14}
+                              >
+                                14 days
+                              </button>
+                            </div>
+
+                            <div className="font-inter text-[12px] text-gray-600">
+                              Days:{" "}
+                              <span className="font-semibold text-brandBlack">
+                                {clamp(
+                                  Number(dailyDays) || 1,
+                                  1,
+                                  dynamicMaxOccurrences,
+                                )}
+                              </span>
+                            </div>
+                          </div>
+
+                          <input
+                            type="range"
+                            min={1}
+                            max={dynamicMaxOccurrences}
+                            value={clamp(
+                              Number(dailyDays) || 1,
+                              1,
+                              dynamicMaxOccurrences,
+                            )}
+                            onChange={(e) =>
+                              setDailyDays(
+                                clamp(
+                                  Number(e.target.value) || 1,
+                                  1,
+                                  dynamicMaxOccurrences,
+                                ),
+                              )
+                            }
+                            className="mt-3 w-full"
+                          />
+
+                          <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+                            <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={dailyWeekdaysOnly}
+                                onChange={(e) =>
+                                  setDailyWeekdaysOnly(e.target.checked)
+                                }
+                                className="w-4 h-4"
+                              />
+                              <span className="text-[12px] font-inter text-brandBlack">
+                                Only weekdays (Mon–Fri)
+                              </span>
+                            </label>
+
+                            <div className="text-[12px] font-inter text-gray-500">
+                              {dailyWeekdaysOnly
+                                ? "Skips Saturday and Sunday."
+                                : "Same time each day."}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {occurrencesPreview.length > 1 && (
+                        <div className="mt-3 border border-gray-200 rounded-[14px] p-3 bg-gray-50">
+                          <div className="text-[12px] font-inter text-gray-600">
+                            Will create
+                            {scheduleMode === "daily" && dailyWeekdaysOnly
+                              ? " (weekdays only)"
+                              : ""}
+                            :
+                          </div>
+                          <div className="mt-1 text-[12px] font-inter text-gray-800 space-y-1">
+                            {occurrencesPreview.slice(0, 5).map((p, i) => (
+                              <div key={i}>• {p}</div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {scheduleAdvanceError && (
+                        <div className="mt-2 text-[12px] font-inter text-red-600">
+                          {scheduleAdvanceError}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Custom link */}
+                <div className="border border-gray-200 rounded-[18px] bg-white p-3 sm:p-4 overflow-hidden">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
+                      <Link2 size={18} />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                        Custom session link
+                      </div>
+                      <div className="font-inter text-[12px] text-gray-500">
+                        {slugHint ||
+                          "Optional. Your own public link: mysession.club/your-link."}
+                      </div>
+
+                      <div className="mt-3 min-w-0">
+                        {ownedSlugValues.length > 0 && !isSeries && (
+                          <div className="mb-3">
+                            <label className="mb-1 block text-[12px] font-inter font-semibold text-gray-700">
+                              Reusable public link
+                            </label>
+                            <select
+                              value={ownedSlugSelectValue}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (!v) {
+                                  setCustomSlugInput("");
+                                  setSlugStatus("idle");
+                                  return;
+                                }
+                                if (v === "__custom__") return;
+                                setCustomSlugInput(v);
+                                setSlugStatus("owned");
+                              }}
+                              className="w-full px-3 py-3 border border-gray-300 rounded-[16px] bg-white font-inter text-[13px]"
+                            >
+                              <option value="">No custom link</option>
+                              {ownedSlugValues.map((slug) => (
+                                <option key={slug} value={slug}>
+                                  Reuse mysession.club/{slug}
+                                </option>
+                              ))}
+                              {sanitizedSlug &&
+                                !ownedSlugValues.includes(sanitizedSlug) && (
+                                  <option value="__custom__">
+                                    New/custom: mysession.club/{sanitizedSlug}
+                                  </option>
+                                )}
+                            </select>
+                          </div>
+                        )}
+
+                        <input
+                          value={customSlugInput}
+                          onChange={(e) => setCustomSlugInput(e.target.value)}
+                          placeholder="e.g., yaro-deep-work"
+                          className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter"
+                        />
+
+                        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 min-w-0">
+                          <div
+                            className={`text-[12px] font-inter ${slugHintColor} min-w-0`}
+                          >
+                            {customSlugInput
+                              ? slugHint
+                              : isSeries
+                                ? "Optional. In series mode, we auto-add date suffix (yyyy-mm-dd)."
+                                : "Allowed: a-z, 0-9, - or _. Lowercase."}
+                          </div>
+
+                          <div className="text-[12px] font-inter text-gray-500 min-w-0 truncate">
+                            {linkPreview}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-2 text-[12px] font-inter text-gray-500">
+                        Video server:{" "}
+                        <span className="font-semibold text-brandBlack">
+                          {FIXED_JITSI_DOMAIN}
+                        </span>{" "}
+                        (fixed)
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Choose a structure */}
+              <div className="rounded-[20px] border border-gray-200 bg-white p-3 sm:p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="font-inter text-[16px] font-semibold text-[#2F2F2F]">
+                      Choose a structure
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1.5 font-inter text-[12px] text-gray-500">
+                      <span>Pick a proven flow or build your own in Session Studio.</span>
+                      <span className="group relative inline-flex">
+                        <Info size={14} className="cursor-help text-gray-400" />
+                        <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-64 -translate-x-1/2 rounded-[12px] bg-[#2F2F2F] px-3 py-2 text-[11px] leading-4 text-white shadow-xl group-hover:block">
+                          Session Studio lets you create a custom structure with your own focus blocks, breaks, check-ins, intentions, and recap stages.
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+                  {templates.length > 0 ? (
+                    templates.map((t) => {
+                      const templateName = String(t.name || "Template");
+                      const normalizedName = templateName.toLowerCase();
+                      const duration = Number((t as any).total_duration) || 0;
+                      const isSelected = selectedTemplate === t.id && !studioEnabled;
+                      const isLightning =
+                        normalizedName.includes("15 / 3") ||
+                        normalizedName.includes("15/3");
+                      const isTarget =
+                        normalizedName.includes("50 / 10") ||
+                        normalizedName.includes("50/10");
+
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedTemplate(t.id);
+                            setStudioEnabled(false);
+                            if (!title) setTitle(templateName);
+                            setSelectedUserTemplateId("");
+                            setSelectedPreviousSessionId("");
+                          }}
+                          className={
+                            "relative min-h-[112px] rounded-[16px] border px-3 py-3 text-center transition " +
+                            (isSelected
+                              ? "border-[#2F2F2F] bg-[#2F2F2F]/[0.045] shadow-[inset_0_0_0_1px_#2F2F2F]"
+                              : "border-gray-200 bg-white hover:border-gray-400 hover:bg-gray-50")
+                          }
+                        >
+                          <span
+                            className={
+                              "absolute left-3 top-3 h-4 w-4 rounded-full border " +
+                              (isSelected
+                                ? "border-[#2F2F2F] bg-[#2F2F2F] shadow-[inset_0_0_0_3px_white]"
+                                : "border-gray-300 bg-white")
+                            }
+                          />
+
+                          <div className="mx-auto flex h-7 items-center justify-center text-[#2F2F2F]">
+                            {isLightning ? (
+                              <Zap size={23} strokeWidth={2.2} />
+                            ) : isTarget ? (
+                              <Target size={23} strokeWidth={2.2} />
                             ) : (
-                              <span className="text-[31px] leading-none" aria-hidden="true">🍅</span>
+                              <span className="text-[22px] leading-none" aria-hidden="true">
+                                🍅
+                              </span>
                             )}
                           </div>
-                          <div className="font-inter text-[17px] font-bold text-[#15171A]">{preset.label}</div>
-                          <div className="mt-1.5 font-inter text-[12px] leading-5 text-[#667085]">
-                            <div>{preset.focus}</div>
-                            <div>{preset.breakLabel}</div>
+
+                          <div className="mt-1 font-inter text-[15px] font-semibold text-[#2F2F2F]">
+                            {templateName}
+                          </div>
+                          <div className="mt-0.5 font-inter text-[11px] text-gray-500">
+                            {duration ? `${duration} min total` : "Ready-made flow"}
                           </div>
                         </button>
                       );
-                    })}
-
-                    <button
-                      type="button"
-                      onClick={openSessionStudio}
-                      className={
-                        "relative flex min-h-[150px] flex-col items-center justify-center rounded-[11px] border bg-white px-3 py-4 text-center transition " +
-                        (studioEnabled
-                          ? "border-[#2F2F2F] shadow-[inset_0_0_0_1px_#2F2F2F]"
-                          : "border-[#D8DCE3] hover:border-[#2F2F2F]/55")
-                      }
-                    >
-                      <span className={"absolute left-3 top-3 h-5 w-5 rounded-full border " + (studioEnabled ? "border-[#2F2F2F] bg-[#2F2F2F]" : "border-[#B8C0CC]")}>
-                        {studioEnabled && <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />}
-                      </span>
-                      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-[10px] bg-[#2F2F2F]/[0.08] text-[#2F2F2F]">
-                        <Layers size={23} />
-                      </div>
-                      <div className="font-inter text-[16px] font-bold text-[#15171A]">Custom</div>
-                      <div className="mt-1.5 font-inter text-[12px] text-[#667085]">Session Studio</div>
-                    </button>
-                  </div>
+                    })
+                  ) : (
+                    <div className="col-span-full rounded-[16px] border border-dashed border-gray-200 px-4 py-6 text-center text-sm text-gray-500 font-inter">
+                      Loading structures...
+                    </div>
+                  )}
 
                   <button
                     type="button"
                     onClick={openSessionStudio}
-                    className="mt-4 flex w-full items-center gap-3 rounded-[10px] border border-[#2F2F2F]/10 bg-[#2F2F2F]/[0.035] px-4 py-3 text-left font-inter text-[13px] text-[#344054]"
+                    className={
+                      "relative min-h-[112px] rounded-[16px] border px-3 py-3 text-center transition " +
+                      (studioEnabled
+                        ? "border-[#2F2F2F] bg-[#2F2F2F]/[0.045] shadow-[inset_0_0_0_1px_#2F2F2F]"
+                        : "border-gray-200 bg-white hover:border-gray-400 hover:bg-gray-50")
+                    }
                   >
-                    <Wand2 size={17} className="text-[#2F2F2F]" />
-                    <span>Add check-ins, intentions, and more in <span className="font-semibold underline">Session Studio</span>.</span>
+                    <span
+                      className={
+                        "absolute left-3 top-3 h-4 w-4 rounded-full border " +
+                        (studioEnabled
+                          ? "border-[#2F2F2F] bg-[#2F2F2F] shadow-[inset_0_0_0_3px_white]"
+                          : "border-gray-300 bg-white")
+                      }
+                    />
+                    <div className="mx-auto flex h-7 items-center justify-center">
+                      <Layers size={23} className="text-[#2F2F2F]" />
+                    </div>
+                    <div className="mt-1 font-inter text-[15px] font-semibold text-[#2F2F2F]">
+                      Custom
+                    </div>
+                    <div className="mt-0.5 font-inter text-[11px] text-gray-500">
+                      Session Studio
+                    </div>
                   </button>
-                </section>
+                </div>
 
-                {/* 3. Guests & capacity */}
-                <section className="mt-8">
-                  <h3 className="font-inter text-[18px] font-bold text-[#15171A]">3. Guests &amp; capacity</h3>
-                  <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="block font-inter text-[13px] font-semibold text-[#15171A]">Max participants</label>
-                      <div className="relative mt-2">
-                        <Users className="absolute left-4 top-1/2 -translate-y-1/2 text-[#667085]" size={18} />
-                        <select
-                          value={maxParticipants}
-                          onChange={(e) => setMaxParticipants(clamp(Number(e.target.value), MIN_PARTICIPANTS, MAX_PARTICIPANTS))}
-                          className="h-[48px] w-full appearance-none rounded-[10px] border border-[#D8DCE3] bg-white pl-11 pr-10 font-inter text-[13px] text-[#344054] outline-none focus:border-[#2F2F2F]"
-                        >
-                          {[8, 12, 16, 24, 32, 48, 64].map((value) => (
-                            <option key={value} value={value}>{value} people</option>
-                          ))}
-                        </select>
-                        <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#667085]">⌄</span>
+                <div className="mt-3 rounded-[16px] border border-gray-200 bg-gray-50/70 px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="font-inter text-[13px] font-semibold text-[#2F2F2F]">
+                        Session Flow
                       </div>
+                      <span className="group relative inline-flex">
+                        <Info size={14} className="cursor-help text-gray-400" />
+                        <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-60 -translate-x-1/2 rounded-[12px] bg-[#2F2F2F] px-3 py-2 text-[11px] leading-4 text-white shadow-xl group-hover:block">
+                          Open Session Studio to customize block order, durations, breaks, intentions, check-ins, and recap stages.
+                        </span>
+                      </span>
                     </div>
-                    <div>
-                      <label className="block font-inter text-[13px] font-semibold text-[#15171A]">Who can join</label>
-                      <div className="relative mt-2">
-                        <Link2 className="absolute left-4 top-1/2 -translate-y-1/2 text-[#667085]" size={18} />
-                        <div className="flex h-[48px] items-center rounded-[10px] border border-[#D8DCE3] bg-white pl-11 pr-10 font-inter text-[13px] text-[#344054]">Anyone with the link</div>
-                        <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[#667085]">⌄</span>
-                      </div>
-                    </div>
+
+                    <button
+                      type="button"
+                      onClick={openSessionStudio}
+                      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[10px] border border-gray-300 bg-white px-3 font-inter text-[12px] font-medium text-[#2F2F2F] transition hover:border-[#2F2F2F] hover:bg-gray-50"
+                    >
+                      <Pencil size={13} />
+                      Edit
+                    </button>
                   </div>
-                </section>
 
-                {/* Advanced settings preserved */}
-                <details ref={scheduleSectionRef} className="mt-6 scroll-mt-6 rounded-[12px] border border-[#E6E8EC] bg-[#FAFAFA]">
-                  <summary className="cursor-pointer px-4 py-3 font-inter text-[13px] font-semibold text-[#344054]">Advanced settings</summary>
-                  <div className="space-y-5 border-t border-[#E6E8EC] p-4">
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div>
-                        <label className="block font-inter text-[12px] font-semibold text-[#344054]">Start time</label>
-                        <input
-                          type="datetime-local"
-                          value={scheduledAt}
-                          onChange={(e) => setScheduledAt(e.target.value)}
-                          min={minDateTime}
-                          className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px] outline-none focus:border-[#2F2F2F]"
-                        />
-                        {scheduleAdvanceError && <p className="mt-2 font-inter text-[12px] text-red-600">{scheduleAdvanceError}</p>}
-                      </div>
-                      <div>
-                        <label className="block font-inter text-[12px] font-semibold text-[#344054]">Scheduling</label>
-                        <div className="mt-2 grid grid-cols-3 gap-2">
-                          {(["single", "daily", "weekly"] as ScheduleMode[]).map((mode) => (
-                            <button
-                              key={mode}
-                              type="button"
-                              onClick={() => setScheduleMode(mode)}
-                              className={"h-11 rounded-[9px] border px-3 font-inter text-[12px] font-semibold capitalize " + (scheduleMode === mode ? "border-[#2F2F2F] bg-[#2F2F2F] text-white" : "border-[#D8DCE3] bg-white text-[#344054]")}
-                            >
-                              {mode}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    {scheduleMode === "daily" && (
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <label className="font-inter text-[12px] font-semibold text-[#344054]">
-                          Number of sessions
-                          <input type="number" min={1} max={dynamicMaxOccurrences} value={dailyDays} onChange={(e) => setDailyDays(clamp(Number(e.target.value) || 1, 1, dynamicMaxOccurrences))} className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3" />
-                        </label>
-                        <label className="mt-6 flex items-center gap-2 font-inter text-[12px] text-[#344054]">
-                          <input type="checkbox" checked={dailyWeekdaysOnly} onChange={(e) => setDailyWeekdaysOnly(e.target.checked)} /> Weekdays only
-                        </label>
-                      </div>
-                    )}
-                    {scheduleMode === "weekly" && (
-                      <label className="block font-inter text-[12px] font-semibold text-[#344054]">
-                        Number of sessions
-                        <input type="number" min={1} max={dynamicMaxOccurrences} value={weeklyCount} onChange={(e) => setWeeklyCount(clamp(Number(e.target.value) || 1, 1, dynamicMaxOccurrences))} className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3" />
-                      </label>
-                    )}
-
-                    {occurrencesPreview.length > 0 && (
-                      <div className="rounded-[9px] border border-[#E6E8EC] bg-white p-3">
-                        <div className="font-inter text-[12px] font-semibold text-[#344054]">Session dates</div>
-                        <div className="mt-2 space-y-1 font-inter text-[11px] text-[#667085]">
-                          {occurrencesPreview.map((item) => <div key={item}>{item}</div>)}
-                        </div>
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="block font-inter text-[12px] font-semibold text-[#344054]">Custom public link</label>
-                      {ownedSlugValues.length > 0 && (
-                        <select
-                          value={ownedSlugSelectValue}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setCustomSlugInput(value === "__custom__" ? "" : value);
-                          }}
-                          className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px]"
+                  {sessionFlowPreview.length > 0 ? (
+                    <div className="mt-2 grid grid-cols-1 gap-x-5 gap-y-1 sm:grid-cols-2">
+                      {sessionFlowPreview.slice(0, 8).map((block, index) => (
+                        <div
+                          key={`${block.id}-${index}`}
+                          className="flex min-w-0 items-center justify-between gap-3 py-0.5"
                         >
-                          <option value="">No custom link</option>
-                          {ownedSlugValues.map((slug) => <option key={slug} value={slug}>{slug}</option>)}
-                          <option value="__custom__">Create another link</option>
-                        </select>
-                      )}
-                      <input
-                        type="text"
-                        value={customSlugInput}
-                        onChange={(e) => setCustomSlugInput(e.target.value)}
-                        placeholder="your-link"
-                        className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px] outline-none focus:border-[#2F2F2F]"
-                      />
-                      <p className={"mt-1.5 font-inter text-[11px] " + slugHintColor}>{slugHint}</p>
-                      <p className="mt-1 font-inter text-[11px] text-[#98A2B3]">{linkPreview}</p>
-                    </div>
-
-                    {(userTemplates.length > 0 || previousSessions.length > 0) && (
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        {userTemplates.length > 0 && (
-                          <label className="font-inter text-[12px] font-semibold text-[#344054]">
-                            My templates
-                            <select
-                              value={selectedUserTemplateId}
-                              onChange={(e) => {
-                                const row = userTemplates.find((item) => item.id === e.target.value);
-                                if (row) applyUserTemplate(row);
-                              }}
-                              className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px]"
-                            >
-                              <option value="">Choose template</option>
-                              {userTemplates.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                            </select>
-                          </label>
-                        )}
-                        {previousSessions.length > 0 && (
-                          <label className="font-inter text-[12px] font-semibold text-[#344054]">
-                            Previous sessions
-                            <select
-                              value={selectedPreviousSessionId}
-                              onChange={(e) => {
-                                const row = previousSessions.find((item) => item.id === e.target.value);
-                                if (row) applyPreviousSession(row);
-                              }}
-                              className="mt-2 h-11 w-full rounded-[9px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px]"
-                            >
-                              <option value="">Choose session</option>
-                              {previousSessions.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-                            </select>
-                          </label>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </details>
-
-                {studioEnabled && (
-                  <section id="session-studio" className="mt-6 rounded-[14px] border border-[#D8DCE3] bg-white p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <h3 className="font-inter text-[17px] font-bold text-[#15171A]">Session Studio</h3>
-                        <p className="mt-1 font-inter text-[12px] text-[#667085]">Build a custom flow with your own blocks and durations.</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={importFromTemplate} className="rounded-[8px] border border-[#D8DCE3] px-3 py-2 font-inter text-[12px] font-semibold text-[#344054]">Import preset</button>
-                        <button type="button" onClick={resetDefaultStudio} className="rounded-[8px] border border-[#D8DCE3] px-3 py-2 font-inter text-[12px] font-semibold text-[#344054]">Reset</button>
-                        <button type="button" onClick={clearStudio} className="rounded-[8px] border border-[#D8DCE3] px-3 py-2 font-inter text-[12px] font-semibold text-[#344054]">Clear</button>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {STUDIO_LIBRARY.map((block) => (
-                        <button
-                          key={block.id}
-                          type="button"
-                          onClick={() => addFromLibrary(block)}
-                          className="rounded-full border border-[#D8DCE3] bg-white px-3 py-1.5 font-inter text-[11px] text-[#344054] hover:border-[#2F2F2F]"
-                        >
-                          + {block.title}
-                        </button>
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span
+                              className="h-2 w-2 shrink-0 rounded-full"
+                              style={{ backgroundColor: getBlockColor(block) }}
+                            />
+                            <span className="truncate font-inter text-[12px] text-[#2F2F2F]">
+                              {block.title}
+                            </span>
+                          </div>
+                          <span className="shrink-0 font-inter text-[11px] text-gray-500">
+                            {block.minutes} min
+                          </span>
+                        </div>
                       ))}
                     </div>
+                  ) : (
+                    <div className="mt-2 font-inter text-[12px] text-gray-500">
+                      Select a structure to preview its flow.
+                    </div>
+                  )}
+                </div>
+              </div>
 
+              {/* My templates + previous sessions */}
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4">
+                {/* My templates */}
+                <div className="border border-gray-200 rounded-[18px] bg-white p-3 sm:p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
+                      <Bookmark size={18} />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                        My saved templates
+                      </div>
+                      <div className="font-inter text-[12px] text-gray-500">
+                        Reuse your own custom Session Studio scripts.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {userTemplates.length > 0 ? (
+                      userTemplates.map((tpl) => {
+                        const blocksCount = normalizeTemplateBlocks(
+                          tpl.blocks,
+                        ).length;
+                        const isActive = selectedUserTemplateId === tpl.id;
+
+                        return (
+                          <button
+                            key={tpl.id}
+                            type="button"
+                            onClick={() => applyUserTemplate(tpl)}
+                            className={
+                              "w-full text-left border rounded-[16px] p-3 transition " +
+                              (isActive
+                                ? "border-brandBlack bg-black/[0.03]"
+                                : "border-gray-200 hover:bg-gray-50")
+                            }
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-inter font-semibold text-[13px] text-brandBlack truncate">
+                                  {tpl.name}
+                                </div>
+                                <div className="mt-1 font-inter text-[12px] text-gray-500 line-clamp-2">
+                                  {tpl.description ||
+                                    tpl.default_description ||
+                                    "No description"}
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <div className="text-[11px] font-inter text-gray-500">
+                                  {blocksCount} blocks
+                                </div>
+                                <div className="text-[11px] font-inter text-gray-500">
+                                  {formatMinutes(
+                                    normalizeTemplateBlocks(tpl.blocks).reduce(
+                                      (sum, b) =>
+                                        sum + (Number(b.minutes) || 0),
+                                      0,
+                                    ),
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
+                              <div className="text-[11px] font-inter text-gray-500">
+                                Base format:{" "}
+                                <span className="text-brandBlack font-medium">
+                                  {tpl.base_template_id
+                                    ? templateNameById.get(
+                                      tpl.base_template_id,
+                                    ) || "Unknown"
+                                    : "None"}
+                                </span>
+                              </div>
+
+                              <div className="text-[11px] font-inter text-gray-500">
+                                Updated {formatShortDate(tpl.updated_at)}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="text-[12px] text-gray-500 font-inter">
+                        No saved templates yet. Build a Session Studio script
+                        and save it below.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Previous sessions */}
+                <div className="border border-gray-200 rounded-[18px] bg-white p-3 sm:p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
+                      <History size={18} />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                        My previous sessions
+                      </div>
+                      <div className="font-inter text-[12px] text-gray-500">
+                        Reuse a session you already created before.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 space-y-2 max-h-72 overflow-y-auto pr-1">
+                    {previousSessions.length > 0 ? (
+                      previousSessions.map((row) => {
+                        const isActive = selectedPreviousSessionId === row.id;
+                        const blocksCount = normalizeTemplateBlocks(
+                          row.schedule,
+                        ).length;
+
+                        return (
+                          <button
+                            key={row.id}
+                            type="button"
+                            onClick={() => applyPreviousSession(row)}
+                            className={
+                              "w-full text-left border rounded-[16px] p-3 transition " +
+                              (isActive
+                                ? "border-brandBlack bg-black/[0.03]"
+                                : "border-gray-200 hover:bg-gray-50")
+                            }
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-inter font-semibold text-[13px] text-brandBlack truncate">
+                                  {row.title}
+                                </div>
+                                <div className="mt-1 font-inter text-[12px] text-gray-500 line-clamp-2">
+                                  {row.description ||
+                                    row.format ||
+                                    "Previous session"}
+                                </div>
+                              </div>
+
+                              <div className="text-right shrink-0">
+                                <div className="text-[11px] font-inter text-gray-500">
+                                  {Number(row.duration_minutes) || 0}m
+                                </div>
+                                <div className="text-[11px] font-inter text-gray-500">
+                                  {blocksCount > 0
+                                    ? `${blocksCount} blocks`
+                                    : "No blocks"}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="mt-2 flex items-center justify-between gap-3 flex-wrap">
+                              <div className="text-[11px] font-inter text-gray-500">
+                                {row.template_id
+                                  ? `Format: ${templateNameById.get(row.template_id) || "Unknown"}`
+                                  : row.format || "Custom"}
+                              </div>
+                              <div className="text-[11px] font-inter text-gray-500">
+                                {formatShortDate(
+                                  row.start_time || row.created_at,
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="text-[12px] text-gray-500 font-inter">
+                        No previous sessions found yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* SESSION STUDIO */}
+              <div id="session-studio" className="scroll-mt-4 border border-[#DBD8D8] rounded-[18px] bg-white p-3 sm:p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
+                      <Layers size={18} />
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="font-inter font-semibold text-[14px] text-brandBlack">
+                        Session Studio
+                      </div>
+                      <div className="flex items-center gap-1.5 font-inter text-[12px] text-gray-500">
+                        <span>Create a custom structure with your own blocks and durations.</span>
+                        <span className="group relative inline-flex">
+                          <Info size={14} className="cursor-help text-gray-400" />
+                          <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-64 -translate-x-1/2 rounded-[12px] bg-[#2F2F2F] px-3 py-2 text-[11px] leading-4 text-white shadow-xl group-hover:block">
+                            Customize focus blocks, breaks, intentions, check-ins, recaps, and their durations.
+                          </span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {studioEnabled && (
+                    <button
+                      onClick={() => setStudioEnabled(false)}
+                      className="px-4 py-2 rounded-full bg-[#2F2F2F] text-white text-[12px] font-inter hover:bg-black transition shrink-0"
+                      type="button"
+                    >
+                      Close
+                    </button>
+                  )}
+                </div>
+
+                <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+                  <label className="flex items-center gap-2 cursor-pointer select-none min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={studioEnabled}
+                      onChange={(e) => setStudioEnabled(e.target.checked)}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-[13px] text-brandBlack font-inter">
+                      Use Session Studio for this session
+                    </span>
+                  </label>
+
+                  <div className="text-[12px] text-gray-600 font-inter whitespace-nowrap">
+                    Length: <span className="font-semibold">{studioTotal}</span>{" "}
+                    min
+                  </div>
+                </div>
+
+
+                {/* Save current studio as my template */}
+                {studioEnabled && (
+                  <div className="mt-4 border border-gray-200 rounded-[16px] p-3 sm:p-4 bg-gray-50">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-[12px] bg-black/5 flex items-center justify-center shrink-0">
+                        <Save size={16} />
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="font-inter font-semibold text-[13px] text-brandBlack">
+                          Save current Studio to My templates
+                        </div>
+                        <div className="font-inter text-[12px] text-gray-500">
+                          Save this custom script and reuse it later.
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[12px] font-inter text-gray-600 mb-1">
+                          Template name
+                        </label>
+                        <input
+                          value={saveTemplateName}
+                          onChange={(e) => setSaveTemplateName(e.target.value)}
+                          placeholder="e.g., My deep work ladder"
+                          className="w-full px-3 py-3 border border-gray-300 rounded-[14px] font-inter"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[12px] font-inter text-gray-600 mb-1">
+                          Template description
+                        </label>
+                        <input
+                          value={saveTemplateDescription}
+                          onChange={(e) =>
+                            setSaveTemplateDescription(e.target.value)
+                          }
+                          placeholder="Optional"
+                          className="w-full px-3 py-3 border border-gray-300 rounded-[14px] font-inter"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex items-center justify-between gap-3 flex-wrap">
+                      <div className="text-[12px] font-inter text-gray-500">
+                        This saves blocks + default title + description +
+                        participant limit.
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveCurrentAsUserTemplate}
+                        disabled={
+                          isSavingUserTemplate ||
+                          !studioEnabled ||
+                          studioBlocks.length === 0 ||
+                          !String(saveTemplateName || title || "").trim()
+                        }
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#2F2F2F] text-white text-[12px] font-inter hover:bg-black disabled:bg-gray-300 transition"
+                      >
+                        <Save size={14} />
+                        {isSavingUserTemplate
+                          ? "Saving..."
+                          : "Save to My templates"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Participant limit */}
+                <div className="mt-4 border border-gray-200 rounded-[16px] p-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-9 h-9 rounded-[12px] bg-black/5 flex items-center justify-center shrink-0">
+                      <Users size={16} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-inter font-semibold text-[13px] text-brandBlack">
+                        Participant limit
+                      </div>
+                      <div className="font-inter text-[12px] text-gray-500">
+                        Default for all templates is {DEFAULT_MAX_PARTICIPANTS}.
+                        Studio can set {MIN_PARTICIPANTS}–{MAX_PARTICIPANTS}.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={MIN_PARTICIPANTS}
+                      max={MAX_PARTICIPANTS}
+                      value={maxParticipants}
+                      disabled={!studioEnabled}
+                      onChange={(e) =>
+                        setMaxParticipants(
+                          clamp(
+                            Number(e.target.value) || DEFAULT_MAX_PARTICIPANTS,
+                            MIN_PARTICIPANTS,
+                            MAX_PARTICIPANTS,
+                          ),
+                        )
+                      }
+                      className={
+                        "w-28 px-3 py-2 border rounded-[14px] font-inter text-center " +
+                        (studioEnabled
+                          ? "border-gray-300"
+                          : "border-gray-200 bg-gray-50 text-gray-500")
+                      }
+                    />
+                    <span className="font-inter text-[12px] text-gray-600">
+                      people
+                    </span>
+
+                    {!studioEnabled && (
+                      <span className="ml-auto font-inter text-[12px] text-gray-500">
+                        (Locked at {DEFAULT_MAX_PARTICIPANTS} when Studio is
+                        off)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {studioEnabled && (
+                  <div className="mt-4 mb-4">
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <div className="text-[12px] text-gray-600 font-inter">
+                        {selectedBlockIds.length > 0 ? (
+                          <>
+                            Selected:{" "}
+                            <span className="font-semibold text-brandBlack">
+                              {selectedBlockIds.length}
+                            </span>
+                            {" · "}Ctrl/Cmd+C to copy, Ctrl/Cmd+V to duplicate
+                          </>
+                        ) : (
+                          <>Click a timeline segment to select and edit it.</>
+                        )}
+                      </div>
+                    </div>
                     <SessionTimeline
                       blocks={studioBlocks}
                       onChange={setStudioBlocks}
@@ -3641,168 +4151,602 @@ export function CreateSessionModal({
                         setSelectionAnchorId(id);
                       }}
                     />
-
-                    <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto]">
-                      <input value={saveTemplateName} onChange={(e) => setSaveTemplateName(e.target.value)} placeholder="Template name" className="h-11 rounded-[9px] border border-[#D8DCE3] px-3 font-inter text-[13px]" />
-                      <input value={saveTemplateDescription} onChange={(e) => setSaveTemplateDescription(e.target.value)} placeholder="Template description" className="h-11 rounded-[9px] border border-[#D8DCE3] px-3 font-inter text-[13px]" />
-                      <button type="button" onClick={handleSaveCurrentAsUserTemplate} disabled={isSavingUserTemplate} className="h-11 rounded-[9px] bg-[#2F2F2F] px-4 font-inter text-[12px] font-semibold text-white disabled:opacity-50">
-                        {isSavingUserTemplate ? "Saving..." : "Save template"}
-                      </button>
-                    </div>
-                  </section>
+                  </div>
                 )}
 
-                {error && !overlapError && <p className="mt-4 font-inter text-[13px] text-red-600">{error}</p>}
-              </div>
-
-              {/* Right column */}
-              <aside ref={summarySectionRef} className="scroll-mt-6 bg-[#FCFCFD] px-7 py-8 sm:px-8">
-                <h3 className="font-inter text-[17px] font-bold text-[#15171A]">Session preview</h3>
-
-                <div className="mt-5 rounded-[12px] border border-[#2F2F2F]/20 bg-[#2F2F2F]/[0.025] p-5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 font-inter text-[14px] font-medium text-[#344054]">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2F2F2F]/[0.08] text-[#2F2F2F]"><Users size={18} /></span>
-                      Group session
-                    </div>
-                    <span className="rounded-full bg-[#2F2F2F]/[0.08] px-2.5 py-1 font-inter text-[11px] font-semibold text-[#2F2F2F]">Structured</span>
-                  </div>
-                  <div className="mt-5 space-y-3 font-inter text-[13px] text-[#344054]">
-                    <div className="flex items-center gap-3"><CalendarDays size={18} className="text-[#667085]" /><span>{previewDateLabel} · {previewTimeLabel}</span></div>
-                    <div className="flex items-center gap-3"><Repeat size={18} className="text-[#667085]" /><span>{studioEnabled ? "Custom structure" : `Based on ${presetMeta[Math.max(0, templates.findIndex((item) => item.id === selectedTemplate))]?.label || "selected structure"}`}</span></div>
-                    <div className="flex items-center gap-3"><Users size={18} className="text-[#667085]" /><span>Up to {maxParticipants} participants</span></div>
-                  </div>
-                </div>
-
-                <div className="mt-7 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-inter text-[15px] font-bold text-[#15171A]">Session Flow</h4>
-                    <span className="group relative inline-flex text-[#667085]">
-                      <Info size={16} />
-                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[230px] -translate-x-1/2 rounded-[9px] bg-[#2F2F2F] px-3 py-2 text-center font-inter text-[11px] leading-4 text-white group-hover:block">Edit the structure, durations, breaks, check-ins, and recap in Session Studio.</span>
-                    </span>
-                  </div>
-                  <button type="button" onClick={openSessionStudio} className="inline-flex h-10 items-center gap-2 rounded-[9px] border border-[#D8DCE3] bg-white px-3.5 font-inter text-[12px] font-semibold text-[#344054] hover:border-[#2F2F2F]">
-                    <Pencil size={15} /> Edit
-                  </button>
-                </div>
-
-                <div className="mt-4 space-y-3.5">
-                  {previewBlocks.map((block, index) => {
-                    const dotClass = block.kind === "break" ? "bg-[#F04438]" : block.kind === "intentions" || block.kind === "recap" ? "bg-[#2E90FA]" : "bg-[#2F2F2F]";
-                    return (
-                      <div key={`${block.id}-${index}`} className="flex items-center justify-between gap-4 font-inter text-[13px]">
-                        <div className="flex min-w-0 items-center gap-3 text-[#344054]"><span className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass}`} /><span className="truncate">{block.title}</span></div>
-                        <span className="shrink-0 text-[#667085]">{block.minutes} min</span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="my-6 h-px bg-[#E6E8EC]" />
-
-                <h4 className="font-inter text-[14px] font-bold text-[#15171A]">Scheduling</h4>
-                <div className="mt-3 rounded-[11px] border border-[#E0E3E8] bg-white p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex min-w-0 items-center gap-3 font-inter text-[13px] text-[#344054]">
-                      <CalendarDays size={17} className="shrink-0 text-[#667085]" />
-                      <div className="relative min-w-[148px]">
-                        <select
-                          value={scheduleMode}
-                          onChange={(event) => {
-                            const mode = event.target.value as ScheduleMode;
-                            setScheduleMode(mode);
-                            setActiveStep(1);
-                          }}
-                          className="h-10 w-full appearance-none rounded-[8px] border border-[#E0E3E8] bg-white pl-3 pr-9 font-inter text-[12px] font-medium text-[#344054] outline-none transition focus:border-[#2F2F2F]"
-                          aria-label="Scheduling mode"
-                        >
-                          <option value="single">Single session</option>
-                          <option value="daily">In advance · Daily</option>
-                          <option value="weekly">In advance · Weekly</option>
-                        </select>
-                        <ChevronDown
-                          size={15}
-                          className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#667085]"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="relative min-w-[126px]">
-                      <select
-                        value={occurrencesCount}
-                        disabled={scheduleMode === "single"}
-                        onChange={(event) => {
-                          const count = clamp(
-                            Number(event.target.value) || 1,
-                            1,
-                            dynamicMaxOccurrences,
-                          );
-                          if (scheduleMode === "daily") setDailyDays(count);
-                          if (scheduleMode === "weekly") setWeeklyCount(count);
-                          setActiveStep(1);
-                        }}
-                        className="h-10 w-full appearance-none rounded-[8px] border border-[#E0E3E8] bg-white pl-3 pr-9 font-inter text-[12px] text-[#344054] outline-none transition focus:border-[#2F2F2F] disabled:cursor-default disabled:bg-[#FAFAFA]"
-                        aria-label="Number of sessions"
+                {studioEnabled && (
+                  <div className="mt-3">
+                    <div className="flex items-center justify-end gap-2 flex-wrap">
+                      <button
+                        onClick={importFromTemplate}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                        title="Import blocks from selected format/template"
+                        type="button"
                       >
-                        {Array.from(
-                          { length: scheduleMode === "single" ? 1 : dynamicMaxOccurrences },
-                          (_, index) => index + 1,
-                        ).map((count) => (
-                          <option key={count} value={count}>
-                            {count} {count === 1 ? "session" : "sessions"}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        size={15}
-                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[#667085]"
-                      />
+                        <Wand2 size={14} />
+                        Import from format
+                      </button>
+
+                      <button
+                        onClick={resetDefaultStudio}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                        title="Reset to default script"
+                        type="button"
+                      >
+                        <RotateCcw size={14} />
+                        Reset default
+                      </button>
+
+                      <button
+                        onClick={clearStudio}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-full border border-gray-200 text-[12px] font-inter hover:bg-gray-50 transition"
+                        title="Clear script"
+                        type="button"
+                      >
+                        <Eraser size={14} />
+                        Clear
+                      </button>
+                    </div>
+
+                    <div className="mt-2 text-[12px] text-gray-500 font-inter">
+                      Tip: Ctrl/Cmd-click for multi-select. Shift-click for
+                      range selection. Ctrl/Cmd+C and Ctrl/Cmd+V duplicate
+                      selected blocks.
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4">
+                      {/* Library */}
+                      <div className="lg:sticky lg:top-16 self-start border border-gray-200 rounded-[18px] p-3 sm:p-4 bg-white">
+                        <div>
+                          <div className="font-inter font-semibold text-[13px] text-brandBlack">
+                            Block Library
+                          </div>
+                          <div className="font-inter text-[12px] text-gray-500">
+                            Add blocks to the script (cards, not rows).
+                          </div>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-2 sm:gap-3">
+                          {STUDIO_LIBRARY.map((b) => (
+                            <button
+                              key={b.id}
+                              onClick={() => addFromLibrary(b)}
+                              className="text-left border border-gray-200 rounded-[14px] p-3 hover:bg-gray-50 transition"
+                              type="button"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="font-inter font-semibold text-[12px] text-brandBlack">
+                                  {b.title}
+                                </div>
+                                <div className="font-inter text-[12px] text-gray-500 whitespace-nowrap">
+                                  {b.minutes}m
+                                </div>
+                              </div>
+                              <div className="mt-1 font-inter text-[12px] text-gray-500 leading-snug">
+                                {b.note}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Script */}
+                      <div
+                        className="border border-gray-200 rounded-[18px] p-3 sm:p-4 bg-white"
+                        onDragOver={(e) => {
+                          if (!draggingId) return;
+                          updateAutoScrollFromClientY(e.clientY);
+                        }}
+                        onDragLeave={() => {
+                          if (!draggingId) return;
+                          autoScrollVelRef.current = 0;
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="font-inter font-semibold text-[13px] text-brandBlack">
+                              Script
+                            </div>
+                            <div className="font-inter text-[12px] text-gray-500">
+                              Reorder with drag & drop, keyboard ↑/↓, or arrows.
+                            </div>
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <div className="font-inter text-[12px] text-gray-500">
+                              Total:
+                            </div>
+                            <div className="font-inter font-semibold text-[12px] text-brandBlack whitespace-nowrap">
+                              {studioTotal} min
+                            </div>
+                          </div>
+                        </div>
+
+                        {studioBlocks.length === 0 ? (
+                          <div className="mt-4 text-[12px] text-gray-500 font-inter">
+                            No blocks yet. Add from the library on the left.
+                          </div>
+                        ) : (
+                          <div className="mt-3 space-y-2 sm:space-y-3">
+                            {studioBlocks.map((b, idx) => {
+                              const selected = selectedBlockIds.includes(b.id);
+                              const isDragging = draggingId === b.id;
+
+                              const isOverSelf =
+                                dragOverId === b.id &&
+                                draggingId &&
+                                draggingId !== b.id;
+
+                              return (
+                                <div
+                                  key={b.id}
+                                  id={`studio-block-${b.id}`}
+                                  tabIndex={0}
+                                  draggable
+                                  onClick={(e) =>
+                                    handleBlockSurfaceClick(e, b.id)
+                                  }
+                                  onFocus={() => {
+                                    setActiveBlockId(b.id);
+                                    if (!selectedBlockIds.includes(b.id)) {
+                                      setSelectedBlockIds([b.id]);
+                                      setSelectionAnchorId(b.id);
+                                    }
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (
+                                      (e.metaKey || e.ctrlKey) &&
+                                      e.key.toLowerCase() === "c"
+                                    ) {
+                                      if (!isInteractiveEl(e.target)) {
+                                        e.preventDefault();
+                                        copySelectedBlocks();
+                                      }
+                                      return;
+                                    }
+
+                                    if (
+                                      (e.metaKey || e.ctrlKey) &&
+                                      e.key.toLowerCase() === "v"
+                                    ) {
+                                      if (!isInteractiveEl(e.target)) {
+                                        e.preventDefault();
+                                        pasteCopiedBlocks();
+                                      }
+                                      return;
+                                    }
+
+                                    if (
+                                      (e.metaKey || e.ctrlKey) &&
+                                      e.key.toLowerCase() === "a"
+                                    ) {
+                                      if (!isInteractiveEl(e.target)) {
+                                        e.preventDefault();
+                                        const allIds = studioBlocks.map(
+                                          (x) => x.id,
+                                        );
+                                        setSelectedBlockIds(allIds);
+                                        setActiveBlockId(allIds[0] || null);
+                                        setSelectionAnchorId(allIds[0] || null);
+                                      }
+                                      return;
+                                    }
+
+                                    if (e.key === "ArrowUp") {
+                                      e.preventDefault();
+                                      moveBlock(b.id, -1);
+                                    } else if (e.key === "ArrowDown") {
+                                      e.preventDefault();
+                                      moveBlock(b.id, 1);
+                                    } else if (
+                                      e.key === "Delete" ||
+                                      e.key === "Backspace"
+                                    ) {
+                                      if (!isInteractiveEl(e.target)) {
+                                        e.preventDefault();
+                                        if (
+                                          selectedBlockIds.length > 1 &&
+                                          selectedBlockIds.includes(b.id)
+                                        ) {
+                                          deleteSelectedBlocks();
+                                        } else {
+                                          removeBlock(b.id);
+                                        }
+                                      }
+                                    }
+                                  }}
+                                  onDragStart={(e) => {
+                                    if (isInteractiveEl(e.target)) {
+                                      e.preventDefault();
+                                      return;
+                                    }
+
+                                    if (!selectedBlockIds.includes(b.id)) {
+                                      setSelectedBlockIds([b.id]);
+                                      setActiveBlockId(b.id);
+                                      setSelectionAnchorId(b.id);
+                                    }
+
+                                    setDraggingId(b.id);
+                                    setDragOverId(null);
+                                    setDropEdge("after");
+
+                                    try {
+                                      e.dataTransfer.effectAllowed = "move";
+                                      e.dataTransfer.setData(
+                                        "text/plain",
+                                        b.id,
+                                      );
+                                      setTransparentDragImage(e.dataTransfer);
+                                    } catch {
+                                      // ignore
+                                    }
+
+                                    startAutoScrollLoop();
+                                  }}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    if (!draggingId) return;
+
+                                    updateAutoScrollFromClientY(e.clientY);
+
+                                    const rect = (
+                                      e.currentTarget as HTMLElement
+                                    ).getBoundingClientRect();
+                                    const mid = rect.top + rect.height / 2;
+                                    const edge: "before" | "after" =
+                                      e.clientY < mid ? "before" : "after";
+
+                                    if (dragOverId !== b.id)
+                                      setDragOverId(b.id);
+                                    if (dropEdge !== edge) setDropEdge(edge);
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+
+                                    const dragIdFromData = (() => {
+                                      try {
+                                        return (
+                                          e.dataTransfer.getData(
+                                            "text/plain",
+                                          ) || ""
+                                        );
+                                      } catch {
+                                        return "";
+                                      }
+                                    })();
+
+                                    const dragId = draggingId || dragIdFromData;
+                                    if (dragId)
+                                      moveBlockTo(dragId, b.id, dropEdge);
+
+                                    setDraggingId(null);
+                                    setDragOverId(null);
+                                    setDropEdge("after");
+
+                                    stopAutoScrollLoop();
+                                  }}
+                                  onDragEnd={() => {
+                                    setDraggingId(null);
+                                    setDragOverId(null);
+                                    setDropEdge("after");
+                                    stopAutoScrollLoop();
+                                  }}
+                                  className={
+                                    "relative border rounded-[16px] p-2.5 sm:p-3 outline-none transition " +
+                                    "cursor-grab active:cursor-grabbing " +
+                                    (selected
+                                      ? "border-brandBlack ring-2 ring-black/10 bg-black/[0.03]"
+                                      : "border-gray-200") +
+                                    (isDragging ? " opacity-60" : "") +
+                                    " hover:bg-gray-50"
+                                  }
+                                  title="Drag to reorder. Click + use ↑/↓ to move."
+                                >
+                                  {isOverSelf && (
+                                    <div
+                                      className={
+                                        "pointer-events-none absolute left-3 right-3 h-[3px] rounded-full bg-brandBlack/80 " +
+                                        (dropEdge === "before"
+                                          ? "-top-[6px]"
+                                          : "-bottom-[6px]")
+                                      }
+                                    />
+                                  )}
+
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="px-2 py-1 rounded-full border border-gray-200 text-[10px] sm:text-[11px] font-inter text-gray-600 whitespace-nowrap">
+                                      {b.kind}
+                                    </span>
+
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          moveBlock(b.id, -1);
+                                        }}
+                                        disabled={idx === 0}
+                                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center disabled:opacity-40 hover:bg-gray-50 transition"
+                                        type="button"
+                                        title="Move up"
+                                      >
+                                        <ArrowUp size={16} />
+                                      </button>
+
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          moveBlock(b.id, 1);
+                                        }}
+                                        disabled={
+                                          idx === studioBlocks.length - 1
+                                        }
+                                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center disabled:opacity-40 hover:bg-gray-50 transition"
+                                        type="button"
+                                        title="Move down"
+                                      >
+                                        <ArrowDown size={16} />
+                                      </button>
+
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          removeBlock(b.id);
+                                        }}
+                                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 flex items-center justify-center hover:bg-gray-50 transition"
+                                        type="button"
+                                        title="Remove"
+                                      >
+                                        <Trash2 size={16} />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-2">
+                                    <input
+                                      value={b.title}
+                                      onChange={(e) =>
+                                        updateBlock(b.id, {
+                                          title: e.target.value,
+                                        })
+                                      }
+                                      className="w-full px-3 py-2.5 border border-gray-200 rounded-[14px] text-[13px] font-inter"
+                                      placeholder="Block title…"
+                                      onClick={(e) => e.stopPropagation()}
+                                      onFocus={() => {
+                                        setActiveBlockId(b.id);
+                                        if (!selectedBlockIds.includes(b.id)) {
+                                          setSelectedBlockIds([b.id]);
+                                          setSelectionAnchorId(b.id);
+                                        }
+                                      }}
+                                    />
+                                  </div>
+
+                                  <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <span className="text-[12px] text-gray-500 font-inter shrink-0">
+                                      Minutes
+                                    </span>
+
+                                    <div
+                                      className="flex items-center gap-1 sm:gap-2 flex-nowrap shrink-0"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          updateBlock(b.id, {
+                                            minutes: clamp(
+                                              b.minutes - 1,
+                                              1,
+                                              24 * 60,
+                                            ),
+                                          })
+                                        }
+                                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
+                                      >
+                                        –
+                                      </button>
+
+                                      <input
+                                        type="number"
+                                        value={b.minutes}
+                                        onChange={(e) =>
+                                          updateBlock(b.id, {
+                                            minutes: clamp(
+                                              Number(e.target.value) || 1,
+                                              1,
+                                              24 * 60,
+                                            ),
+                                          })
+                                        }
+                                        className="w-14 sm:w-16 h-8 sm:h-9 px-2 border border-gray-200 rounded-[12px] text-[13px] font-inter text-center"
+                                        onFocus={() => {
+                                          setActiveBlockId(b.id);
+                                          if (
+                                            !selectedBlockIds.includes(b.id)
+                                          ) {
+                                            setSelectedBlockIds([b.id]);
+                                            setSelectionAnchorId(b.id);
+                                          }
+                                        }}
+                                      />
+
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          updateBlock(b.id, {
+                                            minutes: clamp(
+                                              b.minutes + 1,
+                                              1,
+                                              24 * 60,
+                                            ),
+                                          })
+                                        }
+                                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-[12px] border border-gray-200 hover:bg-gray-50 transition"
+                                      >
+                                        +
+                                      </button>
+
+                                      <span className="hidden sm:inline text-[12px] text-gray-500 font-inter whitespace-nowrap">
+                                        min
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div
+                                    className="mt-2 flex items-center gap-2 flex-wrap"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {QUICK_MINUTES.map((m) => (
+                                      <button
+                                        key={m}
+                                        type="button"
+                                        onClick={() =>
+                                          updateBlock(b.id, { minutes: m })
+                                        }
+                                        className="px-2.5 py-1.5 rounded-full border border-gray-200 text-[11px] sm:text-[12px] font-inter hover:bg-gray-50 transition"
+                                      >
+                                        {m}m
+                                      </button>
+                                    ))}
+                                  </div>
+
+                                  {b.kind === "custom" && (
+                                    <div
+                                      className="mt-3 rounded-[14px] border border-gray-200 bg-white px-3 py-3"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <div className="mb-2 flex items-center justify-between gap-3">
+                                        <div>
+                                          <div className="font-inter text-[12px] font-semibold text-brandBlack">
+                                            Custom block color
+                                          </div>
+                                          <div className="font-inter text-[11px] text-gray-500">
+                                            This color will be used in the
+                                            session timeline.
+                                          </div>
+                                        </div>
+
+                                        <input
+                                          type="color"
+                                          value={getBlockColor(b)}
+                                          onChange={(e) =>
+                                            updateBlock(b.id, {
+                                              color: e.target.value,
+                                            })
+                                          }
+                                          className="h-9 w-12 cursor-pointer rounded-lg border border-gray-200 bg-white p-1"
+                                          title="Custom block color"
+                                        />
+                                      </div>
+
+                                      <div className="flex flex-wrap gap-2">
+                                        {BLOCK_COLOR_PRESETS.map((color) => {
+                                          const selected =
+                                            getBlockColor(b).toLowerCase() ===
+                                            color.toLowerCase();
+
+                                          return (
+                                            <button
+                                              key={`${b.id}-${color}`}
+                                              type="button"
+                                              onClick={() =>
+                                                updateBlock(b.id, { color })
+                                              }
+                                              className={
+                                                "h-7 w-7 rounded-full border transition " +
+                                                (selected
+                                                  ? "border-brandBlack ring-2 ring-brandBlack/20"
+                                                  : "border-gray-200 hover:scale-105")
+                                              }
+                                              style={{ backgroundColor: color }}
+                                              title={color}
+                                              aria-label={`Set custom block color ${color}`}
+                                            />
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+
+                            {draggingId && (
+                              <div
+                                className="relative h-10 rounded-[14px] border border-dashed border-gray-200 bg-gray-50/60"
+                                onDragOver={(e) => {
+                                  e.preventDefault();
+                                  updateAutoScrollFromClientY(e.clientY);
+                                  if (dragOverId !== END_DROP_ID)
+                                    setDragOverId(END_DROP_ID);
+                                  if (dropEdge !== "after")
+                                    setDropEdge("after");
+                                }}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  const dragIdFromData = (() => {
+                                    try {
+                                      return (
+                                        e.dataTransfer.getData("text/plain") ||
+                                        ""
+                                      );
+                                    } catch {
+                                      return "";
+                                    }
+                                  })();
+                                  const dragId = draggingId || dragIdFromData;
+                                  if (dragId)
+                                    moveBlockTo(dragId, END_DROP_ID, "after");
+
+                                  setDraggingId(null);
+                                  setDragOverId(null);
+                                  setDropEdge("after");
+                                  stopAutoScrollLoop();
+                                }}
+                              >
+                                {dragOverId === END_DROP_ID && (
+                                  <div className="pointer-events-none absolute left-3 right-3 top-1/2 -translate-y-1/2 h-[3px] rounded-full bg-brandBlack/70" />
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
+                )}
 
-                  <p className="mt-3 font-inter text-[12px] leading-5 text-[#667085]">
-                    {scheduleMode === "single"
-                      ? "Choose one date and time in Schedule settings."
-                      : `We'll create ${occurrencesCount} sessions within the next ${MAX_ADVANCE_DAYS} days.`}
+                {error && !overlapError && (
+                  <p className="text-red-600 text-sm font-inter mt-4">
+                    {error}
                   </p>
-
-                  <button
-                    type="button"
-                    onClick={() => goToStep(1)}
-                    className="mt-3 font-inter text-[12px] font-semibold text-[#2F2F2F] underline underline-offset-2"
-                  >
-                    Edit schedule settings
-                  </button>
-                </div>
-
-                <h4 className="mt-6 font-inter text-[14px] font-bold text-[#15171A]">Quick summary</h4>
-                <div className="mt-3 rounded-[11px] border border-[#E0E3E8] bg-white p-4">
-                  <div className="space-y-2 font-inter text-[12px] text-[#667085]">
-                    <div className="flex justify-between gap-4"><span>Focus time</span><strong className="font-medium text-[#344054]">{previewFocusMinutes} min</strong></div>
-                    <div className="flex justify-between gap-4"><span>Break time</span><strong className="font-medium text-[#344054]">{previewBreakMinutes} min</strong></div>
-                    <div className="flex justify-between gap-4"><span>Total time (per session)</span><strong className="font-medium text-[#344054]">{previewTotalMinutes} min</strong></div>
-                    <div className="flex justify-between gap-4"><span>Max participants</span><strong className="font-medium text-[#344054]">{maxParticipants} people</strong></div>
-                  </div>
-                </div>
-              </aside>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* Footer */}
+        {/* FOOTER */}
         {!loading && user && (
-          <div className="flex h-[76px] shrink-0 items-center justify-between border-t border-[#E6E8EC] bg-white px-7 sm:px-10">
-            <button type="button" onClick={onClose} className="h-11 rounded-[9px] border border-[#D8DCE3] bg-white px-5 font-inter text-[13px] font-semibold text-[#344054] hover:bg-[#F7F7F7]">Cancel</button>
+          <div className="px-3 sm:px-6 pb-4 sm:pb-5 pt-3 border-t border-gray-100 bg-white">
             <button
-              type="button"
               onClick={handleCreate}
               disabled={createDisabled}
-              className="inline-flex h-11 items-center gap-2 rounded-[9px] bg-[#2F2F2F] px-5 font-inter text-[13px] font-semibold text-white hover:bg-[#1F1F1F] disabled:cursor-not-allowed disabled:bg-[#D0D5DD]"
+              className="w-full bg-[#2F2F2F] text-white py-3 rounded-[42px] font-medium text-[15px] font-inter hover:bg-black disabled:bg-gray-300 transition"
+              type="button"
             >
-              <CalendarDays size={16} />
-              {isCreating ? "Creating..." : scheduleMode === "single" ? "Schedule it" : "Schedule series"}
+              {isCreating
+                ? "Creating..."
+                : scheduleMode === "single"
+                  ? "Create session"
+                  : "Create series"}
             </button>
+
+            <p className="text-xs text-gray-400 mt-3 text-center font-inter">
+              Hosted by <span className="font-medium">{hostName}</span>
+            </p>
           </div>
         )}
       </div>

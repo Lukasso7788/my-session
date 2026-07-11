@@ -46,6 +46,7 @@ type SessionWithRelations = Session & {
 
   session_format_type?: "group" | "infinite" | "body" | string;
   is_silent?: boolean;
+  is_private?: boolean;
 
   max_participants?: number | null;
   schedule?: any;
@@ -1148,6 +1149,7 @@ export function SessionsPage() {
             custom_slug,
             session_format_type,
             is_silent,
+            is_private,
             max_participants
           `
           )
@@ -1431,11 +1433,18 @@ export function SessionsPage() {
     [sessions]
   );
 
+  const privacyFilteredSessions = useMemo(() => {
+    return activeSessions.filter((session) => {
+      if (!session.is_private) return true;
+      return !!user?.id && String(session.host_id || "") === String(user.id);
+    });
+  }, [activeSessions, user?.id]);
+
   const typeFilteredSessions = useMemo(() => {
-    return activeSessions.filter(
+    return privacyFilteredSessions.filter(
       (s) => resolveSessionType(s) === sessionTypeTab
     );
-  }, [sessionTypeTab, activeSessions]);
+  }, [sessionTypeTab, privacyFilteredSessions]);
 
   const isAllDatesMode =
     sessionTypeTab === "group" && isAllDatesValue(dateFilter);

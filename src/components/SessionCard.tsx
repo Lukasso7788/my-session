@@ -8,7 +8,7 @@ import {
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck } from "lucide-react";
+import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock } from "lucide-react";
 import { SessionStageBar } from "./SessionStageBar";
 import {
     loadEntitlementState,
@@ -4753,8 +4753,15 @@ export default function SessionCard({
                     <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 flex-1">
                         <div className="flex flex-col gap-3 w-full">
                             <div className="flex flex-wrap items-center gap-3">
-                                <h3 className="text-[24px] md:text-[29px] font-bold leading-tight">
-                                    {session.title}
+                                <h3 className="flex min-w-0 items-center gap-2 text-[24px] md:text-[29px] font-bold leading-tight">
+                                    {session?.is_private && (
+                                        <Lock
+                                            size={22}
+                                            className="shrink-0 text-[#606060]"
+                                            aria-label="Private session"
+                                        />
+                                    )}
+                                    <span className="min-w-0 break-words">{session.title}</span>
                                 </h3>
 
                             </div>
