@@ -82,6 +82,7 @@ type DailyScheduleSessionRow = {
   format?: string | null;
   session_format_type?: string | null;
   is_silent?: boolean | null;
+  is_private?: boolean | null;
   host_profile?: {
     id?: string | null;
     full_name?: string | null;
@@ -1167,17 +1168,21 @@ async function handleDailyScheduleEmailAction(params: {
       format,
       session_format_type,
       is_silent,
+      is_private,
       host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url)
     `)
     .gte("start_time", startIso)
     .lt("start_time", endIso)
+    .or("is_private.is.null,is_private.eq.false")
     .order("start_time", { ascending: true });
 
   if (sessionsError) {
     return res.status(500).json({ error: "sessions_load_failed", details: sessionsError });
   }
 
-  const sessions = (sessionsData || []) as DailyScheduleSessionRow[];
+  const sessions = ((sessionsData || []) as DailyScheduleSessionRow[]).filter(
+    (session) => session?.is_private !== true
+  );
   const sessionIds = sessions.map((s) => String(s.id)).filter(Boolean);
 
   const { data: bookingsData } = sessionIds.length
