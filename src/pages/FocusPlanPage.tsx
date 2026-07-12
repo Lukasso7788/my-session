@@ -1819,85 +1819,84 @@ export default function FocusPlanPage() {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="mt-6 space-y-3">
-                                    {measurementsByTask.map((group) => {
-                                        const linkedItem = group.focusPlanItemId
-                                            ? items.find(
-                                                (item) =>
-                                                    String(item.id) ===
-                                                    String(group.focusPlanItemId),
-                                            )
-                                            : items.find(
-                                                (item) =>
-                                                    normalizeTaskText(item.text) ===
-                                                    normalizeTaskText(group.taskText),
-                                            );
+                                <div className="mt-6 overflow-x-auto">
+                                    <div className="min-w-full rounded-[18px] border border-[#E5E7EB] overflow-hidden bg-white">
+                                        {measurementsByTask.map((group) => {
+                                            const linkedItem = group.focusPlanItemId
+                                                ? items.find(
+                                                    (item) =>
+                                                        String(item.id) ===
+                                                        String(group.focusPlanItemId),
+                                                )
+                                                : items.find(
+                                                    (item) =>
+                                                        normalizeTaskText(item.text) ===
+                                                        normalizeTaskText(group.taskText),
+                                                );
 
-                                        return (
-                                            <div
-                                                key={group.key}
-                                                className="rounded-[18px] border border-[#E5E7EB] bg-[#FAFAFA] p-4"
-                                            >
-                                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                            return (
+                                                <div
+                                                    key={group.key}
+                                                    className="grid grid-cols-[1fr_140px_160px] items-center border-b border-[#E5E7EB] px-4 py-3 last:border-b-0"
+                                                >
                                                     <div className="min-w-0">
-                                                        <div className="truncate text-[14px] font-semibold text-[#111827]">
-                                                            {linkedItem?.text || group.taskText}
-                                                        </div>
-                                                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[#667085]">
-                                                            <span>
-                                                                {group.measurements.length} saved{" "}
-                                                                {group.measurements.length === 1
-                                                                    ? "interval"
-                                                                    : "intervals"}
-                                                            </span>
-                                                            {linkedItem ? (
-                                                                <span className="rounded-full border border-[#D8DCE3] bg-white px-2 py-0.5">
-                                                                    Linked to plan
+                                                        <div className="min-w-0">
+                                                            <div className="truncate text-[14px] font-semibold text-[#111827]">
+                                                                {linkedItem?.text || group.taskText}
+                                                            </div>
+                                                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[#667085]">
+                                                                <span>
+                                                                    {group.measurements.length} saved{" "}
+                                                                    {group.measurements.length === 1
+                                                                        ? "interval"
+                                                                        : "intervals"}
                                                                 </span>
-                                                            ) : (
-                                                                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-800">
-                                                                    Unlinked measurement
-                                                                </span>
-                                                            )}
+                                                                {linkedItem ? (
+                                                                    <span className="rounded-full border border-[#D8DCE3] bg-white px-2 py-0.5">
+                                                                        Linked to plan
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-800">
+                                                                        Unlinked measurement
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </div>
+                                                        <div className="text-[12px] font-semibold text-[#111827]">{group.measurements.length}</div><div className="text-[12px] font-bold text-[#111827]">{fmtDuration(group.totalMs)}</div>
                                                     </div>
-                                                    <div className="shrink-0 rounded-full bg-[#111827] px-3 py-1.5 text-[12px] font-bold text-white">
-                                                        {fmtDuration(group.totalMs)}
-                                                    </div>
-                                                </div>
 
-                                                <div className="mt-3 divide-y divide-[#E5E7EB] rounded-[14px] border border-[#E5E7EB] bg-white">
-                                                    {group.measurements.map((measurement) => (
-                                                        <div
-                                                            key={measurement.id}
-                                                            className="flex items-center justify-between gap-3 px-3 py-2.5"
-                                                        >
-                                                            <div className="min-w-0">
-                                                                <div className="text-[11px] text-[#667085]">
-                                                                    {fmtWhen(measurement.saved_at) ||
-                                                                        "Saved interval"}
-                                                                </div>
-                                                                {measurement.session_id ? (
-                                                                    <div className="mt-0.5 truncate text-[10px] text-[#98A2B3]">
-                                                                        Session: {measurement.session_id}
+                                                    <div className="mt-3 divide-y divide-[#E5E7EB] rounded-[14px] border border-[#E5E7EB] bg-white">
+                                                        {group.measurements.map((measurement) => (
+                                                            <div
+                                                                key={measurement.id}
+                                                                className="flex items-center justify-between gap-3 px-3 py-2.5"
+                                                            >
+                                                                <div className="min-w-0">
+                                                                    <div className="text-[11px] text-[#667085]">
+                                                                        {fmtWhen(measurement.saved_at) ||
+                                                                            "Saved interval"}
                                                                     </div>
-                                                                ) : null}
+                                                                    {measurement.session_id ? (
+                                                                        <div className="mt-0.5 truncate text-[10px] text-[#98A2B3]">
+                                                                            Session: {measurement.session_id}
+                                                                        </div>
+                                                                    ) : null}
+                                                                </div>
+                                                                <div className="text-[12px] font-semibold text-[#344054]">
+                                                                    {fmtDuration(measurement.elapsed_ms)}
+                                                                </div>
                                                             </div>
-                                                            <div className="text-[12px] font-semibold text-[#344054]">
-                                                                {fmtDuration(measurement.elapsed_ms)}
-                                                            </div>
-                                                        </div>
-                                                    ))}
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                                            );
+                                        })}
+                                    </div>
                             )}
-                        </div>
+                                </div>
                     </div>
                 )}
-            </div>
+                    </div>
         </div>
-    );
+            );
 }
