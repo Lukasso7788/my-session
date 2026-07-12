@@ -180,6 +180,7 @@ export default function FocusPlanPage() {
     const [activeTab, setActiveTab] = useState<"plan" | "measurements">("plan");
     const [measurementsLoading, setMeasurementsLoading] = useState(false);
     const [measurementsError, setMeasurementsError] = useState<string | null>(null);
+    const [measurementsRefreshNonce, setMeasurementsRefreshNonce] = useState(0);
 
     // plans + items (Supabase)
     const [plans, setPlans] = useState<FocusPlan[]>([]);
@@ -293,7 +294,7 @@ export default function FocusPlanPage() {
             window.removeEventListener("storage", onStorage);
             window.removeEventListener("mysession:task-time-measurements-updated", onMeasurements);
         };
-    }, [user?.id]);
+    }, [user?.id, measurementsRefreshNonce]);
 
     // ===== sessions list =====
     useEffect(() => {
@@ -886,29 +887,150 @@ export default function FocusPlanPage() {
     const inputPill =
         "h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] text-[#111827] outline-none focus:border-[#111827] bg-white";
 
+    const allMeasurements = useMemo(
+        () =>
+            [...taskMeasurements]
+                .filter((measurement) => Number(measurement.elapsed_ms || 0) > 0)
+                .sort((a, b) => Date.parse(b.saved_at || "") - Date.parse(a.saved_at || "")),
+        [taskMeasurements],
+    );
+
     const planMeasurements = useMemo(() => {
         const itemIds = new Set(items.map((item) => String(item.id || "")).filter(Boolean));
-        const itemTextSet = new Set(items.map((item) => normalizeTaskText(item.text)).filter(Boolean));
+        const itemTexts = new Set(items.map((item) => normalizeTaskText(item.text)).filter(Boolean));
+        const itemSessionIds = new Set(
+            items.map((item) => String(item.session_id || "")).filter(Boolean),
+        );
 
-        return taskMeasurements.filter((measurement) => {
+        return allMeasurements.filter((measurement) => {
             const focusItemId = String(measurement.focus_plan_item_id || "");
+            const measurementText = normalizeTaskText(measurement.task_text);
+            const measurementSessionId = String(measurement.session_id || "");
+
             if (focusItemId && itemIds.has(focusItemId)) return true;
-            return itemTextSet.has(normalizeTaskText(measurement.task_text));
+            if (measurementText && itemTexts.has(measurementText)) return true;
+
+            // Older measurements were often saved without focus_plan_item_id.
+            // If they belong to a session used by this plan, keep them visible
+            // instead of silently hiding valid data.
+            if (measurementSessionId && itemSessionIds.has(measurementSessionId)) return true;
+
+            return false;
         });
-    }, [items, taskMeasurements]);
+    }, [allMeasurements, items]);
+
+    const visibleMeasurements = useMemo(() => {
+        if (!selectedPlan) return allMeasurements;
+        if (planMeasurements.length > 0) return planMeasurements;
+
+        // Do not show an empty Measurements tab when Supabase already contains
+        // valid measurements that simply were not linked to a plan item.
+        return allMeasurements;
+    }, [allMeasurements, planMeasurements, selectedPlan]);
+
+    const usingAllMeasurementsFallback =
+        Boolean(selectedPlan) &&
+        planMeasurements.length === 0 &&
+        allMeasurements.length > 0;
+
+    const visibleMeasuredMs = useMemo(
+        () =>
+            visibleMeasurements.reduce(
+                (sum, measurement) =>
+                    sum + Math.max(0, Number(measurement.elapsed_ms || 0)),
+                0,
+            ),
+        [visibleMeasurements],
+    );
+
+    const measurementsByTask = useMemo(() => {
+        const groups = new Map<
+            string,
+            {
+                key: string;
+                taskText: string;
+                focusPlanItemId: string | null;
+                sessionId: string | null;
+                measurements: TaskTimeMeasurement[];
+                totalMs: number;
+            }
+        >();
+
+        visibleMeasurements.forEach((measurement) => {
+            const normalizedText = normalizeTaskText(measurement.task_text);
+            const focusPlanItemId = String(measurement.focus_plan_item_id || "") || null;
+            const sessionId = String(measurement.session_id || "") || null;
+            const key =
+                focusPlanItemId ||
+                `${normalizedText || "untitled"}::${sessionId || "no-session"}`;
+
+            const current = groups.get(key) || {
+                key,
+                taskText: measurement.task_text || "Untitled task",
+                focusPlanItemId,
+                sessionId,
+                measurements: [],
+                totalMs: 0,
+            };
+
+            current.measurements.push(measurement);
+            current.totalMs += Math.max(0, Number(measurement.elapsed_ms || 0));
+            groups.set(key, current);
+        });
+
+        return Array.from(groups.values())
+            .map((group) => ({
+                ...group,
+                measurements: [...group.measurements].sort(
+                    (a, b) =>
+                        Date.parse(b.saved_at || "") - Date.parse(a.saved_at || ""),
+                ),
+            }))
+            .sort((a, b) => {
+                const aLatest = Date.parse(a.measurements[0]?.saved_at || "");
+                const bLatest = Date.parse(b.measurements[0]?.saved_at || "");
+                return bLatest - aLatest;
+            });
+    }, [visibleMeasurements]);
 
     const planMeasuredMs = useMemo(
-        () => planMeasurements.reduce((sum, measurement) => sum + Math.max(0, Number(measurement.elapsed_ms || 0)), 0),
+        () =>
+            planMeasurements.reduce(
+                (sum, measurement) =>
+                    sum + Math.max(0, Number(measurement.elapsed_ms || 0)),
+                0,
+            ),
         [planMeasurements],
     );
 
     const getMeasurementsForItem = (item: FocusPlanItem) => {
         const itemId = String(item.id || "");
         const itemText = normalizeTaskText(item.text);
+        const itemSessionId = String(item.session_id || "");
 
-        return taskMeasurements.filter((measurement) => {
-            if (measurement.focus_plan_item_id && String(measurement.focus_plan_item_id) === itemId) return true;
-            return normalizeTaskText(measurement.task_text) === itemText;
+        return allMeasurements.filter((measurement) => {
+            if (
+                measurement.focus_plan_item_id &&
+                String(measurement.focus_plan_item_id) === itemId
+            ) {
+                return true;
+            }
+
+            if (
+                itemText &&
+                normalizeTaskText(measurement.task_text) === itemText
+            ) {
+                return true;
+            }
+
+            if (
+                itemSessionId &&
+                String(measurement.session_id || "") === itemSessionId
+            ) {
+                return true;
+            }
+
+            return false;
         });
     };
 
@@ -1630,11 +1752,31 @@ export default function FocusPlanPage() {
                                         Saved work intervals for the selected focus plan.
                                     </div>
                                 </div>
-                                <div className="rounded-[16px] bg-[#2F2F2F] px-4 py-3 text-white">
-                                    <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/60">
-                                        Total measured
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setMeasurementsRefreshNonce((value) => value + 1)}
+                                        className={btnGhost}
+                                        disabled={measurementsLoading}
+                                        title="Reload measurements from Supabase"
+                                    >
+                                        <span className="inline-flex items-center gap-2">
+                                            <RefreshCw
+                                                size={16}
+                                                className={measurementsLoading ? "animate-spin" : ""}
+                                            />
+                                            Refresh
+                                        </span>
+                                    </button>
+
+                                    <div className="rounded-[16px] bg-[#2F2F2F] px-4 py-3 text-white">
+                                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/60">
+                                            Total measured
+                                        </div>
+                                        <div className="mt-1 text-[20px] font-bold">
+                                            {fmtDuration(visibleMeasuredMs)}
+                                        </div>
                                     </div>
-                                    <div className="mt-1 text-[20px] font-bold">{fmtDuration(planMeasuredMs)}</div>
                                 </div>
                             </div>
 
@@ -1644,13 +1786,29 @@ export default function FocusPlanPage() {
                                 </div>
                             ) : null}
 
+                            {usingAllMeasurementsFallback ? (
+                                <div className="mt-4 rounded-[14px] border border-[#D8DCE3] bg-[#F8F8F8] px-4 py-3 text-[12px] leading-5 text-[#475467]">
+                                    These measurements are saved in Supabase, but older rows are not linked to a specific Focus Plan item.
+                                    They are shown here instead of being hidden. New linked measurements will automatically be grouped under the selected plan.
+                                </div>
+                            ) : null}
+
+                            <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-[#667085]">
+                                <span className="rounded-full border border-[#E5E7EB] bg-white px-3 py-1.5">
+                                    {allMeasurements.length} total saved
+                                </span>
+                                <span className="rounded-full border border-[#E5E7EB] bg-white px-3 py-1.5">
+                                    {planMeasurements.length} linked to selected plan
+                                </span>
+                            </div>
+
                             {measurementsLoading ? (
                                 <div className="mt-6 text-[13px] italic text-[#606060]">Loading measurements…</div>
                             ) : !selectedPlan ? (
                                 <div className="mt-6 text-[13px] italic text-[#606060]">
                                     Select a plan to see its measurements.
                                 </div>
-                            ) : planMeasurements.length === 0 ? (
+                            ) : visibleMeasurements.length === 0 ? (
                                 <div className="mt-6 rounded-[18px] border border-dashed border-[#D8DCE3] bg-[#FAFAFA] px-5 py-8 text-center">
                                     <TimerReset className="mx-auto text-[#98A2B3]" size={24} />
                                     <div className="mt-3 text-[14px] font-semibold text-[#344054]">
@@ -1662,35 +1820,68 @@ export default function FocusPlanPage() {
                                 </div>
                             ) : (
                                 <div className="mt-6 space-y-3">
-                                    {items.map((item) => {
-                                        const measurements = getMeasurementsForItem(item);
-                                        if (!measurements.length) return null;
-                                        const totalMs = measurements.reduce(
-                                            (sum, measurement) => sum + Math.max(0, Number(measurement.elapsed_ms || 0)),
-                                            0,
-                                        );
+                                    {measurementsByTask.map((group) => {
+                                        const linkedItem = group.focusPlanItemId
+                                            ? items.find(
+                                                (item) =>
+                                                    String(item.id) ===
+                                                    String(group.focusPlanItemId),
+                                            )
+                                            : items.find(
+                                                (item) =>
+                                                    normalizeTaskText(item.text) ===
+                                                    normalizeTaskText(group.taskText),
+                                            );
 
                                         return (
-                                            <div key={item.id} className="rounded-[18px] border border-[#E5E7EB] bg-[#FAFAFA] p-4">
+                                            <div
+                                                key={group.key}
+                                                className="rounded-[18px] border border-[#E5E7EB] bg-[#FAFAFA] p-4"
+                                            >
                                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                                     <div className="min-w-0">
                                                         <div className="truncate text-[14px] font-semibold text-[#111827]">
-                                                            {item.text}
+                                                            {linkedItem?.text || group.taskText}
                                                         </div>
-                                                        <div className="mt-1 text-[11px] text-[#667085]">
-                                                            {measurements.length} saved {measurements.length === 1 ? "interval" : "intervals"}
+                                                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[#667085]">
+                                                            <span>
+                                                                {group.measurements.length} saved{" "}
+                                                                {group.measurements.length === 1
+                                                                    ? "interval"
+                                                                    : "intervals"}
+                                                            </span>
+                                                            {linkedItem ? (
+                                                                <span className="rounded-full border border-[#D8DCE3] bg-white px-2 py-0.5">
+                                                                    Linked to plan
+                                                                </span>
+                                                            ) : (
+                                                                <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-800">
+                                                                    Unlinked measurement
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     </div>
                                                     <div className="shrink-0 rounded-full bg-[#111827] px-3 py-1.5 text-[12px] font-bold text-white">
-                                                        {fmtDuration(totalMs)}
+                                                        {fmtDuration(group.totalMs)}
                                                     </div>
                                                 </div>
 
                                                 <div className="mt-3 divide-y divide-[#E5E7EB] rounded-[14px] border border-[#E5E7EB] bg-white">
-                                                    {measurements.map((measurement) => (
-                                                        <div key={measurement.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
-                                                            <div className="text-[11px] text-[#667085]">
-                                                                {fmtWhen(measurement.saved_at) || "Saved interval"}
+                                                    {group.measurements.map((measurement) => (
+                                                        <div
+                                                            key={measurement.id}
+                                                            className="flex items-center justify-between gap-3 px-3 py-2.5"
+                                                        >
+                                                            <div className="min-w-0">
+                                                                <div className="text-[11px] text-[#667085]">
+                                                                    {fmtWhen(measurement.saved_at) ||
+                                                                        "Saved interval"}
+                                                                </div>
+                                                                {measurement.session_id ? (
+                                                                    <div className="mt-0.5 truncate text-[10px] text-[#98A2B3]">
+                                                                        Session: {measurement.session_id}
+                                                                    </div>
+                                                                ) : null}
                                                             </div>
                                                             <div className="text-[12px] font-semibold text-[#344054]">
                                                                 {fmtDuration(measurement.elapsed_ms)}
