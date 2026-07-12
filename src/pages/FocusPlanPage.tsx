@@ -1747,15 +1747,20 @@ export default function FocusPlanPage() {
                         <div className={softCard}>
                             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                                 <div>
-                                    <div className="text-[18px] font-bold text-[#111827]">Focus measurements</div>
+                                    <div className="text-[18px] font-bold text-[#111827]">
+                                        Focus measurements
+                                    </div>
                                     <div className="mt-1 text-[13px] text-[#606060]">
-                                        Saved work intervals for the selected focus plan.
+                                        Every saved measurement is shown as a separate row.
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2">
+
+                                <div className="flex flex-wrap items-center gap-2">
                                     <button
                                         type="button"
-                                        onClick={() => setMeasurementsRefreshNonce((value) => value + 1)}
+                                        onClick={() =>
+                                            setMeasurementsRefreshNonce((value) => value + 1)
+                                        }
                                         className={btnGhost}
                                         disabled={measurementsLoading}
                                         title="Reload measurements from Supabase"
@@ -1763,7 +1768,9 @@ export default function FocusPlanPage() {
                                         <span className="inline-flex items-center gap-2">
                                             <RefreshCw
                                                 size={16}
-                                                className={measurementsLoading ? "animate-spin" : ""}
+                                                className={
+                                                    measurementsLoading ? "animate-spin" : ""
+                                                }
                                             />
                                             Refresh
                                         </span>
@@ -1786,117 +1793,79 @@ export default function FocusPlanPage() {
                                 </div>
                             ) : null}
 
-                            {usingAllMeasurementsFallback ? (
-                                <div className="mt-4 rounded-[14px] border border-[#D8DCE3] bg-[#F8F8F8] px-4 py-3 text-[12px] leading-5 text-[#475467]">
-                                    These measurements are saved in Supabase, but older rows are not linked to a specific Focus Plan item.
-                                    They are shown here instead of being hidden. New linked measurements will automatically be grouped under the selected plan.
-                                </div>
-                            ) : null}
-
-                            <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-[#667085]">
-                                <span className="rounded-full border border-[#E5E7EB] bg-white px-3 py-1.5">
-                                    {allMeasurements.length} total saved
-                                </span>
-                                <span className="rounded-full border border-[#E5E7EB] bg-white px-3 py-1.5">
-                                    {planMeasurements.length} linked to selected plan
-                                </span>
-                            </div>
-
                             {measurementsLoading ? (
-                                <div className="mt-6 text-[13px] italic text-[#606060]">Loading measurements…</div>
-                            ) : !selectedPlan ? (
                                 <div className="mt-6 text-[13px] italic text-[#606060]">
-                                    Select a plan to see its measurements.
+                                    Loading measurements…
                                 </div>
                             ) : visibleMeasurements.length === 0 ? (
                                 <div className="mt-6 rounded-[18px] border border-dashed border-[#D8DCE3] bg-[#FAFAFA] px-5 py-8 text-center">
-                                    <TimerReset className="mx-auto text-[#98A2B3]" size={24} />
+                                    <TimerReset
+                                        className="mx-auto text-[#98A2B3]"
+                                        size={24}
+                                    />
                                     <div className="mt-3 text-[14px] font-semibold text-[#344054]">
                                         No saved time yet
                                     </div>
                                     <div className="mt-1 text-[12px] text-[#667085]">
-                                        Start a task timer in the room and press Save. The interval will appear here.
+                                        Start a task timer in the room and press Save.
+                                        Each saved interval will appear here as a separate row.
                                     </div>
                                 </div>
                             ) : (
-                                <div className="mt-6 overflow-x-auto">
-                                    <div className="min-w-full rounded-[18px] border border-[#E5E7EB] overflow-hidden bg-white">
-                                        {measurementsByTask.map((group) => {
-                                            const linkedItem = group.focusPlanItemId
-                                                ? items.find(
-                                                    (item) =>
-                                                        String(item.id) ===
-                                                        String(group.focusPlanItemId),
-                                                )
-                                                : items.find(
-                                                    (item) =>
-                                                        normalizeTaskText(item.text) ===
-                                                        normalizeTaskText(group.taskText),
-                                                );
-
-                                            return (
-                                                <div
-                                                    key={group.key}
-                                                    className="grid grid-cols-[1fr_140px_160px] items-center border-b border-[#E5E7EB] px-4 py-3 last:border-b-0"
-                                                >
-                                                    <div className="min-w-0">
-                                                        <div className="min-w-0">
-                                                            <div className="truncate text-[14px] font-semibold text-[#111827]">
-                                                                {linkedItem?.text || group.taskText}
-                                                            </div>
-                                                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[#667085]">
-                                                                <span>
-                                                                    {group.measurements.length} saved{" "}
-                                                                    {group.measurements.length === 1
-                                                                        ? "interval"
-                                                                        : "intervals"}
-                                                                </span>
-                                                                {linkedItem ? (
-                                                                    <span className="rounded-full border border-[#D8DCE3] bg-white px-2 py-0.5">
-                                                                        Linked to plan
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-800">
-                                                                        Unlinked measurement
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <div className="text-[12px] font-semibold text-[#111827]">{group.measurements.length}</div><div className="text-[12px] font-bold text-[#111827]">{fmtDuration(group.totalMs)}</div>
-                                                    </div>
-
-                                                    <div className="mt-3 divide-y divide-[#E5E7EB] rounded-[14px] border border-[#E5E7EB] bg-white">
-                                                        {group.measurements.map((measurement) => (
-                                                            <div
-                                                                key={measurement.id}
-                                                                className="flex items-center justify-between gap-3 px-3 py-2.5"
-                                                            >
-                                                                <div className="min-w-0">
-                                                                    <div className="text-[11px] text-[#667085]">
-                                                                        {fmtWhen(measurement.saved_at) ||
-                                                                            "Saved interval"}
-                                                                    </div>
-                                                                    {measurement.session_id ? (
-                                                                        <div className="mt-0.5 truncate text-[10px] text-[#98A2B3]">
-                                                                            Session: {measurement.session_id}
-                                                                        </div>
-                                                                    ) : null}
-                                                                </div>
-                                                                <div className="text-[12px] font-semibold text-[#344054]">
-                                                                    {fmtDuration(measurement.elapsed_ms)}
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
+                                <div className="mt-6 overflow-hidden rounded-[18px] border border-[#E5E7EB] bg-white">
+                                    <div className="overflow-x-auto">
+                                        <div className="min-w-[680px]">
+                                            <div className="grid grid-cols-[minmax(280px,1fr)_150px_210px] items-center border-b border-[#E5E7EB] bg-[#F8F8F8] px-4 py-3">
+                                                <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#667085]">
+                                                    Task
                                                 </div>
-                                            );
-                                        })}
+                                                <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#667085]">
+                                                    Duration
+                                                </div>
+                                                <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#667085]">
+                                                    Saved
+                                                </div>
+                                            </div>
+
+                                            <div className="divide-y divide-[#E5E7EB]">
+                                                {visibleMeasurements.map((measurement) => (
+                                                    <div
+                                                        key={measurement.id}
+                                                        className="grid grid-cols-[minmax(280px,1fr)_150px_210px] items-center px-4 py-3 transition hover:bg-[#FAFAFA]"
+                                                    >
+                                                        <div
+                                                            className="min-w-0 truncate pr-5 text-[13px] font-semibold text-[#111827]"
+                                                            title={
+                                                                measurement.task_text ||
+                                                                "Untitled task"
+                                                            }
+                                                        >
+                                                            {measurement.task_text ||
+                                                                "Untitled task"}
+                                                        </div>
+
+                                                        <div className="text-[13px] font-semibold text-[#344054]">
+                                                            {fmtDuration(
+                                                                measurement.elapsed_ms,
+                                                            )}
+                                                        </div>
+
+                                                        <div className="whitespace-nowrap text-[12px] text-[#667085]">
+                                                            {fmtWhen(
+                                                                measurement.saved_at,
+                                                            ) || "—"}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
                                     </div>
-                            )}
                                 </div>
+                            )}
+                        </div>
                     </div>
                 )}
-                    </div>
+            </div>
         </div>
-            );
+    );
 }
