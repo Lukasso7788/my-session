@@ -843,18 +843,38 @@ export function TasksPanel({
       } catch { }
 
       try {
-        await supabase.from("task_time_measurements").insert({
-          user_id: uid,
-          session_id: sessionId || null,
-          session_intention_id: sessionTaskId || null,
-          focus_plan_item_id: focusPlanItemId || null,
-          task_text: taskText,
-          elapsed_ms: elapsedMs,
-          saved_at: measurement.saved_at,
-        } as any);
-      } catch {
-        // Local save is the source of truth for MVP; DB table can be added later.
+        const { data, error } = await supabase
+          .from("task_time_measurements")
+          .insert({
+            user_id: uid,
+            session_id: sessionId || null,
+            session_intention_id: sessionTaskId || null,
+            focus_plan_item_id: focusPlanItemId || null,
+            task_text: taskText,
+            elapsed_ms: elapsedMs,
+            saved_at: measurement.saved_at,
+          } as any)
+          .select("id")
+          .single();
+
+        if (error) throw error;
+
+        if (data?.id) {
+          const current = readTaskTimeMeasurements(taskTimeMeasurementsStorageKey);
+          const next = current.map((row) =>
+            row.id === measurement.id ? { ...row, id: String(data.id) } : row,
+          );
+          writeTaskTimeMeasurements(taskTimeMeasurementsStorageKey, next);
+        }
+      } catch (error) {
+        console.error("[TasksPanel] failed to save task measurement to Supabase:", error);
       }
+
+      // Save means "commit this interval". Start the next interval from zero,
+      // otherwise pressing Save twice would count the same elapsed time twice.
+      const afterSaveMap = readTaskTimers(taskTimerStorageKey);
+      delete afterSaveMap[timerId];
+      persistTaskTimers(afterSaveMap);
     },
     [persistTaskTimers, sessionId, taskTimeMeasurementsStorageKey, taskTimerStorageKey, user?.id],
   );

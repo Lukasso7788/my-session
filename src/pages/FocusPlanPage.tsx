@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { Check, Trash2, Plus, ExternalLink, RefreshCw, TimerReset } from "lucide-react";
+import { Check, Trash2, Plus, ExternalLink, RefreshCw, TimerReset, ListChecks, BarChart3 } from "lucide-react";
 
 type FocusPlan = {
     id: string;
@@ -177,6 +177,9 @@ export default function FocusPlanPage() {
     const [loadingLibrary, setLoadingLibrary] = useState(false);
     const [deletingLibraryText, setDeletingLibraryText] = useState<string | null>(null);
     const [taskMeasurements, setTaskMeasurements] = useState<TaskTimeMeasurement[]>([]);
+    const [activeTab, setActiveTab] = useState<"plan" | "measurements">("plan");
+    const [measurementsLoading, setMeasurementsLoading] = useState(false);
+    const [measurementsError, setMeasurementsError] = useState<string | null>(null);
 
     // plans + items (Supabase)
     const [plans, setPlans] = useState<FocusPlan[]>([]);
@@ -226,23 +229,67 @@ export default function FocusPlanPage() {
     useEffect(() => {
         if (!user?.id) {
             setTaskMeasurements([]);
+            setMeasurementsError(null);
             return;
         }
 
+        let cancelled = false;
         const storageKey = makeTaskTimeMeasurementsStorageKey(user.id);
-        const refresh = () => setTaskMeasurements(readTaskTimeMeasurements(storageKey));
 
-        refresh();
+        const refresh = async () => {
+            setMeasurementsLoading(true);
+            setMeasurementsError(null);
+
+            const localRows = readTaskTimeMeasurements(storageKey);
+
+            try {
+                const { data, error } = await supabase
+                    .from("task_time_measurements")
+                    .select("id,user_id,session_id,session_intention_id,focus_plan_item_id,task_text,elapsed_ms,saved_at")
+                    .eq("user_id", user.id)
+                    .order("saved_at", { ascending: false })
+                    .limit(500);
+
+                if (cancelled) return;
+                if (error) throw error;
+
+                const remoteRows = Array.isArray(data) ? (data as TaskTimeMeasurement[]) : [];
+                const merged = new Map<string, TaskTimeMeasurement>();
+
+                [...remoteRows, ...localRows].forEach((row) => {
+                    const key = String(row.id || `${row.saved_at}:${row.task_text}:${row.elapsed_ms}`);
+                    if (!merged.has(key)) merged.set(key, row);
+                });
+
+                setTaskMeasurements(
+                    Array.from(merged.values())
+                        .filter((row) => Number(row.elapsed_ms || 0) > 0)
+                        .sort((a, b) => Date.parse(b.saved_at || "") - Date.parse(a.saved_at || ""))
+                        .slice(0, 500),
+                );
+            } catch (error: any) {
+                if (cancelled) return;
+                setTaskMeasurements(localRows);
+                setMeasurementsError(
+                    String(error?.message || "Measurements are currently available only on this device."),
+                );
+            } finally {
+                if (!cancelled) setMeasurementsLoading(false);
+            }
+        };
+
+        void refresh();
 
         const onStorage = (event: StorageEvent) => {
-            if (event.key === storageKey) refresh();
+            if (event.key === storageKey) void refresh();
         };
-        const onMeasurements = () => refresh();
+        const onMeasurements = () => void refresh();
 
         window.addEventListener("storage", onStorage);
         window.addEventListener("mysession:task-time-measurements-updated", onMeasurements);
 
         return () => {
+            cancelled = true;
             window.removeEventListener("storage", onStorage);
             window.removeEventListener("mysession:task-time-measurements-updated", onMeasurements);
         };
@@ -925,200 +972,106 @@ export default function FocusPlanPage() {
                     </div>
                 </div>
 
-                {/* default session picker (optional) */}
-                <div className="mt-6">
-                    <div className={softCard}>
-                        <div className="text-[12px] font-semibold text-[#111827] mb-2">Default session (optional)</div>
-
-                        <div className="flex flex-col md:flex-row gap-3 md:items-center">
-                            <div className="flex-1">
-                                <select
-                                    value={rawDefaultSession}
-                                    onChange={(e) => setRawDefaultSession(e.target.value)}
-                                    className="w-full h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] font-semibold text-[#111827] bg-white outline-none focus:border-[#111827]"
-                                >
-                                    <option value="">— none —</option>
-                                    {sessionsLoading ? (
-                                        <option value="" disabled>
-                                            Loading sessions…
-                                        </option>
-                                    ) : sessions.length === 0 ? (
-                                        <option value="" disabled>
-                                            No sessions found
-                                        </option>
-                                    ) : (
-                                        sessions.map((s) => {
-                                            const when = fmtWhen(s.start_time);
-                                            const isInf = safeLower(s.session_format_type) === "infinite";
-                                            const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""}`;
-                                            return (
-                                                <option key={s.id} value={s.id}>
-                                                    {label}
-                                                </option>
-                                            );
-                                        })
-                                    )}
-                                </select>
-
-                                <div className="mt-2 text-[12px] text-[#606060]">If you open this page from the room later, we can auto-set this.</div>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                                <button
-                                    className={btnGhost}
-                                    onClick={() => {
-                                        sp.delete("sessionId");
-                                        setSp(sp, { replace: true });
-                                        setRawDefaultSession("");
-                                        setDefaultSessionId(null);
-                                        setNewItemSessionId("");
-                                    }}
-                                    type="button"
-                                >
-                                    Clear
-                                </button>
-                            </div>
-                        </div>
-                    </div>
+                <div className="mt-6 inline-flex rounded-[18px] border border-[#E5E7EB] bg-[#F8F8F8] p-1">
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab("plan")}
+                        className={[
+                            "inline-flex h-10 items-center gap-2 rounded-[14px] px-4 text-[13px] font-semibold transition",
+                            activeTab === "plan"
+                                ? "bg-[#2F2F2F] text-white shadow-sm"
+                                : "text-[#606060] hover:bg-white",
+                        ].join(" ")}
+                    >
+                        <ListChecks size={16} />
+                        Plan
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab("measurements")}
+                        className={[
+                            "inline-flex h-10 items-center gap-2 rounded-[14px] px-4 text-[13px] font-semibold transition",
+                            activeTab === "measurements"
+                                ? "bg-[#2F2F2F] text-white shadow-sm"
+                                : "text-[#606060] hover:bg-white",
+                        ].join(" ")}
+                    >
+                        <BarChart3 size={16} />
+                        Measurements
+                    </button>
                 </div>
 
-                {/* main grid */}
-                <div className="mt-6 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
-                    {/* left: plans */}
-                    <div className={softCard}>
-                        <div className="flex items-start justify-between gap-3">
-                            <div>
-                                <div className="text-[16px] font-bold text-[#111827]">Plans</div>
-                                <div className="mt-1 text-[13px] text-[#606060]">Create a plan, then add items.</div>
-                            </div>
+                {activeTab === "plan" ? (
+                    <>
 
-                            <button className={btnGhost} onClick={() => reloadPlans()} type="button" title="Refresh plans">
-                                <span className="inline-flex items-center gap-2">
-                                    <RefreshCw size={16} />
-                                    Refresh
-                                </span>
-                            </button>
-                        </div>
+                        {/* default session picker (optional) */}
+                        <div className="mt-6">
+                            <div className={softCard}>
+                                <div className="text-[12px] font-semibold text-[#111827] mb-2">Default session (optional)</div>
 
-                        {/* create plan */}
-                        <div className="mt-4 flex items-center gap-2">
-                            <input
-                                value={newPlanTitle}
-                                onChange={(e) => setNewPlanTitle(e.target.value)}
-                                onKeyDown={(e) => e.key === "Enter" && createPlan()}
-                                placeholder="New plan title…"
-                                className={"flex-1 " + inputPill}
-                            />
-                            <button className={btnPrimary} onClick={createPlan} type="button" title="Create plan">
-                                <span className="inline-flex items-center gap-2">
-                                    <Plus size={16} />
-                                    Create
-                                </span>
-                            </button>
-                        </div>
-
-                        {/* plan list */}
-                        <div className="mt-4 flex flex-col gap-2">
-                            {plansLoading ? (
-                                <div className="text-[13px] text-[#606060] italic">Loading plans…</div>
-                            ) : plans.length === 0 ? (
-                                <div className="text-[13px] text-[#606060] italic">No plans yet. Create your first one above.</div>
-                            ) : (
-                                plans.map((p) => {
-                                    const active = p.id === selectedPlanId;
-                                    const count = active ? planItemsCount : undefined;
-
-                                    return (
-                                        <button
-                                            key={p.id}
-                                            onClick={() => {
-                                                setSelectedPlanId(p.id);
-                                                setEditingPlanTitle(false);
-                                            }}
-                                            className={[
-                                                "w-full text-left rounded-[18px] px-4 py-3 border transition",
-                                                active
-                                                    ? "border-[#111827] bg-[#111827] text-white"
-                                                    : "border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] text-[#111827]",
-                                            ].join(" ")}
-                                            type="button"
+                                <div className="flex flex-col md:flex-row gap-3 md:items-center">
+                                    <div className="flex-1">
+                                        <select
+                                            value={rawDefaultSession}
+                                            onChange={(e) => setRawDefaultSession(e.target.value)}
+                                            className="w-full h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] font-semibold text-[#111827] bg-white outline-none focus:border-[#111827]"
                                         >
-                                            <div className="flex items-center justify-between gap-3">
-                                                <div className="min-w-0">
-                                                    <div className={["text-[13px] font-semibold truncate", active ? "text-white" : "text-[#111827]"].join(" ")}>
-                                                        {p.title}
-                                                    </div>
-                                                    <div className={["text-[11px] mt-1", active ? "text-white/70" : "text-[#606060]"].join(" ")}>
-                                                        {typeof count === "number" ? `${count} items` : "—"}
-                                                    </div>
-                                                </div>
+                                            <option value="">— none —</option>
+                                            {sessionsLoading ? (
+                                                <option value="" disabled>
+                                                    Loading sessions…
+                                                </option>
+                                            ) : sessions.length === 0 ? (
+                                                <option value="" disabled>
+                                                    No sessions found
+                                                </option>
+                                            ) : (
+                                                sessions.map((s) => {
+                                                    const when = fmtWhen(s.start_time);
+                                                    const isInf = safeLower(s.session_format_type) === "infinite";
+                                                    const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""}`;
+                                                    return (
+                                                        <option key={s.id} value={s.id}>
+                                                            {label}
+                                                        </option>
+                                                    );
+                                                })
+                                            )}
+                                        </select>
 
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        deletePlan(p.id);
-                                                    }}
-                                                    className={[
-                                                        "h-10 w-10 rounded-full border flex items-center justify-center transition",
-                                                        active ? "border-white/25 hover:bg-white/10" : "border-[#E5E7EB] hover:bg-[#F3F4F6]",
-                                                    ].join(" ")}
-                                                    type="button"
-                                                    title="Delete plan"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </div>
-                                        </button>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </div>
-
-                    {/* right: plan builder */}
-                    <div className={softCard}>
-                        {!selectedPlan ? (
-                            <div className="text-[13px] text-[#606060] italic">Select or create a plan.</div>
-                        ) : (
-                            <>
-                                {/* plan title row */}
-                                <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0 flex-1">
-                                        {!editingPlanTitle ? (
-                                            <div className="flex items-center gap-2">
-                                                <div className="text-[18px] font-bold text-[#111827] truncate">{selectedPlan.title}</div>
-                                                <button
-                                                    onClick={beginRenamePlan}
-                                                    className="h-10 px-4 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition text-[12px] font-semibold"
-                                                    type="button"
-                                                >
-                                                    Rename
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                                                <input
-                                                    value={planTitleDraft}
-                                                    onChange={(e) => setPlanTitleDraft(e.target.value)}
-                                                    onKeyDown={(e) => e.key === "Enter" && saveRenamePlan()}
-                                                    className={"flex-1 " + inputPill}
-                                                    placeholder="Plan title…"
-                                                />
-                                                <div className="flex items-center gap-2">
-                                                    <button className={btnPrimary} onClick={saveRenamePlan} type="button">
-                                                        Save
-                                                    </button>
-                                                    <button className={btnGhost} onClick={cancelRenamePlan} type="button">
-                                                        Cancel
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        <div className="mt-1 text-[12px] text-[#606060]">Updated: {fmtWhen(selectedPlan.updated_at)}</div>
+                                        <div className="mt-2 text-[12px] text-[#606060]">If you open this page from the room later, we can auto-set this.</div>
                                     </div>
 
-                                    <button className={btnGhost} onClick={() => selectedPlanId && reloadItems(selectedPlanId)} type="button" title="Refresh items">
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            className={btnGhost}
+                                            onClick={() => {
+                                                sp.delete("sessionId");
+                                                setSp(sp, { replace: true });
+                                                setRawDefaultSession("");
+                                                setDefaultSessionId(null);
+                                                setNewItemSessionId("");
+                                            }}
+                                            type="button"
+                                        >
+                                            Clear
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* main grid */}
+                        <div className="mt-6 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
+                            {/* left: plans */}
+                            <div className={softCard}>
+                                <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                        <div className="text-[16px] font-bold text-[#111827]">Plans</div>
+                                        <div className="mt-1 text-[13px] text-[#606060]">Create a plan, then add items.</div>
+                                    </div>
+
+                                    <button className={btnGhost} onClick={() => reloadPlans()} type="button" title="Refresh plans">
                                         <span className="inline-flex items-center gap-2">
                                             <RefreshCw size={16} />
                                             Refresh
@@ -1126,420 +1079,633 @@ export default function FocusPlanPage() {
                                     </button>
                                 </div>
 
-                                {/* time measurements */}
-                                <div className="mt-5 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5 bg-[#FAFAFA]">
-                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                        <div>
-                                            <div className="text-[14px] font-bold text-[#111827] inline-flex items-center gap-2">
-                                                <TimerReset size={16} />
-                                                Task time measurements
-                                            </div>
-                                            <div className="mt-1 text-[12px] text-[#606060]">
-                                                Saved from the Tasks panel timer via Save.
-                                            </div>
-                                        </div>
+                                {/* create plan */}
+                                <div className="mt-4 flex items-center gap-2">
+                                    <input
+                                        value={newPlanTitle}
+                                        onChange={(e) => setNewPlanTitle(e.target.value)}
+                                        onKeyDown={(e) => e.key === "Enter" && createPlan()}
+                                        placeholder="New plan title…"
+                                        className={"flex-1 " + inputPill}
+                                    />
+                                    <button className={btnPrimary} onClick={createPlan} type="button" title="Create plan">
+                                        <span className="inline-flex items-center gap-2">
+                                            <Plus size={16} />
+                                            Create
+                                        </span>
+                                    </button>
+                                </div>
 
-                                        <div className="rounded-full border border-[#E5E7EB] bg-white px-4 py-2 text-[12px] font-bold text-[#111827]">
-                                            {fmtDuration(planMeasuredMs)} total
-                                        </div>
-                                    </div>
-
-                                    {planMeasurements.length === 0 ? (
-                                        <div className="mt-3 text-[12px] text-[#606060] italic">
-                                            No saved time yet. Start a task timer in a room, then press Save.
-                                        </div>
+                                {/* plan list */}
+                                <div className="mt-4 flex flex-col gap-2">
+                                    {plansLoading ? (
+                                        <div className="text-[13px] text-[#606060] italic">Loading plans…</div>
+                                    ) : plans.length === 0 ? (
+                                        <div className="text-[13px] text-[#606060] italic">No plans yet. Create your first one above.</div>
                                     ) : (
-                                        <div className="mt-3 flex flex-col gap-2">
-                                            {planMeasurements.slice(0, 8).map((measurement) => (
-                                                <div
-                                                    key={measurement.id}
-                                                    className="flex items-center justify-between gap-3 rounded-[16px] border border-[#F0F0F0] bg-white px-4 py-3"
+                                        plans.map((p) => {
+                                            const active = p.id === selectedPlanId;
+                                            const count = active ? planItemsCount : undefined;
+
+                                            return (
+                                                <button
+                                                    key={p.id}
+                                                    onClick={() => {
+                                                        setSelectedPlanId(p.id);
+                                                        setEditingPlanTitle(false);
+                                                    }}
+                                                    className={[
+                                                        "w-full text-left rounded-[18px] px-4 py-3 border transition",
+                                                        active
+                                                            ? "border-[#111827] bg-[#111827] text-white"
+                                                            : "border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] text-[#111827]",
+                                                    ].join(" ")}
+                                                    type="button"
                                                 >
-                                                    <div className="min-w-0">
-                                                        <div className="truncate text-[13px] font-semibold text-[#111827]">
-                                                            {measurement.task_text}
+                                                    <div className="flex items-center justify-between gap-3">
+                                                        <div className="min-w-0">
+                                                            <div className={["text-[13px] font-semibold truncate", active ? "text-white" : "text-[#111827]"].join(" ")}>
+                                                                {p.title}
+                                                            </div>
+                                                            <div className={["text-[11px] mt-1", active ? "text-white/70" : "text-[#606060]"].join(" ")}>
+                                                                {typeof count === "number" ? `${count} items` : "—"}
+                                                            </div>
                                                         </div>
-                                                        <div className="mt-1 text-[11px] text-[#606060]">
-                                                            {measurement.saved_at ? `Saved: ${fmtWhen(measurement.saved_at)}` : "Saved time"}
+
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                deletePlan(p.id);
+                                                            }}
+                                                            className={[
+                                                                "h-10 w-10 rounded-full border flex items-center justify-center transition",
+                                                                active ? "border-white/25 hover:bg-white/10" : "border-[#E5E7EB] hover:bg-[#F3F4F6]",
+                                                            ].join(" ")}
+                                                            type="button"
+                                                            title="Delete plan"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
+                                                </button>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* right: plan builder */}
+                            <div className={softCard}>
+                                {!selectedPlan ? (
+                                    <div className="text-[13px] text-[#606060] italic">Select or create a plan.</div>
+                                ) : (
+                                    <>
+                                        {/* plan title row */}
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0 flex-1">
+                                                {!editingPlanTitle ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="text-[18px] font-bold text-[#111827] truncate">{selectedPlan.title}</div>
+                                                        <button
+                                                            onClick={beginRenamePlan}
+                                                            className="h-10 px-4 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition text-[12px] font-semibold"
+                                                            type="button"
+                                                        >
+                                                            Rename
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                                                        <input
+                                                            value={planTitleDraft}
+                                                            onChange={(e) => setPlanTitleDraft(e.target.value)}
+                                                            onKeyDown={(e) => e.key === "Enter" && saveRenamePlan()}
+                                                            className={"flex-1 " + inputPill}
+                                                            placeholder="Plan title…"
+                                                        />
+                                                        <div className="flex items-center gap-2">
+                                                            <button className={btnPrimary} onClick={saveRenamePlan} type="button">
+                                                                Save
+                                                            </button>
+                                                            <button className={btnGhost} onClick={cancelRenamePlan} type="button">
+                                                                Cancel
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <div className="mt-1 text-[12px] text-[#606060]">Updated: {fmtWhen(selectedPlan.updated_at)}</div>
+                                            </div>
+
+                                            <button className={btnGhost} onClick={() => selectedPlanId && reloadItems(selectedPlanId)} type="button" title="Refresh items">
+                                                <span className="inline-flex items-center gap-2">
+                                                    <RefreshCw size={16} />
+                                                    Refresh
+                                                </span>
+                                            </button>
+                                        </div>
+
+                                        {/* time measurements */}
+                                        <div className="mt-5 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5 bg-[#FAFAFA]">
+                                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                                <div>
+                                                    <div className="text-[14px] font-bold text-[#111827] inline-flex items-center gap-2">
+                                                        <TimerReset size={16} />
+                                                        Task time measurements
+                                                    </div>
+                                                    <div className="mt-1 text-[12px] text-[#606060]">
+                                                        Saved from the Tasks panel timer via Save.
+                                                    </div>
+                                                </div>
+
+                                                <div className="rounded-full border border-[#E5E7EB] bg-white px-4 py-2 text-[12px] font-bold text-[#111827]">
+                                                    {fmtDuration(planMeasuredMs)} total
+                                                </div>
+                                            </div>
+
+                                            {planMeasurements.length === 0 ? (
+                                                <div className="mt-3 text-[12px] text-[#606060] italic">
+                                                    No saved time yet. Start a task timer in a room, then press Save.
+                                                </div>
+                                            ) : (
+                                                <div className="mt-3 flex flex-col gap-2">
+                                                    {planMeasurements.slice(0, 8).map((measurement) => (
+                                                        <div
+                                                            key={measurement.id}
+                                                            className="flex items-center justify-between gap-3 rounded-[16px] border border-[#F0F0F0] bg-white px-4 py-3"
+                                                        >
+                                                            <div className="min-w-0">
+                                                                <div className="truncate text-[13px] font-semibold text-[#111827]">
+                                                                    {measurement.task_text}
+                                                                </div>
+                                                                <div className="mt-1 text-[11px] text-[#606060]">
+                                                                    {measurement.saved_at ? `Saved: ${fmtWhen(measurement.saved_at)}` : "Saved time"}
+                                                                </div>
+                                                            </div>
+                                                            <div className="shrink-0 rounded-full bg-[#111827] px-3 py-1.5 text-[12px] font-bold text-white">
+                                                                {fmtDuration(measurement.elapsed_ms)}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* add item */}
+                                        <div className="mt-5 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5">
+                                            <div className="text-[14px] font-bold text-[#111827]">Add item</div>
+                                            <div className="mt-1 text-[12px] text-[#606060]">Each item = intention + due date + session link.</div>
+
+                                            <div className="mt-4 flex flex-col gap-3">
+                                                <input
+                                                    value={newItemText}
+                                                    onChange={(e) => setNewItemText(e.target.value)}
+                                                    onKeyDown={(e) => e.key === "Enter" && addItemToPlan()}
+                                                    placeholder="What will you work on? (intention)…"
+                                                    className={inputPill}
+                                                />
+
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    <div>
+                                                        <div className="text-[11px] font-semibold text-[#606060] mb-2">Due date (optional)</div>
+                                                        <input type="date" value={newItemDueDate} onChange={(e) => setNewItemDueDate(e.target.value)} className={inputPill} />
+                                                    </div>
+
+                                                    <div>
+                                                        <div className="text-[11px] font-semibold text-[#606060] mb-2">Session (optional)</div>
+                                                        <select
+                                                            value={newItemSessionId}
+                                                            onChange={(e) => setNewItemSessionId(e.target.value)}
+                                                            className="w-full h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] font-semibold text-[#111827] bg-white outline-none focus:border-[#111827]"
+                                                        >
+                                                            <option value="">— none —</option>
+                                                            {sessionsLoading ? (
+                                                                <option value="" disabled>
+                                                                    Loading sessions…
+                                                                </option>
+                                                            ) : sessions.length === 0 ? (
+                                                                <option value="" disabled>
+                                                                    No sessions found
+                                                                </option>
+                                                            ) : (
+                                                                sessions.map((s) => {
+                                                                    const when = fmtWhen(s.start_time);
+                                                                    const isInf = safeLower(s.session_format_type) === "infinite";
+                                                                    const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""}`;
+                                                                    return (
+                                                                        <option key={s.id} value={s.id}>
+                                                                            {label}
+                                                                        </option>
+                                                                    );
+                                                                })
+                                                            )}
+                                                        </select>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center gap-2">
+                                                    <button className={btnPrimary} onClick={addItemToPlan} type="button">
+                                                        <span className="inline-flex items-center gap-2">
+                                                            <Plus size={16} />
+                                                            Add to plan
+                                                        </span>
+                                                    </button>
+                                                    <button
+                                                        className={btnGhost}
+                                                        onClick={() => {
+                                                            setNewItemText("");
+                                                            setNewItemDueDate("");
+                                                        }}
+                                                        type="button"
+                                                    >
+                                                        Clear
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* items list */}
+                                        <div className="mt-5">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div className="text-[16px] font-bold text-[#111827]">Items</div>
+                                                <div className="text-[12px] text-[#606060]">{items.length} total</div>
+                                            </div>
+
+                                            <div className="mt-3 flex flex-col gap-2">
+                                                {itemsLoading ? (
+                                                    <div className="text-[13px] text-[#606060] italic">Loading items…</div>
+                                                ) : items.length === 0 ? (
+                                                    <div className="text-[13px] text-[#606060] italic">Add your first item above.</div>
+                                                ) : (
+                                                    items.map((it) => {
+                                                        const isEditing = editingItemId === it.id;
+                                                        const done = Boolean(it.completed);
+
+                                                        const session = it.session_id ? sessions.find((s) => String(s.id) === String(it.session_id)) : null;
+
+                                                        const canAttach = Boolean(it.session_id) && UUID_RE.test(String(it.session_id)) && String(it.text || "").trim().length > 0;
+                                                        const attached = Boolean(attachedItemIds[it.id]);
+
+                                                        return (
+                                                            <div key={it.id} className="rounded-[18px] border border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] transition px-4 py-3">
+                                                                {!isEditing ? (
+                                                                    <div className="flex items-start gap-3">
+                                                                        <button
+                                                                            className="mt-[2px] h-6 w-6 rounded-full border border-[#D1D5DB] flex items-center justify-center hover:bg-white transition"
+                                                                            onClick={() => toggleItemDone(it.id)}
+                                                                            type="button"
+                                                                            title={done ? "Mark as not done" : "Mark as done"}
+                                                                            style={{
+                                                                                borderColor: done ? "#65D46C" : "#D1D5DB",
+                                                                                background: done ? "rgba(101,212,108,0.15)" : "transparent",
+                                                                            }}
+                                                                        >
+                                                                            {done ? <Check size={14} color="#2F2F2F" /> : null}
+                                                                        </button>
+
+                                                                        <div className="flex-1 min-w-0">
+                                                                            <div className={["text-[13px] leading-5 break-words", done ? "text-[#606060] line-through" : "text-[#111827]"].join(" ")}>
+                                                                                {it.text}
+                                                                            </div>
+
+                                                                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-[#606060]">
+                                                                                {it.target_date ? (
+                                                                                    <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
+                                                                                        Due: <span className="font-semibold text-[#111827]">{fmtDueDate(it.target_date)}</span>
+                                                                                    </span>
+                                                                                ) : null}
+
+                                                                                {session ? (
+                                                                                    <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
+                                                                                        Session: <span className="font-semibold text-[#111827]">{session.title || "Session"}</span>
+                                                                                        {safeLower(session.session_format_type) === "infinite"
+                                                                                            ? " · ∞"
+                                                                                            : session.start_time
+                                                                                                ? ` · ${fmtWhen(session.start_time)}`
+                                                                                                : ""}
+                                                                                    </span>
+                                                                                ) : it.session_id ? (
+                                                                                    <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
+                                                                                        Session: <span className="font-semibold text-[#111827]">resolving…</span>
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
+                                                                                        Session: <span className="font-semibold text-[#111827]">—</span>
+                                                                                    </span>
+                                                                                )}
+
+                                                                                {attached ? (
+                                                                                    <span className="px-3 py-1 rounded-full border border-[#65D46C] bg-[#65D46C]/10 text-[#2F2F2F] font-semibold">
+                                                                                        Attached to room
+                                                                                    </span>
+                                                                                ) : null}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* actions */}
+                                                                        <div className="flex items-center gap-2 shrink-0">
+                                                                            <button className="h-10 px-4 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition text-[12px] font-semibold" onClick={() => startEditItem(it)} type="button">
+                                                                                Edit
+                                                                            </button>
+
+                                                                            <button className="h-10 w-10 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition flex items-center justify-center" onClick={() => deleteItem(it.id)} type="button" title="Delete item">
+                                                                                <Trash2 size={16} />
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex flex-col gap-3">
+                                                                        <div className="text-[12px] font-semibold text-[#606060]">Edit item</div>
+
+                                                                        <input
+                                                                            value={editingItemText}
+                                                                            onChange={(e) => setEditingItemText(e.target.value)}
+                                                                            onKeyDown={(e) => {
+                                                                                if (e.key === "Enter") saveEditItem();
+                                                                                if (e.key === "Escape") cancelEditItem();
+                                                                            }}
+                                                                            className={inputPill}
+                                                                            placeholder="Intention…"
+                                                                            autoFocus
+                                                                        />
+
+                                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                                            <div>
+                                                                                <div className="text-[11px] font-semibold text-[#606060] mb-2">Due date (optional)</div>
+                                                                                <input type="date" value={editingItemDueDate} onChange={(e) => setEditingItemDueDate(e.target.value)} className={inputPill} />
+                                                                            </div>
+
+                                                                            <div>
+                                                                                <div className="text-[11px] font-semibold text-[#606060] mb-2">Session (optional)</div>
+                                                                                <select
+                                                                                    value={editingItemSessionId}
+                                                                                    onChange={(e) => setEditingItemSessionId(e.target.value)}
+                                                                                    className="w-full h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] font-semibold text-[#111827] bg-white outline-none focus:border-[#111827]"
+                                                                                >
+                                                                                    <option value="">— none —</option>
+                                                                                    {sessions.map((s) => {
+                                                                                        const when = fmtWhen(s.start_time);
+                                                                                        const isInf = safeLower(s.session_format_type) === "infinite";
+                                                                                        const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""}`;
+                                                                                        return (
+                                                                                            <option key={s.id} value={s.id}>
+                                                                                                {label}
+                                                                                            </option>
+                                                                                        );
+                                                                                    })}
+                                                                                </select>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <div className="flex flex-wrap items-center gap-2">
+                                                                            <button className={btnPrimary} onClick={saveEditItem} type="button">
+                                                                                Save
+                                                                            </button>
+                                                                            <button className={btnGhost} onClick={cancelEditItem} type="button">
+                                                                                Cancel
+                                                                            </button>
+                                                                            <button
+                                                                                className="h-11 rounded-full px-5 text-[13px] font-semibold border border-[#F65252] bg-[#F65252]/5 text-[#F65252] hover:bg-[#F65252]/10 transition"
+                                                                                onClick={() => deleteItem(it.id)}
+                                                                                type="button"
+                                                                            >
+                                                                                Delete
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
+                                                                {!isEditing && (() => {
+                                                                    const measurements = getMeasurementsForItem(it);
+                                                                    const totalMs = measurements.reduce((sum, measurement) => sum + Math.max(0, Number(measurement.elapsed_ms || 0)), 0);
+
+                                                                    if (!measurements.length) return null;
+
+                                                                    return (
+                                                                        <div className="mt-3 rounded-[16px] border border-[#E5E7EB] bg-[#FAFAFA] px-4 py-3">
+                                                                            <div className="flex items-center justify-between gap-3">
+                                                                                <div className="inline-flex items-center gap-2 text-[12px] font-bold text-[#111827]">
+                                                                                    <TimerReset size={15} />
+                                                                                    Time saved
+                                                                                </div>
+                                                                                <div className="rounded-full bg-[#111827] px-3 py-1 text-[11px] font-bold text-white">
+                                                                                    {fmtDuration(totalMs)}
+                                                                                </div>
+                                                                            </div>
+                                                                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                                                                {measurements.slice(0, 5).map((measurement) => (
+                                                                                    <span
+                                                                                        key={measurement.id}
+                                                                                        className="rounded-full border border-[#E5E7EB] bg-white px-2 py-1 text-[11px] text-[#606060]"
+                                                                                        title={measurement.saved_at ? fmtWhen(measurement.saved_at) : "Saved time"}
+                                                                                    >
+                                                                                        {fmtDuration(measurement.elapsed_ms)}
+                                                                                    </span>
+                                                                                ))}
+                                                                            </div>
+                                                                        </div>
+                                                                    );
+                                                                })()}
+
+                                                                {/* secondary actions row */}
+                                                                {!isEditing ? (
+                                                                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                                                                        <button
+                                                                            className={btnGhost}
+                                                                            onClick={() => {
+                                                                                if (!it.session_id) return;
+                                                                                openRoom(it.session_id);
+                                                                            }}
+                                                                            type="button"
+                                                                            disabled={!it.session_id}
+                                                                            style={{ opacity: it.session_id ? 1 : 0.5 }}
+                                                                            title={!it.session_id ? "Select a session first" : "Open room"}
+                                                                        >
+                                                                            <span className="inline-flex items-center gap-2">
+                                                                                <ExternalLink size={16} />
+                                                                                Open room
+                                                                            </span>
+                                                                        </button>
+
+                                                                        <button
+                                                                            className={btnPrimary}
+                                                                            onClick={() => attachItemToSession(it)}
+                                                                            type="button"
+                                                                            disabled={!canAttach || attachingItemId === it.id}
+                                                                            style={{ opacity: canAttach ? 1 : 0.5 }}
+                                                                            title={
+                                                                                !canAttach
+                                                                                    ? "Set session + intention text first"
+                                                                                    : attached
+                                                                                        ? "Already attached (will still be safe)"
+                                                                                        : "Attach intention to the session (shows in room)"
+                                                                            }
+                                                                        >
+                                                                            {attachingItemId === it.id ? "Attaching…" : attached ? "Attached" : "Attach to session"}
+                                                                        </button>
+
+                                                                        <div className="text-[11px] text-[#606060]">Attach = create real intention row for that session.</div>
+                                                                    </div>
+                                                                ) : null}
+                                                            </div>
+                                                        );
+                                                    })
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* library */}
+                                        <div className="mt-6 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div>
+                                                    <div className="text-[14px] font-bold text-[#111827]">My library</div>
+                                                    <div className="mt-1 text-[12px] text-[#606060]">Your recent intentions (unique by text). Click to fill “Add item”.</div>
+                                                </div>
+
+                                                <button className={btnGhost} onClick={() => loadLibrary()} type="button" title="Refresh library">
+                                                    <span className="inline-flex items-center gap-2">
+                                                        <RefreshCw size={16} />
+                                                        Refresh
+                                                    </span>
+                                                </button>
+                                            </div>
+
+                                            <div className="mt-4">
+                                                {loadingLibrary ? (
+                                                    <div className="text-[13px] text-[#606060] italic">Loading…</div>
+                                                ) : library.length === 0 ? (
+                                                    <div className="text-[13px] text-[#606060] italic">No recent intentions yet. Attach some intentions in rooms first, or create items above.</div>
+                                                ) : (
+                                                    <div className="flex flex-col gap-2">
+                                                        {library.map((it) => {
+                                                            const text = String(it.text || "").trim();
+                                                            const deleting = deletingLibraryText === text.toLowerCase();
+
+                                                            return (
+                                                                <div key={it.id} className="rounded-[18px] border border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] transition px-4 py-3 flex items-center gap-3">
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="text-[13px] text-[#111827] break-words leading-5">{text}</div>
+                                                                        <div className="mt-1 text-[11px] text-[#606060]">{it.created_at ? `Last used: ${fmtWhen(it.created_at)}` : ""}</div>
+                                                                    </div>
+
+                                                                    <div className="flex items-center gap-2 shrink-0">
+                                                                        <button
+                                                                            className="h-10 px-4 rounded-full border border-[#111827] text-[#111827] hover:bg-[#111827] hover:text-white transition text-[12px] font-semibold whitespace-nowrap"
+                                                                            onClick={() => addLibraryTextToPlan(text)}
+                                                                            type="button"
+                                                                        >
+                                                                            Use
+                                                                        </button>
+
+                                                                        <button
+                                                                            className="h-10 w-10 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition flex items-center justify-center"
+                                                                            onClick={() => deleteLibraryText(text)}
+                                                                            type="button"
+                                                                            disabled={deleting}
+                                                                            title="Delete this intention from library"
+                                                                            style={{ opacity: deleting ? 0.6 : 1 }}
+                                                                        >
+                                                                            <Trash2 size={16} />
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                    </>
+                ) : (
+                    <div className="mt-6">
+                        <div className={softCard}>
+                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                    <div className="text-[18px] font-bold text-[#111827]">Focus measurements</div>
+                                    <div className="mt-1 text-[13px] text-[#606060]">
+                                        Saved work intervals for the selected focus plan.
+                                    </div>
+                                </div>
+                                <div className="rounded-[16px] bg-[#2F2F2F] px-4 py-3 text-white">
+                                    <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/60">
+                                        Total measured
+                                    </div>
+                                    <div className="mt-1 text-[20px] font-bold">{fmtDuration(planMeasuredMs)}</div>
+                                </div>
+                            </div>
+
+                            {measurementsError ? (
+                                <div className="mt-4 rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">
+                                    {measurementsError}
+                                </div>
+                            ) : null}
+
+                            {measurementsLoading ? (
+                                <div className="mt-6 text-[13px] italic text-[#606060]">Loading measurements…</div>
+                            ) : !selectedPlan ? (
+                                <div className="mt-6 text-[13px] italic text-[#606060]">
+                                    Select a plan to see its measurements.
+                                </div>
+                            ) : planMeasurements.length === 0 ? (
+                                <div className="mt-6 rounded-[18px] border border-dashed border-[#D8DCE3] bg-[#FAFAFA] px-5 py-8 text-center">
+                                    <TimerReset className="mx-auto text-[#98A2B3]" size={24} />
+                                    <div className="mt-3 text-[14px] font-semibold text-[#344054]">
+                                        No saved time yet
+                                    </div>
+                                    <div className="mt-1 text-[12px] text-[#667085]">
+                                        Start a task timer in the room and press Save. The interval will appear here.
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="mt-6 space-y-3">
+                                    {items.map((item) => {
+                                        const measurements = getMeasurementsForItem(item);
+                                        if (!measurements.length) return null;
+                                        const totalMs = measurements.reduce(
+                                            (sum, measurement) => sum + Math.max(0, Number(measurement.elapsed_ms || 0)),
+                                            0,
+                                        );
+
+                                        return (
+                                            <div key={item.id} className="rounded-[18px] border border-[#E5E7EB] bg-[#FAFAFA] p-4">
+                                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                                    <div className="min-w-0">
+                                                        <div className="truncate text-[14px] font-semibold text-[#111827]">
+                                                            {item.text}
+                                                        </div>
+                                                        <div className="mt-1 text-[11px] text-[#667085]">
+                                                            {measurements.length} saved {measurements.length === 1 ? "interval" : "intervals"}
                                                         </div>
                                                     </div>
                                                     <div className="shrink-0 rounded-full bg-[#111827] px-3 py-1.5 text-[12px] font-bold text-white">
-                                                        {fmtDuration(measurement.elapsed_ms)}
+                                                        {fmtDuration(totalMs)}
                                                     </div>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
 
-                                {/* add item */}
-                                <div className="mt-5 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5">
-                                    <div className="text-[14px] font-bold text-[#111827]">Add item</div>
-                                    <div className="mt-1 text-[12px] text-[#606060]">Each item = intention + due date + session link.</div>
-
-                                    <div className="mt-4 flex flex-col gap-3">
-                                        <input
-                                            value={newItemText}
-                                            onChange={(e) => setNewItemText(e.target.value)}
-                                            onKeyDown={(e) => e.key === "Enter" && addItemToPlan()}
-                                            placeholder="What will you work on? (intention)…"
-                                            className={inputPill}
-                                        />
-
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            <div>
-                                                <div className="text-[11px] font-semibold text-[#606060] mb-2">Due date (optional)</div>
-                                                <input type="date" value={newItemDueDate} onChange={(e) => setNewItemDueDate(e.target.value)} className={inputPill} />
-                                            </div>
-
-                                            <div>
-                                                <div className="text-[11px] font-semibold text-[#606060] mb-2">Session (optional)</div>
-                                                <select
-                                                    value={newItemSessionId}
-                                                    onChange={(e) => setNewItemSessionId(e.target.value)}
-                                                    className="w-full h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] font-semibold text-[#111827] bg-white outline-none focus:border-[#111827]"
-                                                >
-                                                    <option value="">— none —</option>
-                                                    {sessionsLoading ? (
-                                                        <option value="" disabled>
-                                                            Loading sessions…
-                                                        </option>
-                                                    ) : sessions.length === 0 ? (
-                                                        <option value="" disabled>
-                                                            No sessions found
-                                                        </option>
-                                                    ) : (
-                                                        sessions.map((s) => {
-                                                            const when = fmtWhen(s.start_time);
-                                                            const isInf = safeLower(s.session_format_type) === "infinite";
-                                                            const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""}`;
-                                                            return (
-                                                                <option key={s.id} value={s.id}>
-                                                                    {label}
-                                                                </option>
-                                                            );
-                                                        })
-                                                    )}
-                                                </select>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex items-center gap-2">
-                                            <button className={btnPrimary} onClick={addItemToPlan} type="button">
-                                                <span className="inline-flex items-center gap-2">
-                                                    <Plus size={16} />
-                                                    Add to plan
-                                                </span>
-                                            </button>
-                                            <button
-                                                className={btnGhost}
-                                                onClick={() => {
-                                                    setNewItemText("");
-                                                    setNewItemDueDate("");
-                                                }}
-                                                type="button"
-                                            >
-                                                Clear
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* items list */}
-                                <div className="mt-5">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div className="text-[16px] font-bold text-[#111827]">Items</div>
-                                        <div className="text-[12px] text-[#606060]">{items.length} total</div>
-                                    </div>
-
-                                    <div className="mt-3 flex flex-col gap-2">
-                                        {itemsLoading ? (
-                                            <div className="text-[13px] text-[#606060] italic">Loading items…</div>
-                                        ) : items.length === 0 ? (
-                                            <div className="text-[13px] text-[#606060] italic">Add your first item above.</div>
-                                        ) : (
-                                            items.map((it) => {
-                                                const isEditing = editingItemId === it.id;
-                                                const done = Boolean(it.completed);
-
-                                                const session = it.session_id ? sessions.find((s) => String(s.id) === String(it.session_id)) : null;
-
-                                                const canAttach = Boolean(it.session_id) && UUID_RE.test(String(it.session_id)) && String(it.text || "").trim().length > 0;
-                                                const attached = Boolean(attachedItemIds[it.id]);
-
-                                                return (
-                                                    <div key={it.id} className="rounded-[18px] border border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] transition px-4 py-3">
-                                                        {!isEditing ? (
-                                                            <div className="flex items-start gap-3">
-                                                                <button
-                                                                    className="mt-[2px] h-6 w-6 rounded-full border border-[#D1D5DB] flex items-center justify-center hover:bg-white transition"
-                                                                    onClick={() => toggleItemDone(it.id)}
-                                                                    type="button"
-                                                                    title={done ? "Mark as not done" : "Mark as done"}
-                                                                    style={{
-                                                                        borderColor: done ? "#65D46C" : "#D1D5DB",
-                                                                        background: done ? "rgba(101,212,108,0.15)" : "transparent",
-                                                                    }}
-                                                                >
-                                                                    {done ? <Check size={14} color="#2F2F2F" /> : null}
-                                                                </button>
-
-                                                                <div className="flex-1 min-w-0">
-                                                                    <div className={["text-[13px] leading-5 break-words", done ? "text-[#606060] line-through" : "text-[#111827]"].join(" ")}>
-                                                                        {it.text}
-                                                                    </div>
-
-                                                                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-[#606060]">
-                                                                        {it.target_date ? (
-                                                                            <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
-                                                                                Due: <span className="font-semibold text-[#111827]">{fmtDueDate(it.target_date)}</span>
-                                                                            </span>
-                                                                        ) : null}
-
-                                                                        {session ? (
-                                                                            <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
-                                                                                Session: <span className="font-semibold text-[#111827]">{session.title || "Session"}</span>
-                                                                                {safeLower(session.session_format_type) === "infinite"
-                                                                                    ? " · ∞"
-                                                                                    : session.start_time
-                                                                                        ? ` · ${fmtWhen(session.start_time)}`
-                                                                                        : ""}
-                                                                            </span>
-                                                                        ) : it.session_id ? (
-                                                                            <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
-                                                                                Session: <span className="font-semibold text-[#111827]">resolving…</span>
-                                                                            </span>
-                                                                        ) : (
-                                                                            <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
-                                                                                Session: <span className="font-semibold text-[#111827]">—</span>
-                                                                            </span>
-                                                                        )}
-
-                                                                        {attached ? (
-                                                                            <span className="px-3 py-1 rounded-full border border-[#65D46C] bg-[#65D46C]/10 text-[#2F2F2F] font-semibold">
-                                                                                Attached to room
-                                                                            </span>
-                                                                        ) : null}
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* actions */}
-                                                                <div className="flex items-center gap-2 shrink-0">
-                                                                    <button className="h-10 px-4 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition text-[12px] font-semibold" onClick={() => startEditItem(it)} type="button">
-                                                                        Edit
-                                                                    </button>
-
-                                                                    <button className="h-10 w-10 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition flex items-center justify-center" onClick={() => deleteItem(it.id)} type="button" title="Delete item">
-                                                                        <Trash2 size={16} />
-                                                                    </button>
-                                                                </div>
+                                                <div className="mt-3 divide-y divide-[#E5E7EB] rounded-[14px] border border-[#E5E7EB] bg-white">
+                                                    {measurements.map((measurement) => (
+                                                        <div key={measurement.id} className="flex items-center justify-between gap-3 px-3 py-2.5">
+                                                            <div className="text-[11px] text-[#667085]">
+                                                                {fmtWhen(measurement.saved_at) || "Saved interval"}
                                                             </div>
-                                                        ) : (
-                                                            <div className="flex flex-col gap-3">
-                                                                <div className="text-[12px] font-semibold text-[#606060]">Edit item</div>
-
-                                                                <input
-                                                                    value={editingItemText}
-                                                                    onChange={(e) => setEditingItemText(e.target.value)}
-                                                                    onKeyDown={(e) => {
-                                                                        if (e.key === "Enter") saveEditItem();
-                                                                        if (e.key === "Escape") cancelEditItem();
-                                                                    }}
-                                                                    className={inputPill}
-                                                                    placeholder="Intention…"
-                                                                    autoFocus
-                                                                />
-
-                                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                                    <div>
-                                                                        <div className="text-[11px] font-semibold text-[#606060] mb-2">Due date (optional)</div>
-                                                                        <input type="date" value={editingItemDueDate} onChange={(e) => setEditingItemDueDate(e.target.value)} className={inputPill} />
-                                                                    </div>
-
-                                                                    <div>
-                                                                        <div className="text-[11px] font-semibold text-[#606060] mb-2">Session (optional)</div>
-                                                                        <select
-                                                                            value={editingItemSessionId}
-                                                                            onChange={(e) => setEditingItemSessionId(e.target.value)}
-                                                                            className="w-full h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] font-semibold text-[#111827] bg-white outline-none focus:border-[#111827]"
-                                                                        >
-                                                                            <option value="">— none —</option>
-                                                                            {sessions.map((s) => {
-                                                                                const when = fmtWhen(s.start_time);
-                                                                                const isInf = safeLower(s.session_format_type) === "infinite";
-                                                                                const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""}`;
-                                                                                return (
-                                                                                    <option key={s.id} value={s.id}>
-                                                                                        {label}
-                                                                                    </option>
-                                                                                );
-                                                                            })}
-                                                                        </select>
-                                                                    </div>
-                                                                </div>
-
-                                                                <div className="flex flex-wrap items-center gap-2">
-                                                                    <button className={btnPrimary} onClick={saveEditItem} type="button">
-                                                                        Save
-                                                                    </button>
-                                                                    <button className={btnGhost} onClick={cancelEditItem} type="button">
-                                                                        Cancel
-                                                                    </button>
-                                                                    <button
-                                                                        className="h-11 rounded-full px-5 text-[13px] font-semibold border border-[#F65252] bg-[#F65252]/5 text-[#F65252] hover:bg-[#F65252]/10 transition"
-                                                                        onClick={() => deleteItem(it.id)}
-                                                                        type="button"
-                                                                    >
-                                                                        Delete
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        )}
-
-                                                        {!isEditing && (() => {
-                                                            const measurements = getMeasurementsForItem(it);
-                                                            const totalMs = measurements.reduce((sum, measurement) => sum + Math.max(0, Number(measurement.elapsed_ms || 0)), 0);
-
-                                                            if (!measurements.length) return null;
-
-                                                            return (
-                                                                <div className="mt-3 rounded-[16px] border border-[#E5E7EB] bg-[#FAFAFA] px-4 py-3">
-                                                                    <div className="flex items-center justify-between gap-3">
-                                                                        <div className="inline-flex items-center gap-2 text-[12px] font-bold text-[#111827]">
-                                                                            <TimerReset size={15} />
-                                                                            Time saved
-                                                                        </div>
-                                                                        <div className="rounded-full bg-[#111827] px-3 py-1 text-[11px] font-bold text-white">
-                                                                            {fmtDuration(totalMs)}
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="mt-2 flex flex-wrap gap-1.5">
-                                                                        {measurements.slice(0, 5).map((measurement) => (
-                                                                            <span
-                                                                                key={measurement.id}
-                                                                                className="rounded-full border border-[#E5E7EB] bg-white px-2 py-1 text-[11px] text-[#606060]"
-                                                                                title={measurement.saved_at ? fmtWhen(measurement.saved_at) : "Saved time"}
-                                                                            >
-                                                                                {fmtDuration(measurement.elapsed_ms)}
-                                                                            </span>
-                                                                        ))}
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })()}
-
-                                                        {/* secondary actions row */}
-                                                        {!isEditing ? (
-                                                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                                                                <button
-                                                                    className={btnGhost}
-                                                                    onClick={() => {
-                                                                        if (!it.session_id) return;
-                                                                        openRoom(it.session_id);
-                                                                    }}
-                                                                    type="button"
-                                                                    disabled={!it.session_id}
-                                                                    style={{ opacity: it.session_id ? 1 : 0.5 }}
-                                                                    title={!it.session_id ? "Select a session first" : "Open room"}
-                                                                >
-                                                                    <span className="inline-flex items-center gap-2">
-                                                                        <ExternalLink size={16} />
-                                                                        Open room
-                                                                    </span>
-                                                                </button>
-
-                                                                <button
-                                                                    className={btnPrimary}
-                                                                    onClick={() => attachItemToSession(it)}
-                                                                    type="button"
-                                                                    disabled={!canAttach || attachingItemId === it.id}
-                                                                    style={{ opacity: canAttach ? 1 : 0.5 }}
-                                                                    title={
-                                                                        !canAttach
-                                                                            ? "Set session + intention text first"
-                                                                            : attached
-                                                                                ? "Already attached (will still be safe)"
-                                                                                : "Attach intention to the session (shows in room)"
-                                                                    }
-                                                                >
-                                                                    {attachingItemId === it.id ? "Attaching…" : attached ? "Attached" : "Attach to session"}
-                                                                </button>
-
-                                                                <div className="text-[11px] text-[#606060]">Attach = create real intention row for that session.</div>
-                                                            </div>
-                                                        ) : null}
-                                                    </div>
-                                                );
-                                            })
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* library */}
-                                <div className="mt-6 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5">
-                                    <div className="flex items-center justify-between gap-3">
-                                        <div>
-                                            <div className="text-[14px] font-bold text-[#111827]">My library</div>
-                                            <div className="mt-1 text-[12px] text-[#606060]">Your recent intentions (unique by text). Click to fill “Add item”.</div>
-                                        </div>
-
-                                        <button className={btnGhost} onClick={() => loadLibrary()} type="button" title="Refresh library">
-                                            <span className="inline-flex items-center gap-2">
-                                                <RefreshCw size={16} />
-                                                Refresh
-                                            </span>
-                                        </button>
-                                    </div>
-
-                                    <div className="mt-4">
-                                        {loadingLibrary ? (
-                                            <div className="text-[13px] text-[#606060] italic">Loading…</div>
-                                        ) : library.length === 0 ? (
-                                            <div className="text-[13px] text-[#606060] italic">No recent intentions yet. Attach some intentions in rooms first, or create items above.</div>
-                                        ) : (
-                                            <div className="flex flex-col gap-2">
-                                                {library.map((it) => {
-                                                    const text = String(it.text || "").trim();
-                                                    const deleting = deletingLibraryText === text.toLowerCase();
-
-                                                    return (
-                                                        <div key={it.id} className="rounded-[18px] border border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] transition px-4 py-3 flex items-center gap-3">
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="text-[13px] text-[#111827] break-words leading-5">{text}</div>
-                                                                <div className="mt-1 text-[11px] text-[#606060]">{it.created_at ? `Last used: ${fmtWhen(it.created_at)}` : ""}</div>
-                                                            </div>
-
-                                                            <div className="flex items-center gap-2 shrink-0">
-                                                                <button
-                                                                    className="h-10 px-4 rounded-full border border-[#111827] text-[#111827] hover:bg-[#111827] hover:text-white transition text-[12px] font-semibold whitespace-nowrap"
-                                                                    onClick={() => addLibraryTextToPlan(text)}
-                                                                    type="button"
-                                                                >
-                                                                    Use
-                                                                </button>
-
-                                                                <button
-                                                                    className="h-10 w-10 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition flex items-center justify-center"
-                                                                    onClick={() => deleteLibraryText(text)}
-                                                                    type="button"
-                                                                    disabled={deleting}
-                                                                    title="Delete this intention from library"
-                                                                    style={{ opacity: deleting ? 0.6 : 1 }}
-                                                                >
-                                                                    <Trash2 size={16} />
-                                                                </button>
+                                                            <div className="text-[12px] font-semibold text-[#344054]">
+                                                                {fmtDuration(measurement.elapsed_ms)}
                                                             </div>
                                                         </div>
-                                                    );
-                                                })}
+                                                    ))}
+                                                </div>
                                             </div>
-                                        )}
-                                    </div>
+                                        );
+                                    })}
                                 </div>
-                            </>
-                        )}
+                            )}
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
         </div>
     );
