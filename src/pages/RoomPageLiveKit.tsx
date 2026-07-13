@@ -11108,6 +11108,7 @@ export function RoomPageLiveKit({
               containerWidth={effectiveW}
               containerHeight={effectiveH}
               rightPanelOpen={rightPanelOpen}
+              mobileOrTablet={useMobileOrTabletGallery}
               forceThreeAsTwoPlusOne={
                 isLgUp && rightPanelOpen && effectiveW < 1500
               }

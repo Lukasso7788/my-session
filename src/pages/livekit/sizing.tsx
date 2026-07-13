@@ -158,7 +158,7 @@ function computeCols(count: number, containerWidth: number, rightPanelOpen = fal
         return w >= 1500 ? 3 : 2;
     }
 
-    if (count === 5) return w >= 900 ? 3 : 2;
+    if (count === 5) return w >= 780 ? 3 : 2;
     if (count === 6) return w >= 780 ? 3 : 2;
 
     if (count >= 7 && count <= 8) {
@@ -257,6 +257,7 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
     containerHeight: number;
     forceThreeAsTwoPlusOne?: boolean;
     rightPanelOpen?: boolean;
+    mobileOrTablet?: boolean;
     mobileMode?: MobileVideoLayoutMode;
     layoutPreset?: VideoTileLayoutPreset;
     customColumns?: number;
@@ -269,6 +270,7 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
         containerHeight,
         forceThreeAsTwoPlusOne,
         rightPanelOpen = false,
+        mobileOrTablet: mobileOrTabletOverride,
         mobileMode = "auto",
         layoutPreset,
         customColumns = 0,
@@ -276,7 +278,9 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
         renderItem,
     } = props;
 
-    const mobileOrTablet = isMobileOrTabletLikeSize(containerWidth, containerHeight);
+    const mobileOrTablet =
+        mobileOrTabletOverride ??
+        isMobileOrTabletLikeSize(containerWidth, containerHeight);
     const paddingPx = containerWidth && containerWidth < 520 ? 6 : 10;
     const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
 
