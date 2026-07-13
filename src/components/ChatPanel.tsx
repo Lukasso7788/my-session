@@ -1,6 +1,7 @@
 import React, {
     useCallback,
     useEffect,
+    useLayoutEffect,
     useMemo,
     useRef,
     useState,
@@ -1221,6 +1222,8 @@ export function ChatPanel({
     const myReactionsRefreshKeyRef = useRef("");
 
     const atBottomRef = useRef<boolean>(true);
+    const initialBottomScrollPendingRef = useRef(true);
+    const activeViewKeyRef = useRef("");
     const [unseenNew, setUnseenNew] = useState<number>(0);
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1262,6 +1265,9 @@ export function ChatPanel({
         if (!activeDirectPeerId) return null;
         return profilesById[activeDirectPeerId] || null;
     }, [activeDirectPeerId, profilesById]);
+
+    const activeViewKey = `${sessionId}|${activeMode}|${activeDirectPeerId || ""}`;
+    const newestMessageId = messages[messages.length - 1]?.id || "";
 
     useEffect(() => {
         if (!sessionId || !userId) return;
@@ -1408,6 +1414,12 @@ export function ChatPanel({
     };
 
     const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+        const list = listRef.current;
+        if (list) {
+            list.scrollTo({ top: list.scrollHeight, behavior });
+            return;
+        }
+
         bottomRef.current?.scrollIntoView({ behavior });
     };
 
@@ -1836,7 +1848,7 @@ export function ChatPanel({
             loadingMessagesRef.current = true;
             const reqId = ++messagesReqIdRef.current;
 
-            if (!opts?.silent && messagesRef.current.length === 0) setLoading(true);
+            if (!opts?.silent) setLoading(true);
 
             try {
                 const q = buildMessageQuery(
@@ -2380,14 +2392,49 @@ export function ChatPanel({
         };
     }, [sessionId, userId, loadReactions]);
 
-    useEffect(() => {
-        const shouldScroll = atBottomRef.current || isAtBottom();
+    useLayoutEffect(() => {
+        const viewChanged = activeViewKeyRef.current !== activeViewKey;
+        if (viewChanged) {
+            activeViewKeyRef.current = activeViewKey;
+            initialBottomScrollPendingRef.current = true;
+            atBottomRef.current = true;
+            setUnseenNew(0);
+        }
+
+        const forceInitialScroll = initialBottomScrollPendingRef.current;
+        const shouldScroll =
+            forceInitialScroll || atBottomRef.current || isAtBottom();
         if (shouldScroll) {
-            scrollToBottom("smooth");
+            const behavior: ScrollBehavior = forceInitialScroll ? "auto" : "smooth";
+            scrollToBottom(behavior);
+
+            let secondFrame = 0;
+            const firstFrame = window.requestAnimationFrame(() => {
+                scrollToBottom(behavior);
+                secondFrame = window.requestAnimationFrame(() => {
+                    scrollToBottom(behavior);
+                });
+            });
+
+            if (forceInitialScroll && !loading) {
+                initialBottomScrollPendingRef.current = false;
+            }
+
             setUnseenNew(0);
             onBecameVisible?.();
+
+            return () => {
+                window.cancelAnimationFrame(firstFrame);
+                if (secondFrame) window.cancelAnimationFrame(secondFrame);
+            };
         }
-    }, [messages.length, onBecameVisible, activeMode, activeDirectPeerId]);
+    }, [
+        activeViewKey,
+        newestMessageId,
+        messages.length,
+        loading,
+        onBecameVisible,
+    ]);
 
     useEffect(() => {
         const el = composerRef.current;
