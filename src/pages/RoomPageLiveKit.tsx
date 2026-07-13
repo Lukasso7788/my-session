@@ -11661,7 +11661,7 @@ export function RoomPageLiveKit({
       )}
 
       {rightPanelOpen && rightTab === "chat" && (
-        <div className="flex flex-col h-full">
+        <div className="ms-chat-panel-scrollbars flex flex-col h-full">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-[#D8D0D0] bg-[#F3F1F1] min-h-[52px]">
             <div className="flex items-center gap-2 shrink-0 mr-1">
               <img
@@ -11975,7 +11975,7 @@ export function RoomPageLiveKit({
       )}
 
       {rightTab === "tasks" && (
-        <div className="h-full min-h-0 flex flex-col">
+        <div className="ms-tasks-panel-scrollbars h-full min-h-0 flex flex-col">
           <div className="px-5 py-4 border-b border-[#D8D0D0] bg-[#F3F1F1] flex items-center justify-between">
             <div
               className="text-black/85 font-inter font-semibold"
@@ -12393,6 +12393,33 @@ export function RoomPageLiveKit({
           width: 0 !important;
           height: 0 !important;
           display: none !important;
+        }
+
+        .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar,
+        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar {
+          scrollbar-width: thin !important;
+          scrollbar-color: #B8C0BB transparent !important;
+          -ms-overflow-style: auto !important;
+        }
+        .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar::-webkit-scrollbar,
+        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar {
+          width: 6px !important;
+          height: 6px !important;
+          display: block !important;
+        }
+        .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-track,
+        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-thumb,
+        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-thumb {
+          min-height: 32px;
+          border-radius: 999px;
+          background: #B8C0BB;
+        }
+        .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-thumb:hover,
+        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #8F9993;
         }
 
         @media (max-width: 1023px) {
