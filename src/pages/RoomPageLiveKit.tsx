@@ -11760,7 +11760,7 @@ export function RoomPageLiveKit({
                     type="button"
                     onClick={() => setHostDmDropdownOpen((v) => !v)}
                     className={
-                      "flex h-8 w-[136px] min-w-0 max-w-[136px] items-center justify-between gap-2 rounded-full border px-3 text-xs font-regular outline-none transition sm:w-[148px] sm:max-w-[148px] xl:w-[160px] xl:max-w-[160px] " +
+                      "flex h-8 w-[136px] min-w-0 max-w-[136px] items-center justify-between gap-2 rounded-full border px-3 text-xs font-normal outline-none transition sm:w-[148px] sm:max-w-[148px] xl:w-[160px] xl:max-w-[160px] " +
                       (isLight
                         ? "border-[#D8D0D0] bg-[#F7F5F5] text-black/80 hover:border-[#C9C1C1] hover:bg-white"
                         : "border-[#2B2B2B] bg-[#242424] text-white/85 hover:border-[#3A3A3A] hover:bg-[#2A2A2A]")
@@ -11829,7 +11829,7 @@ export function RoomPageLiveKit({
                           setHostDmDropdownOpen(false);
                         }}
                         className={
-                          "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-semibold transition " +
+                          "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-normal transition " +
                           (!selectedHostChatPeerId
                             ? isLight
                               ? "bg-white text-black shadow-[0_1px_4px_rgba(0,0,0,0.04)]"
@@ -11861,7 +11861,7 @@ export function RoomPageLiveKit({
                               setHostDmDropdownOpen(false);
                             }}
                             className={
-                              "mt-1 flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold transition " +
+                              "mt-1 flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-xs font-normal transition " +
                               (selected
                                 ? isLight
                                   ? "bg-white text-black shadow-[0_1px_4px_rgba(0,0,0,0.04)]"
