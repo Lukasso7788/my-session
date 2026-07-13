@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { BarChart3, Check, Copy, Megaphone, TrendingUp, Wallet } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
 type PartnerStatus = "none" | "pending" | "active" | "approved" | "suspended";
@@ -212,6 +213,7 @@ export default function AffiliatePage() {
     const status = normalizeStatus(rawStatus);
     const tier = String(partnerProfile?.tier || "none").toLowerCase();
     const isActive = status === "active";
+    const affiliateRewardAmount = 5;
 
     const referralLink = useMemo(() => {
         if (!referralCode) return "";
@@ -461,39 +463,64 @@ export default function AffiliatePage() {
     }
 
     return (
-        <main className="min-h-screen bg-white px-4 py-8 font-inter text-[#2F2F2F] sm:px-6 sm:py-10">
-            <div className="mx-auto max-w-6xl">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                        <div className="text-[12px] font-bold uppercase tracking-[0.14em] text-[#666]">
-                            MySession Growth
-                        </div>
-                        <h1 className="mt-2 text-[32px] font-bold sm:text-[36px]">Affiliate Program</h1>
-                        <p className="mt-3 max-w-2xl text-[15px] leading-7 text-[#666]">
-                            For creators, admins, hosts, and community owners who can bring paying users to MySession.
-                            Affiliates earn real payout-trackable money when referred users become paid.
-                        </p>
+        <main className="relative min-h-screen overflow-hidden bg-[#F3F5F8] px-4 py-6 font-inter text-[#172033] sm:px-6 sm:py-10">
+            <div className="pointer-events-none absolute -left-32 top-20 h-96 w-96 rounded-full bg-[#DDE7FF] blur-3xl" />
+            <div className="pointer-events-none absolute -right-24 top-72 h-80 w-80 rounded-full bg-[#D8F4E1]/70 blur-3xl" />
+            <div className="relative mx-auto max-w-6xl">
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                    <div className="inline-flex items-center gap-2 text-[12px] font-bold uppercase tracking-[0.14em] text-[#5C6980]">
+                        <TrendingUp className="h-4 w-4 text-[#335DC5]" /> MySession Affiliate Program
                     </div>
-
-                    <div className="flex flex-wrap gap-3">
-                        <Link
-                            to="/referrals"
-                            className="rounded-full border border-[#2F2F2F] px-5 py-2.5 text-[14px] font-semibold hover:bg-[#2F2F2F] hover:text-white"
-                        >
-                            Referral Program
+                    <div className="flex flex-wrap gap-2">
+                        <Link to="/referrals" className="rounded-full border border-[#172033]/10 bg-white/70 px-4 py-2 text-[13px] font-semibold backdrop-blur transition hover:bg-white">
+                            Inviting friends? Referral Program
                         </Link>
-
                         {isActive && (
-                            <button
-                                type="button"
-                                onClick={() => setShowDetails((v) => !v)}
-                                className="rounded-full border border-[#2F2F2F] px-5 py-2.5 text-[14px] font-semibold hover:bg-[#2F2F2F] hover:text-white"
-                            >
-                                {showDetails ? "View dashboard" : "View program details"}
+                            <button type="button" onClick={() => setShowDetails((v) => !v)} className="rounded-full bg-[#172033] px-4 py-2 text-[13px] font-semibold text-white">
+                                {showDetails ? "View dashboard" : "Program details"}
                             </button>
                         )}
                     </div>
                 </div>
+
+                <section className="relative overflow-hidden rounded-[32px] bg-[#18233D] px-5 py-7 text-white shadow-[0_24px_70px_rgba(24,35,61,0.2)] sm:px-8 sm:py-10 lg:px-12">
+                    <div className="absolute -right-20 -top-28 h-80 w-80 rounded-full bg-[#5D86FF]/30 blur-3xl" />
+                    <div className="relative grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+                        <div>
+                            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-[#C9D7FF]">
+                                <Megaphone className="h-4 w-4" /> For creators, hosts and community partners
+                            </div>
+                            <h1 className="mt-5 max-w-2xl text-[38px] font-bold leading-[1.05] tracking-[-0.04em] sm:text-[52px]">
+                                Turn your audience into trackable revenue.
+                            </h1>
+                            <p className="mt-5 max-w-xl text-[16px] leading-7 text-white/70">
+                                Share MySession with people who will use it. Earn a cash reward when each referred member makes their first successful payment.
+                            </p>
+                            <div className="mt-6 flex flex-wrap gap-2 text-[12px] font-semibold text-white/80">
+                                <span className="rounded-full bg-white/10 px-3 py-2">Trackable partner link</span>
+                                <span className="rounded-full bg-white/10 px-3 py-2">Real cash balance</span>
+                                <span className="rounded-full bg-white/10 px-3 py-2">Manual payouts from $20</span>
+                            </div>
+                        </div>
+
+                        <div className="rounded-[26px] border border-white/10 bg-white/[0.07] p-5 backdrop-blur sm:p-6">
+                            <div className="text-[12px] font-bold uppercase tracking-[0.14em] text-[#AFC3FF]">Current standard reward</div>
+                            <div className="mt-2 flex items-end gap-3">
+                                <div className="text-[58px] font-bold leading-none tracking-[-0.05em]">{formatMoney(affiliateRewardAmount)}</div>
+                                <div className="pb-1 text-[13px] leading-5 text-white/55">one-time<br />per new paying member</div>
+                            </div>
+                            <div className="mt-6 grid grid-cols-3 gap-2">
+                                {[1, 5, 10].map((count) => (
+                                    <div key={count} className="rounded-2xl bg-white/10 p-3 text-center">
+                                        <div className="text-[11px] text-white/55">{count} {count === 1 ? "member" : "members"}</div>
+                                        <div className="mt-1 text-[18px] font-bold">{formatMoney(affiliateRewardAmount * count)}</div>
+                                    </div>
+                                ))}
+                            </div>
+                            <p className="mt-4 text-[12px] leading-5 text-white/50">This is a one-time first-payment reward, not a monthly recurring commission.</p>
+                        </div>
+                    </div>
+                </section>
 
                 {error ? (
                     <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
@@ -503,7 +530,7 @@ export default function AffiliatePage() {
 
                 {isActive && !showDetails ? (
                     <>
-                        <section className="mt-8 rounded-[28px] border border-black/10 bg-gray-50 p-5 sm:p-6">
+                        <section className="mt-6 rounded-[28px] border border-black/[0.07] bg-white/90 p-5 shadow-sm backdrop-blur sm:p-7">
                             <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                                 <div>
                                     <div className="flex flex-wrap items-center gap-2">
@@ -515,13 +542,13 @@ export default function AffiliatePage() {
                                         </span>
                                     </div>
 
-                                    <h2 className="mt-4 text-[24px] font-bold">Your affiliate dashboard</h2>
-                                    <p className="mt-2 text-[14px] leading-6 text-[#666]">
-                                        Share your partner link. When a referred user becomes paid, your affiliate balance receives $5.
+                                    <h2 className="mt-4 text-[26px] font-bold tracking-[-0.02em]">Your affiliate dashboard</h2>
+                                    <p className="mt-2 max-w-xl text-[14px] leading-6 text-[#68738A]">
+                                        Share your partner link. When a referred user makes their first successful payment, your balance receives {formatMoney(affiliateRewardAmount)}.
                                     </p>
                                 </div>
 
-                                <div className="rounded-2xl border border-black/10 bg-white p-4 lg:min-w-[440px]">
+                                <div className="rounded-[22px] border border-black/[0.07] bg-[#F4F6FA] p-4 lg:min-w-[440px]">
                                     <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
                                         Partner code
                                     </div>
@@ -530,7 +557,7 @@ export default function AffiliatePage() {
                                     <div className="mt-4 text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
                                         Partner link
                                     </div>
-                                    <div className="mt-2 break-all rounded-xl bg-gray-50 p-3 text-[14px] font-semibold">
+                                    <div className="mt-2 break-all rounded-xl bg-white p-3 text-[14px] font-medium text-[#34405A]">
                                         {referralLink || "Generating link..."}
                                     </div>
 
@@ -538,9 +565,9 @@ export default function AffiliatePage() {
                                         type="button"
                                         onClick={handleCopy}
                                         disabled={!referralLink}
-                                        className="mt-3 rounded-full bg-[#2F2F2F] px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+                                        className="mt-3 inline-flex items-center gap-2 rounded-full bg-[#335DC5] px-4 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
                                     >
-                                        {copyText}
+                                        <Copy className="h-4 w-4" /> {copyText}
                                     </button>
                                 </div>
                             </div>
@@ -557,7 +584,7 @@ export default function AffiliatePage() {
                                 ["Total affiliate rewards", formatMoney(stats.totalRewards)],
                                 ["Payout requests", payoutRequests.length],
                             ].map(([label, value]) => (
-                                <div key={label} className="rounded-[22px] border border-black/10 bg-white p-5 shadow-sm">
+                                <div key={label} className="rounded-[22px] border border-black/[0.07] bg-white p-5 shadow-sm">
                                     <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
                                         {label}
                                     </div>
@@ -566,33 +593,35 @@ export default function AffiliatePage() {
                             ))}
                         </section>
 
-                        <section className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-2">
-                            <div className="rounded-[28px] border border-black/10 bg-white p-6 shadow-sm">
-                                <h2 className="text-[24px] font-bold">How affiliate rewards work</h2>
-
-                                <div className="mt-5 rounded-2xl bg-gray-50 p-5">
-                                    <div className="text-[13px] font-bold uppercase tracking-[0.12em] text-[#777]">
-                                        Paid referred user
-                                    </div>
-                                    <div className="mt-2 text-[30px] font-bold">+$5</div>
-                                    <p className="mt-2 text-[13px] leading-5 text-[#666]">
-                                        You earn $5 when a user you referred makes their first successful MySession payment.
-                                    </p>
+                        <section className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+                            <div className="rounded-[28px] border border-black/[0.07] bg-white p-6 shadow-sm">
+                                <div className="flex items-center gap-3">
+                                    <BarChart3 className="h-6 w-6 text-[#335DC5]" />
+                                    <h2 className="text-[24px] font-bold">How a reward is earned</h2>
                                 </div>
-
-                                <div className="mt-5 rounded-2xl bg-gray-50 p-5">
-                                    <div className="text-[13px] font-bold uppercase tracking-[0.12em] text-[#777]">
-                                        Referral vs affiliate
-                                    </div>
-                                    <p className="mt-2 text-[13px] leading-5 text-[#666]">
-                                        Referral rewards are MySession credits. Affiliate rewards are real payout-trackable money.
-                                    </p>
+                                <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                                    {[
+                                        ["01", "Share", "Use your trackable partner link."],
+                                        ["02", "Convert", "A referred member makes a first payment."],
+                                        ["03", "Earn", `${formatMoney(affiliateRewardAmount)} becomes available.`],
+                                    ].map(([number, title, body]) => (
+                                        <div key={number} className="rounded-2xl bg-[#F4F6FA] p-4">
+                                            <div className="text-[11px] font-bold text-[#335DC5]">{number}</div>
+                                            <div className="mt-3 text-[15px] font-bold">{title}</div>
+                                            <p className="mt-1 text-[12px] leading-5 text-[#68738A]">{body}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="mt-4 flex items-start gap-3 rounded-2xl border border-[#DCE5FA] bg-[#F6F8FD] p-4 text-[13px] leading-5 text-[#53617A]">
+                                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#335DC5]" />
+                                    Affiliate rewards are real payout-trackable money. Friend-to-friend MySession credits stay in the separate Referral Program.
                                 </div>
                             </div>
 
-                            <div className="rounded-[28px] border border-black/10 bg-gray-50 p-6">
-                                <h2 className="text-[24px] font-bold">Payout</h2>
-                                <p className="mt-2 text-[14px] leading-6 text-[#666]">
+                            <div className="rounded-[28px] bg-[#E7ECF8] p-6">
+                                <Wallet className="h-7 w-7 text-[#335DC5]" />
+                                <h2 className="mt-4 text-[24px] font-bold">Payout</h2>
+                                <p className="mt-2 text-[14px] leading-6 text-[#59667D]">
                                     Payouts are manual for now. Minimum payout is $20 available balance.
                                 </p>
 
@@ -600,7 +629,7 @@ export default function AffiliatePage() {
                                     type="button"
                                     onClick={handleAskForPayout}
                                     disabled={payoutBusy || stats.availableRewards < 20}
-                                    className="mt-5 rounded-full bg-[#2F2F2F] px-5 py-2.5 text-[14px] font-semibold text-white disabled:opacity-50"
+                                    className="mt-5 rounded-full bg-[#335DC5] px-5 py-2.5 text-[14px] font-semibold text-white disabled:opacity-50"
                                 >
                                     {payoutBusy ? "Requesting..." : "Ask for payout"}
                                 </button>
