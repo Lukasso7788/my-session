@@ -1136,6 +1136,9 @@ const REPORTS_TABLE = "session_reports";
 const KICK_EVENTS_CHANNEL_PREFIX = "mysession_lk_kick_events";
 
 const ROOM_SOUNDS_PREF_KEY = "mysession_lk_room_sounds";
+const JOIN_SOUND_PREF_KEY = "mysession_lk_join_sound";
+const LEAVE_SOUND_PREF_KEY = "mysession_lk_leave_sound";
+const STAGE_SOUNDS_PREF_KEY = "mysession_lk_stage_sounds";
 const ROOM_SOUNDS_VOLUME_PREF_KEY = "mysession_lk_room_sounds_volume";
 const PREVIEW_MIRROR_PREF_KEY = "mysession_lk_preview_mirror";
 const JOIN_SOUND_CANDIDATES = [
@@ -4231,15 +4234,32 @@ export function RoomPageLiveKit({
   const BREAK_END_SOUND = "/sounds/break_end.mp3";
   const WELCOME_LOOP_SOUND = "/sounds/welcome_loop.mp3";
 
-  const [roomSoundsEnabled, setRoomSoundsEnabled] = useState<boolean>(() => {
+  const readSoundPreference = (key: string) => {
     try {
-      const raw = localStorage.getItem(ROOM_SOUNDS_PREF_KEY);
-      return raw === null ? true : raw === "true";
+      const raw = localStorage.getItem(key);
+      if (raw !== null) return raw === "true";
+
+      const legacy = localStorage.getItem(ROOM_SOUNDS_PREF_KEY);
+      return legacy === null ? true : legacy === "true";
     } catch {
       return true;
     }
-  });
-  const roomSoundsEnabledRef = useRef(roomSoundsEnabled);
+  };
+
+  const [joinSoundEnabled, setJoinSoundEnabled] = useState<boolean>(() =>
+    readSoundPreference(JOIN_SOUND_PREF_KEY),
+  );
+  const joinSoundEnabledRef = useRef(joinSoundEnabled);
+
+  const [leaveSoundEnabled, setLeaveSoundEnabled] = useState<boolean>(() =>
+    readSoundPreference(LEAVE_SOUND_PREF_KEY),
+  );
+  const leaveSoundEnabledRef = useRef(leaveSoundEnabled);
+
+  const [stageSoundsEnabled, setStageSoundsEnabled] = useState<boolean>(() =>
+    readSoundPreference(STAGE_SOUNDS_PREF_KEY),
+  );
+  const stageSoundsEnabledRef = useRef(stageSoundsEnabled);
 
   const [roomSoundsVolume, setRoomSoundsVolume] = useState<number>(() => {
     try {
@@ -4270,11 +4290,25 @@ export function RoomPageLiveKit({
   }, [previewMirrored]);
 
   useEffect(() => {
-    roomSoundsEnabledRef.current = roomSoundsEnabled;
+    joinSoundEnabledRef.current = joinSoundEnabled;
     try {
-      localStorage.setItem(ROOM_SOUNDS_PREF_KEY, String(roomSoundsEnabled));
+      localStorage.setItem(JOIN_SOUND_PREF_KEY, String(joinSoundEnabled));
     } catch { }
-  }, [roomSoundsEnabled]);
+  }, [joinSoundEnabled]);
+
+  useEffect(() => {
+    leaveSoundEnabledRef.current = leaveSoundEnabled;
+    try {
+      localStorage.setItem(LEAVE_SOUND_PREF_KEY, String(leaveSoundEnabled));
+    } catch { }
+  }, [leaveSoundEnabled]);
+
+  useEffect(() => {
+    stageSoundsEnabledRef.current = stageSoundsEnabled;
+    try {
+      localStorage.setItem(STAGE_SOUNDS_PREF_KEY, String(stageSoundsEnabled));
+    } catch { }
+  }, [stageSoundsEnabled]);
 
   useEffect(() => {
     roomSoundsVolumeRef.current = roomSoundsVolume;
@@ -4298,8 +4332,8 @@ export function RoomPageLiveKit({
       return;
     }
 
-    if (!roomSoundsEnabledRef.current) {
-      console.warn("[room-sound] skipped: sounds disabled", { url });
+    if (!stageSoundsEnabledRef.current) {
+      console.warn("[room-sound] skipped: stage sounds disabled", { url });
       return;
     }
 
@@ -4338,6 +4372,7 @@ export function RoomPageLiveKit({
 
   const playStageSoundSafely = (url: string, volume = 1) => {
     if (!url) return;
+    if (!stageSoundsEnabledRef.current) return;
 
     if (!audioUnlockedRef.current) {
       pendingStageSoundRef.current = { url, volume };
@@ -4409,7 +4444,7 @@ export function RoomPageLiveKit({
 
   const startWelcomeLoop = () => {
     stopWelcomeLoop();
-    if (!roomSoundsEnabledRef.current) return;
+    if (!stageSoundsEnabledRef.current) return;
 
     const baseVolume = Math.max(
       0,
@@ -4434,8 +4469,11 @@ export function RoomPageLiveKit({
   };
 
   useEffect(() => {
-    if (!roomSoundsEnabled) stopWelcomeLoop();
-  }, [roomSoundsEnabled]);
+    if (!stageSoundsEnabled) {
+      pendingStageSoundRef.current = null;
+      stopWelcomeLoop();
+    }
+  }, [stageSoundsEnabled]);
 
   useEffect(() => {
     const unlock = () => {
@@ -8573,13 +8611,13 @@ export function RoomPageLiveKit({
         refresh();
       });
       r.on(RoomEvent.ParticipantConnected, () => {
-        if (roomSoundsEnabledRef.current) {
+        if (joinSoundEnabledRef.current) {
           playOneShotFromCandidates(JOIN_SOUND_CANDIDATES, 0.8);
         }
         refresh();
       });
       r.on(RoomEvent.ParticipantDisconnected, () => {
-        if (roomSoundsEnabledRef.current) {
+        if (leaveSoundEnabledRef.current) {
           playOneShotFromCandidates(LEAVE_SOUND_CANDIDATES, 0.8);
         }
         refresh();
@@ -12923,10 +12961,14 @@ export function RoomPageLiveKit({
               autoGainControl: v,
             });
           }}
-          roomSoundsEnabled={roomSoundsEnabled}
-          onToggleRoomSounds={() => setRoomSoundsEnabled((prev) => !prev)}
-          roomSoundsVolume={roomSoundsVolume}
-          onChangeRoomSoundsVolume={setRoomSoundsVolume}
+          joinSoundEnabled={joinSoundEnabled}
+          onChangeJoinSoundEnabled={setJoinSoundEnabled}
+          leaveSoundEnabled={leaveSoundEnabled}
+          onChangeLeaveSoundEnabled={setLeaveSoundEnabled}
+          stageSoundsEnabled={stageSoundsEnabled}
+          onChangeStageSoundsEnabled={setStageSoundsEnabled}
+          stageSoundsVolume={roomSoundsVolume}
+          onChangeStageSoundsVolume={setRoomSoundsVolume}
           colorCorrectionEnabled={isLgUp}
           brightness={colorCorrection.brightness}
           contrast={colorCorrection.contrast}

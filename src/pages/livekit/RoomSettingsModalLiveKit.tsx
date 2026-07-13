@@ -1094,10 +1094,14 @@ export function RoomSettingsModalLiveKit({
     onChangeNoiseSuppression,
     onChangeAutoGainControl,
 
-    roomSoundsEnabled,
-    roomSoundsVolume,
-    onToggleRoomSounds,
-    onChangeRoomSoundsVolume,
+    joinSoundEnabled,
+    onChangeJoinSoundEnabled,
+    leaveSoundEnabled,
+    onChangeLeaveSoundEnabled,
+    stageSoundsEnabled,
+    onChangeStageSoundsEnabled,
+    stageSoundsVolume,
+    onChangeStageSoundsVolume,
 
     colorCorrectionEnabled,
     brightness,
@@ -1166,10 +1170,14 @@ export function RoomSettingsModalLiveKit({
     onChangeNoiseSuppression: (v: boolean) => void | Promise<void>;
     onChangeAutoGainControl: (v: boolean) => void | Promise<void>;
 
-    roomSoundsEnabled: boolean;
-    roomSoundsVolume: number;
-    onToggleRoomSounds: () => void;
-    onChangeRoomSoundsVolume: (v: number) => void;
+    joinSoundEnabled: boolean;
+    onChangeJoinSoundEnabled: (v: boolean) => void;
+    leaveSoundEnabled: boolean;
+    onChangeLeaveSoundEnabled: (v: boolean) => void;
+    stageSoundsEnabled: boolean;
+    onChangeStageSoundsEnabled: (v: boolean) => void;
+    stageSoundsVolume: number;
+    onChangeStageSoundsVolume: (v: number) => void;
 
     colorCorrectionEnabled: boolean;
     brightness: number;
@@ -1565,22 +1573,38 @@ export function RoomSettingsModalLiveKit({
 
                                 <div className="flex flex-col gap-4">
                                     <ToggleRow
-                                        label="Room sounds"
-                                        description="Enable join / leave and other room UI sounds."
-                                        checked={roomSoundsEnabled}
-                                        onChange={() => onToggleRoomSounds()}
+                                        label="Participant joined sound"
+                                        description="Play a notification when someone joins the room."
+                                        checked={joinSoundEnabled}
+                                        onChange={onChangeJoinSoundEnabled}
+                                        isLight={isLight}
+                                    />
+
+                                    <ToggleRow
+                                        label="Participant left sound"
+                                        description="Play a notification when someone leaves the room."
+                                        checked={leaveSoundEnabled}
+                                        onChange={onChangeLeaveSoundEnabled}
+                                        isLight={isLight}
+                                    />
+
+                                    <ToggleRow
+                                        label="Timeline stage sounds"
+                                        description="Play intro, focus, break and outro sounds from the Session Stage Bar."
+                                        checked={stageSoundsEnabled}
+                                        onChange={onChangeStageSoundsEnabled}
                                         isLight={isLight}
                                     />
 
                                     <SliderField
                                         label="Stage sounds volume"
-                                        description="Controls how loud local stage sounds play in this room."
+                                        description="Controls how loud Timeline stage sounds play in this room."
                                         min={0}
                                         max={100}
                                         step={1}
-                                        value={roomSoundsVolume}
-                                        onChange={onChangeRoomSoundsVolume}
-                                        disabled={!roomSoundsEnabled}
+                                        value={stageSoundsVolume}
+                                        onChange={onChangeStageSoundsVolume}
+                                        disabled={!stageSoundsEnabled}
                                         isLight={isLight}
                                         valueSuffix="%"
                                     />
