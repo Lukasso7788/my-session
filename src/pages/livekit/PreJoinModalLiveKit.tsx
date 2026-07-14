@@ -58,15 +58,16 @@ function deviceLabel(d: MediaDeviceInfo, fallback: string) {
   return (d.label || "").trim() || fallback;
 }
 
-// Dedicated modal mark. Replace this component with the final custom asset
-// without touching the pre-join layout or any media controls.
 function PreJoinModalIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
-      <path d="M7 4.75h10A2.25 2.25 0 0 1 19.25 7v10A2.25 2.25 0 0 1 17 19.25H7A2.25 2.25 0 0 1 4.75 17V7A2.25 2.25 0 0 1 7 4.75Z" stroke="currentColor" strokeWidth="1.7" />
-      <path d="m9 12 2 2 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
+    <span
+      className={`inline-block shrink-0 bg-current ${className}`}
+      style={{
+        WebkitMask: "url('/icons/prejoin-room-check.svg') center / contain no-repeat",
+        mask: "url('/icons/prejoin-room-check.svg') center / contain no-repeat",
+      }}
+      aria-hidden="true"
+    />
   );
 }
 
@@ -227,7 +228,7 @@ export function PreJoinModal({
     "fixed inset-0 z-[2147483647] flex items-stretch justify-center px-0 py-0 sm:items-center sm:px-3 sm:py-6 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]";
 
   const card = [
-    "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-[0_32px_100px_rgba(0,0,0,0.48)] sm:max-h-[92dvh] sm:max-w-[1040px] sm:rounded-[30px]",
+    "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-[0_18px_48px_rgba(0,0,0,0.26)] sm:max-h-[92dvh] sm:max-w-[1040px] sm:rounded-[30px]",
     isLight ? "border-white/80 bg-[#F6F4F4] text-black" : "border-white/[0.09] bg-[#181818] text-white",
   ].join(" ");
 
