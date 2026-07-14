@@ -12810,28 +12810,29 @@ export function RoomPageLiveKit({
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
-                        {avatar ? (
-                          <img
-                            src={avatar}
-                            alt={p.label}
-                            className="w-10 h-10 rounded-full object-cover"
-                            referrerPolicy="no-referrer"
-                            onError={(e) => {
-                              try {
-                                (e.currentTarget as any).style.display = "none";
-                              } catch { }
-                            }}
-                          />
-                        ) : (
-                          <div
-                            className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${true
-                              ? "bg-[#1B1B1B]/15 text-[#5286F6]"
-                              : "bg-[#1B1B1B]/15 text-[#5286F6]"
-                              }`}
-                          >
+                        <div
+                          className={`relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border text-[14px] font-semibold ${p.isLocal
+                            ? "border-[#81DB86]/70 bg-[#81DB86]/20 text-[#245F2A] ring-2 ring-[#81DB86]/20"
+                            : "border-[#C9D8CB] bg-[#E5EEE6] text-[#356B3A]"
+                            }`}
+                        >
+                          <span aria-hidden="true">
                             {p.kind === "screen" ? "🖥️" : initials}
-                          </div>
-                        )}
+                          </span>
+                          {avatar ? (
+                            <img
+                              src={avatar}
+                              alt={p.label}
+                              className="absolute inset-0 h-full w-full object-cover"
+                              referrerPolicy="no-referrer"
+                              onError={(e) => {
+                                try {
+                                  e.currentTarget.remove();
+                                } catch { }
+                              }}
+                            />
+                          ) : null}
+                        </div>
 
                         <div className="min-w-0">
                           <div
@@ -12844,24 +12845,14 @@ export function RoomPageLiveKit({
                               {statusLabel ? (
                                 <span
                                   className={`shrink-0 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${statusTone === "yellow"
-                                    ? isLight
-                                      ? "bg-yellow-100 text-yellow-800 border-yellow-300/60"
-                                      : "bg-yellow-400/15 text-yellow-200 border-yellow-300/25"
+                                    ? "border-yellow-300/60 bg-yellow-100 text-yellow-800"
                                     : statusTone === "purple"
-                                      ? isLight
-                                        ? "bg-purple-100 text-purple-800 border-purple-300/60"
-                                        : "bg-purple-400/15 text-purple-200 border-purple-300/25"
+                                      ? "border-purple-300/60 bg-purple-100 text-purple-800"
                                       : statusTone === "blue"
-                                        ? isLight
-                                          ? "bg-blue-100 text-blue-800 border-blue-300/60"
-                                          : "bg-blue-400/15 text-blue-200 border-blue-300/25"
+                                        ? "border-blue-300/60 bg-blue-100 text-blue-800"
                                         : statusTone === "orange"
-                                          ? isLight
-                                            ? "bg-orange-100 text-orange-800 border-orange-300/60"
-                                            : "bg-orange-400/15 text-orange-200 border-orange-300/25"
-                                          : isLight
-                                            ? "bg-neutral-100 text-neutral-700 border-neutral-300/60"
-                                            : "bg-[#303030] text-white/80 border-[#2B2B2B]"
+                                          ? "border-orange-300/60 bg-orange-100 text-orange-800"
+                                          : "border-neutral-300/60 bg-neutral-100 text-neutral-700"
                                     }`}
                                   title={statusLabel}
                                 >
@@ -12876,9 +12867,7 @@ export function RoomPageLiveKit({
                               <span className="ml-2 opacity-70">🙈</span>
                             ) : null}
                           </div>
-                          <div
-                            className={`text-[11px] truncate ${isLight ? "text-black/55" : "text-white/55"}`}
-                          >
+                          <div className="truncate text-[11px] text-black/55">
                             {roleText}
                           </div>
                         </div>
@@ -14534,7 +14523,7 @@ export function RoomPageLiveKit({
                 }`}
             >
               <div
-                className={`text-[16px] font-semibold ${true ? "text-black/85" : "text-black/85"}`}
+                className={`text-[16px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}
               >
                 Edit your name
               </div>
