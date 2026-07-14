@@ -66,6 +66,13 @@ function canUseSpeechRecognition() {
     return !!getSpeechRecognitionConstructor();
 }
 
+function setRoomVoiceUiPaused(paused: boolean) {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(
+        new Event(paused ? "mysession:voice-ui-pause" : "mysession:voice-ui-resume")
+    );
+}
+
 function speak(text: string) {
     if (typeof window === "undefined") return;
     if (!("speechSynthesis" in window)) return;
@@ -371,6 +378,7 @@ export default function AIHostedRoomController({
             } catch {
                 // ignore
             }
+            setRoomVoiceUiPaused(false);
 
             if (silenceStopTimerRef.current) {
                 window.clearTimeout(silenceStopTimerRef.current);
@@ -571,6 +579,8 @@ export default function AIHostedRoomController({
 
             recognition.onend = () => {
                 setListening(false);
+                recognitionRef.current = null;
+                setRoomVoiceUiPaused(false);
             };
 
             recognition.onresult = (event: any) => {
@@ -619,11 +629,13 @@ export default function AIHostedRoomController({
             };
 
             recognitionRef.current = recognition;
+            setRoomVoiceUiPaused(true);
             recognition.start();
         } catch (e: any) {
             console.error("[AI HOST] start voice input failed:", e);
             setListening(false);
             setVoiceHint(String(e?.message || "Could not start voice input."));
+            setRoomVoiceUiPaused(false);
         }
     };
 

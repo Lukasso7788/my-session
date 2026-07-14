@@ -88,6 +88,148 @@ import {
 
 type FxMode = "off" | "blur" | "bg";
 
+type VoiceUiCommand =
+  | "camera_on"
+  | "camera_off"
+  | "microphone_on"
+  | "microphone_off"
+  | "tasks_open"
+  | "tasks_close"
+  | "chat_open"
+  | "chat_close"
+  | "theme_light"
+  | "theme_dark";
+
+type VoiceUiStatus =
+  | "idle"
+  | "starting"
+  | "listening"
+  | "blocked"
+  | "unsupported";
+
+type SpeechRecognitionErrorLike = { error?: string };
+type SpeechRecognitionAlternativeLike = { transcript?: string };
+type SpeechRecognitionResultLike = {
+  isFinal?: boolean;
+  [index: number]: SpeechRecognitionAlternativeLike;
+};
+type SpeechRecognitionEventLike = {
+  resultIndex?: number;
+  results?: {
+    length?: number;
+    [index: number]: SpeechRecognitionResultLike;
+  };
+};
+
+type SpeechRecognitionLike = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  maxAlternatives: number;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onstart: null | (() => void);
+  onend: null | (() => void);
+  onerror: null | ((event: SpeechRecognitionErrorLike) => void);
+  onresult: null | ((event: SpeechRecognitionEventLike) => void);
+};
+
+type SpeechRecognitionConstructorLike = new () => SpeechRecognitionLike;
+
+function getSpeechRecognitionConstructor(): SpeechRecognitionConstructorLike | null {
+  if (typeof window === "undefined") return null;
+  const speechWindow = window as Window & {
+    SpeechRecognition?: SpeechRecognitionConstructorLike;
+    webkitSpeechRecognition?: SpeechRecognitionConstructorLike;
+  };
+  return (
+    speechWindow.SpeechRecognition ||
+    speechWindow.webkitSpeechRecognition ||
+    null
+  );
+}
+
+function normalizeVoiceUiTranscript(raw: string) {
+  return String(raw || "")
+    .toLocaleLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(
+      /^(?:please |hey mysession |mysession |can you |could you |пожалуйста |майсешн |можешь |можете )+/,
+      "",
+    )
+    .trim();
+}
+
+function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
+  const text = normalizeVoiceUiTranscript(raw);
+  if (!text) return null;
+
+  if (
+    /^(?:turn|switch) (?:the )?camera on$/.test(text) ||
+    /^(?:enable|start) (?:the )?camera$/.test(text) ||
+    /^camera on$/.test(text) ||
+    /^(?:включи|запусти) (?:камеру|видео)$/.test(text)
+  ) return "camera_on";
+
+  if (
+    /^(?:turn|switch) (?:the )?camera off$/.test(text) ||
+    /^(?:disable|stop) (?:the )?camera$/.test(text) ||
+    /^camera off$/.test(text) ||
+    /^(?:выключи|отключи|убери) (?:камеру|видео)$/.test(text)
+  ) return "camera_off";
+
+  if (
+    /^(?:unmute|enable|start) (?:the )?(?:mic|microphone)$/.test(text) ||
+    /^(?:turn|switch) (?:the )?(?:mic|microphone) on$/.test(text) ||
+    /^(?:mic|microphone) on$/.test(text) ||
+    /^(?:включи|размуть|анмьют) (?:микрофон|микрофончик)$/.test(text)
+  ) return "microphone_on";
+
+  if (
+    /^(?:mute|disable|stop) (?:the )?(?:mic|microphone)$/.test(text) ||
+    /^(?:turn|switch) (?:the )?(?:mic|microphone) off$/.test(text) ||
+    /^(?:mic|microphone) off$/.test(text) ||
+    /^(?:замуть|выключи|отключи|заглуши) (?:микрофон|микрофончик)$/.test(text)
+  ) return "microphone_off";
+
+  if (
+    /^open (?:the )?(?:tasks|tasks panel|intentions|intentions panel)$/.test(text) ||
+    /^(?:открой|покажи) (?:задачи|панель задач|интенции|намерения)$/.test(text)
+  ) return "tasks_open";
+
+  if (
+    /^close (?:the )?(?:tasks|tasks panel|intentions|intentions panel)$/.test(text) ||
+    /^(?:закрой|скрой) (?:задачи|панель задач|интенции|намерения)$/.test(text)
+  ) return "tasks_close";
+
+  if (
+    /^open (?:the )?chat(?: panel)?$/.test(text) ||
+    /^(?:открой|покажи) чат$/.test(text)
+  ) return "chat_open";
+
+  if (
+    /^close (?:the )?chat(?: panel)?$/.test(text) ||
+    /^(?:закрой|скрой) чат$/.test(text)
+  ) return "chat_close";
+
+  if (
+    /^(?:enable|use|switch to) light mode$/.test(text) ||
+    /^(?:light mode|light theme)$/.test(text) ||
+    /^(?:включи|переключи на) (?:светлую тему|светлый режим)$/.test(text)
+  ) return "theme_light";
+
+  if (
+    /^(?:enable|use|switch to) dark mode$/.test(text) ||
+    /^(?:dark mode|dark theme)$/.test(text) ||
+    /^(?:включи|переключи на) (?:темную тему|темный режим)$/.test(text)
+  ) return "theme_dark";
+
+  return null;
+}
+
 type HostProfile = {
   id: string;
   full_name: string;
@@ -5728,6 +5870,17 @@ export function RoomPageLiveKit({
   const [blurStrength, setBlurStrength] = useState<number>(12);
   const firefoxSafeFx = useMemo(() => isFirefoxLike(), []);
   const [connected, setConnected] = useState(false);
+  const [voiceUiStatus, setVoiceUiStatus] =
+    useState<VoiceUiStatus>("idle");
+  const [voiceUiLastCommand, setVoiceUiLastCommand] = useState("");
+  const voiceUiRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const voiceUiShouldListenRef = useRef(false);
+  const voiceUiSuspendedRef = useRef(false);
+  const voiceUiRestartTimerRef = useRef<number | null>(null);
+  const voiceUiLastExecutionRef = useRef({ command: "", at: 0 });
+  const voiceUiCommandHandlerRef = useRef<
+    (command: VoiceUiCommand) => Promise<void>
+  >(async () => undefined);
   const [mobileMediaRestoreOpen, setMobileMediaRestoreOpen] = useState(false);
   const [mobileMediaRestoreBusy, setMobileMediaRestoreBusy] = useState(false);
   const [mobileRestoreMode, setMobileRestoreMode] = useState<
@@ -9139,6 +9292,277 @@ export function RoomPageLiveKit({
     }
   };
 
+  voiceUiCommandHandlerRef.current = async (command: VoiceUiCommand) => {
+    const room = roomRef.current || roomState;
+
+    const microphoneIsEnabled = (() => {
+      try {
+        const publications = Array.from(
+          room?.localParticipant?.audioTrackPublications?.values?.() || [],
+        );
+        const publication = publications.find(
+          (item: unknown) =>
+            (item as { source?: unknown })?.source === Track.Source.Microphone,
+        );
+        const microphonePublication = publication as {
+          isMuted?: boolean;
+          track?: unknown;
+        } | undefined;
+        return !!microphonePublication &&
+          !microphonePublication.isMuted &&
+          !!microphonePublication.track;
+      } catch {
+        return micOn;
+      }
+    })();
+
+    const cameraIsEnabled = (() => {
+      try {
+        const publications = Array.from(
+          room?.localParticipant?.videoTrackPublications?.values?.() || [],
+        );
+        const publication = publications.find(
+          (item: unknown) =>
+            (item as { source?: unknown })?.source === Track.Source.Camera,
+        );
+        const cameraPublication = publication as {
+          isMuted?: boolean;
+          track?: unknown;
+        } | undefined;
+        return !!cameraPublication &&
+          !cameraPublication.isMuted &&
+          !!cameraPublication.track;
+      } catch {
+        return camOn;
+      }
+    })();
+
+    switch (command) {
+      case "camera_on":
+        if (!cameraIsEnabled) await toggleCam();
+        setVoiceUiLastCommand("Camera on");
+        break;
+      case "camera_off":
+        if (cameraIsEnabled) await toggleCam();
+        setVoiceUiLastCommand("Camera off");
+        break;
+      case "microphone_on":
+        if (!microphoneIsEnabled) await toggleMic();
+        setVoiceUiLastCommand("Microphone on");
+        break;
+      case "microphone_off":
+        if (microphoneIsEnabled) await toggleMic();
+        setVoiceUiLastCommand("Microphone muted");
+        break;
+      case "tasks_open":
+        setRightTab("tasks");
+        setRightPanelOpen(true);
+        setVoiceUiLastCommand("Tasks opened");
+        break;
+      case "tasks_close":
+        if (rightTab === "tasks") setRightPanelOpen(false);
+        setVoiceUiLastCommand("Tasks closed");
+        break;
+      case "chat_open":
+        setRightTab("chat");
+        setRightPanelOpen(true);
+        setVoiceUiLastCommand("Chat opened");
+        break;
+      case "chat_close":
+        if (rightTab === "chat") setRightPanelOpen(false);
+        setVoiceUiLastCommand("Chat closed");
+        break;
+      case "theme_light":
+        setTheme("light");
+        setVoiceUiLastCommand("Light mode");
+        break;
+      case "theme_dark":
+        setTheme("dark");
+        setVoiceUiLastCommand("Dark mode");
+        break;
+    }
+  };
+
+  useEffect(() => {
+    voiceUiShouldListenRef.current = connected;
+
+    if (voiceUiRestartTimerRef.current != null) {
+      window.clearTimeout(voiceUiRestartTimerRef.current);
+      voiceUiRestartTimerRef.current = null;
+    }
+
+    if (!connected) {
+      try {
+        voiceUiRecognitionRef.current?.abort();
+      } catch {
+        // Recognition may already be stopped.
+      }
+      voiceUiRecognitionRef.current = null;
+      setVoiceUiStatus("idle");
+      setVoiceUiLastCommand("");
+      return;
+    }
+
+    const SpeechRecognitionConstructor = getSpeechRecognitionConstructor();
+    if (!SpeechRecognitionConstructor) {
+      setVoiceUiStatus("unsupported");
+      return;
+    }
+
+    let disposed = false;
+
+    const scheduleRestart = (delayMs = 450) => {
+      if (disposed || !voiceUiShouldListenRef.current) return;
+      if (voiceUiSuspendedRef.current) return;
+      if (voiceUiRestartTimerRef.current != null) return;
+
+      voiceUiRestartTimerRef.current = window.setTimeout(() => {
+        voiceUiRestartTimerRef.current = null;
+        startRecognition();
+      }, delayMs);
+    };
+
+    const startRecognition = () => {
+      if (disposed || !voiceUiShouldListenRef.current) return;
+      if (voiceUiSuspendedRef.current) return;
+
+      if (document.visibilityState !== "visible") {
+        scheduleRestart(1_000);
+        return;
+      }
+
+      if (voiceUiRecognitionRef.current) return;
+
+      const recognition =
+        new SpeechRecognitionConstructor() as SpeechRecognitionLike;
+      recognition.lang = String(navigator.language || "en-US");
+      recognition.interimResults = false;
+      recognition.continuous = true;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        if (disposed) return;
+        setVoiceUiStatus("listening");
+      };
+
+      recognition.onresult = (event: SpeechRecognitionEventLike) => {
+        const results = event.results;
+        if (!results) return;
+
+        for (
+          let index = Number(event?.resultIndex || 0);
+          index < Number(results.length || 0);
+          index += 1
+        ) {
+          const result = results[index];
+          if (!result?.isFinal) continue;
+
+          const transcript = String(result?.[0]?.transcript || "").trim();
+          const command = parseVoiceUiCommand(transcript);
+          if (!command) continue;
+
+          const now = Date.now();
+          const previous = voiceUiLastExecutionRef.current;
+          if (previous.command === command && now - previous.at < 2_500) {
+            continue;
+          }
+
+          voiceUiLastExecutionRef.current = { command, at: now };
+          voiceUiCommandHandlerRef.current(command).catch((error) => {
+            console.warn("[voice-ui] command failed", command, error);
+          });
+        }
+      };
+
+      recognition.onerror = (event: SpeechRecognitionErrorLike) => {
+        const code = String(event?.error || "").trim();
+        console.warn("[voice-ui] recognition error", code || event);
+
+        if (code === "not-allowed" || code === "service-not-allowed") {
+          voiceUiShouldListenRef.current = false;
+          setVoiceUiStatus("blocked");
+          return;
+        }
+
+        if (!voiceUiSuspendedRef.current) {
+          setVoiceUiStatus("starting");
+        }
+      };
+
+      recognition.onend = () => {
+        if (voiceUiRecognitionRef.current === recognition) {
+          voiceUiRecognitionRef.current = null;
+        }
+        scheduleRestart();
+      };
+
+      voiceUiRecognitionRef.current = recognition;
+      setVoiceUiStatus("starting");
+
+      try {
+        recognition.start();
+      } catch (error) {
+        console.warn("[voice-ui] could not start recognition", error);
+        voiceUiRecognitionRef.current = null;
+        scheduleRestart(900);
+      }
+    };
+
+    const pauseVoiceUi = () => {
+      voiceUiSuspendedRef.current = true;
+      if (voiceUiRestartTimerRef.current != null) {
+        window.clearTimeout(voiceUiRestartTimerRef.current);
+        voiceUiRestartTimerRef.current = null;
+      }
+      try {
+        voiceUiRecognitionRef.current?.abort();
+      } catch {
+        // Recognition may already be stopped.
+      }
+      voiceUiRecognitionRef.current = null;
+      setVoiceUiStatus("idle");
+    };
+
+    const resumeVoiceUi = () => {
+      voiceUiSuspendedRef.current = false;
+      if (voiceUiShouldListenRef.current) scheduleRestart(250);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        resumeVoiceUi();
+      } else {
+        pauseVoiceUi();
+      }
+    };
+
+    window.addEventListener("mysession:voice-ui-pause", pauseVoiceUi);
+    window.addEventListener("mysession:voice-ui-resume", resumeVoiceUi);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    startRecognition();
+
+    return () => {
+      disposed = true;
+      voiceUiShouldListenRef.current = false;
+      voiceUiSuspendedRef.current = false;
+      window.removeEventListener("mysession:voice-ui-pause", pauseVoiceUi);
+      window.removeEventListener("mysession:voice-ui-resume", resumeVoiceUi);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+
+      if (voiceUiRestartTimerRef.current != null) {
+        window.clearTimeout(voiceUiRestartTimerRef.current);
+        voiceUiRestartTimerRef.current = null;
+      }
+
+      try {
+        voiceUiRecognitionRef.current?.abort();
+      } catch {
+        // Recognition may already be stopped.
+      }
+      voiceUiRecognitionRef.current = null;
+    };
+  }, [connected]);
+
   const createRoomScreenshot = async () => {
     const root = videoWrapRef.current;
     if (!root) throw new Error("Video container is not ready");
@@ -11450,6 +11874,24 @@ export function RoomPageLiveKit({
   const bottomBarBg = isLight
     ? "bg-[#F3F1F1] border border-[#D8D0D0]"
     : "bg-[#1B1B1B] border border-[#252525]";
+  const voiceUiStatusLabel =
+    voiceUiStatus === "listening"
+      ? "Voice UI listening"
+      : voiceUiStatus === "starting"
+        ? "Voice UI starting"
+        : voiceUiStatus === "blocked"
+          ? "Voice UI needs microphone permission"
+          : voiceUiStatus === "unsupported"
+            ? "Voice UI is not supported"
+            : "Voice UI paused";
+  const voiceUiStatusDot =
+    voiceUiStatus === "listening"
+      ? "bg-emerald-400"
+      : voiceUiStatus === "starting"
+        ? "bg-amber-400"
+        : voiceUiStatus === "blocked"
+          ? "bg-red-400"
+          : "bg-zinc-400";
 
   const ctlBtnBase = isLight
     ? "bg-[#E7E7E7] hover:bg-[#DCDCDC] text-black/75"
@@ -12617,6 +13059,23 @@ export function RoomPageLiveKit({
       ) : null}
 
       <div className={`ms-room-page h-[100dvh] overflow-hidden ${pageBg}`}>
+        {connected ? (
+          <div
+            className={`pointer-events-none fixed left-4 top-[112px] z-[80] flex max-w-[min(420px,calc(100vw-2rem))] items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium shadow-lg backdrop-blur ${isLight
+              ? "border-black/10 bg-white/85 text-black/70"
+              : "border-white/10 bg-black/65 text-white/75"
+              }`}
+            role="status"
+            aria-live="polite"
+            title="Always-on room voice controls"
+          >
+            <span className={`h-2 w-2 shrink-0 rounded-full ${voiceUiStatusDot}`} />
+            <span className="truncate">
+              {voiceUiStatusLabel}
+              {voiceUiLastCommand ? ` · ${voiceUiLastCommand}` : ""}
+            </span>
+          </div>
+        ) : null}
         <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))] sm:pb-[calc(90px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
           <RoomTopBar
             theme={theme}
