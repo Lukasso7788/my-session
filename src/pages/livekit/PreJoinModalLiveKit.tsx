@@ -236,7 +236,7 @@ export function PreJoinModal({
     "fixed inset-0 z-[2147483647] flex items-stretch justify-center px-0 py-0 sm:items-center sm:px-3 sm:py-6 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]";
 
   const card = [
-    "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-[0_32px_100px_rgba(0,0,0,0.48)] sm:max-h-[92dvh] sm:max-w-[1040px] sm:rounded-[30px]",
+    "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-[0_32px_100px_rgba(0,0,0,0.48)] sm:max-h-[92dvh] sm:max-w-[1160px] sm:rounded-[30px]",
     isLight ? "border-white/80 bg-[#F6F4F4] text-black" : "border-white/[0.09] bg-[#181818] text-white",
   ].join(" ");
 
@@ -344,9 +344,9 @@ export function PreJoinModal({
               </div>
               <div className="min-w-0">
                 <div className={`text-[10px] font-bold uppercase tracking-[0.18em] ${isLight ? "text-[#3E8C43]" : "text-[#81DB86]"}`}>Room check</div>
-                <div className="mt-0.5 font-inter text-[18px] font-semibold tracking-[-0.02em]">Ready to focus?</div>
+                <div className="mt-0.5 font-inter text-[18px] font-semibold tracking-[-0.02em]">Join your focus room</div>
                 <div className={`mt-0.5 text-[12px] ${labelCls}`}>
-                  Check your look and sound before entering the room.
+                  Make yourself comfortable, then step inside.
                 </div>
               </div>
             </div>
@@ -363,25 +363,27 @@ export function PreJoinModal({
         </div>
 
         <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-7 sm:py-6">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[400px,1fr]">
-            <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-7 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <div className="flex min-w-0 flex-col gap-4">
               <div className={`overflow-hidden rounded-[26px] border ${inputWrap}`}>
-                <div className="flex items-center justify-between px-4 py-3">
-                  <div className={`text-[12px] font-semibold ${labelCls}`}>{previewHint}</div>
-                  <div className={`text-[11px] ${labelCls}`}>
-                    {value.videoEnabled
-                      ? hideBackgroundFx
-                        ? "Clean"
-                        : videoFxMode === "blur"
-                          ? "Blur"
-                          : videoFxMode === "bg"
-                            ? "Background"
-                            : "Clean"
-                      : "Off"}
-                  </div>
-                </div>
-
                 <div className="relative aspect-video overflow-hidden bg-black">
+                  <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between bg-gradient-to-b from-black/60 to-transparent px-4 pb-8 pt-4 text-white">
+                    <div className="flex items-center gap-2 text-[12px] font-semibold">
+                      <span className={`h-2 w-2 rounded-full ${value.videoEnabled ? "bg-[#81DB86]" : "bg-white/35"}`} />
+                      {previewHint}
+                    </div>
+                    <div className="rounded-full border border-white/15 bg-black/30 px-2.5 py-1 text-[10px] font-medium backdrop-blur-md">
+                      {value.videoEnabled
+                        ? hideBackgroundFx
+                          ? "Clean"
+                          : videoFxMode === "blur"
+                            ? "Blur"
+                            : videoFxMode === "bg"
+                              ? "Virtual background"
+                              : "Clean"
+                        : "Camera off"}
+                    </div>
+                  </div>
                   {value.videoEnabled ? (
                     <>
                       <div ref={previewHostRef} className="absolute inset-0 h-full w-full" />
@@ -413,7 +415,7 @@ export function PreJoinModal({
               ) : null}
 
               {!hideBackgroundFx ? (
-                <div className={`rounded-3xl p-4 ${inputWrap}`}>
+                <div className={`rounded-[26px] p-4 sm:p-5 ${inputWrap}`}>
                   <div className="flex items-center justify-between gap-3">
                     <div className={`text-[12px] font-semibold ${labelCls}`}>Background effects</div>
                     <div className={`text-[11px] ${labelCls}`}>
@@ -468,7 +470,7 @@ export function PreJoinModal({
                   <div className="mt-4">
                     <div className={`text-[12px] ${labelCls}`}>Background image</div>
 
-                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                       {fxBgPresets?.map((p) => {
                         const selected = bgImageUrl === p.url;
 
@@ -493,7 +495,7 @@ export function PreJoinModal({
                             title={`Use ${p.label} background`}
                             aria-pressed={selected}
                           >
-                            <div className={`relative h-[72px] w-full overflow-hidden sm:h-[64px] ${isLight ? "bg-[#ECE8E8]" : "bg-[#171717]"}`}>
+                            <div className={`relative h-[76px] w-full overflow-hidden ${isLight ? "bg-[#ECE8E8]" : "bg-[#171717]"}`}>
                               <img
                                 src={p.url}
                                 alt={`${p.label} background preview`}
@@ -507,9 +509,8 @@ export function PreJoinModal({
                                 </span>
                               ) : null}
                             </div>
-                            <div className={`flex items-center justify-between px-3 py-2 text-[12px] ${labelCls}`}>
+                            <div className={`flex items-center justify-between px-2.5 py-2 text-[11px] ${labelCls}`}>
                               <span>{p.label}</span>
-                              {selected ? <span className="text-[10px] opacity-65">Selected</span> : null}
                             </div>
                           </button>
                         );
@@ -573,7 +574,12 @@ export function PreJoinModal({
               ) : null}
             </div>
 
-            <div className="flex flex-col gap-4">
+            <div className="flex min-w-0 flex-col gap-4">
+              <div className="px-1">
+                <div className="text-[15px] font-semibold tracking-[-0.01em]">Your setup</div>
+                <div className={`mt-1 text-[12px] leading-5 ${labelCls}`}>Choose how you want to enter the room.</div>
+              </div>
+
               <div className="flex flex-col gap-2">
                 <div className={`text-[12px] ${labelCls}`}>Display name</div>
                 <div className={`rounded-2xl px-4 py-3 ${inputWrap}`}>
@@ -586,7 +592,7 @@ export function PreJoinModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-3">
                 <div className="flex flex-col gap-2">
                   <div className={`text-[12px] ${labelCls}`}>Microphone</div>
                   <select value={value.audioInputId} onChange={(e) => onChange({ ...value, audioInputId: e.target.value })} className={selectCls}>
@@ -611,7 +617,7 @@ export function PreJoinModal({
                   </select>
                 </div>
 
-                <div className="flex flex-col gap-2 sm:col-span-2">
+                <div className="flex flex-col gap-2">
                   <div className={`text-[12px] ${labelCls}`}>Speaker</div>
                   <select value={value.audioOutputId} onChange={(e) => onChange({ ...value, audioOutputId: e.target.value })} className={selectCls}>
                     <option value="default" style={optionStyle}>Default</option>
@@ -624,8 +630,8 @@ export function PreJoinModal({
                 </div>
               </div>
 
-              <div className={`rounded-2xl p-4 ${inputWrap}`}>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className={`rounded-[24px] p-4 ${inputWrap}`}>
+                <div className="grid grid-cols-1 gap-3">
                   <button
                     type="button"
                     onClick={() => onChange({ ...value, audioEnabled: !value.audioEnabled })}
@@ -654,13 +660,13 @@ export function PreJoinModal({
                     <span className={labelCls}>Noise suppression</span>
                   </label>
 
-                  <label className="flex items-center gap-2 text-[13px] sm:col-span-2">
+                  <label className="flex items-center gap-2 text-[13px]">
                     <input type="checkbox" checked={value.autoGainControl} onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })} />
                     <span className={labelCls}>Auto gain control</span>
                   </label>
                 </div>
 
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="mt-4 flex flex-col gap-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <button onClick={onRefreshDevices} className={`h-10 rounded-2xl px-4 text-[13px] font-semibold ${btnGhost}`} type="button">
                       Refresh devices
@@ -671,16 +677,15 @@ export function PreJoinModal({
                     </button>
                   </div>
 
-                  <div className={`text-[12px] ${labelCls}`}>Tip: allow mic/camera to see device names</div>
+                  <div className={`text-[11px] leading-4 ${labelCls}`}>Allow microphone and camera access to see device names.</div>
                 </div>
               </div>
 
-              <div className={`rounded-2xl p-4 ${isLight ? "border border-[#5286F6]/20 bg-[#5286F6]/8" : "border border-[#2B2B2B] bg-[#252525]"}`}>
-                <div className={`text-[12px] font-semibold ${isLight ? "text-[#2459B8]" : "text-white/80"}`}>
-                  Quick sanity check
-                </div>
-                <div className={`mt-1 text-[12px] ${isLight ? "text-[#2459B8]/75" : "text-white/65"}`}>
-                  If preview is blank — allow camera permissions in the browser.
+              <div className={`flex items-start gap-3 rounded-[22px] p-4 ${isLight ? "border border-[#BEEFC1] bg-[#EAF8EB]" : "border border-[#81DB86]/15 bg-[#81DB86]/[0.06]"}`}>
+                <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] ${isLight ? "bg-[#CDEFD0] text-[#26732C]" : "bg-[#81DB86]/15 text-[#81DB86]"}`}>✓</span>
+                <div>
+                  <div className={`text-[12px] font-semibold ${isLight ? "text-[#26732C]" : "text-white/85"}`}>Almost there</div>
+                  <div className={`mt-1 text-[11px] leading-4 ${isLight ? "text-[#26732C]/75" : "text-white/55"}`}>You can change these settings anytime inside the room.</div>
                 </div>
               </div>
             </div>
