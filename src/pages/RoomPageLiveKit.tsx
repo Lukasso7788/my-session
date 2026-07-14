@@ -194,184 +194,92 @@ function normalizeVoiceUiTranscript(raw: string) {
     .trim();
 }
 
-function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
-  const text = normalizeVoiceUiTranscript(raw);
-  if (!text) return null;
+type VoiceUiCommandGroupId = "media" | "panels" | "views" | "tools" | "reactions";
 
-  if (
-    /^(?:turn|switch) (?:the )?camera on$/.test(text) ||
-    /^(?:enable|start) (?:the )?camera$/.test(text) ||
-    /^camera on$/.test(text)
-  ) return "camera_on";
+type VoiceUiCommandDefinition = {
+  command: VoiceUiCommand;
+  group: VoiceUiCommandGroupId;
+  phrase: string;
+  aliases?: readonly string[];
+};
 
-  if (
-    /^(?:turn|switch) (?:the )?camera off$/.test(text) ||
-    /^(?:disable|stop) (?:the )?camera$/.test(text) ||
-    /^camera off$/.test(text)
-  ) return "camera_off";
+const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
+  { command: "camera_on", group: "media", phrase: "Camera on", aliases: ["Turn on camera", "Turn on the camera", "Turn camera on", "Turn the camera on", "Switch camera on", "Switch the camera on", "Enable camera", "Enable the camera", "Start camera", "Start the camera"] },
+  { command: "camera_off", group: "media", phrase: "Camera off", aliases: ["Turn off camera", "Turn off the camera", "Turn of camera", "Turn of the camera", "Turn camera off", "Turn the camera off", "Switch camera off", "Switch the camera off", "Disable camera", "Disable the camera", "Stop camera", "Stop the camera"] },
+  { command: "microphone_on", group: "media", phrase: "Mic on", aliases: ["Microphone on", "Unmute mic", "Unmute the mic", "Unmute microphone", "Unmute the microphone", "Turn on mic", "Turn on the mic", "Turn on microphone", "Turn on the microphone", "Turn mic on", "Turn microphone on", "Switch mic on", "Switch microphone on", "Enable mic", "Enable microphone", "Start mic", "Start microphone"] },
+  { command: "microphone_off", group: "media", phrase: "Mic off", aliases: ["Microphone off", "Mute mic", "Mute the mic", "Mute microphone", "Mute the microphone", "Turn off mic", "Turn off the mic", "Turn off microphone", "Turn off the microphone", "Turn of microphone", "Turn of the microphone", "Turn mic off", "Turn microphone off", "Switch mic off", "Switch microphone off", "Disable mic", "Disable microphone", "Stop mic", "Stop microphone"] },
+  { command: "screen_share_on", group: "media", phrase: "Share screen", aliases: ["Share my screen", "Start screen share", "Start screen sharing", "Enable screen sharing"] },
+  { command: "screen_share_off", group: "media", phrase: "Stop sharing screen", aliases: ["Stop screen share", "Stop screen sharing", "Turn off screen sharing"] },
 
-  if (
-    /^(?:unmute|enable|start) (?:the )?(?:mic|microphone)$/.test(text) ||
-    /^(?:turn|switch) (?:the )?(?:mic|microphone) on$/.test(text) ||
-    /^(?:mic|microphone) on$/.test(text)
-  ) return "microphone_on";
+  { command: "tasks_open", group: "panels", phrase: "Open tasks", aliases: ["Open task", "Open task panel", "Open tasks panel", "Open intentions", "Show tasks"] },
+  { command: "tasks_close", group: "panels", phrase: "Close tasks", aliases: ["Close task", "Close task panel", "Close tasks panel", "Close intentions", "Hide tasks"] },
+  { command: "chat_open", group: "panels", phrase: "Open chat", aliases: ["Open chat panel"] },
+  { command: "chat_close", group: "panels", phrase: "Close chat", aliases: ["Close chat panel"] },
+  { command: "participants_open", group: "panels", phrase: "Open participants", aliases: ["Open participants panel", "Show participants", "Show people"] },
+  { command: "participants_close", group: "panels", phrase: "Close participants", aliases: ["Close participants panel", "Hide participants", "Hide people"] },
+  { command: "settings_open", group: "panels", phrase: "Open settings", aliases: ["Open room settings"] },
+  { command: "settings_close", group: "panels", phrase: "Close settings", aliases: ["Close room settings"] },
 
-  if (
-    /^(?:mute|disable|stop) (?:the )?(?:mic|microphone)$/.test(text) ||
-    /^(?:turn|switch) (?:the )?(?:mic|microphone) off$/.test(text) ||
-    /^(?:mic|microphone) off$/.test(text)
-  ) return "microphone_off";
+  { command: "pip_open", group: "views", phrase: "Open picture in picture", aliases: ["Open PIP", "Enable picture in picture", "Start picture in picture"] },
+  { command: "pip_close", group: "views", phrase: "Close picture in picture", aliases: ["Close PIP", "Disable picture in picture", "Stop picture in picture"] },
+  { command: "accountability_open", group: "views", phrase: "Open accountability wall", aliases: ["Open accountability view", "Show accountability", "Switch to accountability"] },
+  { command: "accountability_close", group: "views", phrase: "Show video view", aliases: ["Close accountability wall", "Close accountability view", "Switch to video", "Switch to video view"] },
+  { command: "layout_auto", group: "views", phrase: "Auto layout", aliases: ["Automatic layout", "Use auto layout", "Set auto layout", "Switch to auto layout"] },
+  { command: "layout_one", group: "views", phrase: "One column", aliases: ["One column layout", "Set one column layout", "Use one column layout", "1 column layout"] },
+  { command: "layout_two", group: "views", phrase: "Two columns", aliases: ["Two column layout", "Set two column layout", "Use two column layout", "2 column layout"] },
+  { command: "layout_three", group: "views", phrase: "Three columns", aliases: ["Three column layout", "Set three column layout", "Use three column layout", "3 column layout"] },
+  { command: "layout_four", group: "views", phrase: "Four columns", aliases: ["Four column layout", "Set four column layout", "Use four column layout", "4 column layout"] },
 
-  if (
-    /^(?:open|show) (?:the )?(?:task|tasks|task panel|tasks panel|intentions|intentions panel)$/.test(text)
-  ) return "tasks_open";
+  { command: "theme_light", group: "tools", phrase: "Light mode", aliases: ["Light theme", "Enable light mode", "Use light mode", "Switch to light mode"] },
+  { command: "theme_dark", group: "tools", phrase: "Dark mode", aliases: ["Dark theme", "Enable dark mode", "Use dark mode", "Switch to dark mode"] },
+  { command: "ai_host_open", group: "tools", phrase: "Open AI host" },
+  { command: "ai_host_close", group: "tools", phrase: "Close AI host" },
+  { command: "bug_report_open", group: "tools", phrase: "Open bug report", aliases: ["Open report a problem"] },
+  { command: "bug_report_close", group: "tools", phrase: "Close bug report", aliases: ["Close report a problem"] },
+  { command: "host_profile_open", group: "tools", phrase: "Open host profile" },
+  { command: "profile_close", group: "tools", phrase: "Close profile", aliases: ["Close host profile"] },
+  { command: "timeline_open", group: "tools", phrase: "Open timeline", aliases: ["Open timeline editor"] },
+  { command: "timeline_close", group: "tools", phrase: "Close timeline", aliases: ["Close timeline editor"] },
+  { command: "edit_name_open", group: "tools", phrase: "Edit my name", aliases: ["Open name editor", "Change my name"] },
+  { command: "edit_name_close", group: "tools", phrase: "Close name editor", aliases: ["Close edit name"] },
 
-  if (
-    /^(?:close|hide) (?:the )?(?:task|tasks|task panel|tasks panel|intentions|intentions panel)$/.test(text)
-  ) return "tasks_close";
+  { command: "reaction_fire", group: "reactions", phrase: "Fire", aliases: ["Fire reaction", "Send fire", "React with fire"] },
+  { command: "reaction_laugh", group: "reactions", phrase: "Laugh", aliases: ["Laughter", "Laugh reaction", "Send laugh", "React with laugh"] },
+  { command: "reaction_thumbs_up", group: "reactions", phrase: "Thumbs up", aliases: ["Thumbs up reaction", "Send thumbs up", "React with thumbs up"] },
+  { command: "reaction_thumbs_down", group: "reactions", phrase: "Thumbs down", aliases: ["Thumbs down reaction", "Send thumbs down", "React with thumbs down"] },
+  { command: "reaction_heart", group: "reactions", phrase: "Heart", aliases: ["Love", "Heart reaction", "Send heart", "React with heart"] },
+  { command: "reaction_clap", group: "reactions", phrase: "Clap", aliases: ["Applause", "Clap reaction", "Send clap", "React with clap"] },
+  { command: "reaction_ok", group: "reactions", phrase: "OK", aliases: ["OK reaction", "Send OK", "React with OK"] },
+  { command: "reaction_wave", group: "reactions", phrase: "Wave", aliases: ["Wave reaction", "Send wave", "React with wave"] },
+  { command: "reaction_celebrate", group: "reactions", phrase: "Celebrate", aliases: ["Celebration", "Celebrate reaction", "Send celebrate", "React with celebrate"] },
+];
 
-  if (
-    /^open (?:the )?chat(?: panel)?$/.test(text)
-  ) return "chat_open";
+const VOICE_UI_COMMAND_GROUPS: readonly {
+  id: VoiceUiCommandGroupId;
+  title: string;
+}[] = [
+  { id: "media", title: "Camera, microphone & sharing" },
+  { id: "panels", title: "Room panels" },
+  { id: "views", title: "Views & layout" },
+  { id: "tools", title: "Tools & appearance" },
+  { id: "reactions", title: "Reactions" },
+];
 
-  if (
-    /^close (?:the )?chat(?: panel)?$/.test(text)
-  ) return "chat_close";
-
-  if (
-    /^open (?:the )?participants(?: panel)?$/.test(text) ||
-    /^(?:show|open) (?:the )?people$/.test(text)
-  ) return "participants_open";
-
-  if (
-    /^close (?:the )?participants(?: panel)?$/.test(text) ||
-    /^(?:hide|close) (?:the )?people$/.test(text)
-  ) return "participants_close";
-
-  if (
-    /^open (?:the )?(?:settings|room settings)$/.test(text)
-  ) return "settings_open";
-
-  if (
-    /^close (?:the )?(?:settings|room settings)$/.test(text)
-  ) return "settings_close";
-
-  if (
-    /^(?:start|enable|turn on) (?:screen share|screen sharing)$/.test(text) ||
-    /^share (?:my |the )?screen$/.test(text)
-  ) return "screen_share_on";
-
-  if (
-    /^(?:stop|disable|turn off) (?:screen share|screen sharing)$/.test(text) ||
-    /^stop sharing (?:my |the )?screen$/.test(text)
-  ) return "screen_share_off";
-
-  if (
-    /^open (?:picture in picture|pip)$/.test(text) ||
-    /^(?:enable|start) (?:picture in picture|pip)$/.test(text)
-  ) return "pip_open";
-
-  if (
-    /^close (?:picture in picture|pip)$/.test(text) ||
-    /^(?:disable|stop) (?:picture in picture|pip)$/.test(text)
-  ) return "pip_close";
-
-  if (
-    /^open (?:the )?(?:accountability wall|accountability view)$/.test(text) ||
-    /^(?:show|switch to) (?:the )?accountability(?: wall| view)?$/.test(text)
-  ) return "accountability_open";
-
-  if (
-    /^close (?:the )?(?:accountability wall|accountability view)$/.test(text) ||
-    /^(?:show|switch to) (?:the )?video(?: view)?$/.test(text)
-  ) return "accountability_close";
-
-  if (/^(?:use|set|switch to) (?:the )?(?:auto|automatic) layout$/.test(text)) return "layout_auto";
-  if (/^(?:use|set|switch to) (?:the )?(?:one|1) column layout$/.test(text)) return "layout_one";
-  if (/^(?:use|set|switch to) (?:the )?(?:two|2) column layout$/.test(text)) return "layout_two";
-  if (/^(?:use|set|switch to) (?:the )?(?:three|3) column layout$/.test(text)) return "layout_three";
-  if (/^(?:use|set|switch to) (?:the )?(?:four|4) column layout$/.test(text)) return "layout_four";
-
-  if (/^open (?:the )?ai host$/.test(text)) return "ai_host_open";
-  if (/^close (?:the )?ai host$/.test(text)) return "ai_host_close";
-  if (/^open (?:the )?(?:bug report|report a problem)$/.test(text)) return "bug_report_open";
-  if (/^close (?:the )?(?:bug report|report a problem)$/.test(text)) return "bug_report_close";
-  if (/^open (?:the )?host profile$/.test(text)) return "host_profile_open";
-  if (/^close (?:the )?(?:profile|host profile)$/.test(text)) return "profile_close";
-  if (/^open (?:the )?(?:timeline|timeline editor)$/.test(text)) return "timeline_open";
-  if (/^close (?:the )?(?:timeline|timeline editor)$/.test(text)) return "timeline_close";
-  if (/^(?:open|change|edit) (?:my )?name$/.test(text)) return "edit_name_open";
-  if (/^close (?:the )?(?:name editor|edit name)$/.test(text)) return "edit_name_close";
-
-  if (/^(?:send |react with )?fire(?: reaction)?$/.test(text)) return "reaction_fire";
-  if (/^(?:send |react with )?(?:laugh|laughter)(?: reaction)?$/.test(text)) return "reaction_laugh";
-  if (/^(?:send |react with )?thumbs up(?: reaction)?$/.test(text)) return "reaction_thumbs_up";
-  if (/^(?:send |react with )?thumbs down(?: reaction)?$/.test(text)) return "reaction_thumbs_down";
-  if (/^(?:send |react with )?(?:heart|love)(?: reaction)?$/.test(text)) return "reaction_heart";
-  if (/^(?:send |react with )?(?:clap|applause)(?: reaction)?$/.test(text)) return "reaction_clap";
-  if (/^(?:send |react with )?ok(?: reaction)?$/.test(text)) return "reaction_ok";
-  if (/^(?:send |react with )?wave(?: reaction)?$/.test(text)) return "reaction_wave";
-  if (/^(?:send |react with )?(?:celebrate|celebration)(?: reaction)?$/.test(text)) return "reaction_celebrate";
-
-  if (
-    /^(?:enable|use|switch to) light mode$/.test(text) ||
-    /^(?:light mode|light theme)$/.test(text)
-  ) return "theme_light";
-
-  if (
-    /^(?:enable|use|switch to) dark mode$/.test(text) ||
-    /^(?:dark mode|dark theme)$/.test(text)
-  ) return "theme_dark";
-
-  return null;
+const VOICE_UI_COMMAND_LOOKUP = new Map<string, VoiceUiCommand>();
+for (const definition of VOICE_UI_COMMAND_DEFINITIONS) {
+  for (const phrase of [definition.phrase, ...(definition.aliases || [])]) {
+    VOICE_UI_COMMAND_LOOKUP.set(
+      normalizeVoiceUiTranscript(phrase),
+      definition.command,
+    );
+  }
 }
 
-const VOICE_UI_COMMAND_GROUPS = [
-  {
-    title: "Camera, microphone & sharing",
-    commands: [
-      "Turn on camera / Turn off camera",
-      "Unmute microphone / Mute microphone",
-      "Start screen sharing / Stop screen sharing",
-    ],
-  },
-  {
-    title: "Room panels",
-    commands: [
-      "Open tasks / Close tasks",
-      "Open chat / Close chat",
-      "Open participants / Close participants",
-      "Open settings / Close settings",
-    ],
-  },
-  {
-    title: "Views & layout",
-    commands: [
-      "Open accountability wall / Switch to video view",
-      "Open picture in picture / Close picture in picture",
-      "Use auto layout",
-      "Set one / two / three / four column layout",
-    ],
-  },
-  {
-    title: "Tools & appearance",
-    commands: [
-      "Open AI host / Close AI host",
-      "Open bug report / Close bug report",
-      "Open host profile / Close profile",
-      "Open timeline editor / Close timeline",
-      "Edit my name / Close name editor",
-      "Switch to light mode / Switch to dark mode",
-    ],
-  },
-  {
-    title: "Reactions",
-    commands: [
-      "Fire · Laugh · Thumbs up · Thumbs down",
-      "Heart · Clap · OK · Wave · Celebrate",
-    ],
-  },
-] as const;
+function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
+  const normalized = normalizeVoiceUiTranscript(raw);
+  if (!normalized) return null;
+  return VOICE_UI_COMMAND_LOOKUP.get(normalized) || null;
+}
 
 const VOICE_UI_ENABLED_STORAGE_KEY = "room_voice_ui_enabled";
 
@@ -13620,14 +13528,16 @@ export function RoomPageLiveKit({
                           {group.title}
                         </div>
                         <div className="mt-2 space-y-2">
-                          {group.commands.map((command) => (
-                            <div
-                              key={command}
-                              className={`rounded-2xl border px-3 py-2 ${isLight ? "border-black/[0.08] bg-white" : "border-white/[0.08] bg-white/[0.03]"}`}
-                            >
-                              <div className="text-[12px] font-semibold leading-5">{command}</div>
-                            </div>
-                          ))}
+                          {VOICE_UI_COMMAND_DEFINITIONS
+                            .filter((definition) => definition.group === group.id)
+                            .map((definition) => (
+                              <div
+                                key={definition.command}
+                                className={`rounded-2xl border px-3 py-2 ${isLight ? "border-black/[0.08] bg-white" : "border-white/[0.08] bg-white/[0.03]"}`}
+                              >
+                                <div className="text-[12px] font-semibold leading-5">{definition.phrase}</div>
+                              </div>
+                            ))}
                         </div>
                       </section>
                     ))}
