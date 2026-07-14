@@ -372,6 +372,11 @@ type MessageCardProps = {
     readers: ReadReceiptReader[];
 };
 
+type DisplayedReaction = {
+    count: number;
+    exiting: boolean;
+};
+
 function MessageCardInner({
     msg,
     mine,
@@ -394,6 +399,19 @@ function MessageCardInner({
     const [openReactions, setOpenReactions] = useState(false);
     const reactionButtonRef = useRef<HTMLButtonElement | null>(null);
     const reactionMenuRef = useRef<HTMLDivElement | null>(null);
+    const reactionExitTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(
+        new Map(),
+    );
+    const [displayedReactions, setDisplayedReactions] = useState<
+        Record<string, DisplayedReaction>
+    >(() =>
+        Object.fromEntries(
+            Object.entries(reactionsCounts || {}).map(([emoji, count]) => [
+                emoji,
+                { count, exiting: false },
+            ]),
+        ),
+    );
     const [reactionMenuPos, setReactionMenuPos] = useState<{
         top: number;
         left: number;
@@ -432,6 +450,63 @@ function MessageCardInner({
     }, [msg.body, isEditing]);
 
     useEffect(() => {
+        const currentReactions = reactionsCounts || {};
+
+        setDisplayedReactions((previous) => {
+            const next = { ...previous };
+
+            for (const [emoji, count] of Object.entries(currentReactions)) {
+                next[emoji] = { count, exiting: false };
+            }
+
+            for (const emoji of Object.keys(previous)) {
+                if (!(emoji in currentReactions)) {
+                    next[emoji] = { ...previous[emoji], exiting: true };
+                }
+            }
+
+            return next;
+        });
+    }, [reactionsCounts]);
+
+    useEffect(() => {
+        for (const [emoji, reaction] of Object.entries(displayedReactions)) {
+            const existingTimer = reactionExitTimersRef.current.get(emoji);
+
+            if (!reaction.exiting) {
+                if (existingTimer) {
+                    clearTimeout(existingTimer);
+                    reactionExitTimersRef.current.delete(emoji);
+                }
+                continue;
+            }
+
+            if (!existingTimer) {
+                const timer = setTimeout(() => {
+                    reactionExitTimersRef.current.delete(emoji);
+                    setDisplayedReactions((previous) => {
+                        if (!previous[emoji]?.exiting) return previous;
+                        const next = { ...previous };
+                        delete next[emoji];
+                        return next;
+                    });
+                }, 180);
+                reactionExitTimersRef.current.set(emoji, timer);
+            }
+        }
+    }, [displayedReactions]);
+
+    useEffect(
+        () => () => {
+            for (const timer of reactionExitTimersRef.current.values()) {
+                clearTimeout(timer);
+            }
+            reactionExitTimersRef.current.clear();
+        },
+        [],
+    );
+
+    useEffect(() => {
         if (!openReactions) return;
 
         updateReactionMenuPos();
@@ -461,20 +536,19 @@ function MessageCardInner({
         };
     }, [openReactions, updateReactionMenuPos]);
 
-    const hasReactions =
-        reactionsCounts && Object.keys(reactionsCounts).length > 0;
+    const hasReactions = Object.keys(displayedReactions).length > 0;
     const orderedReactionEntries = useMemo(() => {
-        const entries = Object.entries(reactionsCounts || {});
+        const entries = Object.entries(displayedReactions);
         entries.sort((a, b) => {
             const aMine = !!myReactions?.[a[0]];
             const bMine = !!myReactions?.[b[0]];
 
             if (aMine !== bMine) return aMine ? -1 : 1;
-            return b[1] - a[1];
+            return b[1].count - a[1].count;
         });
 
         return entries;
-    }, [reactionsCounts, myReactions]);
+    }, [displayedReactions, myReactions]);
 
     const metaNameCls = "text-black/55";
     const metaTimeCls = "text-black/35";
@@ -502,8 +576,8 @@ function MessageCardInner({
         : "bg-black/25 border border-[#D8D0D0] text-black/70 hover:bg-[#F7F5F5]";
 
     const reactionPillBase = isLight
-        ? "px-2 py-1 rounded-xl bg-[#ECEAEA] border border-[#D8D0D0] text-[12px] text-black/70 flex items-center gap-1.5 transition"
-        : "px-2 py-1 rounded-xl bg-[#F7F5F5] border border-[#D8D0D0] text-[12px] text-black/80 flex items-center gap-1.5 transition";
+        ? "px-2 py-1 rounded-xl bg-[#ECEAEA] border border-[#D8D0D0] text-[12px] text-black/70 flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#E3E1E1] hover:border-[#BEB7B7] hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]/75"
+        : "px-2 py-1 rounded-xl bg-[#F7F5F5] border border-[#D8D0D0] text-[12px] text-black/80 flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-white hover:border-[#BEB7B7] hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]/75";
 
     const reactionPillMine = isLight
         ? "bg-[#81DB86]/18 ring-2 ring-[#81DB86]/70 border-[#81DB86]/70 text-[#246B2A]"
@@ -921,24 +995,34 @@ function MessageCardInner({
                             (mine ? "justify-end" : "justify-start")
                         }
                     >
-                        {orderedReactionEntries.map(([emoji, count]) => {
+                        {orderedReactionEntries.map(([emoji, reaction]) => {
                             const isMine = !!myReactions?.[emoji];
                             return (
                                 <button
                                     key={emoji}
                                     type="button"
                                     className={
-                                        reactionPillBase + " " + (isMine ? reactionPillMine : "")
+                                        reactionPillBase +
+                                        " animate-[fadeIn_180ms_ease-out] " +
+                                        (isMine ? reactionPillMine : "") +
+                                        (reaction.exiting
+                                            ? " pointer-events-none opacity-0 scale-90 translate-y-0.5"
+                                            : " opacity-100")
                                     }
-                                    onClick={() => onOpenReactionDetails(msg.id, emoji)}
+                                    onClick={() => onToggleReaction(msg.id, emoji)}
                                     onContextMenu={(e) => {
                                         e.preventDefault();
-                                        onToggleReaction(msg.id, emoji);
+                                        onOpenReactionDetails(msg.id, emoji);
                                     }}
-                                    title={"Click — who reacted • Right-click — toggle"}
+                                    aria-pressed={isMine}
+                                    title={
+                                        isMine
+                                            ? "Click to remove your reaction · Right-click to see who reacted"
+                                            : "Click to react · Right-click to see who reacted"
+                                    }
                                 >
                                     <span className="text-[16px] leading-none">{emoji}</span>
-                                    <span className={reactionCountCls}>{count}</span>
+                                    <span className={reactionCountCls}>{reaction.count}</span>
                                 </button>
                             );
                         })}
