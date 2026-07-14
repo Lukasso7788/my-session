@@ -98,7 +98,41 @@ type VoiceUiCommand =
   | "chat_open"
   | "chat_close"
   | "theme_light"
-  | "theme_dark";
+  | "theme_dark"
+  | "participants_open"
+  | "participants_close"
+  | "settings_open"
+  | "settings_close"
+  | "screen_share_on"
+  | "screen_share_off"
+  | "pip_open"
+  | "pip_close"
+  | "accountability_open"
+  | "accountability_close"
+  | "layout_auto"
+  | "layout_one"
+  | "layout_two"
+  | "layout_three"
+  | "layout_four"
+  | "ai_host_open"
+  | "ai_host_close"
+  | "bug_report_open"
+  | "bug_report_close"
+  | "host_profile_open"
+  | "profile_close"
+  | "timeline_open"
+  | "timeline_close"
+  | "edit_name_open"
+  | "edit_name_close"
+  | "reaction_fire"
+  | "reaction_laugh"
+  | "reaction_thumbs_up"
+  | "reaction_thumbs_down"
+  | "reaction_heart"
+  | "reaction_clap"
+  | "reaction_ok"
+  | "reaction_wave"
+  | "reaction_celebrate";
 
 type VoiceUiStatus =
   | "idle"
@@ -217,6 +251,94 @@ function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
   ) return "chat_close";
 
   if (
+    /^open (?:the )?participants(?: panel)?$/.test(text) ||
+    /^(?:show|open) (?:the )?people$/.test(text) ||
+    /^(?:открой|покажи) (?:участников|панель участников|людей)$/.test(text)
+  ) return "participants_open";
+
+  if (
+    /^close (?:the )?participants(?: panel)?$/.test(text) ||
+    /^(?:hide|close) (?:the )?people$/.test(text) ||
+    /^(?:закрой|скрой) (?:участников|панель участников|людей)$/.test(text)
+  ) return "participants_close";
+
+  if (
+    /^open (?:the )?(?:settings|room settings)$/.test(text) ||
+    /^(?:открой|покажи) настройки(?: комнаты)?$/.test(text)
+  ) return "settings_open";
+
+  if (
+    /^close (?:the )?(?:settings|room settings)$/.test(text) ||
+    /^(?:закрой|скрой) настройки(?: комнаты)?$/.test(text)
+  ) return "settings_close";
+
+  if (
+    /^(?:start|enable|turn on) (?:screen share|screen sharing)$/.test(text) ||
+    /^share (?:my |the )?screen$/.test(text) ||
+    /^(?:включи|начни|запусти) (?:демонстрацию экрана|шеринг экрана)$/.test(text) ||
+    /^покажи (?:мой )?экран$/.test(text)
+  ) return "screen_share_on";
+
+  if (
+    /^(?:stop|disable|turn off) (?:screen share|screen sharing)$/.test(text) ||
+    /^stop sharing (?:my |the )?screen$/.test(text) ||
+    /^(?:выключи|останови|заверши) (?:демонстрацию экрана|шеринг экрана)$/.test(text) ||
+    /^перестань показывать экран$/.test(text)
+  ) return "screen_share_off";
+
+  if (
+    /^open (?:picture in picture|pip)$/.test(text) ||
+    /^(?:enable|start) (?:picture in picture|pip)$/.test(text) ||
+    /^(?:открой|включи) (?:картинку в картинке|пи п|пип)$/.test(text)
+  ) return "pip_open";
+
+  if (
+    /^close (?:picture in picture|pip)$/.test(text) ||
+    /^(?:disable|stop) (?:picture in picture|pip)$/.test(text) ||
+    /^(?:закрой|выключи) (?:картинку в картинке|пи п|пип)$/.test(text)
+  ) return "pip_close";
+
+  if (
+    /^open (?:the )?(?:accountability wall|accountability view)$/.test(text) ||
+    /^(?:show|switch to) (?:the )?accountability(?: wall| view)?$/.test(text) ||
+    /^(?:открой|покажи|переключись на) (?:стену ответственности|accountability)$/.test(text)
+  ) return "accountability_open";
+
+  if (
+    /^close (?:the )?(?:accountability wall|accountability view)$/.test(text) ||
+    /^(?:show|switch to) (?:the )?video(?: view)?$/.test(text) ||
+    /^(?:закрой|скрой) (?:стену ответственности|accountability)$/.test(text) ||
+    /^(?:покажи|верни) видео$/.test(text)
+  ) return "accountability_close";
+
+  if (/^(?:use|set|switch to) (?:the )?(?:auto|automatic) layout$/.test(text) || /^автоматическая раскладка$/.test(text)) return "layout_auto";
+  if (/^(?:use|set|switch to) (?:the )?(?:one|1) column layout$/.test(text) || /^(?:одна|1) колонка$/.test(text)) return "layout_one";
+  if (/^(?:use|set|switch to) (?:the )?(?:two|2) column layout$/.test(text) || /^(?:две|2) колонки$/.test(text)) return "layout_two";
+  if (/^(?:use|set|switch to) (?:the )?(?:three|3) column layout$/.test(text) || /^(?:три|3) колонки$/.test(text)) return "layout_three";
+  if (/^(?:use|set|switch to) (?:the )?(?:four|4) column layout$/.test(text) || /^(?:четыре|4) колонки$/.test(text)) return "layout_four";
+
+  if (/^open (?:the )?ai host$/.test(text) || /^(?:открой|покажи) (?:ai host|аи хост|ай хост)$/.test(text)) return "ai_host_open";
+  if (/^close (?:the )?ai host$/.test(text) || /^(?:закрой|скрой) (?:ai host|аи хост|ай хост)$/.test(text)) return "ai_host_close";
+  if (/^open (?:the )?(?:bug report|report a problem)$/.test(text) || /^(?:открой|покажи) (?:баг репорт|сообщение об ошибке)$/.test(text)) return "bug_report_open";
+  if (/^close (?:the )?(?:bug report|report a problem)$/.test(text) || /^(?:закрой|скрой) (?:баг репорт|сообщение об ошибке)$/.test(text)) return "bug_report_close";
+  if (/^open (?:the )?host profile$/.test(text) || /^(?:открой|покажи) профиль хоста$/.test(text)) return "host_profile_open";
+  if (/^close (?:the )?(?:profile|host profile)$/.test(text) || /^(?:закрой|скрой) профиль(?: хоста)?$/.test(text)) return "profile_close";
+  if (/^open (?:the )?(?:timeline|timeline editor)$/.test(text) || /^(?:открой|покажи) (?:таймлайн|редактор таймлайна)$/.test(text)) return "timeline_open";
+  if (/^close (?:the )?(?:timeline|timeline editor)$/.test(text) || /^(?:закрой|скрой) (?:таймлайн|редактор таймлайна)$/.test(text)) return "timeline_close";
+  if (/^(?:open|change|edit) (?:my )?name$/.test(text) || /^(?:открой|измени|редактируй) (?:мое )?имя$/.test(text)) return "edit_name_open";
+  if (/^close (?:the )?(?:name editor|edit name)$/.test(text) || /^(?:закрой|скрой) (?:редактор имени|изменение имени)$/.test(text)) return "edit_name_close";
+
+  if (/^(?:send |react with )?fire(?: reaction)?$/.test(text) || /^(?:отправь )?огонь$/.test(text)) return "reaction_fire";
+  if (/^(?:send |react with )?(?:laugh|laughter)(?: reaction)?$/.test(text) || /^(?:отправь )?смех$/.test(text)) return "reaction_laugh";
+  if (/^(?:send |react with )?thumbs up(?: reaction)?$/.test(text) || /^(?:отправь )?(?:палец вверх|лайк)$/.test(text)) return "reaction_thumbs_up";
+  if (/^(?:send |react with )?thumbs down(?: reaction)?$/.test(text) || /^(?:отправь )?(?:палец вниз|дизлайк)$/.test(text)) return "reaction_thumbs_down";
+  if (/^(?:send |react with )?(?:heart|love)(?: reaction)?$/.test(text) || /^(?:отправь )?сердце$/.test(text)) return "reaction_heart";
+  if (/^(?:send |react with )?(?:clap|applause)(?: reaction)?$/.test(text) || /^(?:отправь )?(?:хлопки|аплодисменты)$/.test(text)) return "reaction_clap";
+  if (/^(?:send |react with )?ok(?: reaction)?$/.test(text) || /^(?:отправь )?окей$/.test(text)) return "reaction_ok";
+  if (/^(?:send |react with )?wave(?: reaction)?$/.test(text) || /^(?:отправь )?(?:привет|помаши)$/.test(text)) return "reaction_wave";
+  if (/^(?:send |react with )?(?:celebrate|celebration)(?: reaction)?$/.test(text) || /^(?:отправь )?празднование$/.test(text)) return "reaction_celebrate";
+
+  if (
     /^(?:enable|use|switch to) light mode$/.test(text) ||
     /^(?:light mode|light theme)$/.test(text) ||
     /^(?:включи|переключи на) (?:светлую тему|светлый режим)$/.test(text)
@@ -230,6 +352,53 @@ function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
 
   return null;
 }
+
+const VOICE_UI_COMMAND_GROUPS = [
+  {
+    title: "Camera, microphone & sharing",
+    commands: [
+      ["Turn on camera / Turn off camera", "Включи камеру / Отключи камеру"],
+      ["Unmute microphone / Mute microphone", "Включи микрофон / Замуть микрофон"],
+      ["Start screen sharing / Stop screen sharing", "Покажи мой экран / Останови демонстрацию экрана"],
+    ],
+  },
+  {
+    title: "Room panels",
+    commands: [
+      ["Open tasks / Close tasks", "Открой задачи / Закрой задачи"],
+      ["Open chat / Close chat", "Открой чат / Закрой чат"],
+      ["Open participants / Close participants", "Покажи участников / Закрой участников"],
+      ["Open settings / Close settings", "Открой настройки / Закрой настройки"],
+    ],
+  },
+  {
+    title: "Views & layout",
+    commands: [
+      ["Open accountability wall / Switch to video view", "Открой стену ответственности / Покажи видео"],
+      ["Open picture in picture / Close picture in picture", "Включи картинку в картинке / Выключи картинку в картинке"],
+      ["Use auto layout", "Автоматическая раскладка"],
+      ["Set one / two / three / four column layout", "Одна / две / три / четыре колонки"],
+    ],
+  },
+  {
+    title: "Tools & appearance",
+    commands: [
+      ["Open AI host / Close AI host", "Открой AI Host / Закрой AI Host"],
+      ["Open bug report / Close bug report", "Открой баг-репорт / Закрой баг-репорт"],
+      ["Open host profile / Close profile", "Открой профиль хоста / Закрой профиль"],
+      ["Open timeline editor / Close timeline", "Открой редактор таймлайна / Закрой таймлайн"],
+      ["Edit my name / Close name editor", "Измени мое имя / Закрой редактор имени"],
+      ["Switch to light mode / Switch to dark mode", "Включи светлую тему / Включи темную тему"],
+    ],
+  },
+  {
+    title: "Reactions",
+    commands: [
+      ["Fire · Laugh · Thumbs up · Thumbs down", "Огонь · Смех · Лайк · Дизлайк"],
+      ["Heart · Clap · OK · Wave · Celebrate", "Сердце · Аплодисменты · Окей · Помаши · Празднование"],
+    ],
+  },
+] as const;
 
 type HostProfile = {
   id: string;
@@ -5875,6 +6044,7 @@ export function RoomPageLiveKit({
     useState<VoiceUiStatus>("idle");
   const [voiceUiLastCommand, setVoiceUiLastCommand] = useState("");
   const [voiceUiLastHeard, setVoiceUiLastHeard] = useState("");
+  const [voiceUiHelpOpen, setVoiceUiHelpOpen] = useState(false);
   const voiceUiRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceUiShouldListenRef = useRef(false);
   const voiceUiSuspendedRef = useRef(false);
@@ -5883,6 +6053,18 @@ export function RoomPageLiveKit({
   const voiceUiCommandHandlerRef = useRef<
     (command: VoiceUiCommand) => Promise<void>
   >(async () => undefined);
+
+  useEffect(() => {
+    if (!voiceUiHelpOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setVoiceUiHelpOpen(false);
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [voiceUiHelpOpen]);
+
   const [mobileMediaRestoreOpen, setMobileMediaRestoreOpen] = useState(false);
   const [mobileMediaRestoreBusy, setMobileMediaRestoreBusy] = useState(false);
   const [mobileRestoreMode, setMobileRestoreMode] = useState<
@@ -9339,6 +9521,14 @@ export function RoomPageLiveKit({
       }
     })();
 
+    const screenShareIsEnabled = (() => {
+      try {
+        return !!room && hasLocalLiveScreenShare(room);
+      } catch {
+        return screenShareOn;
+      }
+    })();
+
     switch (command) {
       case "camera_on":
         if (!cameraIsEnabled) await toggleCam();
@@ -9382,6 +9572,146 @@ export function RoomPageLiveKit({
         setTheme("dark");
         setVoiceUiLastCommand("Dark mode");
         break;
+      case "participants_open":
+        setRightTab("participants");
+        setRightPanelOpen(true);
+        setVoiceUiLastCommand("Participants opened");
+        break;
+      case "participants_close":
+        if (rightTab === "participants") setRightPanelOpen(false);
+        setVoiceUiLastCommand("Participants closed");
+        break;
+      case "settings_open":
+        setSettingsOpen(true);
+        setSettingsPreviewVersion((version) => version + 1);
+        setVoiceUiLastCommand("Settings opened");
+        break;
+      case "settings_close":
+        setSettingsOpen(false);
+        setVoiceUiLastCommand("Settings closed");
+        break;
+      case "screen_share_on":
+        if (!screenShareIsEnabled) await toggleScreenShare();
+        setVoiceUiLastCommand("Screen sharing started");
+        break;
+      case "screen_share_off":
+        if (screenShareIsEnabled) await toggleScreenShare();
+        setVoiceUiLastCommand("Screen sharing stopped");
+        break;
+      case "pip_open":
+        if (!pipOpen && pipSupported) await togglePictureInPicture();
+        setVoiceUiLastCommand("Picture in Picture opened");
+        break;
+      case "pip_close":
+        if (pipOpen) await closePictureInPicture();
+        setVoiceUiLastCommand("Picture in Picture closed");
+        break;
+      case "accountability_open":
+        setMainViewMode("accountability");
+        setVoiceUiLastCommand("Accountability wall opened");
+        break;
+      case "accountability_close":
+        setMainViewMode("video");
+        setVoiceUiLastCommand("Video view opened");
+        break;
+      case "layout_auto":
+        setVideoTileLayoutPreset("auto");
+        setVoiceUiLastCommand("Automatic layout");
+        break;
+      case "layout_one":
+        setVideoTileLayoutPreset("one");
+        setVoiceUiLastCommand("One-column layout");
+        break;
+      case "layout_two":
+        setVideoTileLayoutPreset("two");
+        setVoiceUiLastCommand("Two-column layout");
+        break;
+      case "layout_three":
+        setVideoTileLayoutPreset("three");
+        setVoiceUiLastCommand("Three-column layout");
+        break;
+      case "layout_four":
+        setVideoTileLayoutPreset("four");
+        setVoiceUiLastCommand("Four-column layout");
+        break;
+      case "ai_host_open":
+        if (aiHostedEnabled) setAiHostInputOpen(true);
+        setVoiceUiLastCommand("AI Host opened");
+        break;
+      case "ai_host_close":
+        setAiHostInputOpen(false);
+        setVoiceUiLastCommand("AI Host closed");
+        break;
+      case "bug_report_open":
+        setBugReportOpen(true);
+        setVoiceUiLastCommand("Bug report opened");
+        break;
+      case "bug_report_close":
+        setBugReportOpen(false);
+        setVoiceUiLastCommand("Bug report closed");
+        break;
+      case "host_profile_open":
+        if (session?.host_profile) {
+          setSelectedUser(session.host_profile as HostProfile);
+        }
+        setVoiceUiLastCommand("Host profile opened");
+        break;
+      case "profile_close":
+        setSelectedUser(null);
+        setVoiceUiLastCommand("Profile closed");
+        break;
+      case "timeline_open":
+        if (isHost) openTimelineEditor();
+        setVoiceUiLastCommand("Timeline opened");
+        break;
+      case "timeline_close":
+        setTimelineEditorOpen(false);
+        setVoiceUiLastCommand("Timeline closed");
+        break;
+      case "edit_name_open":
+        openEditName();
+        setVoiceUiLastCommand("Name editor opened");
+        break;
+      case "edit_name_close":
+        setEditNameOpen(false);
+        setVoiceUiLastCommand("Name editor closed");
+        break;
+      case "reaction_fire":
+        sendReaction("fire");
+        setVoiceUiLastCommand("Fire reaction sent");
+        break;
+      case "reaction_laugh":
+        sendReaction("laugh");
+        setVoiceUiLastCommand("Laugh reaction sent");
+        break;
+      case "reaction_thumbs_up":
+        sendReaction("thumbsUp");
+        setVoiceUiLastCommand("Thumbs up sent");
+        break;
+      case "reaction_thumbs_down":
+        sendReaction("thumbsDown");
+        setVoiceUiLastCommand("Thumbs down sent");
+        break;
+      case "reaction_heart":
+        sendReaction("heart");
+        setVoiceUiLastCommand("Heart reaction sent");
+        break;
+      case "reaction_clap":
+        sendReaction("clap");
+        setVoiceUiLastCommand("Clap reaction sent");
+        break;
+      case "reaction_ok":
+        sendReaction("ok");
+        setVoiceUiLastCommand("OK reaction sent");
+        break;
+      case "reaction_wave":
+        sendReaction("wave");
+        setVoiceUiLastCommand("Wave reaction sent");
+        break;
+      case "reaction_celebrate":
+        sendReaction("celebrate");
+        setVoiceUiLastCommand("Celebration sent");
+        break;
     }
   };
 
@@ -9403,6 +9733,7 @@ export function RoomPageLiveKit({
       setVoiceUiStatus("idle");
       setVoiceUiLastCommand("");
       setVoiceUiLastHeard("");
+      setVoiceUiHelpOpen(false);
       return;
     }
 
@@ -13035,33 +13366,38 @@ export function RoomPageLiveKit({
 
         .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar,
         .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar,
-        .ms-room-page .ms-room-settings-scrollbar {
+        .ms-room-page .ms-room-settings-scrollbar,
+        .ms-room-page .ms-voice-ui-scrollbar {
           scrollbar-width: thin !important;
           scrollbar-color: #B8C0BB transparent !important;
           -ms-overflow-style: auto !important;
         }
         .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar::-webkit-scrollbar,
         .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar,
-        .ms-room-page .ms-room-settings-scrollbar::-webkit-scrollbar {
+        .ms-room-page .ms-room-settings-scrollbar::-webkit-scrollbar,
+        .ms-room-page .ms-voice-ui-scrollbar::-webkit-scrollbar {
           width: 6px !important;
           height: 6px !important;
           display: block !important;
         }
         .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-track,
         .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-track,
-        .ms-room-page .ms-room-settings-scrollbar::-webkit-scrollbar-track {
+        .ms-room-page .ms-room-settings-scrollbar::-webkit-scrollbar-track,
+        .ms-room-page .ms-voice-ui-scrollbar::-webkit-scrollbar-track {
           background: transparent;
         }
         .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-thumb,
         .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-thumb,
-        .ms-room-page .ms-room-settings-scrollbar::-webkit-scrollbar-thumb {
+        .ms-room-page .ms-room-settings-scrollbar::-webkit-scrollbar-thumb,
+        .ms-room-page .ms-voice-ui-scrollbar::-webkit-scrollbar-thumb {
           min-height: 32px;
           border-radius: 999px;
           background: #B8C0BB;
         }
         .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-thumb:hover,
         .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-thumb:hover,
-        .ms-room-page .ms-room-settings-scrollbar::-webkit-scrollbar-thumb:hover {
+        .ms-room-page .ms-room-settings-scrollbar::-webkit-scrollbar-thumb:hover,
+        .ms-room-page .ms-voice-ui-scrollbar::-webkit-scrollbar-thumb:hover {
           background: #8F9993;
         }
 
@@ -13162,28 +13498,118 @@ export function RoomPageLiveKit({
 
       <div className={`ms-room-page h-[100dvh] overflow-hidden ${pageBg}`}>
         {connected ? (
-          <button
-            type="button"
-            onClick={() => {
-              window.dispatchEvent(new Event("mysession:voice-ui-restart"));
-            }}
-            className={`pointer-events-auto fixed left-4 top-[112px] z-[80] flex max-w-[min(520px,calc(100vw-2rem))] cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium shadow-lg backdrop-blur transition hover:scale-[1.01] ${isLight
-              ? "border-black/10 bg-white/85 text-black/70"
-              : "border-white/10 bg-black/65 text-white/75"
-              }`}
-            aria-live="polite"
-            aria-label="Restart always-on room voice controls"
-            title={`Click to restart voice controls${voiceUiLastHeard ? `. Last heard: ${voiceUiLastHeard}` : ""}`}
-          >
-            <span className={`h-2 w-2 shrink-0 rounded-full ${voiceUiStatusDot}`} />
-            <span className="truncate">
-              {voiceUiStatusLabel}
-              {voiceUiLastCommand ? ` · ${voiceUiLastCommand}` : ""}
-              {!voiceUiLastCommand && voiceUiLastHeard
-                ? ` · Heard: ${voiceUiLastHeard}`
-                : ""}
-            </span>
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => setVoiceUiHelpOpen((open) => !open)}
+              className={`pointer-events-auto fixed left-4 top-[112px] z-[92] flex max-w-[min(520px,calc(100vw-2rem))] cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium shadow-lg backdrop-blur transition hover:scale-[1.01] ${isLight
+                ? "border-black/10 bg-white/85 text-black/70"
+                : "border-white/10 bg-black/65 text-white/75"
+                }`}
+              aria-live="polite"
+              aria-expanded={voiceUiHelpOpen}
+              aria-haspopup="dialog"
+              aria-label="Show available room voice commands"
+              title="Show available voice commands"
+            >
+              <span className={`h-2 w-2 shrink-0 rounded-full ${voiceUiStatusDot}`} />
+              <span className="truncate">
+                {voiceUiStatusLabel}
+                {voiceUiLastCommand ? ` · ${voiceUiLastCommand}` : ""}
+                {!voiceUiLastCommand && voiceUiLastHeard
+                  ? ` · Heard: ${voiceUiLastHeard}`
+                  : ""}
+              </span>
+              <span aria-hidden="true" className="shrink-0 text-[10px] opacity-60">
+                {voiceUiHelpOpen ? "▲" : "▼"}
+              </span>
+            </button>
+
+            {voiceUiHelpOpen ? (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close voice commands"
+                  className="fixed inset-0 z-[90] cursor-default bg-transparent"
+                  onClick={() => setVoiceUiHelpOpen(false)}
+                />
+                <div
+                  role="dialog"
+                  aria-modal="false"
+                  aria-label="Available voice commands"
+                  className={`ms-voice-ui-scrollbar custom-scrollbar fixed left-4 top-[152px] z-[91] max-h-[calc(100dvh-172px)] w-[min(460px,calc(100vw-2rem))] overflow-y-auto rounded-3xl border p-4 shadow-2xl ${isLight
+                    ? "border-black/10 bg-[#F8F8F8] text-black"
+                    : "border-white/10 bg-[#1B1B1B] text-white"
+                    }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[15px] font-bold">Voice commands</div>
+                      <div className={`mt-1 text-[11px] ${isLight ? "text-black/55" : "text-white/55"}`}>
+                        Say a short command, then pause. English and Russian are supported.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setVoiceUiHelpOpen(false)}
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[14px] ${isLight ? "bg-black/5 hover:bg-black/10" : "bg-white/5 hover:bg-white/10"}`}
+                      aria-label="Close voice commands"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className={`mt-3 flex items-center justify-between gap-3 rounded-2xl border px-3 py-2 ${isLight ? "border-black/10 bg-white" : "border-white/10 bg-white/[0.03]"}`}>
+                    <div className="min-w-0 text-[11px]">
+                      <div className="flex items-center gap-2 font-semibold">
+                        <span className={`h-2 w-2 rounded-full ${voiceUiStatusDot}`} />
+                        {voiceUiStatusLabel}
+                      </div>
+                      {voiceUiLastHeard ? (
+                        <div className={`mt-1 truncate ${isLight ? "text-black/50" : "text-white/50"}`}>
+                          Last heard: {voiceUiLastHeard}
+                        </div>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        window.dispatchEvent(new Event("mysession:voice-ui-restart"));
+                      }}
+                      className={`h-8 shrink-0 rounded-xl px-3 text-[11px] font-semibold ${isLight ? "bg-black text-white hover:bg-black/80" : "bg-white text-black hover:bg-white/85"}`}
+                    >
+                      Restart listener
+                    </button>
+                  </div>
+
+                  <div className="mt-4 space-y-4">
+                    {VOICE_UI_COMMAND_GROUPS.map((group) => (
+                      <section key={group.title}>
+                        <div className={`text-[11px] font-bold uppercase tracking-[0.08em] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                          {group.title}
+                        </div>
+                        <div className="mt-2 space-y-2">
+                          {group.commands.map(([english, russian]) => (
+                            <div
+                              key={english}
+                              className={`rounded-2xl border px-3 py-2 ${isLight ? "border-black/[0.08] bg-white" : "border-white/[0.08] bg-white/[0.03]"}`}
+                            >
+                              <div className="text-[12px] font-semibold leading-5">{english}</div>
+                              <div className={`text-[11px] leading-5 ${isLight ? "text-black/50" : "text-white/50"}`}>{russian}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+
+                  <div className={`mt-4 rounded-2xl px-3 py-2 text-[10px] leading-4 ${isLight ? "bg-amber-50 text-amber-900/70" : "bg-amber-400/10 text-amber-100/65"}`}>
+                    Destructive commands such as Leave, kick, ban, and timeline saving are intentionally unavailable.
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </>
         ) : null}
         <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))] sm:pb-[calc(90px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
           <RoomTopBar
