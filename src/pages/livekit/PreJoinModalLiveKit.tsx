@@ -236,22 +236,22 @@ export function PreJoinModal({
     "fixed inset-0 z-[2147483647] flex items-stretch justify-center px-0 py-0 sm:items-center sm:px-3 sm:py-6 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]";
 
   const card = [
-    "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-2xl sm:max-h-[92dvh] sm:max-w-[980px] sm:rounded-3xl",
-    isLight ? "border-[#D8D0D0] bg-[#F3F1F1] text-black" : "border-[#2B2B2B] bg-[#1B1B1B] text-white",
+    "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-[0_32px_100px_rgba(0,0,0,0.48)] sm:max-h-[92dvh] sm:max-w-[1040px] sm:rounded-[30px]",
+    isLight ? "border-white/80 bg-[#F6F4F4] text-black" : "border-white/[0.09] bg-[#181818] text-white",
   ].join(" ");
 
-  const border = isLight ? "border-[#D8D0D0]" : "border-[#2B2B2B]";
+  const border = isLight ? "border-[#DDD7D7]" : "border-white/[0.08]";
   const labelCls = isLight ? "text-black/60" : "text-white/65";
-  const inputWrap = isLight ? "border border-[#CFC6C6] bg-[#F7F5F5]" : "border border-[#2B2B2B] bg-[#252525]";
+  const inputWrap = isLight ? "border border-[#DED8D8] bg-white/75 shadow-sm" : "border border-white/[0.08] bg-white/[0.045] shadow-sm";
   const inputCls = isLight ? "text-black placeholder:text-black/35" : "text-white placeholder:text-white/40";
-  const btnGhost = isLight ? "border border-[#CFC6C6] bg-[#F7F5F5] text-black/75 hover:bg-[#ECEAEA]" : "border border-[#2B2B2B] bg-[#252525] text-white/80 hover:bg-[#303030]";
-  const btnPrimary = isLight ? "bg-[#252525] text-white hover:bg-[#303030]" : "bg-[#81DB86] text-[#07130A] hover:bg-[#6FCB75]";
+  const btnGhost = isLight ? "border border-[#D8D1D1] bg-white/80 text-black/75 hover:border-[#BEB6B6] hover:bg-white" : "border border-white/[0.09] bg-white/[0.055] text-white/80 hover:border-white/20 hover:bg-white/[0.09]";
+  const btnPrimary = "bg-[#81DB86] text-[#102012] shadow-[0_10px_30px_rgba(129,219,134,0.22)] hover:bg-[#91E496] hover:shadow-[0_12px_34px_rgba(129,219,134,0.30)]";
   const fxBtnBase = "h-10 rounded-2xl px-4 text-[13px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60";
   const fxBtnSelected = isLight ? "bg-[#252525] text-white hover:bg-[#303030]" : "bg-[#F3F1F1] text-[#252525] hover:bg-[#ECEAEA]";
   const fxBtnIdle = btnGhost;
   const selectCls = [
-    "w-full rounded-xl px-3 py-2 text-[13px] outline-none",
-    isLight ? "border border-[#CFC6C6] bg-[#F7F5F5] text-black" : "border border-[#2B2B2B] bg-[#252525] text-white",
+    "h-11 w-full rounded-2xl px-3 text-[13px] outline-none transition focus:ring-2 focus:ring-[#81DB86]/30",
+    isLight ? "border border-[#D8D1D1] bg-white text-black" : "border border-white/[0.09] bg-[#222222] text-white",
   ].join(" ");
   const optionStyle: React.CSSProperties = isLight
     ? { color: "#111111", backgroundColor: "#F7F5F5" }
@@ -327,7 +327,7 @@ export function PreJoinModal({
       }}
     >
       <div
-        className="absolute inset-0 z-0 bg-black/55"
+        className="absolute inset-0 z-0 bg-black/70 backdrop-blur-md"
         onClick={onCancel}
       />
 
@@ -335,18 +335,25 @@ export function PreJoinModal({
         className={`${card} z-10`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className={`border-b px-5 py-4 sm:px-6 sm:py-5 ${border}`}>
+        <div className={`relative overflow-hidden border-b px-5 py-4 sm:px-7 sm:py-5 ${border}`}>
+          <div className="pointer-events-none absolute -right-20 -top-28 h-56 w-56 rounded-full bg-[#81DB86]/10 blur-3xl" />
           <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="font-inter text-[16px] font-semibold">Before you join</div>
-              <div className={`mt-1 text-[12px] ${labelCls}`}>
-                Preview + devices + background effects — then join.
+            <div className="flex min-w-0 items-center gap-3.5">
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${isLight ? "border-[#BEEFC1] bg-[#E8F9E9] text-[#25722B]" : "border-[#81DB86]/20 bg-[#81DB86]/10 text-[#81DB86]"}`}>
+                <IconCamera className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <div className={`text-[10px] font-bold uppercase tracking-[0.18em] ${isLight ? "text-[#3E8C43]" : "text-[#81DB86]"}`}>Room check</div>
+                <div className="mt-0.5 font-inter text-[18px] font-semibold tracking-[-0.02em]">Ready to focus?</div>
+                <div className={`mt-0.5 text-[12px] ${labelCls}`}>
+                  Check your look and sound before entering the room.
+                </div>
               </div>
             </div>
 
             <button
               onClick={onCancel}
-              className={`flex h-9 w-9 items-center justify-center rounded-2xl ${btnGhost}`}
+              className={`flex h-10 w-10 items-center justify-center rounded-2xl transition ${btnGhost}`}
               title="Close"
               type="button"
             >
@@ -355,10 +362,10 @@ export function PreJoinModal({
           </div>
         </div>
 
-        <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 sm:px-6 sm:py-5">
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[380px,1fr]">
+        <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-7 sm:py-6">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[400px,1fr]">
             <div className="flex flex-col gap-4">
-              <div className={`overflow-hidden rounded-3xl border ${inputWrap}`}>
+              <div className={`overflow-hidden rounded-[26px] border ${inputWrap}`}>
                 <div className="flex items-center justify-between px-4 py-3">
                   <div className={`text-[12px] font-semibold ${labelCls}`}>{previewHint}</div>
                   <div className={`text-[11px] ${labelCls}`}>
@@ -374,7 +381,7 @@ export function PreJoinModal({
                   </div>
                 </div>
 
-                <div className="relative aspect-video">
+                <div className="relative aspect-video overflow-hidden bg-black">
                   {value.videoEnabled ? (
                     <>
                       <div ref={previewHostRef} className="absolute inset-0 h-full w-full" />
@@ -680,14 +687,22 @@ export function PreJoinModal({
           </div>
         </div>
 
-        <div className={`flex items-center justify-end gap-3 border-t px-5 py-4 sm:px-6 sm:py-5 ${border}`}>
-          <button onClick={onCancel} className={`h-11 rounded-2xl px-5 text-[13px] font-semibold ${btnGhost}`} type="button">
+        <div className={`flex items-center justify-between gap-3 border-t px-5 py-4 sm:px-7 sm:py-5 ${border} ${isLight ? "bg-white/55" : "bg-black/10"}`}>
+          <div className={`hidden items-center gap-2 text-[12px] sm:flex ${labelCls}`}>
+            <span className={`h-2 w-2 rounded-full ${value.videoEnabled || value.audioEnabled ? "bg-[#81DB86] shadow-[0_0_0_4px_rgba(129,219,134,0.12)]" : "bg-white/25"}`} />
+            Your setup is saved for the next room
+          </div>
+
+          <div className="ml-auto flex items-center gap-3">
+          <button onClick={onCancel} className={`h-11 rounded-2xl px-5 text-[13px] font-semibold transition ${btnGhost}`} type="button">
             Cancel
           </button>
 
-          <button onClick={handleJoin} disabled={fxApplying} className={`h-11 rounded-2xl px-6 text-[13px] font-semibold ${btnPrimary} disabled:opacity-70`} type="button">
-            Join room
+          <button onClick={handleJoin} disabled={fxApplying} className={`inline-flex h-11 items-center gap-2 rounded-2xl px-6 text-[13px] font-semibold transition duration-200 ${btnPrimary} disabled:opacity-70`} type="button">
+            <span>{fxApplying ? "Applying background…" : "Join room"}</span>
+            {!fxApplying ? <span aria-hidden="true">→</span> : null}
           </button>
+          </div>
         </div>
 
         <audio ref={testAudioRef} />
