@@ -765,14 +765,14 @@ function TimelinePreview({
 
     const textMuted = isLight ? "text-black/60" : "text-white/60";
     const panelBg = isLight
-        ? "bg-white border-black/10 shadow-[0_10px_30px_rgba(0,0,0,0.10)]"
-        : "bg-[#0B1220] border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.35)]";
+        ? "bg-white border-[#D8D0D0] shadow-[0_10px_30px_rgba(0,0,0,0.08)]"
+        : "bg-[#242424] border-[#343434] shadow-[0_10px_30px_rgba(0,0,0,0.28)]";
     const inputBg = isLight
-        ? "bg-white border-black/10 text-black/85"
-        : "bg-[#111827] border-white/10 text-white/90";
+        ? "bg-[#F7F5F5] border-[#D8D0D0] text-black/85 focus:border-[#81DB86] focus:ring-1 focus:ring-[#81DB86]/45"
+        : "bg-[#1B1B1B] border-[#343434] text-white/90 focus:border-[#81DB86] focus:ring-1 focus:ring-[#81DB86]/45";
     const softBtn = isLight
-        ? "bg-black/5 border-black/10 text-black/80"
-        : "bg-white/5 border-white/10 text-white/85";
+        ? "bg-[#ECEAEA] border-[#D8D0D0] text-black/80 hover:bg-[#E3E1E1]"
+        : "bg-[#2B2B2B] border-[#343434] text-white/85 hover:bg-[#343434]";
 
     return (
         <div className="mt-3">
@@ -1337,14 +1337,17 @@ export default function RoomTimelineEditor({
 
     if (!open) return null;
 
-    const overlayBg = isLight ? "bg-black/45" : "bg-black/60";
-    const panelBg = isLight ? "bg-white text-black/85" : "bg-[#06111C] text-white";
-    const subtleBorder = isLight ? "border-black/10" : "border-white/10";
-    const softBg = isLight ? "bg-black/5" : "bg-white/5";
+    const overlayBg = isLight ? "bg-black/45" : "bg-black/65";
+    const panelBg = isLight ? "bg-[#F3F1F1] text-black/85" : "bg-[#1B1B1B] text-white";
+    const subtleBorder = isLight ? "border-[#D8D0D0]" : "border-[#343434]";
+    const softBg = isLight
+        ? "bg-[#ECEAEA] hover:bg-[#E3E1E1]"
+        : "bg-[#242424] hover:bg-[#2B2B2B]";
+    const sectionBg = isLight ? "bg-white" : "bg-[#242424]";
     const mutedText = isLight ? "text-black/55" : "text-white/55";
     const inputCls = isLight
-        ? "bg-white border-black/10 text-black/85"
-        : "bg-[#0B1220] border-white/10 text-white/90";
+        ? "bg-[#F7F5F5] border-[#D8D0D0] text-black/85 focus:border-[#81DB86] focus:ring-1 focus:ring-[#81DB86]/45 outline-none"
+        : "bg-[#1B1B1B] border-[#343434] text-white/90 focus:border-[#81DB86] focus:ring-1 focus:ring-[#81DB86]/45 outline-none";
 
     return (
         <div className={`fixed inset-0 z-[90] ${overlayBg} p-2 sm:p-4 flex items-center justify-center`}>
@@ -1356,7 +1359,7 @@ export default function RoomTimelineEditor({
                 >
                     <div className="min-w-0">
                         <div className="flex items-center gap-3 min-w-0">
-                            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${softBg}`}>
+                            <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-[#81DB86]/20 text-[#4B9A51]">
                                 <Layers size={18} />
                             </div>
                             <div className="min-w-0">
@@ -1413,7 +1416,7 @@ export default function RoomTimelineEditor({
                     </div>
 
                     <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        <div className={`border rounded-[20px] p-4 ${subtleBorder}`}>
+                        <div className={`border rounded-[20px] p-4 ${subtleBorder} ${sectionBg}`}>
                             <div className="font-inter font-semibold text-[14px]">Block library</div>
                             <div className={`mt-1 font-inter text-[12px] ${mutedText}`}>
                                 Add blocks to the current in-room timeline.
@@ -1425,7 +1428,7 @@ export default function RoomTimelineEditor({
                                         key={b.id}
                                         type="button"
                                         onClick={() => addFromLibrary(b)}
-                                        className={`text-left border rounded-[16px] p-3 transition ${subtleBorder} ${softBg}`}
+                                        className={`text-left border rounded-[16px] p-3 transition hover:-translate-y-0.5 hover:shadow-sm ${subtleBorder} ${softBg}`}
                                     >
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="min-w-0">
@@ -1451,7 +1454,7 @@ export default function RoomTimelineEditor({
                         </div>
 
                         <div
-                            className={`border rounded-[20px] p-4 ${subtleBorder}`}
+                            className={`border rounded-[20px] p-4 ${subtleBorder} ${sectionBg}`}
                             onDragOver={(e) => {
                                 if (!draggingId) return;
                                 updateAutoScrollFromClientY(e.clientY);
@@ -1572,10 +1575,8 @@ export default function RoomTimelineEditor({
                                                 className={
                                                     "relative border rounded-[18px] p-3 outline-none transition cursor-grab active:cursor-grabbing " +
                                                     (selected
-                                                        ? isLight
-                                                            ? "border-black/20 ring-2 ring-black/10"
-                                                            : "border-white/20 ring-2 ring-white/10"
-                                                        : subtleBorder) +
+                                                        ? "border-[#81DB86] ring-2 ring-[#81DB86]/25"
+                                                        : subtleBorder + (isLight ? " hover:border-black/20" : " hover:border-white/20")) +
                                                     (isDragging ? " opacity-60" : "")
                                                 }
                                             >
@@ -1583,7 +1584,7 @@ export default function RoomTimelineEditor({
                                                     <div
                                                         className={
                                                             "pointer-events-none absolute left-3 right-3 h-[3px] rounded-full " +
-                                                            (isLight ? "bg-black/70" : "bg-white/70") +
+                                                            "bg-[#81DB86]" +
                                                             (dropEdge === "before" ? " -top-[6px]" : " -bottom-[6px]")
                                                         }
                                                     />
@@ -1829,8 +1830,7 @@ export default function RoomTimelineEditor({
                                         >
                                             {dragOverId === END_DROP_ID && (
                                                 <div
-                                                    className={`pointer-events-none absolute left-3 right-3 top-1/2 -translate-y-1/2 h-[3px] rounded-full ${isLight ? "bg-black/70" : "bg-white/70"
-                                                        }`}
+                                                    className="pointer-events-none absolute left-3 right-3 top-1/2 -translate-y-1/2 h-[3px] rounded-full bg-[#81DB86]"
                                                 />
                                             )}
                                         </div>
@@ -1862,10 +1862,7 @@ export default function RoomTimelineEditor({
                             type="button"
                             onClick={onSave}
                             disabled={saving || blocks.length === 0}
-                            className={`px-4 py-2.5 rounded-xl text-[13px] font-semibold disabled:opacity-50 ${isLight
-                                ? "bg-blue-600 hover:bg-blue-700 text-white"
-                                : "bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
-                                }`}
+                            className="px-4 py-2.5 rounded-xl bg-[#81DB86] hover:bg-[#72CF78] text-black text-[13px] font-semibold transition disabled:opacity-50"
                         >
                             {saving ? "Saving..." : "Save timeline"}
                         </button>

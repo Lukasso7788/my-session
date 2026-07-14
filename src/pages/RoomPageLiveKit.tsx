@@ -46,7 +46,9 @@ import { PAYWALL_ENABLED } from "../lib/flags";
 import ChatPanel from "../components/ChatPanel";
 import { TasksPanel } from "../components/TasksPanel";
 import AIHostedRoomController from "../components/ai-host/AIHostedRoomController";
-import JoinGateModal from "../components/JoinGateModal";
+import JoinGateModal, {
+  type JoinGateHostSession,
+} from "../components/JoinGateModal";
 import { UserProfileModal } from "../components/UserProfileModal";
 import RoomTopBar from "../components/RoomTopBar";
 import RoomTimelineEditor, {
@@ -4820,6 +4822,83 @@ export function RoomPageLiveKit({
 
   const canJoinNow = joinGateInfo.canJoinNow;
   const joinBlocked = joinGateInfo.enabled && !joinGateInfo.canJoinNow;
+  const [joinGateOtherSessions, setJoinGateOtherSessions] = useState<
+    JoinGateHostSession[]
+  >([]);
+  const [joinGateOtherSessionsLoading, setJoinGateOtherSessionsLoading] =
+    useState(false);
+
+  useEffect(() => {
+    const hostId = String(session?.host_id || "").trim();
+    const currentSessionId = String(session?.id || "").trim();
+
+    if (!joinBlocked || !hostId || !currentSessionId) {
+      setJoinGateOtherSessions([]);
+      setJoinGateOtherSessionsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setJoinGateOtherSessionsLoading(true);
+
+    const loadOtherHostSessions = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("sessions")
+          .select(SESSION_SELECT_STR)
+          .eq("host_id", hostId)
+          .neq("id", currentSessionId)
+          .gte("start_time", new Date().toISOString())
+          .order("start_time", { ascending: true })
+          .limit(3);
+
+        if (cancelled) return;
+        if (error) {
+          console.warn("LiveKit join gate host sessions load failed:", error);
+          setJoinGateOtherSessions([]);
+          return;
+        }
+
+        const next = ((data || []) as SessionRow[])
+          .map((row) => {
+            const startMs = new Date(String(row.start_time || "")).getTime();
+            if (!Number.isFinite(startMs) || startMs <= 0) return null;
+
+            const rowMax = Math.max(
+              2,
+              Math.min(50, Math.round(num(row.max_participants) || 16)),
+            );
+            const rowBookings = Array.isArray(row.session_bookings)
+              ? row.session_bookings.length
+              : 0;
+
+            return {
+              id: String(row.id),
+              title: String(row.title || "Session"),
+              startMs,
+              bookedCount: rowBookings,
+              maxParticipants: rowMax,
+            } satisfies JoinGateHostSession;
+          })
+          .filter((row): row is JoinGateHostSession => !!row);
+
+        setJoinGateOtherSessions(next);
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("LiveKit join gate host sessions load failed:", error);
+          setJoinGateOtherSessions([]);
+        }
+      } finally {
+        if (!cancelled) setJoinGateOtherSessionsLoading(false);
+      }
+    };
+
+    void loadOtherHostSessions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [joinBlocked, session?.host_id, session?.id]);
 
   const [sessionAccessTickMs, setSessionAccessTickMs] = useState<number>(() =>
     Date.now(),
@@ -13085,11 +13164,24 @@ export function RoomPageLiveKit({
         open={true}
         theme={theme}
         sessionTitle={String(session?.title || "Session")}
+        hostName={String(session?.host_profile?.full_name || "Session host")}
+        hostAvatarUrl={session?.host_profile?.avatar_url || null}
+        bookedCount={
+          Array.isArray(session?.session_bookings)
+            ? session.session_bookings.length
+            : 0
+        }
+        maxParticipants={maxParticipants}
         joinEarlyWindowMinutes={JOIN_EARLY_WINDOW_MINUTES}
         startMs={joinGateInfo.startMs}
         allowMs={joinGateInfo.allowMs}
         msUntilAllowed={joinGateInfo.msUntilAllowed}
-        bookingCtaLabel="Book this session right now"
+        otherHostSessions={joinGateOtherSessions}
+        otherHostSessionsLoading={joinGateOtherSessionsLoading}
+        onOpenOtherSession={(otherSessionId) =>
+          navigate(`/room-livekit/${otherSessionId}`)
+        }
+        bookingCtaLabel="Book my place"
         bookingBusy={joinGateBookingBusy}
         bookingDone={joinGateBooked}
         onBook={handleBookFromJoinGate}
@@ -13404,36 +13496,8 @@ export function RoomPageLiveKit({
       ) : null}
 
       <div className={`ms-room-page h-[100dvh] overflow-hidden ${pageBg}`}>
-        {connected ? (
+        {connected && voiceUiEnabled ? (
           <>
-            <button
-              type="button"
-              onClick={() => {
-                setVoiceUiEnabled((enabled) => !enabled);
-                setVoiceUiHelpOpen(false);
-                setVoiceUiLastCommand("");
-              }}
-              className={`fixed left-[7px] top-[104px] z-[93] flex h-[18px] w-[18px] items-center justify-center rounded-full border shadow-md transition ${voiceUiEnabled
-                ? isLight
-                  ? "border-black/15 bg-white text-black/55 hover:text-red-600"
-                  : "border-white/15 bg-[#242424] text-white/60 hover:text-red-300"
-                : "border-red-400/50 bg-red-500 text-white hover:bg-red-600"
-                }`}
-              aria-label={voiceUiEnabled ? "Disable Voice UI" : "Enable Voice UI"}
-              aria-pressed={voiceUiEnabled}
-              title={voiceUiEnabled ? "Disable Voice UI" : "Enable Voice UI"}
-            >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-[11px] w-[11px]"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path d="M12 3v8" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-                <path d="M7.2 5.8a7 7 0 1 0 9.6 0" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
-              </svg>
-            </button>
-
             <button
               type="button"
               onClick={() => setVoiceUiHelpOpen((open) => !open)}
@@ -13966,6 +14030,18 @@ export function RoomPageLiveKit({
           onChangeStageSoundsEnabled={setStageSoundsEnabled}
           stageSoundsVolume={roomSoundsVolume}
           onChangeStageSoundsVolume={setRoomSoundsVolume}
+          defaultRemoteVolumePct={defaultRemoteVolumePct}
+          onDefaultRemoteVolumePctChange={setDefaultRemoteVolumePct}
+          onResetAllParticipantVolumes={() =>
+            setVolumePctByParticipantKey({})
+          }
+          voiceUiEnabled={voiceUiEnabled}
+          onChangeVoiceUiEnabled={(enabled) => {
+            setVoiceUiEnabled(enabled);
+            setVoiceUiHelpOpen(false);
+            setVoiceUiLastCommand("");
+            setVoiceUiLastHeard("");
+          }}
           colorCorrectionEnabled={isLgUp}
           brightness={colorCorrection.brightness}
           contrast={colorCorrection.contrast}

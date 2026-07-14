@@ -1102,6 +1102,8 @@ export function RoomSettingsModalLiveKit({
     onChangeStageSoundsEnabled,
     stageSoundsVolume,
     onChangeStageSoundsVolume,
+    voiceUiEnabled = true,
+    onChangeVoiceUiEnabled,
 
     colorCorrectionEnabled,
     brightness,
@@ -1178,6 +1180,8 @@ export function RoomSettingsModalLiveKit({
     onChangeStageSoundsEnabled: (v: boolean) => void;
     stageSoundsVolume: number;
     onChangeStageSoundsVolume: (v: number) => void;
+    voiceUiEnabled?: boolean;
+    onChangeVoiceUiEnabled?: (v: boolean) => void;
 
     colorCorrectionEnabled: boolean;
     brightness: number;
@@ -1572,6 +1576,16 @@ export function RoomSettingsModalLiveKit({
                                 <div className="text-[13px] font-semibold mb-4">Room tools</div>
 
                                 <div className="flex flex-col gap-4">
+                                    {onChangeVoiceUiEnabled ? (
+                                        <ToggleRow
+                                            label="Voice control"
+                                            description="Listen for English voice commands in the room. Turning this off also hides the Voice Control indicator and command popup."
+                                            checked={voiceUiEnabled}
+                                            onChange={onChangeVoiceUiEnabled}
+                                            isLight={isLight}
+                                        />
+                                    ) : null}
+
                                     <ToggleRow
                                         label="Participant joined sound"
                                         description="Play a notification when someone joins the room."
