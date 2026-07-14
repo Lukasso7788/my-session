@@ -111,6 +111,7 @@ type SpeechRecognitionErrorLike = { error?: string };
 type SpeechRecognitionAlternativeLike = { transcript?: string };
 type SpeechRecognitionResultLike = {
   isFinal?: boolean;
+  length?: number;
   [index: number]: SpeechRecognitionAlternativeLike;
 };
 type SpeechRecognitionEventLike = {
@@ -196,13 +197,13 @@ function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
   ) return "microphone_off";
 
   if (
-    /^open (?:the )?(?:tasks|tasks panel|intentions|intentions panel)$/.test(text) ||
-    /^(?:открой|покажи) (?:задачи|панель задач|интенции|намерения)$/.test(text)
+    /^(?:open|show) (?:the )?(?:task|tasks|task panel|tasks panel|intentions|intentions panel)$/.test(text) ||
+    /^(?:открой|покажи) (?:задачи|таски|таск панель|панель задач|интенции|намерения)$/.test(text)
   ) return "tasks_open";
 
   if (
-    /^close (?:the )?(?:tasks|tasks panel|intentions|intentions panel)$/.test(text) ||
-    /^(?:закрой|скрой) (?:задачи|панель задач|интенции|намерения)$/.test(text)
+    /^(?:close|hide) (?:the )?(?:task|tasks|task panel|tasks panel|intentions|intentions panel)$/.test(text) ||
+    /^(?:закрой|скрой) (?:задачи|таски|таск панель|панель задач|интенции|намерения)$/.test(text)
   ) return "tasks_close";
 
   if (
@@ -5873,6 +5874,7 @@ export function RoomPageLiveKit({
   const [voiceUiStatus, setVoiceUiStatus] =
     useState<VoiceUiStatus>("idle");
   const [voiceUiLastCommand, setVoiceUiLastCommand] = useState("");
+  const [voiceUiLastHeard, setVoiceUiLastHeard] = useState("");
   const voiceUiRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceUiShouldListenRef = useRef(false);
   const voiceUiSuspendedRef = useRef(false);
@@ -9400,6 +9402,7 @@ export function RoomPageLiveKit({
       voiceUiRecognitionRef.current = null;
       setVoiceUiStatus("idle");
       setVoiceUiLastCommand("");
+      setVoiceUiLastHeard("");
       return;
     }
 
@@ -9436,9 +9439,11 @@ export function RoomPageLiveKit({
       const recognition =
         new SpeechRecognitionConstructor() as SpeechRecognitionLike;
       recognition.lang = String(navigator.language || "en-US");
-      recognition.interimResults = false;
-      recognition.continuous = true;
-      recognition.maxAlternatives = 1;
+      // Short utterance sessions finalize much more reliably while WebRTC is
+      // also using the microphone. onend immediately starts the next session.
+      recognition.interimResults = true;
+      recognition.continuous = false;
+      recognition.maxAlternatives = 3;
 
       recognition.onstart = () => {
         if (disposed) return;
@@ -9455,22 +9460,59 @@ export function RoomPageLiveKit({
           index += 1
         ) {
           const result = results[index];
-          if (!result?.isFinal) continue;
+          if (!result) continue;
 
-          const transcript = String(result?.[0]?.transcript || "").trim();
-          const command = parseVoiceUiCommand(transcript);
-          if (!command) continue;
+          const alternativesCount = Math.max(
+            1,
+            Math.min(3, Number(result.length || 1)),
+          );
+          let matchedCommand: VoiceUiCommand | null = null;
+
+          for (
+            let alternativeIndex = 0;
+            alternativeIndex < alternativesCount;
+            alternativeIndex += 1
+          ) {
+            const transcript = String(
+              result?.[alternativeIndex]?.transcript || "",
+            ).trim();
+            if (!transcript) continue;
+
+            if (alternativeIndex === 0) {
+              setVoiceUiLastHeard(transcript);
+              setVoiceUiLastCommand("");
+            }
+
+            matchedCommand = parseVoiceUiCommand(transcript);
+            if (matchedCommand) break;
+          }
+
+          if (!matchedCommand) continue;
 
           const now = Date.now();
           const previous = voiceUiLastExecutionRef.current;
-          if (previous.command === command && now - previous.at < 2_500) {
+          if (
+            previous.command === matchedCommand &&
+            now - previous.at < 2_500
+          ) {
             continue;
           }
 
-          voiceUiLastExecutionRef.current = { command, at: now };
-          voiceUiCommandHandlerRef.current(command).catch((error) => {
-            console.warn("[voice-ui] command failed", command, error);
+          voiceUiLastExecutionRef.current = {
+            command: matchedCommand,
+            at: now,
+          };
+          voiceUiCommandHandlerRef.current(matchedCommand).catch((error) => {
+            console.warn("[voice-ui] command failed", matchedCommand, error);
           });
+
+          // End this utterance after a match; onend starts a clean listener.
+          try {
+            recognition.stop();
+          } catch {
+            // Recognition may already be finalizing.
+          }
+          break;
         }
       };
 
@@ -9493,7 +9535,7 @@ export function RoomPageLiveKit({
         if (voiceUiRecognitionRef.current === recognition) {
           voiceUiRecognitionRef.current = null;
         }
-        scheduleRestart();
+        scheduleRestart(180);
       };
 
       voiceUiRecognitionRef.current = recognition;
@@ -9528,6 +9570,32 @@ export function RoomPageLiveKit({
       if (voiceUiShouldListenRef.current) scheduleRestart(250);
     };
 
+    const restartVoiceUi = () => {
+      voiceUiShouldListenRef.current = true;
+      voiceUiSuspendedRef.current = false;
+
+      if (voiceUiRestartTimerRef.current != null) {
+        window.clearTimeout(voiceUiRestartTimerRef.current);
+        voiceUiRestartTimerRef.current = null;
+      }
+
+      const current = voiceUiRecognitionRef.current;
+      voiceUiRecognitionRef.current = null;
+      if (current) {
+        try {
+          current.abort();
+        } catch {
+          // Recognition may already be stopped.
+        }
+        scheduleRestart(180);
+        return;
+      }
+
+      // When permission/start was blocked, this path runs synchronously from
+      // the user's click on the badge and satisfies Chrome's gesture policy.
+      startRecognition();
+    };
+
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         resumeVoiceUi();
@@ -9538,6 +9606,7 @@ export function RoomPageLiveKit({
 
     window.addEventListener("mysession:voice-ui-pause", pauseVoiceUi);
     window.addEventListener("mysession:voice-ui-resume", resumeVoiceUi);
+    window.addEventListener("mysession:voice-ui-restart", restartVoiceUi);
     document.addEventListener("visibilitychange", onVisibilityChange);
     startRecognition();
 
@@ -9547,6 +9616,7 @@ export function RoomPageLiveKit({
       voiceUiSuspendedRef.current = false;
       window.removeEventListener("mysession:voice-ui-pause", pauseVoiceUi);
       window.removeEventListener("mysession:voice-ui-resume", resumeVoiceUi);
+      window.removeEventListener("mysession:voice-ui-restart", restartVoiceUi);
       document.removeEventListener("visibilitychange", onVisibilityChange);
 
       if (voiceUiRestartTimerRef.current != null) {
@@ -13060,21 +13130,28 @@ export function RoomPageLiveKit({
 
       <div className={`ms-room-page h-[100dvh] overflow-hidden ${pageBg}`}>
         {connected ? (
-          <div
-            className={`pointer-events-none fixed left-4 top-[112px] z-[80] flex max-w-[min(420px,calc(100vw-2rem))] items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium shadow-lg backdrop-blur ${isLight
+          <button
+            type="button"
+            onClick={() => {
+              window.dispatchEvent(new Event("mysession:voice-ui-restart"));
+            }}
+            className={`pointer-events-auto fixed left-4 top-[112px] z-[80] flex max-w-[min(520px,calc(100vw-2rem))] cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium shadow-lg backdrop-blur transition hover:scale-[1.01] ${isLight
               ? "border-black/10 bg-white/85 text-black/70"
               : "border-white/10 bg-black/65 text-white/75"
               }`}
-            role="status"
             aria-live="polite"
-            title="Always-on room voice controls"
+            aria-label="Restart always-on room voice controls"
+            title={`Click to restart voice controls${voiceUiLastHeard ? `. Last heard: ${voiceUiLastHeard}` : ""}`}
           >
             <span className={`h-2 w-2 shrink-0 rounded-full ${voiceUiStatusDot}`} />
             <span className="truncate">
               {voiceUiStatusLabel}
               {voiceUiLastCommand ? ` · ${voiceUiLastCommand}` : ""}
+              {!voiceUiLastCommand && voiceUiLastHeard
+                ? ` · Heard: ${voiceUiLastHeard}`
+                : ""}
             </span>
-          </div>
+          </button>
         ) : null}
         <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))] sm:pb-[calc(90px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
           <RoomTopBar
