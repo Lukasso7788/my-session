@@ -419,9 +419,6 @@ function VideoPreviewBox(props: {
         media.style.width = "100%";
         media.style.height = "100%";
         media.style.objectFit = "cover";
-        media.style.transform = mirrored ? "scaleX(-1)" : "scaleX(1)";
-        media.style.filter = filterCss || "";
-
         host.appendChild(media);
         mediaElRef.current = media;
 
@@ -432,6 +429,14 @@ function VideoPreviewBox(props: {
                 }
             } catch { }
 
+            if (mediaElRef.current) {
+                try {
+                    mediaElRef.current.pause();
+                    mediaElRef.current.srcObject = null;
+                    mediaElRef.current.removeAttribute("src");
+                } catch { }
+            }
+
             try {
                 if (mediaElRef.current && mediaElRef.current.parentNode) {
                     mediaElRef.current.parentNode.removeChild(mediaElRef.current);
@@ -440,6 +445,13 @@ function VideoPreviewBox(props: {
 
             mediaElRef.current = null;
         };
+    }, [track]);
+
+    React.useEffect(() => {
+        const media = mediaElRef.current;
+        if (!media) return;
+        media.style.transform = mirrored ? "scaleX(-1)" : "scaleX(1)";
+        media.style.filter = filterCss || "";
     }, [track, filterCss, mirrored]);
 
     return (

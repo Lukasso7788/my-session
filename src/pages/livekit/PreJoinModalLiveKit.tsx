@@ -130,13 +130,21 @@ export function PreJoinModal({
     if (!host) return;
 
     const cleanup = () => {
+      const current = attachedPreviewElRef.current;
       try {
-        if (previewVideoTrack && attachedPreviewElRef.current && typeof (previewVideoTrack as any)?.detach === "function") {
-          (previewVideoTrack as any).detach(attachedPreviewElRef.current);
+        if (previewVideoTrack && current && typeof (previewVideoTrack as any)?.detach === "function") {
+          (previewVideoTrack as any).detach(current);
         }
       } catch { }
+      if (current instanceof HTMLMediaElement) {
+        try {
+          current.pause();
+          current.srcObject = null;
+          current.removeAttribute("src");
+        } catch { }
+      }
       try {
-        attachedPreviewElRef.current?.remove();
+        current?.remove();
       } catch { }
       attachedPreviewElRef.current = null;
       try {
@@ -162,7 +170,6 @@ export function PreJoinModal({
       el.style.width = "100%";
       el.style.height = "100%";
       (el.style as any).objectFit = "cover";
-      el.style.backgroundColor = isLight ? "#F3F1F1" : "#1B1B1B";
       el.style.display = "block";
     } catch { }
 
@@ -187,7 +194,13 @@ export function PreJoinModal({
     }
 
     return cleanup;
-  }, [open, value.videoEnabled, previewVideoTrack, previewVersion, isLight]);
+  }, [open, value.videoEnabled, previewVideoTrack, previewVersion]);
+
+  useEffect(() => {
+    const el = attachedPreviewElRef.current;
+    if (!el) return;
+    el.style.backgroundColor = isLight ? "#F3F1F1" : "#1B1B1B";
+  }, [open, value.videoEnabled, isLight, previewVideoTrack, previewVersion]);
 
   useEffect(() => {
     if (!open) return;
@@ -449,30 +462,51 @@ export function PreJoinModal({
                     <div className={`text-[12px] ${labelCls}`}>Background image</div>
 
                     <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      {fxBgPresets?.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          disabled={!value.videoEnabled || fxApplying}
-                          onClick={() => {
-                            onSetBgImageUrl(p.url);
-                            setLocalFxMessage("Preset selected");
-                            void Promise.resolve(onApplyVideoFx("bg", p.url));
-                          }}
-                          className={`overflow-hidden rounded-2xl border text-left transition ${isLight ? "border-[#CFC6C6] hover:border-[#BDB4B4]" : "border-[#2B2B2B] hover:border-[#3A3A3A]"}`}
-                          title={p.label}
-                        >
-                          <div
-                            className="h-[72px] w-full sm:h-[56px]"
-                            style={{
-                              backgroundImage: `url(${p.url})`,
-                              backgroundSize: "cover",
-                              backgroundPosition: "center",
+                      {fxBgPresets?.map((p) => {
+                        const selected = bgImageUrl === p.url;
+
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            disabled={!value.videoEnabled || fxApplying}
+                            onClick={() => {
+                              onSetBgImageUrl(p.url);
+                              setLocalFxMessage("Preset selected");
+                              void Promise.resolve(onApplyVideoFx("bg", p.url));
                             }}
-                          />
-                          <div className={`px-3 py-2 text-[12px] ${labelCls}`}>{p.label}</div>
-                        </button>
-                      ))}
+                            className={`group overflow-hidden rounded-2xl border text-left transition duration-200 ${selected
+                              ? isLight
+                                ? "border-[#5286F6] ring-2 ring-[#5286F6]/20"
+                                : "border-[#81DB86] ring-2 ring-[#81DB86]/20"
+                              : isLight
+                                ? "border-[#CFC6C6] hover:border-[#AFA6A6]"
+                                : "border-[#2B2B2B] hover:border-[#4A4A4A]"
+                              }`}
+                            title={`Use ${p.label} background`}
+                            aria-pressed={selected}
+                          >
+                            <div className={`relative h-[72px] w-full overflow-hidden sm:h-[64px] ${isLight ? "bg-[#ECE8E8]" : "bg-[#171717]"}`}>
+                              <img
+                                src={p.url}
+                                alt={`${p.label} background preview`}
+                                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                                draggable={false}
+                              />
+                              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/[0.04]" />
+                              {selected ? (
+                                <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#81DB86] text-[11px] font-bold text-[#102012] shadow-sm">
+                                  ✓
+                                </span>
+                              ) : null}
+                            </div>
+                            <div className={`flex items-center justify-between px-3 py-2 text-[12px] ${labelCls}`}>
+                              <span>{p.label}</span>
+                              {selected ? <span className="text-[10px] opacity-65">Selected</span> : null}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -524,7 +558,9 @@ export function PreJoinModal({
                       </button>
                     </div>
 
-                    {bgImageUrl ? <div className={`mt-1 truncate text-[10px] ${labelCls}`}>Selected: {bgImageUrl.slice(0, 90)}</div> : null}
+                    {bgImageUrl && !fxBgPresets.some((preset) => preset.url === bgImageUrl) ? (
+                      <div className={`mt-2 truncate text-[10px] ${labelCls}`}>Custom image selected</div>
+                    ) : null}
                   </div>
                 </div>
               ) : null}

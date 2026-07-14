@@ -367,6 +367,17 @@ function VideoTileInner({
                 }
             } catch { }
 
+            // Explicitly release the browser's decoded frame/audio buffers.
+            // Removing the node alone can leave its MediaStream retained until
+            // a later GC cycle, which is especially visible with several tiles.
+            if (current instanceof HTMLMediaElement) {
+                try {
+                    current.pause();
+                    current.srcObject = null;
+                    current.removeAttribute("src");
+                } catch { }
+            }
+
             try {
                 if (current && host.contains(current)) {
                     host.removeChild(current);
