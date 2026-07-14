@@ -14,6 +14,8 @@ import {
     Trash2,
     RotateCcw,
     Plus,
+    Minus,
+    ChevronDown,
 } from "lucide-react";
 import type { RoomTheme } from "./VideoControls";
 
@@ -934,27 +936,34 @@ function TimelinePreview({
                         </div>
                     </div>
 
-                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-[160px,minmax(0,1fr),140px] gap-2">
-                        <select
-                            value={selectedBlock.kind}
-                            onChange={(e) => {
-                                const nextKind = normalizeBlockKind(e.target.value);
-                                update(selectedBlock.id, {
-                                    kind: nextKind,
-                                    title:
-                                        String(selectedBlock.title || "").trim() ||
-                                        defaultTitleForKind(nextKind),
-                                    color: getDefaultBlockColor(nextKind),
-                                });
-                            }}
-                            className={`w-full px-3 py-2.5 rounded-[14px] border text-[13px] font-inter ${inputBg}`}
-                        >
-                            {KIND_OPTIONS.map((opt) => (
-                                <option key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                </option>
-                            ))}
-                        </select>
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-[160px,minmax(0,1fr),152px] gap-2">
+                        <div className="group relative min-w-0">
+                            <select
+                                value={selectedBlock.kind}
+                                onChange={(e) => {
+                                    const nextKind = normalizeBlockKind(e.target.value);
+                                    update(selectedBlock.id, {
+                                        kind: nextKind,
+                                        title:
+                                            String(selectedBlock.title || "").trim() ||
+                                            defaultTitleForKind(nextKind),
+                                        color: getDefaultBlockColor(nextKind),
+                                    });
+                                }}
+                                className={`w-full appearance-none rounded-[14px] border py-2.5 pl-3 pr-10 text-[13px] font-inter ${inputBg}`}
+                            >
+                                {KIND_OPTIONS.map((opt) => (
+                                    <option key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                    </option>
+                                ))}
+                            </select>
+                            <ChevronDown
+                                size={15}
+                                aria-hidden="true"
+                                className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 transition duration-200 group-hover:opacity-90 ${textMuted}`}
+                            />
+                        </div>
 
                         <input
                             value={selectedBlock.title}
@@ -963,7 +972,7 @@ function TimelinePreview({
                             placeholder="Block title…"
                         />
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 items-center justify-end gap-2">
                             <button
                                 type="button"
                                 onClick={() =>
@@ -971,9 +980,11 @@ function TimelinePreview({
                                         minutes: clamp((Number(selectedBlock.minutes) || 1) - 1, 1, 24 * 60),
                                     })
                                 }
-                                className={`w-9 h-9 rounded-[12px] border ${softBtn}`}
+                                className={`flex h-10 min-w-10 items-center justify-center rounded-[12px] border px-3 transition active:scale-95 ${softBtn}`}
+                                aria-label="Decrease block duration"
+                                title="Decrease duration"
                             >
-                                –
+                                <Minus size={15} strokeWidth={2.25} />
                             </button>
                             <input
                                 type="number"
@@ -985,7 +996,7 @@ function TimelinePreview({
                                         minutes: clamp(Number(e.target.value) || 1, 1, 24 * 60),
                                     })
                                 }
-                                className={`w-full h-9 px-2 rounded-[12px] border text-center text-[13px] font-inter ${inputBg}`}
+                                className={`h-10 min-w-0 flex-1 rounded-[12px] border px-2 text-center text-[13px] font-inter ${inputBg}`}
                             />
                             <button
                                 type="button"
@@ -994,9 +1005,11 @@ function TimelinePreview({
                                         minutes: clamp((Number(selectedBlock.minutes) || 1) + 1, 1, 24 * 60),
                                     })
                                 }
-                                className={`w-9 h-9 rounded-[12px] border ${softBtn}`}
+                                className={`flex h-10 min-w-10 items-center justify-center rounded-[12px] border px-3 transition active:scale-95 ${softBtn}`}
+                                aria-label="Increase block duration"
+                                title="Increase duration"
                             >
-                                +
+                                <Plus size={15} strokeWidth={2.25} />
                             </button>
                         </div>
                     </div>
@@ -1638,30 +1651,37 @@ export default function RoomTimelineEditor({
                                                     </div>
                                                 </div>
 
-                                                <div className="mt-3 grid grid-cols-1 sm:grid-cols-[160px,minmax(0,1fr),110px] gap-2">
-                                                    <select
-                                                        value={b.kind}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        onMouseDown={(e) => e.stopPropagation()}
-                                                        onFocus={(e) => e.stopPropagation()}
-                                                        onChange={(e) => {
-                                                            const nextKind = normalizeBlockKind(e.target.value);
-                                                            updateBlock(b.id, {
-                                                                kind: nextKind,
-                                                                title:
-                                                                    String(b.title || "").trim() ||
-                                                                    defaultTitleForKind(nextKind),
-                                                                color: getDefaultBlockColor(nextKind),
-                                                            });
-                                                        }}
-                                                        className={`w-full px-3 py-2.5 rounded-[14px] border font-inter text-[13px] ${inputCls}`}
-                                                    >
-                                                        {KIND_OPTIONS.map((opt) => (
-                                                            <option key={opt.value} value={opt.value}>
-                                                                {opt.label}
-                                                            </option>
-                                                        ))}
-                                                    </select>
+                                                <div className="mt-3 grid grid-cols-1 sm:grid-cols-[160px,minmax(0,1fr),152px] gap-2">
+                                                    <div className="group relative min-w-0">
+                                                        <select
+                                                            value={b.kind}
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            onMouseDown={(e) => e.stopPropagation()}
+                                                            onFocus={(e) => e.stopPropagation()}
+                                                            onChange={(e) => {
+                                                                const nextKind = normalizeBlockKind(e.target.value);
+                                                                updateBlock(b.id, {
+                                                                    kind: nextKind,
+                                                                    title:
+                                                                        String(b.title || "").trim() ||
+                                                                        defaultTitleForKind(nextKind),
+                                                                    color: getDefaultBlockColor(nextKind),
+                                                                });
+                                                            }}
+                                                            className={`w-full appearance-none rounded-[14px] border py-2.5 pl-3 pr-10 font-inter text-[13px] ${inputCls}`}
+                                                        >
+                                                            {KIND_OPTIONS.map((opt) => (
+                                                                <option key={opt.value} value={opt.value}>
+                                                                    {opt.label}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                        <ChevronDown
+                                                            size={15}
+                                                            aria-hidden="true"
+                                                            className={`pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 transition duration-200 group-hover:opacity-90 ${mutedText}`}
+                                                        />
+                                                    </div>
 
                                                     <input
                                                         value={b.title}
@@ -1674,7 +1694,7 @@ export default function RoomTimelineEditor({
                                                     />
 
                                                     <div
-                                                        className="flex items-center gap-2"
+                                                        className="flex min-w-0 items-center justify-end gap-2"
                                                         onClick={(e) => e.stopPropagation()}
                                                         onMouseDown={(e) => e.stopPropagation()}
                                                     >
@@ -1686,9 +1706,11 @@ export default function RoomTimelineEditor({
                                                                     minutes: clamp((Number(b.minutes) || 1) - 1, 1, 24 * 60),
                                                                 });
                                                             }}
-                                                            className={`w-9 h-9 rounded-[12px] border ${subtleBorder} ${softBg}`}
+                                                            className={`flex h-10 min-w-10 items-center justify-center rounded-[12px] border px-3 transition active:scale-95 ${subtleBorder} ${softBg}`}
+                                                            aria-label="Decrease block duration"
+                                                            title="Decrease duration"
                                                         >
-                                                            –
+                                                            <Minus size={15} strokeWidth={2.25} />
                                                         </button>
 
                                                         <input
@@ -1704,7 +1726,7 @@ export default function RoomTimelineEditor({
                                                                     minutes: clamp(Number(e.target.value) || 1, 1, 24 * 60),
                                                                 })
                                                             }
-                                                            className={`w-full h-9 px-2 rounded-[12px] border text-center font-inter text-[13px] ${inputCls}`}
+                                                            className={`h-10 min-w-0 flex-1 rounded-[12px] border px-2 text-center font-inter text-[13px] ${inputCls}`}
                                                         />
 
                                                         <button
@@ -1715,9 +1737,11 @@ export default function RoomTimelineEditor({
                                                                     minutes: clamp((Number(b.minutes) || 1) + 1, 1, 24 * 60),
                                                                 });
                                                             }}
-                                                            className={`w-9 h-9 rounded-[12px] border ${subtleBorder} ${softBg}`}
+                                                            className={`flex h-10 min-w-10 items-center justify-center rounded-[12px] border px-3 transition active:scale-95 ${subtleBorder} ${softBg}`}
+                                                            aria-label="Increase block duration"
+                                                            title="Increase duration"
                                                         >
-                                                            +
+                                                            <Plus size={15} strokeWidth={2.25} />
                                                         </button>
                                                     </div>
                                                 </div>

@@ -8,6 +8,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { ChevronDown } from "lucide-react";
 import {
   Room,
   RoomEvent,
@@ -13501,10 +13502,7 @@ export function RoomPageLiveKit({
             <button
               type="button"
               onClick={() => setVoiceUiHelpOpen((open) => !open)}
-              className={`pointer-events-auto fixed left-4 top-[112px] z-[92] flex max-w-[min(520px,calc(100vw-2rem))] cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium shadow-lg backdrop-blur transition hover:scale-[1.01] ${isLight
-                ? "border-black/10 bg-white/85 text-black/70"
-                : "border-white/10 bg-black/65 text-white/75"
-                }`}
+              className="pointer-events-auto fixed left-4 top-[112px] z-[92] flex max-w-[min(520px,calc(100vw-2rem))] cursor-pointer items-center gap-2 rounded-full border border-[#3A3A3A] bg-[#242424]/95 px-3 py-1.5 text-[11px] font-medium text-white/75 shadow-lg backdrop-blur transition duration-200 hover:scale-[1.01] hover:border-[#4A4A4A] hover:bg-[#2B2B2B] hover:text-white"
               aria-live="polite"
               aria-expanded={voiceUiHelpOpen}
               aria-haspopup="dialog"
@@ -13519,9 +13517,11 @@ export function RoomPageLiveKit({
                   ? ` · Heard: ${voiceUiLastHeard}`
                   : ""}
               </span>
-              <span aria-hidden="true" className="shrink-0 text-[10px] opacity-60">
-                {voiceUiHelpOpen ? "▲" : "▼"}
-              </span>
+              <ChevronDown
+                size={14}
+                aria-hidden="true"
+                className={`shrink-0 opacity-60 transition-transform duration-200 ease-out ${voiceUiHelpOpen ? "rotate-180" : "rotate-0"}`}
+              />
             </button>
 
             {voiceUiHelpOpen ? (
