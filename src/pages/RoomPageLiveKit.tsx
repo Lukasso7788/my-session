@@ -9444,10 +9444,43 @@ export function RoomPageLiveKit({
       recognition.interimResults = true;
       recognition.continuous = false;
       recognition.maxAlternatives = 3;
+      let sessionWatchdogId: number | null = null;
+
+      const clearSessionWatchdog = () => {
+        if (sessionWatchdogId == null) return;
+        window.clearTimeout(sessionWatchdogId);
+        sessionWatchdogId = null;
+      };
+
+      const finishSessionAndRestart = (delayMs = 220) => {
+        clearSessionWatchdog();
+        if (voiceUiRecognitionRef.current === recognition) {
+          voiceUiRecognitionRef.current = null;
+        }
+
+        try {
+          recognition.abort();
+        } catch {
+          // Recognition may already be finalizing.
+        }
+
+        if (!voiceUiSuspendedRef.current) {
+          setVoiceUiStatus("starting");
+        }
+        scheduleRestart(delayMs);
+      };
 
       recognition.onstart = () => {
         if (disposed) return;
         setVoiceUiStatus("listening");
+
+        clearSessionWatchdog();
+        sessionWatchdogId = window.setTimeout(() => {
+          clearSessionWatchdog();
+          if (voiceUiRecognitionRef.current !== recognition) return;
+          console.warn("[voice-ui] recognition session watchdog restart");
+          finishSessionAndRestart(250);
+        }, 12_000);
       };
 
       recognition.onresult = (event: SpeechRecognitionEventLike) => {
@@ -9506,12 +9539,9 @@ export function RoomPageLiveKit({
             console.warn("[voice-ui] command failed", matchedCommand, error);
           });
 
-          // End this utterance after a match; onend starts a clean listener.
-          try {
-            recognition.stop();
-          } catch {
-            // Recognition may already be finalizing.
-          }
+          // Chrome does not always emit onend when stop() is called from
+          // onresult. Release the instance and schedule the next one ourselves.
+          finishSessionAndRestart(220);
           break;
         }
       };
@@ -9521,6 +9551,7 @@ export function RoomPageLiveKit({
         console.warn("[voice-ui] recognition error", code || event);
 
         if (code === "not-allowed" || code === "service-not-allowed") {
+          clearSessionWatchdog();
           voiceUiShouldListenRef.current = false;
           setVoiceUiStatus("blocked");
           return;
@@ -9532,6 +9563,7 @@ export function RoomPageLiveKit({
       };
 
       recognition.onend = () => {
+        clearSessionWatchdog();
         if (voiceUiRecognitionRef.current === recognition) {
           voiceUiRecognitionRef.current = null;
         }
