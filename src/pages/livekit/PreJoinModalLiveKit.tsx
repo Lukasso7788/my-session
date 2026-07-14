@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { LocalVideoTrack } from "livekit-client";
-import { Icon as LiveKitIcon } from "./LiveKitUI";
 
 type RoomTheme = "dark" | "light";
 type FxMode = "off" | "blur" | "bg";
@@ -65,6 +64,25 @@ function PreJoinModalIcon({ className = "h-5 w-5" }: { className?: string }) {
       style={{
         WebkitMask: "url('/icons/prejoin-room-check.svg') center / contain no-repeat",
         mask: "url('/icons/prejoin-room-check.svg') center / contain no-repeat",
+      }}
+      aria-hidden="true"
+    />
+  );
+}
+
+function PreJoinMediaIcon({
+  source,
+  className = "h-[18px] w-[18px]",
+}: {
+  source: "mic-on" | "mic-off" | "camera-on-dark" | "camera-off";
+  className?: string;
+}) {
+  return (
+    <span
+      className={`inline-block shrink-0 bg-current ${className}`}
+      style={{
+        WebkitMask: `url('/icons/${source}.svg') center / contain no-repeat`,
+        mask: `url('/icons/${source}.svg') center / contain no-repeat`,
       }}
       aria-hidden="true"
     />
@@ -624,7 +642,7 @@ export function PreJoinModal({
                     onClick={() => onChange({ ...value, audioEnabled: !value.audioEnabled })}
                     className={`${mediaToggleBase} ${value.audioEnabled ? mediaToggleOn : mediaToggleOff}`}
                   >
-                    <LiveKitIcon name={value.audioEnabled ? "mic-on" : "mic-off"} theme={value.audioEnabled ? theme : "dark"} className="h-[18px] w-[18px]" />
+                    <PreJoinMediaIcon source={value.audioEnabled ? "mic-on" : "mic-off"} />
                     <span>{value.audioEnabled ? "Microphone on" : "Microphone off"}</span>
                   </button>
 
@@ -633,7 +651,7 @@ export function PreJoinModal({
                     onClick={() => onChange({ ...value, videoEnabled: !value.videoEnabled })}
                     className={`${mediaToggleBase} ${value.videoEnabled ? mediaToggleOn : mediaToggleOff}`}
                   >
-                    <LiveKitIcon name={value.videoEnabled ? "camera-on" : "camera-off"} theme={value.videoEnabled ? theme : "dark"} className="h-[18px] w-[18px]" />
+                    <PreJoinMediaIcon source={value.videoEnabled ? "camera-on-dark" : "camera-off"} />
                     <span>{value.videoEnabled ? "Camera on" : "Camera off"}</span>
                   </button>
 

@@ -1550,6 +1550,83 @@ const LK_TAB_PREFIX = "mysession_lk_tabs";
 const LK_TAB_TTL_MS = 18_000;
 const LK_TAB_HEARTBEAT_MS = 5_000;
 const LK_MAX_TABS_DEFAULT = 20;
+const MOBILE_ROOM_LEASE_MS = 50 * 60 * 1000;
+
+type MobileRoomLease = {
+  lastSeenAt: number;
+  audioEnabled: boolean;
+  videoEnabled: boolean;
+};
+
+function mobileRoomLeaseKey(sessionId: string, userId: string) {
+  return `mysession_mobile_room_lease:${sessionId}:${userId}`;
+}
+
+function readMobileRoomLease(
+  sessionId: string,
+  userId: string | null | undefined,
+): MobileRoomLease | null {
+  if (!sessionId || !userId) return null;
+
+  try {
+    const key = mobileRoomLeaseKey(sessionId, userId);
+    const parsed = JSON.parse(localStorage.getItem(key) || "null") as MobileRoomLease | null;
+    const lastSeenAt = Number(parsed?.lastSeenAt || 0);
+
+    if (!lastSeenAt || Date.now() - lastSeenAt > MOBILE_ROOM_LEASE_MS) {
+      localStorage.removeItem(key);
+      return null;
+    }
+
+    return {
+      lastSeenAt,
+      audioEnabled: !!parsed?.audioEnabled,
+      videoEnabled: !!parsed?.videoEnabled,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeMobileRoomLease(
+  sessionId: string,
+  userId: string | null | undefined,
+  media: { audioEnabled: boolean; videoEnabled: boolean },
+) {
+  if (!sessionId || !userId) return;
+
+  try {
+    localStorage.setItem(
+      mobileRoomLeaseKey(sessionId, userId),
+      JSON.stringify({
+        lastSeenAt: Date.now(),
+        audioEnabled: !!media.audioEnabled,
+        videoEnabled: !!media.videoEnabled,
+      } satisfies MobileRoomLease),
+    );
+  } catch { }
+}
+
+function clearMobileRoomLease(
+  sessionId: string,
+  userId: string | null | undefined,
+) {
+  if (!sessionId || !userId) return;
+  try {
+    localStorage.removeItem(mobileRoomLeaseKey(sessionId, userId));
+  } catch { }
+}
+
+function createMobileReconnectPolicy() {
+  return {
+    nextRetryDelayInMs(context: { retryCount: number; elapsedMs: number }) {
+      if (context.elapsedMs >= MOBILE_ROOM_LEASE_MS) return null;
+      if (context.retryCount === 0) return 0;
+      if (context.retryCount === 1) return 300;
+      return Math.min(7_000, context.retryCount * context.retryCount * 300);
+    },
+  };
+}
 
 type TabPresence = { v: number; tabs: { id: string; ts: number }[] };
 
@@ -4017,6 +4094,14 @@ export function RoomPageLiveKit({
   const [tokenLoading, setTokenLoading] = useState(false);
   const [tokenError, setTokenError] = useState<string>("");
   const [assignedServerId, setAssignedServerId] = useState<string>("");
+  const lkTokenRef = useRef("");
+  const lkServerUrlRef = useRef(defaultLivekitUrl);
+  const tokenRequestInFlightRef = useRef(false);
+
+  useEffect(() => {
+    lkTokenRef.current = lkToken;
+    lkServerUrlRef.current = lkServerUrl;
+  }, [lkToken, lkServerUrl]);
 
   const getFreshAccessToken = async () => {
     try {
@@ -5037,6 +5122,7 @@ export function RoomPageLiveKit({
       setActiveBan(ban);
 
       if (ban) {
+        clearMobileRoomLease(sessionId, authUserId);
         setPrejoinOpen(false);
         setJoinRequested(false);
         setLkToken("");
@@ -5049,7 +5135,7 @@ export function RoomPageLiveKit({
     } finally {
       setBanLoading(false);
     }
-  }, [authUserId, authReady]);
+  }, [authUserId, authReady, sessionId]);
 
   useEffect(() => {
     void checkActiveBanForRoom();
@@ -6086,6 +6172,9 @@ export function RoomPageLiveKit({
     "restoring" | "needs_action"
   >("restoring");
   const mobileRestoreEscalationTimerRef = useRef<number | null>(null);
+  const mobileAutoRestoreInFlightRef = useRef(false);
+  const mobileRecoveryRetryTimerRef = useRef<number | null>(null);
+  const mobileRecoveryAttemptRef = useRef(0);
   const [frozenLocalVideoFrame, setFrozenLocalVideoFrame] =
     useState<string>("");
 
@@ -6529,6 +6618,29 @@ export function RoomPageLiveKit({
     if (prejoinBootstrappedSessionIdRef.current === sessionId) return;
 
     prejoinBootstrappedSessionIdRef.current = sessionId;
+
+    const mobileLease = lowPowerMobileMode
+      ? readMobileRoomLease(sessionId, authUserId)
+      : null;
+
+    if (mobileLease) {
+      const restoredPrejoin = {
+        ...prejoinRef.current,
+        audioEnabled: mobileLease.audioEnabled,
+        videoEnabled: mobileLease.videoEnabled,
+      };
+
+      prejoinRef.current = restoredPrejoin;
+      setPrejoin(restoredPrejoin);
+      joinFlowStartedRef.current = true;
+      connectingFromPrejoinRef.current = false;
+      returningFromBackgroundRef.current = true;
+      pageHiddenAtRef.current = mobileLease.lastSeenAt;
+      setPrejoinOpen(false);
+      setJoinRequested(true);
+      return;
+    }
+
     setPrejoinOpen(true);
     setDeviceError("");
 
@@ -6561,6 +6673,7 @@ export function RoomPageLiveKit({
     joinRequested,
     loadBrowserDevices,
     deviceTier,
+    lowPowerMobileMode,
   ]);
 
   useEffect(() => {
@@ -6886,6 +6999,16 @@ export function RoomPageLiveKit({
   const connectedRef = useRef(false);
   const joinRequestedRef = useRef(false);
   const autoClosedSessionIdRef = useRef<string>("");
+  const mobileRoomRetentionRef = useRef({
+    enabled: false,
+    sessionId: "",
+    userId: "",
+  });
+  mobileRoomRetentionRef.current = {
+    enabled: lowPowerMobileMode,
+    sessionId,
+    userId: String(authUserId || ""),
+  };
 
   const stopTabPresenceHeartbeat = () => {
     if (tabPresenceHeartbeatRef.current) {
@@ -7249,6 +7372,21 @@ export function RoomPageLiveKit({
   // ---- continue in chunk 2 ----
   const requestToken = async () => {
     if (!session) return;
+
+    if (tokenRequestInFlightRef.current) {
+      const deadline = Date.now() + 20_000;
+      while (tokenRequestInFlightRef.current && Date.now() < deadline) {
+        await delay(100);
+      }
+
+      const pendingToken = String(lkTokenRef.current || "").trim();
+      const pendingUrl = String(lkServerUrlRef.current || "").trim();
+      return pendingToken && pendingUrl
+        ? { token: pendingToken, url: pendingUrl }
+        : undefined;
+    }
+
+    tokenRequestInFlightRef.current = true;
     setTokenError("");
     setTokenLoading(true);
 
@@ -7409,8 +7547,11 @@ export function RoomPageLiveKit({
 
       setLkToken(tok);
       setLkServerUrl(nextUrl);
+      lkTokenRef.current = tok;
+      lkServerUrlRef.current = nextUrl;
       setAssignedServerId(nextAssignedServerId);
       setTokenLoading(false);
+      return { token: tok, url: nextUrl };
     } catch (e: any) {
       console.error("requestToken exception:", e);
       setTokenError(String(e?.message || e || "token_request_failed"));
@@ -7420,6 +7561,8 @@ export function RoomPageLiveKit({
       connectingFromPrejoinRef.current = false;
       setJoinRequested(false);
       setPrejoinOpen(true);
+    } finally {
+      tokenRequestInFlightRef.current = false;
     }
   };
 
@@ -7462,6 +7605,9 @@ export function RoomPageLiveKit({
       adaptiveStream: true,
       dynacast: true,
       disconnectOnPageLeave: false,
+      ...(lowPowerMobileMode
+        ? { reconnectPolicy: createMobileReconnectPolicy() }
+        : {}),
       publishDefaults: {
         simulcast: !lowPowerMobileMode,
         videoCodec: "vp8",
@@ -7952,6 +8098,13 @@ export function RoomPageLiveKit({
       pageHiddenAtRef.current = Date.now();
       returningFromBackgroundRef.current = true;
 
+      if (lowPowerMobileMode) {
+        writeMobileRoomLease(sessionId, authUserId, {
+          audioEnabled: micOn,
+          videoEnabled: camOn,
+        });
+      }
+
       try {
         void attendanceHeartbeat();
       } catch {
@@ -8023,7 +8176,7 @@ export function RoomPageLiveKit({
       clearMobileRestoreEscalationTimer();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lowPowerMobileMode]);
+  }, [lowPowerMobileMode, sessionId, authUserId, micOn, camOn]);
 
   const [adminBusyKey, setAdminBusyKey] = useState<string>("");
 
@@ -8709,6 +8862,7 @@ export function RoomPageLiveKit({
   useEffect(() => {
     if (!sessionId || !sessionCloseInfo.closed) return;
 
+    clearMobileRoomLease(sessionId, authUserId);
     setPrejoinOpen(false);
     setJoinRequested(false);
     setTokenError("");
@@ -8735,7 +8889,7 @@ export function RoomPageLiveKit({
       console.warn("[session-close] auto disconnect failed:", e);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, sessionCloseInfo.closed]);
+  }, [sessionId, sessionCloseInfo.closed, authUserId]);
 
   const syncLiveAudioInput = async (deviceId: string) => {
     const useId = pickExistingDeviceId(
@@ -8872,8 +9026,14 @@ export function RoomPageLiveKit({
     preserveAttendance?: boolean;
     preserveTabPresence?: boolean;
     preserveJoinRequested?: boolean;
+    tokenOverride?: string;
+    serverUrlOverride?: string;
   } = {}) => {
-    if (!lkServerUrl || !lkToken) return;
+    const connectToken = String(opts.tokenOverride || lkToken || "").trim();
+    const connectServerUrl = String(
+      opts.serverUrlOverride || lkServerUrl || "",
+    ).trim();
+    if (!connectServerUrl || !connectToken) return;
     if (connectInFlightRef.current) return;
 
     const existingRoom: any = roomRef.current as any;
@@ -8952,6 +9112,9 @@ export function RoomPageLiveKit({
           adaptiveStream: true,
           dynacast: true,
           disconnectOnPageLeave: false,
+          ...(lowPowerMobileMode
+            ? { reconnectPolicy: createMobileReconnectPolicy() }
+            : {}),
           publishDefaults: {
             simulcast: !lowPowerMobileMode,
             videoCodec: "vp8",
@@ -8970,6 +9133,12 @@ export function RoomPageLiveKit({
         });
 
         setConnected(true);
+        if (lowPowerMobileMode) {
+          writeMobileRoomLease(sessionId, authUserId, {
+            audioEnabled: prejoinRef.current.audioEnabled,
+            videoEnabled: prejoinRef.current.videoEnabled,
+          });
+        }
         if (returningFromBackgroundRef.current || mobileMediaRestoreOpen) {
           closeMobileRestoreState();
           returningFromBackgroundRef.current = false;
@@ -9072,7 +9241,7 @@ export function RoomPageLiveKit({
       r.on(RoomEvent.LocalTrackPublished as any, refresh as any);
       r.on(RoomEvent.LocalTrackUnpublished as any, refresh as any);
 
-      await r.connect(lkServerUrl, lkToken, { autoSubscribe: true });
+      await r.connect(connectServerUrl, connectToken, { autoSubscribe: true });
       connectedToRoom = true;
 
       if (USAGE_TRACKING_ENABLED) {
@@ -9256,12 +9425,24 @@ export function RoomPageLiveKit({
 
   useEffect(() => {
     return () => {
+      const retention = mobileRoomRetentionRef.current;
+      const preserveMobileBackgroundSession =
+        retention.enabled &&
+        !explicitLeaveRequestedRef.current &&
+        typeof document !== "undefined" &&
+        document.visibilityState !== "visible" &&
+        !!readMobileRoomLease(retention.sessionId, retention.userId);
+
       if (rebuildRafRef.current) {
         try {
           cancelAnimationFrame(rebuildRafRef.current);
         } catch { }
       }
-      disconnectRoom().catch(() => { });
+      disconnectRoom({
+        preserveAttendance: preserveMobileBackgroundSession,
+        preserveTabPresence: preserveMobileBackgroundSession,
+        preserveJoinRequested: preserveMobileBackgroundSession,
+      }).catch(() => { });
       cleanupPrejoinPreparedVideoTrack().catch(() => { });
       if (uploadedBgUrlRef.current) {
         try {
@@ -9269,7 +9450,9 @@ export function RoomPageLiveKit({
         } catch { }
       }
       stopWelcomeLoop();
-      releaseTabPresence();
+      if (!preserveMobileBackgroundSession) {
+        releaseTabPresence();
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -10249,10 +10432,10 @@ export function RoomPageLiveKit({
 
     try {
       setMobileMediaRestoreBusy(true);
-      setMobileRestoreMode("needs_action");
+      closeMobileRestoreState();
       setClientError("");
       setTokenError("");
-      setMediaWarning("");
+      setMediaWarning("Restoring your room…");
 
       await loadBrowserDevices({ preserveSelection: true }).catch(() => { });
       await attendanceHeartbeat().catch(() => { });
@@ -10283,13 +10466,41 @@ export function RoomPageLiveKit({
             String((e as any)?.message || e || "restore_reconnect_failed"),
           );
         });
-      } else {
-        await requestToken().catch((e) => {
+      }
+
+      // A token cached before the browser was suspended may no longer be usable.
+      // Fetch a fresh token and connect with it directly; relying only on React
+      // state here can miss a retry when two JWT strings happen to be identical.
+      for (let attempt = 0; attempt < 2 && !roomIsActuallyConnected(); attempt += 1) {
+        if (document.visibilityState !== "visible") return;
+
+        setLkToken("");
+        lkTokenRef.current = "";
+        setPrejoinOpen(false);
+        setJoinRequested(true);
+
+        const refreshed = await requestToken().catch((e) => {
           console.warn("mobile restore token refresh failed:", e);
           setTokenError(
             String((e as any)?.message || e || "restore_token_failed"),
           );
+          return undefined;
         });
+
+        if (refreshed?.token && refreshed?.url) {
+          await connectRoom({
+            forceReconnect: true,
+            preserveAttendance: true,
+            preserveTabPresence: true,
+            preserveJoinRequested: true,
+            tokenOverride: refreshed.token,
+            serverUrlOverride: refreshed.url,
+          });
+        }
+
+        if (!roomIsActuallyConnected() && attempt === 0) {
+          await delay(900);
+        }
       }
 
       await ensureRoomAudioPlaybackUnlocked(
@@ -10299,20 +10510,130 @@ export function RoomPageLiveKit({
       window.setTimeout(() => scheduleRebuildTiles(), 160);
 
       if (roomIsActuallyConnected()) {
+        writeMobileRoomLease(sessionId, authUserId, {
+          audioEnabled: prejoinRef.current.audioEnabled,
+          videoEnabled: prejoinRef.current.videoEnabled,
+        });
         closeMobileRestoreState();
         returningFromBackgroundRef.current = false;
         pageHiddenAtRef.current = null;
+        setMediaWarning("");
       } else {
         setMobileRestoreMode("needs_action");
         setMobileMediaRestoreOpen(true);
         setMediaWarning(
-          "Still reconnecting. Tap Rejoin room, or reload only if it does not recover.",
+          "Still reconnecting automatically. You can tap Rejoin room to retry now.",
         );
       }
     } finally {
       setMobileMediaRestoreBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (!lowPowerMobileMode) return;
+
+    const clearRecoveryRetry = () => {
+      if (!mobileRecoveryRetryTimerRef.current) return;
+      window.clearTimeout(mobileRecoveryRetryTimerRef.current);
+      mobileRecoveryRetryTimerRef.current = null;
+    };
+
+    const scheduleRecoveryRetry = () => {
+      if (mobileRecoveryRetryTimerRef.current) return;
+      if (mobileAutoRestoreInFlightRef.current) return;
+      if (document.visibilityState !== "visible") return;
+      if (roomIsActuallyConnected()) return;
+      if (!readMobileRoomLease(sessionId, authUserId)) return;
+
+      const retryDelays = [1_500, 3_000, 7_000, 15_000, 30_000];
+      const attempt = mobileRecoveryAttemptRef.current;
+      const retryDelay = retryDelays[Math.min(attempt, retryDelays.length - 1)];
+      mobileRecoveryAttemptRef.current = attempt + 1;
+
+      mobileRecoveryRetryTimerRef.current = window.setTimeout(() => {
+        mobileRecoveryRetryTimerRef.current = null;
+        restoreFromLease(false);
+      }, retryDelay);
+    };
+
+    const restoreFromLease = (resetBackoff = true) => {
+      if (document.visibilityState !== "visible") return;
+
+      const lease = readMobileRoomLease(sessionId, authUserId);
+      if (!lease) return;
+
+      if (resetBackoff) {
+        clearRecoveryRetry();
+        mobileRecoveryAttemptRef.current = 0;
+      }
+
+      if (roomIsActuallyConnected()) {
+        clearRecoveryRetry();
+        mobileRecoveryAttemptRef.current = 0;
+        writeMobileRoomLease(sessionId, authUserId, {
+          audioEnabled: lease.audioEnabled,
+          videoEnabled: lease.videoEnabled,
+        });
+        closeMobileRestoreState();
+        returningFromBackgroundRef.current = false;
+        pageHiddenAtRef.current = null;
+        return;
+      }
+
+      if (connectInFlightRef.current || tokenRequestInFlightRef.current) {
+        scheduleRecoveryRetry();
+        return;
+      }
+
+      if (mobileAutoRestoreInFlightRef.current) return;
+
+      const restoredPrejoin = {
+        ...prejoinRef.current,
+        audioEnabled: lease.audioEnabled,
+        videoEnabled: lease.videoEnabled,
+      };
+      prejoinRef.current = restoredPrejoin;
+      setPrejoin(restoredPrejoin);
+      joinFlowStartedRef.current = true;
+      setPrejoinOpen(false);
+      setJoinRequested(true);
+
+      mobileAutoRestoreInFlightRef.current = true;
+      void restoreMobileMediaFromBackground().finally(() => {
+        mobileAutoRestoreInFlightRef.current = false;
+        if (roomIsActuallyConnected()) {
+          clearRecoveryRetry();
+          mobileRecoveryAttemptRef.current = 0;
+          return;
+        }
+        scheduleRecoveryRetry();
+      });
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") {
+        clearRecoveryRetry();
+        return;
+      }
+      restoreFromLease(true);
+    };
+    const onResumeSignal = () => restoreFromLease(true);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pageshow", onResumeSignal);
+    window.addEventListener("online", onResumeSignal);
+    window.addEventListener("focus", onResumeSignal);
+    scheduleRecoveryRetry();
+
+    return () => {
+      clearRecoveryRetry();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pageshow", onResumeSignal);
+      window.removeEventListener("online", onResumeSignal);
+      window.removeEventListener("focus", onResumeSignal);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lowPowerMobileMode, sessionId, authUserId]);
 
   const scheduleScreenShareRebuildBurst = () => {
     scheduleRebuildTiles();
@@ -10554,6 +10875,7 @@ export function RoomPageLiveKit({
 
   const leave = async () => {
     explicitLeaveRequestedRef.current = true;
+    clearMobileRoomLease(sessionId, authUserId);
 
     const startedAt = sessionJoinStartedAtRef.current;
     const minutesSpent =
