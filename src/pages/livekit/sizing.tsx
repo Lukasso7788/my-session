@@ -20,10 +20,13 @@ export function useElementSize<T extends HTMLElement>() {
 
         const updateNow = () => {
             const r = node.getBoundingClientRect();
-            setSize({
-                width: Math.round(r.width),
-                height: Math.round(r.height),
-            });
+            const width = Math.round(r.width);
+            const height = Math.round(r.height);
+            setSize((prev) =>
+                prev.width === width && prev.height === height
+                    ? prev
+                    : { width, height },
+            );
         };
 
         const update = () => {

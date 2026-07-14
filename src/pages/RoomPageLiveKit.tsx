@@ -376,6 +376,35 @@ type TileModel = {
   remoteMicPubSid?: string;
 };
 
+function areTileListsEqual(prev: TileModel[], next: TileModel[]) {
+  if (prev === next) return true;
+  if (prev.length !== next.length) return false;
+
+  return prev.every((a, index) => {
+    const b = next[index];
+    return (
+      a.id === b.id &&
+      a.kind === b.kind &&
+      a.label === b.label &&
+      a.metadataDisplayName === b.metadataDisplayName &&
+      a.status === b.status &&
+      a.isLocal === b.isLocal &&
+      a.videoTrack === b.videoTrack &&
+      a.audioTrack === b.audioTrack &&
+      a.audioLevel === b.audioLevel &&
+      a.participantIdentity === b.participantIdentity &&
+      a.participantUserId === b.participantUserId &&
+      a.micTrackSid === b.micTrackSid &&
+      a.camTrackSid === b.camTrackSid &&
+      a.micMuted === b.micMuted &&
+      a.camPubExists === b.camPubExists &&
+      a.camPubMuted === b.camPubMuted &&
+      a.camPubHasTrack === b.camPubHasTrack &&
+      a.remoteMicPubSid === b.remoteMicPubSid
+    );
+  });
+}
+
 type SessionRole = "moderator";
 type SessionRoleAssignmentRow = {
   id?: string;
@@ -5029,6 +5058,11 @@ export function RoomPageLiveKit({
   useEffect(() => {
     let cancelled = false;
 
+    // Supabase restores the persisted auth session asynchronously. Waiting for
+    // that once avoids an unauthenticated request followed by the same session
+    // request again as soon as auth settles.
+    if (!authReady) return;
+
     (async () => {
       const rawId = String(effectiveSessionParam || "").trim();
 
@@ -7418,7 +7452,32 @@ export function RoomPageLiveKit({
 
   // ---- livekit room
   const roomRef = useRef<Room | null>(null);
+  const prewarmedRoomRef = useRef<Room | null>(null);
   const [roomState, setRoomState] = useState<Room | null>(null);
+
+  useEffect(() => {
+    if (!session?.id || !defaultLivekitUrl) return;
+
+    const warmRoom = new Room({
+      adaptiveStream: true,
+      dynacast: true,
+      disconnectOnPageLeave: false,
+      publishDefaults: {
+        simulcast: !lowPowerMobileMode,
+        videoCodec: "vp8",
+      } as any,
+    });
+
+    prewarmedRoomRef.current = warmRoom;
+    void warmRoom.prepareConnection(defaultLivekitUrl);
+
+    return () => {
+      if (prewarmedRoomRef.current !== warmRoom) return;
+      prewarmedRoomRef.current = null;
+      void warmRoom.disconnect().catch(() => { });
+    };
+  }, [session?.id, defaultLivekitUrl, lowPowerMobileMode]);
+
   useEffect(() => {
     if (!connected) return;
     if (!roomState) return;
@@ -8578,7 +8637,7 @@ export function RoomPageLiveKit({
       }
     });
 
-    setTiles(next);
+    setTiles((prev) => (areTileListsEqual(prev, next) ? prev : next));
 
     requestRemoteScreenShareSubscriptions(room);
 
@@ -8593,7 +8652,9 @@ export function RoomPageLiveKit({
     const nextScreenShares =
       filterRenderableScreenShareTiles(nextScreenSharesRaw);
 
-    setScreenShareTiles(nextScreenShares);
+    setScreenShareTiles((prev) =>
+      areTileListsEqual(prev, nextScreenShares) ? prev : nextScreenShares,
+    );
     setScreenShareOn(hasLocalLiveScreenShare(room));
   };
 
@@ -8870,24 +8931,33 @@ export function RoomPageLiveKit({
     setFxError("");
     setMediaWarning("");
 
-    await disconnectRoom({
-      preserveAttendance: opts.preserveAttendance,
-      preserveTabPresence: opts.preserveTabPresence,
-      preserveJoinRequested: opts.preserveJoinRequested,
-    });
+    if (roomRef.current) {
+      await disconnectRoom({
+        // This cleanup is part of the same join/reconnect attempt. Releasing the
+        // tab slot, writing an attendance leave, and clearing join state here only
+        // adds network work and immediately undoes the gate acquired by Join.
+        preserveAttendance: opts.preserveAttendance ?? true,
+        preserveTabPresence: opts.preserveTabPresence ?? true,
+        preserveJoinRequested: opts.preserveJoinRequested ?? true,
+      });
+      connectInFlightRef.current = true;
+    }
 
     try {
       const pj = prejoinRef.current;
 
-      const r = new Room({
-        adaptiveStream: true,
-        dynacast: true,
-        disconnectOnPageLeave: false,
-        publishDefaults: {
-          simulcast: !lowPowerMobileMode,
-          videoCodec: "vp8",
-        } as any,
-      });
+      const r =
+        prewarmedRoomRef.current ||
+        new Room({
+          adaptiveStream: true,
+          dynacast: true,
+          disconnectOnPageLeave: false,
+          publishDefaults: {
+            simulcast: !lowPowerMobileMode,
+            videoCodec: "vp8",
+          } as any,
+        });
+      prewarmedRoomRef.current = null;
 
       roomRef.current = r;
       setRoomState(r);
@@ -9009,19 +9079,19 @@ export function RoomPageLiveKit({
         sessionJoinStartedAtRef.current = Date.now();
         usageTrackedRef.current = false;
 
-        try {
-          await incrementWeeklyUsage({
-            userId: String(authUserId || "").trim(),
-            addSessions: 1,
+        void incrementWeeklyUsage({
+          userId: String(authUserId || "").trim(),
+          addSessions: 1,
+        })
+          .then(() => {
+            console.log("[usage] weekly session counted:", {
+              userId: authUserId,
+              sessionId: session?.id,
+            });
+          })
+          .catch((e) => {
+            console.error("[usage] incrementWeeklyUsage sessions failed:", e);
           });
-
-          console.log("[usage] weekly session counted:", {
-            userId: authUserId,
-            sessionId: session?.id,
-          });
-        } catch (e) {
-          console.error("[usage] incrementWeeklyUsage sessions failed:", e);
-        }
       }
 
       await r.localParticipant.setCameraEnabled(false);
@@ -9044,8 +9114,9 @@ export function RoomPageLiveKit({
 
       leaveOnceRef.current = false;
       leavePromiseRef.current = null;
-      await attendanceJoin();
-      startAttendanceHeartbeat();
+      void attendanceJoin()
+        .then(() => startAttendanceHeartbeat())
+        .catch((e) => console.warn("attendance join failed:", e));
 
       const shouldAutoStartCameraOnJoin = !!pj.videoEnabled;
 
@@ -11331,35 +11402,6 @@ export function RoomPageLiveKit({
   const fallbackH = typeof window !== "undefined" ? window.innerHeight : 800;
   const effectiveW = videoWrapW || fallbackW;
   const effectiveH = videoWrapH || fallbackH;
-
-  useEffect(() => {
-    const el = videoWrapRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-
-    let raf = 0;
-    let timer: number | null = null;
-
-    const ro = new ResizeObserver(() => {
-      if (timer) window.clearTimeout(timer);
-
-      timer = window.setTimeout(() => {
-        window.cancelAnimationFrame(raf);
-        raf = window.requestAnimationFrame(() => {
-          try {
-            window.dispatchEvent(new Event("resize"));
-          } catch { }
-        });
-      }, 120);
-    });
-
-    ro.observe(el);
-
-    return () => {
-      if (timer) window.clearTimeout(timer);
-      window.cancelAnimationFrame(raf);
-      ro.disconnect();
-    };
-  }, []);
 
   const roomReadyText = connected
     ? ""

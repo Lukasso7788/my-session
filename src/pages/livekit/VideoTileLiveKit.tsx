@@ -410,20 +410,13 @@ function VideoTileInner({
             el.style.width = "100%";
             el.style.height = "100%";
             (el.style as any).objectFit = "cover";
-            el.style.backgroundColor = mediaBgColor;
             el.style.display = "block";
-            el.style.transform = isLocal
-                ? mirrorVideo
-                    ? "translateZ(0) scaleX(-1)"
-                    : "translateZ(0) scaleX(1)"
-                : "translateZ(0)";
             (el.style as any).backfaceVisibility = "hidden";
             el.style.willChange = "transform";
         } catch { }
 
         if (el instanceof HTMLVideoElement) {
             try {
-                el.muted = !!isLocal;
                 el.playsInline = true;
                 el.autoplay = true;
             } catch { }
@@ -444,6 +437,27 @@ function VideoTileInner({
 
         attachedElRef.current = el;
         return cleanup;
+    }, [videoTrack]);
+
+    // Theme, mirroring, and local/remote presentation are UI concerns. Update
+    // the existing media element in place so a theme switch never detaches the
+    // LiveKit track, creates a new <video>, or calls play() again.
+    useEffect(() => {
+        const el = attachedElRef.current;
+        if (!el) return;
+
+        try {
+            el.style.backgroundColor = mediaBgColor;
+            el.style.transform = isLocal
+                ? mirrorVideo
+                    ? "translateZ(0) scaleX(-1)"
+                    : "translateZ(0) scaleX(1)"
+                : "translateZ(0)";
+
+            if (el instanceof HTMLVideoElement) {
+                el.muted = !!isLocal;
+            }
+        } catch { }
     }, [videoTrack, isLocal, mediaBgColor, mirrorVideo]);
 
     const showActions =
