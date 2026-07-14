@@ -1624,7 +1624,6 @@ const SESSION_SELECT_STR =
 
 const JOIN_EARLY_WINDOW_MINUTES = 10;
 const SESSION_CLOSE_GRACE_MINUTES = 10;
-const WEAK_DEVICE_PREVIEW_INIT_DELAY_MS = 450;
 
 type ChatUnreadMessageRow = Record<string, any>;
 
@@ -3874,9 +3873,9 @@ export function RoomPageLiveKit({
     return (isMobileQuery || isTabletQuery) && !isChromeOS;
   }, [isMobileQuery, isTabletQuery, isChromeOS]);
 
-  const shouldDisableBackgroundFx = useMemo(() => {
-    return isMobileQuery || isTabletQuery;
-  }, [isMobileQuery, isTabletQuery]);
+  // Background processors stay disabled only on actual phones/tablets.
+  // ChromeOS devices can expose touch/tablet-like signals, so exclude them.
+  const shouldDisableBackgroundFx = lowPowerMobileMode;
 
   const prejoinPreviewPreset = useMemo(() => {
     if (lowPowerMobileMode) {
@@ -5872,9 +5871,12 @@ export function RoomPageLiveKit({
         : mode === "blur"
           ? `blur:${normalizedBlur}`
           : `bg:${String(bgUrl || DEFAULT_BG_DATA_URL)}`;
+    const trackId = String((track as any)?.mediaStreamTrack?.id || "unknown");
+    const trackSignature = `${trackId}|${signature}`;
 
-    // Самый важный фикс: не пересоздаём processor, если реально ничего не поменялось.
-    if (activeFxSignatureRef.current === signature) return;
+    // A processor is attached to one track. Never reuse a cached FX result after
+    // pre-join recreates the camera track (common on ChromeOS permission flows).
+    if (activeFxSignatureRef.current === trackSignature) return;
 
     const opId = fxOpIdRef.current + 1;
     fxOpIdRef.current = opId;
@@ -5889,14 +5891,14 @@ export function RoomPageLiveKit({
     const proc = makeProcessorForMode(mode, normalizedBlur, bgUrl);
 
     if (!proc) {
-      activeFxSignatureRef.current = "off";
+      activeFxSignatureRef.current = trackSignature;
       return;
     }
 
     await (track as any).setProcessor(proc, true);
 
     if (fxOpIdRef.current === opId) {
-      activeFxSignatureRef.current = signature;
+      activeFxSignatureRef.current = trackSignature;
     }
   };
 
@@ -6004,7 +6006,7 @@ export function RoomPageLiveKit({
     }
   };
 
-  const applyPrejoinVideoFx = async (mode: FxMode) => {
+  const applyPrejoinVideoFx = async (mode: FxMode, backgroundUrl?: string) => {
     setFxError("");
     setFxApplying(true);
     setFxStatusText("");
@@ -6012,9 +6014,7 @@ export function RoomPageLiveKit({
     try {
       const pj = prejoinRef.current;
       if (shouldDisableBackgroundFx) {
-        throw new Error(
-          "Background FX are disabled on mobile/tablet devices for stability",
-        );
+        throw new Error("Background effects are disabled on mobile/tablet devices");
       }
       if (!pj.videoEnabled) throw new Error("Turn camera on in pre-join first");
 
@@ -6028,7 +6028,8 @@ export function RoomPageLiveKit({
         throw new Error("Pre-join camera track id is missing");
       }
 
-      const sig = `${mode}|${blurStrength}|${bgImageUrl}|${String(
+      const nextBgImageUrl = backgroundUrl || bgImageUrl;
+      const sig = `${mode}|${blurStrength}|${nextBgImageUrl}|${String(
         (track as any)?.mediaStreamTrack?.id || "",
       )}`;
 
@@ -6037,7 +6038,7 @@ export function RoomPageLiveKit({
         return;
       }
 
-      await safeApplyProcessor(track, mode, blurStrength, bgImageUrl);
+      await safeApplyProcessor(track, mode, blurStrength, nextBgImageUrl);
       lastPrejoinFxSignatureRef.current = sig;
 
       setVideoFxMode(mode);
@@ -6058,7 +6059,6 @@ export function RoomPageLiveKit({
   };
 
   const initPrejoinPreview = async (opts?: {
-    delayedForWeak?: boolean;
     forceTrack?: boolean;
   }) => {
     if (prejoinPreviewInitInFlightRef.current) return;
@@ -6068,13 +6068,6 @@ export function RoomPageLiveKit({
       const pj = prejoinRef.current;
 
       if (!pj.videoEnabled) return;
-
-      if (opts?.delayedForWeak && deviceTier === "weak" && !isChromeOS) {
-        await delay(WEAK_DEVICE_PREVIEW_INIT_DELAY_MS);
-
-        if (!prejoinOpen) return;
-        if (!prejoinRef.current.videoEnabled) return;
-      }
 
       await createPrejoinPreparedVideoTrack({ force: !!opts?.forceTrack });
 
@@ -6109,10 +6102,7 @@ export function RoomPageLiveKit({
       if (cancelled) return;
 
       try {
-        if (isMobileQuery || isTabletQuery) return;
-
         await initPrejoinPreview({
-          delayedForWeak: false,
           forceTrack: false,
         });
       } catch (e) {
@@ -6137,7 +6127,6 @@ export function RoomPageLiveKit({
 
   useEffect(() => {
     if (!prejoinOpen) return;
-    if (isMobileQuery || isTabletQuery) return;
 
     const pj = prejoinRef.current;
     if (!pj.videoEnabled) return;
@@ -6145,7 +6134,6 @@ export function RoomPageLiveKit({
     const t = window.setTimeout(async () => {
       try {
         await initPrejoinPreview({
-          delayedForWeak: false,
           forceTrack: true,
         });
       } catch (e) {
@@ -6170,12 +6158,9 @@ export function RoomPageLiveKit({
       return;
     }
 
-    if (isMobileQuery || isTabletQuery) return;
-
     (async () => {
       try {
         await initPrejoinPreview({
-          delayedForWeak: false,
           forceTrack: false,
         });
       } catch (e) {
@@ -6194,7 +6179,6 @@ export function RoomPageLiveKit({
     if (!settingsOpen) return;
     if (!prejoinOpen) return;
     if (!prejoinRef.current.videoEnabled) return;
-    if (isMobileQuery || isTabletQuery) return;
 
     if (prejoinPreparedVideoTrackRef.current) {
       setSettingsPreviewVersion((v) => v + 1);
@@ -6206,7 +6190,6 @@ export function RoomPageLiveKit({
     (async () => {
       try {
         await initPrejoinPreview({
-          delayedForWeak: false,
           forceTrack: false,
         });
 
@@ -6229,22 +6212,6 @@ export function RoomPageLiveKit({
     isMobileQuery,
     isTabletQuery,
   ]);
-
-  useEffect(() => {
-    if (deviceTier !== "weak") return;
-    if (videoFxMode === "off") return;
-
-    setVideoFxMode("off");
-    setFxStatusText("FX disabled automatically on weak/mobile device");
-
-    const track = prejoinPreparedVideoTrackRef.current;
-    if (track) {
-      stopAnyProcessor(track).catch(() => { });
-    }
-
-    lastPrejoinFxSignatureRef.current = "";
-    setPrejoinPreviewVersion((v) => v + 1);
-  }, [deviceTier, videoFxMode]);
 
   useEffect(() => {
     if (!prejoinOpen) return;
@@ -8353,7 +8320,6 @@ export function RoomPageLiveKit({
       if (!r) {
         if (prejoinOpen && prejoinRef.current.videoEnabled) {
           await initPrejoinPreview({
-            delayedForWeak: false,
             forceTrack: true,
           });
         }
@@ -9822,7 +9788,7 @@ export function RoomPageLiveKit({
   };
 
   // FX apply in-room
-  const applyVideoFx = async (mode: FxMode) => {
+  const applyVideoFx = async (mode: FxMode, backgroundUrl?: string) => {
     const r = roomRef.current;
     if (!r) return;
 
@@ -9833,7 +9799,12 @@ export function RoomPageLiveKit({
     try {
       const tr = getLocalCameraTrack();
       if (!tr) throw new Error("Camera track is not ready");
-      await safeApplyProcessor(tr, mode, blurStrength, bgImageUrl);
+      await safeApplyProcessor(
+        tr,
+        mode,
+        blurStrength,
+        backgroundUrl || bgImageUrl,
+      );
 
       setVideoFxMode(mode);
       setFxStatusText(
@@ -12353,11 +12324,10 @@ export function RoomPageLiveKit({
       connectingFromPrejoinRef.current = false;
       return;
     }
-    if ((isMobileQuery || isTabletQuery) && videoFxMode !== "off") {
+    if (shouldDisableBackgroundFx && videoFxMode !== "off") {
       setVideoFxMode("off");
       setFxStatusText("FX disabled automatically on mobile/tablet device");
     }
-
     const pj = prejoinRef.current;
     const nm =
       (pj.displayName || displayName || userName || "User").trim() || "User";
@@ -12434,29 +12404,34 @@ export function RoomPageLiveKit({
         }
 
         .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar,
-        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar {
+        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar,
+        .ms-room-page .ms-room-settings-scrollbar {
           scrollbar-width: thin !important;
           scrollbar-color: #B8C0BB transparent !important;
           -ms-overflow-style: auto !important;
         }
         .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar::-webkit-scrollbar,
-        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar {
+        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar,
+        .ms-room-page .ms-room-settings-scrollbar::-webkit-scrollbar {
           width: 6px !important;
           height: 6px !important;
           display: block !important;
         }
         .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-track,
-        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-track {
+        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-track,
+        .ms-room-page .ms-room-settings-scrollbar::-webkit-scrollbar-track {
           background: transparent;
         }
         .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-thumb,
-        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-thumb {
+        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-thumb,
+        .ms-room-page .ms-room-settings-scrollbar::-webkit-scrollbar-thumb {
           min-height: 32px;
           border-radius: 999px;
           background: #B8C0BB;
         }
         .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-thumb:hover,
-        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar::-webkit-scrollbar-thumb:hover,
+        .ms-room-page .ms-room-settings-scrollbar::-webkit-scrollbar-thumb:hover {
           background: #8F9993;
         }
 
@@ -12521,6 +12496,7 @@ export function RoomPageLiveKit({
             const url = URL.createObjectURL(file);
             uploadedBgUrlRef.current = url;
             setBgImageUrl(url);
+            return url;
           } catch (e) {
             console.error("upload bg failed", e);
             setFxError("Failed to load selected image");
@@ -12842,6 +12818,7 @@ export function RoomPageLiveKit({
         <RoomSettingsModalLiveKit
           open={settingsOpen}
           theme={theme}
+          hideBackgroundFx={shouldDisableBackgroundFx}
           mode={videoFxMode}
           blurStrength={blurStrength}
           onBlurStrengthChange={setBlurStrength}

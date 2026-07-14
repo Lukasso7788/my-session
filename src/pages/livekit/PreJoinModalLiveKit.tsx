@@ -44,10 +44,10 @@ type PreJoinModalProps = {
   fxError: string;
   fxStatusText: string;
   fxBgPresets: BgPreset[];
-  onApplyVideoFx: (mode: FxMode) => Promise<void> | void;
+  onApplyVideoFx: (mode: FxMode, backgroundUrl?: string) => Promise<void> | void;
   onBlurStrengthChange: (next: number) => void;
   onSetBgImageUrl: (url: string) => void;
-  onUploadBg: (file: File) => void;
+  onUploadBg: (file: File) => string | void;
   onResetBg: () => void;
   deviceError?: string;
   hideBackgroundFx?: boolean;
@@ -118,6 +118,12 @@ export function PreJoinModal({
   useEffect(() => {
     setBlurDraft(blurStrength);
   }, [blurStrength]);
+
+  useEffect(() => {
+    if (!fxApplying && (fxStatusText || fxError)) {
+      setLocalFxMessage("");
+    }
+  }, [fxApplying, fxStatusText, fxError]);
 
   useEffect(() => {
     const host = previewHostRef.current;
@@ -208,7 +214,7 @@ export function PreJoinModal({
   }, [value.videoEnabled, previewVideoTrack]);
 
   const fxBlockedReason = hideBackgroundFx
-    ? "Background effects are disabled on mobile/tablet for stability"
+    ? "Background effects are disabled on mobile/tablet devices"
     : !value.videoEnabled
       ? "Turn video on to use FX"
       : "";
@@ -451,7 +457,7 @@ export function PreJoinModal({
                           onClick={() => {
                             onSetBgImageUrl(p.url);
                             setLocalFxMessage("Preset selected");
-                            void Promise.resolve(onApplyVideoFx("bg"));
+                            void Promise.resolve(onApplyVideoFx("bg", p.url));
                           }}
                           className={`overflow-hidden rounded-2xl border text-left transition ${isLight ? "border-[#CFC6C6] hover:border-[#BDB4B4]" : "border-[#2B2B2B] hover:border-[#3A3A3A]"}`}
                           title={p.label}
@@ -479,13 +485,9 @@ export function PreJoinModal({
                           const f = e.target.files?.[0];
                           if (!f) return;
 
-                          // Important Chromebook fix:
-                          // upload/select image first, then switch to bg/apply from the same user flow.
-                          onUploadBg(f);
+                          const selectedUrl = onUploadBg(f);
                           setLocalFxMessage("Image selected. Applying background…");
-                          window.setTimeout(() => {
-                            void Promise.resolve(onApplyVideoFx("bg"));
-                          }, 120);
+                          void Promise.resolve(onApplyVideoFx("bg", selectedUrl || undefined));
 
                           try {
                             e.currentTarget.value = "";
@@ -522,9 +524,6 @@ export function PreJoinModal({
                       </button>
                     </div>
 
-                    <div className={`mt-2 text-[11px] ${labelCls}`}>
-                      Chromebook note: if upload does nothing, keep camera on, select the image again, then click Re-apply.
-                    </div>
                     {bgImageUrl ? <div className={`mt-1 truncate text-[10px] ${labelCls}`}>Selected: {bgImageUrl.slice(0, 90)}</div> : null}
                   </div>
                 </div>

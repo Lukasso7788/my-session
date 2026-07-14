@@ -1371,7 +1371,7 @@ export function RoomSettingsModalLiveKit({
                     </div>
                 </div>
 
-                <div className="px-5 sm:px-6 py-4 sm:py-5 flex-1 overflow-y-auto overscroll-contain">
+                <div className="ms-room-settings-scrollbar custom-scrollbar px-5 sm:px-6 py-4 sm:py-5 flex-1 overflow-y-auto overscroll-contain">
                     <div className={`mb-5 rounded-2xl p-4 ${sectionCls}`}>
                         <div className="flex items-start justify-between gap-3 mb-4">
                             <div className="min-w-0">
