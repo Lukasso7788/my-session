@@ -3981,6 +3981,9 @@ export function RoomPageLiveKit({
   const prejoinPreparedVideoTrackRef = useRef<LocalVideoTrack | null>(null);
   const [prejoinPreviewVersion, setPrejoinPreviewVersion] = useState(0);
   const prejoinPreviewInitInFlightRef = useRef(false);
+  const prejoinTrackCreationPromiseRef = useRef<
+    Promise<LocalVideoTrack | null> | null
+  >(null);
   const deviceLabelsWarmupAttemptedRef = useRef(false);
 
   // roles
@@ -5820,9 +5823,12 @@ export function RoomPageLiveKit({
   );
 
   const uploadedBgUrlRef = useRef<string | null>(null);
-  const fxOpIdRef = useRef<number>(0);
   const lastPrejoinFxSignatureRef = useRef<string>("");
-  const activeFxSignatureRef = useRef<string>("");
+  const activeFxSignaturesRef = useRef(new WeakMap<LocalVideoTrack, string>());
+  const pendingFxSignaturesRef = useRef(new WeakMap<LocalVideoTrack, string>());
+  const pendingFxOperationsRef = useRef(
+    new WeakMap<LocalVideoTrack, Promise<void>>(),
+  );
 
   const ensureFxSupportedOrThrow = () => {
     if (!supportsBackgroundProcessors())
@@ -5856,6 +5862,45 @@ export function RoomPageLiveKit({
     } catch { }
   };
 
+  const waitForBackgroundImage = async (url: string) => {
+    if (!url || typeof Image === "undefined") return;
+
+    await new Promise<void>((resolve, reject) => {
+      const image = new Image();
+      let settled = false;
+      let timeoutId = 0;
+
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        image.onload = null;
+        image.onerror = null;
+        if (error) reject(error);
+        else resolve();
+      };
+
+      timeoutId = window.setTimeout(() => {
+        finish(new Error("Background image loading timed out"));
+      }, 12_000);
+
+      image.onload = () => finish();
+      image.onerror = () => finish(new Error("Selected background image could not be loaded"));
+      image.src = url;
+
+      if (image.complete && image.naturalWidth > 0) {
+        finish();
+        return;
+      }
+
+      if (typeof image.decode === "function") {
+        image.decode().then(() => finish()).catch(() => {
+          // Some ChromeOS image decoders reject decode() but still emit load.
+        });
+      }
+    });
+  };
+
   const safeApplyProcessor = async (
     track: LocalVideoTrack,
     mode: FxMode,
@@ -5871,34 +5916,51 @@ export function RoomPageLiveKit({
         : mode === "blur"
           ? `blur:${normalizedBlur}`
           : `bg:${String(bgUrl || DEFAULT_BG_DATA_URL)}`;
-    const trackId = String((track as any)?.mediaStreamTrack?.id || "unknown");
-    const trackSignature = `${trackId}|${signature}`;
+    if (activeFxSignaturesRef.current.get(track) === signature) return;
 
-    // A processor is attached to one track. Never reuse a cached FX result after
-    // pre-join recreates the camera track (common on ChromeOS permission flows).
-    if (activeFxSignatureRef.current === trackSignature) return;
-
-    const opId = fxOpIdRef.current + 1;
-    fxOpIdRef.current = opId;
-
-    await stopAnyProcessor(track);
-    if (fxOpIdRef.current !== opId) return;
-
-    if (firefoxSafeFx) {
-      await delay(90);
-    }
-
-    const proc = makeProcessorForMode(mode, normalizedBlur, bgUrl);
-
-    if (!proc) {
-      activeFxSignatureRef.current = trackSignature;
+    const pendingOperation = pendingFxOperationsRef.current.get(track);
+    if (
+      pendingOperation &&
+      pendingFxSignaturesRef.current.get(track) === signature
+    ) {
+      await pendingOperation;
       return;
     }
 
-    await (track as any).setProcessor(proc, true);
+    const previousOperation = pendingOperation?.catch(() => { });
+    const operation = (previousOperation || Promise.resolve()).then(async () => {
+      if (activeFxSignaturesRef.current.get(track) === signature) return;
 
-    if (fxOpIdRef.current === opId) {
-      activeFxSignatureRef.current = trackSignature;
+      // Decode the image before detaching the current processor. This avoids the
+      // first blank flash on slower ChromeOS devices and makes the first apply real.
+      if (mode === "bg") {
+        await waitForBackgroundImage(bgUrl || DEFAULT_BG_DATA_URL);
+      }
+
+      await stopAnyProcessor(track);
+
+      if (firefoxSafeFx) {
+        await delay(90);
+      }
+
+      const proc = makeProcessorForMode(mode, normalizedBlur, bgUrl);
+      if (proc) {
+        await (track as any).setProcessor(proc, true);
+      }
+
+      activeFxSignaturesRef.current.set(track, signature);
+    });
+
+    pendingFxSignaturesRef.current.set(track, signature);
+    pendingFxOperationsRef.current.set(track, operation);
+
+    try {
+      await operation;
+    } finally {
+      if (pendingFxOperationsRef.current.get(track) === operation) {
+        pendingFxOperationsRef.current.delete(track);
+        pendingFxSignaturesRef.current.delete(track);
+      }
     }
   };
 
@@ -5907,7 +5969,11 @@ export function RoomPageLiveKit({
     const t = prejoinPreparedVideoTrackRef.current as any;
     prejoinPreparedVideoTrackRef.current = null;
     lastPrejoinFxSignatureRef.current = "";
-    activeFxSignatureRef.current = "";
+    if (t) {
+      activeFxSignaturesRef.current.delete(t);
+      pendingFxSignaturesRef.current.delete(t);
+      pendingFxOperationsRef.current.delete(t);
+    }
 
     if (!t) return;
 
@@ -5922,7 +5988,7 @@ export function RoomPageLiveKit({
     setPrejoinPreviewVersion((v) => v + 1);
   };
 
-  const createPrejoinPreparedVideoTrack = async (opts?: {
+  const createPrejoinPreparedVideoTrackNow = async (opts?: {
     force?: boolean;
   }) => {
     const pj = prejoinRef.current;
@@ -6003,6 +6069,26 @@ export function RoomPageLiveKit({
       console.warn("createPrejoinPreparedVideoTrack failed:", e);
       setDeviceError(String(e?.message || e || "camera_preview_failed"));
       return null;
+    }
+  };
+
+  const createPrejoinPreparedVideoTrack = async (opts?: {
+    force?: boolean;
+  }) => {
+    // ChromeOS may still be opening the camera when the user selects a
+    // background. Reuse that creation instead of opening a second camera track.
+    const pending = prejoinTrackCreationPromiseRef.current;
+    if (pending) return await pending;
+
+    const operation = createPrejoinPreparedVideoTrackNow(opts);
+    prejoinTrackCreationPromiseRef.current = operation;
+
+    try {
+      return await operation;
+    } finally {
+      if (prejoinTrackCreationPromiseRef.current === operation) {
+        prejoinTrackCreationPromiseRef.current = null;
+      }
     }
   };
 
