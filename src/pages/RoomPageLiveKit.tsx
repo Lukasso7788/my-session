@@ -188,13 +188,9 @@ function getSpeechRecognitionConstructor(): SpeechRecognitionConstructorLike | n
 function normalizeVoiceUiTranscript(raw: string) {
   return String(raw || "")
     .toLocaleLowerCase()
-    .replace(/ё/g, "е")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
-    .replace(
-      /^(?:please |hey mysession |mysession |can you |could you |пожалуйста |майсешн |можешь |можете )+/,
-      "",
-    )
+    .replace(/^(?:please |hey mysession |mysession |can you |could you )+/, "")
     .trim();
 }
 
@@ -205,149 +201,126 @@ function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
   if (
     /^(?:turn|switch) (?:the )?camera on$/.test(text) ||
     /^(?:enable|start) (?:the )?camera$/.test(text) ||
-    /^camera on$/.test(text) ||
-    /^(?:включи|запусти) (?:камеру|видео)$/.test(text)
+    /^camera on$/.test(text)
   ) return "camera_on";
 
   if (
     /^(?:turn|switch) (?:the )?camera off$/.test(text) ||
     /^(?:disable|stop) (?:the )?camera$/.test(text) ||
-    /^camera off$/.test(text) ||
-    /^(?:выключи|отключи|убери) (?:камеру|видео)$/.test(text)
+    /^camera off$/.test(text)
   ) return "camera_off";
 
   if (
     /^(?:unmute|enable|start) (?:the )?(?:mic|microphone)$/.test(text) ||
     /^(?:turn|switch) (?:the )?(?:mic|microphone) on$/.test(text) ||
-    /^(?:mic|microphone) on$/.test(text) ||
-    /^(?:включи|размуть|анмьют) (?:микрофон|микрофончик)$/.test(text)
+    /^(?:mic|microphone) on$/.test(text)
   ) return "microphone_on";
 
   if (
     /^(?:mute|disable|stop) (?:the )?(?:mic|microphone)$/.test(text) ||
     /^(?:turn|switch) (?:the )?(?:mic|microphone) off$/.test(text) ||
-    /^(?:mic|microphone) off$/.test(text) ||
-    /^(?:замуть|выключи|отключи|заглуши) (?:микрофон|микрофончик)$/.test(text)
+    /^(?:mic|microphone) off$/.test(text)
   ) return "microphone_off";
 
   if (
-    /^(?:open|show) (?:the )?(?:task|tasks|task panel|tasks panel|intentions|intentions panel)$/.test(text) ||
-    /^(?:открой|покажи) (?:задачи|таски|таск панель|панель задач|интенции|намерения)$/.test(text)
+    /^(?:open|show) (?:the )?(?:task|tasks|task panel|tasks panel|intentions|intentions panel)$/.test(text)
   ) return "tasks_open";
 
   if (
-    /^(?:close|hide) (?:the )?(?:task|tasks|task panel|tasks panel|intentions|intentions panel)$/.test(text) ||
-    /^(?:закрой|скрой) (?:задачи|таски|таск панель|панель задач|интенции|намерения)$/.test(text)
+    /^(?:close|hide) (?:the )?(?:task|tasks|task panel|tasks panel|intentions|intentions panel)$/.test(text)
   ) return "tasks_close";
 
   if (
-    /^open (?:the )?chat(?: panel)?$/.test(text) ||
-    /^(?:открой|покажи) чат$/.test(text)
+    /^open (?:the )?chat(?: panel)?$/.test(text)
   ) return "chat_open";
 
   if (
-    /^close (?:the )?chat(?: panel)?$/.test(text) ||
-    /^(?:закрой|скрой) чат$/.test(text)
+    /^close (?:the )?chat(?: panel)?$/.test(text)
   ) return "chat_close";
 
   if (
     /^open (?:the )?participants(?: panel)?$/.test(text) ||
-    /^(?:show|open) (?:the )?people$/.test(text) ||
-    /^(?:открой|покажи) (?:участников|панель участников|людей)$/.test(text)
+    /^(?:show|open) (?:the )?people$/.test(text)
   ) return "participants_open";
 
   if (
     /^close (?:the )?participants(?: panel)?$/.test(text) ||
-    /^(?:hide|close) (?:the )?people$/.test(text) ||
-    /^(?:закрой|скрой) (?:участников|панель участников|людей)$/.test(text)
+    /^(?:hide|close) (?:the )?people$/.test(text)
   ) return "participants_close";
 
   if (
-    /^open (?:the )?(?:settings|room settings)$/.test(text) ||
-    /^(?:открой|покажи) настройки(?: комнаты)?$/.test(text)
+    /^open (?:the )?(?:settings|room settings)$/.test(text)
   ) return "settings_open";
 
   if (
-    /^close (?:the )?(?:settings|room settings)$/.test(text) ||
-    /^(?:закрой|скрой) настройки(?: комнаты)?$/.test(text)
+    /^close (?:the )?(?:settings|room settings)$/.test(text)
   ) return "settings_close";
 
   if (
     /^(?:start|enable|turn on) (?:screen share|screen sharing)$/.test(text) ||
-    /^share (?:my |the )?screen$/.test(text) ||
-    /^(?:включи|начни|запусти) (?:демонстрацию экрана|шеринг экрана)$/.test(text) ||
-    /^покажи (?:мой )?экран$/.test(text)
+    /^share (?:my |the )?screen$/.test(text)
   ) return "screen_share_on";
 
   if (
     /^(?:stop|disable|turn off) (?:screen share|screen sharing)$/.test(text) ||
-    /^stop sharing (?:my |the )?screen$/.test(text) ||
-    /^(?:выключи|останови|заверши) (?:демонстрацию экрана|шеринг экрана)$/.test(text) ||
-    /^перестань показывать экран$/.test(text)
+    /^stop sharing (?:my |the )?screen$/.test(text)
   ) return "screen_share_off";
 
   if (
     /^open (?:picture in picture|pip)$/.test(text) ||
-    /^(?:enable|start) (?:picture in picture|pip)$/.test(text) ||
-    /^(?:открой|включи) (?:картинку в картинке|пи п|пип)$/.test(text)
+    /^(?:enable|start) (?:picture in picture|pip)$/.test(text)
   ) return "pip_open";
 
   if (
     /^close (?:picture in picture|pip)$/.test(text) ||
-    /^(?:disable|stop) (?:picture in picture|pip)$/.test(text) ||
-    /^(?:закрой|выключи) (?:картинку в картинке|пи п|пип)$/.test(text)
+    /^(?:disable|stop) (?:picture in picture|pip)$/.test(text)
   ) return "pip_close";
 
   if (
     /^open (?:the )?(?:accountability wall|accountability view)$/.test(text) ||
-    /^(?:show|switch to) (?:the )?accountability(?: wall| view)?$/.test(text) ||
-    /^(?:открой|покажи|переключись на) (?:стену ответственности|accountability)$/.test(text)
+    /^(?:show|switch to) (?:the )?accountability(?: wall| view)?$/.test(text)
   ) return "accountability_open";
 
   if (
     /^close (?:the )?(?:accountability wall|accountability view)$/.test(text) ||
-    /^(?:show|switch to) (?:the )?video(?: view)?$/.test(text) ||
-    /^(?:закрой|скрой) (?:стену ответственности|accountability)$/.test(text) ||
-    /^(?:покажи|верни) видео$/.test(text)
+    /^(?:show|switch to) (?:the )?video(?: view)?$/.test(text)
   ) return "accountability_close";
 
-  if (/^(?:use|set|switch to) (?:the )?(?:auto|automatic) layout$/.test(text) || /^автоматическая раскладка$/.test(text)) return "layout_auto";
-  if (/^(?:use|set|switch to) (?:the )?(?:one|1) column layout$/.test(text) || /^(?:одна|1) колонка$/.test(text)) return "layout_one";
-  if (/^(?:use|set|switch to) (?:the )?(?:two|2) column layout$/.test(text) || /^(?:две|2) колонки$/.test(text)) return "layout_two";
-  if (/^(?:use|set|switch to) (?:the )?(?:three|3) column layout$/.test(text) || /^(?:три|3) колонки$/.test(text)) return "layout_three";
-  if (/^(?:use|set|switch to) (?:the )?(?:four|4) column layout$/.test(text) || /^(?:четыре|4) колонки$/.test(text)) return "layout_four";
+  if (/^(?:use|set|switch to) (?:the )?(?:auto|automatic) layout$/.test(text)) return "layout_auto";
+  if (/^(?:use|set|switch to) (?:the )?(?:one|1) column layout$/.test(text)) return "layout_one";
+  if (/^(?:use|set|switch to) (?:the )?(?:two|2) column layout$/.test(text)) return "layout_two";
+  if (/^(?:use|set|switch to) (?:the )?(?:three|3) column layout$/.test(text)) return "layout_three";
+  if (/^(?:use|set|switch to) (?:the )?(?:four|4) column layout$/.test(text)) return "layout_four";
 
-  if (/^open (?:the )?ai host$/.test(text) || /^(?:открой|покажи) (?:ai host|аи хост|ай хост)$/.test(text)) return "ai_host_open";
-  if (/^close (?:the )?ai host$/.test(text) || /^(?:закрой|скрой) (?:ai host|аи хост|ай хост)$/.test(text)) return "ai_host_close";
-  if (/^open (?:the )?(?:bug report|report a problem)$/.test(text) || /^(?:открой|покажи) (?:баг репорт|сообщение об ошибке)$/.test(text)) return "bug_report_open";
-  if (/^close (?:the )?(?:bug report|report a problem)$/.test(text) || /^(?:закрой|скрой) (?:баг репорт|сообщение об ошибке)$/.test(text)) return "bug_report_close";
-  if (/^open (?:the )?host profile$/.test(text) || /^(?:открой|покажи) профиль хоста$/.test(text)) return "host_profile_open";
-  if (/^close (?:the )?(?:profile|host profile)$/.test(text) || /^(?:закрой|скрой) профиль(?: хоста)?$/.test(text)) return "profile_close";
-  if (/^open (?:the )?(?:timeline|timeline editor)$/.test(text) || /^(?:открой|покажи) (?:таймлайн|редактор таймлайна)$/.test(text)) return "timeline_open";
-  if (/^close (?:the )?(?:timeline|timeline editor)$/.test(text) || /^(?:закрой|скрой) (?:таймлайн|редактор таймлайна)$/.test(text)) return "timeline_close";
-  if (/^(?:open|change|edit) (?:my )?name$/.test(text) || /^(?:открой|измени|редактируй) (?:мое )?имя$/.test(text)) return "edit_name_open";
-  if (/^close (?:the )?(?:name editor|edit name)$/.test(text) || /^(?:закрой|скрой) (?:редактор имени|изменение имени)$/.test(text)) return "edit_name_close";
+  if (/^open (?:the )?ai host$/.test(text)) return "ai_host_open";
+  if (/^close (?:the )?ai host$/.test(text)) return "ai_host_close";
+  if (/^open (?:the )?(?:bug report|report a problem)$/.test(text)) return "bug_report_open";
+  if (/^close (?:the )?(?:bug report|report a problem)$/.test(text)) return "bug_report_close";
+  if (/^open (?:the )?host profile$/.test(text)) return "host_profile_open";
+  if (/^close (?:the )?(?:profile|host profile)$/.test(text)) return "profile_close";
+  if (/^open (?:the )?(?:timeline|timeline editor)$/.test(text)) return "timeline_open";
+  if (/^close (?:the )?(?:timeline|timeline editor)$/.test(text)) return "timeline_close";
+  if (/^(?:open|change|edit) (?:my )?name$/.test(text)) return "edit_name_open";
+  if (/^close (?:the )?(?:name editor|edit name)$/.test(text)) return "edit_name_close";
 
-  if (/^(?:send |react with )?fire(?: reaction)?$/.test(text) || /^(?:отправь )?огонь$/.test(text)) return "reaction_fire";
-  if (/^(?:send |react with )?(?:laugh|laughter)(?: reaction)?$/.test(text) || /^(?:отправь )?смех$/.test(text)) return "reaction_laugh";
-  if (/^(?:send |react with )?thumbs up(?: reaction)?$/.test(text) || /^(?:отправь )?(?:палец вверх|лайк)$/.test(text)) return "reaction_thumbs_up";
-  if (/^(?:send |react with )?thumbs down(?: reaction)?$/.test(text) || /^(?:отправь )?(?:палец вниз|дизлайк)$/.test(text)) return "reaction_thumbs_down";
-  if (/^(?:send |react with )?(?:heart|love)(?: reaction)?$/.test(text) || /^(?:отправь )?сердце$/.test(text)) return "reaction_heart";
-  if (/^(?:send |react with )?(?:clap|applause)(?: reaction)?$/.test(text) || /^(?:отправь )?(?:хлопки|аплодисменты)$/.test(text)) return "reaction_clap";
-  if (/^(?:send |react with )?ok(?: reaction)?$/.test(text) || /^(?:отправь )?окей$/.test(text)) return "reaction_ok";
-  if (/^(?:send |react with )?wave(?: reaction)?$/.test(text) || /^(?:отправь )?(?:привет|помаши)$/.test(text)) return "reaction_wave";
-  if (/^(?:send |react with )?(?:celebrate|celebration)(?: reaction)?$/.test(text) || /^(?:отправь )?празднование$/.test(text)) return "reaction_celebrate";
+  if (/^(?:send |react with )?fire(?: reaction)?$/.test(text)) return "reaction_fire";
+  if (/^(?:send |react with )?(?:laugh|laughter)(?: reaction)?$/.test(text)) return "reaction_laugh";
+  if (/^(?:send |react with )?thumbs up(?: reaction)?$/.test(text)) return "reaction_thumbs_up";
+  if (/^(?:send |react with )?thumbs down(?: reaction)?$/.test(text)) return "reaction_thumbs_down";
+  if (/^(?:send |react with )?(?:heart|love)(?: reaction)?$/.test(text)) return "reaction_heart";
+  if (/^(?:send |react with )?(?:clap|applause)(?: reaction)?$/.test(text)) return "reaction_clap";
+  if (/^(?:send |react with )?ok(?: reaction)?$/.test(text)) return "reaction_ok";
+  if (/^(?:send |react with )?wave(?: reaction)?$/.test(text)) return "reaction_wave";
+  if (/^(?:send |react with )?(?:celebrate|celebration)(?: reaction)?$/.test(text)) return "reaction_celebrate";
 
   if (
     /^(?:enable|use|switch to) light mode$/.test(text) ||
-    /^(?:light mode|light theme)$/.test(text) ||
-    /^(?:включи|переключи на) (?:светлую тему|светлый режим)$/.test(text)
+    /^(?:light mode|light theme)$/.test(text)
   ) return "theme_light";
 
   if (
     /^(?:enable|use|switch to) dark mode$/.test(text) ||
-    /^(?:dark mode|dark theme)$/.test(text) ||
-    /^(?:включи|переключи на) (?:темную тему|темный режим)$/.test(text)
+    /^(?:dark mode|dark theme)$/.test(text)
   ) return "theme_dark";
 
   return null;
@@ -357,48 +330,50 @@ const VOICE_UI_COMMAND_GROUPS = [
   {
     title: "Camera, microphone & sharing",
     commands: [
-      ["Turn on camera / Turn off camera", "Включи камеру / Отключи камеру"],
-      ["Unmute microphone / Mute microphone", "Включи микрофон / Замуть микрофон"],
-      ["Start screen sharing / Stop screen sharing", "Покажи мой экран / Останови демонстрацию экрана"],
+      "Turn on camera / Turn off camera",
+      "Unmute microphone / Mute microphone",
+      "Start screen sharing / Stop screen sharing",
     ],
   },
   {
     title: "Room panels",
     commands: [
-      ["Open tasks / Close tasks", "Открой задачи / Закрой задачи"],
-      ["Open chat / Close chat", "Открой чат / Закрой чат"],
-      ["Open participants / Close participants", "Покажи участников / Закрой участников"],
-      ["Open settings / Close settings", "Открой настройки / Закрой настройки"],
+      "Open tasks / Close tasks",
+      "Open chat / Close chat",
+      "Open participants / Close participants",
+      "Open settings / Close settings",
     ],
   },
   {
     title: "Views & layout",
     commands: [
-      ["Open accountability wall / Switch to video view", "Открой стену ответственности / Покажи видео"],
-      ["Open picture in picture / Close picture in picture", "Включи картинку в картинке / Выключи картинку в картинке"],
-      ["Use auto layout", "Автоматическая раскладка"],
-      ["Set one / two / three / four column layout", "Одна / две / три / четыре колонки"],
+      "Open accountability wall / Switch to video view",
+      "Open picture in picture / Close picture in picture",
+      "Use auto layout",
+      "Set one / two / three / four column layout",
     ],
   },
   {
     title: "Tools & appearance",
     commands: [
-      ["Open AI host / Close AI host", "Открой AI Host / Закрой AI Host"],
-      ["Open bug report / Close bug report", "Открой баг-репорт / Закрой баг-репорт"],
-      ["Open host profile / Close profile", "Открой профиль хоста / Закрой профиль"],
-      ["Open timeline editor / Close timeline", "Открой редактор таймлайна / Закрой таймлайн"],
-      ["Edit my name / Close name editor", "Измени мое имя / Закрой редактор имени"],
-      ["Switch to light mode / Switch to dark mode", "Включи светлую тему / Включи темную тему"],
+      "Open AI host / Close AI host",
+      "Open bug report / Close bug report",
+      "Open host profile / Close profile",
+      "Open timeline editor / Close timeline",
+      "Edit my name / Close name editor",
+      "Switch to light mode / Switch to dark mode",
     ],
   },
   {
     title: "Reactions",
     commands: [
-      ["Fire · Laugh · Thumbs up · Thumbs down", "Огонь · Смех · Лайк · Дизлайк"],
-      ["Heart · Clap · OK · Wave · Celebrate", "Сердце · Аплодисменты · Окей · Помаши · Празднование"],
+      "Fire · Laugh · Thumbs up · Thumbs down",
+      "Heart · Clap · OK · Wave · Celebrate",
     ],
   },
 ] as const;
+
+const VOICE_UI_ENABLED_STORAGE_KEY = "room_voice_ui_enabled";
 
 type HostProfile = {
   id: string;
@@ -6042,6 +6017,13 @@ export function RoomPageLiveKit({
   const [connected, setConnected] = useState(false);
   const [voiceUiStatus, setVoiceUiStatus] =
     useState<VoiceUiStatus>("idle");
+  const [voiceUiEnabled, setVoiceUiEnabled] = useState(() => {
+    try {
+      return localStorage.getItem(VOICE_UI_ENABLED_STORAGE_KEY) !== "false";
+    } catch {
+      return true;
+    }
+  });
   const [voiceUiLastCommand, setVoiceUiLastCommand] = useState("");
   const [voiceUiLastHeard, setVoiceUiLastHeard] = useState("");
   const [voiceUiHelpOpen, setVoiceUiHelpOpen] = useState(false);
@@ -6053,6 +6035,17 @@ export function RoomPageLiveKit({
   const voiceUiCommandHandlerRef = useRef<
     (command: VoiceUiCommand) => Promise<void>
   >(async () => undefined);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        VOICE_UI_ENABLED_STORAGE_KEY,
+        String(voiceUiEnabled),
+      );
+    } catch {
+      // Local storage can be unavailable in strict privacy modes.
+    }
+  }, [voiceUiEnabled]);
 
   useEffect(() => {
     if (!voiceUiHelpOpen) return;
@@ -9716,14 +9709,14 @@ export function RoomPageLiveKit({
   };
 
   useEffect(() => {
-    voiceUiShouldListenRef.current = connected;
+    voiceUiShouldListenRef.current = connected && voiceUiEnabled;
 
     if (voiceUiRestartTimerRef.current != null) {
       window.clearTimeout(voiceUiRestartTimerRef.current);
       voiceUiRestartTimerRef.current = null;
     }
 
-    if (!connected) {
+    if (!connected || !voiceUiEnabled) {
       try {
         voiceUiRecognitionRef.current?.abort();
       } catch {
@@ -9731,9 +9724,11 @@ export function RoomPageLiveKit({
       }
       voiceUiRecognitionRef.current = null;
       setVoiceUiStatus("idle");
-      setVoiceUiLastCommand("");
-      setVoiceUiLastHeard("");
-      setVoiceUiHelpOpen(false);
+      if (!connected) {
+        setVoiceUiLastCommand("");
+        setVoiceUiLastHeard("");
+        setVoiceUiHelpOpen(false);
+      }
       return;
     }
 
@@ -9994,7 +9989,7 @@ export function RoomPageLiveKit({
       }
       voiceUiRecognitionRef.current = null;
     };
-  }, [connected]);
+  }, [connected, voiceUiEnabled]);
 
   const createRoomScreenshot = async () => {
     const root = videoWrapRef.current;
@@ -12308,7 +12303,9 @@ export function RoomPageLiveKit({
     ? "bg-[#F3F1F1] border border-[#D8D0D0]"
     : "bg-[#1B1B1B] border border-[#252525]";
   const voiceUiStatusLabel =
-    voiceUiStatus === "listening"
+    !voiceUiEnabled
+      ? "Voice UI off"
+      : voiceUiStatus === "listening"
       ? "Voice UI listening"
       : voiceUiStatus === "starting"
         ? "Voice UI starting"
@@ -12318,7 +12315,9 @@ export function RoomPageLiveKit({
             ? "Voice UI is not supported"
             : "Voice UI paused";
   const voiceUiStatusDot =
-    voiceUiStatus === "listening"
+    !voiceUiEnabled
+      ? "bg-zinc-500"
+      : voiceUiStatus === "listening"
       ? "bg-emerald-400"
       : voiceUiStatus === "starting"
         ? "bg-amber-400"
@@ -13501,6 +13500,34 @@ export function RoomPageLiveKit({
           <>
             <button
               type="button"
+              onClick={() => {
+                setVoiceUiEnabled((enabled) => !enabled);
+                setVoiceUiHelpOpen(false);
+                setVoiceUiLastCommand("");
+              }}
+              className={`fixed left-[7px] top-[104px] z-[93] flex h-[18px] w-[18px] items-center justify-center rounded-full border shadow-md transition ${voiceUiEnabled
+                ? isLight
+                  ? "border-black/15 bg-white text-black/55 hover:text-red-600"
+                  : "border-white/15 bg-[#242424] text-white/60 hover:text-red-300"
+                : "border-red-400/50 bg-red-500 text-white hover:bg-red-600"
+                }`}
+              aria-label={voiceUiEnabled ? "Disable Voice UI" : "Enable Voice UI"}
+              aria-pressed={voiceUiEnabled}
+              title={voiceUiEnabled ? "Disable Voice UI" : "Enable Voice UI"}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                className="h-[11px] w-[11px]"
+                fill="none"
+                aria-hidden="true"
+              >
+                <path d="M12 3v8" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+                <path d="M7.2 5.8a7 7 0 1 0 9.6 0" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+              </svg>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setVoiceUiHelpOpen((open) => !open)}
               className={`pointer-events-auto fixed left-4 top-[112px] z-[92] flex max-w-[min(520px,calc(100vw-2rem))] cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-medium shadow-lg backdrop-blur transition hover:scale-[1.01] ${isLight
                 ? "border-black/10 bg-white/85 text-black/70"
@@ -13546,7 +13573,7 @@ export function RoomPageLiveKit({
                     <div>
                       <div className="text-[15px] font-bold">Voice commands</div>
                       <div className={`mt-1 text-[11px] ${isLight ? "text-black/55" : "text-white/55"}`}>
-                        Say a short command, then pause. English and Russian are supported.
+                        Say a short English command, then pause.
                       </div>
                     </div>
                     <button
@@ -13574,11 +13601,15 @@ export function RoomPageLiveKit({
                     <button
                       type="button"
                       onClick={() => {
-                        window.dispatchEvent(new Event("mysession:voice-ui-restart"));
+                        if (!voiceUiEnabled) {
+                          setVoiceUiEnabled(true);
+                        } else {
+                          window.dispatchEvent(new Event("mysession:voice-ui-restart"));
+                        }
                       }}
                       className={`h-8 shrink-0 rounded-xl px-3 text-[11px] font-semibold ${isLight ? "bg-black text-white hover:bg-black/80" : "bg-white text-black hover:bg-white/85"}`}
                     >
-                      Restart listener
+                      {voiceUiEnabled ? "Restart listener" : "Enable listener"}
                     </button>
                   </div>
 
@@ -13589,13 +13620,12 @@ export function RoomPageLiveKit({
                           {group.title}
                         </div>
                         <div className="mt-2 space-y-2">
-                          {group.commands.map(([english, russian]) => (
+                          {group.commands.map((command) => (
                             <div
-                              key={english}
+                              key={command}
                               className={`rounded-2xl border px-3 py-2 ${isLight ? "border-black/[0.08] bg-white" : "border-white/[0.08] bg-white/[0.03]"}`}
                             >
-                              <div className="text-[12px] font-semibold leading-5">{english}</div>
-                              <div className={`text-[11px] leading-5 ${isLight ? "text-black/50" : "text-white/50"}`}>{russian}</div>
+                              <div className="text-[12px] font-semibold leading-5">{command}</div>
                             </div>
                           ))}
                         </div>
