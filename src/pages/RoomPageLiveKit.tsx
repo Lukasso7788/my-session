@@ -6183,7 +6183,9 @@ export function RoomPageLiveKit({
   const [voiceUiHelpOpen, setVoiceUiHelpOpen] = useState(false);
   const [voiceFxPopupMounted, setVoiceFxPopupMounted] = useState(false);
   const [voiceFxPopupVisible, setVoiceFxPopupVisible] = useState(false);
+  const [voiceFxUploadRequested, setVoiceFxUploadRequested] = useState(false);
   const voiceFxUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const voiceFxUploadButtonRef = useRef<HTMLButtonElement | null>(null);
   const voiceFxCloseTimerRef = useRef<number | null>(null);
   const voiceUiRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceUiShouldListenRef = useRef(false);
@@ -6207,6 +6209,7 @@ export function RoomPageLiveKit({
 
   const closeVoiceFxPopup = () => {
     setVoiceFxPopupVisible(false);
+    setVoiceFxUploadRequested(false);
     if (voiceFxCloseTimerRef.current != null) {
       window.clearTimeout(voiceFxCloseTimerRef.current);
     }
@@ -9946,8 +9949,16 @@ export function RoomPageLiveKit({
           break;
         }
         openVoiceFxPopup();
-        setVoiceUiLastCommand("Choose an image to upload");
-        voiceFxUploadInputRef.current?.click();
+        setVoiceFxUploadRequested(true);
+        setVoiceUiLastCommand("Click Upload Image to choose a file");
+        try {
+          voiceFxUploadInputRef.current?.showPicker();
+        } catch {
+          // Try the classic synthetic click as a compatibility fallback.
+          // Browsers may still require a physical user gesture.
+          voiceFxUploadInputRef.current?.click();
+        }
+        window.setTimeout(() => voiceFxUploadButtonRef.current?.focus(), 220);
         break;
       case "background_ocean":
       case "background_forest":
@@ -14041,6 +14052,7 @@ export function RoomPageLiveKit({
             const file = event.target.files?.[0];
             event.currentTarget.value = "";
             if (!file) return;
+            setVoiceFxUploadRequested(false);
             try {
               if (uploadedBgUrlRef.current) URL.revokeObjectURL(uploadedBgUrlRef.current);
               const url = URL.createObjectURL(file);
@@ -14125,13 +14137,27 @@ export function RoomPageLiveKit({
                   {fxApplying ? "Applying…" : "Apply Blur"}
                 </button>
                 <button
+                  ref={voiceFxUploadButtonRef}
                   type="button"
-                  onClick={() => voiceFxUploadInputRef.current?.click()}
-                  className={`flex h-10 cursor-pointer items-center justify-center rounded-xl text-[12px] font-semibold transition ${isLight ? "border border-black/10 bg-white hover:bg-black/5" : "border border-white/10 bg-white/[0.05] hover:bg-white/10"}`}
+                  onClick={() => {
+                    setVoiceFxUploadRequested(false);
+                    try {
+                      voiceFxUploadInputRef.current?.showPicker();
+                    } catch {
+                      voiceFxUploadInputRef.current?.click();
+                    }
+                  }}
+                  className={`flex h-10 cursor-pointer items-center justify-center rounded-xl text-[12px] font-semibold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#81DB86]/40 ${voiceFxUploadRequested ? "animate-pulse bg-[#81DB86] text-black ring-4 ring-[#81DB86]/30" : isLight ? "border border-black/10 bg-white hover:bg-black/5" : "border border-white/10 bg-white/[0.05] hover:bg-white/10"}`}
                 >
                   Upload Image
                 </button>
               </div>
+
+              {voiceFxUploadRequested ? (
+                <div className={`mt-2 rounded-xl px-3 py-2 text-center text-[11px] font-medium ${isLight ? "bg-amber-50 text-amber-900" : "bg-amber-400/10 text-amber-100"}`}>
+                  Your browser requires one click to open files. Press the highlighted Upload Image button.
+                </div>
+              ) : null}
 
               {videoFxMode === "blur" ? (
                 <div className={`mt-3 rounded-2xl border p-3 ${isLight ? "border-black/10 bg-white" : "border-white/10 bg-white/[0.04]"}`}>
