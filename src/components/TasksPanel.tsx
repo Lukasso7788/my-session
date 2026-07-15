@@ -553,14 +553,23 @@ export function TasksPanel({
   const [newTask, setNewTask] = useState("");
 
   useEffect(() => {
-    const onVoiceTaskText = (event: Event) => {
-      const text = String((event as CustomEvent<{ text?: string }>).detail?.text || "").trim();
+    const applyVoiceTaskText = (incoming?: string) => {
+      let pending = "";
+      try {
+        pending = sessionStorage.getItem("mysession:voice-task-draft") || "";
+        sessionStorage.removeItem("mysession:voice-task-draft");
+      } catch { }
+      const text = String(incoming || pending).trim();
       if (!text) return;
       setNewTask(text);
       window.setTimeout(() => {
         document.querySelector<HTMLInputElement>('input[placeholder="Add a task"]')?.focus();
       }, 0);
     };
+    const onVoiceTaskText = (event: Event) => {
+      applyVoiceTaskText((event as CustomEvent<{ text?: string }>).detail?.text);
+    };
+    applyVoiceTaskText();
     window.addEventListener("mysession:voice-task-text", onVoiceTaskText);
     return () => window.removeEventListener("mysession:voice-task-text", onVoiceTaskText);
   }, []);

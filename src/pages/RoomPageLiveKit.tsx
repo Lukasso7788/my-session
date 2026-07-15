@@ -9936,6 +9936,9 @@ export function RoomPageLiveKit({
       const text = decodeURIComponent(command.slice(voiceTextPrefix.length)).trim();
       if (!text) return;
       if (voiceTextPrefix === "task_text_") {
+        try {
+          sessionStorage.setItem("mysession:voice-task-draft", text);
+        } catch { }
         setRightTab("tasks");
         setRightPanelOpen(true);
         window.setTimeout(() => window.dispatchEvent(new CustomEvent("mysession:voice-task-text", { detail: { text } })), 120);
@@ -9943,6 +9946,9 @@ export function RoomPageLiveKit({
         return;
       }
       if (voiceTextPrefix === "message_text_") {
+        try {
+          sessionStorage.setItem("mysession:voice-message-draft", text);
+        } catch { }
         setRightTab("chat");
         setRightPanelOpen(true);
         window.setTimeout(() => window.dispatchEvent(new CustomEvent("mysession:voice-message-text", { detail: { text } })), 120);
@@ -9959,7 +9965,13 @@ export function RoomPageLiveKit({
         active.dispatchEvent(new Event("input", { bubbles: true }));
         setVoiceUiLastCommand(`Typed: ${text}`);
       } else {
-        setVoiceUiLastCommand("Focus a text field, then say Type followed by text");
+        try {
+          sessionStorage.setItem("mysession:voice-message-draft", text);
+        } catch { }
+        setRightTab("chat");
+        setRightPanelOpen(true);
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent("mysession:voice-message-text", { detail: { text } })), 120);
+        setVoiceUiLastCommand(`Message text: ${text}`);
       }
       return;
     }

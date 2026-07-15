@@ -1314,12 +1314,21 @@ export function ChatPanel({
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
     useEffect(() => {
-        const onVoiceMessageText = (event: Event) => {
-            const dictated = String((event as CustomEvent<{ text?: string }>).detail?.text || "").trim();
+        const applyVoiceMessageText = (incoming?: string) => {
+            let pending = "";
+            try {
+                pending = sessionStorage.getItem("mysession:voice-message-draft") || "";
+                sessionStorage.removeItem("mysession:voice-message-draft");
+            } catch { }
+            const dictated = String(incoming || pending).trim();
             if (!dictated) return;
             setText(dictated);
             window.setTimeout(() => composerRef.current?.focus(), 0);
         };
+        const onVoiceMessageText = (event: Event) => {
+            applyVoiceMessageText((event as CustomEvent<{ text?: string }>).detail?.text);
+        };
+        applyVoiceMessageText();
         window.addEventListener("mysession:voice-message-text", onVoiceMessageText);
         return () => window.removeEventListener("mysession:voice-message-text", onVoiceMessageText);
     }, []);
