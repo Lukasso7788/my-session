@@ -472,6 +472,11 @@ type PreJoinSettings = {
   autoGainControl: boolean;
 };
 
+type AudioProcessingPreferences = Pick<
+  PreJoinSettings,
+  "echoCancellation" | "noiseSuppression" | "autoGainControl"
+>;
+
 type TileModel = {
   id: string;
   kind?: "camera" | "screen";
@@ -1491,6 +1496,12 @@ const LEAVE_SOUND_PREF_KEY = "mysession_lk_leave_sound";
 const STAGE_SOUNDS_PREF_KEY = "mysession_lk_stage_sounds";
 const ROOM_SOUNDS_VOLUME_PREF_KEY = "mysession_lk_room_sounds_volume";
 const PREVIEW_MIRROR_PREF_KEY = "mysession_lk_preview_mirror";
+const AUDIO_PROCESSING_PREF_KEY = "mysession_lk_audio_processing_v1";
+const DEFAULT_AUDIO_PROCESSING: AudioProcessingPreferences = {
+  echoCancellation: true,
+  noiseSuppression: false,
+  autoGainControl: false,
+};
 const JOIN_SOUND_CANDIDATES = [
   "/sounds/jitsi/joined.mp3",
   "/sounds/joined.mp3",
@@ -1501,6 +1512,48 @@ const LEAVE_SOUND_CANDIDATES = [
   "/sounds/left.mp3",
   "/sounds/user_left.mp3",
 ];
+
+function readAudioProcessingPreferences(): AudioProcessingPreferences {
+  if (typeof window === "undefined") return DEFAULT_AUDIO_PROCESSING;
+
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(AUDIO_PROCESSING_PREF_KEY) || "null",
+    ) as Partial<AudioProcessingPreferences> | null;
+
+    if (!parsed || typeof parsed !== "object") {
+      return DEFAULT_AUDIO_PROCESSING;
+    }
+
+    return {
+      echoCancellation:
+        typeof parsed.echoCancellation === "boolean"
+          ? parsed.echoCancellation
+          : DEFAULT_AUDIO_PROCESSING.echoCancellation,
+      noiseSuppression:
+        typeof parsed.noiseSuppression === "boolean"
+          ? parsed.noiseSuppression
+          : DEFAULT_AUDIO_PROCESSING.noiseSuppression,
+      autoGainControl:
+        typeof parsed.autoGainControl === "boolean"
+          ? parsed.autoGainControl
+          : DEFAULT_AUDIO_PROCESSING.autoGainControl,
+    };
+  } catch {
+    return DEFAULT_AUDIO_PROCESSING;
+  }
+}
+
+function saveAudioProcessingPreferences(next: AudioProcessingPreferences) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(
+      AUDIO_PROCESSING_PREF_KEY,
+      JSON.stringify(next),
+    );
+  } catch { }
+}
 
 function makeKickBroadcastChannelName(sessionId: string) {
   return `${KICK_EVENTS_CHANNEL_PREFIX}:${String(sessionId || "").trim()}`;
@@ -4344,19 +4397,20 @@ export function RoomPageLiveKit({
     };
   }, [lowPowerMobileMode, isChromeOS, deviceTier, capturePreset]);
 
-  const [prejoin, setPrejoin] = useState<PreJoinSettings>(() => ({
-    displayName: "",
-    audioInputId: "",
-    videoInputId: "",
-    audioOutputId: "default",
+  const [prejoin, setPrejoin] = useState<PreJoinSettings>(() => {
+    const audioProcessing = readAudioProcessingPreferences();
+    return {
+      displayName: "",
+      audioInputId: "",
+      videoInputId: "",
+      audioOutputId: "default",
 
-    audioEnabled: false,
-    videoEnabled: true,
+      audioEnabled: false,
+      videoEnabled: true,
 
-    echoCancellation: true,
-    noiseSuppression: true,
-    autoGainControl: true,
-  }));
+      ...audioProcessing,
+    };
+  });
   const prejoinRef = useRef(prejoin);
   useEffect(() => {
     prejoinRef.current = prejoin;
@@ -4384,33 +4438,39 @@ export function RoomPageLiveKit({
   const [selectedAudioInputId, setSelectedAudioInputId] = useState<string>("");
   const [selectedVideoInputId, setSelectedVideoInputId] = useState<string>("");
 
-  const [echoCancellationEnabled, setEchoCancellationEnabled] = useState(true);
-  const [noiseSuppressionEnabled, setNoiseSuppressionEnabled] = useState(true);
-  const [autoGainControlEnabled, setAutoGainControlEnabled] = useState(true);
+  const [echoCancellationEnabled, setEchoCancellationEnabled] = useState(
+    () => readAudioProcessingPreferences().echoCancellation,
+  );
+  const [noiseSuppressionEnabled, setNoiseSuppressionEnabled] = useState(
+    () => readAudioProcessingPreferences().noiseSuppression,
+  );
+  const [autoGainControlEnabled, setAutoGainControlEnabled] = useState(
+    () => readAudioProcessingPreferences().autoGainControl,
+  );
 
   useEffect(() => {
-    const nextEcho = true;
-    const nextNoise = true;
-    const nextAgc = true;
+    const next: AudioProcessingPreferences = {
+      echoCancellation: echoCancellationEnabled,
+      noiseSuppression: noiseSuppressionEnabled,
+      autoGainControl: autoGainControlEnabled,
+    };
 
     setPrejoin((prev) => ({
       ...prev,
-      echoCancellation: nextEcho,
-      noiseSuppression: nextNoise,
-      autoGainControl: nextAgc,
+      ...next,
     }));
 
     prejoinRef.current = {
       ...prejoinRef.current,
-      echoCancellation: nextEcho,
-      noiseSuppression: nextNoise,
-      autoGainControl: nextAgc,
+      ...next,
     };
 
-    setEchoCancellationEnabled(nextEcho);
-    setNoiseSuppressionEnabled(nextNoise);
-    setAutoGainControlEnabled(nextAgc);
-  }, []);
+    saveAudioProcessingPreferences(next);
+  }, [
+    echoCancellationEnabled,
+    noiseSuppressionEnabled,
+    autoGainControlEnabled,
+  ]);
 
   // pre-join prepared preview track
   const prejoinPreparedVideoTrackRef = useRef<LocalVideoTrack | null>(null);
@@ -14266,7 +14326,18 @@ export function RoomPageLiveKit({
         theme={theme}
         devices={devices}
         value={prejoin}
-        onChange={setPrejoin}
+        onChange={(next) => {
+          setPrejoin(next);
+          prejoinRef.current = next;
+          setEchoCancellationEnabled(next.echoCancellation);
+          setNoiseSuppressionEnabled(next.noiseSuppression);
+          setAutoGainControlEnabled(next.autoGainControl);
+          saveAudioProcessingPreferences({
+            echoCancellation: next.echoCancellation,
+            noiseSuppression: next.noiseSuppression,
+            autoGainControl: next.autoGainControl,
+          });
+        }}
         deviceError={deviceError}
         hideBackgroundFx={shouldDisableBackgroundFx}
         onRefreshDevices={() => loadBrowserDevices().catch(() => { })}

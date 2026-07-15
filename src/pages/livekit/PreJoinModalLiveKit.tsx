@@ -669,6 +669,10 @@ export function PreJoinModal({
                     <input type="checkbox" checked={value.autoGainControl} onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })} />
                     <span className={labelCls}>Auto gain control</span>
                   </label>
+
+                  <div className={`text-[11px] leading-4 sm:col-span-2 ${labelCls}`}>
+                    Voice sounds quiet or clipped? Turn Noise suppression off first. Your choices are saved for the next room.
+                  </div>
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">

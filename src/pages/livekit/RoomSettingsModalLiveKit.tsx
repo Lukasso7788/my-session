@@ -1547,7 +1547,7 @@ export function RoomSettingsModalLiveKit({
 
                                     <ToggleRow
                                         label="Noise suppression"
-                                        description="Reduce keyboard noise, fan noise and room hum."
+                                        description="Reduce keyboard and fan noise. Turn this off first if a soft voice sounds quiet or gets cut out."
                                         checked={noiseSuppressionEnabled}
                                         onChange={(v) => {
                                             void onChangeNoiseSuppression(v);
@@ -1557,7 +1557,7 @@ export function RoomSettingsModalLiveKit({
 
                                     <ToggleRow
                                         label="Auto gain control"
-                                        description="Automatically normalize mic loudness."
+                                        description="Let the browser normalize mic loudness. Turn it off if volume pumps or changes unexpectedly."
                                         checked={autoGainControlEnabled}
                                         onChange={(v) => {
                                             void onChangeAutoGainControl(v);
