@@ -107,9 +107,18 @@ type VoiceUiCommand =
   | "settings_open"
   | "settings_close"
   | "background_change"
+  | "background_upload"
+  | "background_ocean"
+  | "background_forest"
+  | "background_violet"
+  | "background_sunset"
+  | "blur_apply"
   | "status_afk"
   | "status_skip"
   | "status_call"
+  | "status_break"
+  | "status_eating"
+  | "status_private"
   | "status_clear"
   | "screen_share_on"
   | "screen_share_off"
@@ -222,6 +231,9 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "status_skip", group: "status", phrase: "Skip me", aliases: ["Set skip me", "Mark me as skip me"] },
   { command: "status_call", group: "status", phrase: "On a call", aliases: ["I'm on a call", "I am on a call", "Set on a call"] },
   { command: "status_afk", group: "status", phrase: "AFK", aliases: ["I'm AFK", "I am AFK", "Set AFK"] },
+  { command: "status_break", group: "status", phrase: "Taking a break", aliases: ["Take a break", "On a break", "I'm taking a break", "I am taking a break", "Set taking a break"] },
+  { command: "status_eating", group: "status", phrase: "Eating", aliases: ["I'm eating", "I am eating", "Set eating"] },
+  { command: "status_private", group: "status", phrase: "Private", aliases: ["Set private", "I'm private", "I am private", "Private status"] },
   { command: "status_clear", group: "status", phrase: "I'm back", aliases: ["I am back", "Clear my status", "Remove my badge", "Clear badge"] },
 
   { command: "tasks_open", group: "panels", phrase: "Open tasks", aliases: ["Open task", "Open task panel", "Open tasks panel", "Open intentions", "Show tasks"] },
@@ -233,6 +245,12 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "settings_open", group: "panels", phrase: "Open settings", aliases: ["Open room settings"] },
   { command: "settings_close", group: "panels", phrase: "Close settings", aliases: ["Close room settings"] },
   { command: "background_change", group: "panels", phrase: "Change background", aliases: ["Change image background", "Choose background", "Choose a background", "Open background settings"] },
+  { command: "blur_apply", group: "panels", phrase: "Apply blur", aliases: ["Blur background", "Use blur"] },
+  { command: "background_upload", group: "panels", phrase: "Upload image", aliases: ["Upload background", "Upload background image"] },
+  { command: "background_ocean", group: "panels", phrase: "Ocean background", aliases: ["Ocean", "Choose Ocean", "Apply Ocean"] },
+  { command: "background_forest", group: "panels", phrase: "Forest background", aliases: ["Forest", "Choose Forest", "Apply Forest"] },
+  { command: "background_violet", group: "panels", phrase: "Violet background", aliases: ["Violet", "Choose Violet", "Apply Violet"] },
+  { command: "background_sunset", group: "panels", phrase: "Sunset background", aliases: ["Sunset", "Choose Sunset", "Apply Sunset"] },
 
   { command: "pip_open", group: "views", phrase: "Open picture in picture", aliases: ["Open PIP", "Enable picture in picture", "Start picture in picture"] },
   { command: "pip_close", group: "views", phrase: "Close picture in picture", aliases: ["Close PIP", "Disable picture in picture", "Stop picture in picture"] },
@@ -6147,6 +6165,10 @@ export function RoomPageLiveKit({
   const [voiceUiLastCommand, setVoiceUiLastCommand] = useState("");
   const [voiceUiLastHeard, setVoiceUiLastHeard] = useState("");
   const [voiceUiHelpOpen, setVoiceUiHelpOpen] = useState(false);
+  const [voiceFxPopupMounted, setVoiceFxPopupMounted] = useState(false);
+  const [voiceFxPopupVisible, setVoiceFxPopupVisible] = useState(false);
+  const voiceFxUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const voiceFxCloseTimerRef = useRef<number | null>(null);
   const voiceUiRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceUiShouldListenRef = useRef(false);
   const voiceUiSuspendedRef = useRef(false);
@@ -6155,6 +6177,34 @@ export function RoomPageLiveKit({
   const voiceUiCommandHandlerRef = useRef<
     (command: VoiceUiCommand) => Promise<void>
   >(async () => undefined);
+
+  const openVoiceFxPopup = () => {
+    if (voiceFxCloseTimerRef.current != null) {
+      window.clearTimeout(voiceFxCloseTimerRef.current);
+      voiceFxCloseTimerRef.current = null;
+    }
+    setVoiceFxPopupMounted(true);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => setVoiceFxPopupVisible(true));
+    });
+  };
+
+  const closeVoiceFxPopup = () => {
+    setVoiceFxPopupVisible(false);
+    if (voiceFxCloseTimerRef.current != null) {
+      window.clearTimeout(voiceFxCloseTimerRef.current);
+    }
+    voiceFxCloseTimerRef.current = window.setTimeout(() => {
+      setVoiceFxPopupMounted(false);
+      voiceFxCloseTimerRef.current = null;
+    }, 220);
+  };
+
+  useEffect(() => () => {
+    if (voiceFxCloseTimerRef.current != null) {
+      window.clearTimeout(voiceFxCloseTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     try {
@@ -9848,11 +9898,44 @@ export function RoomPageLiveKit({
           setVoiceUiLastCommand("Backgrounds unavailable on this device");
           break;
         }
-        await applyVideoFx("bg");
-        setSettingsOpen(true);
-        setSettingsPreviewVersion((version) => version + 1);
+        openVoiceFxPopup();
         setVoiceUiLastCommand("Choose a background");
         break;
+      case "blur_apply":
+        if (shouldDisableBackgroundFx) {
+          setVoiceUiLastCommand("Blur unavailable on this device");
+          break;
+        }
+        openVoiceFxPopup();
+        await applyVideoFx("blur");
+        setVoiceUiLastCommand("Blur applied");
+        break;
+      case "background_upload":
+        if (shouldDisableBackgroundFx) {
+          setVoiceUiLastCommand("Backgrounds unavailable on this device");
+          break;
+        }
+        openVoiceFxPopup();
+        setVoiceUiLastCommand("Choose an image to upload");
+        window.setTimeout(() => voiceFxUploadInputRef.current?.click(), 180);
+        break;
+      case "background_ocean":
+      case "background_forest":
+      case "background_violet":
+      case "background_sunset": {
+        if (shouldDisableBackgroundFx) {
+          setVoiceUiLastCommand("Backgrounds unavailable on this device");
+          break;
+        }
+        const presetId = command.replace("background_", "");
+        const preset = FX_BG_PRESETS.find((item) => item.id === presetId);
+        if (!preset) break;
+        openVoiceFxPopup();
+        setBgImageUrl(preset.url);
+        await applyVideoFx("bg", preset.url);
+        setVoiceUiLastCommand(`${preset.label} background applied`);
+        break;
+      }
       case "status_afk":
         await setMyStatus("afk");
         refreshStatusBadges();
@@ -9867,6 +9950,21 @@ export function RoomPageLiveKit({
         await setMyStatus("call");
         refreshStatusBadges();
         setVoiceUiLastCommand("On a call badge set");
+        break;
+      case "status_break":
+        await setMyStatus("break");
+        refreshStatusBadges();
+        setVoiceUiLastCommand("Taking a break badge set");
+        break;
+      case "status_eating":
+        await setMyStatus("eating");
+        refreshStatusBadges();
+        setVoiceUiLastCommand("Eating badge set");
+        break;
+      case "status_private":
+        await setMyStatus("private");
+        refreshStatusBadges();
+        setVoiceUiLastCommand("Private badge set");
         break;
       case "status_clear":
         await setMyStatus(null);
@@ -13898,6 +13996,109 @@ export function RoomPageLiveKit({
       ) : null}
 
       <div className={`ms-room-page h-[100dvh] overflow-hidden ${pageBg}`}>
+        {voiceFxPopupMounted ? (
+          <div
+            className={`fixed inset-0 z-[120] flex items-center justify-center p-4 transition-opacity duration-200 ease-out ${voiceFxPopupVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Choose a video background"
+          >
+            <button
+              type="button"
+              className={`absolute inset-0 cursor-default transition-colors duration-200 ${isLight ? "bg-black/35" : "bg-black/65"}`}
+              aria-label="Close background chooser"
+              onClick={closeVoiceFxPopup}
+            />
+            <div
+              className={`relative w-full max-w-[520px] rounded-3xl border p-4 shadow-2xl transition-[opacity,transform] duration-200 ease-out ${voiceFxPopupVisible ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-[0.97] opacity-0"} ${isLight ? "border-black/10 bg-[#F8F8F8] text-black" : "border-white/10 bg-[#1B1B1B] text-white"}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[16px] font-bold">Change background</div>
+                  <div className={`mt-1 text-[11px] ${isLight ? "text-black/55" : "text-white/55"}`}>
+                    Choose a preset, upload an image, or apply blur.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeVoiceFxPopup}
+                  className={`flex h-8 w-8 items-center justify-center rounded-xl ${isLight ? "bg-black/5 hover:bg-black/10" : "bg-white/5 hover:bg-white/10"}`}
+                  aria-label="Close background chooser"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {FX_BG_PRESETS.map((preset) => {
+                  const selected = videoFxMode === "bg" && bgImageUrl === preset.url;
+                  return (
+                    <button
+                      type="button"
+                      key={preset.id}
+                      disabled={fxApplying}
+                      onClick={async () => {
+                        setBgImageUrl(preset.url);
+                        await applyVideoFx("bg", preset.url);
+                        setVoiceUiLastCommand(`${preset.label} background applied`);
+                        closeVoiceFxPopup();
+                      }}
+                      className={`overflow-hidden rounded-2xl border text-left transition hover:-translate-y-0.5 disabled:opacity-50 ${selected ? "border-[#81DB86] ring-2 ring-[#81DB86]/30" : isLight ? "border-black/10 bg-white" : "border-white/10 bg-white/[0.04]"}`}
+                    >
+                      <img src={preset.url} alt="" className="aspect-video w-full object-cover" />
+                      <span className="block px-2 py-2 text-[11px] font-semibold">{preset.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  disabled={fxApplying}
+                  onClick={async () => {
+                    await applyVideoFx("blur");
+                    setVoiceUiLastCommand("Blur applied");
+                    closeVoiceFxPopup();
+                  }}
+                  className={`h-10 rounded-xl text-[12px] font-semibold transition disabled:opacity-50 ${videoFxMode === "blur" ? "bg-[#81DB86] text-black" : isLight ? "bg-black text-white hover:bg-black/80" : "bg-white text-black hover:bg-white/85"}`}
+                >
+                  {fxApplying ? "Applying…" : "Apply Blur"}
+                </button>
+                <label className={`flex h-10 cursor-pointer items-center justify-center rounded-xl text-[12px] font-semibold transition ${isLight ? "border border-black/10 bg-white hover:bg-black/5" : "border border-white/10 bg-white/[0.05] hover:bg-white/10"}`}>
+                  Upload Image
+                  <input
+                    ref={voiceFxUploadInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (event) => {
+                      const file = event.target.files?.[0];
+                      event.currentTarget.value = "";
+                      if (!file) return;
+                      try {
+                        if (uploadedBgUrlRef.current) URL.revokeObjectURL(uploadedBgUrlRef.current);
+                        const url = URL.createObjectURL(file);
+                        uploadedBgUrlRef.current = url;
+                        setBgImageUrl(url);
+                        await applyVideoFx("bg", url);
+                        setVoiceUiLastCommand("Uploaded background applied");
+                        closeVoiceFxPopup();
+                      } catch (error) {
+                        console.error("voice background upload failed", error);
+                        setFxError("Failed to load selected image");
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+
+              <div className={`mt-3 text-center text-[10px] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                Voice: “Forest background”, “Apply Blur”, or “Upload Image”
+              </div>
+            </div>
+          </div>
+        ) : null}
         {connected && voiceUiEnabled ? (
           <>
             <button
