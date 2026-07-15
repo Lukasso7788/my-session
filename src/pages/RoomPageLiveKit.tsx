@@ -114,6 +114,24 @@ type VoiceUiCommand =
   | "background_sunset"
   | "blur_apply"
   | `blur_strength_${number}`
+  | "effects_off"
+  | "background_reset"
+  | "mirror_on"
+  | "mirror_off"
+  | "panels_close_all"
+  | "voice_restart"
+  | "task_add"
+  | "task_complete"
+  | "message_compose"
+  | `layout_columns_${number}`
+  | `layout_rows_${number}`
+  | `brightness_${number}`
+  | `contrast_${number}`
+  | `saturation_${number}`
+  | `participant_pin_${string}`
+  | `participant_unpin_${string}`
+  | `participant_report_${string}`
+  | `participant_manage_${string}`
   | "status_afk"
   | "status_skip"
   | "status_call"
@@ -253,6 +271,14 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "background_forest", group: "panels", phrase: "Forest background", aliases: ["Forest", "Choose Forest", "Apply Forest"] },
   { command: "background_violet", group: "panels", phrase: "Violet background", aliases: ["Violet", "Choose Violet", "Apply Violet"] },
   { command: "background_sunset", group: "panels", phrase: "Sunset background", aliases: ["Sunset", "Choose Sunset", "Apply Sunset"] },
+  { command: "effects_off", group: "panels", phrase: "Turn off effects", aliases: ["Remove background", "Effects off", "Disable background"] },
+  { command: "background_reset", group: "panels", phrase: "Reset background", aliases: ["Default background"] },
+  { command: "mirror_on", group: "panels", phrase: "Mirror camera", aliases: ["Mirror my camera"] },
+  { command: "mirror_off", group: "panels", phrase: "Unmirror camera", aliases: ["Unmirror my camera"] },
+  { command: "panels_close_all", group: "panels", phrase: "Close all panels", aliases: ["Close panels"] },
+  { command: "task_add", group: "panels", phrase: "Add task", aliases: ["Create task", "New task"] },
+  { command: "task_complete", group: "panels", phrase: "Complete task", aliases: ["Finish task"] },
+  { command: "message_compose", group: "panels", phrase: "Send message", aliases: ["Write message", "Compose message"] },
 
   { command: "pip_open", group: "views", phrase: "Open picture in picture", aliases: ["Open PIP", "Enable picture in picture", "Start picture in picture"] },
   { command: "pip_close", group: "views", phrase: "Close picture in picture", aliases: ["Close PIP", "Disable picture in picture", "Stop picture in picture"] },
@@ -263,6 +289,8 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "layout_two", group: "views", phrase: "Two columns", aliases: ["Two column layout", "Set two column layout", "Use two column layout", "2 column layout"] },
   { command: "layout_three", group: "views", phrase: "Three columns", aliases: ["Three column layout", "Set three column layout", "Use three column layout", "3 column layout"] },
   { command: "layout_four", group: "views", phrase: "Four columns", aliases: ["Four column layout", "Set four column layout", "Use four column layout", "4 column layout"] },
+  { command: "layout_columns_3", group: "views", phrase: "Set columns to 3" },
+  { command: "layout_rows_3", group: "views", phrase: "Set rows to 3" },
 
   { command: "theme_light", group: "tools", phrase: "Light mode", aliases: ["Light theme", "Enable light mode", "Use light mode", "Switch to light mode"] },
   { command: "theme_dark", group: "tools", phrase: "Dark mode", aliases: ["Dark theme", "Enable dark mode", "Use dark mode", "Switch to dark mode"] },
@@ -276,6 +304,13 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "timeline_close", group: "tools", phrase: "Close timeline", aliases: ["Close timeline editor"] },
   { command: "edit_name_open", group: "tools", phrase: "Edit my name", aliases: ["Open name editor", "Change my name"] },
   { command: "edit_name_close", group: "tools", phrase: "Close name editor", aliases: ["Close edit name"] },
+  { command: "voice_restart", group: "tools", phrase: "Restart voice control", aliases: ["Restart voice", "Restart listener"] },
+  { command: "brightness_100", group: "tools", phrase: "Brightness 100" },
+  { command: "contrast_100", group: "tools", phrase: "Contrast 100" },
+  { command: "saturation_100", group: "tools", phrase: "Saturation 100" },
+  { command: "participant_pin_person", group: "tools", phrase: "Pin [name]" },
+  { command: "participant_report_person", group: "tools", phrase: "Report [name]" },
+  { command: "participant_manage_person", group: "tools", phrase: "Manage [name]", aliases: ["Mute [name]", "Kick [name]"] },
 
   { command: "reaction_fire", group: "reactions", phrase: "Fire", aliases: ["Fire reaction", "Send fire", "React with fire"] },
   { command: "reaction_laugh", group: "reactions", phrase: "Laugh", aliases: ["Laughter", "Laugh reaction", "Send laugh", "React with laugh"] },
@@ -313,6 +348,8 @@ for (const definition of VOICE_UI_COMMAND_DEFINITIONS) {
 function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
   const normalized = normalizeVoiceUiTranscript(raw);
   if (!normalized) return null;
+  // Room controls intentionally accept English commands only.
+  if (/[^\x00-\x7F]/.test(normalized)) return null;
   const namedBlurStrengths: Record<string, number> = {
     "soft blur": 8,
     "medium blur": 16,
@@ -326,6 +363,29 @@ function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
     const requested = Number(blurStrengthMatch[1]);
     const strength = Math.max(4, Math.min(30, requested));
     return `blur_strength_${strength}`;
+  }
+  const numericCommands: Array<[RegExp, string, number, number]> = [
+    [/^(?:set )?(?:layout )?columns?(?: to)? (\d{1,2})$/, "layout_columns_", 1, 6],
+    [/^(?:set )?(?:layout )?rows?(?: to)? (\d{1,2})$/, "layout_rows_", 1, 6],
+    [/^(?:set )?brightness(?: to)? (\d{1,3})$/, "brightness_", 50, 150],
+    [/^(?:set )?contrast(?: to)? (\d{1,3})$/, "contrast_", 50, 150],
+    [/^(?:set )?saturation(?: to)? (\d{1,3})$/, "saturation_", 0, 200],
+  ];
+  for (const [pattern, prefix, min, max] of numericCommands) {
+    const match = normalized.match(pattern);
+    if (!match) continue;
+    const value = Math.max(min, Math.min(max, Number(match[1])));
+    return `${prefix}${value}` as VoiceUiCommand;
+  }
+  const participantCommands: Array<[RegExp, string]> = [
+    [/^pin (.+)$/, "participant_pin_"],
+    [/^unpin (.+)$/, "participant_unpin_"],
+    [/^report (.+)$/, "participant_report_"],
+    [/^(?:manage|mute|turn off camera for|kick|make moderator|remove moderator from) (.+)$/, "participant_manage_"],
+  ];
+  for (const [pattern, prefix] of participantCommands) {
+    const match = normalized.match(pattern);
+    if (match?.[1]) return `${prefix}${encodeURIComponent(match[1])}` as VoiceUiCommand;
   }
   return VOICE_UI_COMMAND_LOOKUP.get(normalized) || null;
 }
@@ -9851,6 +9911,85 @@ export function RoomPageLiveKit({
       window.setTimeout(() => scheduleRebuildTiles(), 220);
     };
 
+    const numericVoiceValue = (prefix: string) =>
+      Number(command.slice(prefix.length));
+
+    if (command.startsWith("layout_columns_")) {
+      const value = numericVoiceValue("layout_columns_");
+      setVideoTileLayoutColumns(value);
+      setVoiceUiLastCommand(`Layout columns ${value}`);
+      return;
+    }
+    if (command.startsWith("layout_rows_")) {
+      const value = numericVoiceValue("layout_rows_");
+      setVideoTileLayoutRows(value);
+      setVoiceUiLastCommand(`Layout rows ${value}`);
+      return;
+    }
+    for (const [prefix, key] of [
+      ["brightness_", "brightness"],
+      ["contrast_", "contrast"],
+      ["saturation_", "saturation"],
+    ] as const) {
+      if (!command.startsWith(prefix)) continue;
+      const value = numericVoiceValue(prefix);
+      setColorCorrection((current) => ({ ...current, [key]: value }));
+      setVoiceUiLastCommand(`${key[0].toUpperCase()}${key.slice(1)} ${value}`);
+      return;
+    }
+
+    const participantPrefix = [
+      "participant_pin_",
+      "participant_unpin_",
+      "participant_report_",
+      "participant_manage_",
+    ].find((prefix) => command.startsWith(prefix));
+    if (participantPrefix) {
+      const requestedName = decodeURIComponent(command.slice(participantPrefix.length));
+      const normalizedName = requestedName.toLowerCase().trim();
+      const candidates = [...layoutTilesForRender, ...tilesForRender];
+      const target = candidates.find((tile, index) => {
+        if (candidates.findIndex((item) => item.id === tile.id) !== index) return false;
+        const names = [tile.label, tile.metadataDisplayName]
+          .map((value) => String(value || "").toLowerCase().trim())
+          .filter(Boolean);
+        return names.some((name) => name === normalizedName || name.startsWith(normalizedName));
+      });
+      if (!target) {
+        setVoiceUiLastCommand(`Participant ${requestedName} not found`);
+        return;
+      }
+      if (participantPrefix === "participant_pin_") {
+        if (pinnedTileId !== target.id) togglePin(target.id);
+        setVoiceUiLastCommand(`${target.label} pinned`);
+        return;
+      }
+      if (participantPrefix === "participant_unpin_") {
+        if (pinnedTileId === target.id) togglePin(target.id);
+        setVoiceUiLastCommand(`${target.label} unpinned`);
+        return;
+      }
+      if (participantPrefix === "participant_report_") {
+        setReportTarget(target);
+        setReportReason("");
+        setReportError("");
+        setReportModalOpen(true);
+        setVoiceUiLastCommand(`Report ${target.label}`);
+        return;
+      }
+      setOpenTileAdminMenuId(target.id);
+      setTileMenuAnchor({
+        tileId: target.id,
+        x: Math.round(window.innerWidth / 2 + 176),
+        y: Math.round(window.innerHeight / 2 - 220),
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        portalDocument: document,
+      });
+      setVoiceUiLastCommand(`Manage ${target.label}`);
+      return;
+    }
+
     if (command.startsWith("blur_strength_")) {
       if (shouldDisableBackgroundFx) {
         setVoiceUiLastCommand("Blur unavailable on this device");
@@ -9933,6 +10072,69 @@ export function RoomPageLiveKit({
         }
         openVoiceFxPopup();
         setVoiceUiLastCommand("Choose a background");
+        break;
+      case "effects_off":
+        await applyVideoFx("off");
+        closeVoiceFxPopup();
+        setVoiceUiLastCommand("Video effects off");
+        break;
+      case "background_reset":
+        if (uploadedBgUrlRef.current) {
+          URL.revokeObjectURL(uploadedBgUrlRef.current);
+          uploadedBgUrlRef.current = null;
+        }
+        setBgImageUrl(DEFAULT_BG_DATA_URL);
+        openVoiceFxPopup();
+        await applyVideoFx("bg", DEFAULT_BG_DATA_URL);
+        setVoiceUiLastCommand("Default background applied");
+        break;
+      case "mirror_on":
+        setPreviewMirrored(true);
+        setVoiceUiLastCommand("Camera mirrored");
+        break;
+      case "mirror_off":
+        setPreviewMirrored(false);
+        setVoiceUiLastCommand("Camera unmirrored");
+        break;
+      case "panels_close_all":
+        setRightPanelOpen(false);
+        setRightTab(null);
+        setSettingsOpen(false);
+        setBugReportOpen(false);
+        setAiHostInputOpen(false);
+        setSelectedUser(null);
+        closeVoiceFxPopup();
+        closeTileMenu();
+        setVoiceUiLastCommand("All panels closed");
+        break;
+      case "voice_restart":
+        window.dispatchEvent(new Event("mysession:voice-ui-restart"));
+        setVoiceUiLastCommand("Voice control restarted");
+        break;
+      case "task_add":
+      case "task_complete":
+        setRightTab("tasks");
+        setRightPanelOpen(true);
+        window.dispatchEvent(new CustomEvent("mysession:voice-task-action", {
+          detail: { action: command === "task_add" ? "add" : "complete" },
+        }));
+        if (command === "task_add") {
+          window.setTimeout(() => {
+            const input = document.querySelector<HTMLInputElement>('input[placeholder="Add a task"]');
+            input?.focus();
+          }, 180);
+        }
+        setVoiceUiLastCommand(command === "task_add" ? "Tasks opened — add a task" : "Tasks opened — choose a task");
+        break;
+      case "message_compose":
+        setRightTab("chat");
+        setRightPanelOpen(true);
+        window.dispatchEvent(new Event("mysession:voice-compose-message"));
+        window.setTimeout(() => {
+          const textareas = Array.from(document.querySelectorAll<HTMLTextAreaElement>("textarea"));
+          textareas.find((item) => item.offsetParent !== null)?.focus();
+        }, 180);
+        setVoiceUiLastCommand("Chat opened — compose a message");
         break;
       case "blur_apply":
         if (shouldDisableBackgroundFx) {
@@ -10193,7 +10395,7 @@ export function RoomPageLiveKit({
 
       const recognition =
         new SpeechRecognitionConstructor() as SpeechRecognitionLike;
-      recognition.lang = String(navigator.language || "en-US");
+      recognition.lang = "en-US";
       // Short utterance sessions finalize much more reliably while WebRTC is
       // also using the microphone. onend immediately starts the next session.
       recognition.interimResults = true;
