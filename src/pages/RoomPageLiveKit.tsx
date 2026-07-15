@@ -123,6 +123,9 @@ type VoiceUiCommand =
   | "task_add"
   | "task_complete"
   | "message_compose"
+  | `dictate_${string}`
+  | `task_text_${string}`
+  | `message_text_${string}`
   | `layout_columns_${number}`
   | `layout_rows_${number}`
   | `brightness_${number}`
@@ -279,6 +282,9 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "task_add", group: "panels", phrase: "Add task", aliases: ["Create task", "New task"] },
   { command: "task_complete", group: "panels", phrase: "Complete task", aliases: ["Finish task"] },
   { command: "message_compose", group: "panels", phrase: "Send message", aliases: ["Write message", "Compose message"] },
+  { command: "dictate_example", group: "panels", phrase: "Type [text]" },
+  { command: "task_text_example", group: "panels", phrase: "Add task [text]" },
+  { command: "message_text_example", group: "panels", phrase: "Write message [text]" },
 
   { command: "pip_open", group: "views", phrase: "Open picture in picture", aliases: ["Open PIP", "Enable picture in picture", "Start picture in picture"] },
   { command: "pip_close", group: "views", phrase: "Close picture in picture", aliases: ["Close PIP", "Disable picture in picture", "Stop picture in picture"] },
@@ -350,6 +356,15 @@ function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
   if (!normalized) return null;
   // Room controls intentionally accept English commands only.
   if (/[^\x00-\x7F]/.test(normalized)) return null;
+  const textCommands: Array<[RegExp, string]> = [
+    [/^(?:type|dictate) (.+)$/, "dictate_"],
+    [/^(?:add|create) task (.+)$/, "task_text_"],
+    [/^(?:write|compose|type) message (.+)$/, "message_text_"],
+  ];
+  for (const [pattern, prefix] of textCommands) {
+    const match = normalized.match(pattern);
+    if (match?.[1]) return `${prefix}${encodeURIComponent(match[1])}` as VoiceUiCommand;
+  }
   const namedBlurStrengths: Record<string, number> = {
     "soft blur": 8,
     "medium blur": 16,
@@ -9914,6 +9929,41 @@ export function RoomPageLiveKit({
     const numericVoiceValue = (prefix: string) =>
       Number(command.slice(prefix.length));
 
+    const voiceTextPrefix = ["task_text_", "message_text_", "dictate_"].find(
+      (prefix) => command.startsWith(prefix),
+    );
+    if (voiceTextPrefix) {
+      const text = decodeURIComponent(command.slice(voiceTextPrefix.length)).trim();
+      if (!text) return;
+      if (voiceTextPrefix === "task_text_") {
+        setRightTab("tasks");
+        setRightPanelOpen(true);
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent("mysession:voice-task-text", { detail: { text } })), 120);
+        setVoiceUiLastCommand(`Task text: ${text}`);
+        return;
+      }
+      if (voiceTextPrefix === "message_text_") {
+        setRightTab("chat");
+        setRightPanelOpen(true);
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent("mysession:voice-message-text", { detail: { text } })), 120);
+        setVoiceUiLastCommand(`Message text: ${text}`);
+        return;
+      }
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+        const setter = Object.getOwnPropertyDescriptor(
+          active instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
+          "value",
+        )?.set;
+        setter?.call(active, `${active.value}${active.value ? " " : ""}${text}`);
+        active.dispatchEvent(new Event("input", { bubbles: true }));
+        setVoiceUiLastCommand(`Typed: ${text}`);
+      } else {
+        setVoiceUiLastCommand("Focus a text field, then say Type followed by text");
+      }
+      return;
+    }
+
     if (command.startsWith("layout_columns_")) {
       const value = numericVoiceValue("layout_columns_");
       setVideoTileLayoutColumns(value);
@@ -10457,6 +10507,7 @@ export function RoomPageLiveKit({
             Math.min(3, Number(result.length || 1)),
           );
           let matchedCommand: VoiceUiCommand | null = null;
+          let matchedTranscript = "";
 
           for (
             let alternativeIndex = 0;
@@ -10468,16 +10519,19 @@ export function RoomPageLiveKit({
             ).trim();
             if (!transcript) continue;
 
-            if (alternativeIndex === 0) {
-              setVoiceUiLastHeard(transcript);
-              setVoiceUiLastCommand("");
-            }
-
             matchedCommand = parseVoiceUiCommand(transcript);
-            if (matchedCommand) break;
+            if (matchedCommand) {
+              matchedTranscript = transcript;
+              break;
+            }
           }
 
           if (!matchedCommand) continue;
+
+          // Do not expose arbitrary room speech in the local indicator.
+          // Only acknowledged English commands and explicit dictation appear.
+          setVoiceUiLastHeard(matchedTranscript);
+          setVoiceUiLastCommand("");
 
           const now = Date.now();
           const previous = voiceUiLastExecutionRef.current;

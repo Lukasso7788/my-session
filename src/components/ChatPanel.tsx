@@ -1274,6 +1274,7 @@ export function ChatPanel({
     });
 
     const [text, setText] = useState("");
+
     const [loading, setLoading] = useState(true);
     const [replyTo, setReplyTo] = useState<Msg | null>(null);
     const [highlightedMessageId, setHighlightedMessageId] = useState<
@@ -1311,6 +1312,17 @@ export function ChatPanel({
     const [unseenNew, setUnseenNew] = useState<number>(0);
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
+
+    useEffect(() => {
+        const onVoiceMessageText = (event: Event) => {
+            const dictated = String((event as CustomEvent<{ text?: string }>).detail?.text || "").trim();
+            if (!dictated) return;
+            setText(dictated);
+            window.setTimeout(() => composerRef.current?.focus(), 0);
+        };
+        window.addEventListener("mysession:voice-message-text", onVoiceMessageText);
+        return () => window.removeEventListener("mysession:voice-message-text", onVoiceMessageText);
+    }, []);
     const composerEmojiWrapRef = useRef<HTMLDivElement | null>(null);
     const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
     const emojiPortalRef = useRef<HTMLDivElement | null>(null);

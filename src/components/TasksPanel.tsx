@@ -552,6 +552,19 @@ export function TasksPanel({
 
   const [newTask, setNewTask] = useState("");
 
+  useEffect(() => {
+    const onVoiceTaskText = (event: Event) => {
+      const text = String((event as CustomEvent<{ text?: string }>).detail?.text || "").trim();
+      if (!text) return;
+      setNewTask(text);
+      window.setTimeout(() => {
+        document.querySelector<HTMLInputElement>('input[placeholder="Add a task"]')?.focus();
+      }, 0);
+    };
+    window.addEventListener("mysession:voice-task-text", onVoiceTaskText);
+    return () => window.removeEventListener("mysession:voice-task-text", onVoiceTaskText);
+  }, []);
+
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>("");
 
