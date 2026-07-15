@@ -6530,13 +6530,41 @@ export function RoomPageLiveKit({
     const operation = (previousOperation || Promise.resolve()).then(async () => {
       if (activeFxSignaturesRef.current.get(track) === signature) return;
 
-      // Decode the image before detaching the current processor. This avoids the
-      // first blank flash on slower ChromeOS devices and makes the first apply real.
+      // Decode the image while the current processor keeps rendering. The
+      // processor is switched only after the next background is locally ready.
       if (mode === "bg") {
         await waitForBackgroundImage(bgUrl || DEFAULT_BG_DATA_URL);
       }
 
-      await stopAnyProcessor(track);
+      const currentProcessor = (track as any).getProcessor?.() as
+        | { switchTo?: (options: Record<string, unknown>) => Promise<void> }
+        | undefined;
+
+      // BackgroundProcessorWrapper can update its transformer in place. This
+      // keeps the old processed stream (and old image) visible until the new
+      // image has loaded, so the raw camera never flashes between backgrounds.
+      if (mode !== "off" && typeof currentProcessor?.switchTo === "function") {
+        if (mode === "blur") {
+          await currentProcessor.switchTo({
+            mode: "background-blur",
+            blurRadius: normalizedBlur,
+          });
+        } else {
+          await currentProcessor.switchTo({
+            mode: "virtual-background",
+            imagePath: bgUrl || DEFAULT_BG_DATA_URL,
+          });
+        }
+
+        activeFxSignaturesRef.current.set(track, signature);
+        return;
+      }
+
+      if (mode === "off") {
+        await stopAnyProcessor(track);
+        activeFxSignaturesRef.current.set(track, signature);
+        return;
+      }
 
       if (firefoxSafeFx) {
         await delay(90);
@@ -6544,6 +6572,9 @@ export function RoomPageLiveKit({
 
       const proc = makeProcessorForMode(mode, normalizedBlur, bgUrl);
       if (proc) {
+        // LiveKit initializes the replacement before releasing the current
+        // processor. Do not call stopProcessor() first: that exposes the raw
+        // camera while the replacement pipeline is warming up.
         await (track as any).setProcessor(proc, true);
       }
 
