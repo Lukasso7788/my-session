@@ -55,7 +55,7 @@ https://YOUR_WORKER_URL/run?secret=YOUR_SECRET
 
 The run response includes `infiniteRoomPresence` with the rooms scanned, active
 participant counts, cooldown skips, and messages that would be sent in dry-run
-mode. Infinite-room presence uses a 90-second activity window and a 45-minute
+mode. Infinite-room presence uses a 90-second activity window and a 30-minute
 per-room cooldown.
 
 ## Why Cloudflare Worker

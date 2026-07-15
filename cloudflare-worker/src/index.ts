@@ -34,7 +34,7 @@ const KYIV_TIME_ZONE = "Europe/Kyiv";
 const DUE_GRACE_MINUTES = 8;
 const PRESENCE_MIN_PARTICIPANTS = 2;
 const PRESENCE_ACTIVE_WINDOW_SECONDS = 90;
-const PRESENCE_COOLDOWN_MINUTES = 45;
+const PRESENCE_COOLDOWN_MINUTES = 30;
 
 function appUrl(env: Env) {
   return String(env.APP_URL || "https://www.mysession.club").replace(/\/+$/, "");
