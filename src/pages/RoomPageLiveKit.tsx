@@ -106,6 +106,11 @@ type VoiceUiCommand =
   | "participants_close"
   | "settings_open"
   | "settings_close"
+  | "background_change"
+  | "status_afk"
+  | "status_skip"
+  | "status_call"
+  | "status_clear"
   | "screen_share_on"
   | "screen_share_off"
   | "pip_open"
@@ -197,7 +202,7 @@ function normalizeVoiceUiTranscript(raw: string) {
     .trim();
 }
 
-type VoiceUiCommandGroupId = "media" | "panels" | "views" | "tools" | "reactions";
+type VoiceUiCommandGroupId = "media" | "status" | "panels" | "views" | "tools" | "reactions";
 
 type VoiceUiCommandDefinition = {
   command: VoiceUiCommand;
@@ -214,6 +219,11 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "screen_share_on", group: "media", phrase: "Share screen", aliases: ["Share my screen", "Start screen share", "Start screen sharing", "Enable screen sharing"] },
   { command: "screen_share_off", group: "media", phrase: "Stop sharing screen", aliases: ["Stop screen share", "Stop screen sharing", "Turn off screen sharing"] },
 
+  { command: "status_skip", group: "status", phrase: "Skip me", aliases: ["Set skip me", "Mark me as skip me"] },
+  { command: "status_call", group: "status", phrase: "On a call", aliases: ["I'm on a call", "I am on a call", "Set on a call"] },
+  { command: "status_afk", group: "status", phrase: "AFK", aliases: ["I'm AFK", "I am AFK", "Set AFK"] },
+  { command: "status_clear", group: "status", phrase: "I'm back", aliases: ["I am back", "Clear my status", "Remove my badge", "Clear badge"] },
+
   { command: "tasks_open", group: "panels", phrase: "Open tasks", aliases: ["Open task", "Open task panel", "Open tasks panel", "Open intentions", "Show tasks"] },
   { command: "tasks_close", group: "panels", phrase: "Close tasks", aliases: ["Close task", "Close task panel", "Close tasks panel", "Close intentions", "Hide tasks"] },
   { command: "chat_open", group: "panels", phrase: "Open chat", aliases: ["Open chat panel"] },
@@ -222,6 +232,7 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "participants_close", group: "panels", phrase: "Close participants", aliases: ["Close participants panel", "Hide participants", "Hide people"] },
   { command: "settings_open", group: "panels", phrase: "Open settings", aliases: ["Open room settings"] },
   { command: "settings_close", group: "panels", phrase: "Close settings", aliases: ["Close room settings"] },
+  { command: "background_change", group: "panels", phrase: "Change background", aliases: ["Change image background", "Choose background", "Choose a background", "Open background settings"] },
 
   { command: "pip_open", group: "views", phrase: "Open picture in picture", aliases: ["Open PIP", "Enable picture in picture", "Start picture in picture"] },
   { command: "pip_close", group: "views", phrase: "Close picture in picture", aliases: ["Close PIP", "Disable picture in picture", "Stop picture in picture"] },
@@ -262,6 +273,7 @@ const VOICE_UI_COMMAND_GROUPS: readonly {
   title: string;
 }[] = [
   { id: "media", title: "Camera, microphone & sharing" },
+  { id: "status", title: "My status" },
   { id: "panels", title: "Room panels" },
   { id: "views", title: "Views & layout" },
   { id: "tools", title: "Tools & appearance" },
@@ -9764,6 +9776,12 @@ export function RoomPageLiveKit({
       }
     })();
 
+    const refreshStatusBadges = () => {
+      scheduleRebuildTiles();
+      window.setTimeout(() => scheduleRebuildTiles(), 80);
+      window.setTimeout(() => scheduleRebuildTiles(), 220);
+    };
+
     switch (command) {
       case "camera_on":
         if (!cameraIsEnabled) await toggleCam();
@@ -9824,6 +9842,36 @@ export function RoomPageLiveKit({
       case "settings_close":
         setSettingsOpen(false);
         setVoiceUiLastCommand("Settings closed");
+        break;
+      case "background_change":
+        if (shouldDisableBackgroundFx) {
+          setVoiceUiLastCommand("Backgrounds unavailable on this device");
+          break;
+        }
+        await applyVideoFx("bg");
+        setSettingsOpen(true);
+        setSettingsPreviewVersion((version) => version + 1);
+        setVoiceUiLastCommand("Choose a background");
+        break;
+      case "status_afk":
+        await setMyStatus("afk");
+        refreshStatusBadges();
+        setVoiceUiLastCommand("AFK badge set");
+        break;
+      case "status_skip":
+        await setMyStatus("skip");
+        refreshStatusBadges();
+        setVoiceUiLastCommand("Skip me badge set");
+        break;
+      case "status_call":
+        await setMyStatus("call");
+        refreshStatusBadges();
+        setVoiceUiLastCommand("On a call badge set");
+        break;
+      case "status_clear":
+        await setMyStatus(null);
+        refreshStatusBadges();
+        setVoiceUiLastCommand("Status cleared");
         break;
       case "screen_share_on":
         if (!screenShareIsEnabled) await toggleScreenShare();
@@ -13889,14 +13937,14 @@ export function RoomPageLiveKit({
                   role="dialog"
                   aria-modal="false"
                   aria-label="Available voice commands"
-                  className={`ms-voice-ui-scrollbar custom-scrollbar fixed left-4 top-[152px] z-[91] max-h-[calc(100dvh-172px)] w-[min(460px,calc(100vw-2rem))] overflow-y-auto rounded-3xl border p-4 shadow-2xl ${isLight
+                  className={`ms-voice-ui-scrollbar custom-scrollbar fixed left-4 top-[152px] z-[91] max-h-[calc(100dvh-172px)] w-[min(520px,calc(100vw-2rem))] overflow-y-auto rounded-2xl border p-3 shadow-2xl ${isLight
                     ? "border-black/10 bg-[#F8F8F8] text-black"
                     : "border-white/10 bg-[#1B1B1B] text-white"
                     }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-[15px] font-bold">Voice commands</div>
+                      <div className="text-[14px] font-bold">Voice commands</div>
                       <div className={`mt-1 text-[11px] ${isLight ? "text-black/55" : "text-white/55"}`}>
                         Say a short English command, then pause.
                       </div>
@@ -13938,21 +13986,21 @@ export function RoomPageLiveKit({
                     </button>
                   </div>
 
-                  <div className="mt-4 space-y-4">
+                  <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {VOICE_UI_COMMAND_GROUPS.map((group) => (
                       <section key={group.title}>
-                        <div className={`text-[11px] font-bold uppercase tracking-[0.08em] ${isLight ? "text-black/45" : "text-white/45"}`}>
+                        <div className={`text-[10px] font-bold uppercase tracking-[0.07em] ${isLight ? "text-black/45" : "text-white/45"}`}>
                           {group.title}
                         </div>
-                        <div className="mt-2 space-y-2">
+                        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
                           {VOICE_UI_COMMAND_DEFINITIONS
                             .filter((definition) => definition.group === group.id)
                             .map((definition) => (
                               <div
                                 key={definition.command}
-                                className={`rounded-2xl border px-3 py-2 ${isLight ? "border-black/[0.08] bg-white" : "border-white/[0.08] bg-white/[0.03]"}`}
+                                className={`rounded-xl border px-2 py-1.5 ${isLight ? "border-black/[0.08] bg-white" : "border-white/[0.08] bg-white/[0.03]"}`}
                               >
-                                <div className="text-[12px] font-semibold leading-5">{definition.phrase}</div>
+                                <div className="text-[10px] font-semibold leading-4">{definition.phrase}</div>
                               </div>
                             ))}
                         </div>
