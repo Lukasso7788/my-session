@@ -9917,7 +9917,7 @@ export function RoomPageLiveKit({
         }
         openVoiceFxPopup();
         setVoiceUiLastCommand("Choose an image to upload");
-        window.setTimeout(() => voiceFxUploadInputRef.current?.click(), 180);
+        voiceFxUploadInputRef.current?.click();
         break;
       case "background_ocean":
       case "background_forest":
@@ -13996,6 +13996,31 @@ export function RoomPageLiveKit({
       ) : null}
 
       <div className={`ms-room-page h-[100dvh] overflow-hidden ${pageBg}`}>
+        <input
+          ref={voiceFxUploadInputRef}
+          type="file"
+          accept="image/*"
+          className="fixed h-px w-px opacity-0 pointer-events-none"
+          tabIndex={-1}
+          aria-hidden="true"
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            event.currentTarget.value = "";
+            if (!file) return;
+            try {
+              if (uploadedBgUrlRef.current) URL.revokeObjectURL(uploadedBgUrlRef.current);
+              const url = URL.createObjectURL(file);
+              uploadedBgUrlRef.current = url;
+              setBgImageUrl(url);
+              await applyVideoFx("bg", url);
+              setVoiceUiLastCommand("Uploaded background applied");
+              closeVoiceFxPopup();
+            } catch (error) {
+              console.error("voice background upload failed", error);
+              setFxError("Failed to load selected image");
+            }
+          }}
+        />
         {voiceFxPopupMounted ? (
           <div
             className={`fixed inset-0 z-[120] flex items-center justify-center p-4 transition-opacity duration-200 ease-out ${voiceFxPopupVisible ? "opacity-100" : "pointer-events-none opacity-0"}`}
@@ -14065,32 +14090,13 @@ export function RoomPageLiveKit({
                 >
                   {fxApplying ? "Applying…" : "Apply Blur"}
                 </button>
-                <label className={`flex h-10 cursor-pointer items-center justify-center rounded-xl text-[12px] font-semibold transition ${isLight ? "border border-black/10 bg-white hover:bg-black/5" : "border border-white/10 bg-white/[0.05] hover:bg-white/10"}`}>
+                <button
+                  type="button"
+                  onClick={() => voiceFxUploadInputRef.current?.click()}
+                  className={`flex h-10 cursor-pointer items-center justify-center rounded-xl text-[12px] font-semibold transition ${isLight ? "border border-black/10 bg-white hover:bg-black/5" : "border border-white/10 bg-white/[0.05] hover:bg-white/10"}`}
+                >
                   Upload Image
-                  <input
-                    ref={voiceFxUploadInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={async (event) => {
-                      const file = event.target.files?.[0];
-                      event.currentTarget.value = "";
-                      if (!file) return;
-                      try {
-                        if (uploadedBgUrlRef.current) URL.revokeObjectURL(uploadedBgUrlRef.current);
-                        const url = URL.createObjectURL(file);
-                        uploadedBgUrlRef.current = url;
-                        setBgImageUrl(url);
-                        await applyVideoFx("bg", url);
-                        setVoiceUiLastCommand("Uploaded background applied");
-                        closeVoiceFxPopup();
-                      } catch (error) {
-                        console.error("voice background upload failed", error);
-                        setFxError("Failed to load selected image");
-                      }
-                    }}
-                  />
-                </label>
+                </button>
               </div>
 
               <div className={`mt-3 text-center text-[10px] ${isLight ? "text-black/45" : "text-white/45"}`}>
