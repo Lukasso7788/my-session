@@ -405,7 +405,9 @@ function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
   return VOICE_UI_COMMAND_LOOKUP.get(normalized) || null;
 }
 
-const VOICE_UI_ENABLED_STORAGE_KEY = "room_voice_ui_enabled";
+// Versioned opt-in key: the previous setting defaulted to true and therefore
+// wrote "true" for users who never explicitly enabled voice control.
+const VOICE_UI_ENABLED_STORAGE_KEY = "room_voice_ui_enabled_opt_in_v2";
 
 type HostProfile = {
   id: string;
@@ -6248,9 +6250,9 @@ export function RoomPageLiveKit({
     useState<VoiceUiStatus>("idle");
   const [voiceUiEnabled, setVoiceUiEnabled] = useState(() => {
     try {
-      return localStorage.getItem(VOICE_UI_ENABLED_STORAGE_KEY) !== "false";
+      return localStorage.getItem(VOICE_UI_ENABLED_STORAGE_KEY) === "true";
     } catch {
-      return true;
+      return false;
     }
   });
   const [voiceUiLastCommand, setVoiceUiLastCommand] = useState("");

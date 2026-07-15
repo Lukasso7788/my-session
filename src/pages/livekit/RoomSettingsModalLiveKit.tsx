@@ -1114,7 +1114,7 @@ export function RoomSettingsModalLiveKit({
     onChangeStageSoundsEnabled,
     stageSoundsVolume,
     onChangeStageSoundsVolume,
-    voiceUiEnabled = true,
+    voiceUiEnabled = false,
     onChangeVoiceUiEnabled,
 
     colorCorrectionEnabled,
