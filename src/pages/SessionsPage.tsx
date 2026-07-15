@@ -31,6 +31,15 @@ type CurrentProfile = BookingProfile & {
 type SessionBookingRow = {
   user_id: string;
   profiles?: BookingProfile | null;
+  created_at?: string | null;
+  booked_start_time?: string | null;
+  booked_end_time?: string | null;
+};
+
+type BookSessionOptions = {
+  booked_start_time?: string | null;
+  booked_end_time?: string | null;
+  booking_note?: string | null;
 };
 
 type SessionWithRelations = Session & {
@@ -1279,21 +1288,33 @@ export function SessionsPage() {
        */
       const loadPublicBookings = async () => {
         try {
-          const { data: bookingsData, error: bookingsError } =
-            await withTimeout(
+          let bookingsData: any[] | null = null;
+
+          const timedBookings = await withTimeout(
+            supabase.rpc("get_public_session_bookings_with_times", {
+              p_session_ids: ids,
+            }),
+            SESSIONS_ENRICHMENT_TIMEOUT_MS,
+            "sessions_timed_bookings_enrichment"
+          );
+
+          if (!timedBookings.error) {
+            bookingsData = (timedBookings.data || []) as any[];
+          } else {
+            const legacyBookings = await withTimeout(
               supabase
                 .from("public_session_bookings")
-                .select(
-                  "session_id, user_id, full_name, avatar_url"
-                )
+                .select("session_id, user_id, full_name, avatar_url")
                 .in("session_id", ids),
               SESSIONS_ENRICHMENT_TIMEOUT_MS,
               "sessions_bookings_enrichment"
             );
 
-          if (!isCurrentRequest()) return;
+            if (legacyBookings.error) throw legacyBookings.error;
+            bookingsData = (legacyBookings.data || []) as any[];
+          }
 
-          if (bookingsError) throw bookingsError;
+          if (!isCurrentRequest()) return;
 
           const bookingsBySessionId = new Map<
             string,
@@ -1310,6 +1331,9 @@ export function SessionsPage() {
 
             previousBookings.push({
               user_id: String(row?.user_id || ""),
+              created_at: row?.created_at || null,
+              booked_start_time: row?.booked_start_time || null,
+              booked_end_time: row?.booked_end_time || null,
               profiles: {
                 id: String(row?.user_id || ""),
                 full_name: row?.full_name || null,
@@ -1495,7 +1519,7 @@ export function SessionsPage() {
     navigate(next);
   };
 
-  const book = async (id: string) => {
+  const book = async (id: string, opts: BookSessionOptions = {}) => {
     if (showBanModal()) return;
 
     if (!user) {
@@ -1506,6 +1530,9 @@ export function SessionsPage() {
       const { error } = await supabase.from("session_bookings").insert({
         session_id: id,
         user_id: user.id,
+        booked_start_time: opts.booked_start_time || null,
+        booked_end_time: opts.booked_end_time || null,
+        booking_note: opts.booking_note || null,
       });
 
       if (error) throw error;

@@ -163,6 +163,8 @@ type VoiceUiCommand =
   | "timeline_close"
   | "edit_name_open"
   | "edit_name_close"
+  | "edit_name_save"
+  | "modal_close"
   | "reaction_fire"
   | "reaction_laugh"
   | "reaction_thumbs_up"
@@ -310,6 +312,8 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "timeline_close", group: "tools", phrase: "Close timeline", aliases: ["Close timeline editor"] },
   { command: "edit_name_open", group: "tools", phrase: "Edit my name", aliases: ["Open name editor", "Change my name"] },
   { command: "edit_name_close", group: "tools", phrase: "Close name editor", aliases: ["Close edit name"] },
+  { command: "edit_name_save", group: "tools", phrase: "Save name", aliases: ["Save my name", "Confirm name"] },
+  { command: "modal_close", group: "tools", phrase: "Close modal", aliases: ["Close window", "Close popup", "Dismiss modal", "Click close"] },
   { command: "voice_restart", group: "tools", phrase: "Restart voice control", aliases: ["Restart voice", "Restart listener"] },
   { command: "brightness_100", group: "tools", phrase: "Brightness 100" },
   { command: "contrast_100", group: "tools", phrase: "Contrast 100" },
@@ -356,14 +360,22 @@ function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
   if (!normalized) return null;
   // Room controls intentionally accept English commands only.
   if (/[^\x00-\x7F]/.test(normalized)) return null;
+  const rawCommandText = String(raw || "")
+    .trim()
+    .replace(
+      /^(?:(?:please|hey mysession|mysession|can you|could you)\s+)+/i,
+      "",
+    )
+    .trim();
   const textCommands: Array<[RegExp, string]> = [
-    [/^(?:type|dictate) (.+)$/, "dictate_"],
-    [/^(?:add|create) task (.+)$/, "task_text_"],
-    [/^(?:write|compose|type) message (.+)$/, "message_text_"],
+    [/^(?:type|dictate)\s+(.+)$/i, "dictate_"],
+    [/^(?:add|create)\s+task\s+(.+)$/i, "task_text_"],
+    [/^(?:write|compose|type)\s+message\s+(.+)$/i, "message_text_"],
   ];
   for (const [pattern, prefix] of textCommands) {
-    const match = normalized.match(pattern);
-    if (match?.[1]) return `${prefix}${encodeURIComponent(match[1])}` as VoiceUiCommand;
+    const match = rawCommandText.match(pattern);
+    const payload = String(match?.[1] || "").trim();
+    if (payload) return `${prefix}${encodeURIComponent(payload)}` as VoiceUiCommand;
   }
   const namedBlurStrengths: Record<string, number> = {
     "soft blur": 8,
@@ -10455,6 +10467,29 @@ export function RoomPageLiveKit({
         setEditNameOpen(false);
         setVoiceUiLastCommand("Name editor closed");
         break;
+      case "edit_name_save":
+        if (editNameOpen) {
+          await saveEditName();
+          setVoiceUiLastCommand("Name saved");
+        } else {
+          setVoiceUiLastCommand("Name editor is not open");
+        }
+        break;
+      case "modal_close":
+        if (editNameOpen) setEditNameOpen(false);
+        else if (reportModalOpen) setReportModalOpen(false);
+        else if (timelineEditorOpen) setTimelineEditorOpen(false);
+        else if (bugReportOpen) setBugReportOpen(false);
+        else if (settingsOpen) setSettingsOpen(false);
+        else if (mobileMediaRestoreOpen) setMobileMediaRestoreOpen(false);
+        else if (paywallModalOpen) setPaywallModalOpen(false);
+        else if (selectedUser) setSelectedUser(null);
+        else if (aiHostInputOpen) setAiHostInputOpen(false);
+        else if (voiceUiHelpOpen) setVoiceUiHelpOpen(false);
+        else if (voiceFxPopupMounted || voiceFxPopupVisible) closeVoiceFxPopup();
+        else if (rightPanelOpen) setRightPanelOpen(false);
+        setVoiceUiLastCommand("Modal closed");
+        break;
       case "reaction_fire":
         sendReaction("fire");
         setVoiceUiLastCommand("Fire reaction sent");
@@ -10623,6 +10658,16 @@ export function RoomPageLiveKit({
               result?.[alternativeIndex]?.transcript || "",
             ).trim();
             if (!transcript) continue;
+
+            const normalizedTranscript = normalizeVoiceUiTranscript(transcript);
+            const isDictationPhrase = /^(?:type|dictate|add task|create task|write message|compose message|type message)(?: |$)/.test(
+              normalizedTranscript,
+            );
+            if (isDictationPhrase && result.isFinal === false) {
+              // Dictation must wait for the final transcript; executing an
+              // interim result truncates everything after the first word.
+              continue;
+            }
 
             matchedCommand = parseVoiceUiCommand(transcript);
             if (matchedCommand) {

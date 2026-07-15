@@ -3782,6 +3782,20 @@ export default function SessionCard({
 
     const initialBookers = useMemo(() => extractBookers(session), [session]);
     const [bookers, setBookers] = useState<BookedUser[]>(initialBookers);
+    const currentUserBooking = useMemo(
+        () => bookers.find((booking) => booking.id === userId) || null,
+        [bookers, userId]
+    );
+    const sortedBookingTimeline = useMemo(() => {
+        return [...bookers].sort((a, b) => {
+            const aStart = Date.parse(String(a.booked_start_time || ""));
+            const bStart = Date.parse(String(b.booked_start_time || ""));
+            const aValue = Number.isFinite(aStart) ? aStart : Number.POSITIVE_INFINITY;
+            const bValue = Number.isFinite(bStart) ? bStart : Number.POSITIVE_INFINITY;
+            if (aValue !== bValue) return aValue - bValue;
+            return String(a.full_name || a.id).localeCompare(String(b.full_name || b.id));
+        });
+    }, [bookers]);
 
     const [stages, setStages] = useState<SessionStage[]>([]);
     const [liveUsers, setLiveUsers] = useState<BookedUser[]>([]);
@@ -3991,6 +4005,15 @@ export default function SessionCard({
 
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionType === "infinite";
+
+    useEffect(() => {
+        if (!isBookersModalOpen || !isInfinite) return;
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") setIsBookersModalOpen(false);
+        };
+        window.addEventListener("keydown", onKeyDown);
+        return () => window.removeEventListener("keydown", onKeyDown);
+    }, [isBookersModalOpen, isInfinite]);
 
     const bookingTimeRangeString = useMemo(() => {
         const start = session?.start_time ? new Date(session.start_time) : null;
@@ -4706,28 +4729,46 @@ export default function SessionCard({
 
     const confirmedBookingButton = (
         <button
-            onClick={isHoveringCancel ? handleCancelBooking : undefined}
-            onMouseEnter={onEnterBooked}
-            onMouseLeave={onLeaveBooked}
+            onClick={isInfinite
+                ? () => {
+                    setPeopleTab("booked");
+                    setPeopleTabPinned(true);
+                    setIsBookersModalOpen(true);
+                }
+                : isHoveringCancel
+                    ? handleCancelBooking
+                    : undefined}
+            onMouseEnter={isInfinite ? undefined : onEnterBooked}
+            onMouseLeave={isInfinite ? undefined : onLeaveBooked}
             className={`
                 h-12 rounded-full text-[14px] font-semibold
                 flex items-center justify-center
                 transition-all duration-300 ease-in-out
                 w-full xl:w-auto
-                ${isHoveringCancel
+                ${!isInfinite && isHoveringCancel
                     ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252]"
                     : "px-5 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
                 }
             `}
             style={{ willChange: "width, padding" }}
         >
-            {isHoveringCancel ? (
+            {!isInfinite && isHoveringCancel ? (
                 <>
                     <img src="/icons/cross-cancel.svg" className="w-6 h-6 mr-2" alt="" />
                     Cancel booking
                 </>
             ) : (
-                <img src="/icons/book-session-green.svg" className="w-6 h-6" alt="" />
+                <>
+                    <img src="/icons/book-session-green.svg" className="w-5 h-5" alt="" />
+                    <span>
+                        {isInfinite && currentUserBooking
+                            ? `Booked · ${formatBookingRangeFromIso(
+                                currentUserBooking.booked_start_time,
+                                currentUserBooking.booked_end_time
+                            )}`
+                            : "Booked"}
+                    </span>
+                </>
             )}
         </button>
     );
@@ -5175,9 +5216,121 @@ export default function SessionCard({
                 </div>
             </ModalShell>
 
+            {isBookersModalOpen && isInfinite ? (
+                <div className="fixed inset-0 z-[950] flex justify-end" role="dialog" aria-modal="true" aria-label="Booked timeline">
+                    <button
+                        type="button"
+                        className="absolute inset-0 bg-black/30 backdrop-blur-[2px]"
+                        aria-label="Close booked timeline"
+                        onClick={() => setIsBookersModalOpen(false)}
+                    />
+
+                    <aside className="relative flex h-full w-full max-w-[460px] flex-col border-l border-[#E5E7EB] bg-white shadow-[-18px_0_60px_rgba(17,24,39,0.14)]">
+                        <div className="flex items-start justify-between gap-4 border-b border-[#E5E7EB] px-5 py-5">
+                            <div>
+                                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#65A96A]">Infinite room</div>
+                                <h3 className="mt-1 text-[22px] font-bold text-[#111827]">Booked timeline</h3>
+                                <p className="mt-1 text-[12px] leading-5 text-[#606060]">
+                                    See when people plan to focus in this always-open room.
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsBookersModalOpen(false)}
+                                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#E5E7EB] text-[24px] leading-none text-[#606060] transition hover:bg-[#F3F4F6] hover:text-[#111827]"
+                                aria-label="Close booked timeline"
+                            >
+                                ×
+                            </button>
+                        </div>
+
+                        <div className="border-b border-[#E5E7EB] px-5 py-4">
+                            <div className="flex items-center justify-between rounded-[18px] bg-[#F3F8F3] px-4 py-3">
+                                <div>
+                                    <div className="text-[12px] text-[#606060]">Planned participants</div>
+                                    <div className="mt-0.5 text-[18px] font-bold text-[#111827]">{bookedCount}</div>
+                                </div>
+                                <div className="text-right text-[12px] text-[#606060]">
+                                    <div>{liveNowCount} currently online</div>
+                                    <div className="mt-1 font-semibold text-[#65A96A]">Times shown locally</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                            {sortedBookingTimeline.length === 0 ? (
+                                <div className="rounded-[20px] border border-dashed border-[#D1D5DB] px-5 py-8 text-center">
+                                    <div className="text-[15px] font-semibold text-[#111827]">No planned focus times yet</div>
+                                    <div className="mt-1 text-[12px] leading-5 text-[#606060]">Be the first person to book a time in this room.</div>
+                                </div>
+                            ) : (
+                                <div className="relative pl-7">
+                                    <div className="absolute bottom-4 left-[9px] top-4 w-px bg-[#DDE7DE]" />
+                                    <div className="flex flex-col gap-4">
+                                        {sortedBookingTimeline.map((booking) => {
+                                            const label = booking.full_name || booking.id || "Participant";
+                                            const isLive = liveIdSet.has(booking.id);
+                                            const isCurrentUser = booking.id === userId;
+                                            const start = booking.booked_start_time ? new Date(booking.booked_start_time) : null;
+                                            const hasStart = !!start && !Number.isNaN(start.getTime());
+
+                                            return (
+                                                <div key={booking.id} className="relative">
+                                                    <div className={`absolute -left-7 top-5 h-[11px] w-[11px] rounded-full border-2 border-white ring-1 ${isLive ? "bg-[#65D46C] ring-[#65D46C]" : "bg-[#A7CDAA] ring-[#A7CDAA]"}`} />
+                                                    <Link
+                                                        to={`/profile/${booking.id}`}
+                                                        onClick={() => setIsBookersModalOpen(false)}
+                                                        className={`block rounded-[20px] border px-4 py-3 transition hover:-translate-y-0.5 hover:shadow-sm ${isCurrentUser ? "border-[#81DB86] bg-[#F3FBF3]" : "border-[#E5E7EB] bg-white hover:border-[#BFD8C1]"}`}
+                                                    >
+                                                        <div className="flex items-start gap-3">
+                                                            <AvatarCircle user={booking} size={38} isLive={isLive} showLiveDot={true} />
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <div className="truncate text-[13px] font-bold text-[#111827]">
+                                                                        {isCurrentUser ? `${label} (you)` : label}
+                                                                    </div>
+                                                                    {isLive ? <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-[#49A650]">Online</span> : null}
+                                                                </div>
+                                                                <div className="mt-1 text-[12px] font-semibold text-[#334155]">
+                                                                    {formatBookingRangeFromIso(booking.booked_start_time, booking.booked_end_time)}
+                                                                </div>
+                                                                {hasStart ? (
+                                                                    <div className="mt-1 text-[11px] text-[#7A7A7A]">
+                                                                        {start!.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
+                                                                    </div>
+                                                                ) : null}
+                                                            </div>
+                                                        </div>
+                                                    </Link>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {isBookingConfirmed ? (
+                            <div className="border-t border-[#E5E7EB] p-5">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        handleCancelBooking();
+                                        setIsBookersModalOpen(false);
+                                    }}
+                                    className="h-11 w-full rounded-full border border-[#F65252] bg-[#FFF7F7] text-[13px] font-semibold text-[#D83F3F] transition hover:bg-[#FFEDED]"
+                                >
+                                    Cancel my booking
+                                </button>
+                            </div>
+                        ) : null}
+                    </aside>
+                </div>
+            ) : null}
+
             <ModalShell
                 title={hasStarted || hasLiveNow || isInfinite ? "People" : "People who booked this session"}
-                isOpen={isBookersModalOpen}
+                isOpen={isBookersModalOpen && !isInfinite}
                 onClose={() => setIsBookersModalOpen(false)}
             >
                 {(hasStarted || hasLiveNow || isInfinite) && (

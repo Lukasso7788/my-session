@@ -551,28 +551,7 @@ export function TasksPanel({
     useState<string | null>(null);
 
   const [newTask, setNewTask] = useState("");
-
-  useEffect(() => {
-    const applyVoiceTaskText = (incoming?: string) => {
-      let pending = "";
-      try {
-        pending = sessionStorage.getItem("mysession:voice-task-draft") || "";
-        sessionStorage.removeItem("mysession:voice-task-draft");
-      } catch { }
-      const text = String(incoming || pending).trim();
-      if (!text) return;
-      setNewTask(text);
-      window.setTimeout(() => {
-        document.querySelector<HTMLInputElement>('input[placeholder="Add a task"]')?.focus();
-      }, 0);
-    };
-    const onVoiceTaskText = (event: Event) => {
-      applyVoiceTaskText((event as CustomEvent<{ text?: string }>).detail?.text);
-    };
-    applyVoiceTaskText();
-    window.addEventListener("mysession:voice-task-text", onVoiceTaskText);
-    return () => window.removeEventListener("mysession:voice-task-text", onVoiceTaskText);
-  }, []);
+  const voiceTaskLastAppliedRef = useRef<{ text: string; at: number }>({ text: "", at: 0 });
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>("");
@@ -1690,10 +1669,10 @@ export function TasksPanel({
     [user?.id, panelTasks, loadPanelTasks, upsertOwnSessionTask],
   );
 
-  const handleAddPanelTask = async () => {
+  const handleAddPanelTask = async (textOverride?: string) => {
     if (!user?.id) return;
 
-    const text = safeTrim(newTask);
+    const text = safeTrim(textOverride || newTask);
     if (!text) return;
 
     setNewTask("");
@@ -1742,6 +1721,31 @@ export function TasksPanel({
       setPanelTasks((prev) => prev.filter((x) => x.id !== optimisticId));
     }
   };
+
+  useEffect(() => {
+    const takePendingText = (incoming?: string) => {
+      let pending = "";
+      try {
+        pending = sessionStorage.getItem("mysession:voice-task-draft") || "";
+        sessionStorage.removeItem("mysession:voice-task-draft");
+      } catch { }
+      const text = String(incoming || pending).trim();
+      if (!text) return;
+      const previous = voiceTaskLastAppliedRef.current;
+      if (previous.text === text && Date.now() - previous.at < 2_000) return;
+      voiceTaskLastAppliedRef.current = { text, at: Date.now() };
+      setNewTask(text);
+      void handleAddPanelTask(text);
+    };
+    const onVoiceTaskText = (event: Event) => {
+      takePendingText((event as CustomEvent<{ text?: string }>).detail?.text);
+    };
+    takePendingText();
+    window.addEventListener("mysession:voice-task-text", onVoiceTaskText);
+    return () => window.removeEventListener("mysession:voice-task-text", onVoiceTaskText);
+    // The handler intentionally follows the current authenticated panel state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const togglePanelCompleted = async (it: PanelTask) => {
     if (!user?.id) return;
@@ -2744,7 +2748,7 @@ export function TasksPanel({
               type="text"
               value={newTask}
               onChange={(e) => setNewTask(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleAddPanelTask()}
+              onKeyDown={(e) => e.key === "Enter" && void handleAddPanelTask()}
               placeholder="Add a task"
               className={"min-w-0 w-full " + inputCls}
             />
@@ -2766,7 +2770,7 @@ export function TasksPanel({
             </button>
 
             <button
-              onClick={handleAddPanelTask}
+              onClick={() => void handleAddPanelTask()}
               className={[
                 "h-12 shrink-0 px-4 rounded-[18px] font-semibold text-[14px] font-inter transition",
                 "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white",
