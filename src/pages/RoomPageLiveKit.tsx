@@ -113,6 +113,7 @@ type VoiceUiCommand =
   | "background_violet"
   | "background_sunset"
   | "blur_apply"
+  | `blur_strength_${number}`
   | "status_afk"
   | "status_skip"
   | "status_call"
@@ -246,6 +247,7 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "settings_close", group: "panels", phrase: "Close settings", aliases: ["Close room settings"] },
   { command: "background_change", group: "panels", phrase: "Change background", aliases: ["Change image background", "Choose background", "Choose a background", "Open background settings"] },
   { command: "blur_apply", group: "panels", phrase: "Apply blur", aliases: ["Blur background", "Use blur"] },
+  { command: "blur_strength_18", group: "panels", phrase: "Blur strength 18", aliases: ["Set blur to 18", "Blur 18"] },
   { command: "background_upload", group: "panels", phrase: "Upload image", aliases: ["Upload background", "Upload background image"] },
   { command: "background_ocean", group: "panels", phrase: "Ocean background", aliases: ["Ocean", "Choose Ocean", "Apply Ocean"] },
   { command: "background_forest", group: "panels", phrase: "Forest background", aliases: ["Forest", "Choose Forest", "Apply Forest"] },
@@ -311,6 +313,20 @@ for (const definition of VOICE_UI_COMMAND_DEFINITIONS) {
 function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
   const normalized = normalizeVoiceUiTranscript(raw);
   if (!normalized) return null;
+  const namedBlurStrengths: Record<string, number> = {
+    "soft blur": 8,
+    "medium blur": 16,
+    "strong blur": 26,
+  };
+  if (namedBlurStrengths[normalized]) {
+    return `blur_strength_${namedBlurStrengths[normalized]}`;
+  }
+  const blurStrengthMatch = normalized.match(/^(?:set )?blur(?: strength)?(?: to)? (\d{1,2})$/);
+  if (blurStrengthMatch) {
+    const requested = Number(blurStrengthMatch[1]);
+    const strength = Math.max(4, Math.min(30, requested));
+    return `blur_strength_${strength}`;
+  }
   return VOICE_UI_COMMAND_LOOKUP.get(normalized) || null;
 }
 
@@ -9832,6 +9848,20 @@ export function RoomPageLiveKit({
       window.setTimeout(() => scheduleRebuildTiles(), 220);
     };
 
+    if (command.startsWith("blur_strength_")) {
+      if (shouldDisableBackgroundFx) {
+        setVoiceUiLastCommand("Blur unavailable on this device");
+        return;
+      }
+      const requestedStrength = Number(command.slice("blur_strength_".length));
+      const nextStrength = Math.max(4, Math.min(30, requestedStrength || 12));
+      setBlurStrength(nextStrength);
+      openVoiceFxPopup();
+      await applyVideoFx("blur", undefined, nextStrength);
+      setVoiceUiLastCommand(`Blur strength ${nextStrength}`);
+      return;
+    }
+
     switch (command) {
       case "camera_on":
         if (!cameraIsEnabled) await toggleCam();
@@ -11253,7 +11283,11 @@ export function RoomPageLiveKit({
   };
 
   // FX apply in-room
-  const applyVideoFx = async (mode: FxMode, backgroundUrl?: string) => {
+  const applyVideoFx = async (
+    mode: FxMode,
+    backgroundUrl?: string,
+    blurStrengthOverride?: number,
+  ) => {
     const r = roomRef.current;
     if (!r) return;
 
@@ -11267,7 +11301,7 @@ export function RoomPageLiveKit({
       await safeApplyProcessor(
         tr,
         mode,
-        blurStrength,
+        blurStrengthOverride ?? blurStrength,
         backgroundUrl || bgImageUrl,
       );
 
@@ -11276,7 +11310,7 @@ export function RoomPageLiveKit({
         mode === "off"
           ? "FX disabled"
           : mode === "blur"
-            ? `Blur applied (strength ${blurStrength})`
+            ? `Blur applied (strength ${blurStrengthOverride ?? blurStrength})`
             : "Virtual background applied",
       );
       await delay(40);
@@ -14098,6 +14132,44 @@ export function RoomPageLiveKit({
                   Upload Image
                 </button>
               </div>
+
+              {videoFxMode === "blur" ? (
+                <div className={`mt-3 rounded-2xl border p-3 ${isLight ? "border-black/10 bg-white" : "border-white/10 bg-white/[0.04]"}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[12px] font-semibold">Blur strength</div>
+                      <div className={`mt-0.5 text-[10px] ${isLight ? "text-black/50" : "text-white/50"}`}>
+                        Say “Blur strength 18” or choose it here.
+                      </div>
+                    </div>
+                    <span className={`min-w-10 rounded-lg px-2 py-1 text-center text-[12px] font-bold ${isLight ? "bg-black/5" : "bg-white/10"}`}>
+                      {blurStrength}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={4}
+                    max={30}
+                    step={1}
+                    value={blurStrength}
+                    aria-label="Blur strength"
+                    className="mt-3 w-full accent-[#81DB86]"
+                    onChange={(event) => setBlurStrength(Number(event.target.value))}
+                    onPointerUp={(event) => {
+                      const value = Number((event.currentTarget as HTMLInputElement).value);
+                      void applyVideoFx("blur", undefined, value);
+                    }}
+                    onKeyUp={(event) => {
+                      const value = Number(event.currentTarget.value);
+                      void applyVideoFx("blur", undefined, value);
+                    }}
+                  />
+                  <div className={`mt-1 flex justify-between text-[9px] ${isLight ? "text-black/40" : "text-white/40"}`}>
+                    <span>Soft · 4</span>
+                    <span>Strong · 30</span>
+                  </div>
+                </div>
+              ) : null}
 
               <div className={`mt-3 text-center text-[10px] ${isLight ? "text-black/45" : "text-white/45"}`}>
                 Voice: “Forest background”, “Apply Blur”, or “Upload Image”
