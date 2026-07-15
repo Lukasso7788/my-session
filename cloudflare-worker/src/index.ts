@@ -23,8 +23,18 @@ type SessionRow = {
   } | null;
 };
 
+type ActiveInfiniteRoom = {
+  session_id: string;
+  title?: string | null;
+  participant_count?: number | string | null;
+  is_private?: boolean | null;
+};
+
 const KYIV_TIME_ZONE = "Europe/Kyiv";
 const DUE_GRACE_MINUTES = 8;
+const PRESENCE_MIN_PARTICIPANTS = 2;
+const PRESENCE_ACTIVE_WINDOW_SECONDS = 90;
+const PRESENCE_COOLDOWN_MINUTES = 45;
 
 function appUrl(env: Env) {
   return String(env.APP_URL || "https://www.mysession.club").replace(/\/+$/, "");
@@ -189,6 +199,104 @@ async function postDiscord(env: Env, payload: any) {
   } catch {
     return null;
   }
+}
+
+async function fetchActiveInfiniteRooms(env: Env) {
+  const rows = await supabaseFetch(env, "rpc/get_active_infinite_rooms_for_discord", {
+    method: "POST",
+    body: JSON.stringify({
+      min_participants: PRESENCE_MIN_PARTICIPANTS,
+      active_window_seconds: PRESENCE_ACTIVE_WINDOW_SECONDS,
+    }),
+  });
+
+  return Array.isArray(rows) ? (rows as ActiveInfiniteRoom[]) : [];
+}
+
+async function getRecentPresenceBroadcast(env: Env, sessionId: string, now: Date) {
+  const since = addMinutes(now, -PRESENCE_COOLDOWN_MINUTES);
+  const path =
+    `discord_presence_broadcasts?room_session_id=eq.${encodeURIComponent(sessionId)}` +
+    `&sent_at=gte.${encodeURIComponent(iso(since))}` +
+    `&select=id,sent_at&order=sent_at.desc&limit=1`;
+  const rows = await supabaseFetch(env, path, { method: "GET" });
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+}
+
+function buildPresenceMessage(env: Env, room: ActiveInfiniteRoom) {
+  const count = Number(room.participant_count || 0);
+  const title = String(room.title || "Focus room").trim() || "Focus room";
+  const link = `${appUrl(env)}/room-livekit/${encodeURIComponent(room.session_id)}`;
+  const intro =
+    count >= 5
+      ? `🔥 **${count} people are focusing right now** in **${title}**.`
+      : `🟢 **${count} people are focusing right now** in **${title}**.`;
+
+  return {
+    content: truncate(`${intro}\n\nJoin them:\n${link}`),
+  };
+}
+
+async function maybeSendInfiniteRoomPresence(env: Env, now: Date, dryRun = false) {
+  const rooms = await fetchActiveInfiniteRooms(env);
+  const results: any[] = [];
+
+  for (const room of rooms) {
+    const sessionId = String(room.session_id || "").trim();
+    const participantCount = Number(room.participant_count || 0);
+
+    if (!sessionId || room.is_private === true || participantCount < PRESENCE_MIN_PARTICIPANTS) {
+      results.push({
+        skipped: true,
+        sessionId: sessionId || null,
+        participantCount,
+        reason: !sessionId ? "missing_session_id" : room.is_private === true ? "private_room" : "below_threshold",
+      });
+      continue;
+    }
+
+    const recent = await getRecentPresenceBroadcast(env, sessionId, now);
+    if (recent) {
+      results.push({
+        skipped: true,
+        sessionId,
+        participantCount,
+        reason: "cooldown",
+        lastBroadcastAt: recent.sent_at || null,
+      });
+      continue;
+    }
+
+    const payload = buildPresenceMessage(env, room);
+    if (dryRun) {
+      results.push({ dryRun: true, sessionId, participantCount, payload });
+      continue;
+    }
+
+    const discord = await postDiscord(env, payload);
+    await supabaseFetch(env, "discord_presence_broadcasts", {
+      method: "POST",
+      body: JSON.stringify({
+        room_session_id: sessionId,
+        participant_count: participantCount,
+        message: payload.content,
+      }),
+    });
+    results.push({
+      sent: true,
+      sessionId,
+      participantCount,
+      discordMessageId: discord?.id || null,
+    });
+  }
+
+  return {
+    roomsScanned: rooms.length,
+    minParticipants: PRESENCE_MIN_PARTICIPANTS,
+    activeWindowSeconds: PRESENCE_ACTIVE_WINDOW_SECONDS,
+    cooldownMinutes: PRESENCE_COOLDOWN_MINUTES,
+    results,
+  };
 }
 
 async function fetchSessionsBetween(env: Env, start: Date, end: Date) {
@@ -408,6 +516,7 @@ async function runAll(env: Env, dryRun = false) {
   const now = new Date();
   const daily = await maybeSendDailySchedule(env, now, dryRun);
   const reminders = await maybeSendSessionReminders(env, now, dryRun);
+  const infiniteRoomPresence = await maybeSendInfiniteRoomPresence(env, now, dryRun);
 
   return {
     ok: true,
@@ -416,6 +525,7 @@ async function runAll(env: Env, dryRun = false) {
     dryRun,
     daily,
     reminders,
+    infiniteRoomPresence,
   };
 }
 

@@ -6,12 +6,14 @@ Posts to Discord using a Discord incoming webhook:
 - 24h before session.
 - 30m before session.
 - When session starts.
+- When at least two people are actively focusing in a public infinite room.
 
 Uses Supabase `discord_notification_sends` to avoid duplicate messages.
 
 ## Setup
 
-1. Run `supabase_discord_notifications_v1.sql` in Supabase.
+1. Apply the Supabase migrations, including
+   `20260715_discord_infinite_room_presence.sql`.
 2. Create Discord webhook:
    Discord channel → Edit Channel → Integrations → Webhooks → New Webhook → Copy Webhook URL.
 3. In Cloudflare Workers, deploy the worker.
@@ -50,6 +52,11 @@ Real run:
 ```txt
 https://YOUR_WORKER_URL/run?secret=YOUR_SECRET
 ```
+
+The run response includes `infiniteRoomPresence` with the rooms scanned, active
+participant counts, cooldown skips, and messages that would be sent in dry-run
+mode. Infinite-room presence uses a 90-second activity window and a 45-minute
+per-room cooldown.
 
 ## Why Cloudflare Worker
 
