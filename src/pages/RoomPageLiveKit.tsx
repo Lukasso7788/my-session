@@ -245,10 +245,10 @@ type VoiceUiCommandDefinition = {
 };
 
 const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
-  { command: "camera_on", group: "media", phrase: "Camera on", aliases: ["Turn on camera", "Turn on the camera", "Turn camera on", "Turn the camera on", "Switch camera on", "Switch the camera on", "Enable camera", "Enable the camera", "Start camera", "Start the camera"] },
-  { command: "camera_off", group: "media", phrase: "Camera off", aliases: ["Turn off camera", "Turn off the camera", "Turn of camera", "Turn of the camera", "Turn camera off", "Turn the camera off", "Switch camera off", "Switch the camera off", "Disable camera", "Disable the camera", "Stop camera", "Stop the camera"] },
-  { command: "microphone_on", group: "media", phrase: "Mic on", aliases: ["Microphone on", "Unmute mic", "Unmute the mic", "Unmute microphone", "Unmute the microphone", "Turn on mic", "Turn on the mic", "Turn on microphone", "Turn on the microphone", "Turn mic on", "Turn microphone on", "Switch mic on", "Switch microphone on", "Enable mic", "Enable microphone", "Start mic", "Start microphone"] },
-  { command: "microphone_off", group: "media", phrase: "Mic off", aliases: ["Microphone off", "Mute mic", "Mute the mic", "Mute microphone", "Mute the microphone", "Turn off mic", "Turn off the mic", "Turn off microphone", "Turn off the microphone", "Turn of microphone", "Turn of the microphone", "Turn mic off", "Turn microphone off", "Switch mic off", "Switch microphone off", "Disable mic", "Disable microphone", "Stop mic", "Stop microphone"] },
+  { command: "camera_on", group: "media", phrase: "Cam-on", aliases: ["Cam on", "Camera on", "Turn on camera", "Turn on the camera", "Turn camera on", "Turn the camera on", "Switch camera on", "Switch the camera on", "Enable camera", "Enable the camera", "Start camera", "Start the camera"] },
+  { command: "camera_off", group: "media", phrase: "Cam-off", aliases: ["Cam off", "Camera off", "Turn off camera", "Turn off the camera", "Turn of camera", "Turn of the camera", "Turn camera off", "Turn the camera off", "Switch camera off", "Switch the camera off", "Disable camera", "Disable the camera", "Stop camera", "Stop the camera"] },
+  { command: "microphone_on", group: "media", phrase: "Unmute", aliases: ["Mic on", "Microphone on", "Unmute mic", "Unmute the mic", "Unmute microphone", "Unmute the microphone", "Turn on mic", "Turn on the mic", "Turn on microphone", "Turn on the microphone", "Turn mic on", "Turn microphone on", "Switch mic on", "Switch microphone on", "Enable mic", "Enable microphone", "Start mic", "Start microphone"] },
+  { command: "microphone_off", group: "media", phrase: "Mute", aliases: ["Mic off", "Microphone off", "Mute mic", "Mute the mic", "Mute microphone", "Mute the microphone", "Turn off mic", "Turn off the mic", "Turn off microphone", "Turn off the microphone", "Turn of microphone", "Turn of the microphone", "Turn mic off", "Turn microphone off", "Switch mic off", "Switch microphone off", "Disable mic", "Disable microphone", "Stop mic", "Stop microphone"] },
   { command: "screen_share_on", group: "media", phrase: "Share screen", aliases: ["Share my screen", "Start screen share", "Start screen sharing", "Enable screen sharing"] },
   { command: "screen_share_off", group: "media", phrase: "Stop sharing screen", aliases: ["Stop screen share", "Stop screen sharing", "Turn off screen sharing"] },
 
@@ -10174,19 +10174,19 @@ export function RoomPageLiveKit({
     switch (command) {
       case "camera_on":
         if (!cameraIsEnabled) await toggleCam();
-        setVoiceUiLastCommand("Camera on");
+        setVoiceUiLastCommand("Cam-on");
         break;
       case "camera_off":
         if (cameraIsEnabled) await toggleCam();
-        setVoiceUiLastCommand("Camera off");
+        setVoiceUiLastCommand("Cam-off");
         break;
       case "microphone_on":
         if (!microphoneIsEnabled) await toggleMic();
-        setVoiceUiLastCommand("Microphone on");
+        setVoiceUiLastCommand("Unmuted");
         break;
       case "microphone_off":
         if (microphoneIsEnabled) await toggleMic();
-        setVoiceUiLastCommand("Microphone muted");
+        setVoiceUiLastCommand("Muted");
         break;
       case "tasks_open":
         setRightTab("tasks");
