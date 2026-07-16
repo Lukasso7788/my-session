@@ -4060,6 +4060,7 @@ export default function SessionCard({
         maxParticipantsRaw != null && Number.isFinite(maxParticipantsRaw) && maxParticipantsRaw > 0
             ? Math.max(1, Math.round(maxParticipantsRaw))
             : null;
+    const displayedMaxParticipants = maxParticipants ?? 16;
 
     const isSessionFull =
         maxParticipants != null &&
@@ -4159,7 +4160,7 @@ export default function SessionCard({
 
         // Stage/timeline data can include large schedule/template JSON, so load
         // and fully normalize it only when the drawer or editor is opened.
-        if ((!isBookersModalOpen || !isInfinite) && !isEditModalOpen) {
+        if (!isBookersModalOpen && !isEditModalOpen) {
             setStages([]);
             setIsStagesLoading(false);
             return;
@@ -5125,26 +5126,25 @@ export default function SessionCard({
                                 {description || "No description yet."}
                             </p>
 
-                            {isInfinite ? (
-                                <div className="mt-5 rounded-[18px] border border-[#E8EBE8] bg-[#FAFBFA] px-3 py-3">
-                                    <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.1em] text-[#7A7A7A]">Session timeline</div>
-                                    {stagesVisual?.length ? (
-                                        <SessionStageBar
-                                            {...({
-                                                stages: stagesVisual,
-                                                startTime: timelineStartTime,
-                                                cycleSeconds,
-                                                progressStyle: "tick",
-                                                tickEveryMs,
-                                            } as any)}
-                                        />
-                                    ) : (
-                                        <div className="text-[11px] text-[#8A8A8A]">
-                                            {isStagesLoading ? "Loading session stages…" : "No timeline stages configured."}
-                                        </div>
-                                    )}
-                                </div>
-                            ) : (
+                            <div className="mt-5 rounded-[18px] border border-[#E8EBE8] bg-[#FAFBFA] px-3 py-3">
+                                {stagesVisual?.length ? (
+                                    <SessionStageBar
+                                        {...({
+                                            stages: stagesVisual,
+                                            startTime: timelineStartTime,
+                                            cycleSeconds,
+                                            progressStyle: "tick",
+                                            tickEveryMs,
+                                        } as any)}
+                                    />
+                                ) : (
+                                    <div className="text-[11px] text-[#8A8A8A]">
+                                        {isStagesLoading ? "Loading session stages…" : "No timeline stages configured."}
+                                    </div>
+                                )}
+                            </div>
+
+                            {!isInfinite ? (
                                 <div className="mt-5 rounded-[18px] border border-[#E8EBE8] bg-[#FAFBFA] px-3 py-3">
                                     <div className="mb-3 flex items-center justify-between gap-3">
                                         <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#7A7A7A]">Booked participants</div>
@@ -5189,20 +5189,22 @@ export default function SessionCard({
                                         </div>
                                     )}
                                 </div>
-                            )}
+                            ) : null}
                         </div>
 
                         <div className="border-b border-[#E5E7EB] px-5 py-4">
-                            <div className="flex items-center justify-between rounded-[18px] bg-[#F3F8F3] px-4 py-3">
-                                <div>
-                                    <div className="text-[12px] text-[#606060]">Planned participants</div>
+                            <div className="grid grid-cols-3 gap-3 rounded-[18px] bg-[#F3F8F3] px-4 py-3">
+                                <div className="min-w-0">
+                                    <div className="text-[11px] leading-4 text-[#606060]">Booked</div>
                                     <div className="mt-0.5 text-[18px] font-bold text-[#111827]">{bookedCount}</div>
                                 </div>
-                                <div className="text-right text-[12px] text-[#606060]">
-                                    <div>{liveNowCount} currently online</div>
-                                    <div className="mt-1 font-semibold text-[#65A96A]">
-                                        {isInfinite ? "Times shown locally" : "Booked for this session"}
-                                    </div>
+                                <div className="min-w-0 border-l border-[#DDE7DE] pl-3">
+                                    <div className="text-[11px] leading-4 text-[#606060]">In session</div>
+                                    <div className="mt-0.5 text-[18px] font-bold text-[#111827]">{liveNowCount}</div>
+                                </div>
+                                <div className="min-w-0 border-l border-[#DDE7DE] pl-3">
+                                    <div className="text-[11px] leading-4 text-[#606060]">Maximum</div>
+                                    <div className="mt-0.5 text-[18px] font-bold text-[#111827]">{displayedMaxParticipants}</div>
                                 </div>
                             </div>
                         </div>
