@@ -4606,13 +4606,14 @@ export default function SessionCard({
     const bookSessionButton = (
         <button
             onClick={handleBookSession}
+            aria-label="Book session"
             onMouseEnter={() => setIsHoveringBook(true)}
             onMouseLeave={() => setIsHoveringBook(false)}
             className={`
-                h-12 min-w-[160px] rounded-full px-6 text-[14px] font-semibold
+                h-12 min-w-0 sm:min-w-[160px] rounded-full px-4 sm:px-6 text-[14px] font-semibold
                 flex items-center justify-center gap-2
                 transition-all duration-200 ease-in-out
-                w-full xl:w-auto
+                w-auto sm:w-full xl:w-auto
                 ${isHoveringBook
                     ? "text-[#65D46C] border border-[#65D46C] bg-[#65D46C]/10"
                     : "border border-brandBlack text-brandBlack bg-white"
@@ -4624,12 +4625,13 @@ export default function SessionCard({
                 className="w-4 h-4"
                 alt=""
             />
-            <span>Book session</span>
+            <span className="hidden sm:inline">Book session</span>
         </button>
     );
 
     const confirmedBookingButton = (
         <button
+            aria-label={isInfinite ? "View booking details" : "Booked session"}
             onClick={isInfinite
                 ? () => {
                     setPeopleTab("booked");
@@ -4645,7 +4647,7 @@ export default function SessionCard({
                 h-12 rounded-full text-[14px] font-semibold
                 flex items-center justify-center
                 transition-all duration-300 ease-in-out
-                w-full xl:w-auto
+                w-auto sm:w-full xl:w-auto
                 ${!isInfinite && isHoveringCancel
                     ? "px-6 border border-[#F65252] bg-[#F65252]/5 text-[#F65252]"
                     : "px-5 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
@@ -4801,7 +4803,7 @@ export default function SessionCard({
                         </div>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row max-[480px]:flex-col gap-3 w-full xl:w-auto items-center justify-center">
+                    <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_48px] items-center gap-3 sm:flex sm:flex-row xl:w-auto">
                         {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
                         <button
@@ -4824,14 +4826,14 @@ export default function SessionCard({
                             Join session
                         </button>
 
-                        <div ref={optionsRef} className={`relative w-full xl:w-auto ${isOptionsOpen ? "z-[230]" : "z-0"}`}>
+                        <div ref={optionsRef} className={`relative w-12 sm:w-full xl:w-auto ${isOptionsOpen ? "z-[230]" : "z-0"}`}>
                             <button
                                 type="button"
                                 onClick={() => setIsOptionsOpen((v) => !v)}
                                 onMouseEnter={() => setIsHoveringOptions(true)}
                                 onMouseLeave={() => setIsHoveringOptions(false)}
                                 className="
-                                    h-12 w-full xl:w-12
+                                    h-12 w-12 sm:w-full xl:w-12
                                     rounded-full border
                                     flex items-center justify-center
                                     transition-all duration-200 ease-in-out
