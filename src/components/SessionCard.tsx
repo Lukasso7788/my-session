@@ -3782,10 +3782,6 @@ export default function SessionCard({
 
     const initialBookers = useMemo(() => extractBookers(session), [session]);
     const [bookers, setBookers] = useState<BookedUser[]>(initialBookers);
-    const currentUserBooking = useMemo(
-        () => bookers.find((booking) => booking.id === userId) || null,
-        [bookers, userId]
-    );
     const sortedBookingTimeline = useMemo(() => {
         return [...bookers].sort((a, b) => {
             const aStart = Date.parse(String(a.booked_start_time || ""));
@@ -3814,6 +3810,11 @@ export default function SessionCard({
     const [bookingDateDraft, setBookingDateDraft] = useState(() => {
         const start = roundDateToNextQuarterHour();
         return toLocalDateInputValue(start);
+    });
+    const [bookingEndDateDraft, setBookingEndDateDraft] = useState(() => {
+        const start = roundDateToNextQuarterHour();
+        const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+        return toLocalDateInputValue(end);
     });
     const [bookingStartTimeDraft, setBookingStartTimeDraft] = useState(() => {
         const start = roundDateToNextQuarterHour();
@@ -3987,7 +3988,7 @@ export default function SessionCard({
         // PostgREST egress guard:
         // Do not fetch description for every card in the list.
         // Load it only when the user opens details or edit modal.
-        if (!isInfoOpen && !isEditModalOpen) return;
+        if (!isInfoOpen && !isBookersModalOpen && !isEditModalOpen) return;
 
         (async () => {
             try {
@@ -4001,19 +4002,19 @@ export default function SessionCard({
         return () => {
             cancelled = true;
         };
-    }, [session?.id, session?.description, isInfoOpen, isEditModalOpen]);
+    }, [session?.id, session?.description, isInfoOpen, isBookersModalOpen, isEditModalOpen]);
 
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionType === "infinite";
 
     useEffect(() => {
-        if (!isBookersModalOpen || !isInfinite) return;
+        if (!isBookersModalOpen) return;
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key === "Escape") setIsBookersModalOpen(false);
         };
         window.addEventListener("keydown", onKeyDown);
         return () => window.removeEventListener("keydown", onKeyDown);
-    }, [isBookersModalOpen, isInfinite]);
+    }, [isBookersModalOpen]);
 
     const bookingTimeRangeString = useMemo(() => {
         const start = session?.start_time ? new Date(session.start_time) : null;
@@ -4277,7 +4278,6 @@ export default function SessionCard({
     useEffect(() => {
         if (!session?.id) return;
         if (!isBookersModalOpen) return;
-        if (peopleTab !== "live") return;
 
         let cancelled = false;
 
@@ -4301,7 +4301,7 @@ export default function SessionCard({
         return () => {
             cancelled = true;
         };
-    }, [session?.id, isBookersModalOpen, peopleTab]);
+    }, [session?.id, isBookersModalOpen]);
 
     useEffect(() => {
         if (peopleTabPinned) return;
@@ -4310,7 +4310,7 @@ export default function SessionCard({
     }, [peopleTabPinned, hasLiveNow, session?.id]);
 
     useEffect(() => {
-        if (!isInfoOpen) {
+        if (!isInfoOpen && !isBookersModalOpen) {
             setNowStage(null);
             return;
         }
@@ -4350,7 +4350,7 @@ export default function SessionCard({
         tick();
         const timer = window.setInterval(tick, everyMs);
         return () => window.clearInterval(timer);
-    }, [isInfoOpen, stagesVisual, timelineStartTime, isInfinite, session?.schedule]);
+    }, [isInfoOpen, isBookersModalOpen, stagesVisual, timelineStartTime, isInfinite, session?.schedule]);
 
     const ensureCurrentUserAsBooked = (opts?: { booked_start_time?: string | null; booked_end_time?: string | null }) => {
         if (!userId) return;
@@ -4404,6 +4404,7 @@ export default function SessionCard({
             const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
 
             setBookingDateDraft(toLocalDateInputValue(start));
+            setBookingEndDateDraft(toLocalDateInputValue(end));
             setBookingStartTimeDraft(toLocalTimeInputValue(start));
             setBookingEndTimeDraft(toLocalTimeInputValue(end));
             setIsBookingTimeModalOpen(true);
@@ -4424,7 +4425,7 @@ export default function SessionCard({
         }
 
         const startIso = combineLocalDateAndTimeToIso(bookingDateDraft, bookingStartTimeDraft);
-        const endIso = combineLocalDateAndTimeToIso(bookingDateDraft, bookingEndTimeDraft);
+        const endIso = combineLocalDateAndTimeToIso(bookingEndDateDraft, bookingEndTimeDraft);
 
         if (!startIso || !endIso) {
             setBookingDraftError("Choose a valid start and end time.");
@@ -4551,9 +4552,6 @@ export default function SessionCard({
 
     const maxStack = 6;
 
-    const bookedStackUsers = bookers.slice(0, maxStack);
-    const bookedRemaining = Math.max(0, bookedCount - bookedStackUsers.length);
-
     const liveStackUsers = liveUsers.slice(0, maxStack);
     const liveRemaining = Math.max(0, liveNowCount - liveStackUsers.length);
 
@@ -4634,63 +4632,8 @@ export default function SessionCard({
                 )}
             </button>
 
-            <button
-                type="button"
-                onClick={() => {
-                    setPeopleTab("booked");
-                    setPeopleTabPinned(true);
-                    setIsBookersModalOpen(true);
-                }}
-                className="inline-flex items-center gap-2 hover:opacity-80 transition text-left whitespace-nowrap"
-                title="People who booked"
-            >
-                {bookedCount === 0 ? (
-                    <div className="text-[12px] text-[#606060] whitespace-nowrap">
-                        Booked: <span className="font-medium">0</span>
-                    </div>
-                ) : (
-                    <>
-                        {bookedStackUsers.length > 0 && (
-                            <div className="hidden md:flex items-center">
-                                {bookedStackUsers.map((u, idx) => (
-                                    <div
-                                        key={u.id}
-                                        className="relative"
-                                        style={{ marginLeft: idx === 0 ? 0 : -10, zIndex: 50 - idx }}
-                                    >
-                                        <AvatarCircle
-                                            user={u}
-                                            size={26}
-                                            isLive={liveIdSet.has(u.id)}
-                                            showLiveDot={true}
-                                        />
-                                    </div>
-                                ))}
-                                {bookedRemaining > 0 && (
-                                    <div className="relative" style={{ marginLeft: -10, zIndex: 0 }}>
-                                        <div
-                                            className="rounded-full border border-[#E5E7EB] bg-white flex items-center justify-center text-[10px] font-semibold text-[#111827]"
-                                            style={{ width: 26, height: 26 }}
-                                            title={`${bookedRemaining} more`}
-                                        >
-                                            +{bookedRemaining}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        <div className="text-[12px] text-[#606060] font-normal">
-                            Booked: <span className="font-medium">{bookedCount}</span>
-                        </div>
-                    </>
-                )}
-            </button>
         </div>
     );
-
-    const modalUsers = peopleTab === "live" ? liveUsers : bookers;
-    const modalCount = peopleTab === "live" ? liveNowCount : bookedCount;
 
     const description = resolvedDescription;
 
@@ -4758,17 +4701,7 @@ export default function SessionCard({
                     Cancel booking
                 </>
             ) : (
-                <>
-                    <img src="/icons/book-session-green.svg" className="w-5 h-5" alt="" />
-                    <span>
-                        {isInfinite && currentUserBooking
-                            ? `Booked · ${formatBookingRangeFromIso(
-                                currentUserBooking.booked_start_time,
-                                currentUserBooking.booked_end_time
-                            )}`
-                            : "Booked"}
-                    </span>
-                </>
+                <img src="/icons/book-session-green.svg" className="w-6 h-6" alt="" />
             )}
         </button>
     );
@@ -4778,12 +4711,19 @@ export default function SessionCard({
             <div
                 onMouseEnter={() => setIsHoveringCard(true)}
                 onMouseLeave={() => setIsHoveringCard(false)}
+                onClick={(event) => {
+                    const target = event.target as HTMLElement;
+                    if (target.closest("button, a, input, select, textarea, [role='button']")) return;
+                    setPeopleTab("booked");
+                    setIsBookersModalOpen(true);
+                }}
                 className={`
                     relative
                     border rounded-[42px] bg-white
                     transition-all duration-200
                     border-borderGray
                     hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
+                    cursor-pointer
                     p-6
                     flex flex-col
                     w-full gap-4
@@ -4876,8 +4816,10 @@ export default function SessionCard({
                                             onClick={(e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
-                                                setIsInfoOpen(true);
-                                                setIsInfoPinned((v) => !v);
+                                                setIsInfoOpen(false);
+                                                setIsInfoPinned(false);
+                                                setPeopleTab("booked");
+                                                setIsBookersModalOpen(true);
                                             }}
                                         >
                                             <span className="text-[#111827] opacity-80">
@@ -5150,9 +5092,9 @@ export default function SessionCard({
                         Choose when you plan to use this 24/7 room. The room stays open, but your booking helps others see when people are planning to focus.
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <label className="flex flex-col gap-1.5">
-                            <span className="text-[12px] font-semibold text-[#606060]">Date</span>
+                            <span className="text-[12px] font-semibold text-[#606060]">Start date</span>
                             <input
                                 type="date"
                                 value={bookingDateDraft}
@@ -5162,7 +5104,7 @@ export default function SessionCard({
                         </label>
 
                         <label className="flex flex-col gap-1.5">
-                            <span className="text-[12px] font-semibold text-[#606060]">Start</span>
+                            <span className="text-[12px] font-semibold text-[#606060]">Start time</span>
                             <input
                                 type="time"
                                 value={bookingStartTimeDraft}
@@ -5172,7 +5114,17 @@ export default function SessionCard({
                         </label>
 
                         <label className="flex flex-col gap-1.5">
-                            <span className="text-[12px] font-semibold text-[#606060]">End</span>
+                            <span className="text-[12px] font-semibold text-[#606060]">End date</span>
+                            <input
+                                type="date"
+                                value={bookingEndDateDraft}
+                                onChange={(e) => setBookingEndDateDraft(e.target.value)}
+                                className="h-11 rounded-[14px] border border-[#E5E7EB] px-3 text-[13px] outline-none focus:border-[#111827]"
+                            />
+                        </label>
+
+                        <label className="flex flex-col gap-1.5">
+                            <span className="text-[12px] font-semibold text-[#606060]">End time</span>
                             <input
                                 type="time"
                                 value={bookingEndTimeDraft}
@@ -5192,7 +5144,7 @@ export default function SessionCard({
                         Preview: <span className="font-semibold text-[#111827]">
                             {formatBookingRangeFromIso(
                                 combineLocalDateAndTimeToIso(bookingDateDraft, bookingStartTimeDraft),
-                                combineLocalDateAndTimeToIso(bookingDateDraft, bookingEndTimeDraft)
+                                combineLocalDateAndTimeToIso(bookingEndDateDraft, bookingEndTimeDraft)
                             )}
                         </span>
                     </div>
@@ -5216,32 +5168,64 @@ export default function SessionCard({
                 </div>
             </ModalShell>
 
-            {isBookersModalOpen && isInfinite ? (
-                <div className="fixed inset-0 z-[950] flex justify-end" role="dialog" aria-modal="true" aria-label="Booked timeline">
+            {isBookersModalOpen ? (
+                <div className="fixed inset-0 z-[950] flex justify-end" role="dialog" aria-modal="true" aria-label="Session details">
                     <button
                         type="button"
-                        className="absolute inset-0 bg-black/30 backdrop-blur-[2px]"
-                        aria-label="Close booked timeline"
+                        className="session-booking-drawer-backdrop absolute inset-0 bg-black/30 backdrop-blur-[2px]"
+                        aria-label="Close session details"
                         onClick={() => setIsBookersModalOpen(false)}
                     />
 
-                    <aside className="relative flex h-full w-full max-w-[460px] flex-col border-l border-[#E5E7EB] bg-white shadow-[-18px_0_60px_rgba(17,24,39,0.14)]">
+                    <aside className="session-booking-drawer relative flex h-full w-full max-w-[460px] flex-col border-l border-[#E5E7EB] bg-white shadow-[-18px_0_60px_rgba(17,24,39,0.14)]">
                         <div className="flex items-start justify-between gap-4 border-b border-[#E5E7EB] px-5 py-5">
                             <div>
-                                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#65A96A]">Infinite room</div>
-                                <h3 className="mt-1 text-[22px] font-bold text-[#111827]">Booked timeline</h3>
+                                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#65A96A]">
+                                    {isInfinite ? "Infinite room" : resolvedType}
+                                </div>
+                                <h3 className="mt-1 text-[22px] font-bold leading-tight text-[#111827]">{session.title}</h3>
                                 <p className="mt-1 text-[12px] leading-5 text-[#606060]">
-                                    See when people plan to focus in this always-open room.
+                                    {isInfinite ? "Always open · book the focus window that works for you." : bookingTimeRangeString}
                                 </p>
                             </div>
                             <button
                                 type="button"
                                 onClick={() => setIsBookersModalOpen(false)}
                                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#E5E7EB] text-[24px] leading-none text-[#606060] transition hover:bg-[#F3F4F6] hover:text-[#111827]"
-                                aria-label="Close booked timeline"
+                                aria-label="Close session details"
                             >
                                 ×
                             </button>
+                        </div>
+
+                        <div className="border-b border-[#E5E7EB] px-5 py-4">
+                            <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#606060]">
+                                <Link to={`/profile/${session.host_id}`} onClick={() => setIsBookersModalOpen(false)} className="inline-flex items-center gap-1.5 rounded-full bg-[#F3F4F6] px-3 py-1.5 transition hover:bg-[#E9ECEF]">
+                                    <img src="/icons/host.svg" className="h-4 w-4 opacity-70" alt="" />
+                                    <span>Hosted by <strong className="font-semibold text-[#111827]">{session.host_name}</strong></span>
+                                </Link>
+                                <span className="rounded-full bg-[#F3F4F6] px-3 py-1.5 font-medium text-[#111827]">
+                                    {isInfinite ? "24/7 room" : `${session.duration_minutes} min`}
+                                </span>
+                            </div>
+
+                            <p className="mt-4 whitespace-pre-wrap text-[13px] leading-5 text-[#334155]">
+                                {description || "No description yet."}
+                            </p>
+
+                            {stagesVisual?.length ? (
+                                <div className="mt-4">
+                                    <SessionStageBar
+                                        {...({
+                                            stages: stagesVisual,
+                                            startTime: timelineStartTime,
+                                            cycleSeconds,
+                                            progressStyle: "tick",
+                                            tickEveryMs,
+                                        } as any)}
+                                    />
+                                </div>
+                            ) : null}
                         </div>
 
                         <div className="border-b border-[#E5E7EB] px-5 py-4">
@@ -5258,10 +5242,18 @@ export default function SessionCard({
                         </div>
 
                         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                            <div className="mb-4 flex items-center justify-between">
+                                <div>
+                                    <div className="text-[15px] font-bold text-[#111827]">Who booked</div>
+                                    <div className="mt-0.5 text-[11px] text-[#7A7A7A]">
+                                        {isInfinite ? "Planned focus windows are shown in your local time." : "Participants planning to attend this session."}
+                                    </div>
+                                </div>
+                            </div>
                             {sortedBookingTimeline.length === 0 ? (
                                 <div className="rounded-[20px] border border-dashed border-[#D1D5DB] px-5 py-8 text-center">
-                                    <div className="text-[15px] font-semibold text-[#111827]">No planned focus times yet</div>
-                                    <div className="mt-1 text-[12px] leading-5 text-[#606060]">Be the first person to book a time in this room.</div>
+                                    <div className="text-[15px] font-semibold text-[#111827]">No bookings yet</div>
+                                    <div className="mt-1 text-[12px] leading-5 text-[#606060]">Be the first person to book this session.</div>
                                 </div>
                             ) : (
                                 <div className="relative pl-7">
@@ -5292,7 +5284,11 @@ export default function SessionCard({
                                                                     {isLive ? <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-[#49A650]">Online</span> : null}
                                                                 </div>
                                                                 <div className="mt-1 text-[12px] font-semibold text-[#334155]">
-                                                                    {formatBookingRangeFromIso(booking.booked_start_time, booking.booked_end_time)}
+                                                                    {isInfinite
+                                                                        ? hasStart
+                                                                            ? formatBookingRangeFromIso(booking.booked_start_time, booking.booked_end_time)
+                                                                            : "Booking time not specified"
+                                                                        : bookingTimeRangeString}
                                                                 </div>
                                                                 {hasStart ? (
                                                                     <div className="mt-1 text-[11px] text-[#7A7A7A]">
@@ -5327,110 +5323,6 @@ export default function SessionCard({
                     </aside>
                 </div>
             ) : null}
-
-            <ModalShell
-                title={hasStarted || hasLiveNow || isInfinite ? "People" : "People who booked this session"}
-                isOpen={isBookersModalOpen && !isInfinite}
-                onClose={() => setIsBookersModalOpen(false)}
-            >
-                {(hasStarted || hasLiveNow || isInfinite) && (
-                    <div className="flex items-center gap-2 mb-4">
-                        <button
-                            className={[
-                                "h-9 px-4 rounded-full text-[13px] font-semibold border transition",
-                                peopleTab === "live"
-                                    ? "border-[#111827] bg-[#111827] text-white"
-                                    : "border-[#E5E7EB] bg-white text-[#111827] hover:bg-[#F3F4F6]",
-                            ].join(" ")}
-                            onClick={() => setPeopleTab("live")}
-                            type="button"
-                        >
-                            In session ({liveNowCount})
-                        </button>
-                        <button
-                            className={[
-                                "h-9 px-4 rounded-full text-[13px] font-semibold border transition",
-                                peopleTab === "booked"
-                                    ? "border-[#111827] bg-[#111827] text-white"
-                                    : "border-[#E5E7EB] bg-white text-[#111827] hover:bg-[#F3F4F6]",
-                            ].join(" ")}
-                            onClick={() => setPeopleTab("booked")}
-                            type="button"
-                        >
-                            Booked ({bookedCount})
-                        </button>
-                    </div>
-                )}
-
-                {!hasStarted && !hasLiveNow && !isInfinite && (
-                    <div className="text-[12px] text-[#606060]">{bookedCount} booked</div>
-                )}
-
-                {peopleTab === "booked" ? (
-                    <div className="mb-3 rounded-[16px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-[12px] text-[#606060]">
-                        {isInfinite ? "Room default:" : "Session time:"} <span className="font-semibold text-[#111827]">{bookingTimeRangeString}</span>
-                    </div>
-                ) : null}
-
-                <div className="mt-1 flex flex-col gap-2">
-                    {modalCount === 0 ? (
-                        <div className="text-[13px] text-[#606060]">
-                            {peopleTab === "live"
-                                ? "No one in the session right now."
-                                : "No one booked yet. Be the first."}
-                        </div>
-                    ) : peopleTab === "live" && modalUsers.length === 0 ? (
-                        <div className="text-[13px] text-[#606060]">
-                            {isLiveLoading
-                                ? "Loading people in the session…"
-                                : `${liveNowCount} people are in the session right now (profiles may be private or still loading).`}
-                        </div>
-                    ) : (
-                        modalUsers.map((u) => {
-                            const label = u.full_name || u.id || "Participant";
-                            const isLive = liveIdSet.has(u.id);
-
-                            return (
-                                <Link
-                                    key={u.id}
-                                    to={`/profile/${u.id}`}
-                                    onClick={() => setIsBookersModalOpen(false)}
-                                    className="
-                                        flex items-center gap-3 px-3 py-2 rounded-[16px]
-                                        border border-[#F0F0F0]
-                                        hover:bg-[#F6F6F6] hover:border-[#E5E7EB]
-                                        transition
-                                    "
-                                >
-                                    <AvatarCircle
-                                        user={u}
-                                        size={34}
-                                        isLive={peopleTab === "live" ? true : isLive}
-                                        showLiveDot={true}
-                                    />
-
-                                    <div className="flex flex-col min-w-0 flex-1">
-                                        <div className="text-[13px] font-semibold text-[#111827] truncate">
-                                            {label}
-                                        </div>
-
-                                        {peopleTab === "booked" ? (
-                                            <div className="text-[11px] text-[#606060] truncate">
-                                                {isLive ? (
-                                                    <span className="font-semibold text-[#65D46C]">Online · </span>
-                                                ) : null}
-                                                {isInfinite
-                                                    ? formatBookingRangeFromIso(u.booked_start_time, u.booked_end_time)
-                                                    : "Booked for this session"}
-                                            </div>
-                                        ) : null}
-                                    </div>
-                                </Link>
-                            );
-                        })
-                    )}
-                </div>
-            </ModalShell>
 
             {isEditModalOpen && onEditSession && (
                 <EditSessionStudioModal
