@@ -4803,7 +4803,7 @@ export default function SessionCard({
                         </div>
                     </div>
 
-                    <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_48px] items-center gap-3 xl:min-w-[420px] xl:w-auto">
+                    <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_48px] items-center gap-3 min-[769px]:flex min-[769px]:justify-end xl:min-w-[420px] xl:w-auto">
                         {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
                         <button
@@ -4815,7 +4815,6 @@ export default function SessionCard({
                                 flex items-center justify-center
                                 transition-all duration-200 ease-in-out
                                 w-full min-[769px]:w-auto min-[769px]:min-w-[220px]
-                                min-[769px]:justify-self-center
                                 border
                             "
                             style={{
