@@ -245,8 +245,8 @@ type VoiceUiCommandDefinition = {
 };
 
 const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
-  { command: "camera_on", group: "media", phrase: "Cam-on", aliases: ["Cam on", "Cam one", "Camon", "Camp on", "Camera on", "Webcam on", "Web cam on", "Video on", "Turn on camera", "Turn on the camera", "Turn camera on", "Turn the camera on", "Switch camera on", "Switch the camera on", "Enable camera", "Enable the camera", "Start camera", "Start the camera"] },
-  { command: "camera_off", group: "media", phrase: "Cam-off", aliases: ["Cam off", "Cam of", "Camoff", "Camp off", "Camera off", "Webcam off", "Web cam off", "Video off", "Turn off camera", "Turn off the camera", "Turn of camera", "Turn of the camera", "Turn camera off", "Turn the camera off", "Switch camera off", "Switch the camera off", "Disable camera", "Disable the camera", "Stop camera", "Stop the camera"] },
+  { command: "camera_on", group: "media", phrase: "Cam-on", aliases: ["Cam on", "Cam one", "Camon", "Camp on", "Come on", "Came on", "Cameron", "Camera on", "Webcam on", "Web cam on", "Video on", "Turn on camera", "Turn on the camera", "Turn camera on", "Turn the camera on", "Switch camera on", "Switch the camera on", "Enable camera", "Enable the camera", "Start camera", "Start the camera"] },
+  { command: "camera_off", group: "media", phrase: "Cam-off", aliases: ["Cam off", "Cam of", "Camoff", "Camp off", "Come off", "Came off", "Camera off", "Webcam off", "Web cam off", "Video off", "Turn off camera", "Turn off the camera", "Turn of camera", "Turn of the camera", "Turn camera off", "Turn the camera off", "Switch camera off", "Switch the camera off", "Disable camera", "Disable the camera", "Stop camera", "Stop the camera"] },
   { command: "microphone_on", group: "media", phrase: "Unmute", aliases: ["Mic on", "Microphone on", "Unmute mic", "Unmute the mic", "Unmute microphone", "Unmute the microphone", "Turn on mic", "Turn on the mic", "Turn on microphone", "Turn on the microphone", "Turn mic on", "Turn microphone on", "Switch mic on", "Switch microphone on", "Enable mic", "Enable microphone", "Start mic", "Start microphone"] },
   { command: "microphone_off", group: "media", phrase: "Mute", aliases: ["Mic off", "Microphone off", "Mute mic", "Mute the mic", "Mute microphone", "Mute the microphone", "Turn off mic", "Turn off the mic", "Turn off microphone", "Turn off the microphone", "Turn of microphone", "Turn of the microphone", "Turn mic off", "Turn microphone off", "Switch mic off", "Switch microphone off", "Disable mic", "Disable microphone", "Stop mic", "Stop microphone"] },
   { command: "screen_share_on", group: "media", phrase: "Share screen", aliases: ["Share my screen", "Start screen share", "Start screen sharing", "Enable screen sharing"] },
@@ -9941,9 +9941,9 @@ export function RoomPageLiveKit({
   };
 
   // toggle cam without recreating track
-  const toggleCam = async () => {
+  const toggleCam = async (force?: boolean) => {
     try {
-      await camToggleHook.toggle();
+      await camToggleHook.toggle(force);
 
       await ensureRoomAudioPlaybackUnlocked("toggle-cam");
 
@@ -9993,27 +9993,6 @@ export function RoomPageLiveKit({
           !!microphonePublication.track;
       } catch {
         return micOn;
-      }
-    })();
-
-    const cameraIsEnabled = (() => {
-      try {
-        const publications = Array.from(
-          room?.localParticipant?.videoTrackPublications?.values?.() || [],
-        );
-        const publication = publications.find(
-          (item: unknown) =>
-            (item as { source?: unknown })?.source === Track.Source.Camera,
-        );
-        const cameraPublication = publication as {
-          isMuted?: boolean;
-          track?: unknown;
-        } | undefined;
-        return !!cameraPublication &&
-          !cameraPublication.isMuted &&
-          !!cameraPublication.track;
-      } catch {
-        return camOn;
       }
     })();
 
@@ -10173,11 +10152,11 @@ export function RoomPageLiveKit({
 
     switch (command) {
       case "camera_on":
-        if (!cameraIsEnabled) await toggleCam();
+        await toggleCam(true);
         setVoiceUiLastCommand("Cam-on");
         break;
       case "camera_off":
-        if (cameraIsEnabled) await toggleCam();
+        await toggleCam(false);
         setVoiceUiLastCommand("Cam-off");
         break;
       case "microphone_on":
