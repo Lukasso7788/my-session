@@ -4152,6 +4152,18 @@ export default function SessionCard({
     };
     const joinHoverBg = JOIN_HOVER_BG[resolvedType] || "#111827";
 
+    const hostCardUser: BookedUser = {
+        id: String(session?.host_id || "host"),
+        full_name: session?.host_name || session?.host_profile?.full_name || "Host",
+        avatar_url:
+            session?.host_avatar_url ||
+            session?.host_avatar ||
+            session?.host_profile?.avatar_url ||
+            session?.host_profile?.avatar ||
+            session?.profiles?.avatar_url ||
+            undefined,
+    };
+
     const startDateString = session.start_time
         ? new Date(session.start_time).toLocaleString("en-US", {
             month: "short",
@@ -4208,6 +4220,64 @@ export default function SessionCard({
             } as SessionStage;
         });
     }, [stages]);
+
+    const compactTimelineStages = useMemo(() => {
+        const directStages = Array.isArray(session?.session_stages) && session.session_stages.length
+            ? session.session_stages
+            : Array.isArray(session?.stages) && session.stages.length
+                ? session.stages
+                : null;
+
+        if (directStages) return normalizeStages(sortStagesInClient(directStages));
+
+        const scheduled = tryStagesFromSchedule(session?.schedule);
+        if (scheduled.length) return scheduled;
+
+        const embeddedTemplate = getEmbeddedTemplate(session);
+        const templateBlocks = embeddedTemplate
+            ? tryParseJson<any[]>(embeddedTemplate?.blocks) || tryParseJson<any[]>(embeddedTemplate?.stages)
+            : null;
+        if (Array.isArray(templateBlocks) && templateBlocks.length) {
+            return normalizeStages(sortStagesInClient(templateBlocks));
+        }
+
+        const templateSchedule = embeddedTemplate
+            ? tryStagesFromSchedule(embeddedTemplate?.schedule)
+            : [];
+        if (templateSchedule.length) return templateSchedule;
+
+        const durationMinutes = Number(session?.duration_minutes);
+        if (Number.isFinite(durationMinutes) && durationMinutes > 0) {
+            return normalizeStages([
+                { id: "card-preview", kind: "focus", title: "Focus", durationMinutes, position: 0 },
+            ]);
+        }
+
+        return [];
+    }, [
+        session?.session_stages,
+        session?.stages,
+        session?.schedule,
+        session?.session_template,
+        session?.session_templates,
+        session?.template,
+        session?.templates,
+        session?.duration_minutes,
+    ]);
+
+    const compactTimelineVisual = useMemo(
+        () => compactTimelineStages.map((stage) => {
+            const visual = resolveStageVisualLocal(stage as any);
+            return {
+                ...(stage as any),
+                title: (stage as any)?.title ?? (stage as any)?.name ?? visual.name,
+                name: visual.name,
+                kind: visual.kind,
+                color: visual.color,
+            } as SessionStage;
+        }),
+        [compactTimelineStages]
+    );
 
     useEffect(() => {
         const sid = String(session?.id || "").trim();
@@ -4731,8 +4801,19 @@ export default function SessionCard({
                 `}
             >
                 <div className="flex flex-col xl:flex-row w-full gap-6">
-                    <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 flex-1">
-                        <div className="flex flex-col gap-3 w-full">
+                    <div className="flex min-w-0 flex-1 items-stretch justify-between gap-4">
+                        <Link
+                            to={`/profile/${session.host_id}`}
+                            onClick={(event) => event.stopPropagation()}
+                            className="flex w-[68px] shrink-0 flex-col items-center rounded-[24px] border border-[#E5E7EB] bg-[#F7F8F8] px-2 py-3 transition hover:border-[#C9D2CA] hover:bg-[#F0F4F0] md:w-[82px]"
+                            title={`View ${session.host_name || "host"}'s profile`}
+                        >
+                            <AvatarCircle user={hostCardUser} size={54} isLive={false} showLiveDot={false} />
+                            <span className="mt-2 text-[9px] font-bold uppercase tracking-[0.08em] text-[#8A8A8A]">Host</span>
+                            <span className="mt-0.5 w-full truncate text-center text-[10px] font-semibold text-[#303030]">{session.host_name || "Host"}</span>
+                        </Link>
+
+                        <div className="flex min-w-0 flex-1 flex-col gap-3">
                             <div className="flex flex-wrap items-center gap-3">
                                 <h3 className="flex min-w-0 items-center gap-2 text-[24px] md:text-[29px] font-bold leading-tight">
                                     {session?.is_private && (
@@ -4748,15 +4829,6 @@ export default function SessionCard({
                             </div>
 
                             <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
-                                <Link
-                                    to={`/profile/${session.host_id}`}
-                                    className="flex items-center gap-1 hover:opacity-70"
-                                >
-                                    <img src="/icons/host.svg" className="w-4 h-4 opacity-70" alt="" />
-                                    <span>Host</span>
-                                    <span className="underline underline-offset-2">{session.host_name}</span>
-                                </Link>
-
                                 <div className="flex items-center gap-1">
                                     <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" alt="" />
                                     <span>{isInfinite ? "Infinite" : `${session.duration_minutes} min`}</span>
@@ -4810,9 +4882,9 @@ export default function SessionCard({
                                     >
                                         <button
                                             type="button"
-                                            className="h-8 w-8 rounded-full border border-[#E5E7EB] bg-white hover:bg-[#F3F4F6] flex items-center justify-center transition"
-                                            title="Info"
-                                            aria-label="Info"
+                                            className="flex h-8 items-center justify-center gap-1.5 rounded-full border border-[#D8DDDA] bg-white px-3 text-[11px] font-semibold text-[#111827] transition hover:border-[#AFC1B1] hover:bg-[#F3F8F3]"
+                                            title="Session details"
+                                            aria-label="Session details"
                                             onClick={(e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
@@ -4822,9 +4894,10 @@ export default function SessionCard({
                                                 setIsBookersModalOpen(true);
                                             }}
                                         >
-                                            <span className="text-[#111827] opacity-80">
+                                            <span className="text-[#111827] opacity-70">
                                                 <IconInfo size={16} />
                                             </span>
+                                            <span>Details</span>
                                         </button>
 
                                         {isInfoOpen && (
@@ -4912,6 +4985,30 @@ export default function SessionCard({
                                         )}
                                     </div>
                                 </div>
+                            </div>
+
+                            <div className="rounded-[18px] border border-[#E8EBE8] bg-[#FAFBFA] px-3 py-2.5">
+                                <div className="mb-2 flex items-center justify-between gap-3">
+                                    <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#7A7A7A]">Timeline</span>
+                                    {nowStage ? (
+                                        <span className="truncate text-[10px] font-semibold" style={{ color: nowStage.color }}>
+                                            {nowStage.name}
+                                        </span>
+                                    ) : null}
+                                </div>
+                                {compactTimelineVisual.length ? (
+                                    <SessionStageBar
+                                        {...({
+                                            stages: compactTimelineVisual,
+                                            startTime: timelineStartTime,
+                                            cycleSeconds,
+                                            progressStyle: "tick",
+                                            tickEveryMs: 15_000,
+                                        } as any)}
+                                    />
+                                ) : (
+                                    <div className="h-2 w-full rounded-full bg-[#111827]/5" />
+                                )}
                             </div>
                         </div>
 
