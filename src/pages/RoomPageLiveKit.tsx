@@ -313,7 +313,7 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "edit_name_open", group: "tools", phrase: "Edit my name", aliases: ["Open name editor", "Change my name"] },
   { command: "edit_name_close", group: "tools", phrase: "Close name editor", aliases: ["Close edit name"] },
   { command: "edit_name_save", group: "tools", phrase: "Save name", aliases: ["Save my name", "Confirm name"] },
-  { command: "modal_close", group: "tools", phrase: "Close modal", aliases: ["Close window", "Close popup", "Dismiss modal", "Click close"] },
+  { command: "modal_close", group: "tools", phrase: "Close", aliases: ["Close modal", "Close window", "Close popup", "Dismiss modal", "Click close"] },
   { command: "voice_restart", group: "tools", phrase: "Restart voice control", aliases: ["Restart voice", "Restart listener"] },
   { command: "brightness_100", group: "tools", phrase: "Brightness 100" },
   { command: "contrast_100", group: "tools", phrase: "Contrast 100" },
