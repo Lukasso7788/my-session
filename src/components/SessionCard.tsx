@@ -4697,10 +4697,10 @@ export default function SessionCard({
                             title={`View ${session.host_name || "host"}'s profile`}
                             aria-label={`View ${session.host_name || "host"}'s profile`}
                         >
-                            <AvatarCircle user={hostCardUser} size={60} isLive={false} showLiveDot={false} />
+                            <AvatarCircle user={hostCardUser} size={68} isLive={false} showLiveDot={false} />
                         </Link>
 
-                        <div className="flex min-w-0 flex-1 flex-col gap-3">
+                        <div className="flex min-w-0 flex-1 flex-col gap-1">
                             <div className="flex flex-wrap items-center gap-3">
                                 <h3 className="flex min-w-0 items-center gap-2 text-[24px] md:text-[29px] font-bold leading-tight">
                                     {session?.is_private && (
@@ -4784,8 +4784,18 @@ export default function SessionCard({
                                 <div className="text-[32px] font-bold text-brandBlack">
                                     {liveNowCount}
                                 </div>
-                                <div className="text-[10px] text-[#606060] font-light -mt-1">
-                                    {hasLiveNow ? "in the session now" : "live count soon"}
+                                <div className="min-w-[68px] text-[10px] leading-[1.15] text-[#606060] font-light">
+                                    {hasLiveNow ? (
+                                        <>
+                                            <span className="block whitespace-nowrap">in the session</span>
+                                            <span className="block">now</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="block">live count</span>
+                                            <span className="block">soon</span>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         </div>
