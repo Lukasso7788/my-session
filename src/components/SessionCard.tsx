@@ -4814,7 +4814,8 @@ export default function SessionCard({
                                 h-12 rounded-full px-6 text-[14px] font-semibold
                                 flex items-center justify-center
                                 transition-all duration-200 ease-in-out
-                                w-full xl:w-auto
+                                w-full min-[769px]:w-auto min-[769px]:min-w-[220px]
+                                min-[769px]:justify-self-center
                                 border
                             "
                             style={{
