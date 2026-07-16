@@ -1191,6 +1191,13 @@ export function SessionsPage() {
       const ids = rows
         .map((session) => String(session.id || "").trim())
         .filter(Boolean);
+      const hostIds = Array.from(
+        new Set(
+          rows
+            .map((session) => String(session.host_id || "").trim())
+            .filter(Boolean)
+        )
+      );
 
       /**
        * Render base session cards immediately.
@@ -1365,6 +1372,52 @@ export function SessionsPage() {
       };
 
       /**
+       * OPTIONAL ENRICHMENT 3:
+       * real host names / avatars for session cards and the details drawer.
+       */
+      const loadHostProfiles = async () => {
+        if (!hostIds.length) return;
+
+        try {
+          const { data: profileRows, error: profilesError } = await withTimeout(
+            supabase
+              .from("profiles")
+              .select("id, full_name, avatar_url")
+              .in("id", hostIds),
+            SESSIONS_ENRICHMENT_TIMEOUT_MS,
+            "sessions_host_profiles_enrichment"
+          );
+
+          if (!isCurrentRequest()) return;
+          if (profilesError) throw profilesError;
+
+          const profilesById = new Map<string, any>();
+          for (const profile of (profileRows || []) as any[]) {
+            const profileId = String(profile?.id || "").trim();
+            if (profileId) profilesById.set(profileId, profile);
+          }
+
+          setSessions((previousSessions) =>
+            previousSessions.map((session) => {
+              const profile = profilesById.get(String(session.host_id || ""));
+              if (!profile) return session;
+
+              return {
+                ...session,
+                host_name: profile.full_name || session.host_name,
+                host_avatar_url: profile.avatar_url || null,
+                host_profile: profile,
+              };
+            })
+          );
+        } catch (error) {
+          if (DEBUG) {
+            console.warn("[Sessions] Optional host profile enrichment failed:", error);
+          }
+        }
+      };
+
+      /**
        * Start all optional enrichment in parallel.
        *
        * IMPORTANT:
@@ -1372,6 +1425,7 @@ export function SessionsPage() {
        */
       void loadPublicSlugs();
       void loadPublicBookings();
+      void loadHostProfiles();
       void fetchLiveCounts(ids);
     } catch (error) {
       if (!isCurrentRequest()) return;

@@ -3794,6 +3794,7 @@ export default function SessionCard({
     }, [bookers]);
 
     const [stages, setStages] = useState<SessionStage[]>([]);
+    const [isStagesLoading, setIsStagesLoading] = useState(false);
     const [liveUsers, setLiveUsers] = useState<BookedUser[]>([]);
     const [isLiveLoading, setIsLiveLoading] = useState(false);
     const [peopleTab, setPeopleTab] = useState<"booked" | "live">("booked");
@@ -3834,20 +3835,9 @@ export default function SessionCard({
     const [isOptionsOpen, setIsOptionsOpen] = useState(false);
     const optionsRef = useRef<HTMLDivElement | null>(null);
 
-    const [isInfoOpen, setIsInfoOpen] = useState(false);
-    const [isInfoPinned, setIsInfoPinned] = useState(false);
-    const infoRef = useRef<HTMLDivElement | null>(null);
-
     const [resolvedDescription, setResolvedDescription] = useState<string>(() =>
         typeof session?.description === "string" ? session.description.trim() : ""
     );
-
-    const [nowStage, setNowStage] = useState<{
-        name: string;
-        color: string;
-        kind: any;
-        leftSec: number;
-    } | null>(null);
 
     const [copyInviteState, setCopyInviteState] = useState<"idle" | "copied" | "error">("idle");
     const [copyHostState, setCopyHostState] = useState<"idle" | "copied" | "error">("idle");
@@ -3966,14 +3956,10 @@ export default function SessionCard({
                 setIsOptionsOpen(false);
             }
 
-            if (isInfoOpen && infoRef.current && !infoRef.current.contains(t)) {
-                setIsInfoOpen(false);
-                setIsInfoPinned(false);
-            }
         }
         document.addEventListener("mousedown", onDocClick);
         return () => document.removeEventListener("mousedown", onDocClick);
-    }, [isOptionsOpen, isInfoOpen]);
+    }, [isOptionsOpen]);
 
     useEffect(() => {
         let cancelled = false;
@@ -3988,7 +3974,7 @@ export default function SessionCard({
         // PostgREST egress guard:
         // Do not fetch description for every card in the list.
         // Load it only when the user opens details or edit modal.
-        if (!isInfoOpen && !isBookersModalOpen && !isEditModalOpen) return;
+        if (!isBookersModalOpen && !isEditModalOpen) return;
 
         (async () => {
             try {
@@ -4002,7 +3988,7 @@ export default function SessionCard({
         return () => {
             cancelled = true;
         };
-    }, [session?.id, session?.description, isInfoOpen, isBookersModalOpen, isEditModalOpen]);
+    }, [session?.id, session?.description, isBookersModalOpen, isEditModalOpen]);
 
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionType === "infinite";
@@ -4176,14 +4162,15 @@ export default function SessionCard({
     useEffect(() => {
         let cancelled = false;
 
-        // PostgREST egress guard:
-        // Stage/timeline data can include large schedule/template JSON.
-        // Do not load it for every card in the list. Load it only on demand.
-        if (!isInfoOpen && !isEditModalOpen) {
+        // Stage/timeline data can include large schedule/template JSON, so load
+        // and fully normalize it only when the drawer or editor is opened.
+        if (!isBookersModalOpen && !isEditModalOpen) {
             setStages([]);
+            setIsStagesLoading(false);
             return;
         }
 
+        setIsStagesLoading(true);
         (async () => {
             try {
                 const s = await fetchStagesForSession(session);
@@ -4191,6 +4178,8 @@ export default function SessionCard({
             } catch (e) {
                 console.error("[SessionCard] fetchStagesForSession failed:", e);
                 if (!cancelled) setStages([]);
+            } finally {
+                if (!cancelled) setIsStagesLoading(false);
             }
         })();
 
@@ -4202,7 +4191,7 @@ export default function SessionCard({
         session?.schedule,
         session?.session_template_id,
         session?.template_id,
-        isInfoOpen,
+        isBookersModalOpen,
         isEditModalOpen,
     ]);
 
@@ -4220,64 +4209,6 @@ export default function SessionCard({
             } as SessionStage;
         });
     }, [stages]);
-
-    const compactTimelineStages = useMemo(() => {
-        const directStages = Array.isArray(session?.session_stages) && session.session_stages.length
-            ? session.session_stages
-            : Array.isArray(session?.stages) && session.stages.length
-                ? session.stages
-                : null;
-
-        if (directStages) return normalizeStages(sortStagesInClient(directStages));
-
-        const scheduled = tryStagesFromSchedule(session?.schedule);
-        if (scheduled.length) return scheduled;
-
-        const embeddedTemplate = getEmbeddedTemplate(session);
-        const templateBlocks = embeddedTemplate
-            ? tryParseJson<any[]>(embeddedTemplate?.blocks) || tryParseJson<any[]>(embeddedTemplate?.stages)
-            : null;
-        if (Array.isArray(templateBlocks) && templateBlocks.length) {
-            return normalizeStages(sortStagesInClient(templateBlocks));
-        }
-
-        const templateSchedule = embeddedTemplate
-            ? tryStagesFromSchedule(embeddedTemplate?.schedule)
-            : [];
-        if (templateSchedule.length) return templateSchedule;
-
-        const durationMinutes = Number(session?.duration_minutes);
-        if (Number.isFinite(durationMinutes) && durationMinutes > 0) {
-            return normalizeStages([
-                { id: "card-preview", kind: "focus", title: "Focus", durationMinutes, position: 0 },
-            ]);
-        }
-
-        return [];
-    }, [
-        session?.session_stages,
-        session?.stages,
-        session?.schedule,
-        session?.session_template,
-        session?.session_templates,
-        session?.template,
-        session?.templates,
-        session?.duration_minutes,
-    ]);
-
-    const compactTimelineVisual = useMemo(
-        () => compactTimelineStages.map((stage) => {
-            const visual = resolveStageVisualLocal(stage as any);
-            return {
-                ...(stage as any),
-                title: (stage as any)?.title ?? (stage as any)?.name ?? visual.name,
-                name: visual.name,
-                kind: visual.kind,
-                color: visual.color,
-            } as SessionStage;
-        }),
-        [compactTimelineStages]
-    );
 
     useEffect(() => {
         const sid = String(session?.id || "").trim();
@@ -4378,49 +4309,6 @@ export default function SessionCard({
         if (hasLiveNow) setPeopleTab("live");
         else setPeopleTab("booked");
     }, [peopleTabPinned, hasLiveNow, session?.id]);
-
-    useEffect(() => {
-        if (!isInfoOpen && !isBookersModalOpen) {
-            setNowStage(null);
-            return;
-        }
-        if (!stagesVisual?.length) {
-            setNowStage(null);
-            return;
-        }
-
-        const scheduleObj = tryParseJson<any>(session?.schedule);
-        const cycleSeconds =
-            Number((scheduleObj as any)?.timer?.cycleSeconds) ||
-            Number((scheduleObj as any)?.timer?.cycle_seconds) ||
-            undefined;
-
-        const everyMs = isInfinite ? 15000 : 1000;
-
-        const tick = () => {
-            try {
-                const res = computeNowStage(stagesVisual, timelineStartTime, cycleSeconds);
-                if (!res?.curStage) {
-                    setNowStage(null);
-                    return;
-                }
-                const v = resolveStageVisualLocal(res.curStage as any);
-                setNowStage({
-                    name: v.name,
-                    color: v.color,
-                    kind: v.kind,
-                    leftSec: res.stageLeft,
-                });
-            } catch (e) {
-                console.error("[SessionCard] nowStage tick failed:", e);
-                setNowStage(null);
-            }
-        };
-
-        tick();
-        const timer = window.setInterval(tick, everyMs);
-        return () => window.clearInterval(timer);
-    }, [isInfoOpen, isBookersModalOpen, stagesVisual, timelineStartTime, isInfinite, session?.schedule]);
 
     const ensureCurrentUserAsBooked = (opts?: { booked_start_time?: string | null; booked_end_time?: string | null }) => {
         if (!userId) return;
@@ -4797,7 +4685,7 @@ export default function SessionCard({
                     p-6
                     flex flex-col
                     w-full gap-4
-                    ${isInfoOpen || isOptionsOpen ? "z-[220]" : "z-0"}
+                    ${isOptionsOpen ? "z-[220]" : "z-0"}
                 `}
             >
                 <div className="flex flex-col xl:flex-row w-full gap-6">
@@ -4805,12 +4693,11 @@ export default function SessionCard({
                         <Link
                             to={`/profile/${session.host_id}`}
                             onClick={(event) => event.stopPropagation()}
-                            className="flex w-[68px] shrink-0 flex-col items-center rounded-[24px] border border-[#E5E7EB] bg-[#F7F8F8] px-2 py-3 transition hover:border-[#C9D2CA] hover:bg-[#F0F4F0] md:w-[82px]"
+                            className="shrink-0 self-start rounded-full transition hover:scale-[1.03] hover:opacity-90"
                             title={`View ${session.host_name || "host"}'s profile`}
+                            aria-label={`View ${session.host_name || "host"}'s profile`}
                         >
-                            <AvatarCircle user={hostCardUser} size={54} isLive={false} showLiveDot={false} />
-                            <span className="mt-2 text-[9px] font-bold uppercase tracking-[0.08em] text-[#8A8A8A]">Host</span>
-                            <span className="mt-0.5 w-full truncate text-center text-[10px] font-semibold text-[#303030]">{session.host_name || "Host"}</span>
+                            <AvatarCircle user={hostCardUser} size={60} isLive={false} showLiveDot={false} />
                         </Link>
 
                         <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -4872,143 +4759,22 @@ export default function SessionCard({
 
                                     {peopleInline}
 
-                                    <div
-                                        ref={infoRef}
-                                        className="relative"
-                                        onMouseEnter={() => setIsInfoOpen(true)}
-                                        onMouseLeave={() => {
-                                            if (!isInfoPinned) setIsInfoOpen(false);
+                                    <button
+                                        type="button"
+                                        className="flex h-8 items-center justify-center gap-1.5 px-1 text-[12px] font-normal text-[#606060] transition hover:text-[#303030]"
+                                        title="Session details"
+                                        aria-label="Session details"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            setPeopleTab("booked");
+                                            setIsBookersModalOpen(true);
                                         }}
                                     >
-                                        <button
-                                            type="button"
-                                            className="flex h-8 items-center justify-center gap-1.5 rounded-full border border-[#D8DDDA] bg-white px-3 text-[11px] font-semibold text-[#111827] transition hover:border-[#AFC1B1] hover:bg-[#F3F8F3]"
-                                            title="Session details"
-                                            aria-label="Session details"
-                                            onClick={(e) => {
-                                                e.preventDefault();
-                                                e.stopPropagation();
-                                                setIsInfoOpen(false);
-                                                setIsInfoPinned(false);
-                                                setPeopleTab("booked");
-                                                setIsBookersModalOpen(true);
-                                            }}
-                                        >
-                                            <span className="text-[#111827] opacity-70">
-                                                <IconInfo size={16} />
-                                            </span>
-                                            <span>Details</span>
-                                        </button>
-
-                                        {isInfoOpen && (
-                                            <div
-                                                className="
-                                                    absolute left-0 top-[38px]
-                                                    z-[9990]
-                                                    w-[420px] max-w-[85vw]
-                                                    rounded-[18px]
-                                                    border border-[#E5E7EB]
-                                                    bg-white
-                                                    shadow-xl
-                                                    overflow-visible
-                                                "
-                                                onMouseDown={(e) => e.stopPropagation()}
-                                            >
-                                                <div className="px-4 py-3 text-[12px] text-[#606060] border-b border-[#F3F4F6] flex items-center justify-between">
-                                                    <span>Session info</span>
-                                                    {isInfoPinned && (
-                                                        <span className="text-[11px] text-[#111827]/60">
-                                                            Pinned
-                                                        </span>
-                                                    )}
-                                                </div>
-
-                                                <div className="p-4 flex flex-col gap-3">
-                                                    {description ? (
-                                                        <div className="text-[13px] text-[#111827] leading-snug whitespace-pre-wrap">
-                                                            {description}
-                                                        </div>
-                                                    ) : (
-                                                        <div className="text-[12px] text-[#606060]">
-                                                            No description yet.
-                                                        </div>
-                                                    )}
-
-                                                    {nowStage && (
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="text-[12px] text-[#606060]">
-                                                                Current:
-                                                            </div>
-                                                            <div
-                                                                className="inline-flex items-center gap-2 px-3 py-1 rounded-full border"
-                                                                style={{
-                                                                    borderColor: nowStage.color,
-                                                                    backgroundColor: `${nowStage.color}20`,
-                                                                    color: nowStage.color,
-                                                                    fontSize: 12,
-                                                                    fontWeight: 600,
-                                                                }}
-                                                            >
-                                                                <span>{nowStage.name}</span>
-                                                                {Number.isFinite(nowStage.leftSec) &&
-                                                                    nowStage.leftSec > 0 && (
-                                                                        <span className="opacity-80 font-semibold">
-                                                                            · {Math.ceil(nowStage.leftSec / 60)}m left
-                                                                        </span>
-                                                                    )}
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    {stagesVisual?.length ? (
-                                                        <div className="w-full">
-                                                            <SessionStageBar
-                                                                {...({
-                                                                    stages: stagesVisual,
-                                                                    startTime: timelineStartTime,
-                                                                    cycleSeconds,
-                                                                    progressStyle: "tick",
-                                                                    tickEveryMs,
-                                                                } as any)}
-                                                            />
-                                                            <div className="mt-2 text-[11px] text-[#606060]">
-                                                                {isInfinite
-                                                                    ? "Updates every 15s for infinite rooms (low CPU)."
-                                                                    : "Live timeline (1s tick)."}
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="w-full h-2 rounded-full bg-[#111827]/5" />
-                                                    )}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
+                                        <IconInfo size={15} />
+                                        <span>Details</span>
+                                    </button>
                                 </div>
-                            </div>
-
-                            <div className="rounded-[18px] border border-[#E8EBE8] bg-[#FAFBFA] px-3 py-2.5">
-                                <div className="mb-2 flex items-center justify-between gap-3">
-                                    <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#7A7A7A]">Timeline</span>
-                                    {nowStage ? (
-                                        <span className="truncate text-[10px] font-semibold" style={{ color: nowStage.color }}>
-                                            {nowStage.name}
-                                        </span>
-                                    ) : null}
-                                </div>
-                                {compactTimelineVisual.length ? (
-                                    <SessionStageBar
-                                        {...({
-                                            stages: compactTimelineVisual,
-                                            startTime: timelineStartTime,
-                                            cycleSeconds,
-                                            progressStyle: "tick",
-                                            tickEveryMs: 15_000,
-                                        } as any)}
-                                    />
-                                ) : (
-                                    <div className="h-2 w-full rounded-full bg-[#111827]/5" />
-                                )}
                             </div>
                         </div>
 
@@ -5297,9 +5063,9 @@ export default function SessionCard({
 
                         <div className="border-b border-[#E5E7EB] px-5 py-4">
                             <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#606060]">
-                                <Link to={`/profile/${session.host_id}`} onClick={() => setIsBookersModalOpen(false)} className="inline-flex items-center gap-1.5 rounded-full bg-[#F3F4F6] px-3 py-1.5 transition hover:bg-[#E9ECEF]">
-                                    <img src="/icons/host.svg" className="h-4 w-4 opacity-70" alt="" />
-                                    <span>Hosted by <strong className="font-semibold text-[#111827]">{session.host_name}</strong></span>
+                                <Link to={`/profile/${session.host_id}`} onClick={() => setIsBookersModalOpen(false)} className="inline-flex items-center gap-2.5 rounded-full border border-[#E5E7EB] bg-white py-1.5 pl-1.5 pr-3 transition hover:border-[#BFC8C0] hover:bg-[#F8FAF8]">
+                                    <AvatarCircle user={hostCardUser} size={32} isLive={false} showLiveDot={false} />
+                                    <span><span className="text-[#7A7A7A]">Hosted by</span> <strong className="font-semibold text-[#111827]">{session.host_name}</strong></span>
                                 </Link>
                                 <span className="rounded-full bg-[#F3F4F6] px-3 py-1.5 font-medium text-[#111827]">
                                     {isInfinite ? "24/7 room" : `${session.duration_minutes} min`}
@@ -5310,8 +5076,9 @@ export default function SessionCard({
                                 {description || "No description yet."}
                             </p>
 
-                            {stagesVisual?.length ? (
-                                <div className="mt-4">
+                            <div className="mt-5 rounded-[18px] border border-[#E8EBE8] bg-[#FAFBFA] px-3 py-3">
+                                <div className="mb-2 text-[10px] font-bold uppercase tracking-[0.1em] text-[#7A7A7A]">Session timeline</div>
+                                {stagesVisual?.length ? (
                                     <SessionStageBar
                                         {...({
                                             stages: stagesVisual,
@@ -5321,8 +5088,12 @@ export default function SessionCard({
                                             tickEveryMs,
                                         } as any)}
                                     />
-                                </div>
-                            ) : null}
+                                ) : (
+                                    <div className="text-[11px] text-[#8A8A8A]">
+                                        {isStagesLoading ? "Loading session stages…" : "No timeline stages configured."}
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         <div className="border-b border-[#E5E7EB] px-5 py-4">
