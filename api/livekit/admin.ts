@@ -94,6 +94,7 @@ type RecipientCandidate = {
   userId: string;
   email: string;
   name: string;
+  timeZone: string | null;
   score: number;
   reasons: string[];
   lastSentAt: string | null;
@@ -569,16 +570,58 @@ function dayBounds(scheduleDate: string) {
   };
 }
 
-function formatEmailTime(raw?: string | null) {
+const DAILY_EMAIL_REGIONAL_TIME_ZONES = [
+  { label: "US East", timeZone: "America/New_York" },
+  { label: "US West", timeZone: "America/Los_Angeles" },
+  { label: "Europe", timeZone: "Europe/Berlin" },
+  { label: "India", timeZone: "Asia/Kolkata" },
+  { label: "Australia", timeZone: "Australia/Sydney" },
+] as const;
+
+function normalizeTimeZone(raw: unknown): string | null {
+  const timeZone = String(raw || "").trim();
+  if (!timeZone) return null;
+
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format(new Date());
+    return timeZone;
+  } catch {
+    return null;
+  }
+}
+
+function getRecipientTimeZone(user: { user_metadata?: Record<string, unknown> } | null | undefined): string | null {
+  const metadata = user?.user_metadata || {};
+  return normalizeTimeZone(
+    metadata.timezone ||
+    metadata.time_zone ||
+    metadata.timeZone ||
+    metadata.tz
+  );
+}
+
+function formatEmailTime(raw?: string | null, timeZone = "UTC") {
   if (!raw) return "Time TBD";
   const d = new Date(raw);
   if (Number.isNaN(d.getTime())) return "Time TBD";
 
   return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
     hour: "numeric",
     minute: "2-digit",
     timeZoneName: "short",
+    timeZone,
   }).format(d);
+}
+
+function formatRegionalEmailTimes(raw?: string | null) {
+  if (!raw) return "Regional times TBD";
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return "Regional times TBD";
+
+  return DAILY_EMAIL_REGIONAL_TIME_ZONES
+    .map(({ label, timeZone }) => `${label}: ${formatEmailTime(raw, timeZone)}`)
+    .join(" · ");
 }
 
 function formatDateForSubject(scheduleDate: string) {
@@ -680,12 +723,17 @@ function buildDailyScheduleEmail(params: {
   scheduleDate: string;
   sessions: DailyScheduleSessionRow[];
   recipientName: string;
+  recipientTimeZone: string | null;
   unsubscribeToken: string;
 }) {
   const appUrl = getAppUrl();
   const unsubscribeUrl = `${appUrl}/email/unsubscribe?token=${encodeURIComponent(params.unsubscribeToken)}`;
   const dateLabel = formatDateForSubject(params.scheduleDate);
   const groups = groupEmailSessionsByHost(params.sessions);
+  const primaryTimeZone = params.recipientTimeZone || "UTC";
+  const timeZoneIntro = params.recipientTimeZone
+    ? `Times are shown in your timezone (${params.recipientTimeZone}), followed by key regions.`
+    : "Times are shown in UTC, followed by US, European, Indian, and Australian times.";
 
   const subject = `Today on MySession — ${dateLabel}`;
 
@@ -696,7 +744,7 @@ function buildDailyScheduleEmail(params: {
         .map((group) => {
           const lines = group.sessions.map((s) => {
             const title = String(s.title || "Focus session").trim();
-            return `- ${formatEmailTime(s.start_time)} — ${title}`;
+            return `- ${formatEmailTime(s.start_time, primaryTimeZone)} — ${title}\n  ${formatRegionalEmailTimes(s.start_time)}`;
           });
 
           return `${group.hostName} is hosting:\n${lines.join("\n")}`;
@@ -706,6 +754,8 @@ function buildDailyScheduleEmail(params: {
   const text = `Hey ${params.recipientName || "there"},
 
 Here is today's MySession schedule:
+
+${timeZoneIntro}
 
 ${sessionListText}
 
@@ -735,7 +785,8 @@ ${unsubscribeUrl}
           const items = group.sessions
             .map((s) => {
               const title = escapeHtml(s.title || "Focus session");
-              const time = escapeHtml(formatEmailTime(s.start_time));
+              const time = escapeHtml(formatEmailTime(s.start_time, primaryTimeZone));
+              const regionalTimes = escapeHtml(formatRegionalEmailTimes(s.start_time));
               const link = `${appUrl}/room-livekit/${encodeURIComponent(String(s.id))}`;
 
               return `
@@ -743,6 +794,7 @@ ${unsubscribeUrl}
                     <strong>${time}</strong>
                     <span style="color:#555;"> — </span>
                     <a href="${link}" style="color:#111827;text-decoration:underline;">${title}</a>
+                    <div style="margin-top:3px;color:#6b7280;font-size:12px;line-height:1.45;">${regionalTimes}</div>
                   </li>
                 `;
             })
@@ -762,6 +814,7 @@ ${unsubscribeUrl}
       <div style="font-size:13px;text-transform:uppercase;letter-spacing:0.12em;color:#6b7280;font-weight:700;">MySession</div>
       <h1 style="font-size:28px;line-height:1.15;margin:10px 0 8px;">Today’s focus sessions</h1>
       <p style="margin:0 0 22px;color:#555;">Hey ${escapeHtml(params.recipientName || "there")}, here’s today’s schedule for ${escapeHtml(dateLabel)}.</p>
+      <p style="margin:-12px 0 22px;color:#6b7280;font-size:13px;">${escapeHtml(timeZoneIntro)}</p>
 
       ${htmlGroups}
 
@@ -1257,6 +1310,7 @@ async function handleDailyScheduleEmailAction(params: {
       userId,
       email,
       name: String(profile?.full_name || user.user_metadata?.full_name || email.split("@")[0] || "there"),
+      timeZone: getRecipientTimeZone(user),
       score: scored.score,
       reasons: scored.reasons,
       lastSentAt: pref?.last_sent_at || null,
@@ -1305,6 +1359,7 @@ async function handleDailyScheduleEmailAction(params: {
       scheduleDate,
       sessions,
       recipientName: recipient.name,
+      recipientTimeZone: recipient.timeZone,
       unsubscribeToken: recipient.unsubscribeToken,
     });
 

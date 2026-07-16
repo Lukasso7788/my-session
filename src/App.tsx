@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Routes, Route, Link } from "react-router-dom";
+import type { User } from "@supabase/supabase-js";
 
 import { SessionsPage } from "./pages/SessionsPage";
 import LandingPage from "./pages/LandingPage";
@@ -34,6 +35,7 @@ import ContactPage from "./pages/ContactPage";
 import AppLayout from "./layouts/AppLayout";
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
 import { storeReferralCodeFromUrl } from "./lib/referrals";
+import { supabase } from "./lib/supabase";
 
 import BodyDoublingPage from "./pages/seo/BodyDoublingPage";
 import OnlineCoworkingPage from "./pages/seo/OnlineCoworkingPage";
@@ -144,6 +146,41 @@ export default function App() {
 
   useEffect(() => {
     storeReferralCodeFromUrl();
+  }, []);
+
+  useEffect(() => {
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!timeZone) return;
+
+    const syncUserTimeZone = async (user: User | null | undefined) => {
+      if (!user?.id) return;
+
+      const metadataTimeZone = String(
+        user.user_metadata?.timezone ||
+        user.user_metadata?.time_zone ||
+        user.user_metadata?.timeZone ||
+        user.user_metadata?.tz ||
+        ""
+      ).trim();
+      if (metadataTimeZone === timeZone) return;
+
+      const cacheKey = `mysession-timezone:${user.id}`;
+      if (localStorage.getItem(cacheKey) === timeZone) return;
+
+      const { error } = await supabase.auth.updateUser({
+        data: { timezone: timeZone },
+      });
+
+      if (!error) localStorage.setItem(cacheKey, timeZone);
+    };
+
+    void supabase.auth.getUser().then(({ data }) => syncUserTimeZone(data.user));
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN") void syncUserTimeZone(session?.user);
+    });
+
+    return () => authListener.subscription.unsubscribe();
   }, []);
 
   return (
