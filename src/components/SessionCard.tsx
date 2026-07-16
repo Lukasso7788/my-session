@@ -4502,6 +4502,8 @@ export default function SessionCard({
 
     const liveStackUsers = liveUsers.slice(0, maxStack);
     const liveRemaining = Math.max(0, liveNowCount - liveStackUsers.length);
+    const bookedDrawerStackUsers = bookers.slice(0, 8);
+    const bookedDrawerRemaining = Math.max(0, bookers.length - bookedDrawerStackUsers.length);
 
     const canEdit = isHost && !!onEditSession;
     const canCancelBooking = !!isBookingConfirmed;
@@ -5152,8 +5154,8 @@ export default function SessionCard({
                                     {bookers.length === 0 ? (
                                         <div className="text-[11px] text-[#8A8A8A]">No bookings yet.</div>
                                     ) : (
-                                        <div className="flex max-w-full items-center gap-2 overflow-x-auto pb-1">
-                                            {bookers.map((booking) => {
+                                        <div className="flex max-w-full items-center overflow-x-auto py-1 pr-1">
+                                            {bookedDrawerStackUsers.map((booking, index) => {
                                                 const label = booking.full_name || booking.id || "Participant";
                                                 const isLive = liveIdSet.has(booking.id);
 
@@ -5162,7 +5164,11 @@ export default function SessionCard({
                                                         key={booking.id}
                                                         to={`/profile/${booking.id}`}
                                                         onClick={() => setIsBookersModalOpen(false)}
-                                                        className="shrink-0 rounded-full transition hover:scale-105"
+                                                        className="relative shrink-0 rounded-full transition hover:z-50 hover:-translate-y-0.5 hover:scale-105"
+                                                        style={{
+                                                            marginLeft: index === 0 ? 0 : -12,
+                                                            zIndex: bookedDrawerStackUsers.length - index,
+                                                        }}
                                                         title={label}
                                                         aria-label={label}
                                                     >
@@ -5170,6 +5176,16 @@ export default function SessionCard({
                                                     </Link>
                                                 );
                                             })}
+
+                                            {bookedDrawerRemaining > 0 ? (
+                                                <div
+                                                    className="relative flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#EEF3EE] text-[11px] font-bold text-[#334155]"
+                                                    style={{ marginLeft: -12, zIndex: 0 }}
+                                                    title={`${bookedDrawerRemaining} more booked participants`}
+                                                >
+                                                    +{bookedDrawerRemaining}
+                                                </div>
+                                            ) : null}
                                         </div>
                                     )}
                                 </div>
