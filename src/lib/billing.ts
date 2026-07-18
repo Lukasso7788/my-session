@@ -79,6 +79,8 @@ export const PRICING = {
   lifetimeSlotsTotal: 5,
   freeSessionsPerWeek: 3,
   freeMinutesPerWeek: 540,
+  freeLifetimeSessions: 15,
+  supportPromptAfterSessions: 5,
   trialDays: 7,
 } as const;
 

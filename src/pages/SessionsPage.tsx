@@ -14,6 +14,7 @@ import { BodyTriplingIntro } from "../components/body/BodyTriplingIntro";
 import { supabase } from "../lib/supabase";
 import { getCurrentUserActiveBan, type ActiveBan } from "../lib/bans";
 import { loadEntitlementState, type EntitlementState } from "../lib/entitlements";
+import { PRICING } from "../lib/billing";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
@@ -719,7 +720,7 @@ export function SessionsPage() {
     if (entitlementState.isUnlimited) return;
     if (lifetimeSessionsCount === null) return;
 
-    if (lifetimeSessionsCount <= 5) return;
+    if (lifetimeSessionsCount <= PRICING.supportPromptAfterSessions) return;
 
     const key = "mysession_support_modal_dismissed_at";
     const lastDismissed = Number(localStorage.getItem(key) || 0);

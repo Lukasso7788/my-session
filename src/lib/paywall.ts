@@ -1,5 +1,5 @@
-import { PAYWALL_ENABLED } from "./flags";
 import {
+  PRICING,
   getWeeklyLimitState,
   hasUnlimitedAccess,
   type UserEntitlement,
@@ -9,14 +9,17 @@ import {
 export type PaywallDecision = {
   enabled: boolean;
   blocked: boolean;
-  reason: "disabled" | "unlimited" | "within_limits" | "weekly_limit_reached";
+  reason: "unlimited" | "within_limits" | "lifetime_limit_reached";
   isUnlimited: boolean;
+  lifetimeSessionsCount: number | null;
+  lifetimeSessionsLimit: number;
   weekly: ReturnType<typeof getWeeklyLimitState>;
 };
 
 export function getPaywallDecision(params: {
   entitlement: UserEntitlement | null;
   usage: WeeklyUsageRow | null;
+  lifetimeSessionsCount: number | null;
 }): PaywallDecision {
   const weekly = getWeeklyLimitState({
     entitlement: params.entitlement,
@@ -25,16 +28,12 @@ export function getPaywallDecision(params: {
   });
 
   const isUnlimited = hasUnlimitedAccess(params.entitlement);
-
-  if (!PAYWALL_ENABLED) {
-    return {
-      enabled: false,
-      blocked: false,
-      reason: "disabled",
-      isUnlimited,
-      weekly,
-    };
-  }
+  const lifetimeSessionsCount =
+    typeof params.lifetimeSessionsCount === "number" &&
+    Number.isFinite(params.lifetimeSessionsCount)
+    ? Math.max(0, Number(params.lifetimeSessionsCount))
+    : null;
+  const lifetimeSessionsLimit = PRICING.freeLifetimeSessions;
 
   if (isUnlimited) {
     return {
@@ -42,16 +41,22 @@ export function getPaywallDecision(params: {
       blocked: false,
       reason: "unlimited",
       isUnlimited,
+      lifetimeSessionsCount,
+      lifetimeSessionsLimit,
       weekly,
     };
   }
 
-  if (!weekly.limitExceeded) {
+  // Fail open when attendance usage cannot be loaded. A temporary read failure
+  // must never lock a legitimate user out of a room.
+  if (lifetimeSessionsCount === null || lifetimeSessionsCount < lifetimeSessionsLimit) {
     return {
       enabled: true,
       blocked: false,
       reason: "within_limits",
       isUnlimited,
+      lifetimeSessionsCount,
+      lifetimeSessionsLimit,
       weekly,
     };
   }
@@ -59,8 +64,10 @@ export function getPaywallDecision(params: {
   return {
     enabled: true,
     blocked: true,
-    reason: "weekly_limit_reached",
+    reason: "lifetime_limit_reached",
     isUnlimited,
+    lifetimeSessionsCount,
+    lifetimeSessionsLimit,
     weekly,
   };
 }

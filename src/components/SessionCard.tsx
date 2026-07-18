@@ -19,7 +19,6 @@ import {
 import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "./PaywallModal";
 import type { SessionStage } from "../SessionConfig";
-import { PAYWALL_ENABLED } from "../lib/flags";
 
 function getSupabase(): SupabaseClient | null {
     // SessionCard must use the same client and auth storage key as the rest of
@@ -3876,16 +3875,14 @@ export default function SessionCard({
         return getPaywallDecision({
             entitlement: entitlementState.entitlement,
             usage: entitlementState.usage,
+            lifetimeSessionsCount: entitlementState.lifetimeSessionsCount,
         });
     }, [entitlementState]);
-
-    const paywallRuntimeEnabled =
-        PAYWALL_ENABLED || isPersonalPaywallForced(entitlementState);
 
     const paywallBlocked =
         isPersonalPaywallForced(entitlementState)
             ? true
-            : paywallRuntimeEnabled && !!paywallDecision?.blocked;
+            : !!paywallDecision?.blocked;
 
     useEffect(() => setIsBookingConfirmed(!!initialIsBooked), [session.id, initialIsBooked]);
     useEffect(() => setBookers(initialBookers), [initialBookers]);
@@ -5411,7 +5408,7 @@ export default function SessionCard({
                 open={paywallOpen}
                 onClose={() => setPaywallOpen(false)}
                 title="Upgrade to join sessions"
-                description="You’ve reached the current Free plan limit. Upgrade to Pro to keep joining sessions."
+                description="You’ve used your 15 free sessions. Upgrade to Pro to keep joining sessions without limits."
             />
         </>
     );

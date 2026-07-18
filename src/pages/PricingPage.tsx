@@ -171,7 +171,7 @@ export default function PricingPage() {
                 subtitle: "Unlimited access to all formats",
                 badge: "Most flexible",
                 highlights: [
-                    "Unlimited sessions per week",
+                    "Unlimited sessions",
                     "Join and host without limits",
                     "All formats: Group sessions, Infinite rooms, Body tripling",
                     "Priority access to new features",
@@ -193,7 +193,7 @@ export default function PricingPage() {
                 subtitle: "Unlimited access • billed yearly",
                 badge: "Save 20%",
                 highlights: [
-                    "Unlimited sessions per week",
+                    "Unlimited sessions",
                     "Join and host without limits",
                     "All formats: Group sessions, Infinite rooms, Body tripling",
                     "Priority access to new features",
@@ -298,8 +298,7 @@ export default function PricingPage() {
                         subtitle="For getting started"
                         badge="Starter"
                         highlights={[
-                            "Join up to 3 sessions per week",
-                            "Up to 9 hours total per week",
+                            "Your first 15 sessions are free",
                             "Join and host sessions",
                             "Upgrade later when you want unlimited access",
                         ]}
@@ -494,10 +493,10 @@ export default function PricingPage() {
 
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                         <div>
-                            <div className="text-sm font-medium">Why weekly limits on Free?</div>
+                            <div className="text-sm font-medium">What is included on Free?</div>
                             <p className="mt-1 text-sm text-black/60">
-                                Video calls are expensive to run. Limits keep Free sustainable while
-                                paid plans support the infrastructure.
+                                Your first 15 sessions are free. After that, Pro keeps joining and
+                                hosting unlimited while supporting the video infrastructure.
                             </p>
                         </div>
 

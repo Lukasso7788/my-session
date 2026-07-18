@@ -12,7 +12,7 @@ export default function PaywallModal({
     open,
     onClose,
     title = "Upgrade to continue",
-    description = "You’ve reached the current Free plan limit. Upgrade to Pro for unlimited sessions and hosting.",
+    description = "You’ve used your 15 free sessions. Upgrade to Pro for unlimited sessions and hosting.",
 }: PaywallModalProps) {
     const navigate = useNavigate();
 
@@ -28,7 +28,7 @@ export default function PaywallModal({
                 <p className="mt-3 text-[15px] leading-7 text-black/65">{description}</p>
 
                 <div className="mt-6 rounded-2xl border border-black/10 bg-black/[0.03] p-4 text-sm text-black/65">
-                    Free plan includes up to 3 sessions per week and 9 hours total per week.
+                    Free includes your first 15 sessions. Pro unlocks unlimited joining and hosting.
                 </div>
 
                 <div className="mt-6 flex flex-wrap gap-3">

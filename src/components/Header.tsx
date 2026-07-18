@@ -5,7 +5,6 @@ import { useAuth } from "../context/AuthContext";
 import { loadEntitlementState, type EntitlementState } from "../lib/entitlements";
 import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "./PaywallModal";
-import { PAYWALL_ENABLED } from "../lib/flags";
 
 const DEBUG = true;
 const BRAND_BLACK = "#2F2F2F";
@@ -85,7 +84,12 @@ function getPlanPopoverText(state: EntitlementState | null): string {
         return "Your account is currently marked as Free in trial state.";
     }
 
-    return "You’re on Free. Upgrade to Pro for unlimited access.";
+    const used = Math.max(0, Number(state.lifetimeSessionsCount || 0));
+    const remaining = Math.max(0, 15 - used);
+
+    return remaining > 0
+        ? `${remaining} of your 15 free sessions remaining.`
+        : "Your 15 free sessions are used. Upgrade to Pro to continue.";
 }
 
 export default function Header() {
@@ -131,6 +135,7 @@ export default function Header() {
         return getPaywallDecision({
             entitlement: entitlementState.entitlement,
             usage: entitlementState.usage,
+            lifetimeSessionsCount: entitlementState.lifetimeSessionsCount,
         });
     }, [entitlementState]);
 
@@ -648,7 +653,7 @@ export default function Header() {
                 open={paywallOpen}
                 onClose={() => setPaywallOpen(false)}
                 title="Upgrade to create sessions"
-                description="Your Free plan limit has been reached. Upgrade to Pro to keep creating and hosting sessions."
+                description="You’ve used your 15 free sessions. Upgrade to Pro to keep creating and hosting sessions."
             />
         </>
     );

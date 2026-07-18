@@ -15,6 +15,7 @@ import {
 export type EntitlementState = {
   entitlement: UserEntitlement | null;
   usage: WeeklyUsageRow | null;
+  lifetimeSessionsCount: number | null;
 
   isLoggedIn: boolean;
 
@@ -117,6 +118,7 @@ export async function loadEntitlementState(): Promise<EntitlementState> {
     return {
       entitlement: null,
       usage: null,
+      lifetimeSessionsCount: null,
       isLoggedIn: false,
       isActive: false,
       isTrial: false,
@@ -129,7 +131,21 @@ export async function loadEntitlementState(): Promise<EntitlementState> {
     };
   }
 
-  const entitlement = await getUserEntitlement(user.id);
+  const [entitlement, lifetimeCountResult] = await Promise.all([
+    getUserEntitlement(user.id),
+    supabase
+      .from("session_attendance")
+      .select("session_id", { count: "exact", head: true })
+      .eq("user_id", user.id),
+  ]);
+
+  const lifetimeSessionsCount = lifetimeCountResult.error
+    ? null
+    : Math.max(0, Number(lifetimeCountResult.count || 0));
+
+  if (lifetimeCountResult.error) {
+    console.error("getLifetimeSessionsCount error:", lifetimeCountResult.error);
+  }
 
   const rawWeekStart = getWeekStartDate();
   const normalizedWeekStart = normalizeWeekStartForQuery(rawWeekStart);
@@ -179,6 +195,7 @@ export async function loadEntitlementState(): Promise<EntitlementState> {
     normalizedWeekStart,
     entitlement,
     usage,
+    lifetimeSessionsCount,
     sessionsUsed,
     minutesUsed,
     isTrial,
@@ -190,6 +207,7 @@ export async function loadEntitlementState(): Promise<EntitlementState> {
   return {
     entitlement,
     usage,
+    lifetimeSessionsCount,
     isLoggedIn: true,
     isActive,
     isTrial,

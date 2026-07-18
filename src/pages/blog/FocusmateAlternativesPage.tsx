@@ -18,7 +18,7 @@ const platforms: Platform[] = [
     name: "MySession",
     bestFor: "Group body doubling and ongoing community",
     format: "Live group sessions, 24/7 Focus Hub, multiple focus formats",
-    freeAccess: "3 sessions per week plus weekly hour allowance",
+    freeAccess: "First 15 sessions free",
     price: "$10/month or $96/year",
     highlight:
       "A community-first alternative for people who prefer working with a familiar group instead of being matched with one stranger at a time.",
@@ -144,7 +144,7 @@ const faq = [
   {
     question: "Is there a free alternative to Focusmate?",
     answer:
-      "Yes. MySession includes limited free weekly access, Study Together and many Discord communities are free, and several paid platforms offer trials or free tiers. The trade-off is usually schedule depth, consistency, moderation, or the amount of structure included.",
+      "Yes. MySession includes the first 15 sessions for free, Study Together and many Discord communities are free, and several paid platforms offer trials or free tiers. The trade-off is usually schedule depth, consistency, moderation, or the amount of structure included.",
   },
   {
     question: "Is Focusmate still worth using?",

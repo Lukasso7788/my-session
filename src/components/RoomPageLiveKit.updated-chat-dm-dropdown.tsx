@@ -41,7 +41,6 @@ import { getCurrentUserActiveBan, type ActiveBan } from "../lib/bans";
 import PaywallModal from "../components/PaywallModal";
 import ActiveBanModal from "../components/ActiveBanModal";
 import BugReportModal from "../components/BugReportModal";
-import { PAYWALL_ENABLED } from "../lib/flags";
 
 import ChatPanel from "../components/ChatPanel";
 import { TasksPanel } from "../components/TasksPanel";
@@ -3435,6 +3434,7 @@ export function RoomPageLiveKit({
     return getPaywallDecision({
       entitlement: entitlementState.entitlement,
       usage: entitlementState.usage,
+      lifetimeSessionsCount: entitlementState.lifetimeSessionsCount,
     });
   }, [entitlementState]);
 
@@ -3442,40 +3442,9 @@ export function RoomPageLiveKit({
 
   const paywallBlocked = !!paywallDecision?.blocked;
 
-  const paywallRuntimeEnabled = PAYWALL_ENABLED || forcePaywall;
-
   const paywallRuntimeBlocked = forcePaywall
     ? true
-    : paywallRuntimeEnabled && paywallBlocked;
-
-  useEffect(() => {
-    console.log("[PAYWALL Room DEBUG]", {
-      PAYWALL_ENABLED,
-      paywallRuntimeEnabled,
-      entitlementState,
-      paywallDecision,
-      paywallBlocked,
-      paywallRuntimeBlocked,
-    });
-  }, [entitlementState, paywallDecision, paywallBlocked]);
-
-  useEffect(() => {
-    console.log("[PAYWALL RoomPageLiveKit]", {
-      PAYWALL_ENABLED,
-      paywallRuntimeEnabled,
-      entitlementState,
-      paywallDecision,
-      paywallBlocked,
-      paywallRuntimeBlocked,
-    });
-  }, [
-    PAYWALL_ENABLED,
-    paywallRuntimeEnabled,
-    entitlementState,
-    paywallDecision,
-    paywallBlocked,
-    paywallRuntimeBlocked,
-  ]);
+    : paywallBlocked;
 
   // theme
   const [theme, setTheme] = useState<RoomTheme>(() => {
@@ -12171,8 +12140,8 @@ export function RoomPageLiveKit({
             </h1>
 
             <p className="mt-3 text-[15px] leading-7 text-black/65">
-              You’ve reached the current Free plan limit. Upgrade to Pro to keep
-              joining sessions.
+              You’ve used your 15 free sessions. Upgrade to Pro to keep joining
+              sessions without limits.
             </p>
 
             <div className="mt-6">
@@ -12191,7 +12160,7 @@ export function RoomPageLiveKit({
           open={paywallModalOpen}
           onClose={() => setPaywallModalOpen(false)}
           title="Upgrade to join this session"
-          description="Your Free plan limit has been reached. Upgrade to Pro to keep using MySession without limits."
+          description="You’ve used your 15 free sessions. Upgrade to Pro to keep using MySession without limits."
         />
       </>
     );
