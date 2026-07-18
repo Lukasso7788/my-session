@@ -23,8 +23,6 @@ import {
 } from "livekit-client";
 
 import {
-  BackgroundBlur,
-  VirtualBackground,
   supportsBackgroundProcessors,
   supportsModernBackgroundProcessors,
 } from "@livekit/track-processors";
@@ -78,6 +76,13 @@ import {
 import ReportParticipantModalLiveKit from "./livekit/ReportParticipantModalLiveKit";
 import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
+import {
+  createPersonColorBackgroundProcessor,
+  createPublishedColorCorrectionProcessor,
+  isPublishedColorCorrectionIdentity,
+  publishedColorCorrectionSignature,
+  type PublishedColorCorrection,
+} from "./livekit/PersonColorCorrectionProcessor";
 
 import {
   useElementSize,
@@ -6515,16 +6520,31 @@ export function RoomPageLiveKit({
     mode: FxMode,
     blur: number,
     bgUrl: string,
+    correction: PublishedColorCorrection,
   ): any | null => {
-    if (mode === "off") return null;
-
-    if (mode === "blur") {
-      return BackgroundBlur(
-        normalizeFxBlurStrength(blur, firefoxSafeFx),
-      ) as any;
+    if (mode === "off") {
+      return isPublishedColorCorrectionIdentity(correction)
+        ? null
+        : createPublishedColorCorrectionProcessor(correction);
     }
 
-    return VirtualBackground(bgUrl || DEFAULT_BG_DATA_URL) as any;
+    if (mode === "blur") {
+      return createPersonColorBackgroundProcessor({
+        mode: {
+          mode: "background-blur",
+          blurRadius: normalizeFxBlurStrength(blur, firefoxSafeFx),
+        },
+        correction,
+      });
+    }
+
+    return createPersonColorBackgroundProcessor({
+      mode: {
+        mode: "virtual-background",
+        imagePath: bgUrl || DEFAULT_BG_DATA_URL,
+      },
+      correction,
+    });
   };
 
   const stopAnyProcessor = async (track: LocalVideoTrack) => {
@@ -6577,16 +6597,20 @@ export function RoomPageLiveKit({
     mode: FxMode,
     blur: number,
     bgUrl: string,
+    correction: PublishedColorCorrection = colorCorrection,
   ) => {
-    ensureFxSupportedOrThrow();
+    // Color correction alone only needs LiveKit's generic video processor.
+    // MediaPipe/WebGL background support is required only for blur/background.
+    if (mode !== "off") ensureFxSupportedOrThrow();
 
     const normalizedBlur = normalizeFxBlurStrength(blur, firefoxSafeFx);
-    const signature =
+    const effectSignature =
       mode === "off"
         ? "off"
         : mode === "blur"
           ? `blur:${normalizedBlur}`
           : `bg:${String(bgUrl || DEFAULT_BG_DATA_URL)}`;
+    const signature = `${effectSignature}:color:${publishedColorCorrectionSignature(correction)}`;
     if (activeFxSignaturesRef.current.get(track) === signature) return;
 
     const pendingOperation = pendingFxOperationsRef.current.get(track);
@@ -6609,10 +6633,16 @@ export function RoomPageLiveKit({
       }
 
       const currentProcessor = (track as any).getProcessor?.() as
-        | { switchTo?: (options: Record<string, unknown>) => Promise<void> }
+        | {
+          name?: string;
+          switchTo?: (options: Record<string, unknown>) => Promise<void>;
+          setColorCorrection?: (
+            correction: PublishedColorCorrection,
+          ) => Promise<void>;
+        }
         | undefined;
 
-      // BackgroundProcessorWrapper can update its transformer in place. This
+      // PersonColorBackgroundProcessor can update its transformer in place. This
       // keeps the old processed stream (and old image) visible until the new
       // image has loaded, so the raw camera never flashes between backgrounds.
       if (mode !== "off" && typeof currentProcessor?.switchTo === "function") {
@@ -6627,13 +6657,29 @@ export function RoomPageLiveKit({
             imagePath: bgUrl || DEFAULT_BG_DATA_URL,
           });
         }
+        await currentProcessor.setColorCorrection?.(correction);
 
         activeFxSignaturesRef.current.set(track, signature);
         return;
       }
 
       if (mode === "off") {
+        if (
+          !isPublishedColorCorrectionIdentity(correction) &&
+          currentProcessor?.name === "published-color-correction" &&
+          typeof currentProcessor.setColorCorrection === "function"
+        ) {
+          await currentProcessor.setColorCorrection(correction);
+          activeFxSignaturesRef.current.set(track, signature);
+          return;
+        }
+
         await stopAnyProcessor(track);
+        if (!isPublishedColorCorrectionIdentity(correction)) {
+          const colorProcessor =
+            createPublishedColorCorrectionProcessor(correction);
+          await (track as any).setProcessor(colorProcessor, true);
+        }
         activeFxSignaturesRef.current.set(track, signature);
         return;
       }
@@ -6642,7 +6688,12 @@ export function RoomPageLiveKit({
         await delay(90);
       }
 
-      const proc = makeProcessorForMode(mode, normalizedBlur, bgUrl);
+      const proc = makeProcessorForMode(
+        mode,
+        normalizedBlur,
+        bgUrl,
+        correction,
+      );
       if (proc) {
         // LiveKit initializes the replacement before releasing the current
         // processor. Do not call stopProcessor() first: that exposes the raw
@@ -11744,6 +11795,42 @@ export function RoomPageLiveKit({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bgImageUrl]);
 
+  useEffect(() => {
+    if (!connected) return;
+
+    const timer = window.setTimeout(() => {
+      const track = getLocalCameraTrack();
+      if (!track) return;
+
+      safeApplyProcessor(
+        track,
+        videoFxMode,
+        blurStrength,
+        bgImageUrl,
+        colorCorrection,
+      ).catch((error) => {
+        console.error("apply published color correction failed:", error);
+        setFxError(
+          String(error?.message || error || "color_correction_failed"),
+        );
+      });
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+    // Apply slider changes to the outgoing LiveKit track. Primitive values are
+    // listed explicitly so unrelated room renders never restart the processor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    connected,
+    videoFxMode,
+    blurStrength,
+    bgImageUrl,
+    colorCorrection.brightness,
+    colorCorrection.contrast,
+    colorCorrection.saturation,
+    colorCorrection.warmth,
+  ]);
+
   // chat unread
   const hostUserIdForChat = useMemo(() => {
     return String(session?.host_id || "")
@@ -12496,13 +12583,6 @@ export function RoomPageLiveKit({
       >
         <div
           className="absolute inset-0"
-          style={
-            t.isLocal
-              ? {
-                filter: localVideoFilterCss || undefined,
-              }
-              : undefined
-          }
         >
           <VideoTile
             tileId={t.id}

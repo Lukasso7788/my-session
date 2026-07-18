@@ -1880,7 +1880,7 @@ export function RoomSettingsModalLiveKit({
                                         <div className="flex flex-col gap-4">
                                             <ToggleRow
                                                 label="Enable color correction"
-                                                description="Applies CSS video correction in the room UI. This is visual and local."
+                                                description="Publishes the correction with your camera so everyone sees it. Virtual background images keep their original colors."
                                                 checked={colorCorrectionEnabled}
                                                 onChange={onToggleColorCorrection}
                                                 isLight={isLight}
