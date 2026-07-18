@@ -8,7 +8,14 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { ChevronDown } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarClock,
+  Check,
+  ChevronDown,
+  Clock3,
+  Users,
+} from "lucide-react";
 import {
   Room,
   RoomEvent,
@@ -486,6 +493,13 @@ type PreJoinSettings = {
   echoCancellation: boolean;
   noiseSuppression: boolean;
   autoGainControl: boolean;
+};
+
+type ClosedSessionRecommendation = JoinGateHostSession & {
+  hostName: string;
+  hostAvatarUrl: string | null;
+  sameHost: boolean;
+  isBooked: boolean;
 };
 
 type AudioProcessingPreferences = Pick<
@@ -5126,6 +5140,15 @@ export function RoomPageLiveKit({
   >([]);
   const [joinGateOtherSessionsLoading, setJoinGateOtherSessionsLoading] =
     useState(false);
+  const [closedSessionRecommendations, setClosedSessionRecommendations] =
+    useState<ClosedSessionRecommendation[]>([]);
+  const [closedSessionRecommendationsLoading, setClosedSessionRecommendationsLoading] =
+    useState(false);
+  const [closedSessionBookingBusyId, setClosedSessionBookingBusyId] =
+    useState("");
+  const [closedSessionBookedIds, setClosedSessionBookedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   useEffect(() => {
     const hostId = String(session?.host_id || "").trim();
@@ -5293,6 +5316,127 @@ export function RoomPageLiveKit({
       msUntilClose: Math.max(0, closeMs - sessionAccessTickMs),
     };
   }, [session, stages, stagebarStartTime, isInfiniteRoom, sessionAccessTickMs]);
+
+  useEffect(() => {
+    const currentSessionId = String(session?.id || "").trim();
+    const hostId = String(session?.host_id || "").trim();
+
+    if (!sessionCloseInfo.closed || !currentSessionId) {
+      setClosedSessionRecommendations([]);
+      setClosedSessionRecommendationsLoading(false);
+      setClosedSessionBookedIds(new Set());
+      return;
+    }
+
+    let cancelled = false;
+    setClosedSessionRecommendationsLoading(true);
+
+    const normalizeRows = (
+      rows: SessionRow[],
+      sameHost: boolean,
+    ): ClosedSessionRecommendation[] =>
+      rows
+        .map((row) => {
+          const startMs = new Date(String(row.start_time || "")).getTime();
+          if (!Number.isFinite(startMs) || startMs <= Date.now()) return null;
+
+          const maxParticipants = Math.max(
+            2,
+            Math.min(50, Math.round(num(row.max_participants) || 16)),
+          );
+          const bookings = Array.isArray(row.session_bookings)
+            ? row.session_bookings
+            : [];
+          const isBooked =
+            !!authUserId &&
+            bookings.some(
+              (booking) => String(booking?.user_id || "") === String(authUserId),
+            );
+
+          return {
+            id: String(row.id),
+            title: String(row.title || "Session"),
+            startMs,
+            bookedCount: bookings.length,
+            maxParticipants,
+            hostName: String(row.host_profile?.full_name || "Session host"),
+            hostAvatarUrl: row.host_profile?.avatar_url || null,
+            sameHost,
+            isBooked,
+          } satisfies ClosedSessionRecommendation;
+        })
+        .filter(
+          (row): row is ClosedSessionRecommendation => row !== null,
+        );
+
+    const loadRecommendations = async () => {
+      try {
+        let recommendations: ClosedSessionRecommendation[] = [];
+
+        if (hostId) {
+          const { data, error } = await supabase
+            .from("sessions")
+            .select(SESSION_SELECT_STR)
+            .eq("host_id", hostId)
+            .neq("id", currentSessionId)
+            .gte("start_time", new Date().toISOString())
+            .order("start_time", { ascending: true })
+            .limit(2);
+
+          if (error) throw error;
+          recommendations = normalizeRows((data || []) as SessionRow[], true);
+        }
+
+        // The fallback intentionally runs only when this host has no upcoming
+        // sessions, keeping the recommendation hierarchy easy to understand.
+        if (!recommendations.length) {
+          let query = supabase
+            .from("sessions")
+            .select(SESSION_SELECT_STR)
+            .neq("id", currentSessionId)
+            .gte("start_time", new Date().toISOString())
+            .order("start_time", { ascending: true })
+            .limit(2);
+
+          if (hostId) query = query.neq("host_id", hostId);
+
+          const { data, error } = await query;
+          if (error) throw error;
+          recommendations = normalizeRows((data || []) as SessionRow[], false);
+        }
+
+        if (cancelled) return;
+
+        setClosedSessionRecommendations(recommendations.slice(0, 2));
+        setClosedSessionBookedIds(
+          new Set(
+            recommendations
+              .filter((row) => row.isBooked)
+              .map((row) => row.id),
+          ),
+        );
+      } catch (error) {
+        if (!cancelled) {
+          console.warn("Closed session recommendations load failed:", error);
+          setClosedSessionRecommendations([]);
+          setClosedSessionBookedIds(new Set());
+        }
+      } finally {
+        if (!cancelled) setClosedSessionRecommendationsLoading(false);
+      }
+    };
+
+    void loadRecommendations();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    authUserId,
+    session?.host_id,
+    session?.id,
+    sessionCloseInfo.closed,
+  ]);
 
   const checkActiveBanForRoom = useCallback(async () => {
     if (!authUserId || !authReady) {
@@ -14076,52 +14220,300 @@ export function RoomPageLiveKit({
     }
   };
 
+  const handleBookClosedSessionRecommendation = async (
+    recommendation: ClosedSessionRecommendation,
+  ) => {
+    if (closedSessionBookingBusyId) return;
+
+    if (!authUserId) {
+      navigate(`/room-livekit/${recommendation.id}`);
+      return;
+    }
+
+    if (closedSessionBookedIds.has(recommendation.id)) return;
+
+    setClosedSessionBookingBusyId(recommendation.id);
+
+    try {
+      const { error } = await supabase.from("session_bookings").insert({
+        session_id: recommendation.id,
+        user_id: authUserId,
+      });
+
+      if (error) {
+        const message = String(error.message || "").toLowerCase();
+        const alreadyBooked =
+          message.includes("duplicate") ||
+          message.includes("unique") ||
+          message.includes("already");
+
+        if (!alreadyBooked) throw error;
+      }
+
+      setClosedSessionBookedIds((current) => {
+        const next = new Set(current);
+        next.add(recommendation.id);
+        return next;
+      });
+      setClosedSessionRecommendations((current) =>
+        current.map((row) =>
+          row.id === recommendation.id
+            ? {
+                ...row,
+                isBooked: true,
+                bookedCount: Math.min(
+                  row.maxParticipants,
+                  row.bookedCount + 1,
+                ),
+              }
+            : row,
+        ),
+      );
+    } catch (error) {
+      console.error("Closed session recommendation booking failed:", error);
+    } finally {
+      setClosedSessionBookingBusyId("");
+    }
+  };
+
   if (sessionCloseInfo.closed) {
+    const endedHostName = String(
+      session?.host_profile?.full_name || "Session host",
+    );
+    const endedHostAvatarUrl = session?.host_profile?.avatar_url || null;
+    const showingSameHostSessions = closedSessionRecommendations.some(
+      (recommendation) => recommendation.sameHost,
+    );
+    const closedPanel = isLight
+      ? "border-[#D8D0D0] bg-white text-[#1B1B1B]"
+      : "border-[#303030] bg-[#242424] text-white";
+    const closedInset = isLight
+      ? "border-[#DEDADA] bg-[#F5F3F3]"
+      : "border-[#343434] bg-[#1D1D1D]";
+    const closedMuted = isLight ? "text-black/55" : "text-white/55";
+
     return (
       <>
         <div
-          className={`min-h-screen w-full flex items-center justify-center px-4 ${pageBg}`}
+          className={`min-h-[100dvh] w-full overflow-y-auto px-4 py-6 sm:px-6 sm:py-10 ${pageBg}`}
         >
           <div
-            className={`w-full max-w-[560px] rounded-[28px] border p-6 text-center shadow-2xl ${isLight
-              ? "border-[#CFCFCF] bg-[#F3F3F3] text-black"
-              : "border-[#2B2B2B] bg-[#242424] text-white"
-              }`}
+            className={`mx-auto my-auto w-full max-w-[980px] overflow-hidden rounded-[30px] border shadow-[0_18px_55px_rgba(0,0,0,0.18)] ${closedPanel}`}
           >
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/10 text-[24px]">
-              ⏱️
-            </div>
-
-            <div className="text-[24px] font-bold tracking-[-0.02em]">
-              Session is no longer accessible
-            </div>
-
             <div
-              className={`mt-3 text-[14px] leading-6 ${isLight ? "text-black/60" : "text-white/60"}`}
+              className={`flex items-center justify-between gap-4 border-b px-5 py-4 sm:px-7 ${
+                isLight ? "border-[#D8D0D0]" : "border-[#343434]"
+              }`}
             >
-              This session ended at{" "}
-              {sessionCloseInfo.endMs
-                ? formatLocalDateTime(sessionCloseInfo.endMs)
-                : "its scheduled end time"}
-              . MySession keeps the room open for {SESSION_CLOSE_GRACE_MINUTES}{" "}
-              minutes after the last block, then closes it automatically.
-            </div>
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#81DB86]/15 text-[#81DB86]">
+                  <Clock3 size={20} />
+                </div>
+                <div>
+                  <div className="text-[14px] font-bold">Session complete</div>
+                  <div className={`mt-0.5 text-[11px] ${closedMuted}`}>
+                    Keep the momentum going with another room
+                  </div>
+                </div>
+              </div>
 
-            <button
-              type="button"
-              onClick={() => navigate("/sessions", { replace: true })}
-              className={`mt-6 h-11 rounded-full px-5 text-[14px] font-semibold transition ${isLight
-                ? "bg-black text-white hover:bg-black/85"
-                : "bg-[#F3F3F3] text-black hover:bg-[#F1F1F1]/90"
+              <button
+                type="button"
+                onClick={() => navigate("/sessions", { replace: true })}
+                className={`hidden h-10 items-center gap-2 rounded-full border px-4 text-[12px] font-semibold transition sm:inline-flex ${
+                  isLight
+                    ? "border-black/10 bg-black/[0.03] hover:bg-black/[0.07]"
+                    : "border-white/10 bg-white/[0.04] hover:bg-white/[0.08]"
                 }`}
-            >
-              Return to sessions
-            </button>
+              >
+                Browse all sessions <ArrowRight size={14} />
+              </button>
+            </div>
 
-            <div
-              className={`mt-3 text-[12px] ${isLight ? "text-black/55" : "text-white/55"}`}
-            >
-              Return to the sessions page to book or join another session.
+            <div className="grid lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+              <main
+                className={`p-6 sm:p-8 lg:border-r ${
+                  isLight ? "lg:border-[#D8D0D0]" : "lg:border-[#343434]"
+                }`}
+              >
+                <div className="inline-flex items-center gap-2 rounded-full border border-[#81DB86]/25 bg-[#81DB86]/10 px-3 py-1.5 text-[11px] font-semibold text-[#81DB86]">
+                  <Check size={13} /> Finished
+                </div>
+
+                <h1 className="mt-5 text-[30px] font-bold leading-[1.08] tracking-[-0.04em] sm:text-[38px]">
+                  This focus session has ended.
+                </h1>
+
+                <p className={`mt-3 max-w-[520px] text-[14px] leading-6 ${closedMuted}`}>
+                  The room closed after its final stage, but your next session can
+                  start right here. Choose another time below or browse the full
+                  schedule.
+                </p>
+
+                <div className={`mt-6 rounded-[22px] border p-4 ${closedInset}`}>
+                  <div className="text-[10px] font-bold uppercase tracking-[0.12em] opacity-50">
+                    Just finished
+                  </div>
+                  <div className="mt-2 text-[18px] font-bold leading-tight">
+                    {String(session?.title || "Focus session")}
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between gap-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      {endedHostAvatarUrl ? (
+                        <img
+                          src={endedHostAvatarUrl}
+                          alt=""
+                          className="h-10 w-10 shrink-0 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#81DB86] text-[13px] font-bold text-black">
+                          {endedHostName.slice(0, 1).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className={`text-[10px] ${closedMuted}`}>Hosted by</div>
+                        <div className="truncate text-[12px] font-semibold">
+                          {endedHostName}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className={`shrink-0 text-right text-[11px] ${closedMuted}`}>
+                      Ended
+                      <div className="mt-0.5 font-semibold">
+                        {sessionCloseInfo.endMs
+                          ? formatLocalDateTime(sessionCloseInfo.endMs)
+                          : "recently"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => navigate("/sessions", { replace: true })}
+                  className="mt-5 inline-flex h-11 items-center gap-2 rounded-full bg-[#81DB86] px-5 text-[13px] font-bold text-black transition hover:bg-[#72CF78]"
+                >
+                  View all sessions <ArrowRight size={15} />
+                </button>
+              </main>
+
+              <aside className={`p-6 sm:p-8 ${isLight ? "bg-[#F3F1F1]" : "bg-[#202020]"}`}>
+                <div>
+                  <div className="text-[18px] font-bold tracking-[-0.02em]">
+                    {showingSameHostSessions
+                      ? `Next with ${endedHostName}`
+                      : "Upcoming sessions"}
+                  </div>
+                  <div className={`mt-1 text-[12px] ${closedMuted}`}>
+                    {showingSameHostSessions
+                      ? "More upcoming focus time with the same host."
+                      : "The nearest available sessions from the community."}
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-3">
+                  {closedSessionRecommendationsLoading ? (
+                    [0, 1].map((index) => (
+                      <div
+                        key={index}
+                        className={`h-[154px] animate-pulse rounded-[22px] border ${closedInset}`}
+                      />
+                    ))
+                  ) : closedSessionRecommendations.length ? (
+                    closedSessionRecommendations.map((recommendation) => {
+                      const isBooked = closedSessionBookedIds.has(recommendation.id);
+                      const bookingBusy =
+                        closedSessionBookingBusyId === recommendation.id;
+                      const isFull =
+                        recommendation.bookedCount >= recommendation.maxParticipants;
+
+                      return (
+                        <article
+                          key={recommendation.id}
+                          className={`rounded-[22px] border p-4 transition hover:-translate-y-0.5 hover:shadow-lg ${closedPanel}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="line-clamp-2 text-[15px] font-bold leading-[1.25]">
+                                {recommendation.title}
+                              </div>
+                              <div className={`mt-2 flex items-center gap-2 text-[11px] ${closedMuted}`}>
+                                <CalendarClock size={13} />
+                                {formatLocalDateTime(recommendation.startMs)}
+                              </div>
+                            </div>
+
+                            {recommendation.hostAvatarUrl ? (
+                              <img
+                                src={recommendation.hostAvatarUrl}
+                                alt=""
+                                className="h-9 w-9 shrink-0 rounded-full object-cover"
+                              />
+                            ) : (
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#81DB86] text-[12px] font-bold text-black">
+                                {recommendation.hostName.slice(0, 1).toUpperCase()}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className={`mt-3 flex items-center justify-between gap-3 text-[11px] ${closedMuted}`}>
+                            <span className="truncate">{recommendation.hostName}</span>
+                            <span className="flex shrink-0 items-center gap-1.5">
+                              <Users size={13} />
+                              {recommendation.bookedCount}/{recommendation.maxParticipants}
+                            </span>
+                          </div>
+
+                          <div className="mt-4 grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/room-livekit/${recommendation.id}`)}
+                              className="h-10 rounded-xl bg-[#81DB86] px-3 text-[12px] font-bold text-black transition hover:bg-[#72CF78]"
+                            >
+                              Join
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleBookClosedSessionRecommendation(recommendation)
+                              }
+                              disabled={bookingBusy || isBooked || isFull}
+                              className={`flex h-10 items-center justify-center gap-1.5 rounded-xl border px-3 text-[12px] font-semibold transition disabled:cursor-default ${
+                                isBooked
+                                  ? "border-[#81DB86]/40 bg-[#81DB86]/10 text-[#81DB86]"
+                                  : isLight
+                                    ? "border-black/10 bg-black/[0.03] hover:bg-black/[0.07] disabled:opacity-45"
+                                    : "border-white/10 bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-45"
+                              }`}
+                            >
+                              {isBooked ? <Check size={14} /> : <CalendarClock size={14} />}
+                              {isBooked
+                                ? "Booked"
+                                : bookingBusy
+                                  ? "Booking…"
+                                  : isFull
+                                    ? "Full"
+                                    : "Book"}
+                            </button>
+                          </div>
+                        </article>
+                      );
+                    })
+                  ) : (
+                    <div className={`rounded-[22px] border p-5 ${closedInset}`}>
+                      <div className="text-[14px] font-semibold">
+                        No upcoming sessions yet
+                      </div>
+                      <div className={`mt-1 text-[12px] leading-5 ${closedMuted}`}>
+                        The schedule changes throughout the day. Browse all sessions
+                        to find an open room.
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </aside>
             </div>
           </div>
         </div>
