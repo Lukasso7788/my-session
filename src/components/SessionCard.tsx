@@ -7,9 +7,10 @@ import {
     useLayoutEffect,
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock } from "lucide-react";
 import { SessionStageBar } from "./SessionStageBar";
+import { supabase } from "../lib/supabase";
 import {
     loadEntitlementState,
     isPersonalPaywallForced,
@@ -20,49 +21,12 @@ import PaywallModal from "./PaywallModal";
 import type { SessionStage } from "../SessionConfig";
 import { PAYWALL_ENABLED } from "../lib/flags";
 
-/** =========================
- * ✅ Global Supabase singleton (avoid multiple GoTrueClient instances)
- * Uses Vite env vars:
- * - VITE_SUPABASE_URL
- * - VITE_SUPABASE_ANON_KEY
- * ========================= */
-type GlobalAny = typeof globalThis & {
-    __mysession_supabase__?: SupabaseClient | null;
-    __mysession_supabase_inited__?: boolean;
-};
-
 function getSupabase(): SupabaseClient | null {
-    const g = globalThis as GlobalAny;
-    if (g.__mysession_supabase_inited__) return g.__mysession_supabase__ || null;
-
-    g.__mysession_supabase_inited__ = true;
-
-    const env: any = (import.meta as any).env || {};
-    const url =
-        env.VITE_SUPABASE_URL ||
-        env.VITE_PUBLIC_SUPABASE_URL ||
-        env.VITE_NEXT_PUBLIC_SUPABASE_URL ||
-        "";
-    const anon =
-        env.VITE_SUPABASE_ANON_KEY ||
-        env.VITE_SUPABASE_KEY ||
-        env.VITE_PUBLIC_SUPABASE_ANON_KEY ||
-        env.VITE_NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-        "";
-
-    if (!url || !anon) {
-        console.warn(
-            "[SessionCard] Missing Supabase env vars (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY)."
-        );
-        g.__mysession_supabase__ = null;
-        return null;
-    }
-
-    g.__mysession_supabase__ = createClient(url, anon, {
-        auth: { persistSession: true, autoRefreshToken: true },
-    });
-
-    return g.__mysession_supabase__ || null;
+    // SessionCard must use the same client and auth storage key as the rest of
+    // the app. Creating a second client here used the default Supabase storage
+    // key instead of `mysession-auth`, so requests were sent without the active
+    // user's JWT even while the app correctly showed the user as signed in.
+    return supabase;
 }
 
 type BookSessionOptions = {
