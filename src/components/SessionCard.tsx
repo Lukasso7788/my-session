@@ -99,6 +99,8 @@ interface SessionCardProps {
         payload: { email: string; message?: string }
     ) => void | Promise<any>;
 
+    onHostTransferComplete?: () => void | Promise<void>;
+
     currentUser?: {
         id: string;
         full_name?: string;
@@ -1799,9 +1801,11 @@ async function searchHostTransferCandidates(query: string): Promise<HostTransfer
 async function transferSessionHostRights(args: {
     sessionId: string;
     newHostId: string;
+    newHostName?: string | null;
 }): Promise<void> {
     const sessionId = String(args.sessionId || "").trim();
     const newHostId = String(args.newHostId || "").trim();
+    const newHostName = String(args.newHostName || "").trim() || "Host";
 
     if (!sessionId || !newHostId) {
         throw new Error("Missing session or new host id.");
@@ -1812,12 +1816,48 @@ async function transferSessionHostRights(args: {
 
     await ensureAuthReady(sb);
 
-    const { error } = await sb.rpc("transfer_session_host_rights", {
+    const { error: rpcError } = await sb.rpc("transfer_session_host_rights", {
         p_session_id: sessionId,
         p_new_host_id: newHostId,
     });
 
-    if (error) throw error;
+    if (!rpcError) return;
+
+    const rpcErrorCode = String((rpcError as any)?.code || "").toUpperCase();
+    const rpcErrorMessage = String((rpcError as any)?.message || "").toLowerCase();
+    const rpcIsMissing =
+        rpcErrorCode === "PGRST202" ||
+        rpcErrorCode === "42883" ||
+        rpcErrorMessage.includes("could not find the function") ||
+        rpcErrorMessage.includes("function public.transfer_session_host_rights") &&
+            rpcErrorMessage.includes("does not exist");
+
+    if (!rpcIsMissing) throw rpcError;
+
+    // Compatibility path for deployments where the migration has not reached
+    // Supabase yet. The host_id guard makes this an atomic owner-only transfer;
+    // select() also lets us detect an RLS-blocked zero-row update.
+    const { data: authData, error: authError } = await sb.auth.getUser();
+    if (authError) throw authError;
+
+    const currentUserId = String(authData?.user?.id || "").trim();
+    if (!currentUserId) throw new Error("You must be signed in to transfer host rights.");
+
+    const { data: updated, error: updateError } = await sb
+        .from("sessions")
+        .update({
+            host_id: newHostId,
+            host_name: newHostName,
+        })
+        .eq("id", sessionId)
+        .eq("host_id", currentUserId)
+        .select("id, host_id")
+        .maybeSingle();
+
+    if (updateError) throw updateError;
+    if (!updated || String(updated.host_id || "") !== newHostId) {
+        throw new Error("Host transfer was blocked. Only the current host can transfer this session.");
+    }
 }
 
 
@@ -3034,6 +3074,7 @@ function EditSessionStudioModal(props: {
                 await transferSessionHostRights({
                     sessionId: String(session.id),
                     newHostId,
+                    newHostName: candidate.full_name || candidate.email || null,
                 });
 
                 setTransferNotice(`Host rights transferred to ${label}.`);
@@ -3751,6 +3792,7 @@ export default function SessionCard({
     onJoin,
     onDelete,
     onEditSession,
+    onHostTransferComplete,
     currentUser,
 }: SessionCardProps) {
     const navigate = useNavigate();
@@ -5324,8 +5366,9 @@ export default function SessionCard({
                             }
                             : null,
                     ].filter(Boolean) as HostTransferCandidate[])}
-                    onHostTransferred={(newHost) => {
+                    onHostTransferred={async (newHost) => {
                         setHostIdOverride(newHost.id);
+                        await onHostTransferComplete?.();
                         window.setTimeout(() => {
                             setIsEditModalOpen(false);
                         }, 650);

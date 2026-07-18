@@ -1957,6 +1957,7 @@ export function SessionsPage() {
       onDelete={remove}
       onEditSession={editSession}
       onInviteToSession={inviteToSession}
+      onHostTransferComplete={fetchSessions}
     />
   );
 
