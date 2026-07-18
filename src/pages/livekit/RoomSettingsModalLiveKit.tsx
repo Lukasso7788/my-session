@@ -1388,6 +1388,18 @@ export function RoomSettingsModalLiveKit({
                 </div>
 
                 <div className="ms-room-settings-scrollbar custom-scrollbar px-5 sm:px-6 py-4 sm:py-5 flex-1 overflow-y-auto overscroll-contain">
+                    {onChangeVoiceUiEnabled ? (
+                        <div className={`mb-5 rounded-2xl p-4 ${sectionCls}`}>
+                            <ToggleRow
+                                label="Voice control"
+                                description="Listen for English voice commands in the room. Turning this off also hides the Voice Control indicator and command popup."
+                                checked={voiceUiEnabled}
+                                onChange={onChangeVoiceUiEnabled}
+                                isLight={isLight}
+                            />
+                        </div>
+                    ) : null}
+
                     <div className={`mb-5 rounded-2xl p-4 ${sectionCls}`}>
                         <div className="flex items-start justify-between gap-3 mb-4">
                             <div className="min-w-0">
@@ -1588,16 +1600,6 @@ export function RoomSettingsModalLiveKit({
                                 <div className="text-[13px] font-semibold mb-4">Room tools</div>
 
                                 <div className="flex flex-col gap-4">
-                                    {onChangeVoiceUiEnabled ? (
-                                        <ToggleRow
-                                            label="Voice control"
-                                            description="Listen for English voice commands in the room. Turning this off also hides the Voice Control indicator and command popup."
-                                            checked={voiceUiEnabled}
-                                            onChange={onChangeVoiceUiEnabled}
-                                            isLight={isLight}
-                                        />
-                                    ) : null}
-
                                     <ToggleRow
                                         label="Participant joined sound"
                                         description="Play a notification when someone joins the room."
@@ -1704,6 +1706,55 @@ export function RoomSettingsModalLiveKit({
                                     mirrored={previewMirrored}
                                 />
                             </div>
+
+                            {!disableFxControls ? (
+                                <div className={`rounded-2xl p-4 ${sectionCls}`}>
+                                    <div className="text-[13px] font-semibold mb-4">Color correction</div>
+
+                                    <div className="flex flex-col gap-4">
+                                        <ToggleRow
+                                            label="Enable color correction"
+                                            description="Publishes the correction with your camera so everyone sees it. Virtual background images keep their original colors."
+                                            checked={colorCorrectionEnabled}
+                                            onChange={onToggleColorCorrection}
+                                            isLight={isLight}
+                                        />
+
+                                        <SliderField
+                                            label="Brightness"
+                                            min={50}
+                                            max={150}
+                                            step={1}
+                                            value={brightness}
+                                            onChange={onChangeBrightness}
+                                            disabled={!colorCorrectionEnabled}
+                                            isLight={isLight}
+                                        />
+
+                                        <SliderField
+                                            label="Contrast"
+                                            min={50}
+                                            max={150}
+                                            step={1}
+                                            value={contrast}
+                                            onChange={onChangeContrast}
+                                            disabled={!colorCorrectionEnabled}
+                                            isLight={isLight}
+                                        />
+
+                                        <SliderField
+                                            label="Saturation"
+                                            min={50}
+                                            max={180}
+                                            step={1}
+                                            value={saturate}
+                                            onChange={onChangeSaturate}
+                                            disabled={!colorCorrectionEnabled}
+                                            isLight={isLight}
+                                        />
+                                    </div>
+                                </div>
+                            ) : null}
 
                             {!disableFxControls && (
                                 <>
@@ -1874,52 +1925,6 @@ export function RoomSettingsModalLiveKit({
                                         </div>
                                     </div>
 
-                                    <div className={`rounded-2xl p-4 ${sectionCls}`}>
-                                        <div className="text-[13px] font-semibold mb-4">Color correction</div>
-
-                                        <div className="flex flex-col gap-4">
-                                            <ToggleRow
-                                                label="Enable color correction"
-                                                description="Publishes the correction with your camera so everyone sees it. Virtual background images keep their original colors."
-                                                checked={colorCorrectionEnabled}
-                                                onChange={onToggleColorCorrection}
-                                                isLight={isLight}
-                                            />
-
-                                            <SliderField
-                                                label="Brightness"
-                                                min={50}
-                                                max={150}
-                                                step={1}
-                                                value={brightness}
-                                                onChange={onChangeBrightness}
-                                                disabled={!colorCorrectionEnabled}
-                                                isLight={isLight}
-                                            />
-
-                                            <SliderField
-                                                label="Contrast"
-                                                min={50}
-                                                max={150}
-                                                step={1}
-                                                value={contrast}
-                                                onChange={onChangeContrast}
-                                                disabled={!colorCorrectionEnabled}
-                                                isLight={isLight}
-                                            />
-
-                                            <SliderField
-                                                label="Saturation"
-                                                min={50}
-                                                max={180}
-                                                step={1}
-                                                value={saturate}
-                                                onChange={onChangeSaturate}
-                                                disabled={!colorCorrectionEnabled}
-                                                isLight={isLight}
-                                            />
-                                        </div>
-                                    </div>
                                 </>
                             )}
                         </div>

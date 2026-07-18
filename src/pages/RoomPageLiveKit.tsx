@@ -596,6 +596,13 @@ type ColorCorrectionState = {
   warmth: number;
 };
 
+const DEFAULT_COLOR_CORRECTION: ColorCorrectionState = {
+  brightness: 100,
+  contrast: 100,
+  saturation: 100,
+  warmth: 0,
+};
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
@@ -6486,16 +6493,21 @@ export function RoomPageLiveKit({
   const [audioResumeNonce, setAudioResumeNonce] = useState(0);
   const [audioResumeBusy, setAudioResumeBusy] = useState(false);
 
-  const [colorCorrection, setColorCorrection] = useState<ColorCorrectionState>({
-    brightness: 100,
-    contrast: 100,
-    saturation: 100,
-    warmth: 0,
-  });
+  const [colorCorrectionEnabled, setColorCorrectionEnabled] = useState(true);
+  const [colorCorrection, setColorCorrection] =
+    useState<ColorCorrectionState>(DEFAULT_COLOR_CORRECTION);
+
+  const effectiveColorCorrection = useMemo(
+    () =>
+      colorCorrectionEnabled
+        ? colorCorrection
+        : DEFAULT_COLOR_CORRECTION,
+    [colorCorrectionEnabled, colorCorrection],
+  );
 
   const localVideoFilterCss = useMemo(
-    () => buildColorCorrectionFilter(colorCorrection),
-    [colorCorrection],
+    () => buildColorCorrectionFilter(effectiveColorCorrection),
+    [effectiveColorCorrection],
   );
 
   const uploadedBgUrlRef = useRef<string | null>(null);
@@ -6597,7 +6609,7 @@ export function RoomPageLiveKit({
     mode: FxMode,
     blur: number,
     bgUrl: string,
-    correction: PublishedColorCorrection = colorCorrection,
+    correction: PublishedColorCorrection = effectiveColorCorrection,
   ) => {
     // Color correction alone only needs LiveKit's generic video processor.
     // MediaPipe/WebGL background support is required only for blur/background.
@@ -10130,6 +10142,7 @@ export function RoomPageLiveKit({
     ] as const) {
       if (!command.startsWith(prefix)) continue;
       const value = numericVoiceValue(prefix);
+      setColorCorrectionEnabled(true);
       setColorCorrection((current) => ({ ...current, [key]: value }));
       setVoiceUiLastCommand(`${key[0].toUpperCase()}${key.slice(1)} ${value}`);
       return;
@@ -11807,7 +11820,7 @@ export function RoomPageLiveKit({
         videoFxMode,
         blurStrength,
         bgImageUrl,
-        colorCorrection,
+        effectiveColorCorrection,
       ).catch((error) => {
         console.error("apply published color correction failed:", error);
         setFxError(
@@ -11829,6 +11842,7 @@ export function RoomPageLiveKit({
     colorCorrection.contrast,
     colorCorrection.saturation,
     colorCorrection.warmth,
+    colorCorrectionEnabled,
   ]);
 
   // chat unread
@@ -15224,11 +15238,14 @@ export function RoomPageLiveKit({
             setVoiceUiLastCommand("");
             setVoiceUiLastHeard("");
           }}
-          colorCorrectionEnabled={isLgUp}
+          colorCorrectionEnabled={isLgUp && colorCorrectionEnabled}
           brightness={colorCorrection.brightness}
           contrast={colorCorrection.contrast}
           saturate={colorCorrection.saturation}
-          onToggleColorCorrection={() => { }}
+          onToggleColorCorrection={(enabled: boolean) => {
+            if (!isLgUp) return;
+            setColorCorrectionEnabled(enabled);
+          }}
           onChangeBrightness={(v: number) => {
             if (!isLgUp) return;
             setColorCorrection((p) => ({ ...p, brightness: v }));
