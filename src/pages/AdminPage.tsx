@@ -1135,6 +1135,13 @@ export default function AdminPage() {
               Scheduled emails
             </Link>
 
+            <Link
+              to="/admin/sender-email"
+              className="rounded-full border border-[#57C964] px-5 py-2.5 text-[14px] font-semibold text-[#2F2F2F] hover:bg-[#57C964] hover:text-white"
+            >
+              Sender lifecycle
+            </Link>
+
             <button
               type="button"
               onClick={() => navigate("/sessions")}

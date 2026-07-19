@@ -2056,7 +2056,16 @@ const MOBILE_LAYOUT_SWITCHER_VISIBLE_KEY =
 const CONNECTION_DIAGNOSTICS_TABLE = "connection_diagnostics";
 const CONNECTION_DIAGNOSTICS_LOCAL_KEY =
   "mysession_connection_diagnostics_buffer_v1";
-const CONNECTION_DIAGNOSTICS_LOCAL_MAX = 120;
+const CONNECTION_DIAGNOSTICS_LOCAL_MAX = 60;
+const CONNECTION_DIAGNOSTICS_DEDUP_MS = 30_000;
+const CONNECTION_DIAGNOSTICS_REMOTE_SAMPLE_RATE = 1 / 20;
+const CONNECTION_DIAGNOSTICS_CRITICAL_EVENTS = new Set([
+  "livekit.connected",
+  "livekit.disconnected",
+  "livekit.reconnecting",
+  "livekit.reconnected",
+  "window.offline",
+]);
 
 function normalizeVideoTileLayoutPreset(raw: unknown): VideoTileLayoutPreset {
   const s = String(raw || "").trim();
@@ -8254,17 +8263,22 @@ export function RoomPageLiveKit({
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
   const [screenShareOn, setScreenShareOn] = useState(false);
+  const connectionDiagnosticWriteTimesRef = useRef<Record<string, number>>({});
 
   const writeConnectionDiagnostic = useCallback(
     async (eventType: string, payload: Record<string, unknown> = {}) => {
+      const now = Date.now();
+      const lastWriteAt =
+        connectionDiagnosticWriteTimesRef.current[eventType] || 0;
+      if (now - lastWriteAt < CONNECTION_DIAGNOSTICS_DEDUP_MS) return;
+      connectionDiagnosticWriteTimesRef.current[eventType] = now;
+
       const network = getNetworkDiagnosticSnapshot();
       const { browser, browserVersion, os } = getBrowserDetails();
       const deviceType = inferDeviceTypeFromRuntime({
         isMobileQuery,
         isTabletQuery,
       });
-      const nav = typeof navigator !== "undefined" ? (navigator as any) : null;
-      const win = typeof window !== "undefined" ? window : null;
       const roomAny: any = roomRef.current;
 
       const hiddenForMs = pageHiddenAtRef.current
@@ -8289,70 +8303,64 @@ export function RoomPageLiveKit({
 
       pushConnectionDiagnosticToLocalBuffer(localEntry);
 
+      const isCriticalEvent =
+        CONNECTION_DIAGNOSTICS_CRITICAL_EVENTS.has(eventType);
+      if (
+        !isCriticalEvent &&
+        Math.random() >= CONNECTION_DIAGNOSTICS_REMOTE_SAMPLE_RATE
+      ) {
+        return;
+      }
+
       try {
-        await supabase.from(CONNECTION_DIAGNOSTICS_TABLE).insert({
-          session_id: session?.id || null,
-          user_id: authUserId || null,
-          event_type: eventType,
+        const { error } = await supabase
+          .from(CONNECTION_DIAGNOSTICS_TABLE)
+          .insert({
+            session_id: session?.id || null,
+            user_id: authUserId || null,
+            event_type: eventType,
 
-          visibility_state:
-            typeof document !== "undefined"
-              ? document.visibilityState
-              : "unknown",
-          network_online: network.online,
+            visibility_state:
+              typeof document !== "undefined"
+                ? document.visibilityState
+                : "unknown",
+            network_online: network.online,
 
-          room_state: String(roomAny?.state || ""),
-          livekit_connected: !!connectedRef.current,
+            room_state: String(roomAny?.state || ""),
+            livekit_connected: !!connectedRef.current,
 
-          user_agent: String(nav?.userAgent || ""),
-          platform: String(nav?.userAgentData?.platform || nav?.platform || ""),
-          browser,
-          browser_version: browserVersion,
-          os,
-          device_type: deviceType,
+            browser,
+            browser_version: browserVersion,
+            os,
+            device_type: deviceType,
 
-          screen_width:
-            Number(win?.screen?.width || win?.innerWidth || 0) || null,
-          screen_height:
-            Number(win?.screen?.height || win?.innerHeight || 0) || null,
-          viewport_width: Number(win?.innerWidth || 0) || null,
-          viewport_height: Number(win?.innerHeight || 0) || null,
-          device_pixel_ratio: Number(win?.devicePixelRatio || 1) || null,
+            effective_connection_type: network.effectiveType || null,
+            connection_type: network.connectionType || null,
+            downlink: network.downlink,
+            rtt: network.rtt,
+            save_data: network.saveData,
 
-          effective_connection_type: network.effectiveType || null,
-          connection_type: network.connectionType || null,
-          downlink: network.downlink,
-          rtt: network.rtt,
-          save_data: network.saveData,
-
-          payload: {
-            ...payload,
-            tabId,
-            routeId: routeId || null,
-            effectiveSessionParam,
-            isMobileQuery,
-            isTabletQuery,
-            isLgUp,
-            hiddenForMs,
-            pageHiddenAt: pageHiddenAtRef.current,
-            returningFromBackground: returningFromBackgroundRef.current,
-            explicitLeaveRequested: explicitLeaveRequestedRef.current,
-            kickedBySignal: kickedBySignalRef.current,
-            connected,
-            connectedRef: connectedRef.current,
-            joinRequested,
-            joinRequestedRef: joinRequestedRef.current,
-            roomConnectionState: String(roomAny?.state || ""),
-            remoteParticipants: roomAny?.remoteParticipants?.size ?? null,
-            localIdentity: roomAny?.localParticipant?.identity || "",
-            micOn,
-            camOn,
-            hardwareConcurrency: Number(nav?.hardwareConcurrency || 0) || null,
-            deviceMemory: Number(nav?.deviceMemory || 0) || null,
-            maxTouchPoints: Number(nav?.maxTouchPoints || 0) || null,
-            language: String(nav?.language || ""),
-          },
-        });
+            hidden_for_ms: hiddenForMs,
+            disconnect_reason:
+              eventType === "livekit.disconnected"
+                ? String(payload.reason ?? "") || null
+                : null,
+            remote_participants: roomAny?.remoteParticipants?.size ?? null,
+            mic_on: micOn,
+            cam_on: camOn,
+            sample_rate: isCriticalEvent
+              ? 1
+              : CONNECTION_DIAGNOSTICS_REMOTE_SAMPLE_RATE,
+            details: {
+              tab_id: tabId,
+              is_mobile_layout: isMobileQuery,
+              is_tablet_layout: isTabletQuery,
+              returning_from_background: returningFromBackgroundRef.current,
+              explicit_leave_requested: explicitLeaveRequestedRef.current,
+              join_requested: joinRequestedRef.current,
+            },
+          });
+        if (error) throw error;
       } catch (e) {
         console.warn("[connection-diagnostics] insert failed:", e);
       }
@@ -8362,12 +8370,7 @@ export function RoomPageLiveKit({
       authUserId,
       isMobileQuery,
       isTabletQuery,
-      isLgUp,
       tabId,
-      routeId,
-      effectiveSessionParam,
-      connected,
-      joinRequested,
       micOn,
       camOn,
     ],
@@ -8385,26 +8388,6 @@ export function RoomPageLiveKit({
       write(`document.visibilitychange:${document.visibilityState}`);
     };
 
-    const onPageHide = (e: PageTransitionEvent) => {
-      write("window.pagehide", { persisted: e.persisted });
-    };
-
-    const onPageShow = (e: PageTransitionEvent) => {
-      write("window.pageshow", { persisted: e.persisted });
-    };
-
-    const onBeforeUnload = () => {
-      write("window.beforeunload");
-    };
-
-    const onFreeze = () => {
-      write("document.freeze");
-    };
-
-    const onResume = () => {
-      write("document.resume");
-    };
-
     const onOnline = () => {
       write("window.online");
     };
@@ -8414,29 +8397,13 @@ export function RoomPageLiveKit({
     };
 
     document.addEventListener("visibilitychange", onVisibilityChange);
-    document.addEventListener("freeze", onFreeze as any);
-    document.addEventListener("resume", onResume as any);
-
-    window.addEventListener("pagehide", onPageHide);
-    window.addEventListener("pageshow", onPageShow);
-    window.addEventListener("beforeunload", onBeforeUnload);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
 
-    write("connection_diagnostics.mounted");
-
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      document.removeEventListener("freeze", onFreeze as any);
-      document.removeEventListener("resume", onResume as any);
-
-      window.removeEventListener("pagehide", onPageHide);
-      window.removeEventListener("pageshow", onPageShow);
-      window.removeEventListener("beforeunload", onBeforeUnload);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
-
-      write("connection_diagnostics.unmounted");
     };
   }, [writeConnectionDiagnostic]);
 

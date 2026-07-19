@@ -2,7 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
-import { loadEntitlementState, type EntitlementState } from "../lib/entitlements";
+import {
+    isPersonalPaywallForced,
+    loadEntitlementState,
+    type EntitlementState,
+} from "../lib/entitlements";
 import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "./PaywallModal";
 
@@ -139,6 +143,10 @@ export default function Header() {
         });
     }, [entitlementState]);
 
+    const paywallBlocked = isPersonalPaywallForced(entitlementState)
+        ? true
+        : !!paywallDecision?.blocked;
+
     useEffect(() => {
         console.log("[PAYWALL Header]", {
             entitlementState,
@@ -273,7 +281,7 @@ export default function Header() {
     };
 
     const handleCreateSessionClick = () => {
-        if (paywallDecision?.blocked) {
+        if (paywallBlocked) {
             setPaywallOpen(true);
             return;
         }

@@ -1,0 +1,2 @@
+﻿BACKUP=C:\Windows\System32\drivers\etc\hosts.codex-backup-20260719-020304
+REMOVED=11

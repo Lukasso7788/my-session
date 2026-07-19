@@ -11,6 +11,7 @@ import {
   getWeekStartDate,
   WeeklyUsageRow,
 } from "./usage";
+import { PAYWALL_ENABLED } from "./flags";
 
 export type EntitlementState = {
   entitlement: UserEntitlement | null;
@@ -29,7 +30,7 @@ export type EntitlementState = {
 export function isPersonalPaywallForced(
   state: EntitlementState | null | undefined
 ): boolean {
-  return state?.entitlement?.force_paywall === true;
+  return PAYWALL_ENABLED && state?.entitlement?.force_paywall === true;
 }
 
 function normalizeWeekStartForQuery(input: unknown): string {

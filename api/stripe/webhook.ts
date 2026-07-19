@@ -282,6 +282,51 @@ async function markHostSupportPaymentAvailable(session: any) {
   });
 }
 
+async function enqueueStripeLifecycleEvent(params: {
+  userId: string;
+  eventType: string;
+  idempotencyKey: string;
+  properties?: Record<string, unknown>;
+}) {
+  try {
+    const { data } = await supabaseAdmin.auth.admin.getUserById(params.userId);
+    const email = String(data?.user?.email || "").trim();
+    if (!email) return;
+    await supabaseAdmin.rpc("enqueue_sender_event", {
+      p_user_id: params.userId,
+      p_email: email,
+      p_event_type: params.eventType,
+      p_properties: {
+        user_id: params.userId,
+        first_name: String(data?.user?.user_metadata?.full_name || email || "Friend").split(" ")[0],
+        timezone: data?.user?.user_metadata?.timezone || "UTC",
+        upgrade_url: `${process.env.APP_URL || "https://mysession.club"}/pricing`,
+        ...(params.properties || {}),
+      },
+      p_idempotency_key: params.idempotencyKey,
+    });
+  } catch (error) {
+    console.error("Stripe lifecycle event enqueue failed", error);
+  }
+}
+
+async function findEntitlementByStripeObject(object: any) {
+  const subscriptionId =
+    typeof object?.subscription === "string"
+      ? object.subscription
+      : object?.subscription?.id || (object?.object === "subscription" ? object.id : "");
+  const customerId = typeof object?.customer === "string" ? object.customer : object?.customer?.id || "";
+  let query = supabaseAdmin
+    .from("user_entitlements")
+    .select("user_id,plan,status,stripe_subscription_id,stripe_customer_id");
+  if (subscriptionId) query = query.eq("stripe_subscription_id", subscriptionId);
+  else if (customerId) query = query.eq("stripe_customer_id", customerId);
+  else return null;
+  const { data, error } = await query.maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     return res.status(405).send("Method not allowed");
@@ -356,6 +401,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         stripeCustomerId,
       });
 
+      await enqueueStripeLifecycleEvent({
+        userId: metadataUserId,
+        eventType: "subscription_started",
+        idempotencyKey: `subscription_started:${session.id}`,
+        properties: { plan: metadataPlan, stripe_checkout_session_id: session.id },
+      });
+
       console.log("Stripe webhook entitlement updated", {
         sessionId: session.id,
         userId: metadataUserId,
@@ -365,6 +417,80 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         stripeSubscriptionId,
         force_paywall: payload.force_paywall,
       });
+    }
+
+    if (event.type === "invoice.payment_failed" || event.type === "invoice.paid") {
+      const invoice = event.data.object as any;
+      const entitlement = await findEntitlementByStripeObject(invoice);
+      if (entitlement?.user_id) {
+        await enqueueStripeLifecycleEvent({
+          userId: entitlement.user_id,
+          eventType: event.type === "invoice.payment_failed" ? "payment_failed" : "payment_recovered",
+          idempotencyKey: `${event.type}:${invoice.id}`,
+          properties: { plan: entitlement.plan || "free", invoice_id: invoice.id },
+        });
+      }
+    }
+
+    if (event.type === "customer.subscription.deleted") {
+      const subscription = event.data.object as any;
+      const entitlement = await findEntitlementByStripeObject(subscription);
+      if (entitlement?.user_id) {
+        await supabaseAdmin
+          .from("user_entitlements")
+          .update({ status: "cancelled", updated_at: new Date().toISOString() })
+          .eq("user_id", entitlement.user_id);
+        await enqueueStripeLifecycleEvent({
+          userId: entitlement.user_id,
+          eventType: "subscription_cancelled",
+          idempotencyKey: `subscription_cancelled:${subscription.id}:${subscription.canceled_at || event.created}`,
+          properties: {
+            plan: "free",
+            access_ends_at: subscription.current_period_end
+              ? new Date(subscription.current_period_end * 1000).toISOString()
+              : "",
+          },
+        });
+      }
+    }
+
+    if (event.type === "customer.subscription.updated") {
+      const subscription = event.data.object as any;
+      const previous = (event.data as any)?.previous_attributes || {};
+      const cancellationChanged = Object.prototype.hasOwnProperty.call(
+        previous,
+        "cancel_at_period_end",
+      );
+      const entitlement = cancellationChanged
+        ? await findEntitlementByStripeObject(subscription)
+        : null;
+
+      if (entitlement?.user_id && subscription.cancel_at_period_end === true) {
+        await enqueueStripeLifecycleEvent({
+          userId: entitlement.user_id,
+          eventType: "subscription_cancelled",
+          idempotencyKey: `subscription_cancelled:${event.id}`,
+          properties: {
+            plan: entitlement.plan || "free",
+            access_ends_at: subscription.current_period_end
+              ? new Date(subscription.current_period_end * 1000).toISOString()
+              : "",
+          },
+        });
+      }
+
+      if (
+        entitlement?.user_id &&
+        previous.cancel_at_period_end === true &&
+        subscription.cancel_at_period_end === false
+      ) {
+        await enqueueStripeLifecycleEvent({
+          userId: entitlement.user_id,
+          eventType: "subscription_reactivated",
+          idempotencyKey: `subscription_reactivated:${event.id}`,
+          properties: { plan: entitlement.plan || "free" },
+        });
+      }
     }
 
     return res.status(200).json({ received: true });

@@ -18,6 +18,8 @@ import AuthCallback from "./pages/AuthCallback";
 import AdminPage from "./pages/AdminPage";
 import DailyScheduleEmailAdminPage from "./pages/DailyScheduleEmailAdminPage";
 import DailyScheduleUnsubscribePage from "./pages/DailyScheduleUnsubscribePage";
+import EmailPreferencesPage from "./pages/EmailPreferencesPage";
+import SenderEmailAdminPage from "./pages/SenderEmailAdminPage";
 
 import PricingPage from "./pages/PricingPage";
 import PricingSuccessPage from "./pages/PricingSuccessPage";
@@ -196,6 +198,7 @@ export default function App() {
           <Route path="/referrals" element={<ReferralPage />} />
           <Route path="/affiliate" element={<AffiliatePage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/settings/email" element={<EmailPreferencesPage />} />
           <Route path="/profile/:id" element={<PublicProfilePage />} />
 
           <Route path="/admin" element={<AdminPage />} />
@@ -206,6 +209,7 @@ export default function App() {
             path="/admin/daily-schedule-email"
             element={<DailyScheduleEmailAdminPage />}
           />
+          <Route path="/admin/sender-email" element={<SenderEmailAdminPage />} />
 
           <Route
             path="/email/unsubscribe"

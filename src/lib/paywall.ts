@@ -1,3 +1,4 @@
+import { PAYWALL_ENABLED } from "./flags";
 import {
   PRICING,
   getWeeklyLimitState,
@@ -9,7 +10,7 @@ import {
 export type PaywallDecision = {
   enabled: boolean;
   blocked: boolean;
-  reason: "unlimited" | "within_limits" | "lifetime_limit_reached";
+  reason: "disabled" | "unlimited" | "within_limits" | "lifetime_limit_reached";
   isUnlimited: boolean;
   lifetimeSessionsCount: number | null;
   lifetimeSessionsLimit: number;
@@ -34,6 +35,18 @@ export function getPaywallDecision(params: {
     ? Math.max(0, Number(params.lifetimeSessionsCount))
     : null;
   const lifetimeSessionsLimit = PRICING.freeLifetimeSessions;
+
+  if (!PAYWALL_ENABLED) {
+    return {
+      enabled: false,
+      blocked: false,
+      reason: "disabled",
+      isUnlimited,
+      lifetimeSessionsCount,
+      lifetimeSessionsLimit,
+      weekly,
+    };
+  }
 
   if (isUnlimited) {
     return {

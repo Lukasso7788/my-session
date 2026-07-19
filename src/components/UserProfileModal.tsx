@@ -203,6 +203,7 @@ export function UserProfileModal({ user, onClose }: UserProfileModalProps) {
             .from("sessions")
             .select("id, title, start_time, created_at, schedule")
             .eq("host_id", userId)
+            .or("is_private.is.null,is_private.eq.false")
             .gte("start_time", currentWindowStart)
             .order("start_time", { ascending: true })
             .limit(3),

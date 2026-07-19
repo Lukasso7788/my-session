@@ -299,6 +299,25 @@ async function createSubscriptionCheckout(params: {
         : undefined,
   });
 
+  try {
+    await supabaseAdmin.rpc("enqueue_sender_event", {
+      p_user_id: user.id,
+      p_email: user.email || "",
+      p_event_type: "checkout_started",
+      p_properties: {
+        user_id: user.id,
+        first_name: String(user.user_metadata?.full_name || user.email || "Friend").split(" ")[0],
+        timezone: user.user_metadata?.timezone || "UTC",
+        target_plan: entitlementPlan,
+        checkout_url: session.url,
+        upgrade_url: `${APP_URL}/pricing`,
+      },
+      p_idempotency_key: `checkout_started:${session.id}`,
+    });
+  } catch (error) {
+    console.error("Sender checkout event enqueue failed", error);
+  }
+
   return { url: session.url };
 }
 

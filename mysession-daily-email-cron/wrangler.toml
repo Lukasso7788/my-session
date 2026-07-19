@@ -3,9 +3,10 @@ main = "src/index.ts"
 compatibility_date = "2026-05-01"
 
 [triggers]
-crons = ["0 4 * * *"]
+crons = ["0 4 * * *", "*/5 * * * *"]
 
 [vars]
 MYSESSION_DAILY_EMAIL_CRON_URL = "https://www.mysession.club/api/livekit/admin"
 DAILY_SCHEDULE_AUDIENCE_NAME = "default"
 DAILY_SCHEDULE_CRON_LIMIT = "100"
+SENDER_LIFECYCLE_URL = "https://www.mysession.club/api/livekit/admin?senderAction=evaluate"

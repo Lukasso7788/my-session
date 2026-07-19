@@ -400,6 +400,7 @@ export default function ProfilePage() {
         .from("sessions")
         .select("id, title, start_time, schedule, duration_minutes, created_at")
         .eq("host_id", user.id)
+        .or("is_private.is.null,is_private.eq.false")
         .order("created_at", { ascending: false });
 
       if (!error && data) setSessions(data);
@@ -711,6 +712,14 @@ export default function ProfilePage() {
             </div>
 
             <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => navigate("/settings/email")}
+                className="inline-flex items-center justify-center rounded-full border border-[#2F2F2F] px-5 py-2.5 text-[14px] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition"
+              >
+                Email preferences
+              </button>
+
               <button
                 type="button"
                 onClick={() => navigate(`/profile/${user.id}`)}

@@ -15,6 +15,7 @@ import { supabase } from "../lib/supabase";
 import { getCurrentUserActiveBan, type ActiveBan } from "../lib/bans";
 import { loadEntitlementState, type EntitlementState } from "../lib/entitlements";
 import { PRICING } from "../lib/billing";
+import { PAYWALL_ENABLED } from "../lib/flags";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
@@ -715,6 +716,7 @@ export function SessionsPage() {
   }, [user?.id]);
 
   useEffect(() => {
+    if (!PAYWALL_ENABLED) return;
     if (!user?.id) return;
     if (!entitlementState?.isLoggedIn) return;
     if (entitlementState.isUnlimited) return;

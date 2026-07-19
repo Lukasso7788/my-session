@@ -3,6 +3,7 @@ import { randomBytes, randomUUID } from "crypto";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
+import { processSenderOutbox } from "../_lib/sender.js";
 
 type LiveKitAdminAction =
   | "mute_track"
@@ -23,7 +24,9 @@ type EmailAdminAction =
   | "daily_schedule_saved_audience_set"
   | "daily_schedule_send_saved_audience";
 
-type AdminAction = LiveKitAdminAction | EmailAdminAction;
+type SenderAdminAction = "sender_outbox_list" | "sender_outbox_retry";
+
+type AdminAction = LiveKitAdminAction | EmailAdminAction | SenderAdminAction;
 
 type TrackKind = "camera" | "microphone" | "";
 
@@ -40,6 +43,9 @@ type Body = {
   limit?: number;
   selectedUserIds?: string[];
   audienceName?: string;
+
+  // Sender lifecycle email actions
+  senderEventId?: string;
 
   // deprecated / ignored for auth decisions
   isHost?: boolean;
@@ -283,6 +289,13 @@ function normalizeEmailAction(raw: unknown): EmailAdminAction | "" {
   if (a === "daily_schedule_saved_audience_set") return "daily_schedule_saved_audience_set";
   if (a === "daily_schedule_send_saved_audience") return "daily_schedule_send_saved_audience";
 
+  return "";
+}
+
+function normalizeSenderAdminAction(raw: unknown): SenderAdminAction | "" {
+  const action = String(raw || "").trim().toLowerCase();
+  if (action === "sender_outbox_list") return "sender_outbox_list";
+  if (action === "sender_outbox_retry") return "sender_outbox_retry";
   return "";
 }
 
@@ -1498,6 +1511,74 @@ async function handleDailyScheduleSavedAudienceCronAction(params: {
   });
 }
 
+async function handleSenderLifecycleCronAction(params: {
+  req: VercelRequest;
+  res: VercelResponse;
+  sb: SupabaseClient;
+  evaluate: boolean;
+}) {
+  const { req, res, sb, evaluate } = params;
+  const expectedSecret = env("CRON_SECRET");
+  const suppliedSecret = String(req.headers["x-cron-secret"] || "").trim();
+
+  if (!expectedSecret || suppliedSecret !== expectedSecret) {
+    return res.status(401).json({ error: "cron_unauthorized" });
+  }
+
+  let evaluation: unknown = null;
+  if (evaluate) {
+    const { data, error } = await sb.rpc("evaluate_sender_lifecycle_events");
+    if (error) throw error;
+    evaluation = data;
+  }
+
+  const delivery = await processSenderOutbox(
+    sb,
+    Number(getQueryParam(req, "limit") || 50),
+  );
+
+  return res.status(200).json({ ok: true, evaluation, delivery });
+}
+
+async function handleSenderAdminAction(params: {
+  res: VercelResponse;
+  sb: SupabaseClient;
+  accessToken: string;
+  body: Body;
+  action: SenderAdminAction;
+}) {
+  const { res, sb, accessToken, body, action } = params;
+  await assertAppAdmin({ sb, accessToken });
+
+  if (action === "sender_outbox_retry") {
+    const id = String(body.senderEventId || "").trim();
+    if (!looksLikeUuid(id)) {
+      return res.status(400).json({ error: "sender_event_id_required" });
+    }
+
+    const { error } = await sb
+      .from("email_event_outbox")
+      .update({
+        status: "pending",
+        next_attempt_at: new Date().toISOString(),
+        last_error: null,
+        claimed_at: null,
+      })
+      .eq("id", id)
+      .in("status", ["failed", "dead"]);
+    if (error) throw error;
+  }
+
+  const { data, error } = await sb
+    .from("email_event_outbox")
+    .select("id,event_type,status,attempts,next_attempt_at,last_error,created_at,sent_at")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) throw error;
+
+  return res.status(200).json({ events: data || [] });
+}
+
 function setCors(res: VercelResponse, req: VercelRequest) {
   const origin = String(req.headers.origin || "*");
   res.setHeader("Cache-Control", "no-store, max-age=0");
@@ -1546,7 +1627,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(204).end();
     }
 
-        const body = req.method === "POST" ? parseBody(req) : {};
+    const body = req.method === "POST" ? parseBody(req) : {};
     const cronAction =
       req.method === "GET"
         ? normalizeEmailAction(getQueryParam(req, "cronAction"))
@@ -1554,6 +1635,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const isDailyEmailCron =
       req.method === "GET" && cronAction === "daily_schedule_send_saved_audience";
+    const senderCronAction = getQueryParam(req, "senderAction").toLowerCase();
+    const isSenderLifecycleCron =
+      req.method === "POST" &&
+      (senderCronAction === "evaluate" || senderCronAction === "process");
 
     if (req.method !== "POST" && !isDailyEmailCron) {
       res.setHeader("Allow", "GET, POST, OPTIONS");
@@ -1561,6 +1646,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const rawEmailAction = cronAction || normalizeEmailAction(body.action);
+    const rawSenderAdminAction = normalizeSenderAdminAction(body.action);
 
     const supabaseUrl = String(
       process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ""
@@ -1584,11 +1670,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    if (isSenderLifecycleCron) {
+      return await handleSenderLifecycleCronAction({
+        req,
+        res,
+        sb,
+        evaluate: senderCronAction === "evaluate",
+      });
+    }
+
     const accessToken = getBearerToken(req);
     if (!accessToken) {
       return res.status(401).json({
         error: "auth_required",
         hint: "Send Authorization: Bearer <supabase_access_token>",
+      });
+    }
+
+    if (rawSenderAdminAction) {
+      return await handleSenderAdminAction({
+        res,
+        sb,
+        accessToken,
+        body,
+        action: rawSenderAdminAction,
       });
     }
 

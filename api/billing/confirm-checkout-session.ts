@@ -183,6 +183,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       source: "checkout_confirm",
     });
 
+    try {
+      await supabaseAdmin.rpc("enqueue_sender_event", {
+        p_user_id: metadataUserId,
+        p_email: user.email || "",
+        p_event_type: "subscription_started",
+        p_properties: {
+          user_id: metadataUserId,
+          first_name: String(user.user_metadata?.full_name || user.email || "Friend").split(" ")[0],
+          timezone: user.user_metadata?.timezone || "UTC",
+          plan: metadataPlan,
+          pricing_url: `${process.env.APP_URL || "https://mysession.club"}/pricing`,
+        },
+        p_idempotency_key: `subscription_started:${session.id}`,
+      });
+    } catch (senderError) {
+      console.error("Sender subscription event enqueue failed", senderError);
+    }
+
     return res.status(200).json({
       ok: true,
       plan: metadataPlan,

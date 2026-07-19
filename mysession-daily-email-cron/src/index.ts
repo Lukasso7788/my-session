@@ -3,6 +3,29 @@ export interface Env {
   DAILY_SCHEDULE_CRON_SECRET: string;
   DAILY_SCHEDULE_CRON_LIMIT?: string;
   DAILY_SCHEDULE_AUDIENCE_NAME?: string;
+  SENDER_LIFECYCLE_URL?: string;
+  SENDER_CRON_SECRET?: string;
+}
+
+async function runSenderLifecycleCron(
+  env: Env,
+  trigger: "scheduled" | "manual",
+  action: "evaluate" | "process" = "process",
+) {
+  const url = String(env.SENDER_LIFECYCLE_URL || "").trim();
+  const secret = String(env.SENDER_CRON_SECRET || "").trim();
+  if (!url || !secret) return { skipped: true, reason: "sender_cron_not_configured" };
+  const startedAt = Date.now();
+  const target = new URL(url);
+  target.searchParams.set("senderAction", action);
+  const response = await fetch(target.toString(), {
+    method: "POST",
+    headers: { "x-cron-secret": secret, "user-agent": `mysession-cloudflare-sender-cron/${trigger}`, accept: "application/json" },
+  });
+  const text = await response.text();
+  let body: unknown = text;
+  try { body = JSON.parse(text); } catch { /* keep text */ }
+  return { skipped: false, ok: response.ok, status: response.status, durationMs: Date.now() - startedAt, body };
 }
 
 function json(data: unknown, status = 200) {
@@ -69,18 +92,19 @@ async function runDailyScheduleEmailCron(env: Env, trigger: "scheduled" | "manua
 }
 
 export default {
-  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    ctx.waitUntil(
-      runDailyScheduleEmailCron(env, "scheduled")
-        .then((result) => {
-          console.log("[daily-email-cron] result", result);
-        })
-        .catch((error) => {
-          console.error("[daily-email-cron] failed", {
-            message: error?.message || String(error),
-          });
-        })
-    );
+  async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    const jobs = event.cron === "0 4 * * *"
+      ? [
+          runDailyScheduleEmailCron(env, "scheduled").then((result) => console.log("[daily-email-cron] result", result)),
+          runSenderLifecycleCron(env, "scheduled", "evaluate").then((result) => console.log("[sender-lifecycle-evaluate] result", result)),
+        ]
+      : [
+          runSenderLifecycleCron(env, "scheduled", "process").then((result) => console.log("[sender-outbox-process] result", result)),
+        ];
+
+    ctx.waitUntil(Promise.allSettled(jobs).then((results) => {
+      for (const result of results) if (result.status === "rejected") console.error("[cron] failed", result.reason);
+    }));
   },
 
   async fetch(request: Request, env: Env) {
@@ -116,11 +140,24 @@ export default {
       }
     }
 
+    if (url.pathname === "/run-sender") {
+      const supplied = request.headers.get("x-cron-secret") || url.searchParams.get("secret") || "";
+      const expected = String(env.SENDER_CRON_SECRET || "").trim();
+      if (!expected || supplied !== expected) return json({ ok: false, error: "unauthorized" }, 401);
+      try {
+        const action = url.searchParams.get("action") === "process" ? "process" : "evaluate";
+        const result = await runSenderLifecycleCron(env, "manual", action);
+        return json(result, (result as any).ok || (result as any).skipped ? 200 : 502);
+      } catch (error: any) {
+        return json({ ok: false, error: error?.message || String(error) }, 500);
+      }
+    }
+
     return json(
       {
         ok: false,
         error: "not_found",
-        routes: ["/health", "/run"],
+        routes: ["/health", "/run", "/run-sender"],
       },
       404
     );
