@@ -35,6 +35,7 @@ import {
 } from "@livekit/track-processors";
 
 import { supabase } from "../lib/supabase";
+import { withTimeout } from "../lib/promiseTimeout";
 import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
 import {
@@ -4095,7 +4096,11 @@ export function RoomPageLiveKit({
 
     setEntitlementCheckedForUserId(null);
 
-    void loadEntitlementState()
+    void withTimeout(
+      loadEntitlementState(),
+      8_000,
+      "Access check timed out. Continuing with safe defaults.",
+    )
       .then((state) => {
         if (!cancelled) setEntitlementState(state);
       })
@@ -4231,9 +4236,19 @@ export function RoomPageLiveKit({
       setAuthReady((prev) => (prev ? prev : true));
     };
 
-    void supabase.auth.getSession().then(({ data }) => {
-      applyAuthSession("INITIAL_SESSION", data?.session || null);
-    });
+    void withTimeout(
+      supabase.auth.getSession(),
+      8_000,
+      "Room authentication check timed out.",
+    )
+      .then(({ data, error }) => {
+        if (error) throw error;
+        applyAuthSession("INITIAL_SESSION", data?.session || null);
+      })
+      .catch((error) => {
+        console.warn("[room-auth] session restore failed; continuing as guest", error);
+        applyAuthSession("INITIAL_SESSION", null);
+      });
 
     const {
       data: { subscription },
@@ -5505,22 +5520,30 @@ export function RoomPageLiveKit({
 
         // Main path: normal room-livekit/:uuid.
         if (looksLikeUuid(rawId)) {
-          const res = await supabase
-            .from("sessions")
-            .select(SESSION_SELECT_STR)
-            .eq("id", rawId)
-            .maybeSingle();
+          const res = await withTimeout(
+            supabase
+              .from("sessions")
+              .select(SESSION_SELECT_STR)
+              .eq("id", rawId)
+              .maybeSingle(),
+            12_000,
+            "Loading this session timed out. Please retry.",
+          );
 
           data = res.data;
           error = res.error;
         } else {
           // Fallback path: if a route ever passes a slug/custom room param.
           // This prevents the room from collapsing into the useless "Back" screen.
-          const res = await supabase
-            .from("sessions")
-            .select(SESSION_SELECT_STR)
-            .eq("custom_slug", rawId)
-            .maybeSingle();
+          const res = await withTimeout(
+            supabase
+              .from("sessions")
+              .select(SESSION_SELECT_STR)
+              .eq("custom_slug", rawId)
+              .maybeSingle(),
+            12_000,
+            "Loading this session timed out. Please retry.",
+          );
 
           data = res.data;
           error = res.error;
