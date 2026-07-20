@@ -3,7 +3,11 @@ import { randomBytes, randomUUID } from "crypto";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
-import { processSenderOutbox } from "../_lib/sender.js";
+import {
+  SENDER_EVENT_TYPES,
+  emitSenderTestSuite,
+  processSenderOutbox,
+} from "../_lib/sender.js";
 
 type LiveKitAdminAction =
   | "mute_track"
@@ -24,7 +28,11 @@ type EmailAdminAction =
   | "daily_schedule_saved_audience_set"
   | "daily_schedule_send_saved_audience";
 
-type SenderAdminAction = "sender_outbox_list" | "sender_outbox_retry";
+type SenderAdminAction =
+  | "sender_outbox_list"
+  | "sender_outbox_retry"
+  | "sender_outbox_process"
+  | "sender_test_all";
 
 type AdminAction = LiveKitAdminAction | EmailAdminAction | SenderAdminAction;
 
@@ -46,6 +54,8 @@ type Body = {
 
   // Sender lifecycle email actions
   senderEventId?: string;
+  senderTestEmail?: string;
+  senderTestConfirmation?: string;
 
   // deprecated / ignored for auth decisions
   isHost?: boolean;
@@ -296,6 +306,8 @@ function normalizeSenderAdminAction(raw: unknown): SenderAdminAction | "" {
   const action = String(raw || "").trim().toLowerCase();
   if (action === "sender_outbox_list") return "sender_outbox_list";
   if (action === "sender_outbox_retry") return "sender_outbox_retry";
+  if (action === "sender_outbox_process") return "sender_outbox_process";
+  if (action === "sender_test_all") return "sender_test_all";
   return "";
 }
 
@@ -1550,6 +1562,32 @@ async function handleSenderAdminAction(params: {
   const { res, sb, accessToken, body, action } = params;
   await assertAppAdmin({ sb, accessToken });
 
+  if (action === "sender_test_all") {
+    const email = String(body.senderTestEmail || "").trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      return res.status(400).json({ error: "valid_sender_test_email_required" });
+    }
+    if (body.senderTestConfirmation !== "SEND_ALL_TEST_EMAILS") {
+      return res.status(400).json({ error: "sender_test_confirmation_required" });
+    }
+
+    const test = await emitSenderTestSuite({ email });
+    return res.status(200).json({
+      ok: !test.disabled && test.failed === 0,
+      test,
+      supportedEventTypes: SENDER_EVENT_TYPES,
+    });
+  }
+
+  if (action === "sender_outbox_process") {
+    const delivery = await processSenderOutbox(sb, 100);
+    return res.status(200).json({
+      ok: !delivery.disabled && delivery.failed === 0,
+      delivery,
+      supportedEventTypes: SENDER_EVENT_TYPES,
+    });
+  }
+
   if (action === "sender_outbox_retry") {
     const id = String(body.senderEventId || "").trim();
     if (!looksLikeUuid(id)) {
@@ -1576,7 +1614,10 @@ async function handleSenderAdminAction(params: {
     .limit(200);
   if (error) throw error;
 
-  return res.status(200).json({ events: data || [] });
+  return res.status(200).json({
+    events: data || [],
+    supportedEventTypes: SENDER_EVENT_TYPES,
+  });
 }
 
 function setCors(res: VercelResponse, req: VercelRequest) {

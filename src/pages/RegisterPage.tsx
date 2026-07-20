@@ -37,6 +37,16 @@ async function createProfileOnlyIfMissing(params: {
 }) {
   const { userId, fullName } = params;
 
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user?.id || session.user.id !== userId) {
+    // With email confirmation enabled, signUp returns a user before it returns
+    // an authenticated session. Profile RLS must not be queried until the
+    // confirmation callback has established that session.
+    return;
+  }
+
   const { data: existing, error: existingError } = await supabase
     .from("profiles")
     .select("id")
@@ -70,6 +80,10 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [formMessage, setFormMessage] = useState("");
+  const [pendingEmail, setPendingEmail] = useState("");
   const [oauthLoading, setOauthLoading] = useState<null | "google" | "discord" | "facebook">(null);
 
   const inApp = useMemo(() => isInAppBrowser(), []);
@@ -79,12 +93,14 @@ export default function RegisterPage() {
     const cleanEmail = email.trim();
 
     if (!cleanEmail || !password || !cleanFullName) {
-      alert("Please fill out all fields");
+      setFormError("Please fill out all fields.");
       return;
     }
 
     try {
       setLoading(true);
+      setFormError("");
+      setFormMessage("");
 
       const emailRedirectTo = getEmailSignupRedirectUrl();
 
@@ -98,11 +114,11 @@ export default function RegisterPage() {
       });
 
       if (error) {
-        alert(error.message);
+        setFormError(error.message);
         return;
       }
 
-      if (data.user) {
+      if (data.user && data.session) {
         await createProfileOnlyIfMissing({
           userId: data.user.id,
           fullName: cleanFullName,
@@ -113,17 +129,45 @@ export default function RegisterPage() {
         } catch (referralError) {
           console.warn("[referrals] failed to attach referral after signup:", referralError);
         }
+
+        navigate("/sessions", { replace: true });
+        return;
       }
 
-      alert(
-        "Account created. If email confirmation is enabled, please check your inbox and open the newest MySession email."
+      setPendingEmail(cleanEmail);
+      setFormMessage(
+        "Account created. Check your inbox and open the newest MySession confirmation email. You can resend it below if it does not arrive."
       );
-
-      navigate("/login", { replace: true });
     } catch (error: any) {
-      alert(error?.message || "Failed to create account");
+      setFormError(error?.message || "Failed to create account.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const resendConfirmation = async () => {
+    const cleanEmail = pendingEmail.trim().toLowerCase();
+    if (!cleanEmail) return;
+
+    try {
+      setResending(true);
+      setFormError("");
+      setFormMessage("");
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: cleanEmail,
+        options: { emailRedirectTo: getEmailSignupRedirectUrl() },
+      });
+      if (error) throw error;
+      setFormMessage(
+        "Confirmation email sent again. Please use the newest link in your inbox."
+      );
+    } catch (error: any) {
+      setFormError(
+        error?.message || "Could not resend the confirmation email."
+      );
+    } finally {
+      setResending(false);
     }
   };
 
@@ -288,6 +332,29 @@ export default function RegisterPage() {
           >
             {loading ? "Creating…" : "Sign Up"}
           </button>
+
+          {formError ? (
+            <div className="mb-4 rounded-[16px] border border-red-200 bg-red-50 px-4 py-3 text-sm leading-5 text-red-700">
+              {formError}
+            </div>
+          ) : null}
+
+          {formMessage ? (
+            <div className="mb-4 rounded-[16px] border border-green-200 bg-green-50 px-4 py-3 text-sm leading-5 text-green-800">
+              {formMessage}
+            </div>
+          ) : null}
+
+          {pendingEmail ? (
+            <button
+              type="button"
+              onClick={() => void resendConfirmation()}
+              disabled={resending}
+              className="mb-6 w-full rounded-[16px] border border-gray-300 bg-white py-3 text-[15px] font-semibold transition hover:bg-gray-50 disabled:opacity-60"
+            >
+              {resending ? "Sending…" : "Resend confirmation email"}
+            </button>
+          ) : null}
 
           <button
             onClick={signupWithGoogle}

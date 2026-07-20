@@ -2670,7 +2670,7 @@ function RoomAuthModal({
         return;
       }
 
-      if (data.user) {
+      if (data.user && data.session) {
         try {
           await supabase.from("profiles").upsert([
             {

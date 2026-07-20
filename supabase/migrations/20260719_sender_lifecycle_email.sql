@@ -240,7 +240,12 @@ create or replace function public.on_sender_user_confirmed()
 returns trigger language plpgsql security definer set search_path = public, auth as $$
 begin
   if new.email_confirmed_at is not null and (tg_op = 'INSERT' or old.email_confirmed_at is null) then
-    perform public.enqueue_sender_event(new.id,new.email,'user_registered',public.sender_user_properties(new.id),'user_registered:'||new.id);
+    begin
+      perform public.enqueue_sender_event(new.id,new.email,'user_registered',public.sender_user_properties(new.id),'user_registered:'||new.id);
+    exception when others then
+      -- Email automation must never roll back account creation/confirmation.
+      raise warning 'sender_user_confirmed enqueue failed for user %: %', new.id, sqlerrm;
+    end;
   end if;
   return new;
 end

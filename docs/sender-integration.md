@@ -310,7 +310,15 @@ The user page is `/settings/email`.
 
 ## Admin diagnostics
 
-Admins can open `/admin/sender-email` to see event type, status, attempts, timestamps, a truncated last error, and retry failed/dead events. Recipient email and full payload are deliberately omitted.
+Admins can open `/admin/sender-email` to:
+
+- see event type, status, attempts, timestamps, a truncated last error, and retry failed/dead events;
+- manually process up to 100 pending outbox rows;
+- run the complete Sender automation test suite against a dedicated test inbox.
+
+The test suite uses the existing `/api/livekit/admin` function, so it consumes no additional Vercel Function. It requires app-admin authentication and a second explicit confirmation value on the server. It synchronizes the test subscriber once, then emits every supported custom event with realistic placeholder properties and a unique `test_suite_id`. Events are sent with concurrency limited to four requests. Recipient email and full production payloads remain omitted from the outbox table.
+
+The existing Resend daily-schedule test remains at `/admin/daily-schedule-email` and is linked from the Sender diagnostics page. Supabase authentication/security messages must be tested from the Supabase email-template and authentication flow because they are intentionally outside Sender.
 
 Users manage consent and categories at `/settings/email`. This page writes directly to the RLS-protected preferences table and consumes no Vercel Function.
 
@@ -320,12 +328,14 @@ Users manage consent and categories at `/settings/email`. This page writes direc
 2. Apply SQL and deploy app/worker.
 3. Confirm booking a test session creates one `session_booked` row in `email_event_outbox`.
 4. Repeat the same action/retry and confirm the unique idempotency key prevents duplicates.
-5. Enable Sender integration and activate only a test welcome workflow.
-6. Run the consolidated Vercel endpoint through the worker `/run-sender` route with the secret.
-7. Confirm the event appears in Sender's custom-event activity and the admin row becomes `sent`.
-8. Test a temporary invalid token: the row must become `failed`, core booking must still succeed, and Retry must work after restoring the token.
-9. Test all preference switches and verify disabled categories do not enqueue new rows.
-10. Only then activate production workflows one by one.
+5. Enable Sender integration, redeploy, and publish only the workflows currently under test.
+6. Open `/admin/sender-email`, enter a dedicated test inbox, and click **Send all test events**.
+7. Confirm the warning. The page must show a green result for every event accepted by Sender. A green result proves API acceptance; actual email delivery still requires a published Sender workflow for that event.
+8. Check the dedicated inbox and Sender workflow activity. Use the displayed `test_suite_id` to correlate one run.
+9. Click **Process pending** to test the real outbox processor separately.
+10. Test a temporary invalid token: the row must become `failed`, core booking must still succeed, and Retry must work after restoring the token.
+11. Test all preference switches and verify disabled categories do not enqueue new rows.
+12. Only then activate production workflows one by one.
 
 ## Backfill
 

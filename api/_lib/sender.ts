@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "crypto";
 
 export const SENDER_EVENT_TYPES = [
   "user_registered", "registration_stalled", "session_booked", "session_cancelled",
@@ -166,6 +167,123 @@ export async function emitSenderEvent(params: {
     body: JSON.stringify({ subscriber: { email }, type: params.type, properties }),
   });
   return { skipped: false };
+}
+
+function senderTestProperties(type: SenderEventType, suiteId: string) {
+  const now = Date.now();
+  const iso = (offsetMs: number) => new Date(now + offsetMs).toISOString();
+
+  return sanitizeSenderProperties({
+    test_mode: true,
+    test_suite_id: suiteId,
+    test_event_type: type,
+    first_name: "MySession Test",
+    timezone: "UTC",
+    plan: "trial",
+    signup_date: iso(-2 * 86_400_000),
+    session_id: `test-${suiteId}`,
+    session_title: "MySession automation test session",
+    session_start: iso(2 * 60 * 60_000),
+    duration_minutes: 50,
+    session_format: "group",
+    session_url: "https://mysession.club/sessions",
+    sessions_url: "https://mysession.club/sessions",
+    focused_minutes: 420,
+    session_count: 14,
+    free_sessions_remaining: 1,
+    week_start: iso(-7 * 86_400_000).slice(0, 10),
+    last_active_at: iso(-7 * 86_400_000),
+    trial_ends_at: iso(48 * 60 * 60_000),
+    upgrade_url: "https://mysession.club/pricing",
+    checkout_url: "https://mysession.club/pricing",
+    referral_url: "https://mysession.club/referral",
+    referral_code: "TEST-SUITE",
+    payment_failure_reason: "Test payment failure",
+    technical_issue: "Test issue resolved",
+    lifecycle_email_enabled: true,
+    marketing_email_enabled: true,
+    weekly_recap_enabled: true,
+    session_reminders_enabled: true,
+    reactivation_email_enabled: true,
+  });
+}
+
+export async function emitSenderTestSuite(params: {
+  email: string;
+  eventTypes?: SenderEventType[];
+}) {
+  if (!isEnabled()) {
+    return {
+      disabled: true,
+      reason: "sender_disabled",
+      suiteId: null,
+      sent: 0,
+      failed: 0,
+      results: [],
+    };
+  }
+
+  const email = String(params.email || "").trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error("invalid_email");
+
+  const requestedTypes = params.eventTypes?.length
+    ? params.eventTypes
+    : [...SENDER_EVENT_TYPES];
+  const eventTypes = [...new Set(requestedTypes)].filter((type) =>
+    SENDER_EVENT_TYPES.includes(type),
+  );
+  if (!eventTypes.length) throw new Error("no_sender_test_events");
+
+  const suiteId = randomUUID();
+  const subscriberProperties = senderTestProperties(eventTypes[0], suiteId);
+  await syncSubscriber(email, subscriberProperties);
+
+  const results: Array<{
+    eventType: SenderEventType;
+    ok: boolean;
+    error: string | null;
+  }> = new Array(eventTypes.length);
+  let nextIndex = 0;
+
+  async function runWorker() {
+    while (nextIndex < eventTypes.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const type = eventTypes[index];
+      try {
+        await senderFetch("/events", {
+          method: "POST",
+          body: JSON.stringify({
+            subscriber: { email },
+            type,
+            properties: senderTestProperties(type, suiteId),
+          }),
+        });
+        results[index] = { eventType: type, ok: true, error: null };
+      } catch (error) {
+        results[index] = {
+          eventType: type,
+          ok: false,
+          error: (error instanceof Error ? error.message : String(error)).slice(
+            0,
+            500,
+          ),
+        };
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(4, eventTypes.length) }, () => runWorker()),
+  );
+
+  return {
+    disabled: false,
+    suiteId,
+    sent: results.filter((result) => result.ok).length,
+    failed: results.filter((result) => !result.ok).length,
+    results,
+  };
 }
 
 function retryAt(attempts: number) {
