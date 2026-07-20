@@ -37,6 +37,7 @@ type SenderResponse = {
   };
   test?: TestResult;
   error?: string;
+  details?: string;
 };
 
 export default function SenderEmailAdminPage() {
@@ -71,7 +72,12 @@ export default function SenderEmailAdminPage() {
       });
       const payload = (await response.json()) as SenderResponse;
       if (!response.ok) {
-        throw new Error(payload.error || "Sender admin request failed.");
+        const summary = payload.error || "Sender admin request failed.";
+        throw new Error(
+          payload.details && payload.details !== summary
+            ? `${summary}: ${payload.details}`
+            : summary,
+        );
       }
       if (payload.events) setRows(payload.events);
       if (payload.supportedEventTypes) {

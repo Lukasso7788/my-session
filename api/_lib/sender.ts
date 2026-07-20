@@ -116,6 +116,8 @@ function managedGroups() {
 
 async function syncSubscriber(email: string, properties: Record<string, SenderProperty>) {
   const firstname = String(properties.first_name || "").trim().slice(0, 100);
+  const targetGroups = new Set(configuredGroups(properties));
+  let subscriberCreated = false;
   const fields = {
     "{$user_id}": String(properties.user_id || "").slice(0, 200),
     "{$timezone}": String(properties.timezone || "UTC").slice(0, 100),
@@ -134,20 +136,48 @@ async function syncSubscriber(email: string, properties: Record<string, SenderPr
     if (properties.lifecycle_email_enabled === false) return;
     await senderFetch("/subscribers", {
       method: "POST",
-      body: JSON.stringify({ email, firstname, fields, trigger_automation: false }),
+      body: JSON.stringify({
+        email,
+        firstname,
+        fields,
+        groups: [...targetGroups],
+        trigger_automation: false,
+      }),
     });
+    subscriberCreated = true;
   }
-  const targetGroups = new Set(configuredGroups(properties));
+
+  // Sender's group endpoints can briefly report a freshly-created subscriber
+  // as non-existing. The create request above already assigned every desired
+  // group, and a new subscriber cannot belong to any managed group we did not
+  // assign, so no follow-up group mutations are needed in that case.
+  if (subscriberCreated) return;
+
   for (const groupId of managedGroups()) {
     const shouldBelong = targetGroups.has(groupId);
-    await senderFetch(`/subscribers/groups/${encodeURIComponent(groupId)}`, {
-      method: shouldBelong ? "POST" : "DELETE",
-      body: JSON.stringify(
-        shouldBelong
-          ? { subscribers: [email], trigger_automation: false }
-          : { subscribers: [email] },
-      ),
-    });
+    try {
+      await senderFetch(`/subscribers/groups/${encodeURIComponent(groupId)}`, {
+        method: shouldBelong ? "POST" : "DELETE",
+        body: JSON.stringify(
+          shouldBelong
+            ? { subscribers: [email], trigger_automation: false }
+            : { subscribers: [email] },
+        ),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // Removing a subscriber from a group is idempotent from MySession's
+      // perspective. Sender returns 400 instead of success when the subscriber
+      // is already absent, so treat only that documented response as success.
+      if (
+        !shouldBelong &&
+        message.startsWith("sender_http_400:") &&
+        message.includes("No existing subscriber emails provided")
+      ) {
+        continue;
+      }
+      throw error;
+    }
   }
 }
 
