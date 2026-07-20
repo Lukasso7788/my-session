@@ -2,6 +2,7 @@ import {
     createContext,
     useContext,
     useState,
+    useRef,
     useEffect,
     useCallback,
     ReactNode,
@@ -9,6 +10,7 @@ import {
 import type { User, Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { withTimeout } from "../lib/promiseTimeout";
+import { AUTH_PROFILE_READY_EVENT } from "../lib/authProfileEvents";
 
 type Profile = {
     id: string;
@@ -27,11 +29,28 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+function profileFromAuthMetadata(user: User): Profile {
+    const metadata = user.user_metadata || {};
+    const fullName = String(
+        metadata.full_name || metadata.name || user.email || "User"
+    ).trim();
+    const avatarUrl = String(
+        metadata.avatar_url || metadata.picture || ""
+    ).trim();
+
+    return {
+        id: user.id,
+        full_name: fullName || "User",
+        avatar_url: avatarUrl || null,
+    };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [session, setSession] = useState<Session | null>(null);
     const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
+    const currentUserRef = useRef<User | null>(null);
 
     // Загружает профиль
     const loadProfile = useCallback(async (u: User | null) => {
@@ -39,6 +58,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setProfile(null);
             return;
         }
+
+        // Discord/Google already return a name and avatar in auth metadata.
+        // Render those immediately while the durable profiles row catches up.
+        const optimisticProfile = profileFromAuthMetadata(u);
+        currentUserRef.current = u;
+        setProfile((current) =>
+            current?.id === u.id && current.avatar_url
+                ? current
+                : optimisticProfile
+        );
 
         try {
             const { data, error } = await supabase
@@ -49,14 +78,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
             if (error) {
                 console.warn("[Auth] Profile fetch warning:", error.message);
-                setProfile(null);
                 return;
             }
 
-            setProfile(data as Profile);
+            if (currentUserRef.current?.id === u.id) {
+                setProfile(data as Profile);
+            }
         } catch (err) {
             console.error("[Auth] loadProfile exception:", err);
-            setProfile(null);
         }
     }, []);
 
@@ -86,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                 setSession(session);
                 setUser(session?.user ?? null);
+                currentUserRef.current = session?.user ?? null;
 
                 if (session?.user) {
                     void loadProfile(session.user);
@@ -110,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
                 setSession(currentSession);
                 setUser(currentUser);
+                currentUserRef.current = currentUser;
 
                 if (currentUser) {
                     void loadProfile(currentUser);
@@ -121,8 +152,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
         );
 
+        const handleProfileReady = (event: Event) => {
+            const profileEvent = event as CustomEvent<{ userId?: string }>;
+            const currentUser = currentUserRef.current;
+            if (currentUser?.id === profileEvent.detail?.userId) {
+                void loadProfile(currentUser);
+            }
+        };
+
+        window.addEventListener(AUTH_PROFILE_READY_EVENT, handleProfileReady);
+
         return () => {
             active = false;
+            window.removeEventListener(AUTH_PROFILE_READY_EVENT, handleProfileReady);
             subscription.unsubscribe();
         };
     }, [loadProfile]);
@@ -132,6 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setSession(null);
         setProfile(null);
+        currentUserRef.current = null;
         setLoading(false);
     }, []);
 

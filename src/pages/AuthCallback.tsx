@@ -4,6 +4,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { attachReferralToNewUser } from "../lib/referrals";
 import { withTimeout } from "../lib/promiseTimeout";
+import { notifyAuthProfileReady } from "../lib/authProfileEvents";
 
 const SESSION_TIMEOUT_MS = 10_000;
 
@@ -50,13 +51,35 @@ async function ensureProfileWithoutOverwriting(user: User) {
         return;
     }
 
+    const defaults = getOAuthProfileDefaults(user);
+
     if (existing?.id) {
-        // Important: existing profile wins.
-        // OAuth login must NOT overwrite user's edited name, avatar, or bio.
+        // Keep user-edited values, but hydrate fields that the initial profile
+        // bootstrap did not receive from Discord yet.
+        const missingFields: Record<string, string> = {};
+        const existingName = String(existing.full_name || "").trim();
+        const isBootstrapName =
+            !existingName ||
+            existingName.toLowerCase() === "user" ||
+            existingName.toLowerCase() === String(user.email || "").toLowerCase();
+        if (isBootstrapName && defaults.fullName) {
+            missingFields.full_name = defaults.fullName;
+        }
+        if (!String(existing.avatar_url || "").trim() && defaults.avatarUrl) {
+            missingFields.avatar_url = defaults.avatarUrl;
+        }
+
+        if (Object.keys(missingFields).length) {
+            const { error: updateError } = await supabase
+                .from("profiles")
+                .update(missingFields)
+                .eq("id", userId);
+            if (updateError) {
+                console.warn("[auth callback] profile hydration failed:", updateError);
+            }
+        }
         return;
     }
-
-    const defaults = getOAuthProfileDefaults(user);
 
     const { error: insertError } = await supabase.from("profiles").insert({
         id: userId,
@@ -102,6 +125,7 @@ export const AuthCallback = () => {
                         console.warn("[auth callback] background profile setup failed:", result.reason);
                     }
                 });
+                notifyAuthProfileReady(userId);
             });
         };
 
