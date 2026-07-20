@@ -6,7 +6,7 @@ export function getAuthCallbackUrl(nextPath?: string) {
     `${window.location.pathname}${window.location.search}${window.location.hash}`;
 
   const url = new URL("/auth/callback", origin);
-  url.searchParams.set("next", next || "/sessions");
+  url.searchParams.set("redirect", next || "/sessions");
 
   return url.toString();
 }

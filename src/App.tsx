@@ -153,6 +153,9 @@ export default function App() {
   useEffect(() => {
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (!timeZone) return;
+    const isAuthCallback =
+      window.location.pathname.replace(/\/$/, "") === "/auth/callback";
+    let syncTimer: number | null = null;
 
     const syncUserTimeZone = async (user: User | null | undefined) => {
       if (!user?.id) return;
@@ -176,13 +179,25 @@ export default function App() {
       if (!error) localStorage.setItem(cacheKey, timeZone);
     };
 
-    void supabase.auth.getUser().then(({ data }) => syncUserTimeZone(data.user));
+    if (!isAuthCallback) {
+      void supabase.auth.getUser().then(({ data }) => syncUserTimeZone(data.user));
+    }
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN") void syncUserTimeZone(session?.user);
+      if (event === "SIGNED_IN") {
+        // Never call another Supabase auth method from inside the auth callback.
+        // It can contend with the OAuth code exchange lock, especially on Discord.
+        if (syncTimer) window.clearTimeout(syncTimer);
+        syncTimer = window.setTimeout(() => {
+          void syncUserTimeZone(session?.user);
+        }, 3_000);
+      }
     });
 
-    return () => authListener.subscription.unsubscribe();
+    return () => {
+      if (syncTimer) window.clearTimeout(syncTimer);
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   return (

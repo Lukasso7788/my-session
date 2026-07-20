@@ -3,6 +3,8 @@ import { supabase } from "../lib/supabase";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Eye, EyeOff, ExternalLink } from "lucide-react";
 import HeaderLite from "../components/HeaderLite";
+import { startOAuthRedirect } from "../lib/oauthRedirect";
+import { withTimeout } from "../lib/promiseTimeout";
 
 function isInAppBrowser() {
   if (typeof navigator === "undefined") return false;
@@ -82,10 +84,14 @@ export default function LoginPage() {
     try {
       setLoading(true);
 
-      const { error } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
-        password,
-      });
+      const { error } = await withTimeout(
+        supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password,
+        }),
+        15_000,
+        "Login is taking longer than expected. Please try again."
+      );
 
       if (error) {
         alert(error.message);
@@ -139,17 +145,10 @@ export default function LoginPage() {
 
       const redirectTo = getOauthRedirectUrl(redirectAfterLogin);
 
-      const { error } = await supabase.auth.signInWithOAuth({
+      await startOAuthRedirect({
         provider: "google",
-        options: {
-          redirectTo,
-        },
+        redirectTo,
       });
-
-      if (error) {
-        console.log("[auth] google oauth error:", error);
-        alert(error.message);
-      }
     } catch (error: any) {
       console.log("[auth] google oauth unexpected error:", error);
       alert(error?.message || "Failed to start Google login. Please try again.");
@@ -164,18 +163,11 @@ export default function LoginPage() {
 
       const redirectTo = getOauthRedirectUrl(redirectAfterLogin);
 
-      const { error } = await supabase.auth.signInWithOAuth({
+      await startOAuthRedirect({
         provider: "discord",
-        options: {
-          redirectTo,
-          scopes: "identify email",
-        },
+        redirectTo,
+        scopes: "identify email",
       });
-
-      if (error) {
-        console.log("[auth] discord oauth error:", error);
-        alert(error.message);
-      }
     } catch (error: any) {
       console.log("[auth] discord oauth unexpected error:", error);
       alert(error?.message || "Failed to start Discord login. Please try again.");
@@ -190,17 +182,10 @@ export default function LoginPage() {
 
       const redirectTo = getOauthRedirectUrl(redirectAfterLogin);
 
-      const { error } = await supabase.auth.signInWithOAuth({
+      await startOAuthRedirect({
         provider: "facebook",
-        options: {
-          redirectTo,
-        },
+        redirectTo,
       });
-
-      if (error) {
-        console.log("[auth] facebook oauth error:", error);
-        alert(error.message);
-      }
     } catch (error: any) {
       console.log("[auth] facebook oauth unexpected error:", error);
       alert(error?.message || "Failed to start Facebook login. Please try again.");

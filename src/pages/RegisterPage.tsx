@@ -4,6 +4,10 @@ import { useNavigate } from "react-router-dom";
 import { Eye, EyeOff, ExternalLink } from "lucide-react";
 import HeaderLite from "../components/HeaderLite";
 import { attachReferralToNewUser } from "../lib/referrals";
+import { OperationTimeoutError, withTimeout } from "../lib/promiseTimeout";
+import { startOAuthRedirect } from "../lib/oauthRedirect";
+
+const AUTH_REQUEST_TIMEOUT_MS = 15_000;
 
 function isInAppBrowser() {
   if (typeof navigator === "undefined") return false;
@@ -104,14 +108,18 @@ export default function RegisterPage() {
 
       const emailRedirectTo = getEmailSignupRedirectUrl();
 
-      const { data, error } = await supabase.auth.signUp({
-        email: cleanEmail,
-        password,
-        options: {
-          emailRedirectTo,
-          data: { full_name: cleanFullName },
-        },
-      });
+      const { data, error } = await withTimeout(
+        supabase.auth.signUp({
+          email: cleanEmail,
+          password,
+          options: {
+            emailRedirectTo,
+            data: { full_name: cleanFullName },
+          },
+        }),
+        AUTH_REQUEST_TIMEOUT_MS,
+        "Registration is taking longer than expected. Please check your inbox before trying again."
+      );
 
       if (error) {
         setFormError(error.message);
@@ -119,18 +127,14 @@ export default function RegisterPage() {
       }
 
       if (data.user && data.session) {
-        await createProfileOnlyIfMissing({
-          userId: data.user.id,
-          fullName: cleanFullName,
-        });
-
-        try {
-          await attachReferralToNewUser(data.user.id);
-        } catch (referralError) {
-          console.warn("[referrals] failed to attach referral after signup:", referralError);
-        }
-
         navigate("/sessions", { replace: true });
+        void Promise.allSettled([
+          createProfileOnlyIfMissing({
+            userId: data.user.id,
+            fullName: cleanFullName,
+          }),
+          attachReferralToNewUser(data.user.id),
+        ]);
         return;
       }
 
@@ -139,7 +143,11 @@ export default function RegisterPage() {
         "Account created. Check your inbox and open the newest MySession confirmation email. You can resend it below if it does not arrive."
       );
     } catch (error: any) {
-      setFormError(error?.message || "Failed to create account.");
+      setFormError(
+        error instanceof OperationTimeoutError
+          ? error.message
+          : error?.message || "Failed to create account."
+      );
     } finally {
       setLoading(false);
     }
@@ -153,11 +161,15 @@ export default function RegisterPage() {
       setResending(true);
       setFormError("");
       setFormMessage("");
-      const { error } = await supabase.auth.resend({
-        type: "signup",
-        email: cleanEmail,
-        options: { emailRedirectTo: getEmailSignupRedirectUrl() },
-      });
+      const { error } = await withTimeout(
+        supabase.auth.resend({
+          type: "signup",
+          email: cleanEmail,
+          options: { emailRedirectTo: getEmailSignupRedirectUrl() },
+        }),
+        AUTH_REQUEST_TIMEOUT_MS,
+        "Sending the confirmation email is taking too long. Please try again."
+      );
       if (error) throw error;
       setFormMessage(
         "Confirmation email sent again. Please use the newest link in your inbox."
@@ -177,15 +189,10 @@ export default function RegisterPage() {
 
       const redirectTo = getOauthRedirectUrl();
 
-      const { error } = await supabase.auth.signInWithOAuth({
+      await startOAuthRedirect({
         provider: "google",
-        options: { redirectTo },
+        redirectTo,
       });
-
-      if (error) {
-        console.log("[auth] google oauth error:", error);
-        alert(error.message);
-      }
     } catch (error: any) {
       console.log("[auth] google oauth unexpected error:", error);
       alert(error?.message || "Failed to start Google signup. Please try again.");
@@ -200,18 +207,11 @@ export default function RegisterPage() {
 
       const redirectTo = getOauthRedirectUrl();
 
-      const { error } = await supabase.auth.signInWithOAuth({
+      await startOAuthRedirect({
         provider: "discord",
-        options: {
-          redirectTo,
-          scopes: "identify email",
-        },
+        redirectTo,
+        scopes: "identify email",
       });
-
-      if (error) {
-        console.log("[auth] discord oauth error:", error);
-        alert(error.message);
-      }
     } catch (error: any) {
       console.log("[auth] discord oauth unexpected error:", error);
       alert(error?.message || "Failed to start Discord signup. Please try again.");
@@ -226,15 +226,10 @@ export default function RegisterPage() {
 
       const redirectTo = getOauthRedirectUrl();
 
-      const { error } = await supabase.auth.signInWithOAuth({
+      await startOAuthRedirect({
         provider: "facebook",
-        options: { redirectTo },
+        redirectTo,
       });
-
-      if (error) {
-        console.log("[auth] facebook oauth error:", error);
-        alert(error.message);
-      }
     } catch (error: any) {
       console.log("[auth] facebook oauth unexpected error:", error);
       alert(error?.message || "Failed to start Facebook signup. Please try again.");

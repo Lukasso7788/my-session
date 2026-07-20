@@ -1,7 +1,11 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { attachReferralToNewUser } from "../lib/referrals";
+import { withTimeout } from "../lib/promiseTimeout";
+
+const SESSION_TIMEOUT_MS = 10_000;
 
 function getRedirectPath() {
     if (typeof window === "undefined") return "/sessions";
@@ -16,7 +20,7 @@ function getRedirectPath() {
     return redirect;
 }
 
-function getOAuthProfileDefaults(user: any) {
+function getOAuthProfileDefaults(user: User) {
     const metadata = user?.user_metadata || {};
 
     const fullName = String(
@@ -31,7 +35,7 @@ function getOAuthProfileDefaults(user: any) {
     };
 }
 
-async function ensureProfileWithoutOverwriting(user: any) {
+async function ensureProfileWithoutOverwriting(user: User) {
     const userId = String(user?.id || "").trim();
     if (!userId) return;
 
@@ -73,7 +77,7 @@ export const AuthCallback = () => {
     useEffect(() => {
         let mounted = true;
 
-        const finishAuth = async (session: any) => {
+        const finishAuth = async (session: Session) => {
             if (!mounted || !session?.user?.id) return;
 
             const userId = String(session.user.id);
@@ -85,16 +89,20 @@ export const AuthCallback = () => {
 
             handledUserIdRef.current = userId;
 
-            try {
-                await ensureProfileWithoutOverwriting(session.user);
-                await attachReferralToNewUser(userId);
-            } catch (error) {
-                console.warn("[auth callback] profile/referral setup failed:", error);
-            }
-
-            if (!mounted) return;
-
+            // The authenticated session is sufficient to enter the app. Profile
+            // hydration is best-effort and must not add PostgREST latency to OAuth.
             navigate(getRedirectPath(), { replace: true });
+
+            void Promise.allSettled([
+                ensureProfileWithoutOverwriting(session.user),
+                attachReferralToNewUser(userId),
+            ]).then((results) => {
+                results.forEach((result) => {
+                    if (result.status === "rejected") {
+                        console.warn("[auth callback] background profile setup failed:", result.reason);
+                    }
+                });
+            });
         };
 
         const {
@@ -105,9 +113,19 @@ export const AuthCallback = () => {
         });
 
         const handleAuthRedirect = async () => {
-            const {
-                data: { session },
-            } = await supabase.auth.getSession();
+            let session: Session | null = null;
+
+            try {
+                const result = await withTimeout(
+                    supabase.auth.getSession(),
+                    SESSION_TIMEOUT_MS,
+                    "Timed out while restoring the authenticated session."
+                );
+                if (result.error) throw result.error;
+                session = result.data.session;
+            } catch (error) {
+                console.warn("[auth callback] initial session restore failed:", error);
+            }
 
             if (!mounted) return;
 
@@ -116,12 +134,21 @@ export const AuthCallback = () => {
                 return;
             }
 
-            setTimeout(async () => {
+            window.setTimeout(async () => {
                 if (!mounted) return;
 
-                const {
-                    data: { session: retrySession },
-                } = await supabase.auth.getSession();
+                let retrySession: Session | null = null;
+                try {
+                    const result = await withTimeout(
+                        supabase.auth.getSession(),
+                        SESSION_TIMEOUT_MS,
+                        "Timed out while retrying the authenticated session."
+                    );
+                    if (result.error) throw result.error;
+                    retrySession = result.data.session;
+                } catch (error) {
+                    console.warn("[auth callback] retry session restore failed:", error);
+                }
 
                 if (!mounted) return;
 

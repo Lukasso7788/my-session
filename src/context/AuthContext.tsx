@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { User, Session } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
+import { withTimeout } from "../lib/promiseTimeout";
 
 type Profile = {
     id: string;
@@ -67,25 +68,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 🌟 ВОССТАНОВЛЕНИЕ СЕССИИ + LISTENER
     useEffect(() => {
         let active = true;
+        const isAuthCallback =
+            typeof window !== "undefined" &&
+            window.location.pathname.replace(/\/$/, "") === "/auth/callback";
 
         const restoreSession = async () => {
-            const {
-                data: { session },
-            } = await supabase.auth.getSession();
+            try {
+                const {
+                    data: { session },
+                } = await withTimeout(
+                    supabase.auth.getSession(),
+                    10_000,
+                    "Timed out while restoring the auth session."
+                );
 
-            if (!active) return;
+                if (!active) return;
 
-            setSession(session);
-            setUser(session?.user ?? null);
+                setSession(session);
+                setUser(session?.user ?? null);
 
-            if (session?.user) {
-                loadProfile(session.user); // без await — чтобы не блокировать UI
+                if (session?.user) {
+                    void loadProfile(session.user);
+                }
+            } catch (error) {
+                console.warn("[Auth] Session restore warning:", error);
+            } finally {
+                if (active) setLoading(false);
             }
-
-            setLoading(false);
         };
 
-        restoreSession();
+        // AuthCallback owns the OAuth code/session exchange. Starting another
+        // getSession here can contend for Supabase's browser auth lock.
+        if (!isAuthCallback) void restoreSession();
 
         // Auth listener
         const { data: subscription } = supabase.auth.onAuthStateChange(
@@ -98,7 +112,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 setUser(currentUser);
 
                 if (currentUser) {
-                    loadProfile(currentUser); // без await — listener не блокируется
+                    void loadProfile(currentUser);
                 } else {
                     setProfile(null);
                 }
