@@ -2172,6 +2172,11 @@ function pushConnectionDiagnosticToLocalBuffer(entry: Record<string, unknown>) {
 
 const CHAT_MSG_TABLE = "session_chat_messages";
 const REACTION_TTL_MS = 2750;
+const REACTION_RATE_WINDOW_MS = 5_000;
+const REACTION_SEND_MAX_PER_WINDOW = 10;
+const REACTION_SEND_MIN_INTERVAL_MS = 240;
+const REACTION_RECEIVE_MAX_PER_USER_WINDOW = 12;
+const REACTION_RECEIVE_MAX_TOTAL_WINDOW = 40;
 const SESSION_SELECT_STR =
   "*, host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url, bio), session_templates(*), session_bookings(user_id)";
 
@@ -8751,6 +8756,22 @@ export function RoomPageLiveKit({
   >([]);
   const reactionIdRef = useRef<number>(0);
   const reactionsChannelRef = useRef<any>(null);
+  const reactionSendHistoryRef = useRef<number[]>([]);
+  const reactionReceiveHistoryRef = useRef<number[]>([]);
+  const reactionReceiveByUserRef = useRef<Map<string, number[]>>(new Map());
+  const reactionExpiryTimersRef = useRef<Map<number, number>>(new Map());
+
+  useEffect(() => {
+    return () => {
+      for (const timer of reactionExpiryTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      reactionExpiryTimersRef.current.clear();
+      reactionSendHistoryRef.current = [];
+      reactionReceiveHistoryRef.current = [];
+      reactionReceiveByUserRef.current.clear();
+    };
+  }, []);
 
   // edit name modal
   const pipWindowRef = useRef<Window | null>(null);
@@ -12296,9 +12317,11 @@ export function RoomPageLiveKit({
       return next.length > 12 ? next.slice(-12) : next;
     });
 
-    window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
+      reactionExpiryTimersRef.current.delete(id2);
       setFloatingReactions((prev) => prev.filter((r) => r.id !== id2));
     }, REACTION_TTL_MS);
+    reactionExpiryTimersRef.current.set(id2, timer);
   };
 
   useEffect(() => {
@@ -12307,7 +12330,7 @@ export function RoomPageLiveKit({
 
     const ch = supabase
       .channel(`reactions:${session.id}`, {
-        config: { broadcast: { self: false }, presence: { key: authUserId } },
+        config: { broadcast: { self: false } },
       })
       .on("broadcast", { event: "reaction" }, (payload: any) => {
         const p = payload?.payload || payload;
@@ -12316,6 +12339,33 @@ export function RoomPageLiveKit({
         const fromName = String(p?.fromName || "User");
 
         if (!t || !REACTION_EMOJI[t]) return;
+        if (fromUserId && fromUserId === authUserId) return;
+
+        const now = Date.now();
+        const cutoff = now - REACTION_RATE_WINDOW_MS;
+        const recentTotal = reactionReceiveHistoryRef.current.filter(
+          (timestamp) => timestamp > cutoff,
+        );
+        if (recentTotal.length >= REACTION_RECEIVE_MAX_TOTAL_WINDOW) {
+          reactionReceiveHistoryRef.current = recentTotal;
+          return;
+        }
+
+        const senderKey = fromUserId || "anonymous";
+        const recentFromSender = (
+          reactionReceiveByUserRef.current.get(senderKey) || []
+        ).filter((timestamp) => timestamp > cutoff);
+        if (
+          recentFromSender.length >= REACTION_RECEIVE_MAX_PER_USER_WINDOW
+        ) {
+          reactionReceiveByUserRef.current.set(senderKey, recentFromSender);
+          return;
+        }
+
+        recentTotal.push(now);
+        recentFromSender.push(now);
+        reactionReceiveHistoryRef.current = recentTotal;
+        reactionReceiveByUserRef.current.set(senderKey, recentFromSender);
         pushFloatingReaction(t, fromUserId, fromName);
       })
       .subscribe();
@@ -12324,6 +12374,9 @@ export function RoomPageLiveKit({
 
     return () => {
       reactionsChannelRef.current = null;
+      reactionSendHistoryRef.current = [];
+      reactionReceiveHistoryRef.current = [];
+      reactionReceiveByUserRef.current.clear();
       safeRemoveRealtimeChannel(ch);
     };
   }, [session?.id, authUserId]);
@@ -12331,21 +12384,47 @@ export function RoomPageLiveKit({
   const sendReaction = (type: ReactionType) => {
     try {
       if (!session?.id || !authUserId) return;
+      if (!type || !REACTION_EMOJI[type]) return;
+
+      const now = Date.now();
+      const cutoff = now - REACTION_RATE_WINDOW_MS;
+      const recent = reactionSendHistoryRef.current.filter(
+        (timestamp) => timestamp > cutoff,
+      );
+      const previous = recent[recent.length - 1] || 0;
+
+      // Reaction spam should degrade into ignored clicks, never into a flood of
+      // Realtime packets/state updates that can starve LiveKit heartbeats.
+      if (
+        recent.length >= REACTION_SEND_MAX_PER_WINDOW ||
+        now - previous < REACTION_SEND_MIN_INTERVAL_MS
+      ) {
+        reactionSendHistoryRef.current = recent;
+        return;
+      }
+      recent.push(now);
+      reactionSendHistoryRef.current = recent;
 
       pushFloatingReaction(type, authUserId, displayName || userName || "You");
 
       const ch = reactionsChannelRef.current;
       if (!ch) return;
+      if (ch.state && ch.state !== "joined") return;
 
-      void ch.send({
-        type: "broadcast",
-        event: "reaction",
-        payload: {
-          type,
-          fromUserId: authUserId,
-          fromName: displayName || userName || "User",
-          at: Date.now(),
-        },
+      void Promise.resolve(
+        ch.send({
+          type: "broadcast",
+          event: "reaction",
+          payload: {
+            type,
+            fromUserId: authUserId,
+            fromName: displayName || userName || "User",
+            at: now,
+          },
+        }),
+      ).catch(() => {
+        // Reactions are best-effort UI decoration. A rejected broadcast must
+        // never escape into the room lifecycle or disconnect media.
       });
     } catch { }
   };
