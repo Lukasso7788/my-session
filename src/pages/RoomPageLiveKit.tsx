@@ -83,6 +83,7 @@ import {
 import ReportParticipantModalLiveKit from "./livekit/ReportParticipantModalLiveKit";
 import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
+import LiveKitPiPChat from "./livekit/LiveKitPiPChat";
 import {
   createPersonColorBackgroundProcessor,
   createPublishedColorCorrectionProcessor,
@@ -13456,15 +13457,10 @@ export function RoomPageLiveKit({
       data-theme="light"
       style={{ colorScheme: "light" }}
     >
-      <ChatPanel
+      <LiveKitPiPChat
         key={`pip-chat-${session.id}`}
         sessionId={sessionId}
-        theme="light"
-        showHeader={false}
-        onClose={() => setPipMode("gallery")}
-        hostUserIdOverride={String(session?.host_id || "") || null}
-        hostProfileOverride={session?.host_profile || null}
-        externalMode="general"
+        userId={authUserId}
       />
     </div>
   ) : null;
