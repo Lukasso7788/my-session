@@ -142,9 +142,10 @@ export default function LiveKitPiPPortal({
                             aria-pressed={pipMode === "gallery"}
                         >
                             <Icon
-                                name="tile-view"
+                                name="pip"
                                 theme={pipMode === "gallery" ? (isLight ? "dark" : "light") : theme}
                                 className="h-[1rem] w-[1rem]"
+                                alt="Picture in Picture"
                             />
                         </button>
 
@@ -219,10 +220,9 @@ export default function LiveKitPiPPortal({
                     )}
                 </div>
 
-                {chatPanel ? (
+                {chatPanel && pipMode === "chat" ? (
                     <div
-                        className={`h-full min-h-0 min-w-0 overflow-hidden ${pipMode === "chat" ? "block" : "hidden"}`}
-                        aria-hidden={pipMode !== "chat"}
+                        className="ms-pip-chat-panel h-full min-h-0 min-w-0 overflow-hidden"
                     >
                         {chatPanel}
                     </div>
@@ -243,6 +243,38 @@ export default function LiveKitPiPPortal({
                     </div>
                 ) : null}
             </div>
+
+            <style>{`
+                .ms-pip-chat-panel .custom-scrollbar {
+                    scrollbar-width: auto !important;
+                    scrollbar-color: #8f9993 #e7e3e3 !important;
+                    -ms-overflow-style: auto !important;
+                }
+                .ms-pip-chat-panel .custom-scrollbar::-webkit-scrollbar {
+                    width: 14px !important;
+                    height: 14px !important;
+                    display: block !important;
+                }
+                .ms-pip-chat-panel .custom-scrollbar::-webkit-scrollbar-track {
+                    border-radius: 999px;
+                    background: #e7e3e3;
+                }
+                .ms-pip-chat-panel .custom-scrollbar::-webkit-scrollbar-thumb {
+                    min-height: 44px;
+                    border: 3px solid #e7e3e3;
+                    border-radius: 999px;
+                    background: #8f9993;
+                    background-clip: padding-box;
+                }
+                .ms-pip-chat-panel .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+                    background: #66716b;
+                    background-clip: padding-box;
+                }
+                .ms-pip-chat-panel .custom-scrollbar::-webkit-scrollbar-thumb:active {
+                    background: #46504b;
+                    background-clip: padding-box;
+                }
+            `}</style>
 
             <div
                 className={`shrink-0 border-t px-[clamp(0.48rem,1.4vw,0.72rem)] py-[clamp(0.42rem,1.3vw,0.68rem)] ${footerBg}`}
