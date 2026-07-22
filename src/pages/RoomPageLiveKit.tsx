@@ -575,7 +575,7 @@ type SessionRoleAssignmentRow = {
 };
 
 type RightPanelTab = "participants" | "chat" | "tasks" | null;
-type PiPMode = "focus" | "gallery";
+type PiPMode = "gallery" | "chat";
 type RoomMainViewMode = "video" | "accountability";
 
 type FloatingReaction = {
@@ -12381,10 +12381,10 @@ export function RoomPageLiveKit({
     };
   }, [session?.id, authUserId]);
 
-  const sendReaction = (type: ReactionType) => {
+  const sendReaction = (type: ReactionType): boolean => {
     try {
-      if (!session?.id || !authUserId) return;
-      if (!type || !REACTION_EMOJI[type]) return;
+      if (!session?.id || !authUserId) return false;
+      if (!type || !REACTION_EMOJI[type]) return false;
 
       const now = Date.now();
       const cutoff = now - REACTION_RATE_WINDOW_MS;
@@ -12400,16 +12400,16 @@ export function RoomPageLiveKit({
         now - previous < REACTION_SEND_MIN_INTERVAL_MS
       ) {
         reactionSendHistoryRef.current = recent;
-        return;
+        return false;
       }
-      recent.push(now);
-      reactionSendHistoryRef.current = recent;
-
-      pushFloatingReaction(type, authUserId, displayName || userName || "You");
 
       const ch = reactionsChannelRef.current;
-      if (!ch) return;
-      if (ch.state && ch.state !== "joined") return;
+      if (!ch) return false;
+      if (ch.state && ch.state !== "joined") return false;
+
+      recent.push(now);
+      reactionSendHistoryRef.current = recent;
+      pushFloatingReaction(type, authUserId, displayName || userName || "You");
 
       void Promise.resolve(
         ch.send({
@@ -12426,7 +12426,10 @@ export function RoomPageLiveKit({
         // Reactions are best-effort UI decoration. A rejected broadcast must
         // never escape into the room lifecycle or disconnect media.
       });
-    } catch { }
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   // edit name
@@ -13413,39 +13416,6 @@ export function RoomPageLiveKit({
     </div>
   );
 
-  const pipFeaturedTile = useMemo(() => {
-    if (activeScreenShareTile && screenSharePinned)
-      return activeScreenShareTile;
-    if (pinnedParticipantTile) return pinnedParticipantTile;
-    return layoutTilesForRender[0] || null;
-  }, [
-    activeScreenShareTile,
-    screenSharePinned,
-    pinnedParticipantTile,
-    layoutTilesForRender,
-  ]);
-
-  const pipStripTiles = useMemo(() => {
-    if (activeScreenShareTile && screenSharePinned) {
-      return layoutTilesForRender
-        .filter((t) => t.id !== activeScreenShareTile.id)
-        .slice(0, 4);
-    }
-
-    if (pinnedParticipantTile) {
-      return layoutTilesForRender
-        .filter((t) => t.id !== pinnedParticipantTile.id)
-        .slice(0, 4);
-    }
-
-    return layoutTilesForRender.slice(1, 5);
-  }, [
-    activeScreenShareTile,
-    screenSharePinned,
-    pinnedParticipantTile,
-    layoutTilesForRender,
-  ]);
-
   const pipGalleryTiles = useMemo(() => {
     if (activeScreenShareTile && screenSharePinned) {
       const withoutDup = layoutTilesForRender.filter(
@@ -13480,6 +13450,25 @@ export function RoomPageLiveKit({
     return 3;
   }, [pipGalleryTiles.length]);
 
+  const pipChatPanel = session?.id ? (
+    <div
+      className="h-full min-h-0 w-full overflow-hidden bg-[#F3F1F1] text-[#1F1F1F]"
+      data-theme="light"
+      style={{ colorScheme: "light" }}
+    >
+      <ChatPanel
+        key={`pip-chat-${session.id}`}
+        sessionId={sessionId}
+        theme="light"
+        showHeader={false}
+        onClose={() => setPipMode("gallery")}
+        hostUserIdOverride={String(session?.host_id || "") || null}
+        hostProfileOverride={session?.host_profile || null}
+        externalMode="general"
+      />
+    </div>
+  ) : null;
+
   const pipPortal = pipMountEl
     ? createPortal(
       <LiveKitPiPPortal
@@ -13488,9 +13477,7 @@ export function RoomPageLiveKit({
         sessionTitle={String(session?.title || "Session")}
         participantsCount={participantsCount}
         remainingTime={remainingTime}
-        pipMode="gallery"
-        pipFeaturedTile={pipFeaturedTile}
-        pipStripTiles={pipStripTiles}
+        pipMode={pipMode}
         pipGalleryTiles={pipGalleryTiles}
         pipGalleryColumns={pipGalleryColumns}
         renderTile={renderPiPTile}
@@ -13506,11 +13493,10 @@ export function RoomPageLiveKit({
         onToggleScreenShare={() => {
           toggleScreenShare().catch(() => { });
         }}
-        onSendReaction={(reactionType) => {
-          sendReaction(reactionType);
-        }}
-        onSetPipMode={() => setPipMode("gallery")}
+        onSendReaction={sendReaction}
+        onSetPipMode={setPipMode}
         onOpenTasksPanel={openTasksFromPictureInPicture}
+        chatPanel={pipChatPanel}
       />,
       pipMountEl,
     )
