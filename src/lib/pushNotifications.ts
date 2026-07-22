@@ -29,6 +29,15 @@ export function getPushPermission() {
   return Notification.permission;
 }
 
+export async function hasPushSubscription() {
+  if (!pushSupported() || Notification.permission !== "granted") return false;
+
+  const registration = await navigator.serviceWorker.getRegistration("/");
+  if (!registration) return false;
+
+  return Boolean(await registration.pushManager.getSubscription());
+}
+
 function normalizeSubscription(subscription: PushSubscription) {
   const json = subscription.toJSON();
 

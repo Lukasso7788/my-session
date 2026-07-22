@@ -10,6 +10,7 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import UpdatePasswordPage from "./pages/UpdatePasswordPage";
 import ProfilePage from "./pages/ProfilePage";
+import ProfileSettingsPage from "./pages/ProfileSettingsPage";
 import FocusPlanPage from "./pages/FocusPlanPage";
 import FocusShieldPage from "./pages/FocusShieldPage";
 import PublicProfilePage from "./pages/PublicProfilePage";
@@ -213,6 +214,7 @@ export default function App() {
           <Route path="/referrals" element={<ReferralPage />} />
           <Route path="/affiliate" element={<AffiliatePage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/settings" element={<ProfileSettingsPage />} />
           <Route path="/settings/email" element={<EmailPreferencesPage />} />
           <Route path="/profile/:id" element={<PublicProfilePage />} />
 
