@@ -1441,6 +1441,32 @@ function isChromeOSLike() {
   );
 }
 
+function isMobileOrTabletDeviceLike() {
+  if (typeof navigator === "undefined") return false;
+
+  const nav = navigator as Navigator & {
+    userAgentData?: {
+      mobile?: boolean;
+      platform?: string;
+    };
+  };
+  const ua = String(nav.userAgent || "").toLowerCase();
+  const platform = String(
+    nav.userAgentData?.platform || nav.platform || "",
+  ).toLowerCase();
+  const maxTouchPoints = Number(nav.maxTouchPoints || 0);
+
+  // iPadOS can identify itself as macOS when "Request Desktop Website" is on.
+  // Android tablets can likewise expose a desktop-sized viewport, so device
+  // recovery must never depend on CSS width alone.
+  const isDesktopModeIPad =
+    platform.includes("mac") && maxTouchPoints > 1;
+  const hasMobileUa =
+    /android|iphone|ipad|ipod|mobile|tablet|silk|kindle|playbook/.test(ua);
+
+  return !!nav.userAgentData?.mobile || isDesktopModeIPad || hasMobileUa;
+}
+
 function getInitials(name: string) {
   const s = String(name || "").trim();
   if (!s) return "U";
@@ -4393,12 +4419,21 @@ export function RoomPageLiveKit({
   );
 
   const isChromeOS = useMemo(() => isChromeOSLike(), []);
+  const isMobileOrTabletDevice = useMemo(
+    () => isMobileOrTabletDeviceLike(),
+    [],
+  );
 
-  // Mobile/tablet browsers are the unstable path. ChromeOS is NOT treated as tablet here,
-  // because Chromebooks should keep background upload/FX available in pre-join.
+  // Device identity is the primary signal. Viewport width remains a fallback
+  // for older browsers, but landscape tablets and desktop-mode iPads must keep
+  // their recovery lease even when their CSS viewport is wider than 1023px.
+  // ChromeOS is intentionally excluded from the phone/tablet FX restrictions.
   const lowPowerMobileMode = useMemo(() => {
-    return (isMobileQuery || isTabletQuery) && !isChromeOS;
-  }, [isMobileQuery, isTabletQuery, isChromeOS]);
+    return (
+      (isMobileOrTabletDevice || isMobileQuery || isTabletQuery) &&
+      !isChromeOS
+    );
+  }, [isMobileOrTabletDevice, isMobileQuery, isTabletQuery, isChromeOS]);
 
   // Background processors stay disabled only on actual phones/tablets.
   // ChromeOS devices can expose touch/tablet-like signals, so exclude them.
@@ -7528,11 +7563,18 @@ export function RoomPageLiveKit({
 
   useEffect(() => {
     const markMaybeBackgrounded = () => {
-      // Mobile/tablet app switching can fire pagehide without a real tab close.
-      // Do NOT release tab presence and do NOT show restore immediately here:
-      // if LiveKit survives, the user should return without a forced reconnect.
+      // A browser cannot reliably distinguish closing a tab from switching
+      // apps, especially on iOS/iPadOS. Neither pagehide nor beforeunload is an
+      // explicit Leave action. Preserve room presence and let LiveKit recover.
       pageHiddenAtRef.current = Date.now();
       returningFromBackgroundRef.current = true;
+
+      if (lowPowerMobileMode) {
+        writeMobileRoomLease(sessionId, authUserId, {
+          audioEnabled: prejoinRef.current.audioEnabled,
+          videoEnabled: prejoinRef.current.videoEnabled,
+        });
+      }
 
       try {
         void attendanceHeartbeat();
@@ -7542,19 +7584,19 @@ export function RoomPageLiveKit({
     };
 
     const onBeforeUnload = () => {
-      if (isMobileQuery || isTabletQuery) {
-        pageHiddenAtRef.current = Date.now();
-        returningFromBackgroundRef.current = true;
+      if (explicitLeaveRequestedRef.current) {
+        releaseTabPresence();
+        void leaveAttendanceOnce({ keepalive: true });
         return;
       }
 
-      explicitLeaveRequestedRef.current = true;
-      releaseTabPresence();
+      markMaybeBackgrounded();
     };
 
     const onPageHide = () => {
       if (explicitLeaveRequestedRef.current) {
         releaseTabPresence();
+        void leaveAttendanceOnce({ keepalive: true });
         return;
       }
 
@@ -7567,39 +7609,7 @@ export function RoomPageLiveKit({
       window.removeEventListener("beforeunload", onBeforeUnload);
       window.removeEventListener("pagehide", onPageHide);
     };
-  }, [isMobileQuery, isTabletQuery]);
-
-  useEffect(() => {
-    const onBeforeUnload = () => {
-      if (isMobileQuery || isTabletQuery) {
-        pageHiddenAtRef.current = Date.now();
-        returningFromBackgroundRef.current = true;
-        void attendanceHeartbeat();
-        return;
-      }
-
-      explicitLeaveRequestedRef.current = true;
-      void leaveAttendanceOnce({ keepalive: true });
-    };
-
-    const onPageHide = () => {
-      // App switching on mobile can look like pagehide. Keep attendance alive unless this was explicit leave/unload.
-      if (!explicitLeaveRequestedRef.current) {
-        void attendanceHeartbeat();
-        return;
-      }
-
-      void leaveAttendanceOnce({ keepalive: true });
-    };
-
-    window.addEventListener("beforeunload", onBeforeUnload);
-    window.addEventListener("pagehide", onPageHide);
-
-    return () => {
-      window.removeEventListener("beforeunload", onBeforeUnload);
-      window.removeEventListener("pagehide", onPageHide);
-    };
-  }, [session?.id, authUserId]);
+  }, [lowPowerMobileMode, sessionId, authUserId]);
 
   const buildAuthHeaders = async (): Promise<Record<string, string>> => {
     const headers: Record<string, string> = {
