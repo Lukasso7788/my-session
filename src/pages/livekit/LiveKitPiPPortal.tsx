@@ -355,7 +355,6 @@ export default function LiveKitPiPPortal({
                                                 const sent = onSendReaction(reactionType);
                                                 if (!sent) return;
                                                 showReactionSentFeedback(reactionType);
-                                                setShowReactionsMenu(false);
                                             }}
                                             className={`flex h-[2.85rem] items-center justify-center rounded-xl border text-[1.1rem] transition ${isLight
                                                 ? "border-[#D8D0D0] bg-[#E6E6E6] hover:bg-[#DCDCDC]"
