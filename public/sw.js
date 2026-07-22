@@ -15,6 +15,8 @@ self.addEventListener("push", (event) => {
         body: payload.body || "You have a new notification.",
         icon: payload.icon || "/icons/followers_profile.svg",
         badge: payload.badge || "/icons/followers_profile.svg",
+        tag: payload.tag || undefined,
+        renotify: payload.renotify === true,
         data: payload.data || {},
     };
 

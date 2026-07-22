@@ -69,7 +69,9 @@ export async function ensurePushSubscription() {
 
   try {
     await registration.update();
-  } catch {}
+  } catch {
+    // A stale service worker can still complete registration; update is best-effort.
+  }
 
   const readyRegistration = await navigator.serviceWorker.ready;
 
@@ -125,7 +127,7 @@ export async function showPushEnabledTestNotification() {
 
   if (Notification.permission === "granted") {
     new Notification("Notifications enabled", {
-      body: "We’ll notify you when hosts you follow schedule sessions.",
+      body: "We’ll notify you about active focus rooms and hosts you follow.",
       icon: "/icons/followers_profile.svg",
     });
   }

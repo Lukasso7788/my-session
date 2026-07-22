@@ -19,6 +19,137 @@ function getBearerToken(req: VercelRequest) {
   return m?.[1]?.trim() || "";
 }
 
+function getHeader(req: VercelRequest, name: string) {
+  const value = req.headers[name.toLowerCase()];
+  return Array.isArray(value) ? String(value[0] || "") : String(value || "");
+}
+
+async function sendPushBatch(subscriptions: any[], payload: string) {
+  let sent = 0;
+  let failed = 0;
+  let deleted = 0;
+
+  for (const row of subscriptions) {
+    try {
+      await webpush.sendNotification(
+        { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } },
+        payload
+      );
+      sent += 1;
+    } catch (e: any) {
+      failed += 1;
+      const statusCode = Number(e?.statusCode || 0);
+
+      if (statusCode === 404 || statusCode === 410) {
+        await supabaseAdmin.from("push_subscriptions").delete().eq("id", row.id);
+        deleted += 1;
+      } else {
+        console.error("[push] send failed", {
+          subscriptionId: row.id,
+          statusCode,
+          message: e?.message,
+        });
+      }
+    }
+  }
+
+  return { sent, failed, deleted };
+}
+
+async function sendRoomPresencePush(req: VercelRequest, res: VercelResponse) {
+  const expectedSecret = String(process.env.PUSH_DISPATCH_SECRET || "").trim();
+  const suppliedSecret = getHeader(req, "x-push-dispatch-secret").trim();
+
+  if (!expectedSecret || suppliedSecret !== expectedSecret) {
+    return res.status(401).json({ error: "invalid_push_dispatch_secret" });
+  }
+
+  const sessionId = String(req.body?.sessionId || "").trim();
+  const participantCount = Number(req.body?.participantCount || 0);
+
+  if (!sessionId || !Number.isFinite(participantCount) || participantCount < 1) {
+    return res.status(400).json({ error: "invalid_presence_payload" });
+  }
+
+  const { data: session, error: sessionErr } = await supabaseAdmin
+    .from("sessions")
+    .select("id, title, is_private")
+    .eq("id", sessionId)
+    .single();
+
+  if (sessionErr || !session) {
+    return res.status(404).json({ error: "session_not_found" });
+  }
+
+  if ((session as any).is_private === true) {
+    return res.status(200).json({ ok: true, sent: 0, reason: "private_session" });
+  }
+
+  const [{ data: subscriptions, error: subsErr }, { data: activeRows }] = await Promise.all([
+    supabaseAdmin.from("push_subscriptions").select("id, user_id, endpoint, p256dh, auth"),
+    supabaseAdmin
+      .from("session_attendance")
+      .select("user_id")
+      .eq("session_id", sessionId)
+      .is("left_at", null)
+      .gte("last_seen_at", new Date(Date.now() - 90_000).toISOString()),
+  ]);
+
+  if (subsErr) {
+    return res.status(500).json({ error: "subscriptions_query_failed", details: subsErr.message });
+  }
+
+  const { data: disabledRows, error: preferencesErr } = await supabaseAdmin
+    .from("notification_preferences")
+    .select("user_id")
+    .eq("focus_presence_push_enabled", false);
+
+  // A missing preference means enabled. This also keeps existing subscribers
+  // working while the database migration is being rolled out.
+  if (preferencesErr) {
+    console.warn("[push] presence preferences unavailable; using default-on", preferencesErr.message);
+  }
+
+  const disabledUserIds = new Set((disabledRows || []).map((row: any) => String(row.user_id || "")));
+  const activeUserIds = new Set((activeRows || []).map((row: any) => String(row.user_id || "")));
+  const eligibleSubscriptions = (subscriptions || []).filter((row: any) => {
+    const userId = String(row.user_id || "");
+    return userId && !disabledUserIds.has(userId) && !activeUserIds.has(userId);
+  });
+
+  if (!eligibleSubscriptions.length) {
+    return res.status(200).json({
+      ok: true,
+      sent: 0,
+      reason: "no_eligible_subscriptions",
+      excludedActiveUsers: activeUserIds.size,
+    });
+  }
+
+  const sessionTitle = String((session as any).title || "Focus room").trim() || "Focus room";
+  const payload = JSON.stringify({
+    title: `${participantCount} ${participantCount === 1 ? "person is" : "people are"} focusing right now`,
+    body: `Join them in ${sessionTitle}.`,
+    icon: "/icons/followers_profile.svg",
+    badge: "/icons/followers_profile.svg",
+    tag: `focus-presence-${sessionId}`,
+    renotify: false,
+    data: {
+      url: `/room-livekit/${sessionId}`,
+      sessionId,
+      type: "focus_room_presence",
+    },
+  });
+
+  const result = await sendPushBatch(eligibleSubscriptions, payload);
+  return res.status(200).json({
+    ok: true,
+    subscriptions: eligibleSubscriptions.length,
+    excludedActiveUsers: activeUserIds.size,
+    ...result,
+  });
+}
+
 function formatSessionTime(startTime: string | null) {
   if (!startTime) return "";
 
@@ -42,6 +173,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
       return res.status(500).json({ error: "missing_vapid_keys" });
+    }
+
+    if (req.body?.action === "room_presence") {
+      return await sendRoomPresencePush(req, res);
     }
 
     const token = getBearerToken(req);
@@ -137,41 +272,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       },
     });
 
-    let sent = 0;
-    let failed = 0;
-    let deleted = 0;
-
-    for (const row of subscriptions as any[]) {
-      try {
-        await webpush.sendNotification(
-          {
-            endpoint: row.endpoint,
-            keys: {
-              p256dh: row.p256dh,
-              auth: row.auth,
-            },
-          },
-          payload
-        );
-
-        sent += 1;
-      } catch (e: any) {
-        failed += 1;
-
-        const statusCode = Number(e?.statusCode || 0);
-
-        if (statusCode === 404 || statusCode === 410) {
-          await supabaseAdmin.from("push_subscriptions").delete().eq("id", row.id);
-          deleted += 1;
-        } else {
-          console.error("[push] send failed", {
-            subscriptionId: row.id,
-            statusCode,
-            message: e?.message,
-          });
-        }
-      }
-    }
+    const { sent, failed, deleted } = await sendPushBatch(subscriptions as any[], payload);
 
     return res.status(200).json({
       ok: true,

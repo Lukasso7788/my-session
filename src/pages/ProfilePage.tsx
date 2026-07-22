@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
+import {
+  ensurePushSubscription,
+  getPushPermission,
+  pushSupported,
+  showPushEnabledTestNotification,
+} from "../lib/pushNotifications";
 
 type HostSupportPaymentRow = {
   id: string;
@@ -156,6 +162,10 @@ export default function ProfilePage() {
   const [payoutBusy, setPayoutBusy] = useState(false);
   const [payoutMessage, setPayoutMessage] = useState("");
   const [payoutError, setPayoutError] = useState("");
+  const [presencePushEnabled, setPresencePushEnabled] = useState(true);
+  const [pushPermission, setPushPermission] = useState<string>(() => getPushPermission());
+  const [pushPreferenceBusy, setPushPreferenceBusy] = useState(false);
+  const [pushPreferenceMessage, setPushPreferenceMessage] = useState("");
 
   const displayName = useMemo(() => fullName || "User", [fullName]);
 
@@ -441,6 +451,99 @@ export default function ProfilePage() {
     void loadHostSupportBalance(user.id);
   }, [user?.id]);
 
+  useEffect(() => {
+    if (!user?.id) return;
+
+    let cancelled = false;
+
+    const loadPushPreference = async () => {
+      const { data, error } = await supabase
+        .from("notification_preferences")
+        .select("focus_presence_push_enabled")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (cancelled) return;
+      setPushPermission(getPushPermission());
+
+      if (error) {
+        console.warn("Failed to load push preference; using default-on:", error);
+        setPresencePushEnabled(true);
+        return;
+      }
+
+      setPresencePushEnabled(data?.focus_presence_push_enabled !== false);
+    };
+
+    void loadPushPreference();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const handlePresencePushToggle = async () => {
+    if (!user?.id || pushPreferenceBusy) return;
+
+    const nextEnabled = !presencePushEnabled;
+    setPushPreferenceBusy(true);
+    setPushPreferenceMessage("");
+
+    try {
+      const { error } = await supabase.from("notification_preferences").upsert(
+        {
+          user_id: user.id,
+          focus_presence_push_enabled: nextEnabled,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id" }
+      );
+
+      if (error) throw error;
+      setPresencePushEnabled(nextEnabled);
+
+      if (!nextEnabled) {
+        setPushPreferenceMessage("Focus room activity notifications are off.");
+        return;
+      }
+
+      try {
+        await ensurePushSubscription();
+        setPushPermission(getPushPermission());
+        setPushPreferenceMessage("Notifications are enabled on this device.");
+        await showPushEnabledTestNotification();
+      } catch (error: any) {
+        setPushPermission(getPushPermission());
+        setPushPreferenceMessage(
+          String(error?.message || "Allow notifications in your browser to receive them on this device.")
+        );
+      }
+    } catch (error: any) {
+      setPushPreferenceMessage(String(error?.message || "Could not update notification settings."));
+    } finally {
+      setPushPreferenceBusy(false);
+    }
+  };
+
+  const handleEnablePushOnDevice = async () => {
+    if (pushPreferenceBusy) return;
+    setPushPreferenceBusy(true);
+    setPushPreferenceMessage("");
+
+    try {
+      await ensurePushSubscription();
+      setPushPermission(getPushPermission());
+      setPushPreferenceMessage("Notifications are enabled on this device.");
+      await showPushEnabledTestNotification();
+    } catch (error: any) {
+      setPushPermission(getPushPermission());
+      setPushPreferenceMessage(
+        String(error?.message || "Allow notifications in your browser to receive them on this device.")
+      );
+    } finally {
+      setPushPreferenceBusy(false);
+    }
+  };
+
   const handleAskPayout = async () => {
     if (!user?.id || payoutBusy) return;
 
@@ -700,6 +803,74 @@ export default function ProfilePage() {
       <div className="mt-16 border-t border-gray-200" />
 
       <section className="mt-10">
+        <div className="rounded-2xl border border-gray-200 bg-white px-6 py-5 shadow-sm">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="max-w-2xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xl font-bold text-[#2F2F2F]">Focus room notifications</h2>
+                <span className="rounded-full bg-[#EAF9EC] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#238B3A]">
+                  Push
+                </span>
+              </div>
+              <p className="mt-1 text-sm leading-6 text-gray-600">
+                Get a notification when people are focusing together in a public 24/7 room, for example:
+                “5 people are focusing right now in 25/5 Pomodoro.”
+              </p>
+
+              <div className="mt-3 text-[12px] text-gray-500">
+                {!pushSupported()
+                  ? "Push notifications are not supported on this device."
+                  : pushPermission === "granted"
+                    ? "Allowed on this device."
+                    : pushPermission === "denied"
+                      ? "Blocked by the browser. Allow notifications in this site's browser settings."
+                      : presencePushEnabled
+                        ? "Preference is on. Allow notifications once on this device to start receiving them."
+                        : "You can turn this back on at any time."}
+              </div>
+
+              {pushPreferenceMessage && (
+                <div className="mt-2 text-[12px] font-medium text-[#2F2F2F]">{pushPreferenceMessage}</div>
+              )}
+            </div>
+
+            <div className="flex shrink-0 flex-wrap items-center gap-3">
+              {presencePushEnabled && pushPermission === "default" && pushSupported() && (
+                <button
+                  type="button"
+                  onClick={handleEnablePushOnDevice}
+                  disabled={pushPreferenceBusy}
+                  className="rounded-full border border-[#2F2F2F] px-4 py-2 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Allow on this device
+                </button>
+              )}
+
+              <button
+                type="button"
+                role="switch"
+                aria-checked={presencePushEnabled}
+                aria-label="Focus room activity push notifications"
+                onClick={handlePresencePushToggle}
+                disabled={pushPreferenceBusy}
+                className={`relative inline-flex h-8 w-14 items-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                  presencePushEnabled
+                    ? "border-[#65D46C] bg-[#65D46C]"
+                    : "border-gray-300 bg-gray-200"
+                }`}
+              >
+                <span
+                  className={`inline-block h-6 w-6 rounded-full bg-white shadow-sm transition-transform ${
+                    presencePushEnabled ? "translate-x-7" : "translate-x-1"
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-8">
         <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>

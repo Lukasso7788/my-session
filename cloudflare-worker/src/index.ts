@@ -4,6 +4,9 @@ export interface Env {
   DISCORD_WEBHOOK_URL: string;
   APP_URL?: string;
   DISCORD_WORKER_SECRET?: string;
+  PUSH_DISPATCH_SECRET?: string;
+  PUSH_PRESENCE_MIN_PARTICIPANTS?: string;
+  PUSH_PRESENCE_COOLDOWN_MINUTES?: string;
 }
 
 type SessionRow = {
@@ -35,6 +38,11 @@ const DUE_GRACE_MINUTES = 8;
 const PRESENCE_MIN_PARTICIPANTS = 2;
 const PRESENCE_ACTIVE_WINDOW_SECONDS = 90;
 const PRESENCE_COOLDOWN_MINUTES = 45;
+
+function boundedNumber(value: string | undefined, fallback: number, min: number, max: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(min, Math.min(max, parsed)) : fallback;
+}
 
 function appUrl(env: Env) {
   return String(env.APP_URL || "https://www.mysession.club").replace(/\/+$/, "");
@@ -299,6 +307,111 @@ async function maybeSendInfiniteRoomPresence(env: Env, now: Date, dryRun = false
   };
 }
 
+async function getRecentPushPresenceBroadcast(env: Env, sessionId: string, now: Date) {
+  const cooldownMinutes = boundedNumber(env.PUSH_PRESENCE_COOLDOWN_MINUTES, 45, 5, 1440);
+  const since = addMinutes(now, -cooldownMinutes);
+  const path =
+    `push_presence_broadcasts?room_session_id=eq.${encodeURIComponent(sessionId)}` +
+    `&sent_at=gte.${encodeURIComponent(iso(since))}` +
+    `&select=id,sent_at&order=sent_at.desc&limit=1`;
+  const rows = await supabaseFetch(env, path, { method: "GET" });
+  return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+}
+
+async function dispatchPresencePush(env: Env, room: ActiveInfiniteRoom) {
+  const res = await fetch(`${appUrl(env)}/api/push/send-host-session`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-push-dispatch-secret": String(env.PUSH_DISPATCH_SECRET || ""),
+    },
+    body: JSON.stringify({
+      action: "room_presence",
+      sessionId: room.session_id,
+      participantCount: Number(room.participant_count || 0),
+    }),
+  });
+
+  const text = await res.text();
+  let payload: any = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = { raw: text };
+  }
+
+  if (!res.ok) {
+    throw new Error(`Presence push ${res.status}: ${text}`);
+  }
+
+  return payload || {};
+}
+
+async function maybeSendInfiniteRoomPresencePush(env: Env, now: Date, dryRun = false) {
+  if (!env.PUSH_DISPATCH_SECRET) {
+    return { skipped: true, reason: "missing_push_dispatch_secret" };
+  }
+
+  const minParticipants = boundedNumber(env.PUSH_PRESENCE_MIN_PARTICIPANTS, 2, 2, 100);
+  const cooldownMinutes = boundedNumber(env.PUSH_PRESENCE_COOLDOWN_MINUTES, 45, 5, 1440);
+  const rooms = await fetchActiveInfiniteRooms(env);
+  const results: any[] = [];
+
+  for (const room of rooms) {
+    const sessionId = String(room.session_id || "").trim();
+    const participantCount = Number(room.participant_count || 0);
+
+    if (!sessionId || room.is_private === true || participantCount < minParticipants) {
+      results.push({
+        skipped: true,
+        sessionId: sessionId || null,
+        participantCount,
+        reason: !sessionId ? "missing_session_id" : room.is_private === true ? "private_room" : "below_threshold",
+      });
+      continue;
+    }
+
+    const recent = await getRecentPushPresenceBroadcast(env, sessionId, now);
+    if (recent) {
+      results.push({
+        skipped: true,
+        sessionId,
+        participantCount,
+        reason: "cooldown",
+        lastBroadcastAt: recent.sent_at || null,
+      });
+      continue;
+    }
+
+    if (dryRun) {
+      results.push({ dryRun: true, sessionId, participantCount });
+      continue;
+    }
+
+    const delivery = await dispatchPresencePush(env, room);
+    await supabaseFetch(env, "push_presence_broadcasts", {
+      method: "POST",
+      body: JSON.stringify({
+        room_session_id: sessionId,
+        participant_count: participantCount,
+        subscriptions_count: Number(delivery.subscriptions || 0),
+        sent_count: Number(delivery.sent || 0),
+        failed_count: Number(delivery.failed || 0),
+        deleted_count: Number(delivery.deleted || 0),
+      }),
+    });
+    results.push({ sent: true, sessionId, participantCount, delivery });
+  }
+
+  return {
+    roomsScanned: rooms.length,
+    minParticipants,
+    activeWindowSeconds: PRESENCE_ACTIVE_WINDOW_SECONDS,
+    cooldownMinutes,
+    results,
+  };
+}
+
 async function fetchSessionsBetween(env: Env, start: Date, end: Date) {
   const select = [
     "id",
@@ -516,7 +629,25 @@ async function runAll(env: Env, dryRun = false) {
   const now = new Date();
   const daily = await maybeSendDailySchedule(env, now, dryRun);
   const reminders = await maybeSendSessionReminders(env, now, dryRun);
-  const infiniteRoomPresence = await maybeSendInfiniteRoomPresence(env, now, dryRun);
+  let infiniteRoomPresence: any;
+  try {
+    infiniteRoomPresence = await maybeSendInfiniteRoomPresence(env, now, dryRun);
+  } catch (error: any) {
+    infiniteRoomPresence = {
+      ok: false,
+      error: String(error?.message || error || "discord_presence_failed"),
+    };
+  }
+  let infiniteRoomPresencePush: any;
+  try {
+    infiniteRoomPresencePush = await maybeSendInfiniteRoomPresencePush(env, now, dryRun);
+  } catch (error: any) {
+    // Push and Discord delivery are deliberately isolated from one another.
+    infiniteRoomPresencePush = {
+      ok: false,
+      error: String(error?.message || error || "presence_push_failed"),
+    };
+  }
 
   return {
     ok: true,
@@ -526,6 +657,7 @@ async function runAll(env: Env, dryRun = false) {
     daily,
     reminders,
     infiniteRoomPresence,
+    infiniteRoomPresencePush,
   };
 }
 
