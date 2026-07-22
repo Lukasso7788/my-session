@@ -192,6 +192,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const actorUserId = userData.user.id;
+
+    if (req.body?.action === "user_test") {
+      const { data: testSubscriptions, error: testSubsErr } = await supabaseAdmin
+        .from("push_subscriptions")
+        .select("id, user_id, endpoint, p256dh, auth")
+        .eq("user_id", actorUserId);
+
+      if (testSubsErr) {
+        return res.status(500).json({
+          error: "subscriptions_query_failed",
+          details: testSubsErr.message,
+        });
+      }
+
+      if (!testSubscriptions?.length) {
+        return res.status(200).json({
+          ok: false,
+          sent: 0,
+          reason: "no_push_subscriptions_for_user",
+        });
+      }
+
+      const testPayload = JSON.stringify({
+        title: "MySession push is working",
+        body: "This device can receive focus room activity notifications.",
+        icon: "/icons/followers_profile.svg",
+        badge: "/icons/followers_profile.svg",
+        tag: `push-test-${actorUserId}`,
+        renotify: true,
+        data: {
+          url: "/settings",
+          type: "push_test",
+        },
+      });
+
+      const result = await sendPushBatch(testSubscriptions as any[], testPayload);
+      return res.status(200).json({
+        ok: result.sent > 0,
+        subscriptions: testSubscriptions.length,
+        ...result,
+      });
+    }
+
     const sessionId = String(req.body?.sessionId || "").trim();
 
     if (!sessionId) {

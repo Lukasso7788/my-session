@@ -22,6 +22,7 @@ export default function ProfileSettingsPage() {
   const [pushPermission, setPushPermission] = useState<string>(() => getPushPermission());
   const [deviceSubscribed, setDeviceSubscribed] = useState<boolean | null>(null);
   const [pushPreferenceBusy, setPushPreferenceBusy] = useState(false);
+  const [pushTestBusy, setPushTestBusy] = useState(false);
   const [pushPreferenceMessage, setPushPreferenceMessage] = useState("");
 
   useEffect(() => {
@@ -127,6 +128,46 @@ export default function ProfileSettingsPage() {
     }
   };
 
+  const handleSendTestPush = async () => {
+    if (pushTestBusy) return;
+    setPushTestBusy(true);
+    setPushPreferenceMessage("");
+
+    try {
+      await ensurePushSubscription();
+      setPushPermission(getPushPermission());
+      setDeviceSubscribed(true);
+
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Please sign in again before testing push notifications.");
+
+      const response = await fetch("/api/push/send-host-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ action: "user_test" }),
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok || !payload?.ok) {
+        throw new Error(
+          payload?.details || payload?.reason || payload?.error || "The server could not send a test push.",
+        );
+      }
+
+      setPushPreferenceMessage(
+        `Test push sent to ${Number(payload.sent || 0)} of ${Number(payload.subscriptions || 0)} subscribed devices.`,
+      );
+    } catch (error) {
+      setPushPreferenceMessage(errorMessage(error, "Could not send the test push."));
+    } finally {
+      setPushTestBusy(false);
+    }
+  };
+
   if (loading || !user) {
     return <main className="min-h-screen bg-[#F7F8FA]" />;
   }
@@ -195,6 +236,17 @@ export default function ProfileSettingsPage() {
               </div>
 
               <div className="flex shrink-0 flex-wrap items-center gap-3">
+                {presencePushEnabled && deviceSubscribed ? (
+                  <button
+                    type="button"
+                    onClick={handleSendTestPush}
+                    disabled={pushTestBusy || pushPreferenceBusy}
+                    className="rounded-full border border-[#2F2F2F] px-4 py-2 text-[13px] font-medium transition hover:bg-[#2F2F2F] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {pushTestBusy ? "Sending test…" : "Send test push"}
+                  </button>
+                ) : null}
+
                 {presencePushEnabled &&
                 pushSupported() &&
                 pushPermission !== "denied" &&
