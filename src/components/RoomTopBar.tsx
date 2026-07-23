@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { SessionStageBar } from "./SessionStageBar";
 import { Icon, ParticipantsSmartIcon, type RoomTheme } from "./VideoControls";
 
@@ -109,6 +110,25 @@ export default function RoomTopBar(props: RoomTopBarProps) {
     const showEditTimeline =
         showStageBar && !!canEditTimeline && typeof onEditTimeline === "function";
 
+    const [showStepInPrompt, setShowStepInPrompt] = useState(false);
+    const shouldRotateHostPrompt =
+        isInfiniteRoom && canStepInAsHost && !activeRoomHostProfile;
+
+    useEffect(() => {
+        setShowStepInPrompt(false);
+        if (!shouldRotateHostPrompt) return;
+
+        const firstSwitch = window.setTimeout(() => setShowStepInPrompt(true), 1800);
+        const rotation = window.setInterval(
+            () => setShowStepInPrompt((visible) => !visible),
+            3600,
+        );
+        return () => {
+            window.clearTimeout(firstSwitch);
+            window.clearInterval(rotation);
+        };
+    }, [shouldRotateHostPrompt]);
+
     const fullStageLabel = String(currentStage?.name || currentStage?.type || "Stage")
         .trim()
         .slice(0, 25);
@@ -153,36 +173,85 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         </div>
     ) : null;
 
-    const activeHostControl = activeRoomHostProfile ? (
-        isCurrentUserActiveRoomHost && typeof onStepDownAsHost === "function" ? (
+    const ownerId = String(hostProfile?.id || "").toLowerCase();
+    const activeHostId = String(activeRoomHostProfile?.id || "").toLowerCase();
+    const ownerIsActive = !!ownerId && activeHostId === ownerId;
+    const temporaryHostProfile =
+        activeRoomHostProfile && !ownerIsActive ? activeRoomHostProfile : null;
+
+    const renderInfiniteHostControl = (compact = false) => {
+        const surface = isLight
+            ? "border-[#CFCFCF] bg-[#E1E3E6] text-black/75 hover:bg-[#E0E0E0]"
+            : "border-[#2B2B2B] bg-[#1B1B1B]/60 text-[#F1F1F1]/85 hover:bg-[#242424]";
+        const width = compact ? "w-[142px]" : "w-[190px]";
+        const common = `${width} h-9 rounded-xl border px-3 text-[12px] font-inter transition overflow-hidden`;
+
+        if (temporaryHostProfile) {
+            const hostName = String(temporaryHostProfile.full_name || "Participant");
+            if (isCurrentUserActiveRoomHost && typeof onStepDownAsHost === "function") {
+                return (
+                    <button
+                        type="button"
+                        onClick={onStepDownAsHost}
+                        disabled={activeRoomHostBusy}
+                        className={`group relative ${common} ${surface} disabled:opacity-50`}
+                        title={activeRoomHostError || "Step down as the temporary host"}
+                    >
+                        <span className="absolute inset-0 flex items-center justify-center gap-1.5 transition-all duration-300 group-hover:-translate-y-2 group-hover:opacity-0">
+                            <ParticipantsSmartIcon theme={theme} className="h-4 w-4 opacity-90" />
+                            <span className="truncate"><span className="font-light">Host:</span> <strong>{hostName}</strong></span>
+                        </span>
+                        <span className="absolute inset-0 flex translate-y-2 items-center justify-center font-semibold opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
+                            {activeRoomHostBusy ? "Updating…" : "Step down"}
+                        </span>
+                    </button>
+                );
+            }
+
+            return (
+                <span
+                    className={`flex items-center justify-center gap-1.5 ${common} ${surface}`}
+                    title={`Active host: ${hostName}`}
+                >
+                    <ParticipantsSmartIcon theme={theme} className="h-4 w-4 opacity-90" />
+                    <span className="truncate"><span className="font-light">Host:</span> <strong>{hostName}</strong></span>
+                </span>
+            );
+        }
+
+        if (shouldRotateHostPrompt && typeof onStepInAsHost === "function") {
+            return (
+                <button
+                    type="button"
+                    onClick={showStepInPrompt ? onStepInAsHost : onOpenHostProfile}
+                    disabled={activeRoomHostBusy}
+                    className={`relative ${common} ${surface} disabled:opacity-50`}
+                    title={activeRoomHostError || (showStepInPrompt ? "Step in as the temporary host" : "Session owner profile")}
+                    aria-label={showStepInPrompt ? "Step in as host" : "Open session owner profile"}
+                >
+                    <span className={`absolute inset-0 flex items-center justify-center gap-1.5 transition-all duration-500 ${showStepInPrompt ? "-translate-y-2 opacity-0" : "translate-y-0 opacity-100"}`}>
+                        <ParticipantsSmartIcon theme={theme} className="h-4 w-4 opacity-90" />
+                        <span className="truncate"><span className="font-light">Session owner:</span> <strong>{String(hostProfile?.full_name || "Owner")}</strong></span>
+                    </span>
+                    <span className={`absolute inset-0 flex items-center justify-center font-semibold transition-all duration-500 ${showStepInPrompt ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0"}`}>
+                        {activeRoomHostBusy ? "Claiming…" : "Step in as host"}
+                    </span>
+                </button>
+            );
+        }
+
+        return hostProfile ? (
             <button
                 type="button"
-                onClick={onStepDownAsHost}
-                disabled={activeRoomHostBusy}
-                className={`rounded-xl border px-3 py-1.5 text-[12px] font-inter font-medium transition disabled:opacity-50 ${isLight ? "border-[#CFCFCF] bg-white text-black/70 hover:bg-[#F2F3F5]" : "border-[#343434] bg-[#242424] text-white/85 hover:bg-[#2D2D2D]"}`}
-                title={activeRoomHostError || "Release the temporary host role"}
+                onClick={onOpenHostProfile}
+                className={`flex items-center justify-center gap-1.5 ${common} ${surface}`}
+                title={ownerIsActive ? "Session owner is hosting" : "Session owner profile"}
             >
-                {activeRoomHostBusy ? "Updating…" : "Hosting · Step down"}
+                <ParticipantsSmartIcon theme={theme} className="h-4 w-4 opacity-90" />
+                <span className="truncate"><span className="font-light">Session owner:</span> <strong>{String(hostProfile.full_name || "Owner")}</strong></span>
             </button>
-        ) : (
-            <span
-                className={`rounded-xl border px-3 py-1.5 text-[12px] font-inter ${isLight ? "border-[#CFCFCF] bg-white text-black/70" : "border-[#343434] bg-[#242424] text-white/85"}`}
-                title={`Active host: ${String(activeRoomHostProfile.full_name || "Participant")}`}
-            >
-                Active host: <strong>{String(activeRoomHostProfile.full_name || "Participant")}</strong>
-            </span>
-        )
-    ) : canStepInAsHost && typeof onStepInAsHost === "function" ? (
-        <button
-            type="button"
-            onClick={onStepInAsHost}
-            disabled={activeRoomHostBusy}
-            className={`rounded-xl border px-3 py-1.5 text-[12px] font-inter font-semibold transition disabled:opacity-50 ${isLight ? "border-[#5BCB73] bg-[#EAF9ED] text-[#207A35] hover:bg-[#DDF5E2]" : "border-[#4B9B5D] bg-[#17361F] text-[#8CE39D] hover:bg-[#1D4427]"}`}
-            title={activeRoomHostError || "Temporarily run room controls while the owner is away"}
-        >
-            {activeRoomHostBusy ? "Claiming…" : "Step in as host"}
-        </button>
-    ) : null;
+        ) : null;
+    };
 
     return (
         <div
@@ -234,7 +303,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                 </div>
                             </button>
 
-                            {!!hostProfile && (
+                            {!isInfiniteRoom && !!hostProfile && (
                                 <button
                                     onClick={onOpenHostProfile}
                                     className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
@@ -249,18 +318,18 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                         className="w-4 h-4 opacity-90"
                                     />
                                     <span className="font-inter">
-                                        <span className="font-light">{isInfiniteRoom ? "Owner:" : "Host:"}</span>{" "}
+                                        <span className="font-light">Host:</span>{" "}
                                         <span className="font-bold">
                                             {String(hostProfile.full_name || "Host")}
                                         </span>
                                     </span>
                                 </button>
                             )}
-                            {isInfiniteRoom && activeHostControl}
+                            {isInfiniteRoom && renderInfiniteHostControl(false)}
                         </div>
                     </div>
 
-                    <div className="relative z-10 min-[481px]:hidden flex items-center justify-start gap-2">
+                    <div className="relative z-10 min-[481px]:hidden flex flex-wrap items-center justify-start gap-2">
                         {renderTimer()}
 
                         <button
@@ -282,14 +351,14 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                             </div>
                         </button>
 
-                        {!!hostProfile && (
+                        {!isInfiniteRoom && !!hostProfile && (
                             <button
                                 onClick={onOpenHostProfile}
                                 className={`w-10 h-10 rounded-2xl flex items-center justify-center border transition ${isLight
                                     ? "border-[#CFCFCF] bg-[#E1E3E6] hover:bg-[#E0E0E0] text-black/70"
                                     : "border-[#2B2B2B] bg-[#1B1B1B]/60 hover:bg-[#242424] text-white/85"
                                     }`}
-                                title={`${isInfiniteRoom ? "Owner" : "Host"}: ${String(hostProfile.full_name || "Host")}`}
+                                title={`Host: ${String(hostProfile.full_name || "Host")}`}
                                 aria-label="Host profile"
                                 type="button"
                             >
@@ -299,7 +368,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                 />
                             </button>
                         )}
-                        {isInfiniteRoom && activeHostControl}
+                        {isInfiniteRoom && renderInfiniteHostControl(true)}
                     </div>
 
                     {showStageBar && (
