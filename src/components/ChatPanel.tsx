@@ -1323,6 +1323,7 @@ export function ChatPanel({
     const [unseenNew, setUnseenNew] = useState<number>(0);
 
     const composerRef = useRef<HTMLTextAreaElement | null>(null);
+    const voiceSendRef = useRef<() => Promise<void>>(async () => { });
 
     useEffect(() => {
         const applyVoiceMessageText = (incoming?: string) => {
@@ -2768,6 +2769,19 @@ export function ChatPanel({
             );
         }
     };
+
+    voiceSendRef.current = send;
+
+    useEffect(() => {
+        const onVoiceMessageSend = () => {
+            void voiceSendRef.current();
+        };
+
+        chatWindow.addEventListener("mysession:voice-message-send", onVoiceMessageSend);
+        return () => {
+            chatWindow.removeEventListener("mysession:voice-message-send", onVoiceMessageSend);
+        };
+    }, [chatWindow]);
 
     const updateMessage = async (messageId: string, newBody: string) => {
         if (!userId || !sessionId) return;

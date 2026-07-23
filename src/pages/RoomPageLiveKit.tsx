@@ -135,18 +135,28 @@ type VoiceUiCommand =
   | "task_add"
   | "task_complete"
   | "message_compose"
+  | "message_send"
+  | "dictate_example"
+  | "task_text_example"
+  | "message_text_example"
+  | "message_send_text_example"
+  | "click_control_example"
   | `dictate_${string}`
   | `task_text_${string}`
   | `message_text_${string}`
+  | `message_send_text_${string}`
   | `layout_columns_${number}`
   | `layout_rows_${number}`
   | `brightness_${number}`
   | `contrast_${number}`
   | `saturation_${number}`
+  | `stage_volume_${number}`
+  | `participant_volume_${number}`
   | `participant_pin_${string}`
   | `participant_unpin_${string}`
   | `participant_report_${string}`
   | `participant_manage_${string}`
+  | `click_control_${string}`
   | "status_afk"
   | "status_skip"
   | "status_call"
@@ -173,10 +183,35 @@ type VoiceUiCommand =
   | "profile_close"
   | "timeline_open"
   | "timeline_close"
+  | "timeline_save"
   | "edit_name_open"
   | "edit_name_close"
   | "edit_name_save"
   | "modal_close"
+  | "chat_general"
+  | "chat_direct"
+  | "color_correction_on"
+  | "color_correction_off"
+  | "color_correction_reset"
+  | "echo_cancellation_on"
+  | "echo_cancellation_off"
+  | "noise_suppression_on"
+  | "noise_suppression_off"
+  | "auto_gain_on"
+  | "auto_gain_off"
+  | "join_sound_on"
+  | "join_sound_off"
+  | "leave_sound_on"
+  | "leave_sound_off"
+  | "stage_sounds_on"
+  | "stage_sounds_off"
+  | "task_timers_on"
+  | "task_timers_off"
+  | "mobile_layout_switcher_on"
+  | "mobile_layout_switcher_off"
+  | "audio_resume"
+  | "mobile_media_restore"
+  | "leave_room"
   | "reaction_fire"
   | "reaction_laugh"
   | "reaction_thumbs_up"
@@ -295,10 +330,14 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "panels_close_all", group: "panels", phrase: "Close all panels", aliases: ["Close panels"] },
   { command: "task_add", group: "panels", phrase: "Add task", aliases: ["Create task", "New task"] },
   { command: "task_complete", group: "panels", phrase: "Complete task", aliases: ["Finish task"] },
-  { command: "message_compose", group: "panels", phrase: "Send message", aliases: ["Write message", "Compose message"] },
+  { command: "message_compose", group: "panels", phrase: "Compose message", aliases: ["Write message", "Focus message box"] },
+  { command: "message_send", group: "panels", phrase: "Send message", aliases: ["Send current message", "Submit message"] },
+  { command: "chat_general", group: "panels", phrase: "Open all chat", aliases: ["General chat", "All chat", "Switch to all chat"] },
+  { command: "chat_direct", group: "panels", phrase: "Open direct messages", aliases: ["Direct messages", "Open DMs", "Switch to DMs"] },
   { command: "dictate_example", group: "panels", phrase: "Type [text]" },
   { command: "task_text_example", group: "panels", phrase: "Add task [text]" },
   { command: "message_text_example", group: "panels", phrase: "Write message [text]" },
+  { command: "message_send_text_example", group: "panels", phrase: "Send message [text]" },
 
   { command: "pip_open", group: "views", phrase: "Open picture in picture", aliases: ["Open PIP", "Enable picture in picture", "Start picture in picture"] },
   { command: "pip_close", group: "views", phrase: "Close picture in picture", aliases: ["Close PIP", "Disable picture in picture", "Stop picture in picture"] },
@@ -311,6 +350,10 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "layout_four", group: "views", phrase: "Four columns", aliases: ["Four column layout", "Set four column layout", "Use four column layout", "4 column layout"] },
   { command: "layout_columns_3", group: "views", phrase: "Set columns to 3" },
   { command: "layout_rows_3", group: "views", phrase: "Set rows to 3" },
+  { command: "mobile_layout_switcher_on", group: "views", phrase: "Show layout switcher", aliases: ["Show mobile layout controls"] },
+  { command: "mobile_layout_switcher_off", group: "views", phrase: "Hide layout switcher", aliases: ["Hide mobile layout controls"] },
+  { command: "task_timers_on", group: "views", phrase: "Show task timers", aliases: ["Enable task timers", "Turn on task timers"] },
+  { command: "task_timers_off", group: "views", phrase: "Hide task timers", aliases: ["Disable task timers", "Turn off task timers"] },
 
   { command: "theme_light", group: "tools", phrase: "Light mode", aliases: ["Light theme", "Enable light mode", "Use light mode", "Switch to light mode"] },
   { command: "theme_dark", group: "tools", phrase: "Dark mode", aliases: ["Dark theme", "Enable dark mode", "Use dark mode", "Switch to dark mode"] },
@@ -322,17 +365,39 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "profile_close", group: "tools", phrase: "Close profile", aliases: ["Close host profile"] },
   { command: "timeline_open", group: "tools", phrase: "Open timeline", aliases: ["Open timeline editor"] },
   { command: "timeline_close", group: "tools", phrase: "Close timeline", aliases: ["Close timeline editor"] },
+  { command: "timeline_save", group: "tools", phrase: "Save timeline", aliases: ["Save timeline editor"] },
   { command: "edit_name_open", group: "tools", phrase: "Edit my name", aliases: ["Open name editor", "Change my name"] },
   { command: "edit_name_close", group: "tools", phrase: "Cancel", aliases: ["Close name editor", "Close edit name", "Cancel name edit"] },
   { command: "edit_name_save", group: "tools", phrase: "Save", aliases: ["Save name", "Save my name", "Confirm name"] },
   { command: "modal_close", group: "tools", phrase: "Close", aliases: ["Close modal", "Close window", "Close popup", "Dismiss modal", "Click close"] },
   { command: "voice_restart", group: "tools", phrase: "Restart voice control", aliases: ["Restart voice", "Restart listener"] },
+  { command: "color_correction_on", group: "tools", phrase: "Enable color correction", aliases: ["Color correction on", "Turn on color correction"] },
+  { command: "color_correction_off", group: "tools", phrase: "Disable color correction", aliases: ["Color correction off", "Turn off color correction"] },
+  { command: "color_correction_reset", group: "tools", phrase: "Reset color correction", aliases: ["Reset video colors"] },
   { command: "brightness_100", group: "tools", phrase: "Brightness 100" },
   { command: "contrast_100", group: "tools", phrase: "Contrast 100" },
   { command: "saturation_100", group: "tools", phrase: "Saturation 100" },
+  { command: "echo_cancellation_on", group: "tools", phrase: "Enable echo cancellation", aliases: ["Echo cancellation on"] },
+  { command: "echo_cancellation_off", group: "tools", phrase: "Disable echo cancellation", aliases: ["Echo cancellation off"] },
+  { command: "noise_suppression_on", group: "tools", phrase: "Enable noise suppression", aliases: ["Noise suppression on"] },
+  { command: "noise_suppression_off", group: "tools", phrase: "Disable noise suppression", aliases: ["Noise suppression off"] },
+  { command: "auto_gain_on", group: "tools", phrase: "Enable auto gain", aliases: ["Auto gain on", "Enable automatic gain control"] },
+  { command: "auto_gain_off", group: "tools", phrase: "Disable auto gain", aliases: ["Auto gain off", "Disable automatic gain control"] },
+  { command: "join_sound_on", group: "tools", phrase: "Enable join sound", aliases: ["Join sound on"] },
+  { command: "join_sound_off", group: "tools", phrase: "Disable join sound", aliases: ["Join sound off"] },
+  { command: "leave_sound_on", group: "tools", phrase: "Enable leave sound", aliases: ["Leave sound on"] },
+  { command: "leave_sound_off", group: "tools", phrase: "Disable leave sound", aliases: ["Leave sound off"] },
+  { command: "stage_sounds_on", group: "tools", phrase: "Enable stage sounds", aliases: ["Stage sounds on"] },
+  { command: "stage_sounds_off", group: "tools", phrase: "Disable stage sounds", aliases: ["Stage sounds off"] },
+  { command: "stage_volume_50", group: "tools", phrase: "Stage volume 50" },
+  { command: "participant_volume_100", group: "tools", phrase: "Participant volume 100" },
+  { command: "audio_resume", group: "tools", phrase: "Enable room audio", aliases: ["Resume room audio", "Play room audio"] },
+  { command: "mobile_media_restore", group: "tools", phrase: "Restore camera and microphone", aliases: ["Restore room media", "Reconnect camera and microphone"] },
   { command: "participant_pin_person", group: "tools", phrase: "Pin [name]" },
   { command: "participant_report_person", group: "tools", phrase: "Report [name]" },
   { command: "participant_manage_person", group: "tools", phrase: "Manage [name]", aliases: ["Mute [name]", "Kick [name]"] },
+  { command: "click_control_example", group: "tools", phrase: "Click [button label]" },
+  { command: "leave_room", group: "tools", phrase: "Leave room", aliases: ["Exit room", "Leave session"] },
 
   { command: "reaction_fire", group: "reactions", phrase: "Fire", aliases: ["Fire reaction", "Send fire", "React with fire"] },
   { command: "reaction_laugh", group: "reactions", phrase: "Laugh", aliases: ["Laughter", "Laugh reaction", "Send laugh", "React with laugh"] },
@@ -382,12 +447,23 @@ function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
   const textCommands: Array<[RegExp, string]> = [
     [/^(?:type|dictate)\s+(.+)$/i, "dictate_"],
     [/^(?:add|create)\s+task\s+(.+)$/i, "task_text_"],
+    [/^send\s+message\s+(.+)$/i, "message_send_text_"],
     [/^(?:write|compose|type)\s+message\s+(.+)$/i, "message_text_"],
   ];
   for (const [pattern, prefix] of textCommands) {
     const match = rawCommandText.match(pattern);
     const payload = String(match?.[1] || "").trim();
     if (payload) return `${prefix}${encodeURIComponent(payload)}` as VoiceUiCommand;
+  }
+  const clickControlMatch = rawCommandText.match(
+    /^(?:click|press|activate)\s+(.+)$/i,
+  );
+  const clickControlLabel = String(clickControlMatch?.[1] || "").trim();
+  if (clickControlLabel) {
+    if (/^(?:close|close button|x|cross)$/i.test(clickControlLabel)) {
+      return "modal_close";
+    }
+    return `click_control_${encodeURIComponent(clickControlLabel)}` as VoiceUiCommand;
   }
   const namedBlurStrengths: Record<string, number> = {
     "soft blur": 8,
@@ -409,6 +485,8 @@ function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
     [/^(?:set )?brightness(?: to)? (\d{1,3})$/, "brightness_", 50, 150],
     [/^(?:set )?contrast(?: to)? (\d{1,3})$/, "contrast_", 50, 150],
     [/^(?:set )?saturation(?: to)? (\d{1,3})$/, "saturation_", 0, 200],
+    [/^(?:set )?(?:stage|timeline|sound) volume(?: to)? (\d{1,3})$/, "stage_volume_", 0, 100],
+    [/^(?:set )?(?:participant|room|people) volume(?: to)? (\d{1,3})$/, "participant_volume_", 0, 300],
   ];
   for (const [pattern, prefix, min, max] of numericCommands) {
     const match = normalized.match(pattern);
@@ -10265,8 +10343,21 @@ export function RoomPageLiveKit({
 
     const numericVoiceValue = (prefix: string) =>
       Number(command.slice(prefix.length));
+    const dispatchVoiceMessageSend = () => {
+      window.dispatchEvent(new Event("mysession:voice-message-send"));
+      const pipWindow = pipWindowRef.current;
+      if (pipWindow && !pipWindow.closed && pipWindow !== window) {
+        const PiPEvent = (pipWindow as unknown as { Event: typeof Event }).Event;
+        pipWindow.dispatchEvent(new PiPEvent("mysession:voice-message-send"));
+      }
+    };
 
-    const voiceTextPrefix = ["task_text_", "message_text_", "dictate_"].find(
+    const voiceTextPrefix = [
+      "message_send_text_",
+      "task_text_",
+      "message_text_",
+      "dictate_",
+    ].find(
       (prefix) => command.startsWith(prefix),
     );
     if (voiceTextPrefix) {
@@ -10282,14 +10373,26 @@ export function RoomPageLiveKit({
         setVoiceUiLastCommand(`Task text: ${text}`);
         return;
       }
-      if (voiceTextPrefix === "message_text_") {
+      if (
+        voiceTextPrefix === "message_text_" ||
+        voiceTextPrefix === "message_send_text_"
+      ) {
+        if (pipOpen && pipMode === "chat") setPipMode("gallery");
         try {
           sessionStorage.setItem("mysession:voice-message-draft", text);
         } catch { }
         setRightTab("chat");
         setRightPanelOpen(true);
         window.setTimeout(() => window.dispatchEvent(new CustomEvent("mysession:voice-message-text", { detail: { text } })), 120);
-        setVoiceUiLastCommand(`Message text: ${text}`);
+        if (voiceTextPrefix === "message_send_text_") {
+          window.setTimeout(
+            dispatchVoiceMessageSend,
+            500,
+          );
+          setVoiceUiLastCommand(`Message sent: ${text}`);
+        } else {
+          setVoiceUiLastCommand(`Message text: ${text}`);
+        }
         return;
       }
       const active = document.activeElement;
@@ -10325,6 +10428,18 @@ export function RoomPageLiveKit({
       setVoiceUiLastCommand(`Layout rows ${value}`);
       return;
     }
+    if (command.startsWith("stage_volume_")) {
+      const value = numericVoiceValue("stage_volume_");
+      setRoomSoundsVolume(value);
+      setVoiceUiLastCommand(`Stage volume ${value}`);
+      return;
+    }
+    if (command.startsWith("participant_volume_")) {
+      const value = numericVoiceValue("participant_volume_");
+      setDefaultRemoteVolumePct(value);
+      setVoiceUiLastCommand(`Participant volume ${value}`);
+      return;
+    }
     for (const [prefix, key] of [
       ["brightness_", "brightness"],
       ["contrast_", "contrast"],
@@ -10335,6 +10450,52 @@ export function RoomPageLiveKit({
       setColorCorrectionEnabled(true);
       setColorCorrection((current) => ({ ...current, [key]: value }));
       setVoiceUiLastCommand(`${key[0].toUpperCase()}${key.slice(1)} ${value}`);
+      return;
+    }
+
+    if (command.startsWith("click_control_")) {
+      const requestedLabel = decodeURIComponent(
+        command.slice("click_control_".length),
+      ).trim();
+      const normalizedRequestedLabel = normalizeVoiceUiTranscript(requestedLabel);
+      const pipDocument = pipWindowRef.current?.document || null;
+      const documents = [document, pipDocument].filter(
+        (item, index, all): item is Document => !!item && all.indexOf(item) === index,
+      );
+      const controls = documents.flatMap((ownerDocument) =>
+        Array.from(
+          ownerDocument.querySelectorAll<HTMLElement>(
+            'button, [role="button"], input[type="button"], input[type="submit"]',
+          ),
+        ),
+      ).filter((control) => {
+        const disabled = (control as HTMLButtonElement | HTMLInputElement).disabled === true;
+        if (disabled || control.getAttribute("aria-disabled") === "true") return false;
+        return control.getClientRects().length > 0;
+      });
+      const labelForControl = (control: HTMLElement) =>
+        normalizeVoiceUiTranscript(
+          [
+            control.getAttribute("aria-label"),
+            control.getAttribute("title"),
+            control.tagName === "INPUT" ? (control as HTMLInputElement).value : "",
+            control.textContent,
+          ]
+            .filter(Boolean)
+            .join(" "),
+        );
+      const target =
+        controls.find((control) => labelForControl(control) === normalizedRequestedLabel) ||
+        controls.find((control) => labelForControl(control).startsWith(normalizedRequestedLabel)) ||
+        controls.find((control) => labelForControl(control).includes(normalizedRequestedLabel));
+
+      if (!target) {
+        setVoiceUiLastCommand(`Button ${requestedLabel} not found`);
+        return;
+      }
+
+      target.click();
+      setVoiceUiLastCommand(`${requestedLabel} clicked`);
       return;
     }
 
@@ -10431,6 +10592,7 @@ export function RoomPageLiveKit({
         setVoiceUiLastCommand("Tasks closed");
         break;
       case "chat_open":
+        if (pipOpen && pipMode === "chat") setPipMode("gallery");
         setRightTab("chat");
         setRightPanelOpen(true);
         setVoiceUiLastCommand("Chat opened");
@@ -10438,6 +10600,20 @@ export function RoomPageLiveKit({
       case "chat_close":
         if (rightTab === "chat") setRightPanelOpen(false);
         setVoiceUiLastCommand("Chat closed");
+        break;
+      case "chat_general":
+        if (pipOpen && pipMode === "chat") setPipMode("gallery");
+        setChatViewMode("general");
+        setRightTab("chat");
+        setRightPanelOpen(true);
+        setVoiceUiLastCommand("All chat opened");
+        break;
+      case "chat_direct":
+        if (pipOpen && pipMode === "chat") setPipMode("gallery");
+        setChatViewMode("host");
+        setRightTab("chat");
+        setRightPanelOpen(true);
+        setVoiceUiLastCommand("Direct messages opened");
         break;
       case "theme_light":
         setTheme("light");
@@ -10465,6 +10641,87 @@ export function RoomPageLiveKit({
         setSettingsOpen(false);
         setVoiceUiLastCommand("Settings closed");
         break;
+      case "color_correction_on":
+        if (!isLgUp) {
+          setVoiceUiLastCommand("Color correction is unavailable on this device");
+          break;
+        }
+        setColorCorrectionEnabled(true);
+        setVoiceUiLastCommand("Color correction enabled");
+        break;
+      case "color_correction_off":
+        setColorCorrectionEnabled(false);
+        setVoiceUiLastCommand("Color correction disabled");
+        break;
+      case "color_correction_reset":
+        if (!isLgUp) {
+          setVoiceUiLastCommand("Color correction is unavailable on this device");
+          break;
+        }
+        setColorCorrectionEnabled(true);
+        setColorCorrection(DEFAULT_COLOR_CORRECTION);
+        setVoiceUiLastCommand("Color correction reset");
+        break;
+      case "echo_cancellation_on":
+      case "echo_cancellation_off": {
+        const enabled = command === "echo_cancellation_on";
+        setEchoCancellationEnabled(enabled);
+        setPrejoin((current) => ({ ...current, echoCancellation: enabled }));
+        await syncLiveAudioProcessing({
+          echoCancellation: enabled,
+          noiseSuppression: noiseSuppressionEnabled,
+          autoGainControl: autoGainControlEnabled,
+        });
+        setVoiceUiLastCommand(`Echo cancellation ${enabled ? "enabled" : "disabled"}`);
+        break;
+      }
+      case "noise_suppression_on":
+      case "noise_suppression_off": {
+        const enabled = command === "noise_suppression_on";
+        setNoiseSuppressionEnabled(enabled);
+        setPrejoin((current) => ({ ...current, noiseSuppression: enabled }));
+        await syncLiveAudioProcessing({
+          echoCancellation: echoCancellationEnabled,
+          noiseSuppression: enabled,
+          autoGainControl: autoGainControlEnabled,
+        });
+        setVoiceUiLastCommand(`Noise suppression ${enabled ? "enabled" : "disabled"}`);
+        break;
+      }
+      case "auto_gain_on":
+      case "auto_gain_off": {
+        const enabled = command === "auto_gain_on";
+        setAutoGainControlEnabled(enabled);
+        setPrejoin((current) => ({ ...current, autoGainControl: enabled }));
+        await syncLiveAudioProcessing({
+          echoCancellation: echoCancellationEnabled,
+          noiseSuppression: noiseSuppressionEnabled,
+          autoGainControl: enabled,
+        });
+        setVoiceUiLastCommand(`Auto gain ${enabled ? "enabled" : "disabled"}`);
+        break;
+      }
+      case "join_sound_on":
+      case "join_sound_off": {
+        const enabled = command === "join_sound_on";
+        setJoinSoundEnabled(enabled);
+        setVoiceUiLastCommand(`Join sound ${enabled ? "enabled" : "disabled"}`);
+        break;
+      }
+      case "leave_sound_on":
+      case "leave_sound_off": {
+        const enabled = command === "leave_sound_on";
+        setLeaveSoundEnabled(enabled);
+        setVoiceUiLastCommand(`Leave sound ${enabled ? "enabled" : "disabled"}`);
+        break;
+      }
+      case "stage_sounds_on":
+      case "stage_sounds_off": {
+        const enabled = command === "stage_sounds_on";
+        setStageSoundsEnabled(enabled);
+        setVoiceUiLastCommand(`Stage sounds ${enabled ? "enabled" : "disabled"}`);
+        break;
+      }
       case "background_change":
         if (shouldDisableBackgroundFx) {
           setVoiceUiLastCommand("Backgrounds unavailable on this device");
@@ -10511,6 +10768,29 @@ export function RoomPageLiveKit({
         window.dispatchEvent(new Event("mysession:voice-ui-restart"));
         setVoiceUiLastCommand("Voice control restarted");
         break;
+      case "task_timers_on":
+      case "task_timers_off": {
+        const enabled = command === "task_timers_on";
+        const storageKey = `${TASK_TIMER_ENABLED_STORAGE_PREFIX}:${String(authUserId || "anonymous")}`;
+        try {
+          localStorage.setItem(storageKey, String(enabled));
+          window.dispatchEvent(
+            new CustomEvent(TASK_TIMER_VISIBILITY_EVENT, {
+              detail: { enabled, userId: authUserId || "" },
+            }),
+          );
+        } catch { }
+        setVoiceUiLastCommand(enabled ? "Task timers shown" : "Task timers hidden");
+        break;
+      }
+      case "mobile_layout_switcher_on":
+        updateShowMobileLayoutSwitcher(true);
+        setVoiceUiLastCommand("Layout switcher shown");
+        break;
+      case "mobile_layout_switcher_off":
+        updateShowMobileLayoutSwitcher(false);
+        setVoiceUiLastCommand("Layout switcher hidden");
+        break;
       case "task_add":
       case "task_complete":
         setRightTab("tasks");
@@ -10527,6 +10807,7 @@ export function RoomPageLiveKit({
         setVoiceUiLastCommand(command === "task_add" ? "Tasks opened — add a task" : "Tasks opened — choose a task");
         break;
       case "message_compose":
+        if (pipOpen && pipMode === "chat") setPipMode("gallery");
         setRightTab("chat");
         setRightPanelOpen(true);
         window.dispatchEvent(new Event("mysession:voice-compose-message"));
@@ -10535,6 +10816,10 @@ export function RoomPageLiveKit({
           textareas.find((item) => item.offsetParent !== null)?.focus();
         }, 180);
         setVoiceUiLastCommand("Chat opened — compose a message");
+        break;
+      case "message_send":
+        dispatchVoiceMessageSend();
+        setVoiceUiLastCommand("Send message requested");
         break;
       case "blur_apply":
         if (shouldDisableBackgroundFx) {
@@ -10692,6 +10977,16 @@ export function RoomPageLiveKit({
         setTimelineEditorOpen(false);
         setVoiceUiLastCommand("Timeline closed");
         break;
+      case "timeline_save":
+        if (!isHost) {
+          setVoiceUiLastCommand("Only the host can save the timeline");
+        } else if (!timelineEditorOpen) {
+          setVoiceUiLastCommand("Timeline editor is not open");
+        } else {
+          await saveTimelineEditor();
+          setVoiceUiLastCommand("Timeline saved");
+        }
+        break;
       case "edit_name_open":
         openEditName();
         setVoiceUiLastCommand("Name editor opened");
@@ -10709,7 +11004,8 @@ export function RoomPageLiveKit({
         }
         break;
       case "modal_close":
-        if (editNameOpen) setEditNameOpen(false);
+        if (systemNotice.open && systemNotice.kind !== "kick") closeSystemNotice();
+        else if (editNameOpen) setEditNameOpen(false);
         else if (reportModalOpen) setReportModalOpen(false);
         else if (timelineEditorOpen) setTimelineEditorOpen(false);
         else if (bugReportOpen) setBugReportOpen(false);
@@ -10722,6 +11018,19 @@ export function RoomPageLiveKit({
         else if (voiceFxPopupMounted || voiceFxPopupVisible) closeVoiceFxPopup();
         else if (rightPanelOpen) setRightPanelOpen(false);
         setVoiceUiLastCommand("Modal closed");
+        break;
+      case "audio_resume":
+        await ensureRoomAudioPlaybackUnlocked("voice-ui");
+        setAudioResumeNonce((value) => value + 1);
+        setVoiceUiLastCommand("Room audio enabled");
+        break;
+      case "mobile_media_restore":
+        await restoreMobileMediaFromBackground();
+        setVoiceUiLastCommand("Camera and microphone restored");
+        break;
+      case "leave_room":
+        setVoiceUiLastCommand("Leaving room");
+        await leave();
         break;
       case "reaction_fire":
         sendReaction("fire");
@@ -10893,7 +11202,7 @@ export function RoomPageLiveKit({
             if (!transcript) continue;
 
             const normalizedTranscript = normalizeVoiceUiTranscript(transcript);
-            const isDictationPhrase = /^(?:type|dictate|add task|create task|write message|compose message|type message)(?: |$)/.test(
+            const isDictationPhrase = /^(?:type|dictate|add task|create task|write message|compose message|type message|send message)(?: |$)/.test(
               normalizedTranscript,
             );
             if (isDictationPhrase && result.isFinal === false) {
@@ -15313,7 +15622,7 @@ export function RoomPageLiveKit({
                   </div>
 
                   <div className={`mt-4 rounded-2xl px-3 py-2 text-[10px] leading-4 ${isLight ? "bg-amber-50 text-amber-900/70" : "bg-amber-400/10 text-amber-100/65"}`}>
-                    Destructive commands such as Leave, kick, ban, and timeline saving are intentionally unavailable.
+                    “Leave room” exits immediately. Participant moderation commands open the matching management menu so you can confirm the action.
                   </div>
                 </div>
               </>
