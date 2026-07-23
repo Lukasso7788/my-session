@@ -8,19 +8,50 @@ import {
 
 class PiPChatBoundary extends React.Component<
     { children: React.ReactNode },
-    { failed: boolean }
+    { failed: boolean; retryCount: number }
 > {
-    state = { failed: false };
+    state = { failed: false, retryCount: 0 };
+    private retryTimer: ReturnType<typeof setTimeout> | null = null;
 
     static getDerivedStateFromError() {
         return { failed: true };
     }
 
+    componentDidCatch(error: unknown) {
+        console.error("[pip-chat] render failed", error);
+
+        // The Document PiP window can need one extra frame before portals and
+        // measurements are ready. Retry a fresh ChatPanel mount automatically
+        // instead of leaving the PiP chat permanently stuck on the fallback.
+        if (this.state.retryCount >= 2 || this.retryTimer) return;
+
+        this.retryTimer = setTimeout(() => {
+            this.retryTimer = null;
+            this.setState((state) => ({
+                failed: false,
+                retryCount: state.retryCount + 1,
+            }));
+        }, 250);
+    }
+
+    componentWillUnmount() {
+        if (this.retryTimer) clearTimeout(this.retryTimer);
+    }
+
     render() {
         if (this.state.failed) {
             return (
-                <div className="flex h-full items-center justify-center px-6 text-center text-xs text-black/55">
-                    Chat is temporarily unavailable. Room controls remain active.
+                <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-xs text-black/55">
+                    <span>Chat is temporarily unavailable. Room controls remain active.</span>
+                    {this.state.retryCount >= 2 ? (
+                        <button
+                            type="button"
+                            className="rounded-xl bg-[#1B1B1B] px-3 py-2 font-semibold text-white transition hover:bg-[#303030]"
+                            onClick={() => this.setState({ failed: false, retryCount: 0 })}
+                        >
+                            Try again
+                        </button>
+                    ) : null}
                 </div>
             );
         }

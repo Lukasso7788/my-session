@@ -13450,7 +13450,16 @@ export function RoomPageLiveKit({
     return 3;
   }, [pipGalleryTiles.length]);
 
-  const pipChatPanel = session?.id ? (
+  const pipChatDocument = pipMountEl?.ownerDocument || null;
+  const pipChatWindow = pipChatDocument?.defaultView || null;
+  const pipChatReady = Boolean(
+    pipMountEl?.isConnected &&
+    pipChatDocument?.body &&
+    pipChatWindow &&
+    !pipChatWindow.closed,
+  );
+
+  const pipChatPanel = session?.id && pipChatReady ? (
     <div
       className="h-full min-h-0 w-full overflow-hidden bg-[#F3F1F1] text-[#1F1F1F]"
       data-theme="light"
@@ -13465,8 +13474,8 @@ export function RoomPageLiveKit({
         hostUserIdOverride={String(session?.host_id || "") || null}
         hostProfileOverride={session?.host_profile || null}
         externalMode="general"
-        renderDocument={pipMountEl?.ownerDocument || null}
-        renderWindow={pipMountEl?.ownerDocument.defaultView || null}
+        renderDocument={pipChatDocument}
+        renderWindow={pipChatWindow}
       />
     </div>
   ) : null;
@@ -13496,7 +13505,15 @@ export function RoomPageLiveKit({
           toggleScreenShare().catch(() => { });
         }}
         onSendReaction={sendReaction}
-        onSetPipMode={setPipMode}
+        onSetPipMode={(mode) => {
+          // Keep one ChatPanel instance per room. Transfer chat to PiP before
+          // mounting it there so realtime channels and portals cannot collide.
+          if (mode === "chat" && rightPanelOpen && rightTab === "chat") {
+            setRightPanelOpen(false);
+            setRightTab(null);
+          }
+          setPipMode(mode);
+        }}
         onOpenTasksPanel={openTasksFromPictureInPicture}
         chatPanel={pipChatPanel}
       />,
@@ -15516,7 +15533,11 @@ export function RoomPageLiveKit({
           onToggleScreenShare={() => toggleScreenShare().catch(() => { })}
           onLeave={() => leave().catch(() => { })}
           onOpenParticipants={() => openRightTab("participants")}
-          onOpenChat={() => openRightTab("chat")}
+          onOpenChat={() => {
+            // Move chat out of PiP before mounting the normal room drawer.
+            if (pipOpen && pipMode === "chat") setPipMode("gallery");
+            openRightTab("chat");
+          }}
           onOpenTasks={() => openRightTab("tasks")}
           onOpenSettings={() => {
             setSettingsOpen(true);
