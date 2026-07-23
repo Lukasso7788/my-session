@@ -2994,6 +2994,8 @@ type TaskTimerState = {
 type TaskTimerMap = Record<string, TaskTimerState>;
 
 const TASK_TIMER_EVENT = "mysession:task-timers-updated";
+const TASK_TIMER_VISIBILITY_EVENT = "mysession:task-timer-visibility-changed";
+const TASK_TIMER_ENABLED_STORAGE_PREFIX = "mysession_task_timer_enabled_v1";
 const TASK_TIMER_STORAGE_PREFIX = "mysession_task_timers_v1";
 const TASKS_SYNC_EVENT = "mysession:tasks-synced";
 
@@ -3158,6 +3160,51 @@ function AccountabilityWall({
   );
   const [taskTimers, setTaskTimers] = useState<TaskTimerMap>({});
   const [taskTimerTickMs, setTaskTimerTickMs] = useState(() => Date.now());
+  const [taskTimersEnabled, setTaskTimersEnabled] = useState(false);
+
+  const taskTimerEnabledStorageKey = useMemo(
+    () => `${TASK_TIMER_ENABLED_STORAGE_PREFIX}:${String(authUserId || "anonymous")}`,
+    [authUserId],
+  );
+
+  useEffect(() => {
+    const refreshVisibility = () => {
+      try {
+        setTaskTimersEnabled(
+          window.localStorage.getItem(taskTimerEnabledStorageKey) === "true",
+        );
+      } catch {
+        setTaskTimersEnabled(false);
+      }
+    };
+
+    const onVisibilityChanged = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail || {};
+      const eventUserId = String(detail?.userId || "").trim().toLowerCase();
+      const currentUserId = String(authUserId || "").trim().toLowerCase();
+      if (eventUserId && currentUserId && eventUserId !== currentUserId) return;
+      setTaskTimersEnabled(detail?.enabled === true);
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === taskTimerEnabledStorageKey) refreshVisibility();
+    };
+
+    refreshVisibility();
+    window.addEventListener(
+      TASK_TIMER_VISIBILITY_EVENT,
+      onVisibilityChanged as EventListener,
+    );
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      window.removeEventListener(
+        TASK_TIMER_VISIBILITY_EVENT,
+        onVisibilityChanged as EventListener,
+      );
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [authUserId, taskTimerEnabledStorageKey]);
 
   useEffect(() => {
     setTaskTimers(readTaskTimers(taskTimerStorageKey));
@@ -3586,13 +3633,13 @@ function AccountabilityWall({
   };
 
   return (
-    <div className="h-full w-full min-h-0 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div className="h-full w-full min-h-0 overflow-y-auto px-2 py-2 sm:px-3 sm:py-3">
+      <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className={`font-inter text-[15px] font-bold ${isLight ? "text-black/85" : "text-white/90"}`}>
+          <div className={`font-inter text-[14px] font-bold ${isLight ? "text-black/85" : "text-white/90"}`}>
             Accountability Wall
           </div>
-          <div className={`mt-1 font-inter text-[14px] font-normal ${mutedText}`}>
+          <div className={`mt-0.5 font-inter text-[12px] font-normal ${mutedText}`}>
             Everyone’s current tasks, visible while you work.
           </div>
         </div>
@@ -3602,7 +3649,7 @@ function AccountabilityWall({
             type="button"
             onClick={onOpenTasks}
             className={[
-              "inline-flex h-9 items-center justify-center rounded-2xl px-3 font-inter text-[12px] font-normal leading-none transition",
+              "inline-flex h-8 items-center justify-center rounded-xl px-3 font-inter text-[11px] font-normal leading-none transition",
               isLight
                 ? "bg-[#242424] text-white hover:bg-[#303030]"
                 : "bg-[#81DB86] text-black hover:brightness-95",
@@ -3615,7 +3662,7 @@ function AccountabilityWall({
             type="button"
             onClick={onSwitchBackToVideo}
             className={[
-              "inline-flex h-9 items-center justify-center gap-1.5 rounded-2xl border px-3 font-inter text-[12px] font-normal leading-none transition",
+              "inline-flex h-8 items-center justify-center gap-1.5 rounded-xl border px-3 font-inter text-[11px] font-normal leading-none transition",
               isLight
                 ? "border-[#CFC6C6] bg-[#F7F5F5] text-black/70 hover:bg-[#ECEAEA]"
                 : "border-[#2B2B2B] bg-[#242424] text-white/80 hover:bg-white/[0.06]",
@@ -3646,7 +3693,7 @@ function AccountabilityWall({
           No participants yet
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {participantTiles.map((tile) => {
             const userId = getTilePersonKey(tile);
             const profile =
@@ -3666,22 +3713,22 @@ function AccountabilityWall({
               <div
                 key={`accountability-${tile.id}`}
                 className={[
-                  "min-h-[220px] rounded-[28px] border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg",
+                  "min-h-[180px] rounded-[22px] border p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
                   cardBg,
                 ].join(" ")}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2.5">
                     {avatarUrl ? (
                       <img
                         src={avatarUrl}
                         alt=""
-                        className="h-12 w-12 shrink-0 rounded-2xl object-cover"
+                        className="h-10 w-10 shrink-0 rounded-xl object-cover"
                       />
                     ) : (
                       <div
                         className={[
-                          "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-[16px] font-black",
+                          "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[14px] font-black",
                           isLight ? "bg-black/5 text-black/75" : "bg-white/10 text-white/85",
                         ].join(" ")}
                       >
@@ -3690,10 +3737,10 @@ function AccountabilityWall({
                     )}
 
                     <div className="min-w-0">
-                      <div className="truncate font-inter text-[15px] font-bold leading-tight">
+                      <div className="truncate font-inter text-[14px] font-bold leading-tight">
                         {name}
                       </div>
-                      <div className={`mt-1 text-[12px] ${mutedText}`}>
+                      <div className={`mt-0.5 text-[11px] ${mutedText}`}>
                         {tile.status ? getStatusLabel(tile.status) || tile.status : tile.isLocal ? "You" : "In room"}
                       </div>
                     </div>
@@ -3701,7 +3748,7 @@ function AccountabilityWall({
 
                   <div
                     className={[
-                      "shrink-0 rounded-2xl border px-2.5 py-1 font-inter text-[11px] font-medium",
+                      "shrink-0 rounded-xl border px-2 py-1 font-inter text-[10px] font-medium",
                       activeCount > 0
                         ? "border-[#81DB86]/55 bg-[#81DB86]/10 text-[#2FA84F]"
                         : isLight
@@ -3713,9 +3760,9 @@ function AccountabilityWall({
                   </div>
                 </div>
 
-                <div className="mt-5 space-y-2">
+                <div className="mt-3 space-y-1.5">
                   {isLocalCard ? (
-                    <div className="mb-3 flex items-center gap-2">
+                    <div className="mb-2 flex items-center gap-1.5">
                       <input
                         type="text"
                         value={newWallTask}
@@ -3725,7 +3772,7 @@ function AccountabilityWall({
                         }}
                         placeholder="Add a task"
                         className={[
-                          "h-11 min-w-0 flex-1 rounded-2xl border px-3 font-inter text-[13px] outline-none transition",
+                          "h-9 min-w-0 flex-1 rounded-xl border px-2.5 font-inter text-[12px] outline-none transition",
                           isLight
                             ? "border-[#CFC6C6] bg-[#F7F5F5] text-black/85 placeholder:text-black/35 focus:border-[#81DB86] focus:ring-1 focus:ring-[#81DB86]"
                             : "border-white/10 bg-white/[0.05] text-white/90 placeholder:text-white/35 focus:border-[#81DB86]/70 focus:ring-1 focus:ring-[#81DB86]/50",
@@ -3735,7 +3782,7 @@ function AccountabilityWall({
                         type="button"
                         onClick={() => void addOwnWallTask()}
                         disabled={!newWallTask.trim() || !!wallTaskBusy}
-                        className="h-11 rounded-2xl bg-[#81DB86] px-4 font-inter text-[13px] font-bold text-black transition hover:brightness-95 disabled:opacity-50"
+                        className="h-9 rounded-xl bg-[#81DB86] px-3 font-inter text-[12px] font-bold text-black transition hover:brightness-95 disabled:opacity-50"
                       >
                         Add
                       </button>
@@ -3752,13 +3799,14 @@ function AccountabilityWall({
                       const timer = taskTimers[timerId] || null;
                       const elapsedMs = getTaskTimerDisplayMs(timer, taskTimerTickMs);
                       const timerRunning = isTaskTimerRunning(timer);
-                      const shouldShowTimer = isLocalCard || elapsedMs > 0;
+                      const shouldShowTimer =
+                        taskTimersEnabled && (isLocalCard || elapsedMs > 0);
 
                       return (
                         <div
                           key={item.id}
                           className={[
-                            "flex items-start gap-2 rounded-2xl border px-3 py-3 font-inter text-[14px] font-normal leading-5",
+                            "flex items-start gap-2 rounded-xl border px-2.5 py-2 font-inter text-[12px] font-normal leading-4",
                             item.completed
                               ? isLight
                                 ? "border-black/10 bg-black/[0.02] text-black/35"
@@ -3794,7 +3842,7 @@ function AccountabilityWall({
                             <div className={item.completed ? "line-through" : ""}>{item.text}</div>
 
                             {shouldShowTimer ? (
-                              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1">
                                 <div
                                   className={[
                                     "inline-flex h-7 items-center rounded-full border px-2.5 text-[11px] font-bold tabular-nums",
@@ -3859,7 +3907,7 @@ function AccountabilityWall({
                       type="button"
                       onClick={isLocalCard ? undefined : onOpenTasks}
                       className={[
-                        "w-full rounded-2xl border border-dashed px-4 py-4 text-left font-inter text-[14px] font-normal transition",
+                        "w-full rounded-xl border border-dashed px-3 py-3 text-left font-inter text-[12px] font-normal transition",
                         isLight
                           ? "border-black/15 text-black/45 hover:bg-black/[0.03]"
                           : "border-white/15 text-white/45 hover:bg-white/[0.05]",
