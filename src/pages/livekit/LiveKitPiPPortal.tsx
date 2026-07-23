@@ -6,6 +6,29 @@ import {
     type RoomTheme,
 } from "./LiveKitUI";
 
+class PiPChatBoundary extends React.Component<
+    { children: React.ReactNode },
+    { failed: boolean }
+> {
+    state = { failed: false };
+
+    static getDerivedStateFromError() {
+        return { failed: true };
+    }
+
+    render() {
+        if (this.state.failed) {
+            return (
+                <div className="flex h-full items-center justify-center px-6 text-center text-xs text-black/55">
+                    Chat is temporarily unavailable. Room controls remain active.
+                </div>
+            );
+        }
+
+        return this.props.children;
+    }
+}
+
 export default function LiveKitPiPPortal({
     isLight,
     theme,
@@ -224,7 +247,7 @@ export default function LiveKitPiPPortal({
                     <div
                         className="ms-pip-chat-panel h-full min-h-0 min-w-0 overflow-hidden"
                     >
-                        {chatPanel}
+                        <PiPChatBoundary>{chatPanel}</PiPChatBoundary>
                     </div>
                 ) : null}
 

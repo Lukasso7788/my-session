@@ -370,6 +370,8 @@ type MessageCardProps = {
     onJumpToMessage: (messageId: string) => void;
     highlighted: boolean;
     readers: ReadReceiptReader[];
+    renderDocument: Document;
+    renderWindow: Window;
 };
 
 type DisplayedReaction = {
@@ -392,6 +394,8 @@ function MessageCardInner({
     onJumpToMessage,
     highlighted,
     readers,
+    renderDocument,
+    renderWindow,
 }: MessageCardProps) {
     const name = mine ? "You" : msg.profile?.full_name || "Participant";
     const time = formatTime(msg.created_at);
@@ -428,8 +432,8 @@ function MessageCardInner({
         if (!reactionButtonRef.current) return;
 
         const rect = reactionButtonRef.current.getBoundingClientRect();
-        const vw = window.innerWidth || 360;
-        const vh = window.innerHeight || 640;
+        const vw = renderWindow.innerWidth || 360;
+        const vh = renderWindow.innerHeight || 640;
         const margin = 8;
         const menuWidth = Math.max(280, Math.min(352, vw - margin * 2));
         const menuHeight = Math.min(460, Math.max(320, vh - margin * 2));
@@ -443,7 +447,7 @@ function MessageCardInner({
         }
 
         setReactionMenuPos({ top, left });
-    }, []);
+    }, [renderWindow]);
 
     useEffect(() => {
         if (!isEditing) setDraft(msg.body);
@@ -525,16 +529,16 @@ function MessageCardInner({
 
         const onRelayout = () => updateReactionMenuPos();
 
-        document.addEventListener("mousedown", onDown);
-        window.addEventListener("resize", onRelayout);
-        window.addEventListener("scroll", onRelayout, true);
+        renderDocument.addEventListener("mousedown", onDown);
+        renderWindow.addEventListener("resize", onRelayout);
+        renderWindow.addEventListener("scroll", onRelayout, true);
 
         return () => {
-            document.removeEventListener("mousedown", onDown);
-            window.removeEventListener("resize", onRelayout);
-            window.removeEventListener("scroll", onRelayout, true);
+            renderDocument.removeEventListener("mousedown", onDown);
+            renderWindow.removeEventListener("resize", onRelayout);
+            renderWindow.removeEventListener("scroll", onRelayout, true);
         };
-    }, [openReactions, updateReactionMenuPos]);
+    }, [openReactions, renderDocument, renderWindow, updateReactionMenuPos]);
 
     const hasReactions = Object.keys(displayedReactions).length > 0;
     const orderedReactionEntries = useMemo(() => {
@@ -609,7 +613,7 @@ function MessageCardInner({
 
     const doDelete = async () => {
         if (deleting) return;
-        const ok = window.confirm("Delete this message?");
+        const ok = renderWindow.confirm("Delete this message?");
         if (!ok) return;
 
         setDeleting(true);
@@ -673,7 +677,7 @@ function MessageCardInner({
                                 ) : null}
                             </button>
 
-                            {readersOpen && typeof document !== "undefined"
+                            {readersOpen
                                 ? createPortal(
                                     <div
                                         className="fixed inset-0 z-[220] flex items-center justify-center p-4"
@@ -752,7 +756,7 @@ function MessageCardInner({
                                             </div>
                                         </div>
                                     </div>,
-                                    document.body,
+                                    renderDocument.body,
                                 )
                                 : null}
                         </div>
@@ -793,7 +797,6 @@ function MessageCardInner({
 
                                 {openReactions &&
                                     reactionMenuPos &&
-                                    typeof document !== "undefined" &&
                                     createPortal(
                                         <div
                                             ref={reactionMenuRef}
@@ -806,9 +809,9 @@ function MessageCardInner({
                                                 left: reactionMenuPos.left,
                                                 width: Math.max(
                                                     280,
-                                                    Math.min(352, window.innerWidth - 16),
+                                                    Math.min(352, renderWindow.innerWidth - 16),
                                                 ),
-                                                maxHeight: Math.min(460, window.innerHeight - 16),
+                                                maxHeight: Math.min(460, renderWindow.innerHeight - 16),
                                             }}
                                             onMouseDown={(e) => e.stopPropagation()}
                                         >
@@ -862,7 +865,7 @@ function MessageCardInner({
                                                 />
                                             </div>
                                         </div>,
-                                        document.body,
+                                        renderDocument.body,
                                     )}
                             </div>
 
@@ -1059,7 +1062,9 @@ const areMessageCardPropsEqual = (
         prev.onDeleteMessage === next.onDeleteMessage &&
         prev.onJumpToMessage === next.onJumpToMessage &&
         prev.highlighted === next.highlighted &&
-        prev.readers === next.readers
+        prev.readers === next.readers &&
+        prev.renderDocument === next.renderDocument &&
+        prev.renderWindow === next.renderWindow
     );
 };
 
@@ -1078,6 +1083,8 @@ export function ChatPanel({
     externalMode = "general",
     externalDirectPeerUserId = null,
     onDirectPeerIdsChange,
+    renderDocument,
+    renderWindow,
 }: {
     sessionId: string;
     theme?: RoomTheme;
@@ -1091,8 +1098,12 @@ export function ChatPanel({
     externalMode?: "general" | "host";
     externalDirectPeerUserId?: string | null;
     onDirectPeerIdsChange?: (peerIds: string[]) => void;
+    renderDocument?: Document | null;
+    renderWindow?: Window | null;
 }) {
     const isLight = true;
+    const chatDocument = renderDocument || document;
+    const chatWindow = renderWindow || window;
 
     const [userId, setUserId] = useState<string | null>(null);
     const [hostUserId, setHostUserId] = useState<string | null>(null);
@@ -1161,7 +1172,7 @@ export function ChatPanel({
         }
 
         try {
-            const raw = sessionStorage.getItem(readReceiptStorageKey);
+            const raw = chatWindow.sessionStorage.getItem(readReceiptStorageKey);
             const parsed = raw ? JSON.parse(raw) : {};
 
             // Backward compatibility with the previous format, which stored only message ids.
@@ -1203,7 +1214,7 @@ export function ChatPanel({
         } catch {
             setReadersByMessage({});
         }
-    }, [readReceiptStorageKey]);
+    }, [chatWindow, readReceiptStorageKey]);
 
     const rememberMessageReaders = useCallback(
         (messageIds: string[], reader: ReadReceiptReader) => {
@@ -1245,7 +1256,7 @@ export function ChatPanel({
                 if (readReceiptStorageKey) {
                     try {
                         const entries = Object.entries(next).slice(-500);
-                        sessionStorage.setItem(
+                        chatWindow.sessionStorage.setItem(
                             readReceiptStorageKey,
                             JSON.stringify(Object.fromEntries(entries)),
                         );
@@ -1255,7 +1266,7 @@ export function ChatPanel({
                 return next;
             });
         },
-        [readReceiptStorageKey],
+        [chatWindow, readReceiptStorageKey],
     );
 
     const [reactions, setReactions] = useState<
@@ -1317,21 +1328,21 @@ export function ChatPanel({
         const applyVoiceMessageText = (incoming?: string) => {
             let pending = "";
             try {
-                pending = sessionStorage.getItem("mysession:voice-message-draft") || "";
-                sessionStorage.removeItem("mysession:voice-message-draft");
+                pending = chatWindow.sessionStorage.getItem("mysession:voice-message-draft") || "";
+                chatWindow.sessionStorage.removeItem("mysession:voice-message-draft");
             } catch { }
             const dictated = String(incoming || pending).trim();
             if (!dictated) return;
             setText(dictated);
-            window.setTimeout(() => composerRef.current?.focus(), 0);
+            chatWindow.setTimeout(() => composerRef.current?.focus(), 0);
         };
         const onVoiceMessageText = (event: Event) => {
             applyVoiceMessageText((event as CustomEvent<{ text?: string }>).detail?.text);
         };
         applyVoiceMessageText();
-        window.addEventListener("mysession:voice-message-text", onVoiceMessageText);
-        return () => window.removeEventListener("mysession:voice-message-text", onVoiceMessageText);
-    }, []);
+        chatWindow.addEventListener("mysession:voice-message-text", onVoiceMessageText);
+        return () => chatWindow.removeEventListener("mysession:voice-message-text", onVoiceMessageText);
+    }, [chatWindow]);
     const composerEmojiWrapRef = useRef<HTMLDivElement | null>(null);
     const emojiButtonRef = useRef<HTMLButtonElement | null>(null);
     const emojiPortalRef = useRef<HTMLDivElement | null>(null);
@@ -1536,21 +1547,21 @@ export function ChatPanel({
         setHighlightedMessageId(messageId);
 
         if (highlightTimerRef.current) {
-            window.clearTimeout(highlightTimerRef.current);
+            chatWindow.clearTimeout(highlightTimerRef.current);
         }
 
-        highlightTimerRef.current = window.setTimeout(() => {
+        highlightTimerRef.current = chatWindow.setTimeout(() => {
             setHighlightedMessageId((prev) => (prev === messageId ? null : prev));
         }, 1800);
-    }, []);
+    }, [chatWindow]);
 
     useEffect(() => {
         return () => {
             if (highlightTimerRef.current) {
-                window.clearTimeout(highlightTimerRef.current);
+                chatWindow.clearTimeout(highlightTimerRef.current);
             }
         };
-    }, []);
+    }, [chatWindow]);
 
     useEffect(() => {
         if (!sessionId) return;
@@ -1876,9 +1887,9 @@ export function ChatPanel({
         const onKey = (e: KeyboardEvent) => {
             if (e.key === "Escape") closeReactionDetails();
         };
-        document.addEventListener("keydown", onKey);
-        return () => document.removeEventListener("keydown", onKey);
-    }, [reactionDetails.open]);
+        chatDocument.addEventListener("keydown", onKey);
+        return () => chatDocument.removeEventListener("keydown", onKey);
+    }, [chatDocument, reactionDetails.open]);
 
     const loadDirectPeers = useCallback(async () => {
         if (!sessionId || !hostUserId) {
@@ -2170,7 +2181,7 @@ export function ChatPanel({
         if (!sessionId) return;
 
         if (pollingRef.current) {
-            window.clearInterval(pollingRef.current);
+            chatWindow.clearInterval(pollingRef.current);
             pollingRef.current = null;
         }
 
@@ -2336,7 +2347,7 @@ export function ChatPanel({
         channel.subscribe((status) => {
             if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
                 if (!pollingRef.current) {
-                    pollingRef.current = window.setInterval(() => {
+                    pollingRef.current = chatWindow.setInterval(() => {
                         void bootstrap({ silent: true, force: true });
                     }, 15000);
                 }
@@ -2345,7 +2356,7 @@ export function ChatPanel({
 
             if (status === "SUBSCRIBED") {
                 if (pollingRef.current) {
-                    window.clearInterval(pollingRef.current);
+                    chatWindow.clearInterval(pollingRef.current);
                     pollingRef.current = null;
                 }
                 if (messagesRef.current.length === 0) {
@@ -2356,7 +2367,7 @@ export function ChatPanel({
 
         return () => {
             if (pollingRef.current) {
-                window.clearInterval(pollingRef.current);
+                chatWindow.clearInterval(pollingRef.current);
                 pollingRef.current = null;
             }
             supabase.removeChannel(channel);
@@ -2371,6 +2382,7 @@ export function ChatPanel({
         attachProfile,
         ensureProfiles,
         bootstrap,
+        chatWindow,
     ]);
 
     useEffect(() => {
@@ -2514,9 +2526,9 @@ export function ChatPanel({
             scrollToBottom(behavior);
 
             let secondFrame = 0;
-            const firstFrame = window.requestAnimationFrame(() => {
+            const firstFrame = chatWindow.requestAnimationFrame(() => {
                 scrollToBottom(behavior);
-                secondFrame = window.requestAnimationFrame(() => {
+                secondFrame = chatWindow.requestAnimationFrame(() => {
                     scrollToBottom(behavior);
                 });
             });
@@ -2529,8 +2541,8 @@ export function ChatPanel({
             onBecameVisible?.();
 
             return () => {
-                window.cancelAnimationFrame(firstFrame);
-                if (secondFrame) window.cancelAnimationFrame(secondFrame);
+                chatWindow.cancelAnimationFrame(firstFrame);
+                if (secondFrame) chatWindow.cancelAnimationFrame(secondFrame);
             };
         }
     }, [
@@ -2539,6 +2551,7 @@ export function ChatPanel({
         messages.length,
         loading,
         onBecameVisible,
+        chatWindow,
     ]);
 
     useEffect(() => {
@@ -2568,7 +2581,7 @@ export function ChatPanel({
 
         setComposerEmojiOpen(false);
 
-        requestAnimationFrame(() => {
+        chatWindow.requestAnimationFrame(() => {
             const el = composerRef.current;
             if (!el) return;
             el.focus();
@@ -2584,9 +2597,9 @@ export function ChatPanel({
         if (!btn) return null;
 
         const rect = btn.getBoundingClientRect();
-        const vv = (window as any).visualViewport as VisualViewport | undefined;
-        const vw = Math.floor(vv?.width || window.innerWidth);
-        const vh = Math.floor(vv?.height || window.innerHeight);
+        const vv = chatWindow.visualViewport;
+        const vw = Math.floor(vv?.width || chatWindow.innerWidth);
+        const vh = Math.floor(vv?.height || chatWindow.innerHeight);
         const offsetLeft = Math.floor(vv?.offsetLeft || 0);
         const offsetTop = Math.floor(vv?.offsetTop || 0);
 
@@ -2633,8 +2646,8 @@ export function ChatPanel({
         const onResize = () => setEmojiPos(computeEmojiPosition());
         const onScroll = () => onResize();
 
-        window.addEventListener("resize", onResize);
-        window.addEventListener("scroll", onScroll, true);
+        chatWindow.addEventListener("resize", onResize);
+        chatWindow.addEventListener("scroll", onScroll, true);
 
         const onDown = (e: MouseEvent) => {
             const t = e.target as Node | null;
@@ -2648,16 +2661,16 @@ export function ChatPanel({
             if (e.key === "Escape") setComposerEmojiOpen(false);
         };
 
-        document.addEventListener("mousedown", onDown);
-        document.addEventListener("keydown", onKey);
+        chatDocument.addEventListener("mousedown", onDown);
+        chatDocument.addEventListener("keydown", onKey);
 
         return () => {
-            window.removeEventListener("resize", onResize);
-            window.removeEventListener("scroll", onScroll, true);
-            document.removeEventListener("mousedown", onDown);
-            document.removeEventListener("keydown", onKey);
+            chatWindow.removeEventListener("resize", onResize);
+            chatWindow.removeEventListener("scroll", onScroll, true);
+            chatDocument.removeEventListener("mousedown", onDown);
+            chatDocument.removeEventListener("keydown", onKey);
         };
-    }, [composerEmojiOpen]);
+    }, [chatDocument, chatWindow, composerEmojiOpen]);
 
     const send = async () => {
         const raw = text.trim();
@@ -2916,7 +2929,7 @@ export function ChatPanel({
 
     useEffect(() => {
         if (!sessionId || !userId) return;
-        if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+        if (chatDocument.visibilityState === "hidden") return;
 
         const unreadForMe = visibleMessages.filter((message) => {
             if (!message.id || message.id.startsWith("optimistic-")) return false;
@@ -2931,7 +2944,7 @@ export function ChatPanel({
         const channel = readReceiptChannelRef.current;
         if (!channel || !readReceiptReadyRef.current) return;
 
-        const timer = window.setTimeout(() => {
+        const timer = chatWindow.setTimeout(() => {
             if (!readReceiptReadyRef.current) return;
 
             messageIds.forEach((id) => reportedReadIdsRef.current.add(id));
@@ -2957,13 +2970,15 @@ export function ChatPanel({
             } catch { }
         }, 120);
 
-        return () => window.clearTimeout(timer);
+        return () => chatWindow.clearTimeout(timer);
     }, [
         sessionId,
         userId,
         visibleMessages,
         activeMode,
         activeDirectPeerId,
+        chatDocument,
+        chatWindow,
     ]);
 
     const modalMessage = reactionDetails.open
@@ -2991,7 +3006,7 @@ export function ChatPanel({
         !!myReactions?.[reactionDetails.messageId]?.[reactionDetails.emoji];
 
     const emojiPortal =
-        composerEmojiOpen && emojiPos && typeof document !== "undefined"
+        composerEmojiOpen && emojiPos
             ? createPortal(
                 <div
                     className="fixed inset-0 z-[99999]"
@@ -3033,7 +3048,7 @@ export function ChatPanel({
                         </div>
                     </div>
                 </div>,
-                document.body,
+                chatDocument.body,
             )
             : null;
 
@@ -3335,6 +3350,8 @@ export function ChatPanel({
                                 onJumpToMessage={jumpToMessage}
                                 highlighted={highlightedMessageId === m.id}
                                 readers={mine ? readersByMessage[m.id] || [] : []}
+                                renderDocument={chatDocument}
+                                renderWindow={chatWindow}
                             />
                         </div>
                     );
