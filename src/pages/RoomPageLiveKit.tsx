@@ -522,6 +522,15 @@ type HostProfile = {
   bio?: string | null;
 };
 
+type InfiniteRoomHostLease = {
+  session_id: string;
+  user_id: string;
+  claimed_at: string;
+  heartbeat_at: string;
+  expires_at: string;
+  active_host_profile?: HostProfile | null;
+};
+
 type SessionTemplate = {
   name?: string | null;
   title?: string | null;
@@ -4692,6 +4701,11 @@ export function RoomPageLiveKit({
 
   // roles
   const [moderatorUserIds, setModeratorUserIds] = useState<string[]>([]);
+  const [activeRoomHostLease, setActiveRoomHostLease] =
+    useState<InfiniteRoomHostLease | null>(null);
+  const [activeRoomHostBusy, setActiveRoomHostBusy] = useState(false);
+  const [activeRoomHostError, setActiveRoomHostError] = useState("");
+  const [activeRoomHostClock, setActiveRoomHostClock] = useState(() => Date.now());
   const [rolesLoading, setRolesLoading] = useState(false);
   const [rolesError, setRolesError] = useState<string>("");
   const [roleBusyKey, setRoleBusyKey] = useState<string>("");
@@ -7437,11 +7451,25 @@ export function RoomPageLiveKit({
     return !!hostId && String(hostId) === String(authUserId);
   }, [authUserId, session]);
 
+  const hasValidActiveRoomHostLease = useMemo(() => {
+    if (!activeRoomHostLease?.expires_at) return false;
+    const expiresAt = new Date(activeRoomHostLease.expires_at).getTime();
+    return Number.isFinite(expiresAt) && expiresAt > activeRoomHostClock;
+  }, [activeRoomHostLease, activeRoomHostClock]);
+
+  const isTemporaryRoomHost = useMemo(() => {
+    if (!authUserId || !hasValidActiveRoomHostLease) return false;
+    return (
+      String(activeRoomHostLease?.user_id || "").toLowerCase() ===
+      String(authUserId).toLowerCase()
+    );
+  }, [activeRoomHostLease?.user_id, authUserId, hasValidActiveRoomHostLease]);
+
   const isSelfModerator = useMemo(() => {
     if (!authUserId) return false;
-    if (isHost) return true;
+    if (isHost || isTemporaryRoomHost) return true;
     return moderatorUserIds.includes(String(authUserId).toLowerCase());
-  }, [authUserId, isHost, moderatorUserIds]);
+  }, [authUserId, isHost, isTemporaryRoomHost, moderatorUserIds]);
 
   const loadModerators = useCallback(
     async (sessionId: string, opts?: { force?: boolean }) => {
@@ -8666,6 +8694,220 @@ export function RoomPageLiveKit({
 
   const [tiles, setTiles] = useState<TileModel[]>([]);
   const [screenShareTiles, setScreenShareTiles] = useState<TileModel[]>([]);
+
+  const sessionOwnerId = useMemo(
+    () =>
+      String(session?.host_id || session?.host_profile?.id || "")
+        .trim()
+        .toLowerCase(),
+    [session?.host_id, session?.host_profile?.id],
+  );
+
+  const sessionOwnerIsPresent = useMemo(() => {
+    if (!sessionOwnerId) return false;
+    if (
+      connected &&
+      String(authUserId || "").trim().toLowerCase() === sessionOwnerId
+    ) {
+      return true;
+    }
+
+    return tiles.some((tile) => {
+      const participantId = String(
+        tile.participantUserId ||
+        extractBaseUserIdFromIdentity(String(tile.participantIdentity || "")),
+      )
+        .trim()
+        .toLowerCase();
+      return participantId === sessionOwnerId;
+    });
+  }, [authUserId, connected, sessionOwnerId, tiles]);
+
+  const loadActiveRoomHostLease = useCallback(async () => {
+    if (!isInfiniteRoom || !sessionId) {
+      setActiveRoomHostLease(null);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("infinite_room_host_leases")
+      .select(
+        "session_id,user_id,claimed_at,heartbeat_at,expires_at,active_host_profile:profiles!infinite_room_host_leases_user_id_fkey(id,full_name,avatar_url,bio)",
+      )
+      .eq("session_id", sessionId)
+      .maybeSingle();
+
+    if (error) {
+      // A deployment can briefly run before its migration is applied. Do not
+      // break the room for that case; the action remains unavailable.
+      console.warn("active room host lease unavailable", error);
+      setActiveRoomHostLease(null);
+      return;
+    }
+
+    const rawProfile = (data as any)?.active_host_profile;
+    const profile = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile;
+    setActiveRoomHostLease(
+      data
+        ? ({
+            ...(data as any),
+            active_host_profile: profile || null,
+          } as InfiniteRoomHostLease)
+        : null,
+    );
+  }, [isInfiniteRoom, sessionId]);
+
+  useEffect(() => {
+    const tick = window.setInterval(
+      () => setActiveRoomHostClock(Date.now()),
+      15_000,
+    );
+    return () => window.clearInterval(tick);
+  }, []);
+
+  useEffect(() => {
+    if (!isInfiniteRoom || !sessionId) {
+      setActiveRoomHostLease(null);
+      return;
+    }
+
+    void loadActiveRoomHostLease();
+    const channel = supabase
+      .channel(`infinite-room-host-${sessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "infinite_room_host_leases",
+          filter: `session_id=eq.${sessionId}`,
+        },
+        () => void loadActiveRoomHostLease(),
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [isInfiniteRoom, loadActiveRoomHostLease, sessionId]);
+
+  useEffect(() => {
+    if (
+      !connected ||
+      !isInfiniteRoom ||
+      !sessionId ||
+      !authUserId ||
+      !isTemporaryRoomHost
+    ) {
+      return;
+    }
+
+    const heartbeat = async () => {
+      const { data, error } = await supabase.rpc(
+        "heartbeat_infinite_room_host",
+        { p_session_id: sessionId },
+      );
+      if (error || data === false) {
+        setActiveRoomHostLease(null);
+        if (error) console.warn("active host heartbeat failed", error);
+        return;
+      }
+      setActiveRoomHostClock(Date.now());
+      void loadActiveRoomHostLease();
+    };
+
+    void heartbeat();
+    const heartbeatTimer = window.setInterval(heartbeat, 30_000);
+    return () => window.clearInterval(heartbeatTimer);
+  }, [
+    authUserId,
+    connected,
+    isInfiniteRoom,
+    isTemporaryRoomHost,
+    loadActiveRoomHostLease,
+    sessionId,
+  ]);
+
+  useEffect(() => {
+    if (!sessionOwnerIsPresent || !isTemporaryRoomHost || !sessionId) return;
+    void supabase
+      .rpc("release_infinite_room_host", { p_session_id: sessionId })
+      .then(() => loadActiveRoomHostLease());
+  }, [
+    isTemporaryRoomHost,
+    loadActiveRoomHostLease,
+    sessionId,
+    sessionOwnerIsPresent,
+  ]);
+
+  const claimActiveRoomHost = useCallback(async () => {
+    if (!sessionId || activeRoomHostBusy) return;
+    setActiveRoomHostBusy(true);
+    setActiveRoomHostError("");
+    try {
+      const { error } = await supabase.rpc("claim_infinite_room_host", {
+        p_session_id: sessionId,
+      });
+      if (error) throw error;
+      await loadActiveRoomHostLease();
+    } catch (error: any) {
+      const message = String(error?.message || error || "");
+      setActiveRoomHostError(
+        message.includes("session_owner_present")
+          ? "The session owner is already in the room."
+          : message.includes("active_host_already_claimed")
+            ? "Someone else has already stepped in as host."
+            : "Could not step in as host. Please try again.",
+      );
+      await loadActiveRoomHostLease();
+    } finally {
+      setActiveRoomHostBusy(false);
+    }
+  }, [activeRoomHostBusy, loadActiveRoomHostLease, sessionId]);
+
+  const releaseActiveRoomHost = useCallback(async () => {
+    if (!sessionId || activeRoomHostBusy) return;
+    setActiveRoomHostBusy(true);
+    setActiveRoomHostError("");
+    try {
+      const { error } = await supabase.rpc("release_infinite_room_host", {
+        p_session_id: sessionId,
+      });
+      if (error) throw error;
+      await loadActiveRoomHostLease();
+    } catch (error) {
+      console.warn("active host release failed", error);
+      setActiveRoomHostError("Could not step down. Please try again.");
+    } finally {
+      setActiveRoomHostBusy(false);
+    }
+  }, [activeRoomHostBusy, loadActiveRoomHostLease, sessionId]);
+
+  const activeOperationalHostProfile = useMemo<HostProfile | null>(() => {
+    if (sessionOwnerIsPresent) return session?.host_profile || null;
+    if (!hasValidActiveRoomHostLease) return null;
+    const leaseUserId = String(activeRoomHostLease?.user_id || "").toLowerCase();
+    return (
+      activeRoomHostLease?.active_host_profile ||
+      profilesById[leaseUserId] || {
+        id: leaseUserId,
+        full_name: isTemporaryRoomHost ? "You" : "Participant",
+      }
+    );
+  }, [
+    activeRoomHostLease,
+    hasValidActiveRoomHostLease,
+    isTemporaryRoomHost,
+    profilesById,
+    session?.host_profile,
+    sessionOwnerIsPresent,
+  ]);
+
+  const activeOperationalHostUserId = sessionOwnerIsPresent
+    ? sessionOwnerId
+    : hasValidActiveRoomHostLease
+      ? String(activeRoomHostLease?.user_id || "").toLowerCase()
+      : "";
 
   useEffect(() => {
     const shouldShowMobileRestore = () => {
@@ -12040,6 +12282,16 @@ export function RoomPageLiveKit({
     explicitLeaveRequestedRef.current = true;
     clearMobileRoomLease(sessionId, authUserId);
 
+    if (isTemporaryRoomHost && sessionId) {
+      try {
+        await supabase.rpc("release_infinite_room_host", {
+          p_session_id: sessionId,
+        });
+      } catch {
+        // The lease expires automatically if the network is already gone.
+      }
+    }
+
     const startedAt = sessionJoinStartedAtRef.current;
     const minutesSpent =
       startedAt && Number.isFinite(startedAt)
@@ -13017,7 +13269,11 @@ export function RoomPageLiveKit({
 
   const getBadgeForTile = (t: TileModel): string | null => {
     if (t.isLocal) {
-      if (isHost) return "Host";
+      if (
+        isHost ||
+        (isTemporaryRoomHost && !sessionOwnerIsPresent)
+      )
+        return "Host";
       if (isSelfModerator) return "Moderator";
       return null;
     }
@@ -13027,6 +13283,7 @@ export function RoomPageLiveKit({
       extractBaseUserIdFromIdentity(String(t.participantIdentity || ""))
     ).toLowerCase();
 
+    if (pid && pid === activeOperationalHostUserId) return "Host";
     if (pid && looksLikeUuid(pid) && moderatorUserIds.includes(pid))
       return "Moderator";
     return null;
@@ -14040,11 +14297,15 @@ export function RoomPageLiveKit({
                 const statusTone = getStatusTone(p.status);
 
                 const pidBase = String(p.participantUserId || "").toLowerCase();
+                const isActiveOperationalHost = p.isLocal
+                  ? isHost ||
+                    (isTemporaryRoomHost && !sessionOwnerIsPresent)
+                  : !!pidBase && pidBase === activeOperationalHostUserId;
                 const isMod =
                   !p.isLocal && looksLikeUuid(pidBase)
                     ? moderatorUserIds.includes(pidBase)
                     : p.isLocal
-                      ? isSelfModerator && !isHost
+                      ? isSelfModerator && !isActiveOperationalHost
                       : false;
 
                 const roleText =
@@ -14053,14 +14314,16 @@ export function RoomPageLiveKit({
                       ? "Your screen"
                       : "Screen share"
                     : p.isLocal
-                      ? isHost
+                      ? isActiveOperationalHost
                         ? "Host"
                         : isMod
                           ? "Moderator"
                           : "You"
-                      : isMod
-                        ? "Moderator"
-                        : "Participant";
+                      : isActiveOperationalHost
+                        ? "Host"
+                        : isMod
+                          ? "Moderator"
+                          : "Participant";
 
                 return (
                   <div
@@ -15670,7 +15933,24 @@ export function RoomPageLiveKit({
             stagebarStartTime={stagebarStartTime}
             stagebarCycleSeconds={stagebarCycleSeconds}
             remainingTime={remainingTime}
+            currentStage={(stages[currentStage] as any) || null}
             hostProfile={session?.host_profile || null}
+            isInfiniteRoom={isInfiniteRoom}
+            activeRoomHostProfile={activeOperationalHostProfile}
+            isCurrentUserActiveRoomHost={
+              isTemporaryRoomHost && !sessionOwnerIsPresent
+            }
+            canStepInAsHost={
+              connected &&
+              isInfiniteRoom &&
+              !!authUserId &&
+              !sessionOwnerIsPresent &&
+              !hasValidActiveRoomHostLease
+            }
+            activeRoomHostBusy={activeRoomHostBusy}
+            activeRoomHostError={activeRoomHostError}
+            onStepInAsHost={claimActiveRoomHost}
+            onStepDownAsHost={releaseActiveRoomHost}
             onHoverStage={setHoveredStage as any}
             onToggleTheme={() =>
               setTheme((t) => (t === "dark" ? "light" : "dark"))

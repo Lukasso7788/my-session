@@ -62,6 +62,39 @@ async function resolveRole(params: { supabaseUrl: string; serviceKey: string; ac
     isModerator = !rErr && Array.isArray(rData) && rData.length > 0;
   }
 
+  if (!isHost && !isModerator) {
+    const nowIso = new Date().toISOString();
+    const ownerActiveSinceIso = new Date(Date.now() - 120_000).toISOString();
+    const hostId = String((sData as any).host_id || "").toLowerCase();
+
+    const { data: lease, error: leaseErr } = await sb
+      .from("infinite_room_host_leases")
+      .select("user_id,expires_at")
+      .eq("session_id", params.sessionId)
+      .eq("user_id", userId)
+      .gt("expires_at", nowIso)
+      .maybeSingle();
+
+    if (!leaseErr && lease?.user_id) {
+      const { data: ownerAttendance, error: ownerAttendanceErr } = hostId
+        ? await sb
+            .from("session_attendance")
+            .select("user_id")
+            .eq("session_id", params.sessionId)
+            .eq("user_id", hostId)
+            .is("left_at", null)
+            .gte("last_seen_at", ownerActiveSinceIso)
+            .limit(1)
+        : { data: [], error: null };
+
+      const ownerIsPresent =
+        !ownerAttendanceErr &&
+        Array.isArray(ownerAttendance) &&
+        ownerAttendance.length > 0;
+      if (!ownerIsPresent) isModerator = true;
+    }
+  }
+
   return { userId, isHost, isModerator };
 }
 
