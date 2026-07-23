@@ -63,6 +63,7 @@ interface SessionCardProps {
     ) => void | Promise<any>;
 
     onHostTransferComplete?: () => void | Promise<void>;
+    canManageAnySession?: boolean;
 
     currentUser?: {
         id: string;
@@ -1765,6 +1766,7 @@ async function transferSessionHostRights(args: {
     sessionId: string;
     newHostId: string;
     newHostName?: string | null;
+    canManageAnySession?: boolean;
 }): Promise<void> {
     const sessionId = String(args.sessionId || "").trim();
     const newHostId = String(args.newHostId || "").trim();
@@ -1778,6 +1780,21 @@ async function transferSessionHostRights(args: {
     if (!sb) throw new Error("Supabase is not configured.");
 
     await ensureAuthReady(sb);
+
+    if (args.canManageAnySession) {
+        const { data: updated, error: updateError } = await sb
+            .from("sessions")
+            .update({ host_id: newHostId, host_name: newHostName })
+            .eq("id", sessionId)
+            .select("id, host_id")
+            .maybeSingle();
+
+        if (updateError) throw updateError;
+        if (!updated || String(updated.host_id || "") !== newHostId) {
+            throw new Error("Super-admin host transfer was blocked by database policy.");
+        }
+        return;
+    }
 
     const { error: rpcError } = await sb.rpc("transfer_session_host_rights", {
         p_session_id: sessionId,
@@ -2658,6 +2675,7 @@ function EditSessionStudioModal(props: {
     currentUserId?: string;
     hostCandidates?: HostTransferCandidate[];
     onHostTransferred?: (newHost: HostTransferCandidate) => void;
+    canManageAnySession?: boolean;
 }) {
     const {
         isOpen,
@@ -2667,6 +2685,7 @@ function EditSessionStudioModal(props: {
         currentUserId,
         hostCandidates = [],
         onHostTransferred,
+        canManageAnySession = false,
     } = props;
 
     const [editTitle, setEditTitle] = useState<string>(session?.title || "");
@@ -3012,7 +3031,7 @@ function EditSessionStudioModal(props: {
             const newHostId = String(candidate?.id || "").trim();
             if (!newHostId || !session?.id) return;
 
-            if (currentUserId && currentHostId && currentUserId !== currentHostId) {
+            if (!canManageAnySession && currentUserId && currentHostId && currentUserId !== currentHostId) {
                 setTransferError("Only the current host can transfer host rights.");
                 return;
             }
@@ -3038,6 +3057,7 @@ function EditSessionStudioModal(props: {
                     sessionId: String(session.id),
                     newHostId,
                     newHostName: candidate.full_name || candidate.email || null,
+                    canManageAnySession,
                 });
 
                 setTransferNotice(`Host rights transferred to ${label}.`);
@@ -3052,7 +3072,7 @@ function EditSessionStudioModal(props: {
                 setIsTransferringHostId(null);
             }
         },
-        [session?.id, currentHostId, currentUserId, onHostTransferred]
+        [session?.id, currentHostId, currentUserId, onHostTransferred, canManageAnySession]
     );
 
     if (!isOpen) return null;
@@ -3147,7 +3167,7 @@ function EditSessionStudioModal(props: {
                                     Transfer host rights
                                 </div>
                                 <div className="mt-1 font-inter text-[12px] leading-5 text-gray-500">
-                                    Move ownership and host controls for this session to another user.
+                                    Assign the host role and room controls to another user.
                                     Use this when someone else should run the room.
                                 </div>
                             </div>
@@ -3756,6 +3776,7 @@ export default function SessionCard({
     onDelete,
     onEditSession,
     onHostTransferComplete,
+    canManageAnySession = false,
     currentUser,
 }: SessionCardProps) {
     const navigate = useNavigate();
@@ -3767,6 +3788,7 @@ export default function SessionCard({
 
     const effectiveHostId = hostIdOverride || session.host_id;
     const isHost = !!userId && effectiveHostId === userId;
+    const canManageSession = isHost || canManageAnySession;
 
     const initialIsBooked =
         !!userId &&
@@ -4137,10 +4159,19 @@ export default function SessionCard({
     };
     const joinHoverBg = JOIN_HOVER_BG[resolvedType] || "#111827";
 
+    const activeInfiniteHost = isInfinite ? session?.active_host_profile : null;
+    const displayedHostId = String(
+        activeInfiniteHost?.id || session?.active_host_user_id || session?.host_id || "host"
+    );
     const hostCardUser: BookedUser = {
-        id: String(session?.host_id || "host"),
-        full_name: session?.host_name || session?.host_profile?.full_name || "Host",
+        id: displayedHostId,
+        full_name:
+            activeInfiniteHost?.full_name ||
+            session?.host_name ||
+            session?.host_profile?.full_name ||
+            "Host",
         avatar_url:
+            activeInfiniteHost?.avatar_url ||
             session?.host_avatar_url ||
             session?.host_avatar ||
             session?.host_profile?.avatar_url ||
@@ -4482,7 +4513,7 @@ export default function SessionCard({
         // Capacity gate belongs on the card because it is useful before opening the room.
         // Auth gate does NOT belong here anymore: logged-out users should be sent to the
         // room and see the in-room auth modal there.
-        if (!isHost && isSessionFull) {
+        if (!canManageSession && isSessionFull) {
             setSessionFullOpen(true);
             return;
         }
@@ -4509,9 +4540,9 @@ export default function SessionCard({
     const bookedDrawerStackUsers = bookers.slice(0, 8);
     const bookedDrawerRemaining = Math.max(0, bookers.length - bookedDrawerStackUsers.length);
 
-    const canEdit = isHost && !!onEditSession;
+    const canEdit = canManageSession && !!onEditSession;
     const canCancelBooking = !!isBookingConfirmed;
-    const canCancelSession = isHost;
+    const canCancelSession = canManageSession;
 
     const hasPrettySessionSlug = !!getSessionPublicSlug(session);
     const hasHostSlug = !!String(resolvedHostSlug || "").trim();
@@ -4684,11 +4715,11 @@ export default function SessionCard({
                 <div className="flex flex-col xl:flex-row w-full gap-6">
                     <div className="flex min-w-0 flex-1 items-stretch justify-between gap-4">
                         <Link
-                            to={`/profile/${session.host_id}`}
+                            to={`/profile/${displayedHostId}`}
                             onClick={(event) => event.stopPropagation()}
                             className="shrink-0 self-start rounded-full transition hover:scale-[1.03] hover:opacity-90"
-                            title={`View ${session.host_name || "host"}'s profile`}
-                            aria-label={`View ${session.host_name || "host"}'s profile`}
+                            title={`View ${hostCardUser.full_name || "host"}'s profile`}
+                            aria-label={`View ${hostCardUser.full_name || "host"}'s profile`}
                         >
                             <AvatarCircle user={hostCardUser} size={68} isLive={false} showLiveDot={false} />
                         </Link>
@@ -5116,9 +5147,9 @@ export default function SessionCard({
 
                         <div className="border-b border-[#E5E7EB] px-5 py-4">
                             <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#606060]">
-                                <Link to={`/profile/${session.host_id}`} onClick={() => setIsBookersModalOpen(false)} className="inline-flex items-center gap-2.5 rounded-full border border-[#E5E7EB] bg-white py-1.5 pl-1.5 pr-3 transition hover:border-[#BFC8C0] hover:bg-[#F8FAF8]">
+                                <Link to={`/profile/${displayedHostId}`} onClick={() => setIsBookersModalOpen(false)} className="inline-flex items-center gap-2.5 rounded-full border border-[#E5E7EB] bg-white py-1.5 pl-1.5 pr-3 transition hover:border-[#BFC8C0] hover:bg-[#F8FAF8]">
                                     <AvatarCircle user={hostCardUser} size={32} isLive={false} showLiveDot={false} />
-                                    <span><span className="text-[#7A7A7A]">Hosted by</span> <strong className="font-semibold text-[#111827]">{session.host_name}</strong></span>
+                                    <span><span className="text-[#7A7A7A]">Host</span> <strong className="font-semibold text-[#111827]">{hostCardUser.full_name || "Not assigned"}</strong></span>
                                 </Link>
                                 <span className="rounded-full bg-[#F3F4F6] px-3 py-1.5 font-medium text-[#111827]">
                                     {isInfinite ? "24/7 room" : `${session.duration_minutes} min`}
@@ -5307,6 +5338,7 @@ export default function SessionCard({
                         description: resolvedDescription,
                     }}
                     currentUserId={userId}
+                    canManageAnySession={canManageAnySession}
                     hostCandidates={uniqueHostTransferCandidates([
                         ...bookers.map((u) => ({
                             id: u.id,

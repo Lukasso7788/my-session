@@ -56,6 +56,7 @@ import FaqPage from "./pages/seo/FaqPage";
 
 import NotFoundPage from "./pages/NotFoundPage";
 import SessionCardsPlayground from "./SessionCardsPlayground";
+import IconVectorizerPage from "./pages/IconVectorizerPage";
 
 function BlogIndexPlaceholder() {
   return (
@@ -314,6 +315,8 @@ export default function App() {
         </Route>
 
         <Route path="/:slug" element={<PublicSlugRedirectPage />} />
+
+        <Route path="/vectorizer" element={<IconVectorizerPage />} />
 
         <Route path="/room-iframe/:id" element={<RoomPageIFrame />} />
         <Route path="/room-livekit/:id" element={<RoomPageLiveKit />} />

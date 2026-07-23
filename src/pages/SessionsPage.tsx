@@ -12,7 +12,11 @@ import { SessionsDateFilter } from "../components/SessionsDateFilter";
 import BodyTriplingBody from "../components/body/BodyTriplingBody";
 import { BodyTriplingIntro } from "../components/body/BodyTriplingIntro";
 import { supabase } from "../lib/supabase";
-import { getCurrentUserActiveBan, type ActiveBan } from "../lib/bans";
+import {
+  getCurrentUserActiveBan,
+  isCurrentUserAdmin,
+  type ActiveBan,
+} from "../lib/bans";
 import { loadEntitlementState, type EntitlementState } from "../lib/entitlements";
 import { PRICING } from "../lib/billing";
 import { PAYWALL_ENABLED } from "../lib/flags";
@@ -65,6 +69,8 @@ type SessionWithRelations = Session & {
   session_bookings?: SessionBookingRow[];
 
   live_count?: number;
+  active_host_user_id?: string | null;
+  active_host_profile?: BookingProfile | null;
 };
 
 
@@ -520,6 +526,7 @@ export function SessionsPage() {
   const [currentProfile, setCurrentProfile] = useState<CurrentProfile | null>(
     null
   );
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
 
   const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
   const [lifetimeSessionsCount, setLifetimeSessionsCount] = useState<number | null>(null);
@@ -1055,6 +1062,7 @@ export function SessionsPage() {
     const run = async () => {
       if (!user?.id) {
         setCurrentProfile(null);
+        setIsSuperAdmin(false);
         return;
       }
 
@@ -1075,6 +1083,23 @@ export function SessionsPage() {
     };
 
     void run();
+  }, [user?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!user?.id) {
+      setIsSuperAdmin(false);
+      return;
+    }
+
+    void isCurrentUserAdmin().then((allowed) => {
+      if (!cancelled) setIsSuperAdmin(allowed);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [user?.id]);
 
   const fetchLiveCounts = useCallback(async (sessionIds: string[]) => {
@@ -1420,6 +1445,48 @@ export function SessionsPage() {
         }
       };
 
+      const loadInfiniteRoomHosts = async () => {
+        try {
+          const { data: leaseRows, error: leaseError } = await withTimeout(
+            supabase
+              .from("infinite_room_host_leases")
+              .select(
+                "session_id,user_id,expires_at,active_host_profile:profiles!infinite_room_host_leases_user_id_fkey(id,full_name,avatar_url)"
+              )
+              .in("session_id", ids)
+              .gt("expires_at", new Date().toISOString()),
+            SESSIONS_ENRICHMENT_TIMEOUT_MS,
+            "sessions_active_hosts_enrichment"
+          );
+
+          if (!isCurrentRequest()) return;
+          if (leaseError) throw leaseError;
+
+          const leasesBySessionId = new Map<string, any>();
+          for (const lease of (leaseRows || []) as any[]) {
+            const sid = String(lease?.session_id || "").trim();
+            if (sid) leasesBySessionId.set(sid, lease);
+          }
+
+          setSessions((previousSessions) =>
+            previousSessions.map((session) => {
+              const lease = leasesBySessionId.get(String(session.id || ""));
+              if (!lease) return session;
+              const rawProfile = lease.active_host_profile;
+              return {
+                ...session,
+                active_host_user_id: lease.user_id || null,
+                active_host_profile: Array.isArray(rawProfile)
+                  ? rawProfile[0] || null
+                  : rawProfile || null,
+              };
+            })
+          );
+        } catch (error) {
+          if (DEBUG) console.warn("[Sessions] Optional active host enrichment failed:", error);
+        }
+      };
+
       /**
        * Start all optional enrichment in parallel.
        *
@@ -1429,6 +1496,7 @@ export function SessionsPage() {
       void loadPublicSlugs();
       void loadPublicBookings();
       void loadHostProfiles();
+      void loadInfiniteRoomHosts();
       void fetchLiveCounts(ids);
     } catch (error) {
       if (!isCurrentRequest()) return;
@@ -1457,6 +1525,25 @@ export function SessionsPage() {
 
   useEffect(() => {
     void fetchSessions();
+  }, [fetchSessions]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel("sessions-active-hosts")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "infinite_room_host_leases",
+        },
+        () => void fetchSessions()
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   }, [fetchSessions]);
 
   useEffect(() => {
@@ -1517,9 +1604,9 @@ export function SessionsPage() {
   const privacyFilteredSessions = useMemo(() => {
     return activeSessions.filter((session) => {
       if (!session.is_private) return true;
-      return !!user?.id && String(session.host_id || "") === String(user.id);
+      return isSuperAdmin || (!!user?.id && String(session.host_id || "") === String(user.id));
     });
-  }, [activeSessions, user?.id]);
+  }, [activeSessions, isSuperAdmin, user?.id]);
 
   const typeFilteredSessions = useMemo(() => {
     return privacyFilteredSessions.filter(
@@ -1961,6 +2048,7 @@ export function SessionsPage() {
       onEditSession={editSession}
       onInviteToSession={inviteToSession}
       onHostTransferComplete={fetchSessions}
+      canManageAnySession={isSuperAdmin}
     />
   );
 

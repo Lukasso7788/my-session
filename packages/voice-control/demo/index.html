@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Voice Control SDK demo</title>
+<style>
+  body{font:16px system-ui;max-width:760px;margin:48px auto;padding:0 24px;color:#17201b}button,input,select,a{font:inherit;margin:6px;padding:10px 14px}.card{border:1px solid #ccd7d0;border-radius:16px;padding:20px;margin:20px 0}.status{min-height:24px;color:#216e46}code{background:#eef4f0;padding:2px 5px;border-radius:5px}
+</style>
+<h1>Автоматический Voice Control</h1>
+<p>SDK сам обнаруживает элементы ниже. Нажмите микрофон или введите тестовую команду.</p>
+<button id="microphone" data-voice-ignore>🎙 Говорить</button>
+<input id="command" data-voice-ignore placeholder="Например: открой настройки">
+<button id="run" data-voice-ignore>Выполнить текст</button>
+<p class="status" id="status" aria-live="polite"></p>
+
+<section class="card">
+  <button onclick="document.querySelector('#status').textContent='Настройки открыты'">Настройки</button>
+  <a href="#reports" onclick="document.querySelector('#status').textContent='Отчёты открыты'">Отчёты</a>
+  <label>Поиск <input id="search" placeholder="Поиск проектов"></label>
+  <label>Период <select><option>Сегодня</option><option>Эта неделя</option><option>Этот месяц</option></select></label>
+  <button data-voice-confirm onclick="document.querySelector('#status').textContent='Удаление подтверждено'">Удалить проект</button>
+</section>
+
+<script type="module">
+  import { VoiceController, WebSpeechAdapter } from "../dist/index.js";
+  const status = document.querySelector("#status");
+  const voice = new VoiceController({
+    locale: "ru-RU",
+    confirmation: ({ action }) => confirm(`Подтвердить: ${action.label}?`),
+    onTranscript: text => status.textContent = `Распознано: ${text}`,
+    onMatch: ({ action, confidence }) => status.textContent = `Выполнено: ${action.label} (${Math.round(confidence * 100)}%)`,
+    onError: error => status.textContent = `Ошибка: ${error.message}`
+  });
+  const speech = new WebSpeechAdapter(voice);
+  document.querySelector("#microphone").onclick = () => speech.start();
+  document.querySelector("#run").onclick = async () => {
+    const text = document.querySelector("#command").value;
+    const match = await voice.handle(text);
+    if (!match) status.textContent = "Команда не найдена";
+  };
+</script>
+</html>
