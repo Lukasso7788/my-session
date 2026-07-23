@@ -136,6 +136,8 @@ type VoiceUiCommand =
   | "task_complete"
   | "message_compose"
   | "message_send"
+  | "message_confirm"
+  | "message_cancel"
   | "dictate_example"
   | "task_text_example"
   | "message_text_example"
@@ -332,6 +334,8 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "task_complete", group: "panels", phrase: "Complete task", aliases: ["Finish task"] },
   { command: "message_compose", group: "panels", phrase: "Compose message", aliases: ["Write message", "Focus message box"] },
   { command: "message_send", group: "panels", phrase: "Send message", aliases: ["Send current message", "Submit message"] },
+  { command: "message_confirm", group: "panels", phrase: "Confirm", aliases: ["Confirm message", "Send it"] },
+  { command: "message_cancel", group: "panels", phrase: "Cancel message", aliases: ["Discard message", "Clear message"] },
   { command: "chat_general", group: "panels", phrase: "Open all chat", aliases: ["General chat", "All chat", "Switch to all chat"] },
   { command: "chat_direct", group: "panels", phrase: "Open direct messages", aliases: ["Direct messages", "Open DMs", "Switch to DMs"] },
   { command: "dictate_example", group: "panels", phrase: "Type [text]" },
@@ -10377,19 +10381,27 @@ export function RoomPageLiveKit({
         voiceTextPrefix === "message_text_" ||
         voiceTextPrefix === "message_send_text_"
       ) {
+        const preview = voiceTextPrefix === "message_send_text_";
         if (pipOpen && pipMode === "chat") setPipMode("gallery");
         try {
           sessionStorage.setItem("mysession:voice-message-draft", text);
+          sessionStorage.setItem(
+            "mysession:voice-message-preview",
+            String(preview),
+          );
         } catch { }
         setRightTab("chat");
         setRightPanelOpen(true);
-        window.setTimeout(() => window.dispatchEvent(new CustomEvent("mysession:voice-message-text", { detail: { text } })), 120);
-        if (voiceTextPrefix === "message_send_text_") {
-          window.setTimeout(
-            dispatchVoiceMessageSend,
-            500,
-          );
-          setVoiceUiLastCommand(`Message sent: ${text}`);
+        window.setTimeout(
+          () => window.dispatchEvent(
+            new CustomEvent("mysession:voice-message-text", {
+              detail: { text, preview },
+            }),
+          ),
+          120,
+        );
+        if (preview) {
+          setVoiceUiLastCommand("Message preview ready — say Confirm");
         } else {
           setVoiceUiLastCommand(`Message text: ${text}`);
         }
@@ -10820,6 +10832,22 @@ export function RoomPageLiveKit({
       case "message_send":
         dispatchVoiceMessageSend();
         setVoiceUiLastCommand("Send message requested");
+        break;
+      case "message_confirm":
+        dispatchVoiceMessageSend();
+        setVoiceUiLastCommand("Message confirmed");
+        break;
+      case "message_cancel":
+        window.dispatchEvent(new Event("mysession:voice-message-cancel"));
+        if (pipWindowRef.current && !pipWindowRef.current.closed) {
+          const PiPEvent = (
+            pipWindowRef.current as unknown as { Event: typeof Event }
+          ).Event;
+          pipWindowRef.current.dispatchEvent(
+            new PiPEvent("mysession:voice-message-cancel"),
+          );
+        }
+        setVoiceUiLastCommand("Message cancelled");
         break;
       case "blur_apply":
         if (shouldDisableBackgroundFx) {

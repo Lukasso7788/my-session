@@ -1285,6 +1285,7 @@ export function ChatPanel({
     });
 
     const [text, setText] = useState("");
+    const [voiceMessagePreview, setVoiceMessagePreview] = useState(false);
 
     const [loading, setLoading] = useState(true);
     const [replyTo, setReplyTo] = useState<Msg | null>(null);
@@ -1326,19 +1327,28 @@ export function ChatPanel({
     const voiceSendRef = useRef<() => Promise<void>>(async () => { });
 
     useEffect(() => {
-        const applyVoiceMessageText = (incoming?: string) => {
+        const applyVoiceMessageText = (incoming?: string, preview?: boolean) => {
             let pending = "";
+            let pendingPreview = false;
             try {
                 pending = chatWindow.sessionStorage.getItem("mysession:voice-message-draft") || "";
                 chatWindow.sessionStorage.removeItem("mysession:voice-message-draft");
+                pendingPreview =
+                    chatWindow.sessionStorage.getItem("mysession:voice-message-preview") === "true";
+                chatWindow.sessionStorage.removeItem("mysession:voice-message-preview");
             } catch { }
             const dictated = String(incoming || pending).trim();
             if (!dictated) return;
             setText(dictated);
+            setVoiceMessagePreview(preview ?? pendingPreview);
             chatWindow.setTimeout(() => composerRef.current?.focus(), 0);
         };
         const onVoiceMessageText = (event: Event) => {
-            applyVoiceMessageText((event as CustomEvent<{ text?: string }>).detail?.text);
+            const detail = (event as CustomEvent<{
+                text?: string;
+                preview?: boolean;
+            }>).detail;
+            applyVoiceMessageText(detail?.text, detail?.preview);
         };
         applyVoiceMessageText();
         chatWindow.addEventListener("mysession:voice-message-text", onVoiceMessageText);
@@ -2768,6 +2778,8 @@ export function ChatPanel({
                 prev.includes(outgoingPeerId) ? prev : [...prev, outgoingPeerId],
             );
         }
+
+        setVoiceMessagePreview(false);
     };
 
     voiceSendRef.current = send;
@@ -2776,10 +2788,17 @@ export function ChatPanel({
         const onVoiceMessageSend = () => {
             void voiceSendRef.current();
         };
+        const onVoiceMessageCancel = () => {
+            setText("");
+            setVoiceMessagePreview(false);
+            chatWindow.setTimeout(() => composerRef.current?.focus(), 0);
+        };
 
         chatWindow.addEventListener("mysession:voice-message-send", onVoiceMessageSend);
+        chatWindow.addEventListener("mysession:voice-message-cancel", onVoiceMessageCancel);
         return () => {
             chatWindow.removeEventListener("mysession:voice-message-send", onVoiceMessageSend);
+            chatWindow.removeEventListener("mysession:voice-message-cancel", onVoiceMessageCancel);
         };
     }, [chatWindow]);
 
@@ -3426,6 +3445,52 @@ export function ChatPanel({
                         </button>
                     </div>
                 )}
+
+                {voiceMessagePreview && text.trim() ? (
+                    <div
+                        className={
+                            "mb-2 rounded-xl border px-3 py-2 " +
+                            (isLight
+                                ? "border-[#81DB86]/60 bg-[#81DB86]/10 text-black/80"
+                                : "border-[#81DB86]/45 bg-[#81DB86]/10 text-white/85")
+                        }
+                    >
+                        <div className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#3FB455]">
+                                    Voice message preview
+                                </div>
+                                <div className="mt-1 text-[12px] leading-4 opacity-75">
+                                    Review the message below, then say “Confirm”.
+                                </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setText("");
+                                        setVoiceMessagePreview(false);
+                                    }}
+                                    className={
+                                        "h-8 rounded-lg px-2.5 text-[11px] font-semibold transition " +
+                                        (isLight
+                                            ? "bg-black/5 hover:bg-black/10"
+                                            : "bg-white/[0.06] hover:bg-white/10")
+                                    }
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void send()}
+                                    className="h-8 rounded-lg bg-[#81DB86] px-3 text-[11px] font-semibold text-black transition hover:bg-[#72CF78]"
+                                >
+                                    Confirm
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                ) : null}
 
                 <div className="flex items-end gap-2">
                     <textarea
