@@ -8972,14 +8972,11 @@ export function RoomPageLiveKit({
         // ignore
       }
 
-      // Keep camera/microphone tracks alive while the browser allows it.
-      // Older code turned the camera off here, which forced a visible tile reload
-      // every time the user returned from another tab/app.
-      if (!lowPowerMobileMode) return;
-
-      void captureLocalVideoFrame().then((frame) => {
-        if (frame) setFrozenLocalVideoFrame(frame);
-      });
+      // Do not attach the published camera track to another hidden <video> or
+      // capture a fallback frame here. Browsers can suspend that play/capture
+      // operation halfway through when the tab becomes hidden, which stalls the
+      // processed outgoing track for everyone else. Leave the existing LiveKit
+      // publication untouched and let WebRTC keep it alive where the OS permits.
     };
 
     const markVisible = () => {
