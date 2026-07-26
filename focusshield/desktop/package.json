@@ -1,0 +1,43 @@
+{
+  "name": "focusshield-desktop",
+  "version": "0.2.0",
+  "private": true,
+  "author": "MySession",
+  "description": "FocusShield desktop app by MySession",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "icons": "electron scripts/generate-icon.cjs",
+    "pack": "electron-builder --dir",
+    "dist:win": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "club.mysession.focusshield",
+    "productName": "FocusShield",
+    "asar": true,
+    "files": [
+      "assets/**/*",
+      "electron/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

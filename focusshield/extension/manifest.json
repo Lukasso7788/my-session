@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "FocusShield by MySession",
-    "version": "0.1.0",
-    "description": "Block distracting websites during focus sessions.",
+    "version": "0.2.0",
+    "description": "Block distracting websites and sync with FocusShield Desktop during focus sessions.",
     "permissions": [
         "storage",
         "alarms",

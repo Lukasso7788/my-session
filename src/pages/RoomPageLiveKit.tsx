@@ -103,6 +103,8 @@ import {
 
 type FxMode = "off" | "blur" | "bg";
 
+const PARTICIPANT_CONTROL_TOPIC = "mysession.participant-control.v1";
+
 type VoiceUiCommand =
   | "camera_on"
   | "camera_off"
@@ -4490,6 +4492,12 @@ export function RoomPageLiveKit({
 
   const getFreshAccessToken = async () => {
     try {
+      // Supabase keeps this ref current through onAuthStateChange. Avoid taking
+      // its storage/session lock for every moderation click; that lock can be
+      // noticeably delayed when another tab is refreshing the same session.
+      const cachedToken = String(accessTokenRef.current || "").trim();
+      if (cachedToken) return cachedToken;
+
       const { data } = await supabase.auth.getSession();
       let token = String(data?.session?.access_token || "").trim();
 
@@ -4712,6 +4720,7 @@ export function RoomPageLiveKit({
   const loadModeratorsInFlightRef = useRef(false);
   const lastModeratorsLoadAtRef = useRef(0);
   const lastModeratorsLoadSessionIdRef = useRef("");
+  const participantControlSenderIdsRef = useRef<Set<string>>(new Set());
 
   // right panel
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(() => {
@@ -8909,6 +8918,27 @@ export function RoomPageLiveKit({
       ? String(activeRoomHostLease?.user_id || "").toLowerCase()
       : "";
 
+  useEffect(() => {
+    const allowedSenderIds = new Set<string>();
+    if (sessionOwnerId) allowedSenderIds.add(sessionOwnerId);
+    for (const moderatorUserId of moderatorUserIds) {
+      const normalizedId = String(moderatorUserId || "").trim().toLowerCase();
+      if (normalizedId) allowedSenderIds.add(normalizedId);
+    }
+    if (hasValidActiveRoomHostLease) {
+      const activeHostId = String(activeRoomHostLease?.user_id || "")
+        .trim()
+        .toLowerCase();
+      if (activeHostId) allowedSenderIds.add(activeHostId);
+    }
+    participantControlSenderIdsRef.current = allowedSenderIds;
+  }, [
+    activeRoomHostLease?.user_id,
+    hasValidActiveRoomHostLease,
+    moderatorUserIds,
+    sessionOwnerId,
+  ]);
+
   // DMs follow the person who is actively hosting the room. When an infinite
   // room has no owner present, a participant who steps in as host must get the
   // same participant picker and direct-chat behavior as the session owner.
@@ -10083,6 +10113,46 @@ export function RoomPageLiveKit({
       r.on(RoomEvent.TrackSubscriptionFailed as any, refresh as any);
       r.on(RoomEvent.LocalTrackPublished as any, refresh as any);
       r.on(RoomEvent.LocalTrackUnpublished as any, refresh as any);
+      r.on(
+        RoomEvent.DataReceived,
+        ((payload: Uint8Array, sender?: RemoteParticipant, _kind?: unknown, topic?: string) => {
+          if (topic !== PARTICIPANT_CONTROL_TOPIC || !sender) return;
+
+          const senderIdentity = String(sender.identity || "").trim();
+          const senderUserId = extractBaseUserIdFromIdentity(senderIdentity)
+            .trim()
+            .toLowerCase();
+          const senderHasRoomAdminGrant =
+            (sender as any)?.permissions?.roomAdmin === true;
+
+          // Sender identity comes from LiveKit itself, not from the packet. The
+          // allow-list also covers a temporary infinite-room host whose token was
+          // issued before they stepped in and therefore has no roomAdmin grant.
+          if (
+            !senderHasRoomAdminGrant &&
+            !participantControlSenderIdsRef.current.has(senderUserId)
+          ) {
+            return;
+          }
+
+          try {
+            const message = JSON.parse(new TextDecoder().decode(payload)) as {
+              action?: string;
+              issuedAt?: number;
+            };
+            const issuedAt = Number(message?.issuedAt || 0);
+            if (!issuedAt || Math.abs(Date.now() - issuedAt) > 15_000) return;
+
+            if (message.action === "mute_microphone") {
+              void r.localParticipant.setMicrophoneEnabled(false);
+            } else if (message.action === "turn_off_camera") {
+              void r.localParticipant.setCameraEnabled(false);
+            }
+          } catch {
+            // Ignore unrelated or malformed data packets.
+          }
+        }) as any,
+      );
 
       await r.connect(connectServerUrl, connectToken, { autoSubscribe: true });
       connectedToRoom = true;
@@ -12320,29 +12390,30 @@ export function RoomPageLiveKit({
     navigate(`/sessions?${params.toString()}`, { replace: true });
   };
 
-  const controller = new AbortController();
-
   // admin endpoint
   const callAdmin = async (body: Record<string, unknown>) => {
     const token = await getFreshAccessToken();
-
-    const res = await fetch(adminEndpoint, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        ...body,
-        sessionId: session?.id,
-        isHost,
-        isModerator: !isHost && isSelfModerator,
-      }),
-    });
-
+    const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 8000);
-    window.clearTimeout(timeoutId);
+    let res: Response;
+    try {
+      res = await fetch(adminEndpoint, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          ...body,
+          sessionId: session?.id,
+          isHost,
+          isModerator: !isHost && isSelfModerator,
+        }),
+      });
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
 
     if (!res.ok) {
       const t = await res.text().catch(() => "");
@@ -12350,6 +12421,28 @@ export function RoomPageLiveKit({
     }
 
     return res.json().catch(() => ({}));
+  };
+
+  const sendRealtimeParticipantControl = (
+    participantIdentity: string,
+    action: "mute_microphone" | "turn_off_camera",
+  ) => {
+    const room = roomRef.current;
+    if (!room || !participantIdentity) return;
+
+    const payload = new TextEncoder().encode(
+      JSON.stringify({ action, issuedAt: Date.now() }),
+    );
+    void room.localParticipant
+      .publishData(payload, {
+        reliable: true,
+        topic: PARTICIPANT_CONTROL_TOPIC,
+        destinationIdentities: [participantIdentity],
+      })
+      .catch((error) => {
+        // The server-side admin action below remains the authoritative fallback.
+        console.warn("fast participant control signal failed", error);
+      });
   };
 
   const optimisticMute = (tileId: string) => {
@@ -12386,6 +12479,7 @@ export function RoomPageLiveKit({
     setAdminBusyKey(busyKey);
     closeTileMenu();
 
+    sendRealtimeParticipantControl(participantIdentity, "mute_microphone");
     optimisticMute(tileId);
     setAdminBusyKey("");
 
@@ -12424,6 +12518,7 @@ export function RoomPageLiveKit({
     setAdminBusyKey(busyKey);
     closeTileMenu();
 
+    sendRealtimeParticipantControl(participantIdentity, "turn_off_camera");
     optimisticCameraOff(tileId);
     setAdminBusyKey("");
 

@@ -1,15 +1,84 @@
 const RULE_ID_START = 1000;
+const DESKTOP_BRIDGE_URL = "http://127.0.0.1:43117/v1/policy";
 
 const DEFAULT_POLICY = {
     active: false,
     locked: false,
+    startedAt: null,
     endAt: null,
+    updatedAt: null,
+    source: "extension",
     web: {
         domains: [],
         urls: [],
         allow: []
+    },
+    desktop: {
+        applications: []
     }
 };
+
+function deactivatePolicy(policy, source = "extension") {
+    return {
+        ...policy,
+        active: false,
+        locked: false,
+        startedAt: null,
+        endAt: null,
+        updatedAt: Date.now(),
+        source,
+        web: policy?.web || DEFAULT_POLICY.web,
+        desktop: policy?.desktop || DEFAULT_POLICY.desktop
+    };
+}
+
+async function readDesktopPolicy() {
+    try {
+        const response = await fetch(DESKTOP_BRIDGE_URL, {
+            method: "GET",
+            cache: "no-store",
+            signal: AbortSignal.timeout(1200)
+        });
+        if (!response.ok) return null;
+        const body = await response.json();
+        return body?.policy || null;
+    } catch {
+        return null;
+    }
+}
+
+async function pushDesktopPolicy(policy) {
+    try {
+        const response = await fetch(DESKTOP_BRIDGE_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ policy }),
+            signal: AbortSignal.timeout(1200)
+        });
+        if (!response.ok) return null;
+        return await response.json();
+    } catch {
+        // Desktop is optional: website blocking continues independently.
+        return null;
+    }
+}
+
+async function syncFromDesktop() {
+    const desktopPolicy = await readDesktopPolicy();
+    if (!desktopPolicy) return false;
+    const localPolicy = await getPolicy();
+    const localUpdatedAt = Number(localPolicy?.updatedAt || 0);
+    const desktopUpdatedAt = Number(desktopPolicy?.updatedAt || 0);
+
+    if (localUpdatedAt > desktopUpdatedAt) {
+        await pushDesktopPolicy(localPolicy);
+        return true;
+    }
+
+    await chrome.storage.local.set({ policy: desktopPolicy });
+    await applyPolicy(desktopPolicy);
+    return true;
+}
 
 async function getPolicy() {
     const data = await chrome.storage.local.get(["policy"]);
@@ -118,7 +187,7 @@ async function applyPolicy(policy) {
     if (!policy.active) return;
 
     if (policy.endAt && Date.now() > policy.endAt) {
-        await chrome.storage.local.set({ policy: DEFAULT_POLICY });
+        await chrome.storage.local.set({ policy: deactivatePolicy(policy, "expired") });
         await clearRules();
         return;
     }
@@ -160,37 +229,46 @@ async function stopShield() {
         };
     }
 
-    await chrome.storage.local.set({ policy: DEFAULT_POLICY });
-    await applyPolicy(DEFAULT_POLICY);
+    const inactive = deactivatePolicy(policy);
+    await chrome.storage.local.set({ policy: inactive });
+    await applyPolicy(inactive);
 
-    return { ok: true };
+    return { ok: true, policy: inactive };
 }
 
 chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
     (async () => {
         if (msg.type === "ACTIVATE") {
             const minutes = Math.max(1, Number(msg.minutes || 25));
+            const currentPolicy = await getPolicy();
 
             const policy = {
                 active: true,
                 locked: Boolean(msg.locked),
+                startedAt: Date.now(),
                 endAt: Date.now() + minutes * 60000,
+                updatedAt: Date.now(),
+                source: "extension",
                 web: {
                     domains: (msg.domains || []).map(normalizeDomain).filter(Boolean),
                     urls: (msg.urls || []).map(normalizeUrl).filter(Boolean),
                     allow: []
-                }
+                },
+                desktop: currentPolicy.desktop || DEFAULT_POLICY.desktop
             };
 
             await chrome.storage.local.set({ policy });
             await applyPolicy(policy);
+            await pushDesktopPolicy(policy);
 
             sendResponse({ ok: true, policy });
             return;
         }
 
         if (msg.type === "STOP") {
-            sendResponse(await stopShield());
+            const result = await stopShield();
+            if (result.ok) await pushDesktopPolicy(result.policy);
+            sendResponse(result);
             return;
         }
 
@@ -219,20 +297,24 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 });
 
 chrome.runtime.onInstalled.addListener(async () => {
-    chrome.alarms.create("tick", { periodInMinutes: 1 });
+    chrome.alarms.create("tick", { periodInMinutes: 0.5 });
+    await syncFromDesktop();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
+    if (await syncFromDesktop()) return;
     const policy = await getPolicy();
     await applyPolicy(policy);
 });
 
 chrome.alarms.onAlarm.addListener(async () => {
+    if (await syncFromDesktop()) return;
     const policy = await getPolicy();
 
     if (policy.active && policy.endAt && Date.now() > policy.endAt) {
-        await chrome.storage.local.set({ policy: DEFAULT_POLICY });
-        await applyPolicy(DEFAULT_POLICY);
+        const inactive = deactivatePolicy(policy, "expired");
+        await chrome.storage.local.set({ policy: inactive });
+        await applyPolicy(inactive);
         return;
     }
 

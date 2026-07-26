@@ -94,12 +94,14 @@ function renderActiveList(policy) {
 
     const domains = policy.web?.domains || [];
     const urls = policy.web?.urls || [];
+    const applications = policy.desktop?.applications || [];
 
     activeList.style.display = "block";
     activeList.innerHTML = `
     <strong>Currently blocking:</strong><br/>
     ${domains.length ? `Sites: ${domains.join(", ")}<br/>` : ""}
     ${urls.length ? `Pages: ${urls.join(", ")}` : ""}
+    ${applications.length ? `Desktop apps: ${applications.join(", ")}` : ""}
   `;
 }
 
