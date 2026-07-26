@@ -8909,6 +8909,15 @@ export function RoomPageLiveKit({
       ? String(activeRoomHostLease?.user_id || "").toLowerCase()
       : "";
 
+  // DMs follow the person who is actively hosting the room. When an infinite
+  // room has no owner present, a participant who steps in as host must get the
+  // same participant picker and direct-chat behavior as the session owner.
+  // Keep the owner as the fallback peer while nobody has claimed the room.
+  const chatHostUserId = activeOperationalHostUserId || sessionOwnerId;
+  const canSelectHostDmPeer =
+    !!chatHostUserId &&
+    chatHostUserId === String(authUserId || "").trim().toLowerCase();
+
   useEffect(() => {
     const shouldShowMobileRestore = () => {
       if (!lowPowerMobileMode) return false;
@@ -9003,9 +9012,6 @@ export function RoomPageLiveKit({
   const [adminBusyKey, setAdminBusyKey] = useState<string>("");
 
   const liveHostChatOptions = useMemo(() => {
-    const hostId = String(session?.host_id || "")
-      .trim()
-      .toLowerCase();
     const me = String(authUserId || "")
       .trim()
       .toLowerCase();
@@ -9017,7 +9023,6 @@ export function RoomPageLiveKit({
           .toLowerCase();
         if (!uid) return false;
         if (!looksLikeUuid(uid)) return false;
-        if (uid === hostId) return false;
         if (uid === me) return false;
         return true;
       })
@@ -9042,25 +9047,20 @@ export function RoomPageLiveKit({
           arr.findIndex((x) => x.userId === item.userId) === index,
       )
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [tiles, session?.host_id, authUserId, profilesById]);
+  }, [tiles, authUserId, profilesById]);
 
   useEffect(() => {
-    const hostId = String(session?.host_id || "")
-      .trim()
-      .toLowerCase();
     const me = String(authUserId || "")
       .trim()
       .toLowerCase();
 
-    if (!hostId || !me) {
+    if (!chatHostUserId || !me) {
       setSelectedHostChatPeerId(null);
       return;
     }
 
-    const isHost = hostId === me;
-
-    if (!isHost) {
-      setSelectedHostChatPeerId(hostId);
+    if (!canSelectHostDmPeer) {
+      setSelectedHostChatPeerId(chatHostUserId);
       return;
     }
 
@@ -9074,7 +9074,12 @@ export function RoomPageLiveKit({
         return prev;
       return liveHostChatOptions[0]?.userId || null;
     });
-  }, [session?.host_id, authUserId, liveHostChatOptions]);
+  }, [
+    authUserId,
+    canSelectHostDmPeer,
+    chatHostUserId,
+    liveHostChatOptions,
+  ]);
 
   // hide / pin
   const [hiddenTileIds, setHiddenTileIds] = useState<Record<string, boolean>>(
@@ -14113,8 +14118,10 @@ export function RoomPageLiveKit({
         theme="light"
         showHeader={false}
         onClose={() => setPipMode("gallery")}
-        hostUserIdOverride={String(session?.host_id || "") || null}
-        hostProfileOverride={session?.host_profile || null}
+        hostUserIdOverride={chatHostUserId || null}
+        hostProfileOverride={
+          activeOperationalHostProfile || session?.host_profile || null
+        }
         externalMode="general"
         renderDocument={pipChatDocument}
         renderWindow={pipChatWindow}
@@ -14567,13 +14574,7 @@ export function RoomPageLiveKit({
 
             <div className="flex-1 min-w-0" />
 
-            {String(session?.host_id || "")
-              .trim()
-              .toLowerCase() ===
-              String(authUserId || "")
-                .trim()
-                .toLowerCase() &&
-              chatViewMode === "host" && (
+            {canSelectHostDmPeer && chatViewMode === "host" && (
                 <div ref={hostDmDropdownRef} className="relative shrink-0">
                   <style>
                     {`
@@ -14721,12 +14722,7 @@ export function RoomPageLiveKit({
                 </div>
               )}
 
-            {String(session?.host_id || "")
-              .trim()
-              .toLowerCase() ===
-              String(authUserId || "")
-                .trim()
-                .toLowerCase() &&
+            {canSelectHostDmPeer &&
               chatViewMode === "host" &&
               liveHostChatOptions.some(
                 (item) =>
@@ -14798,8 +14794,10 @@ export function RoomPageLiveKit({
               setRightPanelOpen(false);
               setRightTab(null);
             }}
-            hostUserIdOverride={String(session?.host_id || "") || null}
-            hostProfileOverride={session?.host_profile || null}
+            hostUserIdOverride={chatHostUserId || null}
+            hostProfileOverride={
+              activeOperationalHostProfile || session?.host_profile || null
+            }
             externalMode={chatViewMode}
             externalDirectPeerUserId={selectedHostChatPeerId}
             onDirectPeerIdsChange={setHostChatPeerIds}
