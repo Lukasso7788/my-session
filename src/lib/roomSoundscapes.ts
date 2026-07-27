@@ -1,6 +1,6 @@
 export type RoomSoundscapeId =
   | "ambient"
-  | "ambient-deep"
+  | "flow-relax"
   | "rain"
   | "forest"
   | "fireplace"
@@ -21,10 +21,10 @@ export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
     emoji: "◌",
   },
   {
-    id: "ambient-deep",
-    label: "Deep meditation",
-    description: "A slower, spacious ambient layer",
-    file: "/sounds/room-music/ambient-deep.mp3",
+    id: "flow-relax",
+    label: "Flow relax",
+    description: "Warm, relaxed chillout for steady work",
+    file: "/sounds/room-music/flow-relax.mp3",
     emoji: "◎",
   },
   {
@@ -37,7 +37,7 @@ export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
   {
     id: "forest",
     label: "Quiet forest",
-    description: "Leaves, air and distant birds",
+    description: "A calm European forest atmosphere",
     file: "/sounds/room-music/quiet-forest.mp3",
     emoji: "♧",
   },

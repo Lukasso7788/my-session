@@ -8396,7 +8396,11 @@ export function RoomPageLiveKit({
   const prewarmedRoomRef = useRef<Room | null>(null);
   const [roomState, setRoomState] = useState<Room | null>(null);
 
-  const canControlRoomSoundtrack = isHost || isSelfModerator;
+  // Built-in room soundscapes are collaborative: any connected participant
+  // can select or pause them. Uploading arbitrary audio remains restricted to
+  // the host/moderators and is enforced again by the server.
+  const canControlRoomSoundtrack = connected;
+  const canUploadRoomSoundtrack = isHost || isSelfModerator;
 
   const publishSoundtrackPacket = async (packet: RoomSoundtrackPacket) => {
     const room = roomRef.current;
@@ -8430,7 +8434,7 @@ export function RoomPageLiveKit({
   };
 
   const uploadRoomSoundtrack = async (file: File) => {
-    if (!canControlRoomSoundtrack) return;
+    if (!canUploadRoomSoundtrack) return;
     const maxBytes = 3 * 1024 * 1024;
     const allowedTypes = new Set([
       "audio/mpeg",
@@ -8509,6 +8513,7 @@ export function RoomPageLiveKit({
 
   const pauseRoomSoundtrack = async () => {
     if (!canControlRoomSoundtrack || !activeSoundscapeId) return;
+    if (activeSoundscapeId === "custom" && !canUploadRoomSoundtrack) return;
     const position = pauseSoundscapeLocally();
     const next: RoomSoundtrackState = {
       trackId: activeSoundscapeId,
@@ -8571,11 +8576,11 @@ export function RoomPageLiveKit({
           const senderCanControl =
             (sender as any)?.permissions?.roomAdmin === true ||
             participantControlSenderIdsRef.current.has(senderUserId);
-          if (!senderCanControl) return;
+          if (packet.state.trackId === "custom" && !senderCanControl) return;
           applyRemoteState(packet.state);
           return;
         }
-        if (packet.type === "soundtrack_request" && canControlRoomSoundtrack) {
+        if (packet.type === "soundtrack_request" && canUploadRoomSoundtrack) {
           const current = soundscapeStateRef.current;
           if (current) {
             void publishSoundtrackPacket({
@@ -8604,7 +8609,7 @@ export function RoomPageLiveKit({
     // The listener is tied to the active LiveKit room. Personal volume/mute is
     // applied by separate effects and does not require a new data subscription.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, roomState, canControlRoomSoundtrack]);
+  }, [connected, roomState, canControlRoomSoundtrack, canUploadRoomSoundtrack]);
 
   useEffect(() => {
     if (!session?.id || !defaultLivekitUrl) return;
@@ -15248,12 +15253,12 @@ export function RoomPageLiveKit({
 
       {rightTab === "music" && (
         <RoomSoundscapePanel
-          isLight={isLight}
           activeId={activeSoundscapeId}
           playing={soundscapePlaying}
           volume={soundscapeVolume}
           personalMuted={soundscapeMuted}
           canControl={canControlRoomSoundtrack}
+          canUpload={canUploadRoomSoundtrack}
           customTrackLabel={customSoundscapeLabel}
           busy={soundscapeBusy}
           uploading={soundscapeUploading}
@@ -15289,6 +15294,7 @@ export function RoomPageLiveKit({
             }
             const state = soundscapeStateRef.current;
             if (!state) return;
+            if (state.trackId === "custom" && !canUploadRoomSoundtrack) return;
             void (async () => {
               await playSoundscapeLocally(
                 state.trackId,

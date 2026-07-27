@@ -6,9 +6,9 @@ These four room soundtracks were selected from Mixkit and downloaded on
 | App file | Mixkit title | Source |
 | --- | --- | --- |
 | `ambient-focus.mp3` | Smooth Meditation | https://assets.mixkit.co/music/324/324.mp3 |
-| `ambient-deep.mp3` | Meditation | https://assets.mixkit.co/music/441/441.mp3 |
+| `flow-relax.mp3` | Serene View | https://assets.mixkit.co/music/443/443.mp3 |
 | `gentle-rain.mp3` | Light Rain Loop | https://assets.mixkit.co/active_storage/sfx/2393/2393-preview.mp3 |
-| `quiet-forest.mp3` | Breeze Through the Trees | https://assets.mixkit.co/active_storage/sfx/2427/2427-preview.mp3 |
+| `quiet-forest.mp3` | European Forest Ambience | https://assets.mixkit.co/active_storage/sfx/1213/1213-preview.mp3 |
 | `fireplace.mp3` | Campfire Night Wind | https://assets.mixkit.co/active_storage/sfx/1736/1736-preview.mp3 |
 
 License record: https://mixkit.co/license/
