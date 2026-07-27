@@ -241,8 +241,9 @@ export function RoomSoundscapePanel({
               min="0"
               max="100"
               value={volume}
+              disabled={!canControl}
               onChange={(event) => onVolumeChange(Number(event.target.value))}
-              className="ms-room-music-slider min-w-0 flex-1 cursor-pointer"
+              className="ms-room-music-slider min-w-0 flex-1 cursor-pointer disabled:cursor-default disabled:opacity-45"
               style={{ "--ms-slider-progress": `${volume}%` } as CSSProperties}
               aria-label="Your music volume"
             />
