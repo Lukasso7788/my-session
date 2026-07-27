@@ -45,6 +45,10 @@ import {
 } from "../lib/entitlements";
 import { getPaywallDecision } from "../lib/paywall";
 import { getCurrentUserActiveBan, type ActiveBan } from "../lib/bans";
+import {
+  RoomSoundscapeEngine,
+  type RoomSoundscapeId,
+} from "../lib/roomSoundscapes";
 import PaywallModal from "../components/PaywallModal";
 import ActiveBanModal from "../components/ActiveBanModal";
 import BugReportModal from "../components/BugReportModal";
@@ -65,6 +69,7 @@ import RoomTimelineEditor, {
   makeDefaultTimelineBlocks,
 } from "../components/RoomTimelineEditor";
 import { LiveKitBottomBar } from "./livekit/LiveKitBottomBar";
+import RoomSoundscapePanel from "./livekit/RoomSoundscapePanel";
 import {
   Icon,
   reactionEmoji as REACTION_EMOJI,
@@ -1652,6 +1657,9 @@ const JOIN_SOUND_PREF_KEY = "mysession_lk_join_sound";
 const LEAVE_SOUND_PREF_KEY = "mysession_lk_leave_sound";
 const STAGE_SOUNDS_PREF_KEY = "mysession_lk_stage_sounds";
 const ROOM_SOUNDS_VOLUME_PREF_KEY = "mysession_lk_room_sounds_volume";
+const BACKGROUND_SOUNDSCAPE_PREF_KEY = "mysession_lk_background_soundscape";
+const BACKGROUND_SOUNDSCAPE_VOLUME_PREF_KEY =
+  "mysession_lk_background_soundscape_volume";
 const PREVIEW_MIRROR_PREF_KEY = "mysession_lk_preview_mirror";
 const AUDIO_PROCESSING_PREF_KEY = "mysession_lk_audio_processing_v1";
 const DEFAULT_AUDIO_PROCESSING: AudioProcessingPreferences = {
@@ -6669,6 +6677,24 @@ export function RoomPageLiveKit({
   const [fxApplying, setFxApplying] = useState(false);
   const [fxStatusText, setFxStatusText] = useState<string>("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [soundscapePanelOpen, setSoundscapePanelOpen] = useState(false);
+  const [activeSoundscapeId, setActiveSoundscapeId] =
+    useState<RoomSoundscapeId | null>(null);
+  const [soundscapeBusy, setSoundscapeBusy] = useState(false);
+  const [soundscapeError, setSoundscapeError] = useState<string | null>(null);
+  const [soundscapeVolume, setSoundscapeVolume] = useState(() => {
+    try {
+      const stored = Number(
+        localStorage.getItem(BACKGROUND_SOUNDSCAPE_VOLUME_PREF_KEY) || "35",
+      );
+      return Number.isFinite(stored)
+        ? Math.max(0, Math.min(100, Math.round(stored)))
+        : 35;
+    } catch {
+      return 35;
+    }
+  });
+  const soundscapeEngineRef = useRef<RoomSoundscapeEngine | null>(null);
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [mainViewMode, setMainViewMode] =
     useState<RoomMainViewMode>("video");
@@ -6702,6 +6728,62 @@ export function RoomPageLiveKit({
   const voiceUiCommandHandlerRef = useRef<
     (command: VoiceUiCommand) => Promise<void>
   >(async () => undefined);
+
+  const playSoundscape = async (id: RoomSoundscapeId) => {
+    try {
+      setSoundscapeBusy(true);
+      setSoundscapeError(null);
+      if (!soundscapeEngineRef.current) {
+        soundscapeEngineRef.current = new RoomSoundscapeEngine();
+      }
+      await soundscapeEngineRef.current.play(id, soundscapeVolume / 100);
+      setActiveSoundscapeId(id);
+      try {
+        localStorage.setItem(BACKGROUND_SOUNDSCAPE_PREF_KEY, id);
+      } catch {
+        // Persistence is optional in browser privacy modes.
+      }
+    } catch (error) {
+      setSoundscapeError(
+        error instanceof Error
+          ? error.message
+          : "Background audio could not be started.",
+      );
+    } finally {
+      setSoundscapeBusy(false);
+    }
+  };
+
+  const stopSoundscape = () => {
+    soundscapeEngineRef.current?.stop();
+    setActiveSoundscapeId(null);
+    setSoundscapeError(null);
+  };
+
+  useEffect(() => {
+    soundscapeEngineRef.current?.setVolume(soundscapeVolume / 100);
+    try {
+      localStorage.setItem(
+        BACKGROUND_SOUNDSCAPE_VOLUME_PREF_KEY,
+        String(soundscapeVolume),
+      );
+    } catch {
+      // Persistence is optional in browser privacy modes.
+    }
+  }, [soundscapeVolume]);
+
+  useEffect(() => {
+    if (connected || !activeSoundscapeId) return;
+    stopSoundscape();
+  }, [connected, activeSoundscapeId]);
+
+  useEffect(
+    () => () => {
+      soundscapeEngineRef.current?.destroy().catch(() => { });
+      soundscapeEngineRef.current = null;
+    },
+    [],
+  );
 
   const openVoiceFxPopup = () => {
     if (voiceFxCloseTimerRef.current != null) {
@@ -16265,6 +16347,21 @@ export function RoomPageLiveKit({
           </>
         ) : null}
 
+        <RoomSoundscapePanel
+          open={soundscapePanelOpen}
+          isLight={isLight}
+          activeId={activeSoundscapeId}
+          volume={soundscapeVolume}
+          busy={soundscapeBusy}
+          error={soundscapeError}
+          onSelect={(id) => {
+            playSoundscape(id).catch(() => { });
+          }}
+          onVolumeChange={setSoundscapeVolume}
+          onStop={stopSoundscape}
+          onClose={() => setSoundscapePanelOpen(false)}
+        />
+
         <LiveKitBottomBar
           theme={theme}
           isLight={isLight}
@@ -16298,6 +16395,10 @@ export function RoomPageLiveKit({
             setSettingsOpen(true);
             setSettingsPreviewVersion((v) => v + 1);
           }}
+          soundscapeActive={activeSoundscapeId !== null}
+          onOpenSoundscapes={
+            connected ? () => setSoundscapePanelOpen(true) : undefined
+          }
           onOpenBugReport={() => setBugReportOpen(true)}
           onSendReaction={sendReaction}
           showAIHost={aiHostedEnabled}

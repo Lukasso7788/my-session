@@ -73,6 +73,32 @@ function BugReportIcon({
     );
 }
 
+function SoundscapeIcon({
+    isLight,
+    active = false,
+    className = "w-5 h-5",
+}: {
+    isLight: boolean;
+    active?: boolean;
+    className?: string;
+}) {
+    const iconIsLight = active ? false : isLight;
+    return (
+        <span className={`relative inline-flex items-center justify-center ${className}`}>
+            <span className="absolute inset-0 flex items-center justify-center text-[18px] leading-none" aria-hidden="true">♪</span>
+            <img
+                src={iconIsLight ? "/icons/soundscape-light.svg" : "/icons/soundscape-dark.svg"}
+                alt=""
+                className="relative z-[1] w-full h-full"
+                draggable={false}
+                onError={(event) => {
+                    event.currentTarget.style.display = "none";
+                }}
+            />
+        </span>
+    );
+}
+
 export function LiveKitBottomBar(props: {
     theme: RoomTheme;
     isLight: boolean;
@@ -96,6 +122,9 @@ export function LiveKitBottomBar(props: {
 
     showLayoutControls?: boolean;
     onOpenLayoutControls?: () => void;
+
+    soundscapeActive?: boolean;
+    onOpenSoundscapes?: () => void;
 
     onToggleMic: () => void;
     onToggleCam: () => void;
@@ -132,6 +161,9 @@ export function LiveKitBottomBar(props: {
 
         showLayoutControls = true,
         onOpenLayoutControls,
+
+        soundscapeActive = false,
+        onOpenSoundscapes,
 
         onToggleMic,
         onToggleCam,
@@ -486,6 +518,32 @@ export function LiveKitBottomBar(props: {
                                             <span>Settings</span>
                                         </button>
 
+                                        {onOpenSoundscapes ? (
+                                            <button
+                                                onClick={() => {
+                                                    onOpenSoundscapes();
+                                                    setShowMoreMenu(false);
+                                                }}
+                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${soundscapeActive
+                                                    ? "bg-[#242424] text-white"
+                                                    : isLight
+                                                        ? "text-black/75 hover:bg-[#E1E3E6]"
+                                                        : "text-white/85 hover:bg-[#F2F3F5]/5"
+                                                    }`}
+                                                type="button"
+                                            >
+                                                <SoundscapeIcon
+                                                    isLight={isLight}
+                                                    active={soundscapeActive}
+                                                    className="w-4 h-4"
+                                                />
+                                                <span>Background sounds</span>
+                                                {soundscapeActive ? (
+                                                    <span className="ml-auto h-2 w-2 rounded-full bg-[#7EE787]" />
+                                                ) : null}
+                                            </button>
+                                        ) : null}
+
                                         {showPiP && onTogglePiP ? (
                                             <button
                                                 onClick={() => {
@@ -548,6 +606,26 @@ export function LiveKitBottomBar(props: {
                             >
                                 <Icon name="settings" theme={theme} className="w-5 h-5" />
                             </button>
+
+                            {onOpenSoundscapes ? (
+                                <button
+                                    onClick={onOpenSoundscapes}
+                                    className={
+                                        "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
+                                        (soundscapeActive
+                                            ? "bg-[#242424] hover:bg-[#2E2E2E] text-white"
+                                            : ctlBtnBase)
+                                    }
+                                    title={soundscapeActive ? "Background sounds playing" : "Background sounds"}
+                                    type="button"
+                                >
+                                    <SoundscapeIcon isLight={isLight} active={soundscapeActive} />
+                                    {soundscapeActive ? (
+                                        <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#7EE787]" />
+                                    ) : null}
+                                    <span className="sr-only">Background sounds</span>
+                                </button>
+                            ) : null}
 
                             {pipDesktopBtn}
                         </div>
