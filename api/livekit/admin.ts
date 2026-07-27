@@ -34,7 +34,13 @@ type SenderAdminAction =
   | "sender_outbox_process"
   | "sender_test_all";
 
-type AdminAction = LiveKitAdminAction | EmailAdminAction | SenderAdminAction;
+type RoomMediaAdminAction = "upload_room_soundtrack";
+
+type AdminAction =
+  | LiveKitAdminAction
+  | EmailAdminAction
+  | SenderAdminAction
+  | RoomMediaAdminAction;
 
 type TrackKind = "camera" | "microphone" | "";
 
@@ -56,6 +62,11 @@ type Body = {
   senderEventId?: string;
   senderTestEmail?: string;
   senderTestConfirmation?: string;
+
+  // Shared room soundtrack upload (base64 stays below Vercel's request limit)
+  fileName?: string;
+  contentType?: string;
+  audioBase64?: string;
 
   // deprecated / ignored for auth decisions
   isHost?: boolean;
@@ -310,6 +321,23 @@ function normalizeSenderAdminAction(raw: unknown): SenderAdminAction | "" {
   if (action === "sender_test_all") return "sender_test_all";
   return "";
 }
+
+function normalizeRoomMediaAdminAction(raw: unknown): RoomMediaAdminAction | "" {
+  return String(raw || "").trim().toLowerCase() === "upload_room_soundtrack"
+    ? "upload_room_soundtrack"
+    : "";
+}
+
+const ROOM_SOUNDTRACK_BUCKET = "room-soundtracks";
+const ROOM_SOUNDTRACK_MAX_BYTES = 3 * 1024 * 1024;
+const ROOM_SOUNDTRACK_MIME_EXTENSIONS: Record<string, string> = {
+  "audio/mpeg": "mp3",
+  "audio/mp3": "mp3",
+  "audio/mp4": "m4a",
+  "audio/x-m4a": "m4a",
+  "audio/ogg": "ogg",
+  "audio/webm": "webm",
+};
 
 function normalizeTrackKind(raw: unknown): TrackKind {
   const s = String(raw || "").trim().toLowerCase();
@@ -1687,6 +1715,96 @@ function writeTimingHeaders(
   }
 }
 
+async function handleRoomSoundtrackUpload(params: {
+  res: VercelResponse;
+  sb: SupabaseClient;
+  accessToken: string;
+  body: Body;
+}) {
+  const { res, sb, accessToken, body } = params;
+  const sessionId = String(body.sessionId || "").trim().toLowerCase();
+  if (!looksLikeUuid(sessionId)) {
+    return res.status(400).json({ error: "sessionId_required" });
+  }
+
+  const sessionContext = await resolveSessionContext({ sb, sessionId });
+  const actor = await getActorRole({ sb, accessToken, sessionContext });
+  if (!actor.isHost && !actor.isModerator) {
+    return res.status(403).json({ error: "host_or_moderator_required" });
+  }
+
+  const contentType = String(body.contentType || "").trim().toLowerCase();
+  const extension = ROOM_SOUNDTRACK_MIME_EXTENSIONS[contentType];
+  if (!extension) {
+    return res.status(415).json({
+      error: "unsupported_audio_type",
+      allowed: Object.keys(ROOM_SOUNDTRACK_MIME_EXTENSIONS),
+    });
+  }
+
+  const encoded = String(body.audioBase64 || "").replace(/^data:[^;]+;base64,/, "");
+  if (!encoded) return res.status(400).json({ error: "audio_file_required" });
+
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(encoded, "base64");
+  } catch {
+    return res.status(400).json({ error: "invalid_audio_data" });
+  }
+  if (!bytes.length || bytes.length > ROOM_SOUNDTRACK_MAX_BYTES) {
+    return res.status(413).json({
+      error: "audio_file_too_large",
+      maxBytes: ROOM_SOUNDTRACK_MAX_BYTES,
+    });
+  }
+
+  const { data: buckets, error: bucketListError } = await sb.storage.listBuckets();
+  if (bucketListError) throw bucketListError;
+  if (!(buckets || []).some((bucket) => bucket.name === ROOM_SOUNDTRACK_BUCKET)) {
+    const { error: bucketError } = await sb.storage.createBucket(
+      ROOM_SOUNDTRACK_BUCKET,
+      {
+        public: true,
+        fileSizeLimit: ROOM_SOUNDTRACK_MAX_BYTES,
+        allowedMimeTypes: Object.keys(ROOM_SOUNDTRACK_MIME_EXTENSIONS),
+      },
+    );
+    if (bucketError && !String(bucketError.message || "").toLowerCase().includes("already")) {
+      throw bucketError;
+    }
+  }
+
+  const objectPath = `${sessionId}/${Date.now()}-${randomUUID()}.${extension}`;
+  const { error: uploadError } = await sb.storage
+    .from(ROOM_SOUNDTRACK_BUCKET)
+    .upload(objectPath, bytes, {
+      contentType,
+      cacheControl: "3600",
+      upsert: false,
+    });
+  if (uploadError) throw uploadError;
+
+  const { data: publicData } = sb.storage
+    .from(ROOM_SOUNDTRACK_BUCKET)
+    .getPublicUrl(objectPath);
+
+  // Keep storage bounded per room. The newest five uploads remain available,
+  // which also avoids deleting a track while participants are still playing it.
+  const { data: existing } = await sb.storage
+    .from(ROOM_SOUNDTRACK_BUCKET)
+    .list(sessionId, { limit: 100, sortBy: { column: "created_at", order: "desc" } });
+  const stale = (existing || []).slice(5).map((item) => `${sessionId}/${item.name}`);
+  if (stale.length) {
+    await sb.storage.from(ROOM_SOUNDTRACK_BUCKET).remove(stale);
+  }
+
+  return res.status(200).json({
+    url: publicData.publicUrl,
+    label: String(body.fileName || "Custom track").replace(/\.[^.]+$/, "").slice(0, 60),
+    size: bytes.length,
+  });
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const totalStartedAt = nowMs();
   let authMs = 0;
@@ -1720,6 +1838,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const rawEmailAction = cronAction || normalizeEmailAction(body.action);
     const rawSenderAdminAction = normalizeSenderAdminAction(body.action);
+    const rawRoomMediaAction = normalizeRoomMediaAdminAction(body.action);
 
     const supabaseUrl = String(
       process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ""
@@ -1767,6 +1886,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         accessToken,
         body,
         action: rawSenderAdminAction,
+      });
+    }
+
+    if (rawRoomMediaAction === "upload_room_soundtrack") {
+      return await handleRoomSoundtrackUpload({
+        res,
+        sb,
+        accessToken,
+        body,
       });
     }
 
