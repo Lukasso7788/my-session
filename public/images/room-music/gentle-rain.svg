@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Gentle rain artwork">
+  <rect width="480" height="150" rx="22" fill="#E7EDF0"/>
+  <path d="M0 112c74-25 133-7 198-27 80-25 151 17 282-22v87H0z" fill="#D1DDE2"/>
+  <g fill="none" stroke="#9CB3BF" stroke-linecap="round" stroke-width="4" opacity=".7">
+    <path d="m48 26-10 18M103 12 91 34M164 29l-10 19M224 8l-12 23M291 25l-11 20M352 10l-12 22M421 26l-11 20"/>
+    <path d="m73 69-9 17M138 57l-11 20M203 71l-9 17M270 55l-11 21M335 67l-9 17M400 56l-10 19"/>
+  </g>
+  <path d="M0 132c100-18 150 7 239-12 90-20 146 8 241-17v47H0z" fill="#BBCDD5" opacity=".72"/>
+</svg>

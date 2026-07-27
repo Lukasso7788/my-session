@@ -12,6 +12,7 @@ export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
   description: string;
   file: string;
   icon: string;
+  artwork: string;
   durationSeconds: number;
 }> = [
   {
@@ -20,6 +21,7 @@ export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
     description: "Calm instrumental focus music",
     file: "/sounds/room-music/ambient-focus.mp3",
     icon: "/icons/music-ambient-focus.svg",
+    artwork: "/images/room-music/ambient-focus.svg",
     durationSeconds: 154,
   },
   {
@@ -28,6 +30,7 @@ export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
     description: "Warm, relaxed chillout for steady work",
     file: "/sounds/room-music/flow-relax.mp3",
     icon: "/icons/music-flow-relax.svg",
+    artwork: "/images/room-music/flow-relax.svg",
     durationSeconds: 114,
   },
   {
@@ -36,6 +39,7 @@ export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
     description: "Even rainfall without thunder",
     file: "/sounds/room-music/gentle-rain.mp3",
     icon: "/icons/music-gentle-rain.svg",
+    artwork: "/images/room-music/gentle-rain.svg",
     durationSeconds: 15,
   },
   {
@@ -44,6 +48,7 @@ export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
     description: "A calm European forest atmosphere",
     file: "/sounds/room-music/quiet-forest.mp3",
     icon: "/icons/music-quiet-forest.svg",
+    artwork: "/images/room-music/quiet-forest.svg",
     durationSeconds: 161,
   },
   {
@@ -52,6 +57,7 @@ export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
     description: "A low fire with natural crackle",
     file: "/sounds/room-music/fireplace.mp3",
     icon: "/icons/music-fireplace.svg",
+    artwork: "/images/room-music/campfire.svg",
     durationSeconds: 30,
   },
 ];

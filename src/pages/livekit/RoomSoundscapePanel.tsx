@@ -176,41 +176,50 @@ export function RoomSoundscapePanel({
             {activeOption?.description || (activeId ? "Uploaded room audio" : "Select from the playlist")}
           </div>
 
-          <div className="mt-5 flex items-center justify-center gap-3">
-            <button
-              type="button"
-              disabled={!canControl || busy}
-              onClick={() => selectRelative(-1)}
-              className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ECEAEA] text-[#2F2F2F] transition hover:bg-[#E2DFDF] disabled:opacity-25"
-              aria-label="Previous track"
-            >
-              <SkipBack className="h-[18px] w-[18px]" fill="currentColor" strokeWidth={1.6} />
-            </button>
-            <button
-              type="button"
-              disabled={!canControl || !activeId || busy}
-              onClick={onStop}
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-[#2F2F2F] text-white transition hover:bg-[#252525] disabled:opacity-35"
-              aria-label={playing ? "Pause" : "Play"}
-            >
-              {playing ? (
-                <Pause className="h-5 w-5" fill="currentColor" strokeWidth={1.8} />
-              ) : (
-                <Play className="ml-0.5 h-5 w-5" fill="currentColor" strokeWidth={1.8} />
-              )}
-            </button>
-            <button
-              type="button"
-              disabled={!canControl || busy}
-              onClick={() => selectRelative(1)}
-              className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ECEAEA] text-[#2F2F2F] transition hover:bg-[#E2DFDF] disabled:opacity-25"
-              aria-label="Next track"
-            >
-              <SkipForward className="h-[18px] w-[18px]" fill="currentColor" strokeWidth={1.6} />
-            </button>
+          <div className="relative mt-4 overflow-hidden rounded-[18px] bg-[#ECEAEA]">
+            <img
+              src={activeOption?.artwork || "/images/room-music/ambient-focus.svg"}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+              draggable={false}
+            />
+            <div className="absolute inset-0 bg-white/10" />
+            <div className="relative flex items-center justify-center gap-3 py-5">
+              <button
+                type="button"
+                disabled={!canControl || busy}
+                onClick={() => selectRelative(-1)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/80 text-[#2F2F2F] transition hover:bg-white disabled:opacity-40"
+                aria-label="Previous track"
+              >
+                <SkipBack className="h-[18px] w-[18px]" fill="currentColor" strokeWidth={1.6} />
+              </button>
+              <button
+                type="button"
+                disabled={!canControl || !activeId || busy}
+                onClick={onStop}
+                className="flex h-12 w-12 items-center justify-center rounded-full bg-[#2F2F2F] text-white transition hover:bg-[#252525] disabled:opacity-40"
+                aria-label={playing ? "Pause" : "Play"}
+              >
+                {playing ? (
+                  <Pause className="h-5 w-5" fill="currentColor" strokeWidth={1.8} />
+                ) : (
+                  <Play className="ml-0.5 h-5 w-5" fill="currentColor" strokeWidth={1.8} />
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={!canControl || busy}
+                onClick={() => selectRelative(1)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/80 text-[#2F2F2F] transition hover:bg-white disabled:opacity-40"
+                aria-label="Next track"
+              >
+                <SkipForward className="h-[18px] w-[18px]" fill="currentColor" strokeWidth={1.6} />
+              </button>
+            </div>
           </div>
 
-          <div className="mt-5">
+          <div className="mt-4">
             <input
               type="range"
               min="0"

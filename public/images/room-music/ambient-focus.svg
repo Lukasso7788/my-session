@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Ambient focus artwork">
+  <rect width="480" height="150" rx="22" fill="#E8EEF4"/>
+  <circle cx="405" cy="30" r="58" fill="#D8E3EE"/>
+  <circle cx="86" cy="132" r="72" fill="#DCE7F0"/>
+  <path d="M0 105C74 79 126 126 202 99s135-8 278-40v91H0z" fill="#C9D8E6"/>
+  <path d="M0 124c90-30 145 18 228-8 84-26 155-8 252-38v72H0z" fill="#B8CBDD" opacity=".72"/>
+</svg>
