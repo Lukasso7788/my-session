@@ -152,6 +152,28 @@ export function RoomSoundscapePanel({
               <span>{formatTrackTime(shownPosition)}</span>
               <span>{formatTrackTime(duration)}</span>
             </div>
+            <div className="mt-2 flex items-center gap-2.5 rounded-xl bg-[#F5F3F3] px-2.5 py-2">
+              <img
+                src="/icons/soundscape-light.svg"
+                alt="Volume"
+                className="h-3.5 w-3.5 shrink-0 object-contain opacity-60"
+                draggable={false}
+              />
+              <input
+                id="room-soundscape-volume"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={volume}
+                onChange={(event) => onVolumeChange(Number(event.target.value))}
+                className="min-w-0 flex-1 cursor-pointer accent-[#505050]"
+                aria-label="Your music volume"
+              />
+              <span className="w-8 shrink-0 text-right text-[9px] tabular-nums text-black/45">
+                {volume}%
+              </span>
+            </div>
           </div>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
@@ -159,7 +181,7 @@ export function RoomSoundscapePanel({
               type="button"
               disabled={!activeId}
               onClick={onToggleMute}
-              className={`h-9 rounded-xl border text-[11px] font-semibold transition disabled:opacity-40 ${personalMuted ? "border-[#F65252]/40 bg-[#F65252]/10 text-[#C63F3F]" : "border-black/10 bg-[#F5F5F5] text-black/75 hover:bg-[#EBEBEB]"}`}
+              className={`h-9 rounded-xl border text-[11px] font-semibold transition disabled:opacity-40 ${personalMuted ? "border-[#2F2F2F] bg-[#2F2F2F] text-white hover:bg-[#242424]" : "border-[#C9C4C4] bg-[#F1EFEF] text-[#4A4A4A] hover:border-[#B7B1B1] hover:bg-[#E9E6E6]"}`}
             >
               {personalMuted ? "Unmute for me" : "Mute for me"}
             </button>
@@ -237,23 +259,6 @@ export function RoomSoundscapePanel({
               {uploading ? "Uploading…" : "Choose"}
             </button>
           </div>
-        </section>
-
-        <section className="mt-4 rounded-[18px] border border-[#D8D0D0] bg-white p-3">
-          <div className="flex items-center justify-between gap-3">
-            <label htmlFor="room-soundscape-volume" className="text-[11px] font-medium text-black/75">Your music volume</label>
-            <span className="text-[10px] tabular-nums text-black/50">{volume}%</span>
-          </div>
-          <input
-            id="room-soundscape-volume"
-            type="range"
-            min="0"
-            max="100"
-            step="1"
-            value={volume}
-            onChange={(event) => onVolumeChange(Number(event.target.value))}
-            className="mt-2 w-full accent-[#62D873]"
-          />
         </section>
 
         {error ? <div className="mt-3 rounded-xl border border-[#F65252]/40 bg-[#F65252]/10 px-3 py-2 text-[11px] text-[#C63F3F]">{error}</div> : null}
