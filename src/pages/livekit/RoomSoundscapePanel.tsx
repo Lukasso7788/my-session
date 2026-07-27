@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Music2,
+  Pause,
+  Play,
+  SkipBack,
+  SkipForward,
+  Upload,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
+import {
   ROOM_SOUNDSCAPE_OPTIONS,
   type RoomSoundscapeId,
 } from "../../lib/roomSoundscapes";
@@ -14,11 +25,11 @@ function formatTrackTime(rawSeconds: number) {
 
 function TrackIcon({ src, label }: { src: string; label: string }) {
   return (
-    <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-[#E2DEDE] bg-[#F5F3F3]">
+    <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[11px] bg-[#F0EEEE]">
       <img
         src={src}
         alt=""
-        className="h-5 w-5 object-contain"
+        className="h-[18px] w-[18px] object-contain opacity-80"
         draggable={false}
         onError={(event) => {
           if (!event.currentTarget.src.endsWith("/icons/soundscape-light.svg")) {
@@ -107,25 +118,25 @@ export function RoomSoundscapePanel({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#FAF9F9] text-[#2F2F2F]">
-      <header className="flex min-h-[60px] items-center justify-between gap-3 border-b border-[#DDD8D8] bg-white px-5 py-4">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <img src="/icons/soundscape-light.svg" alt="" className="h-4 w-4" />
-          <span className="truncate text-[14px] font-semibold">Music</span>
+    <div className="flex h-full min-h-0 flex-col bg-[#F8F7F7] text-[#2F2F2F]">
+      <header className="flex min-h-[48px] items-center justify-between gap-3 bg-[#F8F7F7] px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <Music2 className="h-4 w-4 text-[#2F2F2F]/65" strokeWidth={1.8} />
+          <span className="truncate text-[13px] font-medium">Music</span>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#F0EEEE] text-[#2F2F2F]/60 transition hover:bg-[#E5E2E2]"
+          className="flex h-8 w-8 items-center justify-center rounded-[10px] text-[#2F2F2F]/50 transition hover:bg-[#ECEAEA] hover:text-[#2F2F2F]"
           aria-label="Close music panel"
         >
-          ✕
+          <X className="h-4 w-4" strokeWidth={1.8} />
         </button>
       </header>
 
       <div className="ms-chat-panel-scrollbars min-h-0 flex-1 overflow-y-auto">
-        <div className="px-4 pt-4">
-          <div className="grid grid-cols-2 rounded-[14px] border border-[#DEDADA] bg-[#F1EFEF] p-1">
+        <div className="px-4 pt-2">
+          <div className="grid grid-cols-2 rounded-[13px] bg-[#ECEAEA] p-1">
             {(["room", "personal"] as const).map((mode) => (
               <button
                 key={mode}
@@ -133,7 +144,7 @@ export function RoomSoundscapePanel({
                 onClick={() => onListeningModeChange(mode)}
                 className={`h-9 rounded-[10px] text-[11px] font-medium transition ${
                   listeningMode === mode
-                    ? "bg-[#2F2F2F] text-white shadow-sm"
+                    ? "bg-[#2F2F2F] text-white"
                     : "text-[#2F2F2F]/60 hover:text-[#2F2F2F]"
                 }`}
               >
@@ -150,7 +161,7 @@ export function RoomSoundscapePanel({
           </p>
         </div>
 
-        <section className="px-5 pb-5 pt-6 text-center">
+        <section className="px-5 pb-5 pt-5 text-center">
           <div className="text-[8px] font-semibold uppercase tracking-[0.22em] text-[#2F2F2F]/40">
             {listeningMode === "room" ? "Room mix" : "Playing for me"}
           </div>
@@ -161,33 +172,37 @@ export function RoomSoundscapePanel({
             {activeOption?.description || (activeId ? "Uploaded room audio" : "Select from the playlist")}
           </div>
 
-          <div className="mt-5 flex items-center justify-center gap-7">
+          <div className="mt-5 flex items-center justify-center gap-3">
             <button
               type="button"
               disabled={!canControl || busy}
               onClick={() => selectRelative(-1)}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-[#2F2F2F] transition hover:bg-[#EEECEC] disabled:opacity-25"
+              className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ECEAEA] text-[#2F2F2F] transition hover:bg-[#E2DFDF] disabled:opacity-25"
               aria-label="Previous track"
             >
-              ◀
+              <SkipBack className="h-[18px] w-[18px]" fill="currentColor" strokeWidth={1.6} />
             </button>
             <button
               type="button"
               disabled={!canControl || !activeId || busy}
               onClick={onStop}
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-[#2F2F2F] text-[17px] text-white shadow-[0_7px_18px_rgba(47,47,47,0.22)] transition hover:scale-[1.03] hover:bg-[#252525] disabled:opacity-35"
+              className="flex h-12 w-12 items-center justify-center rounded-[15px] bg-[#2F2F2F] text-white transition hover:bg-[#252525] disabled:opacity-35"
               aria-label={playing ? "Pause" : "Play"}
             >
-              {playing ? "Ⅱ" : "▶"}
+              {playing ? (
+                <Pause className="h-5 w-5" fill="currentColor" strokeWidth={1.8} />
+              ) : (
+                <Play className="ml-0.5 h-5 w-5" fill="currentColor" strokeWidth={1.8} />
+              )}
             </button>
             <button
               type="button"
               disabled={!canControl || busy}
               onClick={() => selectRelative(1)}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-lg text-[#2F2F2F] transition hover:bg-[#EEECEC] disabled:opacity-25"
+              className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#ECEAEA] text-[#2F2F2F] transition hover:bg-[#E2DFDF] disabled:opacity-25"
               aria-label="Next track"
             >
-              ▶
+              <SkipForward className="h-[18px] w-[18px]" fill="currentColor" strokeWidth={1.6} />
             </button>
           </div>
 
@@ -213,7 +228,7 @@ export function RoomSoundscapePanel({
           </div>
 
           <div className="mt-3 flex items-center gap-2.5 rounded-xl bg-[#F0EEEE] px-3 py-2">
-            <img src="/icons/soundscape-light.svg" alt="Volume" className="h-3.5 w-3.5 opacity-55" />
+            <Volume2 className="h-3.5 w-3.5 shrink-0 text-[#2F2F2F]/55" strokeWidth={1.8} />
             <input
               type="range"
               min="0"
@@ -230,17 +245,22 @@ export function RoomSoundscapePanel({
             type="button"
             disabled={!activeId}
             onClick={onToggleMute}
-            className={`mt-3 h-9 w-full rounded-xl border text-[11px] font-medium transition disabled:opacity-35 ${
+            className={`mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-xl text-[11px] font-medium transition disabled:opacity-35 ${
               personalMuted
-                ? "border-[#2F2F2F] bg-[#2F2F2F] text-white hover:bg-[#252525]"
-                : "border-[#CBC6C6] bg-[#F1EFEF] text-[#555] hover:bg-[#E9E6E6]"
+                ? "bg-[#2F2F2F] text-white hover:bg-[#252525]"
+                : "bg-[#ECEAEA] text-[#555] hover:bg-[#E3E0E0]"
             }`}
           >
+            {personalMuted ? (
+              <Volume2 className="h-3.5 w-3.5" strokeWidth={1.8} />
+            ) : (
+              <VolumeX className="h-3.5 w-3.5" strokeWidth={1.8} />
+            )}
             {personalMuted ? "Unmute for me" : "Mute for me"}
           </button>
         </section>
 
-        <section className="border-t border-[#E4E0E0] bg-white px-4 pb-4 pt-4">
+        <section className="mx-2 mb-2 rounded-[18px] bg-white px-2 pb-3 pt-3">
           <div className="mb-2 flex items-center justify-between px-1">
             <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#2F2F2F]/55">Playlist</div>
             <span className="text-[9px] text-[#2F2F2F]/35">{ROOM_SOUNDSCAPE_OPTIONS.length} tracks</span>
@@ -256,7 +276,7 @@ export function RoomSoundscapePanel({
                   disabled={!canControl || busy}
                   onClick={() => onSelect(option.id)}
                   className={`group flex w-full items-center gap-3 rounded-[13px] px-2 py-2 text-left transition disabled:cursor-default ${
-                    selected ? "bg-[#F0EEEE]" : "hover:bg-[#F7F5F5]"
+                    selected ? "bg-[#EDEBEB]" : "hover:bg-[#F5F3F3]"
                   } ${!canControl ? "opacity-65" : ""}`}
                 >
                   <span className="w-5 shrink-0 text-center text-[9px] tabular-nums text-[#2F2F2F]/30">
@@ -277,7 +297,7 @@ export function RoomSoundscapePanel({
           </div>
 
           {listeningMode === "room" && canUpload ? (
-            <div className="mt-3 border-t border-[#E7E3E3] pt-3">
+            <div className="mt-3 px-1">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -293,15 +313,16 @@ export function RoomSoundscapePanel({
                 type="button"
                 disabled={uploading || busy}
                 onClick={() => fileInputRef.current?.click()}
-                className="flex h-10 w-full items-center justify-center rounded-xl border border-[#2F2F2F] bg-white text-[10px] font-semibold text-[#2F2F2F] transition hover:bg-[#F1EFEF] disabled:opacity-40"
+                className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#ECEAEA] text-[10px] font-semibold text-[#2F2F2F] transition hover:bg-[#E2DFDF] disabled:opacity-40"
               >
+                <Upload className="h-3.5 w-3.5" strokeWidth={1.8} />
                 {uploading ? "Uploading…" : "Upload room track · max 3 MB"}
               </button>
             </div>
           ) : null}
 
           {error ? (
-            <div className="mt-3 rounded-xl border border-[#F65252]/35 bg-[#F65252]/8 px-3 py-2 text-[10px] text-[#B83D3D]">{error}</div>
+            <div className="mt-3 rounded-xl bg-[#F65252]/8 px-3 py-2 text-[10px] text-[#B83D3D]">{error}</div>
           ) : null}
         </section>
       </div>
