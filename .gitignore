@@ -31,3 +31,10 @@ dist-ssr
 /mysession/
 
 /mysession-focusshield-api/
+
+# Standalone local apps. They are maintained and released separately from
+# the MySession web app and must not be mixed into regular web commits.
+/focusshield/
+/public/downloads/focusshield/
+/apps/voice-control-*/
+/apps/voice-control-extension.zip
