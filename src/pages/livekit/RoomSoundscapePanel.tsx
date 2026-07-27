@@ -186,7 +186,7 @@ export function RoomSoundscapePanel({
               type="button"
               disabled={!canControl || !activeId || busy}
               onClick={onStop}
-              className="flex h-12 w-12 items-center justify-center rounded-[15px] bg-[#2F2F2F] text-white transition hover:bg-[#252525] disabled:opacity-35"
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-[#2F2F2F] text-white transition hover:bg-[#252525] disabled:opacity-35"
               aria-label={playing ? "Pause" : "Play"}
             >
               {playing ? (
@@ -218,7 +218,8 @@ export function RoomSoundscapePanel({
               onPointerUp={(event) => commitSeek(Number(event.currentTarget.value))}
               onKeyUp={(event) => commitSeek(Number(event.currentTarget.value))}
               onBlur={(event) => seekDraft !== null && commitSeek(Number(event.currentTarget.value))}
-              className="ms-room-music-timeline w-full cursor-pointer accent-[#2F2F2F] disabled:cursor-default disabled:opacity-35"
+              className="ms-room-music-timeline w-full cursor-pointer border-0 bg-transparent p-0 accent-[#2F2F2F] outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 disabled:cursor-default disabled:opacity-35"
+              style={{ border: 0, outline: "none", boxShadow: "none" }}
               aria-label="Track position"
             />
             <div className="mt-1 flex justify-between text-[9px] tabular-nums text-[#2F2F2F]/40">
@@ -235,7 +236,8 @@ export function RoomSoundscapePanel({
               max="100"
               value={volume}
               onChange={(event) => onVolumeChange(Number(event.target.value))}
-              className="min-w-0 flex-1 cursor-pointer accent-[#2F2F2F]"
+              className="min-w-0 flex-1 cursor-pointer border-0 bg-transparent p-0 accent-[#2F2F2F] outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
+              style={{ border: 0, outline: "none", boxShadow: "none" }}
               aria-label="Your music volume"
             />
             <span className="w-7 text-right text-[9px] tabular-nums text-[#2F2F2F]/45">{volume}%</span>
