@@ -30,6 +30,13 @@ Recommended export settings:
 If a soundtrack is replaced later, preserve its title, direct source URL,
 license URL, and download date in this table.
 
+## Seamless playback
+
+Every built-in and uploaded track is looped by `RoomSoundscapeEngine` using two
+preloaded audio elements and a short equal-power crossfade. The next copy starts
+before the current copy ends, so MP3 encoder padding and imperfect source cuts
+do not create an audible stop between repetitions.
+
 ## Custom room tracks
 
 Hosts and room moderators can upload MP3, M4A, OGG, or WebM audio from the

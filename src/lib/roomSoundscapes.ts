@@ -90,9 +90,128 @@ function waitForAudioMetadata(audio: HTMLAudioElement) {
 
 export class RoomSoundscapeEngine {
   private audio: HTMLAudioElement | null = null;
+  private standbyAudio: HTMLAudioElement | null = null;
   private activeId: RoomSoundscapeId | null = null;
+  private activeUrl = "";
   private requestedVolume = 0.35;
   private muted = false;
+  private playing = false;
+  private loopTimer: number | null = null;
+  private fadeTimer: number | null = null;
+  private playbackGeneration = 0;
+
+  private clearLoopTimers() {
+    if (this.loopTimer != null) window.clearTimeout(this.loopTimer);
+    if (this.fadeTimer != null) window.clearInterval(this.fadeTimer);
+    this.loopTimer = null;
+    this.fadeTimer = null;
+  }
+
+  private makeAudio(url: string) {
+    const audio = new Audio(url);
+    audio.loop = false;
+    audio.preload = "auto";
+    audio.muted = this.muted;
+    audio.volume = 0;
+    return audio;
+  }
+
+  private crossfadeSeconds(duration: number) {
+    if (!Number.isFinite(duration) || duration <= 0) return 1.5;
+    return Math.max(0.8, Math.min(2.5, duration * 0.08));
+  }
+
+  private sourceDuration() {
+    const value = Number(this.audio?.duration || 0);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  private scheduleSeamlessLoop() {
+    this.clearLoopTimers();
+    const audio = this.audio;
+    if (!this.playing || !audio || !this.standbyAudio) return;
+    const sourceDuration = this.sourceDuration();
+    if (!sourceDuration) return;
+    const fadeSeconds = this.crossfadeSeconds(sourceDuration);
+    const delaySeconds = Math.max(
+      0.02,
+      sourceDuration - audio.currentTime - fadeSeconds,
+    );
+    const generation = this.playbackGeneration;
+    this.loopTimer = window.setTimeout(() => {
+      this.loopTimer = null;
+      void this.startSeamlessCrossfade(generation, fadeSeconds);
+    }, delaySeconds * 1000);
+  }
+
+  private async startSeamlessCrossfade(
+    generation: number,
+    fadeSeconds: number,
+  ) {
+    const outgoing = this.audio;
+    const incoming = this.standbyAudio;
+    if (
+      !this.playing ||
+      generation !== this.playbackGeneration ||
+      !outgoing ||
+      !incoming
+    ) {
+      return;
+    }
+
+    try {
+      incoming.pause();
+      incoming.currentTime = 0;
+      incoming.muted = this.muted;
+      incoming.volume = 0;
+      await incoming.play();
+    } catch {
+      // A second media element can occasionally be blocked on restrictive
+      // browsers. Fall back to their native loop rather than stopping audio.
+      outgoing.loop = true;
+      return;
+    }
+
+    if (!this.playing || generation !== this.playbackGeneration) {
+      incoming.pause();
+      return;
+    }
+
+    const startedAt = performance.now();
+    this.fadeTimer = window.setInterval(() => {
+      if (
+        !this.playing ||
+        generation !== this.playbackGeneration ||
+        !this.audio ||
+        !this.standbyAudio
+      ) {
+        this.clearLoopTimers();
+        return;
+      }
+      const progress = Math.max(
+        0,
+        Math.min(1, (performance.now() - startedAt) / (fadeSeconds * 1000)),
+      );
+      // Equal-power curves keep perceived loudness stable during the overlap.
+      outgoing.volume = this.requestedVolume * Math.cos(progress * Math.PI * 0.5);
+      incoming.volume = this.requestedVolume * Math.sin(progress * Math.PI * 0.5);
+      if (progress < 1) return;
+
+      this.clearLoopTimers();
+      outgoing.pause();
+      outgoing.loop = false;
+      try {
+        outgoing.currentTime = 0;
+      } catch {
+        // The inactive element will be reset again before its next use.
+      }
+      outgoing.volume = 0;
+      incoming.volume = this.requestedVolume;
+      this.audio = incoming;
+      this.standbyAudio = outgoing;
+      this.scheduleSeamlessLoop();
+    }, 40);
+  }
 
   async play(
     id: RoomSoundscapeId,
@@ -105,18 +224,24 @@ export class RoomSoundscapeEngine {
 
     this.requestedVolume = Math.max(0, Math.min(1, volume));
     let audio = this.audio;
+    const resolvedUrl = new URL(url, window.location.href).href;
 
-    if (!audio || this.activeId !== id || audio.src !== new URL(url, window.location.href).href) {
-      const previous = audio;
-      audio = new Audio(url);
-      audio.loop = true;
-      audio.preload = "auto";
-      audio.volume = this.requestedVolume;
-      audio.muted = this.muted;
-      await waitForAudioMetadata(audio);
-      previous?.pause();
+    if (!audio || this.activeId !== id || this.activeUrl !== resolvedUrl) {
+      this.clearLoopTimers();
+      this.playbackGeneration += 1;
+      const previous = [this.audio, this.standbyAudio];
+      audio = this.makeAudio(url);
+      const standby = this.makeAudio(url);
+      await Promise.all([waitForAudioMetadata(audio), waitForAudioMetadata(standby)]);
+      for (const item of previous) {
+        item?.pause();
+        item?.removeAttribute("src");
+        item?.load();
+      }
       this.audio = audio;
+      this.standbyAudio = standby;
       this.activeId = id;
+      this.activeUrl = resolvedUrl;
     }
 
     const duration = Number(audio.duration || 0);
@@ -137,18 +262,29 @@ export class RoomSoundscapeEngine {
     audio.volume = this.requestedVolume;
     audio.muted = this.muted;
     await audio.play();
+    this.playing = true;
+    this.scheduleSeamlessLoop();
   }
 
   pause() {
+    this.playing = false;
+    this.playbackGeneration += 1;
+    this.clearLoopTimers();
     this.audio?.pause();
+    this.standbyAudio?.pause();
     return this.currentTime();
   }
 
   stop() {
     if (!this.audio) return;
+    this.playing = false;
+    this.playbackGeneration += 1;
+    this.clearLoopTimers();
     this.audio.pause();
+    this.standbyAudio?.pause();
     try {
       this.audio.currentTime = 0;
+      if (this.standbyAudio) this.standbyAudio.currentTime = 0;
     } catch {
       // Seeking can fail while a file is still loading.
     }
@@ -157,11 +293,15 @@ export class RoomSoundscapeEngine {
   setVolume(volume: number) {
     this.requestedVolume = Math.max(0, Math.min(1, volume));
     if (this.audio) this.audio.volume = this.requestedVolume;
+    if (this.standbyAudio && this.standbyAudio.paused) {
+      this.standbyAudio.volume = 0;
+    }
   }
 
   setMuted(muted: boolean) {
     this.muted = muted;
     if (this.audio) this.audio.muted = muted;
+    if (this.standbyAudio) this.standbyAudio.muted = muted;
   }
 
   currentTime() {
@@ -169,12 +309,18 @@ export class RoomSoundscapeEngine {
   }
 
   duration() {
-    const value = Number(this.audio?.duration || 0);
-    return Number.isFinite(value) && value > 0 ? value : 0;
+    const sourceDuration = this.sourceDuration();
+    return sourceDuration > 0
+      ? Math.max(0.1, sourceDuration - this.crossfadeSeconds(sourceDuration))
+      : 0;
   }
 
   seek(positionSeconds: number) {
     if (!this.audio) return 0;
+    this.playbackGeneration += 1;
+    this.clearLoopTimers();
+    this.standbyAudio?.pause();
+    if (this.standbyAudio) this.standbyAudio.volume = 0;
     const duration = this.duration();
     const next = Math.max(
       0,
@@ -185,16 +331,24 @@ export class RoomSoundscapeEngine {
     } catch {
       // Browsers may reject a seek while metadata is still loading.
     }
+    if (this.playing) this.scheduleSeamlessLoop();
     return this.currentTime();
   }
 
   destroy() {
-    const audio = this.audio;
+    const elements = [this.audio, this.standbyAudio];
+    this.clearLoopTimers();
+    this.playing = false;
+    this.playbackGeneration += 1;
     this.audio = null;
+    this.standbyAudio = null;
     this.activeId = null;
-    if (!audio) return;
-    audio.pause();
-    audio.removeAttribute("src");
-    audio.load();
+    this.activeUrl = "";
+    for (const audio of elements) {
+      if (!audio) continue;
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
   }
 }
