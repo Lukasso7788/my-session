@@ -33,10 +33,11 @@ license URL, and download date in this table.
 ## Custom room tracks
 
 Hosts and room moderators can upload MP3, M4A, OGG, or WebM audio from the
-room music panel. Files are limited to 3 MB so uploads remain below the
-serverless request limit and do not put avoidable pressure on room bandwidth.
-The API creates the public `room-soundtracks` Supabase Storage bucket on first
-use and keeps only the five newest custom uploads for each room.
+room music panel. Files are limited to 30 MB and uploaded directly to Supabase
+Storage through a short-lived signed upload token, so the audio body does not
+pass through Vercel's serverless request limit. The API creates or updates the
+public `room-soundtracks` bucket and keeps only the five newest custom uploads
+for each room.
 
 ## Playlist icons
 

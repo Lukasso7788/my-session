@@ -325,7 +325,7 @@ export function RoomSoundscapePanel({
                 className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#ECEAEA] text-[10px] font-semibold text-[#2F2F2F] transition hover:bg-[#E2DFDF] disabled:opacity-40"
               >
                 <Upload className="h-3.5 w-3.5" strokeWidth={1.8} />
-                {uploading ? "Uploading…" : "Upload room track · max 3 MB"}
+                {uploading ? "Uploading…" : "Upload room track · max 30 MB"}
               </button>
             </div>
           ) : null}

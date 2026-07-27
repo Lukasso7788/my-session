@@ -8597,7 +8597,7 @@ export function RoomPageLiveKit({
 
   const uploadRoomSoundtrack = async (file: File) => {
     if (!canUploadRoomSoundtrack) return;
-    const maxBytes = 3 * 1024 * 1024;
+    const maxBytes = 30 * 1024 * 1024;
     const allowedTypes = new Set([
       "audio/mpeg",
       "audio/mp3",
@@ -8611,7 +8611,7 @@ export function RoomPageLiveKit({
       return;
     }
     if (!file.size || file.size > maxBytes) {
-      setSoundscapeError("Custom tracks must be 3 MB or smaller.");
+      setSoundscapeError("Custom tracks must be 30 MB or smaller.");
       return;
     }
 
@@ -8622,12 +8622,6 @@ export function RoomPageLiveKit({
       const accessToken = authData.session?.access_token;
       if (!accessToken) throw new Error("Sign in again before uploading audio.");
 
-      const audioBase64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(new Error("The audio file could not be read."));
-        reader.onload = () => resolve(String(reader.result || ""));
-        reader.readAsDataURL(file);
-      });
       const response = await fetch("/api/livekit/admin", {
         method: "POST",
         headers: {
@@ -8635,21 +8629,34 @@ export function RoomPageLiveKit({
           Authorization: `Bearer ${accessToken}`,
         },
         body: JSON.stringify({
-          action: "upload_room_soundtrack",
+          action: "prepare_room_soundtrack_upload",
           sessionId,
           fileName: file.name,
           contentType: file.type,
-          audioBase64,
+          fileSize: file.size,
         }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload?.url) {
+      if (
+        !response.ok ||
+        !payload?.bucket ||
+        !payload?.path ||
+        !payload?.token ||
+        !payload?.url
+      ) {
         throw new Error(
           payload?.error === "audio_file_too_large"
-            ? "Custom tracks must be 3 MB or smaller."
+            ? "Custom tracks must be 30 MB or smaller."
             : String(payload?.details || payload?.error || "The track could not be uploaded."),
         );
       }
+
+      const { error: directUploadError } = await supabase.storage
+        .from(String(payload.bucket))
+        .uploadToSignedUrl(String(payload.path), String(payload.token), file, {
+          contentType: file.type,
+        });
+      if (directUploadError) throw directUploadError;
 
       const label = String(payload.label || file.name).slice(0, 60);
       await playSoundscapeLocally("custom", 0, String(payload.url));
