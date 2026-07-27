@@ -48,6 +48,7 @@ type PanelTask = {
   created_at: string;
   updated_at: string;
   visibility?: "public" | "private" | string | null;
+  sort_order?: number | null;
 };
 
 type FocusPlan = {
@@ -308,6 +309,15 @@ type TaskTimerMap = Record<string, TaskTimerState>;
 const TASK_TIMER_EVENT = "mysession:task-timers-updated";
 const TASK_TIMER_VISIBILITY_EVENT = "mysession:task-timer-visibility-changed";
 const TASK_ORDER_STORAGE_PREFIX = "mysession_task_order_v1";
+const TASK_ORDER_SYNC_EVENT = "mysession:task-order-synced";
+const TASK_REORDER_LOG_PREFIX = "[TasksPanel/reorder]";
+
+function logTaskReorder(step: string, detail: Record<string, unknown> = {}) {
+  console.info(TASK_REORDER_LOG_PREFIX, step, {
+    at: new Date().toISOString(),
+    ...detail,
+  });
+}
 const TASK_TIMER_ENABLED_STORAGE_PREFIX = "mysession_task_timer_enabled_v1";
 const TASK_TIMER_STORAGE_PREFIX = "mysession_task_timers_v1";
 const TASK_TIME_MEASUREMENTS_STORAGE_PREFIX = "mysession_task_time_measurements_v1";
@@ -611,6 +621,11 @@ export function TasksPanel({
   );
 
   const [panelTaskOrder, setPanelTaskOrder] = useState<string[]>([]);
+  const panelTaskOrderRef = useRef<string[]>([]);
+  const reorderVersionRef = useRef(0);
+  const reorderInFlightRef = useRef(0);
+  const reorderQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingPanelReloadRef = useRef(false);
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
   const [taskTimersEnabled, setTaskTimersEnabled] = useState<boolean>(false);
@@ -623,11 +638,46 @@ export function TasksPanel({
     try {
       const raw = localStorage.getItem(taskOrderStorageKey);
       const parsed = raw ? JSON.parse(raw) : [];
-      setPanelTaskOrder(Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : []);
+      const next = Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+      panelTaskOrderRef.current = next;
+      setPanelTaskOrder(next);
+      logTaskReorder("storage_hydrated", {
+        storageKey: taskOrderStorageKey,
+        order: next,
+      });
     } catch {
+      panelTaskOrderRef.current = [];
       setPanelTaskOrder([]);
     }
   }, [taskOrderStorageKey]);
+
+  useEffect(() => {
+    const applyExternalOrder = (next: string[], source: string) => {
+      const normalized = next.map(String).filter(Boolean);
+      if (normalized.join("|") === panelTaskOrderRef.current.join("|")) return;
+      panelTaskOrderRef.current = normalized;
+      setPanelTaskOrder(normalized);
+      logTaskReorder("external_order_applied", { source, order: normalized });
+    };
+    const onOrderSync = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail || {};
+      if (String(detail.userId || "") !== String(user?.id || "")) return;
+      if (Array.isArray(detail.order)) applyExternalOrder(detail.order, "same_document");
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== taskOrderStorageKey || !event.newValue) return;
+      try {
+        const parsed = JSON.parse(event.newValue);
+        if (Array.isArray(parsed)) applyExternalOrder(parsed, "storage_event");
+      } catch { }
+    };
+    window.addEventListener(TASK_ORDER_SYNC_EVENT, onOrderSync as EventListener);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(TASK_ORDER_SYNC_EVENT, onOrderSync as EventListener);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [taskOrderStorageKey, user?.id]);
 
   useEffect(() => {
     try {
@@ -648,22 +698,35 @@ export function TasksPanel({
   useEffect(() => {
     const ids = panelTasks.map((task) => String(task.id || "")).filter(Boolean);
     if (!ids.length) {
-      if (panelTaskOrder.length) setPanelTaskOrder([]);
+      // An empty array while the initial/refetch request is running is not an
+      // authoritative empty task set. Clearing here used to erase the locally
+      // hydrated order before Supabase returned.
+      if (panelLoading) return;
+      if (panelTaskOrderRef.current.length) {
+        panelTaskOrderRef.current = [];
+        setPanelTaskOrder([]);
+      }
       return;
     }
 
     const idSet = new Set(ids);
-    const next = [
-      ...panelTaskOrder.filter((id) => idSet.has(id)),
-      ...ids.filter((id) => !panelTaskOrder.includes(id)),
-    ];
-
-    if (next.join("|") === panelTaskOrder.join("|")) return;
-    setPanelTaskOrder(next);
-    try {
-      localStorage.setItem(taskOrderStorageKey, JSON.stringify(next));
-    } catch { }
-  }, [panelTasks, panelTaskOrder, taskOrderStorageKey]);
+    setPanelTaskOrder((latestOrder) => {
+      const next = [
+        ...latestOrder.filter((id) => idSet.has(id)),
+        ...ids.filter((id) => !latestOrder.includes(id)),
+      ];
+      if (next.join("|") === latestOrder.join("|")) return latestOrder;
+      panelTaskOrderRef.current = next;
+      try {
+        localStorage.setItem(taskOrderStorageKey, JSON.stringify(next));
+      } catch { }
+      logTaskReorder("task_set_reconciled", {
+        previousOrder: latestOrder,
+        nextOrder: next,
+      });
+      return next;
+    });
+  }, [panelLoading, panelTasks, taskOrderStorageKey]);
 
   useEffect(() => {
     const refresh = () => {
@@ -1011,24 +1074,91 @@ export function TasksPanel({
     if (!user?.id) return;
 
     const seq = ++panelSeqRef.current;
+    logTaskReorder("refetch_started", {
+      seq,
+      reorderInFlight: reorderInFlightRef.current,
+    });
     setPanelLoading(true);
 
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from(PANEL_TASKS_TABLE)
         .select("*")
         .eq("user_id", user.id)
+        .order("sort_order", { ascending: true, nullsFirst: false })
         .order("created_at", { ascending: false })
         .limit(PANEL_TASKS_FETCH_LIMIT);
 
-      if (seq !== panelSeqRef.current) return;
+      if (error && /sort_order|column/i.test(String(error.message || ""))) {
+        logTaskReorder("database_order_unavailable_fallback", {
+          seq,
+          error: String(error.message || error),
+        });
+        const fallback = await supabase
+          .from(PANEL_TASKS_TABLE)
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(PANEL_TASKS_FETCH_LIMIT);
+        data = fallback.data;
+        error = fallback.error;
+      }
 
-      if (error || !Array.isArray(data)) {
-        setPanelTasks([]);
+      if (seq !== panelSeqRef.current) {
+        logTaskReorder("refetch_discarded", {
+          seq,
+          latestSeq: panelSeqRef.current,
+        });
         return;
       }
 
+      if (error || !Array.isArray(data)) {
+        logTaskReorder("refetch_failed", {
+          seq,
+          error: String(error?.message || error || "invalid_data"),
+        });
+        return;
+      }
+
+      const databaseOrder = data
+        .map((task: any) => String(task.id || ""))
+        .filter(Boolean);
+      const hasPersistedDatabaseOrder = data.every(
+        (task: any) =>
+          task.sort_order !== null &&
+          task.sort_order !== undefined &&
+          task.sort_order !== "" &&
+          Number.isFinite(Number(task.sort_order)),
+      );
+
+      // Once the position column exists, Supabase is authoritative on loads
+      // and refreshes. While a drop is being saved, realtime/refetch is held
+      // back so it cannot overwrite the optimistic order.
+      if (
+        reorderInFlightRef.current === 0 &&
+        databaseOrder.length > 0 &&
+        (hasPersistedDatabaseOrder || panelTaskOrderRef.current.length === 0)
+      ) {
+        panelTaskOrderRef.current = databaseOrder;
+        setPanelTaskOrder(databaseOrder);
+        try {
+          localStorage.setItem(taskOrderStorageKey, JSON.stringify(databaseOrder));
+        } catch { }
+        logTaskReorder("database_order_hydrated", {
+          seq,
+          hasPersistedDatabaseOrder,
+          order: databaseOrder,
+        });
+      }
+
       setPanelTasks(data as PanelTask[]);
+      logTaskReorder("refetch_applied", {
+        seq,
+        databaseOrder: data.map((task: any) => ({
+          id: String(task.id || ""),
+          sortOrder: task.sort_order ?? null,
+        })),
+      });
     } finally {
       if (seq === panelSeqRef.current) setPanelLoading(false);
     }
@@ -1037,6 +1167,18 @@ export function TasksPanel({
   useEffect(() => {
     if (!user?.id) return;
     void loadPanelTasks();
+    let realtimeReloadTimer: number | null = null;
+
+    const scheduleRealtimeReload = () => {
+      if (realtimeReloadTimer !== null) {
+        window.clearTimeout(realtimeReloadTimer);
+      }
+      realtimeReloadTimer = window.setTimeout(() => {
+        realtimeReloadTimer = null;
+        logTaskReorder("realtime_refetch_started");
+        void loadPanelTasks();
+      }, 100);
+    };
 
     const onExternalTasksUpdated = () => {
       void loadPanelTasks();
@@ -1057,7 +1199,19 @@ export function TasksPanel({
           table: PANEL_TASKS_TABLE,
           filter: `user_id=eq.${user.id}`,
         },
-        () => void loadPanelTasks(),
+        (payload) => {
+          logTaskReorder("realtime_received", {
+            eventType: payload.eventType,
+            taskId: String((payload.new as any)?.id || (payload.old as any)?.id || ""),
+            reorderInFlight: reorderInFlightRef.current,
+          });
+          if (reorderInFlightRef.current > 0) {
+            pendingPanelReloadRef.current = true;
+            logTaskReorder("realtime_refetch_deferred");
+            return;
+          }
+          scheduleRealtimeReload();
+        },
       )
       .subscribe();
 
@@ -1066,6 +1220,9 @@ export function TasksPanel({
         "mysession:tasks-updated",
         onExternalTasksUpdated,
       );
+      if (realtimeReloadTimer !== null) {
+        window.clearTimeout(realtimeReloadTimer);
+      }
       supabase.removeChannel(ch);
     };
   }, [user?.id, loadPanelTasks]);
@@ -2055,13 +2212,20 @@ export function TasksPanel({
   }, [hideTeamTasks, hideTeamTasksStorageKey]);
 
   const persistPanelTaskOrder = useCallback(
-    (nextOrder: string[]) => {
+    (nextOrder: string[], source: string) => {
+      panelTaskOrderRef.current = nextOrder;
       setPanelTaskOrder(nextOrder);
       try {
         localStorage.setItem(taskOrderStorageKey, JSON.stringify(nextOrder));
+        window.dispatchEvent(
+          new CustomEvent(TASK_ORDER_SYNC_EVENT, {
+            detail: { userId: user?.id || "", order: nextOrder, source },
+          }),
+        );
       } catch { }
+      logTaskReorder("optimistic_order_applied", { source, order: nextOrder });
     },
-    [taskOrderStorageKey],
+    [taskOrderStorageKey, user?.id],
   );
 
   const reorderPanelTask = useCallback(
@@ -2069,21 +2233,106 @@ export function TasksPanel({
       if (!fromId || !toId || fromId === toId) return;
 
       const currentIds = panelTasks.map((task) => task.id);
+      const latestOrder = panelTaskOrderRef.current;
       const base = [
-        ...panelTaskOrder.filter((id) => currentIds.includes(id)),
-        ...currentIds.filter((id) => !panelTaskOrder.includes(id)),
+        ...latestOrder.filter((id) => currentIds.includes(id)),
+        ...currentIds.filter((id) => !latestOrder.includes(id)),
       ];
 
       const fromIndex = base.indexOf(fromId);
       const toIndex = base.indexOf(toId);
-      if (fromIndex < 0 || toIndex < 0) return;
+      if (fromIndex < 0 || toIndex < 0) {
+        logTaskReorder("drop_rejected_missing_task", {
+          fromId,
+          toId,
+          currentOrder: base,
+        });
+        return;
+      }
 
+      const previousOrder = [...base];
       const next = [...base];
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved);
-      persistPanelTaskOrder(next);
+      const version = ++reorderVersionRef.current;
+
+      logTaskReorder("drop_computed", {
+        version,
+        fromId,
+        toId,
+        previousOrder,
+        nextOrder: next,
+      });
+      persistPanelTaskOrder(next, "drop");
+      reorderInFlightRef.current += 1;
+
+      const mutation = reorderQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          logTaskReorder("database_mutation_started", {
+            version,
+            order: next,
+          });
+          const { error } = await supabase.rpc("reorder_panel_intentions", {
+            p_task_ids: next,
+          });
+          if (error) throw error;
+          logTaskReorder("database_mutation_succeeded", {
+            version,
+            order: next,
+          });
+        })
+        .catch((error: any) => {
+          const message = String(error?.message || error || "unknown_error");
+          const code = String(error?.code || "");
+          const migrationMissing =
+            code === "42883" ||
+            code === "PGRST202" ||
+            /reorder_panel_intentions|function.*does not exist/i.test(message);
+
+          if (migrationMissing) {
+            // Keep the established localStorage behavior until the migration
+            // is applied; surfacing the precise failure makes rollout obvious.
+            logTaskReorder("database_mutation_unavailable_local_fallback", {
+              version,
+              code,
+              error: message,
+              order: next,
+            });
+            return;
+          }
+
+          logTaskReorder("database_mutation_failed", {
+            version,
+            code,
+            error: message,
+          });
+          if (version === reorderVersionRef.current) {
+            persistPanelTaskOrder(previousOrder, "database_rollback");
+          }
+        })
+        .finally(() => {
+          reorderInFlightRef.current = Math.max(
+            0,
+            reorderInFlightRef.current - 1,
+          );
+          logTaskReorder("database_mutation_finished", {
+            version,
+            remaining: reorderInFlightRef.current,
+          });
+          if (
+            reorderInFlightRef.current === 0 &&
+            pendingPanelReloadRef.current
+          ) {
+            pendingPanelReloadRef.current = false;
+            logTaskReorder("deferred_refetch_started", { version });
+            void loadPanelTasks();
+          }
+        });
+
+      reorderQueueRef.current = mutation;
     },
-    [panelTaskOrder, panelTasks, persistPanelTaskOrder],
+    [loadPanelTasks, panelTasks, persistPanelTaskOrder],
   );
 
   const orderedPanelTasks = useMemo(() => {
@@ -2794,6 +3043,7 @@ export function TasksPanel({
             <div className="flex flex-col gap-2">
               {orderedPanelTasks.map((i) => {
                 const isEditing = editingId === i.id;
+                const isPersistedTask = UUID_RE.test(String(i.id || ""));
 
                 const circleCls = "text-black/40";
                 const textDoneCls = "text-black/45 line-through";
@@ -2809,7 +3059,7 @@ export function TasksPanel({
                 return (
                   <div
                     key={i.id}
-                    draggable={!isEditing}
+                    draggable={!isEditing && isPersistedTask}
                     className={[
                       myCardCls,
                       "font-inter",
@@ -2819,19 +3069,26 @@ export function TasksPanel({
                         : "",
                     ].join(" ")}
                     onDragStart={(e) => {
-                      if (isEditing) {
+                      if (isEditing || !isPersistedTask) {
                         e.preventDefault();
+                        logTaskReorder("drag_rejected_unsaved_task", {
+                          taskId: i.id,
+                        });
                         return;
                       }
                       setDraggedTaskId(i.id);
                       setDragOverTaskId(null);
+                      logTaskReorder("drag_started", {
+                        taskId: i.id,
+                        currentOrder: panelTaskOrderRef.current,
+                      });
                       try {
                         e.dataTransfer.effectAllowed = "move";
                         e.dataTransfer.setData("text/plain", i.id);
                       } catch { }
                     }}
                     onDragOver={(e) => {
-                      if (!draggedTaskId || draggedTaskId === i.id) return;
+                      if (!isPersistedTask || !draggedTaskId || draggedTaskId === i.id) return;
                       e.preventDefault();
                       setDragOverTaskId(i.id);
                       try {
@@ -2842,11 +3099,26 @@ export function TasksPanel({
                       e.preventDefault();
                       e.stopPropagation();
                       const fromId = draggedTaskId || e.dataTransfer.getData("text/plain");
+                      if (!isPersistedTask) {
+                        logTaskReorder("drop_rejected_unsaved_task", {
+                          fromId,
+                          toId: i.id,
+                        });
+                        return;
+                      }
+                      logTaskReorder("drop_received", {
+                        fromId,
+                        toId: i.id,
+                      });
                       reorderPanelTask(fromId, i.id);
                       setDraggedTaskId(null);
                       setDragOverTaskId(null);
                     }}
                     onDragEnd={() => {
+                      logTaskReorder("drag_ended", {
+                        taskId: draggedTaskId,
+                        currentOrder: panelTaskOrderRef.current,
+                      });
                       setDraggedTaskId(null);
                       setDragOverTaskId(null);
                     }}
