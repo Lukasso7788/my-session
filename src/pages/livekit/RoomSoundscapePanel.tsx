@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
-  Music2,
   Pause,
   Play,
   SkipBack,
@@ -121,7 +120,12 @@ export function RoomSoundscapePanel({
     <div className="flex h-full min-h-0 flex-col bg-[#F8F7F7] text-[#2F2F2F]">
       <header className="flex min-h-[48px] items-center justify-between gap-3 bg-[#F8F7F7] px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
-          <Music2 className="h-4 w-4 text-[#2F2F2F]/65" strokeWidth={1.8} />
+          <img
+            src="/icons/soundscape-light.svg"
+            alt=""
+            className="h-4 w-4 object-contain opacity-70"
+            draggable={false}
+          />
           <span className="truncate text-[13px] font-medium">Music</span>
         </div>
         <button
@@ -218,8 +222,10 @@ export function RoomSoundscapePanel({
               onPointerUp={(event) => commitSeek(Number(event.currentTarget.value))}
               onKeyUp={(event) => commitSeek(Number(event.currentTarget.value))}
               onBlur={(event) => seekDraft !== null && commitSeek(Number(event.currentTarget.value))}
-              className="ms-room-music-timeline w-full cursor-pointer border-0 bg-transparent p-0 accent-[#2F2F2F] outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0 disabled:cursor-default disabled:opacity-35"
-              style={{ border: 0, outline: "none", boxShadow: "none" }}
+              className="ms-room-music-slider w-full cursor-pointer disabled:cursor-default disabled:opacity-35"
+              style={{
+                "--ms-slider-progress": `${Math.min(100, (shownPosition / timelineMax) * 100)}%`,
+              } as CSSProperties}
               aria-label="Track position"
             />
             <div className="mt-1 flex justify-between text-[9px] tabular-nums text-[#2F2F2F]/40">
@@ -236,8 +242,8 @@ export function RoomSoundscapePanel({
               max="100"
               value={volume}
               onChange={(event) => onVolumeChange(Number(event.target.value))}
-              className="min-w-0 flex-1 cursor-pointer border-0 bg-transparent p-0 accent-[#2F2F2F] outline-none ring-0 focus:border-0 focus:outline-none focus:ring-0"
-              style={{ border: 0, outline: "none", boxShadow: "none" }}
+              className="ms-room-music-slider min-w-0 flex-1 cursor-pointer"
+              style={{ "--ms-slider-progress": `${volume}%` } as CSSProperties}
               aria-label="Your music volume"
             />
             <span className="w-7 text-right text-[9px] tabular-nums text-[#2F2F2F]/45">{volume}%</span>
