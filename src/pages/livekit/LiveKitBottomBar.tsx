@@ -84,18 +84,12 @@ function SoundscapeIcon({
 }) {
     const iconIsLight = active ? false : isLight;
     return (
-        <span className={`relative inline-flex items-center justify-center ${className}`}>
-            <span className="absolute inset-0 flex items-center justify-center text-[18px] leading-none" aria-hidden="true">♪</span>
-            <img
-                src={iconIsLight ? "/icons/soundscape-light.svg" : "/icons/soundscape-dark.svg"}
-                alt=""
-                className="relative z-[1] w-full h-full"
-                draggable={false}
-                onError={(event) => {
-                    event.currentTarget.style.display = "none";
-                }}
-            />
-        </span>
+        <img
+            src={iconIsLight ? "/icons/soundscape-light.svg" : "/icons/soundscape-dark.svg"}
+            alt=""
+            className={`${className} object-contain`}
+            draggable={false}
+        />
     );
 }
 

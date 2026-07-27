@@ -11,42 +11,48 @@ export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
   label: string;
   description: string;
   file: string;
-  emoji: string;
+  icon: string;
+  durationSeconds: number;
 }> = [
   {
     id: "ambient",
     label: "Ambient focus",
     description: "Calm instrumental focus music",
     file: "/sounds/room-music/ambient-focus.mp3",
-    emoji: "◌",
+    icon: "/icons/music-ambient-focus.svg",
+    durationSeconds: 154,
   },
   {
     id: "flow-relax",
     label: "Flow relax",
     description: "Warm, relaxed chillout for steady work",
     file: "/sounds/room-music/flow-relax.mp3",
-    emoji: "◎",
+    icon: "/icons/music-flow-relax.svg",
+    durationSeconds: 114,
   },
   {
     id: "rain",
     label: "Gentle rain",
     description: "Even rainfall without thunder",
     file: "/sounds/room-music/gentle-rain.mp3",
-    emoji: "☂",
+    icon: "/icons/music-gentle-rain.svg",
+    durationSeconds: 15,
   },
   {
     id: "forest",
     label: "Quiet forest",
     description: "A calm European forest atmosphere",
     file: "/sounds/room-music/quiet-forest.mp3",
-    emoji: "♧",
+    icon: "/icons/music-quiet-forest.svg",
+    durationSeconds: 161,
   },
   {
     id: "fireplace",
     label: "Fireplace",
     description: "A low fire with natural crackle",
     file: "/sounds/room-music/fireplace.mp3",
-    emoji: "♨",
+    icon: "/icons/music-fireplace.svg",
+    durationSeconds: 30,
   },
 ];
 
@@ -160,6 +166,26 @@ export class RoomSoundscapeEngine {
 
   currentTime() {
     return Math.max(0, Number(this.audio?.currentTime || 0));
+  }
+
+  duration() {
+    const value = Number(this.audio?.duration || 0);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  seek(positionSeconds: number) {
+    if (!this.audio) return 0;
+    const duration = this.duration();
+    const next = Math.max(
+      0,
+      Math.min(duration > 0 ? duration : Number.MAX_SAFE_INTEGER, Number(positionSeconds || 0)),
+    );
+    try {
+      this.audio.currentTime = next;
+    } catch {
+      // Browsers may reject a seek while metadata is still loading.
+    }
+    return this.currentTime();
   }
 
   destroy() {

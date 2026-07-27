@@ -695,6 +695,7 @@ type RoomSoundtrackState = {
   trackId: RoomSoundscapeId;
   trackUrl?: string;
   trackLabel?: string;
+  duration?: number;
   playing: boolean;
   position: number;
   updatedAt: number;
@@ -6697,6 +6698,8 @@ export function RoomPageLiveKit({
   const [activeSoundscapeId, setActiveSoundscapeId] =
     useState<RoomSoundscapeId | null>(null);
   const [soundscapePlaying, setSoundscapePlaying] = useState(false);
+  const [soundscapePosition, setSoundscapePosition] = useState(0);
+  const [soundscapeDuration, setSoundscapeDuration] = useState(0);
   const [soundscapeBusy, setSoundscapeBusy] = useState(false);
   const [soundscapeUploading, setSoundscapeUploading] = useState(false);
   const [customSoundscapeLabel, setCustomSoundscapeLabel] = useState<string | null>(null);
@@ -6776,6 +6779,8 @@ export function RoomPageLiveKit({
         positionSeconds,
         customUrl,
       );
+      setSoundscapePosition(soundscapeEngineRef.current.currentTime());
+      setSoundscapeDuration(soundscapeEngineRef.current.duration());
       setActiveSoundscapeId(id);
       setSoundscapePlaying(true);
       try {
@@ -6797,6 +6802,7 @@ export function RoomPageLiveKit({
 
   const pauseSoundscapeLocally = () => {
     const position = soundscapeEngineRef.current?.pause() || 0;
+    setSoundscapePosition(position);
     setSoundscapePlaying(false);
     setSoundscapeError(null);
     return position;
@@ -6827,11 +6833,26 @@ export function RoomPageLiveKit({
   }, [soundscapeMuted]);
 
   useEffect(() => {
+    if (!activeSoundscapeId) return;
+    const updateProgress = () => {
+      const engine = soundscapeEngineRef.current;
+      if (!engine) return;
+      setSoundscapePosition(engine.currentTime());
+      setSoundscapeDuration(engine.duration());
+    };
+    updateProgress();
+    const timer = window.setInterval(updateProgress, 500);
+    return () => window.clearInterval(timer);
+  }, [activeSoundscapeId, soundscapePlaying]);
+
+  useEffect(() => {
     if (connected || !activeSoundscapeId) return;
     soundscapeEngineRef.current?.stop();
     soundscapeStateRef.current = null;
     setActiveSoundscapeId(null);
     setSoundscapePlaying(false);
+    setSoundscapePosition(0);
+    setSoundscapeDuration(0);
   }, [connected, activeSoundscapeId]);
 
   useEffect(
@@ -8422,6 +8443,7 @@ export function RoomPageLiveKit({
     await playSoundscapeLocally(id, resumePosition);
     const next: RoomSoundtrackState = {
       trackId: id,
+      duration: soundscapeEngineRef.current?.duration() || 0,
       playing: true,
       position: resumePosition,
       updatedAt: Date.now(),
@@ -8430,6 +8452,7 @@ export function RoomPageLiveKit({
     setCustomSoundscapeLabel(null);
     setActiveSoundscapeId(id);
     setSoundscapePlaying(true);
+    setSoundscapePosition(resumePosition);
     await publishSoundtrackPacket({ type: "soundtrack_state", state: next });
   };
 
@@ -8495,6 +8518,7 @@ export function RoomPageLiveKit({
         trackId: "custom",
         trackUrl: String(payload.url),
         trackLabel: label,
+        duration: soundscapeEngineRef.current?.duration() || 0,
         playing: true,
         position: 0,
         updatedAt: Date.now(),
@@ -8503,6 +8527,7 @@ export function RoomPageLiveKit({
       setCustomSoundscapeLabel(label);
       setActiveSoundscapeId("custom");
       setSoundscapePlaying(true);
+      setSoundscapePosition(0);
       await publishSoundtrackPacket({ type: "soundtrack_state", state: next });
     } catch (error) {
       setSoundscapeError(error instanceof Error ? error.message : "The track could not be uploaded.");
@@ -8527,6 +8552,21 @@ export function RoomPageLiveKit({
     await publishSoundtrackPacket({ type: "soundtrack_state", state: next });
   };
 
+  const seekRoomSoundtrack = async (requestedPosition: number) => {
+    const current = soundscapeStateRef.current;
+    if (!canControlRoomSoundtrack || !current) return;
+    if (current.trackId === "custom" && !canUploadRoomSoundtrack) return;
+    const position = soundscapeEngineRef.current?.seek(requestedPosition) || 0;
+    setSoundscapePosition(position);
+    const next: RoomSoundtrackState = {
+      ...current,
+      position,
+      updatedAt: Date.now(),
+    };
+    soundscapeStateRef.current = next;
+    await publishSoundtrackPacket({ type: "soundtrack_state", state: next });
+  };
+
   useEffect(() => {
     const room = roomRef.current;
     if (!connected || !room) return;
@@ -8543,10 +8583,23 @@ export function RoomPageLiveKit({
       setActiveSoundscapeId(next.trackId);
       setCustomSoundscapeLabel(next.trackId === "custom" ? next.trackLabel || "Custom track" : null);
       setSoundscapePlaying(next.playing);
+      setSoundscapePosition(Math.max(0, Number(next.position || 0)));
+      setSoundscapeDuration(
+        Math.max(
+          0,
+          Number(
+            next.duration ||
+              ROOM_SOUNDSCAPE_OPTIONS.find((option) => option.id === next.trackId)
+                ?.durationSeconds ||
+              0,
+          ),
+        ),
+      );
       setSoundscapeError(null);
 
       if (!next.playing) {
         soundscapeEngineRef.current?.pause();
+        soundscapeEngineRef.current?.seek(next.position);
         return;
       }
 
@@ -15255,6 +15308,8 @@ export function RoomPageLiveKit({
         <RoomSoundscapePanel
           activeId={activeSoundscapeId}
           playing={soundscapePlaying}
+          currentTime={soundscapePosition}
+          duration={soundscapeDuration}
           volume={soundscapeVolume}
           personalMuted={soundscapeMuted}
           canControl={canControlRoomSoundtrack}
@@ -15265,6 +15320,9 @@ export function RoomPageLiveKit({
           error={soundscapeError}
           onSelect={(id) => {
             void selectRoomSoundtrack(id).catch(() => { });
+          }}
+          onSeek={(position) => {
+            void seekRoomSoundtrack(position).catch(() => { });
           }}
           onVolumeChange={setSoundscapeVolume}
           onUpload={(file) => {

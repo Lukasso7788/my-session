@@ -37,3 +37,17 @@ room music panel. Files are limited to 3 MB so uploads remain below the
 serverless request limit and do not put avoidable pressure on room bandwidth.
 The API creates the public `room-soundtracks` Supabase Storage bucket on first
 use and keeps only the five newest custom uploads for each room.
+
+## Playlist icons
+
+The playlist looks for these replaceable SVG assets in `public/icons/`:
+
+- `music-ambient-focus.svg`
+- `music-flow-relax.svg`
+- `music-gentle-rain.svg`
+- `music-quiet-forest.svg`
+- `music-fireplace.svg`
+- `music-custom.svg`
+
+Until a dedicated icon is added, the UI automatically falls back to
+`soundscape-light.svg`.
