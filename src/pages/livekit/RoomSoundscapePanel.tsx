@@ -123,10 +123,10 @@ export function RoomSoundscapePanel({
           <img
             src="/icons/soundscape-light.svg"
             alt=""
-            className="h-4 w-4 object-contain opacity-70"
+            className="h-4 w-4 object-contain"
             draggable={false}
           />
-          <span className="truncate text-[13px] font-medium">Music</span>
+          <span className="truncate text-[13px] font-medium text-[#2F2F2F]">Music</span>
         </div>
         <button
           type="button"
