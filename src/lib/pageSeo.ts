@@ -11,6 +11,7 @@ export type PageSeoInput = {
   canonicalUrl: string;
   type?: "website" | "article";
   imageUrl?: string | null;
+  imageAlt?: string | null;
   noIndex?: boolean;
   article?: ArticleSeo;
 };
@@ -23,6 +24,18 @@ function upsertMeta(selector: string, attribute: "name" | "property", key: strin
     document.head.appendChild(element);
   }
   element.content = value;
+}
+
+function removeMeta(selector: string) {
+  document.head.querySelector(selector)?.remove();
+}
+
+function absoluteUrl(value: string, canonicalUrl: string) {
+  try {
+    return new URL(value, canonicalUrl).href;
+  } catch {
+    return value;
+  }
 }
 export function applyPageSeo(input: PageSeoInput) {
   if (typeof document === "undefined") return;
@@ -55,8 +68,18 @@ export function applyPageSeo(input: PageSeoInput) {
   upsertMeta('meta[name="twitter:description"]', "name", "twitter:description", input.description);
 
   if (input.imageUrl) {
-    upsertMeta('meta[property="og:image"]', "property", "og:image", input.imageUrl);
-    upsertMeta('meta[name="twitter:image"]', "name", "twitter:image", input.imageUrl);
+    const imageUrl = absoluteUrl(input.imageUrl, input.canonicalUrl);
+    upsertMeta('meta[property="og:image"]', "property", "og:image", imageUrl);
+    upsertMeta('meta[name="twitter:image"]', "name", "twitter:image", imageUrl);
+    if (input.imageAlt) {
+      upsertMeta('meta[property="og:image:alt"]', "property", "og:image:alt", input.imageAlt);
+      upsertMeta('meta[name="twitter:image:alt"]', "name", "twitter:image:alt", input.imageAlt);
+    }
+  } else {
+    removeMeta('meta[property="og:image"]');
+    removeMeta('meta[property="og:image:alt"]');
+    removeMeta('meta[name="twitter:image"]');
+    removeMeta('meta[name="twitter:image:alt"]');
   }
 
   if (type === "article" && input.article) {

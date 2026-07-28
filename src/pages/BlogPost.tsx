@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, ArrowRight, Clock3 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import MarkdownArticle from "../components/MarkdownArticle";
-import { starterFocusmatePost } from "../data/blogSeed";
+import { starterFocusmatePost, withStarterFocusmateAssets } from "../data/blogSeed";
 import {
   estimateReadingMinutes,
   getPublishedBlogPost,
@@ -12,6 +12,17 @@ import {
 import { applyPageSeo, safeJsonLd } from "../lib/pageSeo";
 
 const SITE_ORIGIN = "https://mysession.club";
+const FOCUSMATE_COVER_ALT =
+  "Three colleagues working together around laptops and documents at a shared office desk";
+
+function absoluteSiteUrl(value?: string | null) {
+  if (!value) return undefined;
+  try {
+    return new URL(value, SITE_ORIGIN).href;
+  } catch {
+    return value;
+  }
+}
 
 function formatLongDate(value?: string | null) {
   if (!value) return "";
@@ -44,7 +55,7 @@ export default function BlogPost() {
         if (cancelled) return;
 
         const fallback = slug === starterFocusmatePost.slug ? starterFocusmatePost : null;
-        setPost(databasePost || fallback);
+        setPost(databasePost ? withStarterFocusmateAssets(databasePost) : fallback);
         setRelatedPosts(publishedPosts.filter((candidate) => candidate.slug !== slug).slice(0, 3));
       } catch (error) {
         console.warn("[blog] article load failed", error);
@@ -82,6 +93,10 @@ export default function BlogPost() {
       canonicalUrl,
       type: "article",
       imageUrl: post.cover_image_url,
+      imageAlt:
+        post.slug === starterFocusmatePost.slug
+          ? FOCUSMATE_COVER_ALT
+          : `Cover image for ${post.title}`,
       article: {
         publishedAt: post.published_at,
         modifiedAt: post.updated_at,
@@ -125,7 +140,7 @@ export default function BlogPost() {
     dateModified: post.updated_at,
     author: { "@type": "Organization", name: post.author_name || "MySession Editorial" },
     publisher: { "@type": "Organization", name: "MySession", url: SITE_ORIGIN },
-    image: post.cover_image_url || undefined,
+    image: absoluteSiteUrl(post.cover_image_url),
     keywords: post.tags.join(", "),
   };
   const breadcrumbJsonLd = {
@@ -167,11 +182,25 @@ export default function BlogPost() {
             src={post.cover_image_url}
             alt={
               post.slug === starterFocusmatePost.slug
-                ? "Side-by-side comparison of scheduled one-to-one focus sessions and group or always-open focus rooms"
+                ? FOCUSMATE_COVER_ALT
                 : `Cover illustration for ${post.title}`
             }
-            className="max-h-[560px] w-full rounded-[26px] bg-[#F7F7F7] object-contain"
+            className="max-h-[560px] w-full rounded-[26px] bg-[#F7F7F7] object-cover"
           />
+          {post.slug === starterFocusmatePost.slug ? (
+            <p className="mt-2 px-1 text-right text-[11px] text-[#888]">
+              Photo by{" "}
+              <a
+                href="https://www.pexels.com/photo/people-working-on-laptops-7988692/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2"
+              >
+                Mikhail Nilov
+              </a>{" "}
+              on Pexels · MySession edit
+            </p>
+          ) : null}
         </div>
       ) : null}
 

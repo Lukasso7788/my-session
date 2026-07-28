@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, BookOpen, Clock3 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { starterFocusmatePost } from "../data/blogSeed";
+import { starterFocusmatePost, withStarterFocusmateAssets } from "../data/blogSeed";
 import { estimateReadingMinutes, listPublishedBlogPosts, type BlogPost } from "../lib/blog";
 import { applyPageSeo, safeJsonLd } from "../lib/pageSeo";
 
@@ -31,7 +31,7 @@ function PostCard({ post, featured = false }: { post: BlogPost; featured?: boole
             src={post.cover_image_url}
             alt={
               post.slug === starterFocusmatePost.slug
-                ? "Scheduled one-to-one focus sessions compared with group and always-open focus rooms"
+                ? "Three colleagues working together around laptops and documents at a shared office desk"
                 : `Cover illustration for ${post.title}`
             }
             className="h-full w-full object-cover"
@@ -106,8 +106,15 @@ export default function BlogIndex() {
       try {
         const databasePosts = await listPublishedBlogPosts();
         if (cancelled) return;
-        const hasStarter = databasePosts.some((post) => post.slug === starterFocusmatePost.slug);
-        setPosts(hasStarter ? databasePosts : [starterFocusmatePost, ...databasePosts]);
+        const postsWithEditorialAssets = databasePosts.map(withStarterFocusmateAssets);
+        const hasStarter = postsWithEditorialAssets.some(
+          (post) => post.slug === starterFocusmatePost.slug,
+        );
+        setPosts(
+          hasStarter
+            ? postsWithEditorialAssets
+            : [starterFocusmatePost, ...postsWithEditorialAssets],
+        );
       } catch (error) {
         console.warn("[blog] published posts unavailable; using bundled article", error);
         if (!cancelled) setPosts([starterFocusmatePost]);

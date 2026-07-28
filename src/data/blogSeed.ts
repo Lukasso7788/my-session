@@ -120,7 +120,7 @@ export const starterFocusmatePost: BlogPost = {
   category: "Body doubling",
   tags: ["Focusmate alternative", "body doubling", "virtual coworking", "focus rooms"],
   author_name: "MySession Editorial",
-  cover_image_url: "/blog/focusmate-alternatives/format-comparison.svg",
+  cover_image_url: "/blog/focusmate-alternatives/focusmate-alternative-cover.jpg",
   seo_title: "Focusmate Alternative for Group Focus Rooms | MySession",
   meta_description:
     "Looking for a Focusmate alternative? Compare scheduled 1:1 body doubling with MySession group sessions and 24/7 focus rooms.",
@@ -133,6 +133,20 @@ export const starterFocusmatePost: BlogPost = {
   created_by: null,
   updated_by: null,
 };
+
+export function withStarterFocusmateAssets(post: BlogPost): BlogPost {
+  if (post.slug !== starterFocusmatePost.slug) return post;
+
+  const shouldUseCurrentCover =
+    !post.cover_image_url || post.cover_image_url.includes("format-comparison.svg");
+
+  return {
+    ...post,
+    cover_image_url: shouldUseCurrentCover
+      ? starterFocusmatePost.cover_image_url
+      : post.cover_image_url,
+  };
+}
 
 export function createStarterFocusmateDraft() {
   return {
