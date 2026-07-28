@@ -353,8 +353,20 @@ function VideoTileInner({
         if (!host) return;
 
         let mountedEl: HTMLElement | null = null;
+        let mountedVideo: HTMLVideoElement | null = null;
+        const playbackTimers: number[] = [];
+
+        const tryPlay = () => {
+            if (!mountedVideo || !mountedVideo.isConnected) return;
+            mountedVideo.play().catch(() => { });
+        };
 
         const cleanup = () => {
+            playbackTimers.forEach((timer) => window.clearTimeout(timer));
+            if (mountedVideo) {
+                mountedVideo.removeEventListener("loadedmetadata", tryPlay);
+                mountedVideo.removeEventListener("canplay", tryPlay);
+            }
             const current = attachedElRef.current;
 
             try {
@@ -428,13 +440,18 @@ function VideoTileInner({
 
         if (el instanceof HTMLVideoElement) {
             try {
+                // Camera video never carries the participant's audio in this UI;
+                // audio has its own LiveKit attachment. Muting video before play
+                // keeps Safari autoplay-compliant for local and remote tiles.
+                el.muted = true;
+                el.defaultMuted = true;
                 el.playsInline = true;
                 el.autoplay = true;
+                el.setAttribute("muted", "");
+                el.setAttribute("playsinline", "");
+                el.setAttribute("webkit-playsinline", "");
             } catch { }
-
-            Promise.resolve()
-                .then(() => el.play())
-                .catch(() => { });
+            mountedVideo = el;
         }
 
         try {
@@ -447,6 +464,17 @@ function VideoTileInner({
         }
 
         attachedElRef.current = el;
+
+        // WebKit needs the media element connected before play(), and can expose
+        // the stream only after loadedmetadata/canplay. Retrying these idempotent
+        // calls avoids a permanently black tile after permission was granted.
+        if (mountedVideo) {
+            mountedVideo.addEventListener("loadedmetadata", tryPlay);
+            mountedVideo.addEventListener("canplay", tryPlay);
+            tryPlay();
+            playbackTimers.push(window.setTimeout(tryPlay, 120));
+            playbackTimers.push(window.setTimeout(tryPlay, 500));
+        }
         return cleanup;
     }, [videoTrack]);
 

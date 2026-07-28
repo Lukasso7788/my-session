@@ -986,6 +986,12 @@ function isFirefoxLike() {
   return /firefox|fxios/i.test(String(navigator.userAgent || ""));
 }
 
+function isSafariLike() {
+  if (typeof navigator === "undefined") return false;
+  const ua = String(navigator.userAgent || "");
+  return /safari/i.test(ua) && !/chrome|chromium|crios|android|edg/i.test(ua);
+}
+
 function normalizeFxBlurStrength(raw: number, firefoxSafe = false) {
   const n = Math.max(4, Math.min(30, Math.round(Number(raw || 12))));
 
@@ -4762,6 +4768,21 @@ export function RoomPageLiveKit({
     return window.innerWidth || 1440;
   });
 
+  const roomDeviceType = useMemo(
+    () =>
+      inferDeviceTypeFromRuntime({
+        isMobileQuery,
+        isTabletQuery,
+      }),
+    [isMobileQuery, isTabletQuery],
+  );
+
+  // Large iPads and Android tablets commonly expose a desktop-width viewport
+  // in landscape. Width-only breakpoints would put the panel beside the video
+  // and squeeze both surfaces. Keep every side panel as a full-stage overlay on
+  // tablets, while preserving the split layout on actual desktop devices.
+  const useOverlayRightPanel = !isLgUp || roomDeviceType === "tablet";
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -4787,7 +4808,7 @@ export function RoomPageLiveKit({
   }, []);
 
   const rightPanelWidthPx = useMemo(() => {
-    if (!rightPanelOpen || !isLgUp) return 0;
+    if (!rightPanelOpen || useOverlayRightPanel) return 0;
 
     if (viewportW < 1100) return 320;
     if (viewportW < 1280) return 340;
@@ -4795,12 +4816,12 @@ export function RoomPageLiveKit({
     if (viewportW < 1680) return 390;
 
     return 420;
-  }, [rightPanelOpen, isLgUp, viewportW]);
+  }, [rightPanelOpen, useOverlayRightPanel, viewportW]);
 
   const roomGridTemplateColumns = useMemo(() => {
-    if (!rightPanelOpen || !isLgUp) return "minmax(0, 1fr)";
+    if (!rightPanelOpen || useOverlayRightPanel) return "minmax(0, 1fr)";
     return `minmax(0, 1fr) ${rightPanelWidthPx}px`;
-  }, [rightPanelOpen, isLgUp, rightPanelWidthPx]);
+  }, [rightPanelOpen, useOverlayRightPanel, rightPanelWidthPx]);
 
   const roomUiScale = useMemo(() => {
     if (!isLgUp) return "lg";
@@ -7339,7 +7360,8 @@ export function RoomPageLiveKit({
 
     await cleanupPrejoinPreparedVideoTrack();
 
-    const isMobileOrTablet = isMobileQuery || isTabletQuery;
+    const isMobileOrTablet = lowPowerMobileMode;
+    const safariCamera = isSafariLike();
     const wantedVideoDeviceId = String(pj.videoInputId || "").trim();
 
     const buildTrack = async (args: {
@@ -7369,20 +7391,25 @@ export function RoomPageLiveKit({
           width: prejoinPreviewPreset.width,
           height: prejoinPreviewPreset.height,
           fps: prejoinPreviewPreset.fps,
-          useExactDeviceId: !isMobileOrTablet,
+          // WebKit can rotate camera deviceIds when permission is granted. The
+          // browser default is substantially more reliable for Safari/iPad; the
+          // picker can be refreshed after capture exposes stable device labels.
+          useExactDeviceId: !isMobileOrTablet && !safariCamera,
         });
       } catch (firstError) {
         console.warn("prejoin preview primary create failed:", firstError);
 
-        if (!isChromeOS && !isMobileOrTablet && deviceTier !== "weak") {
-          throw firstError;
-        }
-
         track = await buildTrack({
-          width: 480,
-          height: 270,
-          fps: 12,
-          useExactDeviceId: !isMobileOrTablet,
+          width:
+            isMobileOrTablet || safariCamera
+              ? 480
+              : prejoinPreviewPreset.width,
+          height:
+            isMobileOrTablet || safariCamera
+              ? 270
+              : prejoinPreviewPreset.height,
+          fps: isMobileOrTablet || safariCamera ? 12 : prejoinPreviewPreset.fps,
+          useExactDeviceId: false,
         });
       }
 
@@ -9825,28 +9852,6 @@ export function RoomPageLiveKit({
     },
   });
 
-  const camToggleHook = useTrackToggle({
-    source: Track.Source.Camera,
-    room: roomState || undefined,
-    captureOptions: {
-      deviceId:
-        selectedVideoInputId || prejoinRef.current.videoInputId || undefined,
-      resolution: {
-        width: capturePreset.width,
-        height: capturePreset.height,
-      },
-      frameRate: capturePreset.fps,
-    } as any,
-    onDeviceError: (error) => {
-      console.error("camera toggle device error:", error);
-      setMediaWarning(
-        normalizeMediaWarningMessage(
-          (error as any)?.message || error || "camera_toggle_failed",
-        ),
-      );
-    },
-  });
-
   const volumeStorageKey = useMemo(() => {
     return session?.id ? `mysession_lk_volume:${session.id}` : "";
   }, [session?.id]);
@@ -10827,23 +10832,73 @@ export function RoomPageLiveKit({
             }
           }
 
+          const defaultCameraOptions = {
+            resolution: {
+              width: lowPowerMobileMode ? 320 : capturePreset.width,
+              height: lowPowerMobileMode ? 180 : capturePreset.height,
+            },
+            frameRate: lowPowerMobileMode ? 8 : capturePreset.fps,
+          } as any;
+
+          let cameraPublished = false;
+
           if (prepared) {
-            await r.localParticipant.publishTrack(prepared, {
-              source: Track.Source.Camera,
-            } as any);
-            prejoinPreparedVideoTrackRef.current = null;
-            setCamOn(true);
-          } else {
-            await r.localParticipant.setCameraEnabled(true, {
-              deviceId: pj.videoInputId || selectedVideoInputId || undefined,
-              resolution: {
-                width: lowPowerMobileMode ? 320 : capturePreset.width,
-                height: lowPowerMobileMode ? 180 : capturePreset.height,
-              },
-              frameRate: lowPowerMobileMode ? 8 : capturePreset.fps,
-            } as any);
-            setCamOn(true);
+            const preparedMediaTrack = (prepared as any)?.mediaStreamTrack as
+              | MediaStreamTrack
+              | undefined;
+
+            if (preparedMediaTrack?.readyState !== "ended") {
+              try {
+                await r.localParticipant.publishTrack(prepared, {
+                  source: Track.Source.Camera,
+                } as any);
+                prejoinPreparedVideoTrackRef.current = null;
+                cameraPublished = true;
+              } catch (publishError) {
+                console.warn(
+                  "[join] prepared camera publish failed; retrying default camera:",
+                  publishError,
+                );
+                await cleanupPrejoinPreparedVideoTrack().catch(() => { });
+              }
+            }
           }
+
+          if (!cameraPublished) {
+            const requestedCameraId = String(
+              pj.videoInputId || selectedVideoInputId || "",
+            ).trim();
+
+            try {
+              await r.localParticipant.setCameraEnabled(true, {
+                ...defaultCameraOptions,
+                deviceId:
+                  lowPowerMobileMode || isSafariLike()
+                    ? undefined
+                    : requestedCameraId || undefined,
+              } as any);
+            } catch (selectedCameraError) {
+              console.warn(
+                "[join] selected camera failed; retrying browser default:",
+                selectedCameraError,
+              );
+              try {
+                await r.localParticipant.setCameraEnabled(false);
+              } catch { }
+              await delay(120);
+              await r.localParticipant.setCameraEnabled(
+                true,
+                defaultCameraOptions,
+              );
+              setSelectedVideoInputId("");
+              prejoinRef.current = {
+                ...prejoinRef.current,
+                videoInputId: "",
+              };
+            }
+          }
+
+          setCamOn(true);
 
           setDeviceError("");
         } catch (e: any) {
@@ -10856,7 +10911,7 @@ export function RoomPageLiveKit({
 
           setDeviceError(msg);
           setMediaWarning(
-            `${msg} You joined the room, but your camera is off. In Firefox, click the lock icon near the address bar, allow Camera, then choose the camera and try again.`,
+            `${msg} You joined the room, but your camera is off. Check the browser's site settings, allow Camera, close other apps using it, then try Camera on again.`,
           );
         }
       } else {
@@ -11193,10 +11248,73 @@ export function RoomPageLiveKit({
     await toggleMic();
   };
 
-  // toggle cam without recreating track
+  // Toggle camera with a deterministic default-device fallback. Safari can
+  // invalidate a previously enumerated deviceId after permission changes, and
+  // useTrackToggle otherwise keeps retrying that stale id on every click.
   const toggleCam = async (force?: boolean) => {
+    const room = roomRef.current || roomState;
+    if (!room?.localParticipant) {
+      setMediaWarning(
+        "Camera is not ready yet. Please wait a moment and try again.",
+      );
+      return;
+    }
+
+    const lp = room.localParticipant;
+    const currentPublication = Array.from(
+      lp.videoTrackPublications?.values?.() || [],
+    ).find((publication: any) => publication?.source === Track.Source.Camera) as
+      | LocalTrackPublication
+      | undefined;
+    const currentlyEnabled =
+      !!currentPublication?.track && !currentPublication.isMuted;
+    const nextEnabled = typeof force === "boolean" ? force : !currentlyEnabled;
+    const requestedCameraId = String(
+      selectedVideoInputId || prejoinRef.current.videoInputId || "",
+    ).trim();
+    const baseOptions = {
+      resolution: {
+        width: lowPowerMobileMode ? 320 : capturePreset.width,
+        height: lowPowerMobileMode ? 180 : capturePreset.height,
+      },
+      frameRate: lowPowerMobileMode ? 8 : capturePreset.fps,
+    } as any;
+
     try {
-      await camToggleHook.toggle(force);
+      setMediaWarning("");
+
+      if (!nextEnabled) {
+        await lp.setCameraEnabled(false);
+      } else {
+        try {
+          await lp.setCameraEnabled(true, {
+            ...baseOptions,
+            deviceId:
+              lowPowerMobileMode || isSafariLike()
+                ? undefined
+                : requestedCameraId || undefined,
+          } as any);
+        } catch (selectedCameraError) {
+          console.warn(
+            "[camera-toggle] selected camera failed; retrying browser default:",
+            selectedCameraError,
+          );
+          try {
+            await lp.setCameraEnabled(false);
+          } catch { }
+          await delay(120);
+          await lp.setCameraEnabled(true, baseOptions);
+          setSelectedVideoInputId("");
+          setPrejoin((prev) => ({ ...prev, videoInputId: "" }));
+          prejoinRef.current = {
+            ...prejoinRef.current,
+            videoInputId: "",
+          };
+        }
+      }
+
+      setCamOn(nextEnabled);
+      setDeviceError("");
 
       await ensureRoomAudioPlaybackUnlocked("toggle-cam");
 
@@ -11217,9 +11335,10 @@ export function RoomPageLiveKit({
       );
 
       setMediaWarning(
-        `${msg} Try allowing camera permissions, choosing another camera, or refreshing the room.`,
+        `${msg} Check the browser's site settings, allow Camera, close other apps using it, and try again.`,
       );
 
+      setCamOn(currentlyEnabled);
       setDeviceError(msg);
       scheduleRebuildTiles();
     }
@@ -14469,7 +14588,8 @@ export function RoomPageLiveKit({
     !!featuredTile &&
     !useMobileOrTabletGallery &&
     !useVeryNarrowMode &&
-    effectiveW >= (isLgUp && rightPanelOpen ? 980 : 900);
+    effectiveW >=
+      (!useOverlayRightPanel && rightPanelOpen ? 980 : 900);
 
   const showMobileLayoutControls = useMobileOrTabletGallery && tileCount >= 3;
 
@@ -14537,7 +14657,7 @@ export function RoomPageLiveKit({
       className="h-full w-full min-w-0 min-h-0 grid gap-2 sm:gap-3 p-2 sm:p-3 overflow-hidden"
       style={{
         gridTemplateColumns:
-          isLgUp && rightPanelOpen
+          !useOverlayRightPanel && rightPanelOpen
             ? "minmax(0, 1fr) clamp(12rem, 20vw, 16rem)"
             : "minmax(0, 1fr) clamp(14rem, 24vw, 20rem)",
       }}
@@ -14625,7 +14745,7 @@ export function RoomPageLiveKit({
               rightPanelOpen={rightPanelOpen}
               mobileOrTablet={useMobileOrTabletGallery}
               forceThreeAsTwoPlusOne={
-                isLgUp && rightPanelOpen && effectiveW < 1500
+                !useOverlayRightPanel && rightPanelOpen && effectiveW < 1500
               }
               layoutPreset={videoTileLayoutPreset}
               customColumns={videoTileLayoutColumns}
@@ -16888,19 +17008,19 @@ export function RoomPageLiveKit({
               )}
             </div>
 
-            {rightPanelOpen && isLgUp && (
+            {rightPanelOpen && !useOverlayRightPanel && (
               <div className="min-h-0 h-full overflow-hidden">
                 {RightPanelBody}
               </div>
             )}
 
-            {rightPanelOpen && !isLgUp && (
+            {rightPanelOpen && useOverlayRightPanel && (
               <div className="absolute inset-0 z-40 min-h-0">
                 <div
                   className="absolute inset-0 bg-black/40"
                   onClick={() => openRightTab(null)}
                 />
-                <div className="absolute inset-x-0 top-0 bottom-0 p-2 min-h-0">
+                <div className="absolute inset-0 min-h-0">
                   {RightPanelBody}
                 </div>
               </div>

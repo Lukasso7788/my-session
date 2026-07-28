@@ -139,7 +139,20 @@ export function PreJoinModal({
     const host = previewHostRef.current;
     if (!host) return;
 
+    const playbackTimers: number[] = [];
+    let attachedVideo: HTMLVideoElement | null = null;
+
+    const tryPlay = () => {
+      if (!attachedVideo || !attachedVideo.isConnected) return;
+      attachedVideo.play().catch(() => { });
+    };
+
     const cleanup = () => {
+      playbackTimers.forEach((timer) => window.clearTimeout(timer));
+      if (attachedVideo) {
+        attachedVideo.removeEventListener("loadedmetadata", tryPlay);
+        attachedVideo.removeEventListener("canplay", tryPlay);
+      }
       const current = attachedPreviewElRef.current;
       try {
         if (previewVideoTrack && current && typeof (previewVideoTrack as any)?.detach === "function") {
@@ -186,13 +199,14 @@ export function PreJoinModal({
     if (el instanceof HTMLVideoElement) {
       try {
         el.muted = true;
+        el.defaultMuted = true;
         el.playsInline = true;
         el.autoplay = true;
+        el.setAttribute("muted", "");
+        el.setAttribute("playsinline", "");
+        el.setAttribute("webkit-playsinline", "");
       } catch { }
-
-      Promise.resolve()
-        .then(() => el.play())
-        .catch(() => { });
+      attachedVideo = el;
     }
 
     try {
@@ -201,6 +215,17 @@ export function PreJoinModal({
     } catch (e) {
       console.warn("preview append failed", e);
       return cleanup;
+    }
+
+    // WebKit may ignore play() while the element is detached or before camera
+    // metadata arrives. Start only after insertion and retry on its media-ready
+    // events so a granted camera permission cannot leave a black preview.
+    if (attachedVideo) {
+      attachedVideo.addEventListener("loadedmetadata", tryPlay);
+      attachedVideo.addEventListener("canplay", tryPlay);
+      tryPlay();
+      playbackTimers.push(window.setTimeout(tryPlay, 120));
+      playbackTimers.push(window.setTimeout(tryPlay, 500));
     }
 
     return cleanup;
