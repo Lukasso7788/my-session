@@ -235,6 +235,7 @@ export default function App() {
           />
 
           <Route path="/focus-plan" element={<FocusPlanPage />} />
+          <Route path="/tasks" element={<FocusPlanPage />} />
           <Route path="/focus-shield" element={<FocusShieldPage />} />
 
           <Route path="/ui-playground" element={<SessionCardsPlayground />} />

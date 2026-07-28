@@ -2,6 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { Check, Trash2, Plus, ExternalLink, RefreshCw, TimerReset, ListChecks, BarChart3 } from "lucide-react";
+import {
+    loadEligibleTaskSessions,
+    type TaskSessionOption,
+} from "../lib/taskSessionEligibility";
 
 type FocusPlan = {
     id: string;
@@ -23,14 +27,7 @@ type FocusPlanItem = {
     sort_order: number;
 };
 
-type SessionLite = {
-    id: string;
-    title?: string | null;
-    start_time?: string | null;
-    duration_minutes?: number | null;
-    session_format_type?: string | null;
-    custom_slug?: string | null;
-};
+type SessionLite = TaskSessionOption;
 
 type IntentionRow = {
     id: string;
@@ -159,7 +156,7 @@ export default function FocusPlanPage() {
     const navigate = useNavigate();
     const [sp, setSp] = useSearchParams();
 
-    // optional: deep-link from room: /focus-plan?sessionId=...
+    // optional: deep-link from room: /tasks?sessionId=...
     const initialParam = (sp.get("sessionId") || "").trim();
 
     const [user, setUser] = useState<any>(null);
@@ -167,6 +164,10 @@ export default function FocusPlanPage() {
     // sessions
     const [sessions, setSessions] = useState<SessionLite[]>([]);
     const [sessionsLoading, setSessionsLoading] = useState(true);
+    const eligibleSessionIds = useMemo(
+        () => new Set(sessions.map((session) => String(session.id))),
+        [sessions],
+    );
 
     // default session for "new item" (raw may be uuid or slug)
     const [rawDefaultSession, setRawDefaultSession] = useState<string>(initialParam);
@@ -302,17 +303,16 @@ export default function FocusPlanPage() {
 
         (async () => {
             setSessionsLoading(true);
-            try {
-                const { data, error } = await supabase
-                    .from("sessions")
-                    .select("id, title, start_time, duration_minutes, session_format_type, custom_slug")
-                    .order("start_time", { ascending: true })
-                    .limit(150);
-
+            if (!user?.id) {
                 if (!cancelled) {
-                    if (!error && Array.isArray(data)) setSessions(data as any);
-                    else setSessions([]);
+                    setSessions([]);
+                    setSessionsLoading(false);
                 }
+                return;
+            }
+            try {
+                const data = await loadEligibleTaskSessions(user.id);
+                if (!cancelled) setSessions(data);
             } catch {
                 if (!cancelled) setSessions([]);
             } finally {
@@ -323,7 +323,7 @@ export default function FocusPlanPage() {
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [user?.id]);
 
     // resolve default session uuid from uuid/slug
     useEffect(() => {
@@ -337,7 +337,7 @@ export default function FocusPlanPage() {
             }
 
             if (UUID_RE.test(raw)) {
-                if (!cancelled) setDefaultSessionId(raw);
+                if (!cancelled) setDefaultSessionId(eligibleSessionIds.has(raw) ? raw : null);
                 return;
             }
 
@@ -349,26 +349,13 @@ export default function FocusPlanPage() {
                 return;
             }
 
-            try {
-                const { data, error } = await supabase
-                    .from("sessions")
-                    .select("id")
-                    .eq("custom_slug", slug)
-                    .maybeSingle();
-
-                if (!cancelled) {
-                    if (!error && data?.id) setDefaultSessionId(String(data.id));
-                    else setDefaultSessionId(null);
-                }
-            } catch {
-                if (!cancelled) setDefaultSessionId(null);
-            }
+            if (!cancelled) setDefaultSessionId(null);
         })();
 
         return () => {
             cancelled = true;
         };
-    }, [rawDefaultSession, sessions]);
+    }, [rawDefaultSession, sessions, eligibleSessionIds]);
 
     // keep query param in sync (nice UX)
     useEffect(() => {
@@ -397,7 +384,7 @@ export default function FocusPlanPage() {
     // ===== auth guard =====
     const requireAuth = () => {
         if (user?.id) return true;
-        navigate(buildLoginNext("/focus-plan"));
+        navigate(buildLoginNext("/tasks"));
         return false;
     };
 
@@ -613,6 +600,7 @@ export default function FocusPlanPage() {
 
         const due = newItemDueDate ? newItemDueDate : null; // YYYY-MM-DD
         const sid = newItemSessionId ? String(newItemSessionId) : null;
+        if (sid && !eligibleSessionIds.has(sid)) return;
 
         try {
             const { data, error } = await supabase
@@ -729,6 +717,7 @@ export default function FocusPlanPage() {
 
         const due = editingItemDueDate ? editingItemDueDate : null;
         const sid = editingItemSessionId ? String(editingItemSessionId) : null;
+        if (sid && !eligibleSessionIds.has(sid)) return;
 
         const prev = items;
         const before = items.find((x) => x.id === editingItemId);
@@ -840,7 +829,7 @@ export default function FocusPlanPage() {
 
         const sid = String(item.session_id || "").trim();
         const text = String(item.text || "").trim();
-        if (!sid || !UUID_RE.test(sid) || !text) return;
+        if (!sid || !UUID_RE.test(sid) || !eligibleSessionIds.has(sid) || !text) return;
 
         setAttachingItemId(item.id);
 
@@ -1038,11 +1027,11 @@ export default function FocusPlanPage() {
         return (
             <div className={pageWrap}>
                 <div className={card}>
-                    <div className="text-[28px] md:text-[34px] font-bold text-[#111827] leading-tight">Focus plan</div>
-                    <div className="mt-2 text-[13px] text-[#606060]">Build your plan: intentions + due dates + session links.</div>
+                    <div className="text-[28px] md:text-[34px] font-bold text-[#111827] leading-tight">Tasks</div>
+                    <div className="mt-2 text-[13px] text-[#606060]">Plan tasks and connect them to the sessions where you will work on them.</div>
 
                     <div className="mt-6 flex flex-col sm:flex-row gap-3">
-                        <button className={btnPrimary} onClick={() => navigate(buildLoginNext("/focus-plan"))} type="button">
+                        <button className={btnPrimary} onClick={() => navigate(buildLoginNext("/tasks"))} type="button">
                             Log in
                         </button>
                         <Link to="/sessions" className={btnGhost + " inline-flex items-center justify-center"}>
@@ -1062,8 +1051,8 @@ export default function FocusPlanPage() {
                 {/* header */}
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
-                        <div className="text-[28px] md:text-[34px] font-bold text-[#111827] leading-tight">Focus plan</div>
-                        <div className="mt-2 text-[13px] text-[#606060]">Plans → items (intentions) → due date → session link → attach to room.</div>
+                        <div className="text-[28px] md:text-[34px] font-bold text-[#111827] leading-tight">Tasks</div>
+                        <div className="mt-2 text-[13px] text-[#606060]">Organize tasks, set due dates, and attach them to eligible sessions.</div>
 
                         {defaultSession ? (
                             <div className="mt-2 text-[12px] text-[#606060]">
@@ -1375,7 +1364,7 @@ export default function FocusPlanPage() {
 
                                         {/* add item */}
                                         <div className="mt-5 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5">
-                                            <div className="text-[14px] font-bold text-[#111827]">Add item</div>
+                                            <div className="text-[14px] font-bold text-[#111827]">Add task</div>
                                             <div className="mt-1 text-[12px] text-[#606060]">Each item = intention + due date + session link.</div>
 
                                             <div className="mt-4 flex flex-col gap-3">
@@ -1449,7 +1438,7 @@ export default function FocusPlanPage() {
                                         {/* items list */}
                                         <div className="mt-5">
                                             <div className="flex items-center justify-between gap-3">
-                                                <div className="text-[16px] font-bold text-[#111827]">Items</div>
+                                                <div className="text-[16px] font-bold text-[#111827]">Tasks</div>
                                                 <div className="text-[12px] text-[#606060]">{items.length} total</div>
                                             </div>
 
@@ -1465,7 +1454,7 @@ export default function FocusPlanPage() {
 
                                                         const session = it.session_id ? sessions.find((s) => String(s.id) === String(it.session_id)) : null;
 
-                                                        const canAttach = Boolean(it.session_id) && UUID_RE.test(String(it.session_id)) && String(it.text || "").trim().length > 0;
+                                                        const canAttach = Boolean(it.session_id) && UUID_RE.test(String(it.session_id)) && eligibleSessionIds.has(String(it.session_id)) && String(it.text || "").trim().length > 0;
                                                         const attached = Boolean(attachedItemIds[it.id]);
 
                                                         return (
@@ -1681,7 +1670,7 @@ export default function FocusPlanPage() {
                                             <div className="flex items-center justify-between gap-3">
                                                 <div>
                                                     <div className="text-[14px] font-bold text-[#111827]">My library</div>
-                                                    <div className="mt-1 text-[12px] text-[#606060]">Your recent intentions (unique by text). Click to fill “Add item”.</div>
+                                                    <div className="mt-1 text-[12px] text-[#606060]">Your recent room tasks (unique by text). Click one to add it.</div>
                                                 </div>
 
                                                 <button className={btnGhost} onClick={() => loadLibrary()} type="button" title="Refresh library">

@@ -354,8 +354,8 @@ export default function Header() {
                             Pricing
                         </button>
 
-                        <button onClick={() => navigate("/focus-plan")} className="hover:text-[#2F2F2F]">
-                            Focus plan
+                        <button onClick={() => navigate("/tasks")} className="hover:text-[#2F2F2F]">
+                            Plan
                         </button>
                     </nav>
 
@@ -567,12 +567,12 @@ export default function Header() {
 
                                 <button
                                     onClick={() => {
-                                        navigate("/focus-plan");
+                                        navigate("/tasks");
                                         setMobileMenu(false);
                                     }}
                                     className="text-left"
                                 >
-                                    Focus plan
+                                    Plan
                                 </button>
 
                                 <button

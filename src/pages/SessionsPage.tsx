@@ -23,6 +23,8 @@ import { PAYWALL_ENABLED } from "../lib/flags";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
+import { ListChecks } from "lucide-react";
+import SessionsTasksSidebar from "../components/SessionsTasksSidebar";
 
 type BookingProfile = {
   id: string;
@@ -535,6 +537,7 @@ export function SessionsPage() {
   const [hostPromptOpen, setHostPromptOpen] = useState(false);
   const [hostPromptKind, setHostPromptKind] = useState<HostPromptKind>("never_hosted");
   const [communityPromptOpen, setCommunityPromptOpen] = useState(false);
+  const [tasksSidebarOpen, setTasksSidebarOpen] = useState(false);
 
   const [postSessionPrompt, setPostSessionPrompt] =
     useState<PostSessionPromptState>({
@@ -2073,7 +2076,7 @@ export function SessionsPage() {
           {sessionTypeTab === "infinite" && <InfiniteRoomsIntroCard />}
           {sessionTypeTab === "body" && <BodyTriplingIntro />}
 
-          <div className="w-full flex justify-center mb-[55px]">
+          <div className="relative w-full flex justify-center mb-[55px]">
             <SessionTypeSwitcher
               value={sessionTypeTab}
               onChange={(v) => {
@@ -2085,7 +2088,28 @@ export function SessionsPage() {
                 }
               }}
             />
+            {user?.id ? (
+              <button
+                type="button"
+                onClick={() => setTasksSidebarOpen(true)}
+                className="absolute right-0 top-1/2 hidden h-11 -translate-y-1/2 items-center gap-2 rounded-full bg-[#F1F1F1] px-4 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8] md:flex"
+              >
+                <ListChecks size={17} />
+                Tasks
+              </button>
+            ) : null}
           </div>
+
+          {user?.id ? (
+            <button
+              type="button"
+              onClick={() => setTasksSidebarOpen(true)}
+              className="mb-5 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#F1F1F1] text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8] md:hidden"
+            >
+              <ListChecks size={17} />
+              Tasks
+            </button>
+          ) : null}
 
           {sessionTypeTab === "body" ? (
             <div className="w-full max-w-[980px] mx-auto">
@@ -2195,6 +2219,12 @@ export function SessionsPage() {
           )}
         </div>
       </main>
+
+      <SessionsTasksSidebar
+        open={tasksSidebarOpen}
+        userId={user?.id || ""}
+        onClose={() => setTasksSidebarOpen(false)}
+      />
 
 
 

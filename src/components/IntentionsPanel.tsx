@@ -1530,7 +1530,7 @@ export function TasksPanel({
                     Attach to Tasks Panel
                   </div>
                   <div className={["text-[11px] mt-0.5", modalSub].join(" ")}>
-                    Imports Focus plan items into your global panel tasks
+                    Import tasks from your plans into the room task panel
                     (visible in every session).
                   </div>
                 </div>
@@ -1545,15 +1545,15 @@ export function TasksPanel({
                     onClick={() => {
                       const sid = (rawSessionId || sessionId || "").trim();
                       window.open(
-                        `/focus-plan?sessionId=${encodeURIComponent(sid)}`,
+                        `/tasks?sessionId=${encodeURIComponent(sid)}`,
                         "_blank",
                         "noopener,noreferrer",
                       );
                     }}
-                    title="Go to Focus Plan"
+                    title="Go to Tasks"
                   >
                     <ExternalLink size={14} />
-                    Go to Focus Plan
+                    Go to Tasks
                   </button>
 
                   <button
@@ -1594,7 +1594,7 @@ export function TasksPanel({
                 </div>
               ) : plans.length === 0 ? (
                 <div className={"text-[12px] italic " + mutedText}>
-                  No plans found. Create a plan in Focus plan page.
+                  No plans found. Create one on the Tasks page.
                   {lastPlansLoadedAt
                     ? ` (checked ${new Date(lastPlansLoadedAt).toLocaleTimeString()})`
                     : ""}
@@ -1710,7 +1710,7 @@ export function TasksPanel({
                                 >
                                   {already
                                     ? "Already in your panel"
-                                    : "Focus plan item"}
+                                    : "Planned task"}
                                   {it.target_date
                                     ? ` · Due: ${it.target_date}`
                                     : ""}
@@ -1897,7 +1897,7 @@ export function TasksPanel({
                 className={
                   "border border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
                 }
-                title="Attach from Focus plan to panel"
+                title="Add from Tasks"
                 onClick={(e) => {
                   e.preventDefault();
                   openImportModal();
@@ -1907,7 +1907,7 @@ export function TasksPanel({
                   name="focus-plan"
                   theme={panelTheme}
                   className="w-4 h-4"
-                  alt="Focus plan"
+                  alt="Tasks"
                 />
               </IconButton>
 
@@ -2019,7 +2019,7 @@ export function TasksPanel({
             </div>
           ) : panelTasks.length === 0 ? (
             <div className={"text-[12px] italic font-inter " + mutedText}>
-              No panel tasks yet. Attach from Focus plan or add manually.
+              No panel tasks yet. Add one from Tasks or create it manually.
             </div>
           ) : (
             <div className="flex flex-col gap-2">
@@ -2082,7 +2082,7 @@ export function TasksPanel({
 
                         {i.focus_plan_item_id ? (
                           <div className={"mt-1 text-[11px] " + mutedText}>
-                            Linked to Focus plan item
+                            Linked to planned task
                           </div>
                         ) : null}
                       </div>
