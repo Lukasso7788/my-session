@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-labelledby="title description">
+  <title id="title">Scheduled one-to-one and group focus formats compared</title>
+  <desc id="description">A restrained editorial comparison of scheduled one-to-one accountability and MySession group or always-open rooms.</desc>
+  <style>
+    text { font-family: Inter, sans-serif; }
+    .kicker { font-size: 13px; font-weight: 700; letter-spacing: 1.8px; }
+    .headline { font-size: 42px; font-weight: 700; letter-spacing: -1.7px; }
+    .column { font-size: 23px; font-weight: 700; letter-spacing: -.4px; }
+    .label { font-size: 11px; font-weight: 700; letter-spacing: 1.4px; }
+    .value { font-size: 18px; font-weight: 700; }
+    .body { font-size: 14px; font-weight: 400; }
+  </style>
+
+  <rect width="1200" height="675" fill="#F7F7F5"/>
+  <text x="64" y="70" class="kicker" fill="#4A8F50">MYSESSION / FORMAT NOTE 01</text>
+  <text x="1136" y="70" text-anchor="end" font-size="18" font-weight="700" fill="#2F2F2F">MySession</text>
+  <text x="64" y="142" class="headline" fill="#2F2F2F">Accountability, two ways.</text>
+  <text x="64" y="178" class="body" fill="#70706C">The useful difference is not the feature count. It is how each format gets you into the work.</text>
+
+  <line x1="64" y1="220" x2="1136" y2="220" stroke="#D8D8D3"/>
+  <line x1="282" y1="220" x2="282" y2="584" stroke="#D8D8D3"/>
+  <line x1="708" y1="220" x2="708" y2="584" stroke="#D8D8D3"/>
+
+  <text x="314" y="267" class="column" fill="#2F2F2F">Scheduled 1:1</text>
+  <text x="740" y="267" class="column" fill="#2F2F2F">Group + 24/7</text>
+  <rect x="1040" y="241" width="96" height="34" rx="8" fill="#DDF4DF"/>
+  <text x="1088" y="263" text-anchor="middle" font-size="11" font-weight="700" fill="#39783F">MYSESSION</text>
+
+  <line x1="64" y1="298" x2="1136" y2="298" stroke="#D8D8D3"/>
+  <text x="64" y="349" class="label" fill="#858580">ENTRY</text>
+  <text x="314" y="342" class="value" fill="#2F2F2F">Book the commitment</text>
+  <text x="314" y="368" class="body" fill="#70706C">A specific person expects you at a specific time.</text>
+  <text x="740" y="342" class="value" fill="#2F2F2F">Enter while momentum exists</text>
+  <text x="740" y="368" class="body" fill="#70706C">Start now, or schedule when structure helps.</text>
+
+  <line x1="64" y1="404" x2="1136" y2="404" stroke="#D8D8D3"/>
+  <text x="64" y="455" class="label" fill="#858580">SOCIAL SHAPE</text>
+  <text x="314" y="448" class="value" fill="#2F2F2F">One partner</text>
+  <text x="314" y="474" class="body" fill="#70706C">Direct attention and a clear finish ritual.</text>
+  <text x="740" y="448" class="value" fill="#2F2F2F">Shared room</text>
+  <text x="740" y="474" class="body" fill="#70706C">Visible work without the intensity of a 1:1 call.</text>
+
+  <line x1="64" y1="510" x2="1136" y2="510" stroke="#D8D8D3"/>
+  <text x="64" y="561" class="label" fill="#858580">BEST WHEN</text>
+  <text x="314" y="554" class="value" fill="#2F2F2F">You need an appointment</text>
+  <text x="314" y="580" class="body" fill="#70706C">Showing up is the main obstacle.</text>
+  <text x="740" y="554" class="value" fill="#2F2F2F">You need a place to begin</text>
+  <text x="740" y="580" class="body" fill="#70706C">Starting friction is the main obstacle.</text>
+
+  <rect x="64" y="624" width="1072" height="4" fill="#2F2F2F"/>
+  <rect x="708" y="624" width="428" height="4" fill="#81DB86"/>
+</svg>

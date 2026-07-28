@@ -12,7 +12,7 @@ Focusmate and MySession solve the same basic problem: it is easier to begin and 
 
 Neither format is universally better. The right choice depends on whether you value personal one-to-one accountability or lower-friction access to a group focus environment.
 
-![Scheduled one-to-one accountability compared with MySession group and 24/7 focus rooms](/blog/focusmate-alternatives/format-comparison.svg?v=3)
+![Scheduled one-to-one accountability compared with MySession group and 24/7 focus rooms](/blog/focusmate-alternatives/format-comparison.svg?v=4)
 
 *Two useful kinds of accountability: a scheduled partner creates commitment, while a persistent group room removes the friction of getting started.*
 
@@ -28,7 +28,7 @@ Focusmate uses a clear routine: book a time, meet one partner, state your intent
 
 Focusmate itself describes its core experience as booking a time and being matched with one community member. You can read its current explanation in the [official Focusmate FAQ](https://www.focusmate.com/faq/).
 
-![Decision map matching common focus obstacles with scheduled one-to-one sessions, 24/7 rooms, quiet groups, and staged sessions](/blog/focusmate-alternatives/decision-map.svg?v=3)
+![Decision map matching common focus obstacles with scheduled one-to-one sessions, 24/7 rooms, quiet groups, and staged sessions](/blog/focusmate-alternatives/decision-map.svg?v=4)
 
 *Choose a format based on the moment where your focus usually fails.*
 
@@ -50,7 +50,7 @@ One partner can create a powerful sense of responsibility, but it also makes som
 
 MySession rooms can include intentions, task panels, a shared session timeline, focus and break stages, reactions, chat, background soundscapes, and optional voice controls. The goal is to keep the planning and accountability loop inside the room instead of sending you to several other tools.
 
-![Example MySession timeline with intentions, focus blocks, a check-in break, and a recap](/blog/focusmate-alternatives/session-flow.svg?v=3)
+![Example MySession timeline with intentions, focus blocks, a check-in break, and a recap](/blog/focusmate-alternatives/session-flow.svg?v=4)
 
 *A shared session timeline can reduce decision fatigue during longer work blocks.*
 
@@ -146,7 +146,7 @@ export function withStarterFocusmateAssets(post: BlogPost): BlogPost {
 
   let contentMarkdown = post.content_markdown;
   if (!contentMarkdown.includes("format-comparison.svg")) {
-    const comparisonBlock = `\n\n![Scheduled one-to-one accountability compared with MySession group and 24/7 focus rooms](/blog/focusmate-alternatives/format-comparison.svg?v=3)\n\n*Two useful kinds of accountability: a scheduled partner creates commitment, while a persistent group room removes the friction of getting started.*\n`;
+    const comparisonBlock = `\n\n![Scheduled one-to-one accountability compared with MySession group and 24/7 focus rooms](/blog/focusmate-alternatives/format-comparison.svg?v=4)\n\n*Two useful kinds of accountability: a scheduled partner creates commitment, while a persistent group room removes the friction of getting started.*\n`;
     contentMarkdown = contentMarkdown.replace(
       /\n## Why people look for a Focusmate alternative/,
       `${comparisonBlock}\n## Why people look for a Focusmate alternative`,
@@ -154,9 +154,9 @@ export function withStarterFocusmateAssets(post: BlogPost): BlogPost {
   }
 
   contentMarkdown = contentMarkdown
-    .replace(/\/format-comparison\.svg(?:\?v=\d+)?/g, "/format-comparison.svg?v=3")
-    .replace(/\/decision-map\.svg(?:\?v=\d+)?/g, "/decision-map.svg?v=3")
-    .replace(/\/session-flow\.svg(?:\?v=\d+)?/g, "/session-flow.svg?v=3");
+    .replace(/\/format-comparison\.svg(?:\?v=\d+)?/g, "/format-comparison.svg?v=4")
+    .replace(/\/decision-map\.svg(?:\?v=\d+)?/g, "/decision-map.svg?v=4")
+    .replace(/\/session-flow\.svg(?:\?v=\d+)?/g, "/session-flow.svg?v=4");
 
   return {
     ...post,

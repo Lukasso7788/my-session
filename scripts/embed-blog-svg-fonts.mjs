@@ -2,10 +2,10 @@ import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const projectRoot = resolve(import.meta.dirname, "..");
-const illustrationPaths = [
-  "public/blog/focusmate-alternatives/format-comparison.svg",
-  "public/blog/focusmate-alternatives/decision-map.svg",
-  "public/blog/focusmate-alternatives/session-flow.svg",
+const illustrations = [
+  ["scripts/blog-illustrations/format-comparison.svg", "public/blog/focusmate-alternatives/format-comparison.svg"],
+  ["scripts/blog-illustrations/decision-map.svg", "public/blog/focusmate-alternatives/decision-map.svg"],
+  ["scripts/blog-illustrations/session-flow.svg", "public/blog/focusmate-alternatives/session-flow.svg"],
 ];
 
 const [regularFont, boldFont] = await Promise.all([
@@ -31,9 +31,8 @@ const embeddedFontCss = `
     }
 `;
 
-for (const relativePath of illustrationPaths) {
-  const absolutePath = resolve(projectRoot, relativePath);
-  const source = await readFile(absolutePath, "utf8");
+for (const [sourcePath, outputPath] of illustrations) {
+  const source = await readFile(resolve(projectRoot, sourcePath), "utf8");
   const withoutPreviousEmbed = source.replace(
     /\n\s*\/\* INTER_EMBED_START \*\/[\s\S]*?\/\* INTER_EMBED_END \*\/\s*/,
     "\n",
@@ -44,15 +43,15 @@ for (const relativePath of illustrationPaths) {
       `<style>\n    /* INTER_EMBED_START */${embeddedFontCss}    /* INTER_EMBED_END */\n`,
     )
     .replace(
-      /text \{ font-family: Inter, "Segoe UI", Arial, sans-serif; \}/,
+      /text \{ font-family: Inter,[^}]+\}/,
       'text { font-family: "Inter Embedded", sans-serif; }',
     );
 
   if (next === withoutPreviousEmbed) {
-    throw new Error(`Could not inject Inter into ${relativePath}`);
+    throw new Error(`Could not inject Inter into ${sourcePath}`);
   }
 
-  await writeFile(absolutePath, next, "utf8");
+  await writeFile(resolve(projectRoot, outputPath), next, "utf8");
 }
 
-console.log(`Embedded Inter in ${illustrationPaths.length} blog illustrations.`);
+console.log(`Embedded Inter in ${illustrations.length} blog illustrations.`);

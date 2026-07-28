@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-labelledby="title description">
+  <title id="title">Decision map for choosing a virtual coworking format</title>
+  <desc id="description">Four common focus obstacles connected to the coworking format most likely to reduce each obstacle.</desc>
+  <style>
+    text { font-family: Inter, sans-serif; }
+    .kicker { font-size: 13px; font-weight: 700; letter-spacing: 1.8px; }
+    .headline { font-size: 40px; font-weight: 700; letter-spacing: -1.5px; }
+    .header { font-size: 11px; font-weight: 700; letter-spacing: 1.4px; }
+    .problem { font-size: 19px; font-weight: 400; }
+    .answer { font-size: 19px; font-weight: 700; }
+    .note { font-size: 13px; font-weight: 400; }
+  </style>
+
+  <rect width="1200" height="675" fill="#FFFFFF"/>
+  <text x="64" y="70" class="kicker" fill="#4A8F50">MYSESSION / DECISION NOTE 02</text>
+  <text x="1136" y="70" text-anchor="end" font-size="18" font-weight="700" fill="#2F2F2F">MySession</text>
+  <text x="64" y="140" class="headline" fill="#2F2F2F">Name the friction first.</text>
+  <text x="64" y="176" font-size="15" fill="#70706C">A useful format solves the moment where focus usually breaks.</text>
+
+  <rect x="64" y="220" width="1072" height="46" fill="#2F2F2F"/>
+  <text x="92" y="249" class="header" fill="#FFFFFF">WHAT GETS IN THE WAY</text>
+  <text x="690" y="249" class="header" fill="#AEE8B2">FORMAT TO TRY</text>
+
+  <line x1="64" y1="344" x2="1136" y2="344" stroke="#DEDEDA"/>
+  <line x1="64" y1="432" x2="1136" y2="432" stroke="#DEDEDA"/>
+  <line x1="64" y1="520" x2="1136" y2="520" stroke="#DEDEDA"/>
+  <line x1="654" y1="266" x2="654" y2="608" stroke="#DEDEDA"/>
+
+  <text x="92" y="312" font-size="12" font-weight="700" fill="#999994">01</text>
+  <text x="140" y="312" class="problem" fill="#2F2F2F">“I keep skipping commitments.”</text>
+  <path d="M602 306h22m-7-7 7 7-7 7" fill="none" stroke="#9A9A95" stroke-width="2"/>
+  <text x="690" y="304" class="answer" fill="#2F2F2F">Scheduled 1:1</text>
+  <text x="690" y="326" class="note" fill="#70706C">A person is waiting for you.</text>
+
+  <text x="92" y="400" font-size="12" font-weight="700" fill="#4A8F50">02</text>
+  <text x="140" y="400" class="problem" fill="#2F2F2F">“I need to start right now.”</text>
+  <path d="M602 394h22m-7-7 7 7-7 7" fill="none" stroke="#4A8F50" stroke-width="2"/>
+  <text x="690" y="392" class="answer" fill="#2F2F2F">24/7 focus room</text>
+  <text x="690" y="414" class="note" fill="#557058">No booking friction.</text>
+
+  <text x="92" y="488" font-size="12" font-weight="700" fill="#999994">03</text>
+  <text x="140" y="488" class="problem" fill="#2F2F2F">“One-to-one feels too intense.”</text>
+  <path d="M602 482h22m-7-7 7 7-7 7" fill="none" stroke="#9A9A95" stroke-width="2"/>
+  <text x="690" y="480" class="answer" fill="#2F2F2F">Quiet group room</text>
+  <text x="690" y="502" class="note" fill="#70706C">Presence without the spotlight.</text>
+
+  <text x="92" y="576" font-size="12" font-weight="700" fill="#999994">04</text>
+  <text x="140" y="576" class="problem" fill="#2F2F2F">“I lose direction halfway through.”</text>
+  <path d="M602 570h22m-7-7 7 7-7 7" fill="none" stroke="#9A9A95" stroke-width="2"/>
+  <text x="690" y="568" class="answer" fill="#2F2F2F">Staged session</text>
+  <text x="690" y="590" class="note" fill="#70706C">Focus, pause, check in, return.</text>
+
+  <circle cx="1116" cy="394" r="8" fill="#81DB86"/>
+</svg>
