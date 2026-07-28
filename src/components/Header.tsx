@@ -355,7 +355,7 @@ export default function Header() {
                         </button>
 
                         <button onClick={() => navigate("/tasks")} className="hover:text-[#2F2F2F]">
-                            Plan
+                            Tasks
                         </button>
                     </nav>
 
@@ -572,7 +572,7 @@ export default function Header() {
                                     }}
                                     className="text-left"
                                 >
-                                    Plan
+                                    Tasks
                                 </button>
 
                                 <button

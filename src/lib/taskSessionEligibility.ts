@@ -10,8 +10,9 @@ export type TaskSessionOption = {
   host_id: string | null;
 };
 
-type SessionBookingLite = {
+type PublicSessionBookingLite = {
   session_id: string;
+  user_id: string;
 };
 
 export function isInfiniteTaskSession(session: TaskSessionOption) {
@@ -66,35 +67,40 @@ export async function loadEligibleTaskSessions(userId: string) {
   const uid = String(userId || "").trim();
   if (!uid) return [] as TaskSessionOption[];
 
-  const [sessionsResult, bookingsResult] = await Promise.all([
-    supabase
-      .from("sessions")
-      .select(
-        "id,title,start_time,duration_minutes,session_format_type,custom_slug,host_id",
-      )
-      .order("start_time", { ascending: true })
-      .limit(400),
-    supabase
-      .from("session_bookings")
-      .select("session_id")
-      .eq("user_id", uid)
-      .limit(500),
-  ]);
+  const activeWindowStart = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
+  const sessionsResult = await supabase
+    .from("sessions")
+    .select(
+      "id,title,start_time,duration_minutes,session_format_type,custom_slug,host_id",
+    )
+    .or(`session_format_type.eq.infinite,start_time.gte.${activeWindowStart}`)
+    .order("start_time", { ascending: true })
+    .limit(500);
 
   if (sessionsResult.error) throw sessionsResult.error;
-  if (bookingsResult.error) throw bookingsResult.error;
 
   const sessions = (Array.isArray(sessionsResult.data)
     ? sessionsResult.data
     : []) as TaskSessionOption[];
-  const bookings = (Array.isArray(bookingsResult.data)
-    ? bookingsResult.data
-    : []) as SessionBookingLite[];
+  const sessionIds = sessions.map((session) => session.id).filter(Boolean);
+
+  let bookings: PublicSessionBookingLite[] = [];
+  if (sessionIds.length > 0) {
+    const bookingsResult = await supabase.rpc(
+      "get_public_session_bookings_with_times",
+      { p_session_ids: sessionIds },
+    );
+    if (bookingsResult.error) throw bookingsResult.error;
+    bookings = (Array.isArray(bookingsResult.data)
+      ? bookingsResult.data
+      : []) as PublicSessionBookingLite[];
+  }
 
   return filterEligibleTaskSessions({
     sessions,
     userId: uid,
-    bookedSessionIds: bookings.map((row) => row.session_id),
+    bookedSessionIds: bookings
+      .filter((row) => String(row.user_id || "").toLowerCase() === uid.toLowerCase())
+      .map((row) => row.session_id),
   });
 }
-

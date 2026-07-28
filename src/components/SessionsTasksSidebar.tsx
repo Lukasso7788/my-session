@@ -63,6 +63,8 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
+  const [mounted, setMounted] = useState(open);
+  const [visible, setVisible] = useState(false);
 
   const sessionById = useMemo(
     () => new Map(sessions.map((session) => [String(session.id), session])),
@@ -113,18 +115,30 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
   }, [open, refresh]);
 
   useEffect(() => {
-    if (!open) return;
+    if (open) {
+      setMounted(true);
+      const frame = window.requestAnimationFrame(() => setVisible(true));
+      return () => window.cancelAnimationFrame(frame);
+    }
+
+    setVisible(false);
+    const timer = window.setTimeout(() => setMounted(false), 280);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+
+  useEffect(() => {
+    if (!mounted) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && open) onClose();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [open, onClose]);
+  }, [mounted, open, onClose]);
 
   const ensurePlan = async () => {
     const current = plans[0];
@@ -315,18 +329,32 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
     }
   };
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   return (
-    <div className="fixed inset-0 z-[140]">
+    <div
+      className={[
+        "fixed inset-0 z-[140]",
+        visible ? "pointer-events-auto" : "pointer-events-none",
+      ].join(" ")}
+      aria-hidden={!visible}
+    >
       <button
         type="button"
         aria-label="Close tasks"
         onClick={onClose}
-        className="absolute inset-0 bg-black/20 backdrop-blur-[1px]"
+        className={[
+          "absolute inset-0 bg-black/20 backdrop-blur-[1px] transition-opacity duration-300 ease-out",
+          visible ? "opacity-100" : "opacity-0",
+        ].join(" ")}
       />
 
-      <aside className="absolute inset-y-0 right-0 flex w-full flex-col bg-[#F7F7F7] text-[#2F2F2F] shadow-[-18px_0_50px_rgba(0,0,0,0.12)] sm:w-[390px]">
+      <aside
+        className={[
+          "absolute inset-y-0 right-0 flex w-full flex-col bg-[#F7F7F7] text-[#2F2F2F] shadow-[-18px_0_50px_rgba(0,0,0,0.12)] transition-[transform,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] sm:w-[390px]",
+          visible ? "translate-x-0 opacity-100" : "translate-x-[104%] opacity-70",
+        ].join(" ")}
+      >
         <header className="flex h-[76px] shrink-0 items-center justify-between px-5">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-[#E9E9E9]">
