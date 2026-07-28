@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Routes, Route, Link } from "react-router-dom";
+import { Navigate, Routes, Route } from "react-router-dom";
 import type { User } from "@supabase/supabase-js";
 
 import { SessionsPage } from "./pages/SessionsPage";
@@ -21,6 +21,9 @@ import DailyScheduleEmailAdminPage from "./pages/DailyScheduleEmailAdminPage";
 import DailyScheduleUnsubscribePage from "./pages/DailyScheduleUnsubscribePage";
 import EmailPreferencesPage from "./pages/EmailPreferencesPage";
 import SenderEmailAdminPage from "./pages/SenderEmailAdminPage";
+import BlogAdminPage from "./pages/BlogAdminPage";
+import BlogIndex from "./pages/BlogIndex";
+import BlogPost from "./pages/BlogPost";
 
 import PricingPage from "./pages/PricingPage";
 import PricingSuccessPage from "./pages/PricingSuccessPage";
@@ -46,7 +49,6 @@ import GroupFocusSessionsPage from "./pages/seo/GroupFocusSessionsPage";
 import SilentCoworkingPage from "./pages/seo/SilentCoworkingPage";
 import AdhdProductivityPage from "./pages/seo/AdhdProductivityPage";
 import AIAssistantPage from "./pages/seo/AIAssistantPage";
-import FocusmateAlternativesPage from "./pages/seo/FocusmateAlternativesPage";
 
 import AdhdBodyDoublingPage from "./pages/seo/AdhdBodyDoublingPage";
 import StudyTogetherPage from "./pages/seo/StudyTogetherPage";
@@ -57,93 +59,6 @@ import FaqPage from "./pages/seo/FaqPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import SessionCardsPlayground from "./SessionCardsPlayground";
 import IconVectorizerPage from "./pages/IconVectorizerPage";
-
-function BlogIndexPlaceholder() {
-  return (
-    <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
-      <div className="overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-[0_12px_40px_rgba(0,0,0,0.08)]">
-        <div className="px-6 py-7 sm:px-8 sm:py-8">
-          <div className="inline-flex items-center rounded-full border border-black/10 bg-black/[0.03] px-3 py-1 text-[12px] font-medium text-[#606060]">
-            Blog
-          </div>
-
-          <h1 className="mt-4 text-[30px] font-semibold tracking-tight text-[#2F2F2F] sm:text-[38px]">
-            MySession Blog
-          </h1>
-
-          <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[#606060]">
-            Explore practical guides on body doubling, online coworking, deep
-            work, structured focus sessions, accountability, and ADHD-friendly
-            productivity — designed to help you work with more consistency and
-            less friction.
-          </p>
-
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link
-              to="/blog/best-focusmate-alternatives"
-              className="rounded-xl border border-black/10 bg-[#81DB86]/25 px-4 py-2 text-[14px] font-medium text-[#245C29] transition hover:bg-[#81DB86]/35"
-            >
-              Best Focusmate alternatives
-            </Link>
-
-            <Link
-              to="/updates"
-              className="rounded-xl border border-black/10 bg-black/[0.03] px-4 py-2 text-[14px] text-[#2F2F2F] transition hover:bg-black/[0.06]"
-            >
-              See updates
-            </Link>
-
-            <Link
-              to="/"
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-[14px] text-[#2F2F2F] transition hover:bg-black/[0.03]"
-            >
-              Back to home
-            </Link>
-          </div>
-        </div>
-      </div>
-    </main>
-  );
-}
-
-function BlogPostPlaceholder() {
-  return (
-    <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
-      <div className="overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-[0_12px_40px_rgba(0,0,0,0.08)]">
-        <div className="px-6 py-7 sm:px-8 sm:py-8">
-          <div className="inline-flex items-center rounded-full border border-black/10 bg-black/[0.03] px-3 py-1 text-[12px] font-medium text-[#606060]">
-            Blog post
-          </div>
-
-          <h1 className="mt-4 text-[30px] font-semibold tracking-tight text-[#2F2F2F] sm:text-[38px]">
-            Blog post placeholder
-          </h1>
-
-          <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[#606060]">
-            This route works. Replace this placeholder with your real blog post
-            page when you are ready.
-          </p>
-
-          <div className="mt-6 flex flex-wrap gap-3">
-            <Link
-              to="/blog"
-              className="rounded-xl border border-black/10 bg-black/[0.03] px-4 py-2 text-[14px] text-[#2F2F2F] transition hover:bg-black/[0.06]"
-            >
-              Back to blog
-            </Link>
-
-            <Link
-              to="/"
-              className="rounded-xl border border-black/10 bg-white px-4 py-2 text-[14px] text-[#2F2F2F] transition hover:bg-black/[0.03]"
-            >
-              Back to home
-            </Link>
-          </div>
-        </div>
-      </div>
-    </main>
-  );
-}
 
 export default function App() {
   console.log("[ROUTER] App mounted");
@@ -228,6 +143,7 @@ export default function App() {
             element={<DailyScheduleEmailAdminPage />}
           />
           <Route path="/admin/sender-email" element={<SenderEmailAdminPage />} />
+          <Route path="/admin/blog" element={<BlogAdminPage />} />
 
           <Route
             path="/email/unsubscribe"
@@ -247,14 +163,9 @@ export default function App() {
           <Route path="/data-deletion" element={<DataDeletionPage />} />
           <Route path="/rules" element={<RulesPage />} />
 
-          <Route path="/blog" element={<BlogIndexPlaceholder />} />
+          <Route path="/blog" element={<BlogIndex />} />
 
-          <Route
-            path="/blog/best-focusmate-alternatives"
-            element={<FocusmateAlternativesPage />}
-          />
-
-          <Route path="/blog/:slug" element={<BlogPostPlaceholder />} />
+          <Route path="/blog/:slug" element={<BlogPost />} />
 
           {/* SEO pages */}
           <Route path="/body-doubling" element={<BodyDoublingPage />} />
@@ -307,7 +218,7 @@ export default function App() {
 
           <Route
             path="/focusmate-alternatives"
-            element={<FocusmateAlternativesPage />}
+            element={<Navigate to="/blog/best-focusmate-alternatives" replace />}
           />
 
           <Route path="/ai-assistant" element={<AIAssistantPage />} />

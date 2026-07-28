@@ -76,12 +76,6 @@
   </url>
 
   <url>
-    <loc>https://mysession.club/focusmate-alternatives</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-
-  <url>
     <loc>https://mysession.club/ai-assistant</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
@@ -109,6 +103,12 @@
     <loc>https://mysession.club/blog</loc>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
+  </url>
+
+  <url>
+    <loc>https://mysession.club/blog/best-focusmate-alternatives</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
   </url>
 
   <url>

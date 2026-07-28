@@ -132,7 +132,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!isAuthCallback) void restoreSession();
 
         // Auth listener
-        const { data: subscription } = supabase.auth.onAuthStateChange(
+        const {
+            data: { subscription },
+        } = supabase.auth.onAuthStateChange(
             async (event, currentSession) => {
                 if (!active) return;
 

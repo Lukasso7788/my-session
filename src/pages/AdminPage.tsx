@@ -1142,6 +1142,13 @@ export default function AdminPage() {
               Sender lifecycle
             </Link>
 
+            <Link
+              to="/admin/blog"
+              className="rounded-full border border-[#2F2F2F] px-5 py-2.5 text-[14px] font-semibold text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white"
+            >
+              Blog editor
+            </Link>
+
             <button
               type="button"
               onClick={() => navigate("/sessions")}
