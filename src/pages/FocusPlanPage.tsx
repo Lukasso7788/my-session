@@ -864,17 +864,17 @@ export default function FocusPlanPage() {
         navigate(`/room-iframe/${sid}`);
     };
 
-    const pageWrap = "w-full max-w-[1320px] mx-auto px-3 md:px-6 py-5 md:py-7";
-    const card = "rounded-[24px] bg-[#F7F7F7] p-4 md:p-6 text-[#2F2F2F]";
-    const softCard = "rounded-[18px] bg-white p-4 md:p-5";
+    const pageWrap = "w-full max-w-[1200px] mx-auto px-4 md:px-6 py-8";
+    const card = "border border-borderGray rounded-[42px] bg-white p-6 md:p-7 transition-all duration-200";
+    const softCard = "border border-[#E5E7EB] rounded-[24px] bg-white p-4 md:p-5";
 
     const btnPrimary =
-        "h-10 rounded-[12px] px-4 text-[12px] font-medium bg-[#2F2F2F] text-white hover:bg-[#242424] transition disabled:opacity-40";
+        "h-11 rounded-full px-5 text-[13px] font-semibold border border-[#111827] bg-[#111827] text-white hover:opacity-90 transition";
     const btnGhost =
-        "h-10 rounded-[12px] px-4 text-[12px] font-medium bg-[#E9E9E9] text-[#2F2F2F] hover:bg-[#DFDFDF] transition disabled:opacity-40";
+        "h-11 rounded-full px-5 text-[13px] font-semibold border border-[#E5E7EB] hover:bg-[#F3F4F6] transition";
 
     const inputPill =
-        "h-10 px-3 rounded-[12px] border-0 text-[12px] text-[#2F2F2F] outline-none bg-[#F1F1F1] focus:bg-[#EAEAEA] transition";
+        "h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] text-[#111827] outline-none focus:border-[#111827] bg-white";
 
     const allMeasurements = useMemo(
         () =>
@@ -1027,7 +1027,7 @@ export default function FocusPlanPage() {
         return (
             <div className={pageWrap}>
                 <div className={card}>
-                    <div className="text-[26px] md:text-[30px] font-semibold text-[#2F2F2F] leading-tight">Tasks</div>
+                    <div className="text-[28px] md:text-[34px] font-bold text-[#111827] leading-tight">Tasks</div>
                     <div className="mt-2 text-[13px] text-[#606060]">Plan tasks and connect them to the sessions where you will work on them.</div>
 
                     <div className="mt-6 flex flex-col sm:flex-row gap-3">
@@ -1051,12 +1051,12 @@ export default function FocusPlanPage() {
                 {/* header */}
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                     <div>
-                        <div className="text-[26px] md:text-[30px] font-semibold text-[#2F2F2F] leading-tight">Tasks</div>
+                        <div className="text-[28px] md:text-[34px] font-bold text-[#111827] leading-tight">Tasks</div>
                         <div className="mt-2 text-[13px] text-[#606060]">Organize tasks, set due dates, and attach them to eligible sessions.</div>
 
                         {defaultSession ? (
                             <div className="mt-2 text-[12px] text-[#606060]">
-                                Default session for new tasks:{" "}
+                                Default session for new items:{" "}
                                 <span className="font-semibold text-[#111827]">{defaultSession.title || "Session"}</span>
                                 {safeLower(defaultSession.session_format_type) === "infinite"
                                     ? " · ∞"
@@ -1083,28 +1083,28 @@ export default function FocusPlanPage() {
                     </div>
                 </div>
 
-                <div className="mt-5 inline-flex rounded-[14px] bg-[#E9E9E9] p-1">
+                <div className="mt-6 inline-flex rounded-[18px] border border-[#E5E7EB] bg-[#F8F8F8] p-1">
                     <button
                         type="button"
                         onClick={() => setActiveTab("plan")}
                         className={[
-                            "inline-flex h-9 items-center gap-2 rounded-[11px] px-4 text-[12px] font-medium transition",
+                            "inline-flex h-10 items-center gap-2 rounded-[14px] px-4 text-[13px] font-semibold transition",
                             activeTab === "plan"
-                                ? "bg-[#2F2F2F] text-white"
-                                : "text-[#606060] hover:bg-white/70",
+                                ? "bg-[#2F2F2F] text-white shadow-sm"
+                                : "text-[#606060] hover:bg-white",
                         ].join(" ")}
                     >
                         <ListChecks size={16} />
-                        Tasks
+                        Plan
                     </button>
                     <button
                         type="button"
                         onClick={() => setActiveTab("measurements")}
                         className={[
-                            "inline-flex h-9 items-center gap-2 rounded-[11px] px-4 text-[12px] font-medium transition",
+                            "inline-flex h-10 items-center gap-2 rounded-[14px] px-4 text-[13px] font-semibold transition",
                             activeTab === "measurements"
-                                ? "bg-[#2F2F2F] text-white"
-                                : "text-[#606060] hover:bg-white/70",
+                                ? "bg-[#2F2F2F] text-white shadow-sm"
+                                : "text-[#606060] hover:bg-white",
                         ].join(" ")}
                     >
                         <BarChart3 size={16} />
@@ -1125,7 +1125,7 @@ export default function FocusPlanPage() {
                                         <select
                                             value={rawDefaultSession}
                                             onChange={(e) => setRawDefaultSession(e.target.value)}
-                                            className="h-10 w-full rounded-[12px] border-0 bg-[#F1F1F1] px-3 text-[12px] font-medium text-[#2F2F2F] outline-none transition focus:bg-[#EAEAEA]"
+                                            className="w-full h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] font-semibold text-[#111827] bg-white outline-none focus:border-[#111827]"
                                         >
                                             <option value="">— none —</option>
                                             {sessionsLoading ? (
@@ -1173,16 +1173,16 @@ export default function FocusPlanPage() {
                         </div>
 
                         {/* main grid */}
-                        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[300px_1fr]">
+                        <div className="mt-6 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
                             {/* left: plans */}
                             <div className={softCard}>
                                 <div className="flex items-start justify-between gap-3">
                                     <div>
-                                        <div className="text-[15px] font-semibold text-[#2F2F2F]">Categories</div>
-                                        <div className="mt-1 text-[12px] text-[#777]">Group related tasks together.</div>
+                                        <div className="text-[16px] font-bold text-[#111827]">Plans</div>
+                                        <div className="mt-1 text-[13px] text-[#606060]">Create a plan, then add items.</div>
                                     </div>
 
-                                    <button className={btnGhost} onClick={() => reloadPlans()} type="button" title="Refresh categories">
+                                    <button className={btnGhost} onClick={() => reloadPlans()} type="button" title="Refresh plans">
                                         <span className="inline-flex items-center gap-2">
                                             <RefreshCw size={16} />
                                             Refresh
@@ -1196,7 +1196,7 @@ export default function FocusPlanPage() {
                                         value={newPlanTitle}
                                         onChange={(e) => setNewPlanTitle(e.target.value)}
                                         onKeyDown={(e) => e.key === "Enter" && createPlan()}
-                                        placeholder="New category…"
+                                        placeholder="New plan title…"
                                         className={"flex-1 " + inputPill}
                                     />
                                     <button className={btnPrimary} onClick={createPlan} type="button" title="Create plan">
@@ -1210,9 +1210,9 @@ export default function FocusPlanPage() {
                                 {/* plan list */}
                                 <div className="mt-4 flex flex-col gap-2">
                                     {plansLoading ? (
-                                        <div className="text-[12px] text-[#777] italic">Loading categories…</div>
+                                        <div className="text-[13px] text-[#606060] italic">Loading plans…</div>
                                     ) : plans.length === 0 ? (
-                                        <div className="text-[12px] text-[#777] italic">No categories yet. Create your first one above.</div>
+                                        <div className="text-[13px] text-[#606060] italic">No plans yet. Create your first one above.</div>
                                     ) : (
                                         plans.map((p) => {
                                             const active = p.id === selectedPlanId;
@@ -1226,10 +1226,10 @@ export default function FocusPlanPage() {
                                                         setEditingPlanTitle(false);
                                                     }}
                                                     className={[
-                                                        "w-full text-left rounded-[13px] px-3 py-2.5 transition",
+                                                        "w-full text-left rounded-[18px] px-4 py-3 border transition",
                                                         active
-                                                            ? "bg-[#2F2F2F] text-white"
-                                                            : "bg-[#F3F3F3] hover:bg-[#EAEAEA] text-[#2F2F2F]",
+                                                            ? "border-[#111827] bg-[#111827] text-white"
+                                                            : "border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] text-[#111827]",
                                                     ].join(" ")}
                                                     type="button"
                                                 >
@@ -1238,8 +1238,8 @@ export default function FocusPlanPage() {
                                                             <div className={["text-[13px] font-semibold truncate", active ? "text-white" : "text-[#111827]"].join(" ")}>
                                                                 {p.title}
                                                             </div>
-                                                            <div className={["mt-1 text-[11px]", active ? "text-white/70" : "text-[#606060]"].join(" ")}>
-                                                                {typeof count === "number" ? `${count} tasks` : "—"}
+                                                            <div className={["text-[11px] mt-1", active ? "text-white/70" : "text-[#606060]"].join(" ")}>
+                                                                {typeof count === "number" ? `${count} items` : "—"}
                                                             </div>
                                                         </div>
 
@@ -1249,11 +1249,11 @@ export default function FocusPlanPage() {
                                                                 deletePlan(p.id);
                                                             }}
                                                             className={[
-                                                                "h-8 w-8 rounded-[10px] flex items-center justify-center transition",
-                                                                active ? "hover:bg-white/10" : "hover:bg-[#DFDFDF]",
+                                                                "h-10 w-10 rounded-full border flex items-center justify-center transition",
+                                                                active ? "border-white/25 hover:bg-white/10" : "border-[#E5E7EB] hover:bg-[#F3F4F6]",
                                                             ].join(" ")}
                                                             type="button"
-                                                            title="Delete category"
+                                                            title="Delete plan"
                                                         >
                                                             <Trash2 size={16} />
                                                         </button>
@@ -1279,7 +1279,7 @@ export default function FocusPlanPage() {
                                                         <div className="text-[18px] font-bold text-[#111827] truncate">{selectedPlan.title}</div>
                                                         <button
                                                             onClick={beginRenamePlan}
-                                                            className="h-9 rounded-[11px] bg-[#E9E9E9] px-3 text-[11px] font-medium transition hover:bg-[#DFDFDF]"
+                                                            className="h-10 px-4 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition text-[12px] font-semibold"
                                                             type="button"
                                                         >
                                                             Rename
@@ -1292,7 +1292,7 @@ export default function FocusPlanPage() {
                                                             onChange={(e) => setPlanTitleDraft(e.target.value)}
                                                             onKeyDown={(e) => e.key === "Enter" && saveRenamePlan()}
                                                             className={"flex-1 " + inputPill}
-                                                            placeholder="Category title…"
+                                                            placeholder="Plan title…"
                                                         />
                                                         <div className="flex items-center gap-2">
                                                             <button className={btnPrimary} onClick={saveRenamePlan} type="button">
@@ -1308,7 +1308,7 @@ export default function FocusPlanPage() {
                                                 <div className="mt-1 text-[12px] text-[#606060]">Updated: {fmtWhen(selectedPlan.updated_at)}</div>
                                             </div>
 
-                                            <button className={btnGhost} onClick={() => selectedPlanId && reloadItems(selectedPlanId)} type="button" title="Refresh tasks">
+                                            <button className={btnGhost} onClick={() => selectedPlanId && reloadItems(selectedPlanId)} type="button" title="Refresh items">
                                                 <span className="inline-flex items-center gap-2">
                                                     <RefreshCw size={16} />
                                                     Refresh
@@ -1317,7 +1317,7 @@ export default function FocusPlanPage() {
                                         </div>
 
                                         {/* time measurements */}
-                                        <div className="mt-4 rounded-[16px] bg-[#F3F3F3] p-4">
+                                        <div className="mt-5 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5 bg-[#FAFAFA]">
                                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                                                 <div>
                                                     <div className="text-[14px] font-bold text-[#111827] inline-flex items-center gap-2">
@@ -1329,7 +1329,7 @@ export default function FocusPlanPage() {
                                                     </div>
                                                 </div>
 
-                                                <div className="rounded-[10px] bg-white px-3 py-2 text-[11px] font-semibold text-[#2F2F2F]">
+                                                <div className="rounded-full border border-[#E5E7EB] bg-white px-4 py-2 text-[12px] font-bold text-[#111827]">
                                                     {fmtDuration(planMeasuredMs)} total
                                                 </div>
                                             </div>
@@ -1343,7 +1343,7 @@ export default function FocusPlanPage() {
                                                     {planMeasurements.slice(0, 8).map((measurement) => (
                                                         <div
                                                             key={measurement.id}
-                                                            className="flex items-center justify-between gap-3 rounded-[12px] bg-white px-3 py-2.5"
+                                                            className="flex items-center justify-between gap-3 rounded-[16px] border border-[#F0F0F0] bg-white px-4 py-3"
                                                         >
                                                             <div className="min-w-0">
                                                                 <div className="truncate text-[13px] font-semibold text-[#111827]">
@@ -1353,7 +1353,7 @@ export default function FocusPlanPage() {
                                                                     {measurement.saved_at ? `Saved: ${fmtWhen(measurement.saved_at)}` : "Saved time"}
                                                                 </div>
                                                             </div>
-                                                            <div className="shrink-0 rounded-[9px] bg-[#2F2F2F] px-2.5 py-1.5 text-[11px] font-semibold text-white">
+                                                            <div className="shrink-0 rounded-full bg-[#111827] px-3 py-1.5 text-[12px] font-bold text-white">
                                                                 {fmtDuration(measurement.elapsed_ms)}
                                                             </div>
                                                         </div>
@@ -1363,9 +1363,9 @@ export default function FocusPlanPage() {
                                         </div>
 
                                         {/* add item */}
-                                        <div className="mt-4 rounded-[16px] bg-[#F7F7F7] p-4">
+                                        <div className="mt-5 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5">
                                             <div className="text-[14px] font-bold text-[#111827]">Add task</div>
-                                            <div className="mt-1 text-[12px] text-[#777]">Add a due date or connect the task to a session when useful.</div>
+                                            <div className="mt-1 text-[12px] text-[#606060]">Each item = intention + due date + session link.</div>
 
                                             <div className="mt-4 flex flex-col gap-3">
                                                 <input
@@ -1387,7 +1387,7 @@ export default function FocusPlanPage() {
                                                         <select
                                                             value={newItemSessionId}
                                                             onChange={(e) => setNewItemSessionId(e.target.value)}
-                                                            className="h-10 w-full rounded-[12px] border-0 bg-[#ECECEC] px-3 text-[12px] font-medium text-[#2F2F2F] outline-none transition focus:bg-[#E5E5E5]"
+                                                            className="w-full h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] font-semibold text-[#111827] bg-white outline-none focus:border-[#111827]"
                                                         >
                                                             <option value="">— none —</option>
                                                             {sessionsLoading ? (
@@ -1418,7 +1418,7 @@ export default function FocusPlanPage() {
                                                     <button className={btnPrimary} onClick={addItemToPlan} type="button">
                                                         <span className="inline-flex items-center gap-2">
                                                             <Plus size={16} />
-                                                            Add task
+                                                            Add to plan
                                                         </span>
                                                     </button>
                                                     <button
@@ -1439,12 +1439,12 @@ export default function FocusPlanPage() {
                                         <div className="mt-5">
                                             <div className="flex items-center justify-between gap-3">
                                                 <div className="text-[16px] font-bold text-[#111827]">Tasks</div>
-                                                <div className="text-[11px] text-[#777]">{items.length} tasks</div>
+                                                <div className="text-[12px] text-[#606060]">{items.length} total</div>
                                             </div>
 
                                             <div className="mt-3 flex flex-col gap-2">
                                                 {itemsLoading ? (
-                                                    <div className="text-[12px] text-[#777] italic">Loading tasks…</div>
+                                                    <div className="text-[13px] text-[#606060] italic">Loading items…</div>
                                                 ) : items.length === 0 ? (
                                                     <div className="text-[13px] text-[#606060] italic">Add your first item above.</div>
                                                 ) : (
@@ -1458,11 +1458,11 @@ export default function FocusPlanPage() {
                                                         const attached = Boolean(attachedItemIds[it.id]);
 
                                                         return (
-                                                            <div key={it.id} className="rounded-[14px] bg-[#F7F7F7] px-3 py-2.5 transition hover:bg-[#F1F1F1]">
+                                                            <div key={it.id} className="rounded-[18px] border border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] transition px-4 py-3">
                                                                 {!isEditing ? (
                                                                     <div className="flex items-start gap-3">
                                                                         <button
-                                                                            className="mt-[2px] flex h-5 w-5 items-center justify-center rounded-[6px] bg-[#E6E6E6] transition hover:bg-white"
+                                                                            className="mt-[2px] h-6 w-6 rounded-full border border-[#D1D5DB] flex items-center justify-center hover:bg-white transition"
                                                                             onClick={() => toggleItemDone(it.id)}
                                                                             type="button"
                                                                             title={done ? "Mark as not done" : "Mark as done"}
@@ -1481,13 +1481,13 @@ export default function FocusPlanPage() {
 
                                                                             <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-[#606060]">
                                                                                 {it.target_date ? (
-                                                                                    <span className="rounded-[8px] bg-white px-2.5 py-1">
+                                                                                    <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
                                                                                         Due: <span className="font-semibold text-[#111827]">{fmtDueDate(it.target_date)}</span>
                                                                                     </span>
                                                                                 ) : null}
 
                                                                                 {session ? (
-                                                                                    <span className="rounded-[8px] bg-white px-2.5 py-1">
+                                                                                    <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
                                                                                         Session: <span className="font-semibold text-[#111827]">{session.title || "Session"}</span>
                                                                                         {safeLower(session.session_format_type) === "infinite"
                                                                                             ? " · ∞"
@@ -1496,17 +1496,17 @@ export default function FocusPlanPage() {
                                                                                                 : ""}
                                                                                     </span>
                                                                                 ) : it.session_id ? (
-                                                                                    <span className="rounded-[8px] bg-white px-2.5 py-1">
+                                                                                    <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
                                                                                         Session: <span className="font-semibold text-[#111827]">resolving…</span>
                                                                                     </span>
                                                                                 ) : (
-                                                                                    <span className="rounded-[8px] bg-white px-2.5 py-1">
+                                                                                    <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
                                                                                         Session: <span className="font-semibold text-[#111827]">—</span>
                                                                                     </span>
                                                                                 )}
 
                                                                                 {attached ? (
-                                                                                    <span className="rounded-[8px] bg-[#E5F7E7] px-2.5 py-1 font-medium text-[#2F2F2F]">
+                                                                                    <span className="px-3 py-1 rounded-full border border-[#65D46C] bg-[#65D46C]/10 text-[#2F2F2F] font-semibold">
                                                                                         Attached to room
                                                                                     </span>
                                                                                 ) : null}
@@ -1515,11 +1515,11 @@ export default function FocusPlanPage() {
 
                                                                         {/* actions */}
                                                                         <div className="flex items-center gap-2 shrink-0">
-                                                                            <button className="h-9 rounded-[11px] bg-white px-3 text-[11px] font-medium transition hover:bg-[#E5E5E5]" onClick={() => startEditItem(it)} type="button">
+                                                                            <button className="h-10 px-4 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition text-[12px] font-semibold" onClick={() => startEditItem(it)} type="button">
                                                                                 Edit
                                                                             </button>
 
-                                                                            <button className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-white transition hover:bg-red-50 hover:text-[#F65252]" onClick={() => deleteItem(it.id)} type="button" title="Delete item">
+                                                                            <button className="h-10 w-10 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition flex items-center justify-center" onClick={() => deleteItem(it.id)} type="button" title="Delete item">
                                                                                 <Trash2 size={16} />
                                                                             </button>
                                                                         </div>
@@ -1551,7 +1551,7 @@ export default function FocusPlanPage() {
                                                                                 <select
                                                                                     value={editingItemSessionId}
                                                                                     onChange={(e) => setEditingItemSessionId(e.target.value)}
-                                                                                    className="h-10 w-full rounded-[12px] border-0 bg-[#ECECEC] px-3 text-[12px] font-medium text-[#2F2F2F] outline-none transition focus:bg-[#E5E5E5]"
+                                                                                    className="w-full h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] font-semibold text-[#111827] bg-white outline-none focus:border-[#111827]"
                                                                                 >
                                                                                     <option value="">— none —</option>
                                                                                     {sessions.map((s) => {
@@ -1576,7 +1576,7 @@ export default function FocusPlanPage() {
                                                                                 Cancel
                                                                             </button>
                                                                             <button
-                                                                                className="h-10 rounded-[12px] bg-red-50 px-4 text-[12px] font-medium text-[#F65252] transition hover:bg-red-100"
+                                                                                className="h-11 rounded-full px-5 text-[13px] font-semibold border border-[#F65252] bg-[#F65252]/5 text-[#F65252] hover:bg-[#F65252]/10 transition"
                                                                                 onClick={() => deleteItem(it.id)}
                                                                                 type="button"
                                                                             >
@@ -1593,13 +1593,13 @@ export default function FocusPlanPage() {
                                                                     if (!measurements.length) return null;
 
                                                                     return (
-                                                                        <div className="mt-3 rounded-[12px] bg-white px-3 py-2.5">
+                                                                        <div className="mt-3 rounded-[16px] border border-[#E5E7EB] bg-[#FAFAFA] px-4 py-3">
                                                                             <div className="flex items-center justify-between gap-3">
                                                                                 <div className="inline-flex items-center gap-2 text-[12px] font-bold text-[#111827]">
                                                                                     <TimerReset size={15} />
                                                                                     Time saved
                                                                                 </div>
-                                                                                <div className="rounded-[8px] bg-[#2F2F2F] px-2.5 py-1 text-[10px] font-semibold text-white">
+                                                                                <div className="rounded-full bg-[#111827] px-3 py-1 text-[11px] font-bold text-white">
                                                                                     {fmtDuration(totalMs)}
                                                                                 </div>
                                                                             </div>
@@ -1607,7 +1607,7 @@ export default function FocusPlanPage() {
                                                                                 {measurements.slice(0, 5).map((measurement) => (
                                                                                     <span
                                                                                         key={measurement.id}
-                                                                                        className="rounded-[8px] bg-[#F1F1F1] px-2 py-1 text-[10px] text-[#606060]"
+                                                                                        className="rounded-full border border-[#E5E7EB] bg-white px-2 py-1 text-[11px] text-[#606060]"
                                                                                         title={measurement.saved_at ? fmtWhen(measurement.saved_at) : "Saved time"}
                                                                                     >
                                                                                         {fmtDuration(measurement.elapsed_ms)}
@@ -1666,7 +1666,7 @@ export default function FocusPlanPage() {
                                         </div>
 
                                         {/* library */}
-                                        <div className="mt-5 rounded-[16px] bg-[#F7F7F7] p-4">
+                                        <div className="mt-6 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5">
                                             <div className="flex items-center justify-between gap-3">
                                                 <div>
                                                     <div className="text-[14px] font-bold text-[#111827]">My library</div>
@@ -1685,7 +1685,7 @@ export default function FocusPlanPage() {
                                                 {loadingLibrary ? (
                                                     <div className="text-[13px] text-[#606060] italic">Loading…</div>
                                                 ) : library.length === 0 ? (
-                                                    <div className="text-[12px] text-[#777] italic">No recent intentions yet. Attach intentions in a room first, or create a task above.</div>
+                                                    <div className="text-[13px] text-[#606060] italic">No recent intentions yet. Attach some intentions in rooms first, or create items above.</div>
                                                 ) : (
                                                     <div className="flex flex-col gap-2">
                                                         {library.map((it) => {
@@ -1693,7 +1693,7 @@ export default function FocusPlanPage() {
                                                             const deleting = deletingLibraryText === text.toLowerCase();
 
                                                             return (
-                                                                <div key={it.id} className="flex items-center gap-3 rounded-[13px] bg-white px-3 py-2.5 transition hover:bg-[#F1F1F1]">
+                                                                <div key={it.id} className="rounded-[18px] border border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] transition px-4 py-3 flex items-center gap-3">
                                                                     <div className="flex-1 min-w-0">
                                                                         <div className="text-[13px] text-[#111827] break-words leading-5">{text}</div>
                                                                         <div className="mt-1 text-[11px] text-[#606060]">{it.created_at ? `Last used: ${fmtWhen(it.created_at)}` : ""}</div>
@@ -1701,7 +1701,7 @@ export default function FocusPlanPage() {
 
                                                                     <div className="flex items-center gap-2 shrink-0">
                                                                         <button
-                                                                            className="h-9 whitespace-nowrap rounded-[11px] bg-[#2F2F2F] px-3 text-[11px] font-medium text-white transition hover:bg-[#242424]"
+                                                                            className="h-10 px-4 rounded-full border border-[#111827] text-[#111827] hover:bg-[#111827] hover:text-white transition text-[12px] font-semibold whitespace-nowrap"
                                                                             onClick={() => addLibraryTextToPlan(text)}
                                                                             type="button"
                                                                         >
@@ -1709,7 +1709,7 @@ export default function FocusPlanPage() {
                                                                         </button>
 
                                                                         <button
-                                                                            className="flex h-9 w-9 items-center justify-center rounded-[11px] bg-[#E9E9E9] transition hover:bg-red-50 hover:text-[#F65252]"
+                                                                            className="h-10 w-10 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition flex items-center justify-center"
                                                                             onClick={() => deleteLibraryText(text)}
                                                                             type="button"
                                                                             disabled={deleting}
@@ -1787,7 +1787,7 @@ export default function FocusPlanPage() {
                                     Loading measurements…
                                 </div>
                             ) : visibleMeasurements.length === 0 ? (
-                                <div className="mt-5 rounded-[16px] bg-[#F3F3F3] px-5 py-8 text-center">
+                                <div className="mt-6 rounded-[18px] border border-dashed border-[#D8DCE3] bg-[#FAFAFA] px-5 py-8 text-center">
                                     <TimerReset
                                         className="mx-auto text-[#98A2B3]"
                                         size={24}
@@ -1801,10 +1801,10 @@ export default function FocusPlanPage() {
                                     </div>
                                 </div>
                             ) : (
-                                <div className="mt-5 overflow-hidden rounded-[16px] bg-white">
+                                <div className="mt-6 overflow-hidden rounded-[18px] border border-[#E5E7EB] bg-white">
                                     <div className="overflow-x-auto">
                                         <div className="min-w-[680px]">
-                                            <div className="grid grid-cols-[minmax(280px,1fr)_150px_210px] items-center bg-[#F1F1F1] px-4 py-3">
+                                            <div className="grid grid-cols-[minmax(280px,1fr)_150px_210px] items-center border-b border-[#E5E7EB] bg-[#F8F8F8] px-4 py-3">
                                                 <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#667085]">
                                                     Task
                                                 </div>
@@ -1816,7 +1816,7 @@ export default function FocusPlanPage() {
                                                 </div>
                                             </div>
 
-                                            <div className="divide-y divide-[#EFEFEF]">
+                                            <div className="divide-y divide-[#E5E7EB]">
                                                 {visibleMeasurements.map((measurement) => (
                                                     <div
                                                         key={measurement.id}
