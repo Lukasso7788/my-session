@@ -538,6 +538,7 @@ export function SessionsPage() {
   const [hostPromptKind, setHostPromptKind] = useState<HostPromptKind>("never_hosted");
   const [communityPromptOpen, setCommunityPromptOpen] = useState(false);
   const [tasksSidebarOpen, setTasksSidebarOpen] = useState(false);
+  const [unfinishedTaskCount, setUnfinishedTaskCount] = useState(0);
 
   const [postSessionPrompt, setPostSessionPrompt] =
     useState<PostSessionPromptState>({
@@ -1102,6 +1103,33 @@ export function SessionsPage() {
 
     return () => {
       cancelled = true;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshUnfinishedTasks = async () => {
+      if (!user?.id) {
+        if (!cancelled) setUnfinishedTaskCount(0);
+        return;
+      }
+
+      const { count, error } = await supabase
+        .from("focus_plan_items")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("completed", false);
+
+      if (!cancelled && !error) setUnfinishedTaskCount(Math.max(0, count || 0));
+    };
+
+    void refreshUnfinishedTasks();
+    const onTasksUpdated = () => void refreshUnfinishedTasks();
+    window.addEventListener("mysession:tasks-updated", onTasksUpdated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("mysession:tasks-updated", onTasksUpdated);
     };
   }, [user?.id]);
 
@@ -2096,6 +2124,15 @@ export function SessionsPage() {
               >
                 <ListChecks size={17} />
                 Tasks
+                {unfinishedTaskCount > 0 ? (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-[#4B4B4B]">
+                    <span className="relative flex h-2 w-2">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#67CE70] opacity-60" />
+                      <span className="relative inline-flex h-2 w-2 rounded-full bg-[#55C95F]" />
+                    </span>
+                    {unfinishedTaskCount} unfinished
+                  </span>
+                ) : null}
               </button>
             ) : null}
           </div>
@@ -2108,6 +2145,15 @@ export function SessionsPage() {
             >
               <ListChecks size={17} />
               Tasks
+              {unfinishedTaskCount > 0 ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-[#4B4B4B]">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#67CE70] opacity-60" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[#55C95F]" />
+                  </span>
+                  {unfinishedTaskCount} unfinished
+                </span>
+              ) : null}
             </button>
           ) : null}
 

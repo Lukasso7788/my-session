@@ -79,6 +79,8 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
   const [settingsMenuId, setSettingsMenuId] = useState("");
   const [editingId, setEditingId] = useState("");
   const [editingText, setEditingText] = useState("");
+  const [draggingId, setDraggingId] = useState("");
+  const [dragTargetId, setDragTargetId] = useState("");
 
   const sessionById = useMemo(
     () => new Map(sessions.map((session) => [String(session.id), session])),
@@ -383,28 +385,18 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
     }
   };
 
-  const moveTask = async (item: TaskItem, direction: -1 | 1) => {
-    if (busyId) return;
-    const peers = items.filter((task) => task.completed === item.completed);
-    const peerIndex = peers.findIndex((task) => task.id === item.id);
-    const target = peers[peerIndex + direction];
-    if (!target) return;
-
-    const previous = items;
-    const currentIndex = items.findIndex((task) => task.id === item.id);
-    const targetIndex = items.findIndex((task) => task.id === target.id);
-    const reordered = [...items];
-    [reordered[currentIndex], reordered[targetIndex]] = [
-      reordered[targetIndex],
-      reordered[currentIndex],
-    ];
+  const persistTaskOrder = async (
+    reordered: TaskItem[],
+    previous: TaskItem[],
+    activeTaskId: string,
+  ) => {
     const normalized = reordered.map((task, index) => ({
       ...task,
       sort_order: index,
     }));
 
     setSettingsMenuId("");
-    setBusyId(item.id);
+    setBusyId(activeTaskId);
     setItems(normalized);
     try {
       const results = await Promise.all(
@@ -433,6 +425,42 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
     } finally {
       setBusyId("");
     }
+  };
+
+  const moveTask = async (item: TaskItem, direction: -1 | 1) => {
+    if (busyId) return;
+    const peers = items.filter((task) => task.completed === item.completed);
+    const peerIndex = peers.findIndex((task) => task.id === item.id);
+    const target = peers[peerIndex + direction];
+    if (!target) return;
+
+    const previous = items;
+    const currentIndex = items.findIndex((task) => task.id === item.id);
+    const targetIndex = items.findIndex((task) => task.id === target.id);
+    const reordered = [...items];
+    [reordered[currentIndex], reordered[targetIndex]] = [
+      reordered[targetIndex],
+      reordered[currentIndex],
+    ];
+    await persistTaskOrder(reordered, previous, item.id);
+  };
+
+  const dropTask = async (draggedId: string, targetId: string) => {
+    setDraggingId("");
+    setDragTargetId("");
+    if (!draggedId || !targetId || draggedId === targetId || busyId) return;
+
+    const dragged = items.find((task) => task.id === draggedId);
+    const target = items.find((task) => task.id === targetId);
+    if (!dragged || !target || dragged.completed !== target.completed) return;
+
+    const previous = items;
+    const reordered = [...items];
+    const fromIndex = reordered.findIndex((task) => task.id === draggedId);
+    const toIndex = reordered.findIndex((task) => task.id === targetId);
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+    await persistTaskOrder(reordered, previous, draggedId);
   };
 
   return (
@@ -531,7 +559,38 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
                 return (
                   <div
                     key={item.id}
-                    className="group relative flex min-h-12 items-center gap-2 border-b border-[#ECECEC] py-1.5 last:border-b-0"
+                    draggable={!busyId && editingId !== item.id}
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", item.id);
+                      setDraggingId(item.id);
+                      setAssignMenuId("");
+                      setSettingsMenuId("");
+                    }}
+                    onDragOver={(event) => {
+                      const dragged = items.find((task) => task.id === draggingId);
+                      if (!dragged || dragged.completed !== item.completed) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      setDragTargetId(item.id);
+                    }}
+                    onDragLeave={() => {
+                      if (dragTargetId === item.id) setDragTargetId("");
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      void dropTask(event.dataTransfer.getData("text/plain") || draggingId, item.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggingId("");
+                      setDragTargetId("");
+                    }}
+                    title="Drag to reorder"
+                    className={[
+                      "group relative flex min-h-12 cursor-grab items-center gap-2 border-b border-[#ECECEC] py-1.5 transition-[min-height,background-color,opacity] duration-200 ease-out last:border-b-0 hover:min-h-[68px] hover:bg-[#FAFAFA] active:cursor-grabbing",
+                      draggingId === item.id ? "opacity-40" : "opacity-100",
+                      dragTargetId === item.id && draggingId !== item.id ? "bg-[#EDF8EF]" : "",
+                    ].join(" ")}
                   >
                     <button
                       type="button"
@@ -565,7 +624,7 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
                         <div
                           title={item.text}
                           className={[
-                            "truncate text-[12px] leading-5",
+                            "max-h-5 overflow-hidden whitespace-nowrap text-[12px] leading-5 transition-[max-height] duration-200 group-hover:max-h-10 group-hover:whitespace-normal group-hover:leading-[18px]",
                             item.completed ? "text-[#8A8A8A] line-through" : "text-[#2F2F2F]",
                           ].join(" ")}
                         >
