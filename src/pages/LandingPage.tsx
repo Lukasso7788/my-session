@@ -1,6 +1,10 @@
 // src/pages/LandingPage.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { applyPageSeo } from "../lib/pageSeo";
+
+const HOME_META_DESCRIPTION =
+    "Join live virtual coworking and body doubling sessions, work alongside focused people, and use structured focus rooms to finally get things done.";
 
 const ROTATING_LINES = [
     "Struggle To Get Started?",
@@ -844,6 +848,15 @@ function FinalCta() {
 }
 
 export default function LandingPage() {
+    useEffect(() => {
+        applyPageSeo({
+            title: "MySession – Stay Focused 24/7",
+            description: HOME_META_DESCRIPTION,
+            canonicalUrl: "https://mysession.club/",
+            type: "website",
+        });
+    }, []);
+
     const heroCopy = useMemo(
         () => (
             <>
