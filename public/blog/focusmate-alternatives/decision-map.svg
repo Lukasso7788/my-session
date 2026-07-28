@@ -1,50 +1,67 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-labelledby="title description">
   <title id="title">Decision map for choosing a virtual coworking format</title>
-  <desc id="description">A decision map connecting common focus problems to scheduled one-to-one sessions, always-open rooms, quiet groups, and structured sessions.</desc>
-  <rect width="1200" height="675" rx="40" fill="#f7f7f7"/>
-  <text x="600" y="76" text-anchor="middle" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="28" font-weight="700">Where does your focus usually break?</text>
-  <text x="600" y="112" text-anchor="middle" fill="#777" font-family="Inter,Arial,sans-serif" font-size="16">Start with the obstacle, then choose the format.</text>
+  <desc id="description">Four common focus obstacles paired with the virtual coworking format most likely to reduce each obstacle.</desc>
+  <style>
+    text { font-family: Inter, "Segoe UI", Arial, sans-serif; }
+    .eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 2.2px; }
+    .title { font-size: 34px; font-weight: 750; letter-spacing: -1px; }
+    .number { font-size: 13px; font-weight: 750; }
+    .problem { font-size: 17px; font-weight: 650; }
+    .answer { font-size: 21px; font-weight: 720; letter-spacing: -.3px; }
+    .caption { font-size: 13px; font-weight: 450; }
+  </style>
 
-  <rect x="416" y="151" width="368" height="88" rx="24" fill="#2f2f2f"/>
-  <text x="600" y="188" text-anchor="middle" fill="#ffffff" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="700">What stops you from starting?</text>
-  <text x="600" y="216" text-anchor="middle" fill="#cfcfcf" font-family="Inter,Arial,sans-serif" font-size="14">Pick the closest answer</text>
+  <rect width="1200" height="675" rx="40" fill="#FAFAF9"/>
+  <circle cx="78" cy="68" r="7" fill="#81DB86"/>
+  <text x="98" y="73" class="eyebrow" fill="#2F2F2F">QUICK DECISION GUIDE</text>
+  <text x="1114" y="73" text-anchor="end" font-size="18" font-weight="800" fill="#2F2F2F">MySession</text>
+  <text x="64" y="136" class="title" fill="#2F2F2F">Start with the moment where focus breaks.</text>
+  <text x="64" y="168" font-size="15" fill="#757575">Your obstacle is more useful than a long feature checklist.</text>
 
-  <path d="M600 239v46M600 285H176v54M600 285H458v54M600 285h142v54M600 285h424v54" fill="none" stroke="#c9c9c9" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="64" y="210" width="1072" height="88" rx="24" fill="#2F2F2F"/>
+  <text x="96" y="245" font-size="13" font-weight="700" letter-spacing="1.6" fill="#81DB86">THE QUESTION</text>
+  <text x="96" y="273" font-size="22" font-weight="700" fill="#FFFFFF">What makes it hardest to begin?</text>
+  <rect x="943" y="232" width="161" height="44" rx="14" fill="#3A3A3A"/>
+  <text x="1024" y="260" text-anchor="middle" font-size="13" font-weight="650" fill="#CFCFCF">Pick one answer</text>
 
-  <rect x="62" y="339" width="228" height="104" rx="20" fill="#ffffff"/>
-  <circle cx="96" cy="374" r="12" fill="#81db86"/>
-  <text x="120" y="381" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="700">I skip commitments</text>
-  <text x="88" y="414" fill="#777" font-family="Inter,Arial,sans-serif" font-size="14">Use a booked appointment.</text>
+  <rect x="64" y="326" width="250" height="280" rx="28" fill="#F1F1F0"/>
+  <rect x="337" y="326" width="250" height="280" rx="28" fill="#EAF8EB"/>
+  <rect x="610" y="326" width="250" height="280" rx="28" fill="#EEF5FF"/>
+  <rect x="883" y="326" width="253" height="280" rx="28" fill="#F6F0FF"/>
 
-  <rect x="344" y="339" width="228" height="104" rx="20" fill="#ffffff"/>
-  <circle cx="378" cy="374" r="12" fill="#81db86"/>
-  <text x="402" y="381" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="700">I need to start now</text>
-  <text x="370" y="414" fill="#777" font-family="Inter,Arial,sans-serif" font-size="14">Remove scheduling friction.</text>
+  <rect x="88" y="350" width="38" height="38" rx="12" fill="#FFFFFF"/>
+  <text x="107" y="374" text-anchor="middle" class="number" fill="#666666">01</text>
+  <text x="88" y="426" class="problem" fill="#2F2F2F">“I skip commitments.”</text>
+  <path d="M88 466h58" stroke="#B7B7B7" stroke-width="3" stroke-linecap="round"/>
+  <path d="M138 459l9 7-9 7" fill="none" stroke="#B7B7B7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="88" y="516" class="answer" fill="#2F2F2F">Scheduled 1:1</text>
+  <text x="88" y="545" class="caption" fill="#6F6F6F">A partner expects you</text>
+  <text x="88" y="565" class="caption" fill="#6F6F6F">at a specific time.</text>
 
-  <rect x="628" y="339" width="228" height="104" rx="20" fill="#ffffff"/>
-  <circle cx="662" cy="374" r="12" fill="#81db86"/>
-  <text x="686" y="381" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="700">1:1 feels intense</text>
-  <text x="654" y="414" fill="#777" font-family="Inter,Arial,sans-serif" font-size="14">Spread attention across a group.</text>
+  <rect x="361" y="350" width="38" height="38" rx="12" fill="#81DB86"/>
+  <text x="380" y="374" text-anchor="middle" class="number" fill="#204F25">02</text>
+  <text x="361" y="426" class="problem" fill="#2F2F2F">“I need to start now.”</text>
+  <path d="M361 466h58" stroke="#62B96A" stroke-width="3" stroke-linecap="round"/>
+  <path d="M411 459l9 7-9 7" fill="none" stroke="#62B96A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="361" y="516" class="answer" fill="#2F2F2F">24/7 focus room</text>
+  <text x="361" y="545" class="caption" fill="#557058">Enter while momentum</text>
+  <text x="361" y="565" class="caption" fill="#557058">is still available.</text>
 
-  <rect x="910" y="339" width="228" height="104" rx="20" fill="#ffffff"/>
-  <circle cx="944" cy="374" r="12" fill="#81db86"/>
-  <text x="968" y="381" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="700">I lose direction</text>
-  <text x="936" y="414" fill="#777" font-family="Inter,Arial,sans-serif" font-size="14">Add stages and check-ins.</text>
+  <rect x="634" y="350" width="38" height="38" rx="12" fill="#CFE3FF"/>
+  <text x="653" y="374" text-anchor="middle" class="number" fill="#315F92">03</text>
+  <text x="634" y="426" class="problem" fill="#2F2F2F">“One-to-one feels intense.”</text>
+  <path d="M634 466h58" stroke="#82ACD8" stroke-width="3" stroke-linecap="round"/>
+  <path d="M684 459l9 7-9 7" fill="none" stroke="#82ACD8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="634" y="516" class="answer" fill="#2F2F2F">Quiet group room</text>
+  <text x="634" y="545" class="caption" fill="#5D7186">Accountability without</text>
+  <text x="634" y="565" class="caption" fill="#5D7186">the spotlight.</text>
 
-  <path d="M176 443v55M458 443v55M742 443v55M1024 443v55" stroke="#c9c9c9" stroke-width="4" stroke-linecap="round"/>
-  <rect x="62" y="498" width="228" height="104" rx="20" fill="#eaf8eb"/>
-  <text x="176" y="540" text-anchor="middle" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="700">Scheduled 1:1</text>
-  <text x="176" y="569" text-anchor="middle" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="14">A partner expects you</text>
-
-  <rect x="344" y="498" width="228" height="104" rx="20" fill="#eaf8eb"/>
-  <text x="458" y="540" text-anchor="middle" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="700">24/7 focus room</text>
-  <text x="458" y="569" text-anchor="middle" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="14">Enter when ready</text>
-
-  <rect x="628" y="498" width="228" height="104" rx="20" fill="#eaf8eb"/>
-  <text x="742" y="540" text-anchor="middle" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="700">Quiet group room</text>
-  <text x="742" y="569" text-anchor="middle" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="14">Accountability, less pressure</text>
-
-  <rect x="910" y="498" width="228" height="104" rx="20" fill="#eaf8eb"/>
-  <text x="1024" y="540" text-anchor="middle" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="700">Staged session</text>
-  <text x="1024" y="569" text-anchor="middle" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="14">Focus, break, recap</text>
+  <rect x="907" y="350" width="38" height="38" rx="12" fill="#DDCCFA"/>
+  <text x="926" y="374" text-anchor="middle" class="number" fill="#61458B">04</text>
+  <text x="907" y="426" class="problem" fill="#2F2F2F">“I lose direction.”</text>
+  <path d="M907 466h58" stroke="#A58ACB" stroke-width="3" stroke-linecap="round"/>
+  <path d="M957 459l9 7-9 7" fill="none" stroke="#A58ACB" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="907" y="516" class="answer" fill="#2F2F2F">Staged session</text>
+  <text x="907" y="545" class="caption" fill="#76678F">Focus, pause, check in,</text>
+  <text x="907" y="565" class="caption" fill="#76678F">then return.</text>
 </svg>

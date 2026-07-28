@@ -1,49 +1,69 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-labelledby="title description">
   <title id="title">Scheduled one-to-one and group focus formats compared</title>
-  <desc id="description">A side-by-side diagram comparing a scheduled one-to-one Focusmate session with group and always-open MySession focus rooms.</desc>
-  <rect width="1200" height="675" rx="40" fill="#f6f7f6"/>
-  <text x="72" y="84" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="28" font-weight="700">Two ways to create accountability</text>
-  <text x="72" y="122" fill="#747474" font-family="Inter,Arial,sans-serif" font-size="17">The right format depends on the friction you need to remove.</text>
+  <desc id="description">A modern side-by-side comparison of scheduled one-to-one Focusmate sessions and group or always-open MySession rooms.</desc>
+  <style>
+    text { font-family: Inter, "Segoe UI", Arial, sans-serif; }
+    .eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 2.2px; }
+    .title { font-size: 34px; font-weight: 750; letter-spacing: -1px; }
+    .cardTitle { font-size: 25px; font-weight: 700; letter-spacing: -.5px; }
+    .body { font-size: 15px; font-weight: 450; }
+    .item { font-size: 18px; font-weight: 650; }
+    .caption { font-size: 13px; font-weight: 450; }
+  </style>
 
-  <rect x="72" y="174" width="500" height="405" rx="28" fill="#ffffff"/>
-  <rect x="628" y="174" width="500" height="405" rx="28" fill="#eaf8eb"/>
+  <rect width="1200" height="675" rx="40" fill="#F4F5F3"/>
+  <circle cx="78" cy="68" r="7" fill="#81DB86"/>
+  <text x="98" y="73" class="eyebrow" fill="#2F2F2F">MYSESSION FIELD GUIDE</text>
+  <text x="1114" y="73" text-anchor="end" font-size="18" font-weight="800" fill="#2F2F2F">MySession</text>
 
-  <circle cx="130" cy="236" r="27" fill="#ececec"/>
-  <circle cx="156" cy="236" r="27" fill="#d7d7d7" stroke="#ffffff" stroke-width="6"/>
-  <text x="201" y="230" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="23" font-weight="700">Scheduled 1:1</text>
-  <text x="201" y="259" fill="#747474" font-family="Inter,Arial,sans-serif" font-size="15">Focusmate-style matching</text>
+  <text x="64" y="136" class="title" fill="#2F2F2F">Choose the accountability that gets you started.</text>
+  <text x="64" y="168" class="body" fill="#757575">Both formats create presence. They remove different kinds of friction.</text>
 
-  <path d="M120 322h48m-24-24v48" stroke="#777" stroke-width="5" stroke-linecap="round"/>
-  <text x="201" y="319" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="600">Book a time</text>
-  <text x="201" y="345" fill="#777" font-family="Inter,Arial,sans-serif" font-size="14">The appointment creates commitment.</text>
+  <rect x="64" y="204" width="520" height="407" rx="32" fill="#FFFFFF"/>
+  <rect x="616" y="204" width="520" height="407" rx="32" fill="#2F2F2F"/>
 
-  <path d="M119 413c17-23 37-23 54 0m-27-34a14 14 0 1 0 0-28 14 14 0 0 0 0 28Z" fill="none" stroke="#777" stroke-width="5" stroke-linecap="round"/>
-  <text x="201" y="401" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="600">Meet one partner</text>
-  <text x="201" y="427" fill="#777" font-family="Inter,Arial,sans-serif" font-size="14">Direct, personal accountability.</text>
+  <rect x="96" y="236" width="48" height="48" rx="15" fill="#F0F0EF"/>
+  <text x="120" y="267" text-anchor="middle" font-size="15" font-weight="750" fill="#6C6C6C">01</text>
+  <text x="164" y="255" class="cardTitle" fill="#2F2F2F">Scheduled 1:1</text>
+  <text x="164" y="280" class="caption" fill="#777777">One partner. One appointment.</text>
 
-  <path d="M119 482h53v44h-53zM131 470v24m29-24v24" fill="none" stroke="#777" stroke-width="5" stroke-linejoin="round"/>
-  <text x="201" y="497" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="600">Finish together</text>
-  <text x="201" y="523" fill="#777" font-family="Inter,Arial,sans-serif" font-size="14">A clear start-work-finish ritual.</text>
+  <rect x="648" y="236" width="48" height="48" rx="15" fill="#81DB86"/>
+  <text x="672" y="267" text-anchor="middle" font-size="15" font-weight="750" fill="#204F25">02</text>
+  <text x="716" y="255" class="cardTitle" fill="#FFFFFF">Group + 24/7</text>
+  <text x="716" y="280" class="caption" fill="#BEBEBE">A room when you need one.</text>
 
-  <circle cx="686" cy="236" r="27" fill="#81db86"/>
-  <circle cx="712" cy="236" r="27" fill="#4faa57" stroke="#eaf8eb" stroke-width="6"/>
-  <circle cx="738" cy="236" r="27" fill="#2f2f2f" stroke="#eaf8eb" stroke-width="6"/>
-  <text x="785" y="230" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="23" font-weight="700">Group + 24/7</text>
-  <text x="785" y="259" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="15">MySession focus rooms</text>
+  <circle cx="112" cy="337" r="15" fill="#F0F0EF"/>
+  <path d="M106 337l4 4 8-9" fill="none" stroke="#5F5F5F" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="144" y="333" class="item" fill="#2F2F2F">Book a time</text>
+  <text x="144" y="354" class="caption" fill="#777777">Commit before motivation arrives.</text>
 
-  <path d="M682 299v52m-26-26h52" stroke="#3c8e44" stroke-width="5" stroke-linecap="round"/>
-  <text x="757" y="319" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="600">Start now or schedule</text>
-  <text x="757" y="345" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="14">Choose the lowest-friction entry.</text>
+  <circle cx="112" cy="410" r="15" fill="#F0F0EF"/>
+  <path d="M106 410l4 4 8-9" fill="none" stroke="#5F5F5F" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="144" y="406" class="item" fill="#2F2F2F">Meet one partner</text>
+  <text x="144" y="427" class="caption" fill="#777777">Direct, personal accountability.</text>
 
-  <circle cx="671" cy="386" r="13" fill="none" stroke="#3c8e44" stroke-width="5"/>
-  <circle cx="700" cy="386" r="13" fill="none" stroke="#3c8e44" stroke-width="5"/>
-  <circle cx="729" cy="386" r="13" fill="none" stroke="#3c8e44" stroke-width="5"/>
-  <path d="M650 416c8-16 34-16 42 0m-7 0c8-16 34-16 42 0m-7 0c8-16 34-16 42 0" fill="none" stroke="#3c8e44" stroke-width="5" stroke-linecap="round"/>
-  <text x="785" y="401" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="600">Work around a group</text>
-  <text x="785" y="427" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="14">Visible without intense one-to-one pressure.</text>
+  <circle cx="112" cy="483" r="15" fill="#F0F0EF"/>
+  <path d="M106 483l4 4 8-9" fill="none" stroke="#5F5F5F" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="144" y="479" class="item" fill="#2F2F2F">Finish together</text>
+  <text x="144" y="500" class="caption" fill="#777777">A clear start-work-finish ritual.</text>
 
-  <path d="M661 481h67v45h-67z" fill="none" stroke="#3c8e44" stroke-width="5" stroke-linejoin="round"/>
-  <path d="M673 494h20m-20 13h42" stroke="#3c8e44" stroke-width="4" stroke-linecap="round"/>
-  <text x="785" y="497" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="600">Keep structure in the room</text>
-  <text x="785" y="523" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="14">Tasks, stages, check-ins, chat and music.</text>
+  <circle cx="664" cy="337" r="15" fill="#81DB86"/>
+  <path d="M658 337l4 4 8-9" fill="none" stroke="#204F25" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="696" y="333" class="item" fill="#FFFFFF">Start now or schedule</text>
+  <text x="696" y="354" class="caption" fill="#BEBEBE">Choose the lowest-friction entry.</text>
+
+  <circle cx="664" cy="410" r="15" fill="#81DB86"/>
+  <path d="M658 410l4 4 8-9" fill="none" stroke="#204F25" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="696" y="406" class="item" fill="#FFFFFF">Work around a group</text>
+  <text x="696" y="427" class="caption" fill="#BEBEBE">Visible, without intense 1:1 pressure.</text>
+
+  <circle cx="664" cy="483" r="15" fill="#81DB86"/>
+  <path d="M658 483l4 4 8-9" fill="none" stroke="#204F25" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="696" y="479" class="item" fill="#FFFFFF">Keep structure in one room</text>
+  <text x="696" y="500" class="caption" fill="#BEBEBE">Tasks, stages, check-ins, chat and music.</text>
+
+  <rect x="96" y="544" width="456" height="43" rx="14" fill="#F4F5F3"/>
+  <text x="324" y="571" text-anchor="middle" font-size="14" font-weight="650" fill="#5F5F5F">Best for: showing up to a commitment</text>
+  <rect x="648" y="544" width="456" height="43" rx="14" fill="#3A3A3A"/>
+  <text x="876" y="571" text-anchor="middle" font-size="14" font-weight="650" fill="#AEE8B2">Best for: starting with less friction</text>
 </svg>
