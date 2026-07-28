@@ -63,8 +63,6 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
-  const [mounted, setMounted] = useState(open);
-  const [visible, setVisible] = useState(false);
 
   const sessionById = useMemo(
     () => new Map(sessions.map((session) => [String(session.id), session])),
@@ -115,30 +113,18 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
   }, [open, refresh]);
 
   useEffect(() => {
-    if (open) {
-      setMounted(true);
-      const frame = window.requestAnimationFrame(() => setVisible(true));
-      return () => window.cancelAnimationFrame(frame);
-    }
-
-    setVisible(false);
-    const timer = window.setTimeout(() => setMounted(false), 280);
-    return () => window.clearTimeout(timer);
-  }, [open]);
-
-  useEffect(() => {
-    if (!mounted) return;
+    if (!open) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && open) onClose();
+      if (event.key === "Escape") onClose();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [mounted, open, onClose]);
+  }, [open, onClose]);
 
   const ensurePlan = async () => {
     const current = plans[0];
@@ -329,15 +315,13 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
     }
   };
 
-  if (!mounted) return null;
-
   return (
     <div
       className={[
         "fixed inset-0 z-[140]",
-        visible ? "pointer-events-auto" : "pointer-events-none",
+        open ? "pointer-events-auto visible" : "pointer-events-none invisible delay-300",
       ].join(" ")}
-      aria-hidden={!visible}
+      aria-hidden={!open}
     >
       <button
         type="button"
@@ -345,14 +329,14 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
         onClick={onClose}
         className={[
           "absolute inset-0 bg-black/20 backdrop-blur-[1px] transition-opacity duration-300 ease-out",
-          visible ? "opacity-100" : "opacity-0",
+          open ? "opacity-100" : "opacity-0",
         ].join(" ")}
       />
 
       <aside
         className={[
-          "absolute inset-y-0 right-0 flex w-full flex-col bg-[#F7F7F7] text-[#2F2F2F] shadow-[-18px_0_50px_rgba(0,0,0,0.12)] transition-[transform,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] sm:w-[390px]",
-          visible ? "translate-x-0 opacity-100" : "translate-x-[104%] opacity-70",
+          "absolute inset-y-0 right-0 flex w-full flex-col bg-[#F7F7F7] text-[#2F2F2F] shadow-[-18px_0_50px_rgba(0,0,0,0.12)] will-change-transform transition-[transform,opacity] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] sm:w-[390px]",
+          open ? "translate-x-0 opacity-100" : "translate-x-full opacity-0",
         ].join(" ")}
       >
         <header className="flex h-[76px] shrink-0 items-center justify-between px-5">
@@ -416,21 +400,23 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
               <div className="mt-1 text-[11px] text-[#777]">Add one above, then choose its session.</div>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="overflow-hidden rounded-[16px] bg-white px-3">
               {items.map((item) => {
                 const assigned = item.session_id
                   ? sessionById.get(String(item.session_id))
                   : null;
                 const hasUnavailableAssignment = !!item.session_id && !assigned;
                 return (
-                  <div key={item.id} className="rounded-[18px] bg-white p-3.5">
-                    <div className="flex items-start gap-3">
+                  <div
+                    key={item.id}
+                    className="group flex min-h-12 items-center gap-2 border-b border-[#ECECEC] py-1.5 last:border-b-0"
+                  >
                       <button
                         type="button"
                         onClick={() => void toggleTask(item)}
                         disabled={busyId === item.id}
                         className={[
-                          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-[7px] transition",
+                          "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[6px] transition",
                           item.completed
                             ? "bg-[#81DB86] text-[#1F4A22]"
                             : "bg-[#ECECEC] text-transparent hover:bg-[#E2E2E2]",
@@ -441,41 +427,24 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
                       </button>
                       <div className="min-w-0 flex-1">
                         <div
+                          title={item.text}
                           className={[
-                            "break-words text-[13px] leading-5",
+                            "truncate text-[12px] leading-5",
                             item.completed ? "text-[#8A8A8A] line-through" : "text-[#2F2F2F]",
                           ].join(" ")}
                         >
                           {item.text}
                         </div>
-                        {assigned ? (
-                          <div className="mt-1 truncate text-[10px] text-[#777]">
-                            {isInfiniteTaskSession(assigned)
-                              ? "Always open"
-                              : formatSessionTime(assigned.start_time)}
-                          </div>
-                        ) : hasUnavailableAssignment ? (
-                          <div className="mt-1 text-[10px] text-amber-700">
-                            Past or unavailable session — choose another one
-                          </div>
-                        ) : null}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void deleteTask(item)}
-                        disabled={busyId === item.id}
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] text-[#999] transition hover:bg-[#F0F0F0] hover:text-[#F65252]"
-                        aria-label="Delete task"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
 
                     <select
                       value={String(item.session_id || "")}
                       onChange={(event) => void assignTask(item, event.target.value)}
                       disabled={busyId === item.id}
-                      className="mt-3 h-10 w-full rounded-[13px] bg-[#F1F1F1] px-3 text-[11px] text-[#444] outline-none transition focus:bg-[#ECECEC] disabled:opacity-60"
+                      className={[
+                        "h-8 w-[142px] shrink-0 truncate rounded-[10px] bg-[#F1F1F1] px-2 text-[10px] outline-none transition focus:bg-[#E9E9E9] disabled:opacity-60",
+                        hasUnavailableAssignment ? "text-amber-700" : "text-[#555]",
+                      ].join(" ")}
                       aria-label={`Session for ${item.text}`}
                     >
                       <option value="">Unscheduled</option>
@@ -492,6 +461,16 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
                         </option>
                       ))}
                     </select>
+
+                    <button
+                      type="button"
+                      onClick={() => void deleteTask(item)}
+                      disabled={busyId === item.id}
+                      className="flex h-8 w-7 shrink-0 items-center justify-center rounded-[9px] text-[#A0A0A0] opacity-70 transition hover:bg-[#F0F0F0] hover:text-[#F65252] group-hover:opacity-100"
+                      aria-label="Delete task"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 );
               })}
