@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-labelledby="title description">
+  <title id="title">Example structure of a MySession focus session</title>
+  <desc id="description">A timeline showing intention setting, focused work, a short break and check-in, another focus block, and a final recap.</desc>
+  <rect width="1200" height="675" rx="40" fill="#f7f7f7"/>
+  <text x="72" y="88" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="28" font-weight="700">Structure without leaving the room</text>
+  <text x="72" y="126" fill="#777" font-family="Inter,Arial,sans-serif" font-size="16">A shared timeline turns a long work block into a sequence of smaller commitments.</text>
+
+  <rect x="72" y="186" width="1056" height="24" rx="12" fill="#e5e5e5"/>
+  <rect x="72" y="186" width="118" height="24" rx="12" fill="#b9dcff"/>
+  <rect x="190" y="186" width="340" height="24" fill="#81db86"/>
+  <rect x="530" y="186" width="138" height="24" fill="#ffd69a"/>
+  <rect x="668" y="186" width="340" height="24" fill="#81db86"/>
+  <rect x="1008" y="186" width="120" height="24" rx="12" fill="#d9c9ff"/>
+
+  <path d="M131 210v54M360 210v54M599 210v54M838 210v54M1068 210v54" stroke="#bcbcbc" stroke-width="3" stroke-dasharray="5 7"/>
+
+  <rect x="72" y="264" width="118" height="212" rx="22" fill="#eef7ff"/>
+  <circle cx="131" cy="314" r="23" fill="#b9dcff"/>
+  <path d="M119 314h24m-12-12v24" stroke="#2f638d" stroke-width="4" stroke-linecap="round"/>
+  <text x="131" y="365" text-anchor="middle" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700">Intentions</text>
+  <text x="131" y="394" text-anchor="middle" fill="#637887" font-family="Inter,Arial,sans-serif" font-size="13">Name the task</text>
+  <text x="131" y="416" text-anchor="middle" fill="#637887" font-family="Inter,Arial,sans-serif" font-size="13">and first step</text>
+
+  <rect x="210" y="264" width="300" height="212" rx="22" fill="#eaf8eb"/>
+  <circle cx="360" cy="314" r="23" fill="#81db86"/>
+  <path d="M350 314l7 7 14-16" fill="none" stroke="#245c29" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="360" y="365" text-anchor="middle" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="700">Focus</text>
+  <text x="360" y="394" text-anchor="middle" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="13">Quiet visible work</text>
+  <text x="360" y="416" text-anchor="middle" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="13">with tasks in view</text>
+
+  <rect x="530" y="264" width="138" height="212" rx="22" fill="#fff5e5"/>
+  <circle cx="599" cy="314" r="23" fill="#ffd69a"/>
+  <path d="M588 308h22v18h-22zM610 312h6v9h-6" fill="none" stroke="#8a6128" stroke-width="4" stroke-linejoin="round"/>
+  <text x="599" y="365" text-anchor="middle" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700">Check-in</text>
+  <text x="599" y="394" text-anchor="middle" fill="#826b4a" font-family="Inter,Arial,sans-serif" font-size="13">Pause, reset</text>
+  <text x="599" y="416" text-anchor="middle" fill="#826b4a" font-family="Inter,Arial,sans-serif" font-size="13">and continue</text>
+
+  <rect x="688" y="264" width="300" height="212" rx="22" fill="#eaf8eb"/>
+  <circle cx="838" cy="314" r="23" fill="#81db86"/>
+  <path d="M828 314l7 7 14-16" fill="none" stroke="#245c29" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="838" y="365" text-anchor="middle" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="17" font-weight="700">Focus</text>
+  <text x="838" y="394" text-anchor="middle" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="13">Return with less</text>
+  <text x="838" y="416" text-anchor="middle" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="13">decision fatigue</text>
+
+  <rect x="1008" y="264" width="120" height="212" rx="22" fill="#f4efff"/>
+  <circle cx="1068" cy="314" r="23" fill="#d9c9ff"/>
+  <path d="M1057 307h22v20h-22zM1062 313h12m-12 7h8" fill="none" stroke="#69548f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="1068" y="365" text-anchor="middle" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="16" font-weight="700">Recap</text>
+  <text x="1068" y="394" text-anchor="middle" fill="#76678f" font-family="Inter,Arial,sans-serif" font-size="13">Record what</text>
+  <text x="1068" y="416" text-anchor="middle" fill="#76678f" font-family="Inter,Arial,sans-serif" font-size="13">moved forward</text>
+
+  <text x="72" y="550" fill="#777" font-family="Inter,Arial,sans-serif" font-size="14">Example only — room hosts can use a different timeline.</text>
+</svg>

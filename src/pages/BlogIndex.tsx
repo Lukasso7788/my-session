@@ -29,7 +29,11 @@ function PostCard({ post, featured = false }: { post: BlogPost; featured?: boole
         <div className={featured ? "min-h-[260px] md:order-2" : "aspect-[16/9]"}>
           <img
             src={post.cover_image_url}
-            alt=""
+            alt={
+              post.slug === starterFocusmatePost.slug
+                ? "Scheduled one-to-one focus sessions compared with group and always-open focus rooms"
+                : `Cover illustration for ${post.title}`
+            }
             className="h-full w-full object-cover"
             loading={featured ? "eager" : "lazy"}
           />

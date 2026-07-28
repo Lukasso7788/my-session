@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" role="img" aria-labelledby="title description">
+  <title id="title">Scheduled one-to-one and group focus formats compared</title>
+  <desc id="description">A side-by-side diagram comparing a scheduled one-to-one Focusmate session with group and always-open MySession focus rooms.</desc>
+  <rect width="1200" height="675" rx="40" fill="#f6f7f6"/>
+  <text x="72" y="84" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="28" font-weight="700">Two ways to create accountability</text>
+  <text x="72" y="122" fill="#747474" font-family="Inter,Arial,sans-serif" font-size="17">The right format depends on the friction you need to remove.</text>
+
+  <rect x="72" y="174" width="500" height="405" rx="28" fill="#ffffff"/>
+  <rect x="628" y="174" width="500" height="405" rx="28" fill="#eaf8eb"/>
+
+  <circle cx="130" cy="236" r="27" fill="#ececec"/>
+  <circle cx="156" cy="236" r="27" fill="#d7d7d7" stroke="#ffffff" stroke-width="6"/>
+  <text x="201" y="230" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="23" font-weight="700">Scheduled 1:1</text>
+  <text x="201" y="259" fill="#747474" font-family="Inter,Arial,sans-serif" font-size="15">Focusmate-style matching</text>
+
+  <path d="M120 322h48m-24-24v48" stroke="#777" stroke-width="5" stroke-linecap="round"/>
+  <text x="201" y="319" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="600">Book a time</text>
+  <text x="201" y="345" fill="#777" font-family="Inter,Arial,sans-serif" font-size="14">The appointment creates commitment.</text>
+
+  <path d="M119 413c17-23 37-23 54 0m-27-34a14 14 0 1 0 0-28 14 14 0 0 0 0 28Z" fill="none" stroke="#777" stroke-width="5" stroke-linecap="round"/>
+  <text x="201" y="401" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="600">Meet one partner</text>
+  <text x="201" y="427" fill="#777" font-family="Inter,Arial,sans-serif" font-size="14">Direct, personal accountability.</text>
+
+  <path d="M119 482h53v44h-53zM131 470v24m29-24v24" fill="none" stroke="#777" stroke-width="5" stroke-linejoin="round"/>
+  <text x="201" y="497" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="600">Finish together</text>
+  <text x="201" y="523" fill="#777" font-family="Inter,Arial,sans-serif" font-size="14">A clear start-work-finish ritual.</text>
+
+  <circle cx="686" cy="236" r="27" fill="#81db86"/>
+  <circle cx="712" cy="236" r="27" fill="#4faa57" stroke="#eaf8eb" stroke-width="6"/>
+  <circle cx="738" cy="236" r="27" fill="#2f2f2f" stroke="#eaf8eb" stroke-width="6"/>
+  <text x="785" y="230" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="23" font-weight="700">Group + 24/7</text>
+  <text x="785" y="259" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="15">MySession focus rooms</text>
+
+  <path d="M682 299v52m-26-26h52" stroke="#3c8e44" stroke-width="5" stroke-linecap="round"/>
+  <text x="757" y="319" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="600">Start now or schedule</text>
+  <text x="757" y="345" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="14">Choose the lowest-friction entry.</text>
+
+  <circle cx="671" cy="386" r="13" fill="none" stroke="#3c8e44" stroke-width="5"/>
+  <circle cx="700" cy="386" r="13" fill="none" stroke="#3c8e44" stroke-width="5"/>
+  <circle cx="729" cy="386" r="13" fill="none" stroke="#3c8e44" stroke-width="5"/>
+  <path d="M650 416c8-16 34-16 42 0m-7 0c8-16 34-16 42 0m-7 0c8-16 34-16 42 0" fill="none" stroke="#3c8e44" stroke-width="5" stroke-linecap="round"/>
+  <text x="785" y="401" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="600">Work around a group</text>
+  <text x="785" y="427" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="14">Visible without intense one-to-one pressure.</text>
+
+  <path d="M661 481h67v45h-67z" fill="none" stroke="#3c8e44" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M673 494h20m-20 13h42" stroke="#3c8e44" stroke-width="4" stroke-linecap="round"/>
+  <text x="785" y="497" fill="#2f2f2f" font-family="Inter,Arial,sans-serif" font-size="18" font-weight="600">Keep structure in the room</text>
+  <text x="785" y="523" fill="#557058" font-family="Inter,Arial,sans-serif" font-size="14">Tasks, stages, check-ins, chat and music.</text>
+</svg>

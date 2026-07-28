@@ -24,6 +24,10 @@ Focusmate uses a clear routine: book a time, meet one partner, state your intent
 
 Focusmate itself describes its core experience as booking a time and being matched with one community member. You can read its current explanation in the [official Focusmate FAQ](https://www.focusmate.com/faq/).
 
+![Decision map matching common focus obstacles with scheduled one-to-one sessions, 24/7 rooms, quiet groups, and staged sessions](/blog/focusmate-alternatives/decision-map.svg)
+
+*Choose a format based on the moment where your focus usually fails.*
+
 ## Focusmate vs MySession
 
 ### Session format
@@ -41,6 +45,10 @@ One partner can create a powerful sense of responsibility, but it also makes som
 ### Structure inside the room
 
 MySession rooms can include intentions, task panels, a shared session timeline, focus and break stages, reactions, chat, background soundscapes, and optional voice controls. The goal is to keep the planning and accountability loop inside the room instead of sending you to several other tools.
+
+![Example MySession timeline with intentions, focus blocks, a check-in break, and a recap](/blog/focusmate-alternatives/session-flow.svg)
+
+*A shared session timeline can reduce decision fatigue during longer work blocks.*
 
 ## Who should choose Focusmate?
 
@@ -112,7 +120,7 @@ export const starterFocusmatePost: BlogPost = {
   category: "Body doubling",
   tags: ["Focusmate alternative", "body doubling", "virtual coworking", "focus rooms"],
   author_name: "MySession Editorial",
-  cover_image_url: null,
+  cover_image_url: "/blog/focusmate-alternatives/format-comparison.svg",
   seo_title: "Focusmate Alternative for Group Focus Rooms | MySession",
   meta_description:
     "Looking for a Focusmate alternative? Compare scheduled 1:1 body doubling with MySession group sessions and 24/7 focus rooms.",

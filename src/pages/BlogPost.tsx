@@ -163,7 +163,15 @@ export default function BlogPost() {
 
       {post.cover_image_url ? (
         <div className="mx-auto max-w-[1080px] px-4 sm:px-6">
-          <img src={post.cover_image_url} alt="" className="max-h-[560px] w-full rounded-[26px] object-cover" />
+          <img
+            src={post.cover_image_url}
+            alt={
+              post.slug === starterFocusmatePost.slug
+                ? "Side-by-side comparison of scheduled one-to-one focus sessions and group or always-open focus rooms"
+                : `Cover illustration for ${post.title}`
+            }
+            className="max-h-[560px] w-full rounded-[26px] bg-[#F7F7F7] object-contain"
+          />
         </div>
       ) : null}
 
