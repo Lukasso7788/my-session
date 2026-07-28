@@ -176,10 +176,20 @@ export default function BlogAdminPage() {
   };
 
   const loadStarter = () => {
-    setForm(createStarterFocusmateDraft());
+    const starter = createStarterFocusmateDraft();
+    const existing = posts.find((post) => post.slug === starter.slug);
+    setForm({
+      ...starter,
+      id: existing?.id,
+      published_at: existing?.published_at || null,
+    });
     setSlugTouched(true);
     setError("");
-    setNotice("Starter article loaded. Review it, add your own experience, then publish.");
+    setNotice(
+      existing
+        ? "Updated starter loaded into the existing article. Review it, then publish."
+        : "Starter article loaded. Review it, add your own experience, then publish.",
+    );
   };
 
   const selectPost = (post: BlogPost) => {
