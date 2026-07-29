@@ -99,6 +99,9 @@ export function applyPageSeo(input: PageSeoInput) {
         input.article.modifiedAt,
       );
     }
+  } else {
+    removeMeta('meta[property="article:published_time"]');
+    removeMeta('meta[property="article:modified_time"]');
   }
 }
 

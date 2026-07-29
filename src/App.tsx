@@ -43,18 +43,15 @@ import { CreateSessionModalProvider } from "./context/CreateSessionModalContext"
 import { storeReferralCodeFromUrl } from "./lib/referrals";
 import { supabase } from "./lib/supabase";
 
-import BodyDoublingPage from "./pages/seo/BodyDoublingPage";
-import OnlineCoworkingPage from "./pages/seo/OnlineCoworkingPage";
 import GroupFocusSessionsPage from "./pages/seo/GroupFocusSessionsPage";
 import SilentCoworkingPage from "./pages/seo/SilentCoworkingPage";
 import AdhdProductivityPage from "./pages/seo/AdhdProductivityPage";
 import AIAssistantPage from "./pages/seo/AIAssistantPage";
 
-import AdhdBodyDoublingPage from "./pages/seo/AdhdBodyDoublingPage";
-import StudyTogetherPage from "./pages/seo/StudyTogetherPage";
-import ProcrastinationPage from "./pages/seo/ProcrastinationPage";
 import HowItWorksPage from "./pages/seo/HowItWorksPage";
 import FaqPage from "./pages/seo/FaqPage";
+import DataDrivenSeoPage from "./pages/seo/DataDrivenSeoPage";
+import { seoPages } from "./data/seoPageRegistry";
 
 import NotFoundPage from "./pages/NotFoundPage";
 import SessionCardsPlayground from "./SessionCardsPlayground";
@@ -168,27 +165,22 @@ export default function App() {
           <Route path="/blog/:slug" element={<BlogPost />} />
 
           {/* SEO pages */}
-          <Route path="/body-doubling" element={<BodyDoublingPage />} />
+          {seoPages.map((page) => (
+            <Route
+              key={page.slug}
+              path={page.route}
+              element={<DataDrivenSeoPage page={page} />}
+            />
+          ))}
 
-          <Route
-            path="/adhd-body-doubling"
-            element={<AdhdBodyDoublingPage />}
-          />
+          <Route path="/adhd-body-doubling" element={<Navigate to="/body-doubling-for-adhd" replace />} />
 
           <Route
             path="/adhd-productivity"
             element={<AdhdProductivityPage />}
           />
 
-          <Route
-            path="/online-coworking"
-            element={<OnlineCoworkingPage />}
-          />
-
-          <Route
-            path="/virtual-coworking"
-            element={<OnlineCoworkingPage />}
-          />
+          <Route path="/online-coworking" element={<Navigate to="/virtual-coworking" replace />} />
 
           <Route
             path="/group-focus-sessions"
@@ -205,12 +197,8 @@ export default function App() {
             element={<SilentCoworkingPage />}
           />
 
-          <Route path="/study-together" element={<StudyTogetherPage />} />
-
-          <Route
-            path="/procrastination"
-            element={<ProcrastinationPage />}
-          />
+          <Route path="/study-together" element={<Navigate to="/body-doubling-for-studying" replace />} />
+          <Route path="/procrastination" element={<Navigate to="/body-doubling-for-procrastination" replace />} />
 
           <Route path="/how-it-works" element={<HowItWorksPage />} />
 

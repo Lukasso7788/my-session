@@ -14,5 +14,14 @@ Disallow: /auth/
 Disallow: /update-password
 Disallow: /data-deletion
 Disallow: /ui-playground
+Disallow: /login
+Disallow: /register
+Disallow: /settings
+Disallow: /settings/
+Disallow: /tasks
+Disallow: /focus-plan
 
 Sitemap: https://mysession.club/sitemap.xml
+Sitemap: https://mysession.club/sitemap-pages.xml
+Sitemap: https://mysession.club/sitemap-guides.xml
+Sitemap: https://mysession.club/sitemap-comparisons.xml
