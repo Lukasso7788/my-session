@@ -561,7 +561,13 @@ export function TasksPanel({
     useState<string | null>(null);
 
   const [newTask, setNewTask] = useState("");
+  const [newTaskVisibility, setNewTaskVisibility] = useState<"public" | "private">("public");
+  const newTaskVisibilityRef = useRef<"public" | "private">("public");
   const voiceTaskLastAppliedRef = useRef<{ text: string; at: number }>({ text: "", at: 0 });
+
+  useEffect(() => {
+    newTaskVisibilityRef.current = newTaskVisibility;
+  }, [newTaskVisibility]);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>("");
@@ -1826,11 +1832,15 @@ export function TasksPanel({
     [user?.id, panelTasks, loadPanelTasks, upsertOwnSessionTask],
   );
 
-  const handleAddPanelTask = async (textOverride?: string) => {
+  const handleAddPanelTask = async (
+    textOverride?: string,
+    visibilityOverride?: "public" | "private",
+  ) => {
     if (!user?.id) return;
 
     const text = safeTrim(textOverride || newTask);
     if (!text) return;
+    const visibility = visibilityOverride || newTaskVisibilityRef.current;
 
     setNewTask("");
 
@@ -1843,7 +1853,7 @@ export function TasksPanel({
       completed: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      visibility: "public",
+      visibility,
     };
 
     setPanelTasks((prev) =>
@@ -1857,7 +1867,7 @@ export function TasksPanel({
           user_id: user.id,
           text,
           completed: false,
-          visibility: "public",
+          visibility,
         } as any)
         .select("*")
         .single();
@@ -1873,7 +1883,9 @@ export function TasksPanel({
           ...prev.filter((x) => x.id !== optimisticId),
         ].slice(0, PANEL_TASKS_FETCH_LIMIT),
       );
-      void upsertOwnSessionTask({ text, completed: false });
+      if (visibility === "public") {
+        void upsertOwnSessionTask({ text, completed: false });
+      }
     } catch {
       setPanelTasks((prev) => prev.filter((x) => x.id !== optimisticId));
     }
@@ -2992,7 +3004,7 @@ export function TasksPanel({
             ) : null}
           </div>
 
-          <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_48px_auto] items-center gap-2 mb-3">
+          <div className="mb-3 flex w-full min-w-0 flex-col gap-2">
             <input
               type="text"
               value={newTask}
@@ -3002,33 +3014,74 @@ export function TasksPanel({
               className={"min-w-0 w-full " + inputCls}
             />
 
-            <button
-              type="button"
-              onClick={toggleTaskTimersEnabled}
-              className={[
-                "h-12 w-12 shrink-0 rounded-[18px] border transition inline-flex items-center justify-center",
-                taskTimersEnabled
-                  ? "border-[#81DB86] bg-[#81DB86]/10 text-[#81DB86] hover:bg-[#81DB86]/15"
-                  : "border-[#CFC6C6] bg-[#F7F5F5] text-black/45 hover:bg-[#ECEAEA]",
-              ].join(" ")}
-              title={taskTimersEnabled ? "Disable Timer" : "Enable Timer"}
-              aria-label={taskTimersEnabled ? "Disable Timer" : "Enable Timer"}
-              aria-pressed={taskTimersEnabled}
-            >
-              <TimerReset size={18} />
-            </button>
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <div
+                className="inline-flex min-w-0 items-center rounded-[16px] bg-[#ECEAEA] p-1"
+                role="group"
+                aria-label="Task visibility"
+              >
+                <button
+                  type="button"
+                  onClick={() => setNewTaskVisibility("public")}
+                  aria-pressed={newTaskVisibility === "public"}
+                  className={[
+                    "inline-flex h-9 items-center gap-1.5 rounded-[12px] px-3 text-[12px] font-semibold transition",
+                    newTaskVisibility === "public"
+                      ? "bg-white text-[#2F2F2F] shadow-sm"
+                      : "text-black/50 hover:text-black/70",
+                  ].join(" ")}
+                  title="Public — visible to everyone in the room"
+                >
+                  <Globe2 size={14} />
+                  Public
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNewTaskVisibility("private")}
+                  aria-pressed={newTaskVisibility === "private"}
+                  className={[
+                    "inline-flex h-9 items-center gap-1.5 rounded-[12px] px-3 text-[12px] font-semibold transition",
+                    newTaskVisibility === "private"
+                      ? "bg-white text-[#2F2F2F] shadow-sm"
+                      : "text-black/50 hover:text-black/70",
+                  ].join(" ")}
+                  title="Private — visible only to you"
+                >
+                  <Lock size={14} />
+                  Private
+                </button>
+              </div>
 
-            <button
-              onClick={() => void handleAddPanelTask()}
-              className={[
-                "h-12 shrink-0 px-4 rounded-[18px] font-semibold text-[14px] font-inter transition",
-                "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white",
-              ].join(" ")}
-              type="button"
-              title="Add"
-            >
-              Add
-            </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={toggleTaskTimersEnabled}
+                  className={[
+                    "h-12 w-12 shrink-0 rounded-[18px] border transition inline-flex items-center justify-center",
+                    taskTimersEnabled
+                      ? "border-[#81DB86] bg-[#81DB86]/10 text-[#81DB86] hover:bg-[#81DB86]/15"
+                      : "border-[#CFC6C6] bg-[#F7F5F5] text-black/45 hover:bg-[#ECEAEA]",
+                  ].join(" ")}
+                  title={taskTimersEnabled ? "Disable Timer" : "Enable Timer"}
+                  aria-label={taskTimersEnabled ? "Disable Timer" : "Enable Timer"}
+                  aria-pressed={taskTimersEnabled}
+                >
+                  <TimerReset size={18} />
+                </button>
+
+                <button
+                  onClick={() => void handleAddPanelTask()}
+                  className={[
+                    "h-12 shrink-0 px-4 rounded-[18px] font-semibold text-[14px] font-inter transition",
+                    "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white",
+                  ].join(" ")}
+                  type="button"
+                  title={`Add ${newTaskVisibility} task`}
+                >
+                  Add
+                </button>
+              </div>
+            </div>
           </div>
 
           {panelLoading ? (
