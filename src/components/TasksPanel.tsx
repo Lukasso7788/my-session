@@ -561,7 +561,14 @@ export function TasksPanel({
     useState<string | null>(null);
 
   const [newTask, setNewTask] = useState("");
+  const [newTaskVisibility, setNewTaskVisibility] = useState<"public" | "private">("public");
+  const [newTaskVisibilityMenuOpen, setNewTaskVisibilityMenuOpen] = useState(false);
+  const newTaskVisibilityRef = useRef<"public" | "private">("public");
   const voiceTaskLastAppliedRef = useRef<{ text: string; at: number }>({ text: "", at: 0 });
+
+  useEffect(() => {
+    newTaskVisibilityRef.current = newTaskVisibility;
+  }, [newTaskVisibility]);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState<string>("");
@@ -1826,11 +1833,15 @@ export function TasksPanel({
     [user?.id, panelTasks, loadPanelTasks, upsertOwnSessionTask],
   );
 
-  const handleAddPanelTask = async (textOverride?: string) => {
+  const handleAddPanelTask = async (
+    textOverride?: string,
+    visibilityOverride?: "public" | "private",
+  ) => {
     if (!user?.id) return;
 
     const text = safeTrim(textOverride || newTask);
     if (!text) return;
+    const visibility = visibilityOverride || newTaskVisibilityRef.current;
 
     setNewTask("");
 
@@ -1843,7 +1854,7 @@ export function TasksPanel({
       completed: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      visibility: "public",
+      visibility,
     };
 
     setPanelTasks((prev) =>
@@ -1857,7 +1868,7 @@ export function TasksPanel({
           user_id: user.id,
           text,
           completed: false,
-          visibility: "public",
+          visibility,
         } as any)
         .select("*")
         .single();
@@ -1873,7 +1884,9 @@ export function TasksPanel({
           ...prev.filter((x) => x.id !== optimisticId),
         ].slice(0, PANEL_TASKS_FETCH_LIMIT),
       );
-      void upsertOwnSessionTask({ text, completed: false });
+      if (visibility === "public") {
+        void upsertOwnSessionTask({ text, completed: false });
+      }
     } catch {
       setPanelTasks((prev) => prev.filter((x) => x.id !== optimisticId));
     }
@@ -2993,14 +3006,81 @@ export function TasksPanel({
           </div>
 
           <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_48px_auto] items-center gap-2 mb-3">
-            <input
-              type="text"
-              value={newTask}
-              onChange={(e) => setNewTask(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void handleAddPanelTask()}
-              placeholder="Add a task"
-              className={"min-w-0 w-full " + inputCls}
-            />
+            <div className="relative min-w-0">
+              <input
+                type="text"
+                value={newTask}
+                onChange={(e) => setNewTask(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && void handleAddPanelTask()}
+                placeholder="Add a task"
+                className={"min-w-0 w-full !pr-12 " + inputCls}
+              />
+
+              <div
+                className="absolute right-2 top-1/2 z-30 -translate-y-1/2"
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    setNewTaskVisibilityMenuOpen(false);
+                  }
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setNewTaskVisibilityMenuOpen((open) => !open)}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl text-black/50 transition hover:bg-black/[0.06] hover:text-black/75"
+                  title={newTaskVisibility === "public" ? "Public task" : "Private task"}
+                  aria-label={`Task visibility: ${newTaskVisibility}`}
+                  aria-haspopup="menu"
+                  aria-expanded={newTaskVisibilityMenuOpen}
+                >
+                  {newTaskVisibility === "public" ? <Globe2 size={15} /> : <Lock size={15} />}
+                </button>
+
+                {newTaskVisibilityMenuOpen ? (
+                  <div
+                    role="menu"
+                    className="absolute right-0 top-[calc(100%+6px)] w-36 overflow-hidden rounded-2xl bg-white p-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.12)] ring-1 ring-black/[0.06]"
+                  >
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={newTaskVisibility === "public"}
+                      onClick={() => {
+                        setNewTaskVisibility("public");
+                        setNewTaskVisibilityMenuOpen(false);
+                      }}
+                      className={[
+                        "flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[12px] font-semibold transition",
+                        newTaskVisibility === "public"
+                          ? "bg-[#EAF8EC] text-[#2F7F3D]"
+                          : "text-black/65 hover:bg-black/[0.04]",
+                      ].join(" ")}
+                    >
+                      <Globe2 size={14} />
+                      Public
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={newTaskVisibility === "private"}
+                      onClick={() => {
+                        setNewTaskVisibility("private");
+                        setNewTaskVisibilityMenuOpen(false);
+                      }}
+                      className={[
+                        "flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-[12px] font-semibold transition",
+                        newTaskVisibility === "private"
+                          ? "bg-[#F0F0F0] text-[#2F2F2F]"
+                          : "text-black/65 hover:bg-black/[0.04]",
+                      ].join(" ")}
+                    >
+                      <Lock size={14} />
+                      Private
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </div>
 
             <button
               type="button"
@@ -3025,7 +3105,7 @@ export function TasksPanel({
                 "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white",
               ].join(" ")}
               type="button"
-              title="Add"
+              title={`Add ${newTaskVisibility} task`}
             >
               Add
             </button>
