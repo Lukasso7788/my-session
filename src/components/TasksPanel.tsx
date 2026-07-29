@@ -573,6 +573,8 @@ export function TasksPanel({
     useState<Record<string, EncouragementUser[]>>({});
   const [encouragementModalTaskId, setEncouragementModalTaskId] =
     useState<string | null>(null);
+  const [deletingPublishedTaskId, setDeletingPublishedTaskId] =
+    useState<string | null>(null);
 
   const [newTask, setNewTask] = useState("");
   const [newTaskVisibility, setNewTaskVisibility] = useState<"public" | "private">("public");
@@ -2096,6 +2098,85 @@ export function TasksPanel({
     }
   };
 
+  const deleteOwnPublishedTask = async (item: SessionTask) => {
+    const uid = String(user?.id || "").trim();
+    const sid = String(sessionId || "").trim();
+    const taskId = String(item?.id || "").trim();
+    if (
+      !uid ||
+      !sid ||
+      !taskId ||
+      String(item?.user_id || "").trim() !== uid ||
+      deletingPublishedTaskId
+    ) {
+      return;
+    }
+
+    const matchingPanelTask =
+      panelTasks.find(
+        (task) =>
+          normalizeTextForMatch(task.text) === normalizeTextForMatch(item.text),
+      ) || null;
+
+    setDeletingPublishedTaskId(taskId);
+    setSessionTasks((prev) => prev.filter((task) => task.id !== taskId));
+    setEncouragementModalTaskId((current) =>
+      current === taskId ? null : current,
+    );
+
+    try {
+      // Remove child reactions first for installations without an ON DELETE
+      // CASCADE constraint. RLS can reject this best-effort cleanup, while the
+      // intention delete itself remains the authoritative operation.
+      await supabase
+        .from(TASK_ENCOURAGEMENTS_TABLE)
+        .delete()
+        .or(`session_intention_id.eq.${taskId},intention_id.eq.${taskId}`);
+
+      const { error } = await supabase
+        .from(SESSION_TASKS_TABLE)
+        .delete()
+        .eq("id", taskId)
+        .eq("user_id", uid)
+        .eq("session_id", sid);
+
+      if (error) throw error;
+
+      setEncouragementCounts((prev) => {
+        const next = { ...prev };
+        delete next[taskId];
+        return next;
+      });
+      setMyEncouragedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+      setEncouragementUsersByTask((prev) => {
+        const next = { ...prev };
+        delete next[taskId];
+        return next;
+      });
+
+      if (matchingPanelTask) {
+        await deletePanelTask(matchingPanelTask.id);
+      }
+
+      emitTasksSync({
+        action: "delete",
+        sessionId: sid,
+        userId: uid,
+        taskId,
+      });
+      scheduleSessionTasksReload(sid);
+    } catch (error) {
+      console.error("deleteOwnPublishedTask error:", error);
+      void loadSessionTasks(sid);
+    } finally {
+      setDeletingPublishedTaskId(null);
+    }
+  };
+
   const startEdit = (id: string, text: string) => {
     setEditingId(id);
     setEditingText(text || "");
@@ -3521,6 +3602,9 @@ export function TasksPanel({
               const encouragementCount = encouragementCounts[item.id] || 0;
               const encouragedByMe = myEncouragedIds.has(item.id);
               const statusText = item.completed ? "Completed" : "In progress";
+              const isOwnPublishedTask =
+                String(item.user_id || "").trim() === String(user?.id || "").trim();
+              const isDeletingPublishedTask = deletingPublishedTaskId === item.id;
 
               return (
                 <div key={item.id} className={teamCardCls + " font-inter"}>
@@ -3623,6 +3707,26 @@ export function TasksPanel({
                           </span>
                         ) : null}
                       </button>
+
+                      {isOwnPublishedTask ? (
+                        <button
+                          type="button"
+                          disabled={isDeletingPublishedTask}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void deleteOwnPublishedTask(item);
+                          }}
+                          className="h-8 w-8 shrink-0 rounded-full bg-[#F3F1F1] text-black/55 transition inline-flex items-center justify-center hover:bg-[#F65252]/10 hover:text-[#F65252] disabled:cursor-wait disabled:opacity-45"
+                          title="Delete published task"
+                          aria-label="Delete published task"
+                        >
+                          {isDeletingPublishedTask ? (
+                            <RefreshCw size={14} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 </div>
