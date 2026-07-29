@@ -1014,6 +1014,16 @@ function normalizeMediaWarningMessage(raw: unknown) {
 
   const low = s.toLowerCase();
 
+  if (
+    low.includes("notreadableerror") ||
+    low.includes("trackstarterror") ||
+    low.includes("could not start video source") ||
+    low.includes("device is in use") ||
+    low.includes("device in use")
+  ) {
+    return "The physical camera is already in use or could not be shared by Chrome. MySession also tried the camera without resolution or frame-rate requirements.";
+  }
+
   if (low.includes("permission denied") || low.includes("notallowederror")) {
     return "A camera or microphone permission step failed.";
   }
@@ -7399,18 +7409,29 @@ export function RoomPageLiveKit({
       } catch (firstError) {
         console.warn("prejoin preview primary create failed:", firstError);
 
-        track = await buildTrack({
-          width:
-            isMobileOrTablet || safariCamera
-              ? 480
-              : prejoinPreviewPreset.width,
-          height:
-            isMobileOrTablet || safariCamera
-              ? 270
-              : prejoinPreviewPreset.height,
-          fps: isMobileOrTablet || safariCamera ? 12 : prejoinPreviewPreset.fps,
-          useExactDeviceId: false,
-        });
+        try {
+          track = await buildTrack({
+            width:
+              isMobileOrTablet || safariCamera
+                ? 480
+                : prejoinPreviewPreset.width,
+            height:
+              isMobileOrTablet || safariCamera
+                ? 270
+                : prejoinPreviewPreset.height,
+            fps: isMobileOrTablet || safariCamera ? 12 : prejoinPreviewPreset.fps,
+            useExactDeviceId: false,
+          });
+        } catch (constrainedFallbackError) {
+          // A physical camera already opened by another Chrome tab may be
+          // shareable only in the capture format that tab negotiated. Let the
+          // browser reuse that format instead of requiring our resolution/FPS.
+          console.warn(
+            "prejoin constrained fallback failed; retrying unconstrained camera:",
+            constrainedFallbackError,
+          );
+          track = await createLocalVideoTrack({} as any);
+        }
       }
 
       prejoinPreparedVideoTrackRef.current = track;
@@ -10886,10 +10907,18 @@ export function RoomPageLiveKit({
                 await r.localParticipant.setCameraEnabled(false);
               } catch { }
               await delay(120);
-              await r.localParticipant.setCameraEnabled(
-                true,
-                defaultCameraOptions,
-              );
+              try {
+                await r.localParticipant.setCameraEnabled(
+                  true,
+                  defaultCameraOptions,
+                );
+              } catch (constrainedDefaultError) {
+                console.warn(
+                  "[join] constrained default camera failed; retrying unconstrained camera:",
+                  constrainedDefaultError,
+                );
+                await r.localParticipant.setCameraEnabled(true);
+              }
               setSelectedVideoInputId("");
               prejoinRef.current = {
                 ...prejoinRef.current,
@@ -11303,7 +11332,15 @@ export function RoomPageLiveKit({
             await lp.setCameraEnabled(false);
           } catch { }
           await delay(120);
-          await lp.setCameraEnabled(true, baseOptions);
+          try {
+            await lp.setCameraEnabled(true, baseOptions);
+          } catch (constrainedDefaultError) {
+            console.warn(
+              "[camera-toggle] constrained default failed; retrying unconstrained camera:",
+              constrainedDefaultError,
+            );
+            await lp.setCameraEnabled(true);
+          }
           setSelectedVideoInputId("");
           setPrejoin((prev) => ({ ...prev, videoInputId: "" }));
           prejoinRef.current = {
