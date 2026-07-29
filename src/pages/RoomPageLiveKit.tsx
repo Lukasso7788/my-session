@@ -14460,6 +14460,17 @@ export function RoomPageLiveKit({
 
   const [tileTasksByUserId, setTileTasksByUserId] = useState<Record<string, string>>({});
 
+  const tileTaskUserIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const tile of allTilesForRender) {
+      const userId = getTilePersonKey(tile);
+      if (userId) ids.add(userId);
+    }
+    return Array.from(ids).sort();
+  }, [allTilesForRender]);
+
+  const tileTaskUserIdsKey = tileTaskUserIds.join("|");
+
   const loadTileTasks = useCallback(async () => {
     const sid = String(session?.id || "").trim();
     if (!sid) {
@@ -14481,6 +14492,9 @@ export function RoomPageLiveKit({
         return;
       }
 
+      // Legacy/session tasks remain a fallback for tasks created directly on
+      // the accountability wall. Panel tasks below are authoritative because
+      // their sort_order is the order the user actually sees in Tasks.
       const next: Record<string, string> = {};
       for (const row of data as any[]) {
         const userId = String(row?.user_id || "").trim().toLowerCase();
@@ -14489,11 +14503,70 @@ export function RoomPageLiveKit({
         next[userId] = text;
       }
 
+      const participantUserIds = tileTaskUserIdsKey
+        ? tileTaskUserIdsKey.split("|").filter(Boolean)
+        : [];
+
+      if (participantUserIds.length) {
+        let panelResult: any = await supabase
+          .from("panel_intentions")
+          .select("id,text,user_id,created_at,completed,visibility,sort_order")
+          .in("user_id", participantUserIds)
+          .or("visibility.eq.public,visibility.is.null")
+          .order("sort_order", { ascending: true, nullsFirst: false })
+          .order("created_at", { ascending: false })
+          .limit(500);
+
+        if (
+          panelResult.error &&
+          /sort_order|column/i.test(String(panelResult.error.message || ""))
+        ) {
+          panelResult = await supabase
+            .from("panel_intentions")
+            .select("id,text,user_id,created_at,completed,visibility")
+            .in("user_id", participantUserIds)
+            .or("visibility.eq.public,visibility.is.null")
+            .order("created_at", { ascending: false })
+            .limit(500);
+        }
+
+        if (!panelResult.error && Array.isArray(panelResult.data)) {
+          const panelUsers = new Set<string>();
+
+          for (const row of panelResult.data as any[]) {
+            const userId = String(row?.user_id || "").trim().toLowerCase();
+            if (userId) panelUsers.add(userId);
+          }
+
+          // If public panel rows exist for a participant, never let an older
+          // session intention override their current ordered panel state.
+          for (const userId of panelUsers) delete next[userId];
+
+          for (const row of panelResult.data as any[]) {
+            const userId = String(row?.user_id || "").trim().toLowerCase();
+            const text = String(row?.text || "").trim();
+            const visibility = String(row?.visibility || "public").toLowerCase();
+            if (
+              !userId ||
+              !text ||
+              next[userId] ||
+              Boolean(row?.completed) ||
+              visibility === "private" ||
+              visibility === "self" ||
+              visibility === "hidden"
+            ) {
+              continue;
+            }
+            next[userId] = text;
+          }
+        }
+      }
+
       setTileTasksByUserId(next);
     } catch {
       setTileTasksByUserId({});
     }
-  }, [session?.id]);
+  }, [session?.id, tileTaskUserIdsKey]);
 
   useEffect(() => {
     void loadTileTasks();
@@ -14512,8 +14585,24 @@ export function RoomPageLiveKit({
       )
       .subscribe();
 
+    const panelChannel = supabase
+      .channel(`tile-panel-intentions:${sid}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "panel_intentions" },
+        () => void loadTileTasks(),
+      )
+      .subscribe();
+
+    const refreshFromTaskOrder = () => void loadTileTasks();
+    window.addEventListener("mysession:task-order-synced", refreshFromTaskOrder);
+    window.addEventListener(TASKS_SYNC_EVENT, refreshFromTaskOrder);
+
     return () => {
       safeRemoveRealtimeChannel(ch);
+      safeRemoveRealtimeChannel(panelChannel);
+      window.removeEventListener("mysession:task-order-synced", refreshFromTaskOrder);
+      window.removeEventListener(TASKS_SYNC_EVENT, refreshFromTaskOrder);
     };
   }, [session?.id, loadTileTasks]);
 

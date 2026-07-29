@@ -157,6 +157,20 @@ function getVisibilityTitle(value: unknown) {
   return "Private — visible only to you. Click the globe to make public.";
 }
 
+function orderPanelTasks(tasks: PanelTask[], order: string[]) {
+  const indexById = new Map(order.map((id, index) => [id, index]));
+  return [...tasks].sort((a, b) => {
+    const ai = indexById.has(a.id)
+      ? Number(indexById.get(a.id))
+      : Number.MAX_SAFE_INTEGER;
+    const bi = indexById.has(b.id)
+      ? Number(indexById.get(b.id))
+      : Number.MAX_SAFE_INTEGER;
+    if (ai !== bi) return ai - bi;
+    return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+  });
+}
+
 function PanelSmartIcon({
   name,
   theme,
@@ -1656,6 +1670,43 @@ export function TasksPanel({
     ],
   );
 
+  const syncFirstPublicTaskForTile = useCallback(
+    async (tasks: PanelTask[], order = panelTaskOrderRef.current) => {
+      if (!user?.id || !sessionId) return;
+
+      const firstPublicTask = orderPanelTasks(tasks, order).find(
+        (task) => isPanelTaskPublic(task) && !Boolean(task.completed),
+      );
+      if (!firstPublicTask) return;
+
+      const intentionId = await upsertOwnSessionTask({
+        text: firstPublicTask.text,
+        completed: false,
+      });
+      if (!intentionId) return;
+
+      // Room participants read the shared intentions table. Promoting the
+      // panel's first public task makes that shared selection deterministic
+      // without deleting the user's other public tasks or encouragements.
+      const { error } = await supabase
+        .from(SESSION_TASKS_TABLE)
+        .update({ created_at: new Date().toISOString() })
+        .eq("id", intentionId)
+        .eq("user_id", user.id)
+        .eq("session_id", sessionId);
+
+      if (!error) {
+        emitTasksSync({
+          action: "promote",
+          sessionId,
+          userId: user.id,
+          taskId: intentionId,
+        });
+      }
+    },
+    [sessionId, upsertOwnSessionTask, user?.id],
+  );
+
   const loadPlans = useCallback(async () => {
     if (!user?.id) return;
 
@@ -1884,8 +1935,63 @@ export function TasksPanel({
           ...prev.filter((x) => x.id !== optimisticId),
         ].slice(0, PANEL_TASKS_FETCH_LIMIT),
       );
+
+      // A newly added task is always position 1. Persist that position before
+      // realtime/refetch can re-apply the database order and move a null
+      // sort_order task back to the end of the list.
+      const currentIds = panelTasks
+        .map((task) => String(task.id || ""))
+        .filter((id) => id && id !== optimisticId && id !== String(data.id));
+      const persistedIds = panelTaskOrderRef.current.filter((id) =>
+        currentIds.includes(id),
+      );
+      const nextOrder = [
+        String(data.id),
+        ...persistedIds,
+        ...currentIds.filter((id) => !persistedIds.includes(id)),
+      ];
+
+      panelTaskOrderRef.current = nextOrder;
+      setPanelTaskOrder(nextOrder);
+      try {
+        localStorage.setItem(taskOrderStorageKey, JSON.stringify(nextOrder));
+        window.dispatchEvent(
+          new CustomEvent(TASK_ORDER_SYNC_EVENT, {
+            detail: { userId: user.id, order: nextOrder, source: "add" },
+          }),
+        );
+      } catch { }
+
+      reorderInFlightRef.current += 1;
+      const persistAddedTaskOrder = reorderQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          const { error: reorderError } = await supabase.rpc(
+            "reorder_panel_intentions",
+            { p_task_ids: nextOrder },
+          );
+          if (reorderError) throw reorderError;
+        })
+        .catch((reorderError: any) => {
+          logTaskReorder("add_order_persist_failed", {
+            taskId: String(data.id),
+            error: String(reorderError?.message || reorderError || "unknown_error"),
+          });
+        })
+        .finally(() => {
+          reorderInFlightRef.current = Math.max(0, reorderInFlightRef.current - 1);
+          if (reorderInFlightRef.current === 0 && pendingPanelReloadRef.current) {
+            pendingPanelReloadRef.current = false;
+            void loadPanelTasks();
+          }
+        });
+      reorderQueueRef.current = persistAddedTaskOrder;
+
       if (visibility === "public") {
-        void upsertOwnSessionTask({ text, completed: false });
+        void syncFirstPublicTaskForTile(
+          [data as PanelTask, ...panelTasks.filter((task) => task.id !== optimisticId)],
+          nextOrder,
+        );
       }
     } catch {
       setPanelTasks((prev) => prev.filter((x) => x.id !== optimisticId));
@@ -1950,6 +2056,12 @@ export function TasksPanel({
           text: it.text,
           completed: next,
         });
+        if (next) {
+          const nextTasks = panelTasks.map((task) =>
+            task.id === it.id ? { ...task, completed: true } : task,
+          );
+          void syncFirstPublicTaskForTile(nextTasks);
+        }
       }
     } catch {
       setPanelTasks((prev) =>
@@ -1977,6 +2089,7 @@ export function TasksPanel({
 
       if (target?.text && normalizeTaskVisibility(target.visibility) === "public") {
         void deleteOwnSessionTaskByText(target.text);
+        void syncFirstPublicTaskForTile(panelTasks.filter((task) => task.id !== id));
       }
     } catch {
       setPanelTasks(prev);
@@ -2066,8 +2179,18 @@ export function TasksPanel({
           text: it.text,
           completed: Boolean(it.completed),
         });
+        if (!it.completed) {
+          const nextTasks = panelTasks.map((task) =>
+            task.id === it.id ? { ...task, visibility: nextVisibility } : task,
+          );
+          void syncFirstPublicTaskForTile(nextTasks);
+        }
       } else {
         void deleteOwnSessionTaskByText(it.text);
+        const nextTasks = panelTasks.map((task) =>
+          task.id === it.id ? { ...task, visibility: nextVisibility } : task,
+        );
+        void syncFirstPublicTaskForTile(nextTasks);
       }
     } catch {
       setPanelTasks(prev);
@@ -2277,6 +2400,7 @@ export function TasksPanel({
         nextOrder: next,
       });
       persistPanelTaskOrder(next, "drop");
+      void syncFirstPublicTaskForTile(panelTasks, next);
       reorderInFlightRef.current += 1;
 
       const mutation = reorderQueueRef.current
@@ -2345,17 +2469,11 @@ export function TasksPanel({
 
       reorderQueueRef.current = mutation;
     },
-    [loadPanelTasks, panelTasks, persistPanelTaskOrder],
+    [loadPanelTasks, panelTasks, persistPanelTaskOrder, syncFirstPublicTaskForTile],
   );
 
   const orderedPanelTasks = useMemo(() => {
-    const indexById = new Map(panelTaskOrder.map((id, index) => [id, index]));
-    return [...panelTasks].sort((a, b) => {
-      const ai = indexById.has(a.id) ? Number(indexById.get(a.id)) : Number.MAX_SAFE_INTEGER;
-      const bi = indexById.has(b.id) ? Number(indexById.get(b.id)) : Number.MAX_SAFE_INTEGER;
-      if (ai !== bi) return ai - bi;
-      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
-    });
+    return orderPanelTasks(panelTasks, panelTaskOrder);
   }, [panelTaskOrder, panelTasks]);
 
   const renderTaskTimerControls = useCallback(
