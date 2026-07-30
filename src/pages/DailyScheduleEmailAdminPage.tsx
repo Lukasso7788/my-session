@@ -33,6 +33,9 @@ type AdminEmailUser = {
   priorityOverride: number;
 };
 
+type AudienceFilter = "active" | "all" | "selected" | "never_sent" | "unconfirmed" | "unsubscribed";
+type AudienceSort = "priority" | "newest" | "oldest" | "last_sent_oldest" | "last_sent_newest" | "name";
+
 const DAILY_SCHEDULE_ADMIN_API = "/api/livekit/admin";
 
 function todayYMD() {
@@ -106,7 +109,8 @@ export default function DailyScheduleEmailAdminPage() {
   const [allUsers, setAllUsers] = useState<AdminEmailUser[]>([]);
   const [userSearch, setUserSearch] = useState("");
   const [columns, setColumns] = useState(4);
-  const [showOnly, setShowOnly] = useState<"all" | "enabled" | "selected" | "unconfirmed">("all");
+  const [showOnly, setShowOnly] = useState<AudienceFilter>("active");
+  const [sortBy, setSortBy] = useState<AudienceSort>("priority");
   const [audienceSaving, setAudienceSaving] = useState(false);
   const [audienceLoading, setAudienceLoading] = useState(false);
   const [audienceMessage, setAudienceMessage] = useState("");
@@ -119,10 +123,12 @@ export default function DailyScheduleEmailAdminPage() {
   const filteredAllUsers = useMemo(() => {
     const q = userSearch.trim().toLowerCase();
 
-    return allUsers.filter((u) => {
-      if (showOnly === "enabled" && !u.enabled) return false;
-      if (showOnly === "selected" && !selectedIdSet.has(u.userId)) return false;
-      if (showOnly === "unconfirmed" && u.emailConfirmed) return false;
+    const visible = allUsers.filter((u) => {
+      if (showOnly === "active" && !u.enabled) return false;
+      if (showOnly === "selected" && (!u.enabled || !selectedIdSet.has(u.userId))) return false;
+      if (showOnly === "never_sent" && (!u.enabled || Boolean(u.lastSentAt))) return false;
+      if (showOnly === "unconfirmed" && (!u.enabled || u.emailConfirmed)) return false;
+      if (showOnly === "unsubscribed" && u.enabled) return false;
 
       if (!q) return true;
 
@@ -132,7 +138,41 @@ export default function DailyScheduleEmailAdminPage() {
         u.userId.toLowerCase().includes(q)
       );
     });
-  }, [allUsers, userSearch, showOnly, selectedIdSet]);
+
+    const timestamp = (value?: string | null) => {
+      const parsed = value ? new Date(value).getTime() : 0;
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    return visible.sort((a, b) => {
+      if (sortBy === "priority") {
+        const neverSentDelta = Number(!b.lastSentAt) - Number(!a.lastSentAt);
+        if (neverSentDelta) return neverSentDelta;
+        if (!a.lastSentAt && !b.lastSentAt) {
+          const newestSignupDelta = timestamp(b.createdAt) - timestamp(a.createdAt);
+          if (newestSignupDelta) return newestSignupDelta;
+        }
+        const oldestSendDelta = timestamp(a.lastSentAt) - timestamp(b.lastSentAt);
+        if (oldestSendDelta) return oldestSendDelta;
+      }
+      if (sortBy === "newest") return timestamp(b.createdAt) - timestamp(a.createdAt);
+      if (sortBy === "oldest") return timestamp(a.createdAt) - timestamp(b.createdAt);
+      if (sortBy === "last_sent_oldest") {
+        if (!a.lastSentAt !== !b.lastSentAt) return !a.lastSentAt ? -1 : 1;
+        return timestamp(a.lastSentAt) - timestamp(b.lastSentAt);
+      }
+      if (sortBy === "last_sent_newest") {
+        if (!a.lastSentAt !== !b.lastSentAt) return !a.lastSentAt ? 1 : -1;
+        return timestamp(b.lastSentAt) - timestamp(a.lastSentAt);
+      }
+      return String(a.name || a.email).localeCompare(String(b.name || b.email));
+    });
+  }, [allUsers, userSearch, showOnly, sortBy, selectedIdSet]);
+
+  const unsubscribedCount = useMemo(
+    () => allUsers.filter((u) => !u.enabled).length,
+    [allUsers]
+  );
 
   const gridClass = useMemo(() => {
     if (columns <= 2) return "grid-cols-1 md:grid-cols-2";
@@ -268,10 +308,12 @@ export default function DailyScheduleEmailAdminPage() {
   const toggleRecipient = (userId: string) => {
     const id = String(userId || "").trim();
     if (!id) return;
+    const isUnsubscribed = allUsers.some((u) => u.userId === id && !u.enabled);
 
     setSelectionMode("manual");
     setSelectedRecipientIds((prev) => {
       if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (isUnsubscribed) return prev;
       return [...prev, id];
     });
   };
@@ -393,7 +435,13 @@ export default function DailyScheduleEmailAdminPage() {
       });
 
       if (json?.ok) {
-        setAudienceMessage(`Saved daily audience: ${json.savedCount || ids.length} people.`);
+        const skipped = Number(json?.skippedUnsubscribedCount || 0);
+        setAudienceMessage(
+          `Saved daily audience: ${json.savedCount || ids.length} active people.${skipped ? ` Skipped ${skipped} unsubscribed.` : ""}`
+        );
+        if (Array.isArray(json.selectedUserIds)) {
+          setSelectedRecipientIds(normalizeSelectedIds(json.selectedUserIds));
+        }
       }
     } catch (e: any) {
       console.error("[daily-schedule-email] save audience failed:", e);
@@ -417,7 +465,10 @@ export default function DailyScheduleEmailAdminPage() {
 
       setSelectionMode("manual");
       setSelectedRecipientIds(ids);
-      setAudienceMessage(`Loaded saved daily audience: ${ids.length} people.`);
+      const excluded = Number(json?.unsubscribedCount || 0);
+      setAudienceMessage(
+        `Loaded saved daily audience: ${ids.length} active people.${excluded ? ` ${excluded} unsubscribed ${excluded === 1 ? "person was" : "people were"} moved out of the send list.` : ""}`
+      );
 
       if (ids.length > 0) {
         const previewJson = await callEndpoint("daily_schedule_preview", {
@@ -627,11 +678,11 @@ export default function DailyScheduleEmailAdminPage() {
             <div>
               <h2 className="text-[22px] font-bold">All registered users</h2>
               <p className="mt-1 text-[13px] text-[#666]">
-                Load everyone, search by name/email/id, then choose manually. Disabled/unsubscribed users are shown but marked.
+                Active recipients stay in the working list. Unsubscribed people are kept in a separate view and are never selected for sending.
               </p>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(240px,420px)_160px_160px]">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(220px,360px)_170px_210px_150px]">
               <input
                 value={userSearch}
                 onChange={(e) => setUserSearch(e.target.value)}
@@ -641,13 +692,28 @@ export default function DailyScheduleEmailAdminPage() {
 
               <select
                 value={showOnly}
-                onChange={(e) => setShowOnly(e.target.value as any)}
+                onChange={(e) => setShowOnly(e.target.value as AudienceFilter)}
                 className="h-11 rounded-2xl border border-black/10 bg-white px-4 text-[14px] outline-none focus:ring-2 focus:ring-black/15"
               >
-                <option value="all">All users</option>
-                <option value="enabled">Enabled only</option>
+                <option value="active">Active audience</option>
+                <option value="never_sent">Never sent</option>
                 <option value="selected">Selected only</option>
                 <option value="unconfirmed">Unconfirmed email</option>
+                <option value="unsubscribed">Unsubscribed ({unsubscribedCount})</option>
+                <option value="all">All users</option>
+              </select>
+
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as AudienceSort)}
+                className="h-11 rounded-2xl border border-black/10 bg-white px-4 text-[14px] outline-none focus:ring-2 focus:ring-black/15"
+              >
+                <option value="priority">Priority: never sent → newest</option>
+                <option value="newest">Newest registrations</option>
+                <option value="oldest">Oldest registrations</option>
+                <option value="last_sent_oldest">Least recently emailed</option>
+                <option value="last_sent_newest">Most recently emailed</option>
+                <option value="name">Name A–Z</option>
               </select>
 
               <select
@@ -689,8 +755,9 @@ export default function DailyScheduleEmailAdminPage() {
                       <input
                         type="checkbox"
                         checked={checked}
+                        disabled={!u.enabled && !checked}
                         onChange={() => toggleRecipient(u.userId)}
-                        className="mt-1 h-4 w-4 shrink-0"
+                        className="mt-1 h-4 w-4 shrink-0 disabled:cursor-not-allowed disabled:opacity-40"
                       />
 
                       <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/80 text-[13px] font-bold text-[#2F2F2F]">

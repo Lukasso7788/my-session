@@ -129,6 +129,7 @@ type RecipientCandidate = {
   score: number;
   reasons: string[];
   lastSentAt: string | null;
+  createdAt: string | null;
   enabled: boolean;
   unsubscribeToken: string;
 };
@@ -145,6 +146,30 @@ type AdminEmailUser = {
   priorityOverride: number;
   unsubscribeToken: string;
 };
+
+function emailAudiencePriorityCompare(
+  a: { lastSentAt?: string | null; createdAt?: string | null; email?: string | null },
+  b: { lastSentAt?: string | null; createdAt?: string | null; email?: string | null }
+) {
+  const aNeverSent = !a.lastSentAt;
+  const bNeverSent = !b.lastSentAt;
+  if (aNeverSent !== bNeverSent) return aNeverSent ? -1 : 1;
+
+  const time = (value?: string | null) => {
+    const parsed = value ? new Date(value).getTime() : 0;
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  if (aNeverSent && bNeverSent) {
+    const newestSignupFirst = time(b.createdAt) - time(a.createdAt);
+    if (newestSignupFirst) return newestSignupFirst;
+  } else {
+    const oldestSendFirst = time(a.lastSentAt) - time(b.lastSentAt);
+    if (oldestSendFirst) return oldestSendFirst;
+  }
+
+  return 0;
+}
 
 const ACTOR_ROLE_CACHE_TTL_MS = 2_000;
 const SESSION_CONTEXT_CACHE_TTL_MS = 15_000;
@@ -1103,8 +1128,15 @@ async function handleDailyScheduleSavedAudienceAction(params: {
     const { data: profilesData } = userIds.length
       ? await sb
           .from("profiles")
-          .select("id,full_name,avatar_url")
+          .select("id,full_name,avatar_url,created_at")
           .in("id", userIds)
+      : { data: [] as any[] };
+
+    const { data: preferencesData } = userIds.length
+      ? await sb
+          .from("daily_schedule_email_preferences")
+          .select("user_id,enabled,last_sent_at")
+          .in("user_id", userIds)
       : { data: [] as any[] };
 
     const profilesByUser = new Map<string, any>();
@@ -1112,26 +1144,45 @@ async function handleDailyScheduleSavedAudienceAction(params: {
       profilesByUser.set(String(p.id), p);
     }
 
+    const preferencesByUser = new Map<string, any>();
+    for (const preference of preferencesData || []) {
+      preferencesByUser.set(String(preference.user_id), preference);
+    }
+
     const members = rows.map((row: any) => {
       const userId = String(row.user_id || "");
       const profile = profilesByUser.get(userId) || null;
+      const preference = preferencesByUser.get(userId) || null;
 
       return {
         userId,
         email: String(row.email || ""),
         name: String(profile?.full_name || row.email || "User"),
         avatarUrl: String(profile?.avatar_url || "").trim() || null,
-        enabled: row.enabled !== false,
-        createdAt: row.created_at || null,
+        enabled: row.enabled !== false && preference?.enabled !== false,
+        createdAt: profile?.created_at || row.created_at || null,
+        lastSentAt: preference?.last_sent_at || null,
       };
     });
+
+    const activeMembers = members
+      .filter((member: any) => member.enabled)
+      .sort((a: any, b: any) =>
+        emailAudiencePriorityCompare(a, b) ||
+        String(a.email || "").localeCompare(String(b.email || ""))
+      );
+    const unsubscribedMembers = members
+      .filter((member: any) => !member.enabled)
+      .sort((a: any, b: any) => String(a.name || a.email).localeCompare(String(b.name || b.email)));
 
     return res.status(200).json({
       ok: true,
       audienceName,
-      members,
-      selectedUserIds: members.map((m: any) => m.userId).filter(Boolean),
-      count: members.length,
+      members: activeMembers,
+      unsubscribedMembers,
+      unsubscribedCount: unsubscribedMembers.length,
+      selectedUserIds: activeMembers.map((m: any) => m.userId).filter(Boolean),
+      count: activeMembers.length,
     });
   }
 
@@ -1173,8 +1224,22 @@ async function handleDailyScheduleSavedAudienceAction(params: {
       authUsers.set(String(u.id), u);
     }
 
+    const { data: selectedPreferences } = selectedUserIds.length
+      ? await sb
+          .from("daily_schedule_email_preferences")
+          .select("user_id,enabled")
+          .in("user_id", selectedUserIds)
+      : { data: [] as any[] };
+    const unsubscribedUserIds = new Set(
+      (selectedPreferences || [])
+        .filter((preference: any) => preference?.enabled === false)
+        .map((preference: any) => String(preference.user_id || ""))
+        .filter(Boolean)
+    );
+
     const rows = selectedUserIds
       .map((userId) => {
+        if (unsubscribedUserIds.has(userId)) return null;
         const u = authUsers.get(userId);
         const email = String(u?.email || "").trim().toLowerCase();
         if (!email) return null;
@@ -1224,7 +1289,8 @@ async function handleDailyScheduleSavedAudienceAction(params: {
       ok: true,
       audienceName,
       savedCount: rows.length,
-      selectedUserIds,
+      selectedUserIds: rows.map((row: any) => String(row.user_id || "")).filter(Boolean),
+      skippedUnsubscribedCount: unsubscribedUserIds.size,
     });
   }
 
@@ -1291,11 +1357,10 @@ async function handleDailyScheduleAllUsersAction(params: {
     });
   }
 
-  rows.sort((a, b) => {
-    const an = String(a.name || a.email).toLowerCase();
-    const bn = String(b.name || b.email).toLowerCase();
-    return an.localeCompare(bn);
-  });
+  rows.sort((a, b) =>
+    emailAudiencePriorityCompare(a, b) ||
+    String(a.name || a.email).localeCompare(String(b.name || b.email))
+  );
 
   return res.status(200).json({
     ok: true,
@@ -1433,12 +1498,15 @@ async function handleDailyScheduleEmailAction(params: {
       score: scored.score,
       reasons: scored.reasons,
       lastSentAt: pref?.last_sent_at || null,
+      createdAt: String(user.created_at || profile?.created_at || "").trim() || null,
       enabled: pref?.enabled !== false,
       unsubscribeToken,
     });
   }
 
   candidates.sort((a, b) => {
+    const audiencePriority = emailAudiencePriorityCompare(a, b);
+    if (audiencePriority) return audiencePriority;
     if (b.score !== a.score) return b.score - a.score;
     return a.email.localeCompare(b.email);
   });
