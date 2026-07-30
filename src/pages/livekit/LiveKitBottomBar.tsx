@@ -624,8 +624,6 @@ export function LiveKitBottomBar(props: {
                             >
                                 <Icon name="settings" theme={theme} className="w-5 h-5" />
                             </button>
-
-                            {pipDesktopBtn}
                         </div>
                     </div>
 
@@ -720,6 +718,10 @@ export function LiveKitBottomBar(props: {
                                 </div>
                             )}
                         </div>
+
+                        <div className="hidden md:block">
+                            {pipDesktopBtn}
+                        </div>
                     </div>
 
                     <div className="flex items-center justify-end gap-2">
@@ -732,7 +734,17 @@ export function LiveKitBottomBar(props: {
 
                         <button
                             onClick={onLeave}
-                            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#F65252] hover:bg-[#E64545] text-white flex items-center justify-center transition"
+                            className="hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 bg-[#F65252] hover:bg-[#E64545] text-white transition"
+                            title="Leave"
+                            type="button"
+                        >
+                            <Icon name="leave" theme="dark" className="w-5 h-5" />
+                            <span className="text-[14px]">Leave</span>
+                        </button>
+
+                        <button
+                            onClick={onLeave}
+                            className="sm:hidden w-10 h-10 rounded-2xl bg-[#F65252] hover:bg-[#E64545] text-white flex items-center justify-center transition"
                             title="Leave"
                             type="button"
                         >
