@@ -288,6 +288,50 @@ export function LiveKitBottomBar(props: {
         </button>
     );
 
+    const participantsBtn = (
+        <button
+            onClick={onOpenParticipants}
+            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+            title="Participants"
+            type="button"
+        >
+            <Icon name="participants" theme={theme} className="w-5 h-5" />
+            <span className="sr-only">Participants</span>
+        </button>
+    );
+
+    const tasksBtn = (
+        <button
+            onClick={onOpenTasks}
+            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+            title="Tasks"
+            type="button"
+        >
+            <Icon name="tasks" theme={theme} className="w-5 h-5" />
+            <span className="sr-only">Tasks</span>
+        </button>
+    );
+
+    const soundscapesBtn = onOpenSoundscapes ? (
+        <button
+            onClick={onOpenSoundscapes}
+            className={
+                "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
+                (soundscapeActive
+                    ? "bg-[#242424] hover:bg-[#2E2E2E] text-white"
+                    : ctlBtnBase)
+            }
+            title={soundscapeActive ? "Background sounds playing" : "Background sounds"}
+            type="button"
+        >
+            <SoundscapeIcon isLight={isLight} active={soundscapeActive} />
+            {soundscapeActive ? (
+                <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#7EE787]" />
+            ) : null}
+            <span className="sr-only">Background sounds</span>
+        </button>
+    ) : null;
+
     const aiHostDesktopBtn =
         showAIHost && onOpenAIHost ? (
             <button
@@ -573,26 +617,6 @@ export function LiveKitBottomBar(props: {
                             {layoutDesktopBtn}
 
                             <button
-                                onClick={onOpenParticipants}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                title="Participants"
-                                type="button"
-                            >
-                                <Icon name="participants" theme={theme} className="w-5 h-5" />
-                            </button>
-
-                            {chatBtn}
-
-                            <button
-                                onClick={onOpenTasks}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
-                                title="Tasks"
-                                type="button"
-                            >
-                                <Icon name="tasks" theme={theme} className="w-5 h-5" />
-                            </button>
-
-                            <button
                                 onClick={onOpenSettings}
                                 className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                                 title="Settings"
@@ -600,26 +624,6 @@ export function LiveKitBottomBar(props: {
                             >
                                 <Icon name="settings" theme={theme} className="w-5 h-5" />
                             </button>
-
-                            {onOpenSoundscapes ? (
-                                <button
-                                    onClick={onOpenSoundscapes}
-                                    className={
-                                        "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
-                                        (soundscapeActive
-                                            ? "bg-[#242424] hover:bg-[#2E2E2E] text-white"
-                                            : ctlBtnBase)
-                                    }
-                                    title={soundscapeActive ? "Background sounds playing" : "Background sounds"}
-                                    type="button"
-                                >
-                                    <SoundscapeIcon isLight={isLight} active={soundscapeActive} />
-                                    {soundscapeActive ? (
-                                        <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#7EE787]" />
-                                    ) : null}
-                                    <span className="sr-only">Background sounds</span>
-                                </button>
-                            ) : null}
 
                             {pipDesktopBtn}
                         </div>
@@ -718,24 +722,22 @@ export function LiveKitBottomBar(props: {
                         </div>
                     </div>
 
-                    <div className="flex items-center justify-end gap-2 sm:gap-3">
-                        <button
-                            onClick={onLeave}
-                            className="hidden sm:flex h-11 px-6 rounded-2xl font-semibold items-center justify-center gap-2 bg-[#F65252] hover:bg-[#E64545] text-white"
-                            title="Leave"
-                            type="button"
-                        >
-                            <Icon name="leave" theme="dark" className="w-5 h-5" />
-                            <span className="text-[14px]">Leave</span>
-                        </button>
+                    <div className="flex items-center justify-end gap-2">
+                        <div className="hidden md:flex items-center gap-2">
+                            {participantsBtn}
+                            {chatBtn}
+                            {tasksBtn}
+                            {soundscapesBtn}
+                        </div>
 
                         <button
                             onClick={onLeave}
-                            className="sm:hidden w-10 h-10 rounded-2xl bg-[#F65252] hover:bg-[#E64545] text-white flex items-center justify-center"
+                            className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-[#F65252] hover:bg-[#E64545] text-white flex items-center justify-center transition"
                             title="Leave"
                             type="button"
                         >
                             <Icon name="leave" theme="dark" className="w-5 h-5" />
+                            <span className="sr-only">Leave room</span>
                         </button>
                     </div>
                 </div>

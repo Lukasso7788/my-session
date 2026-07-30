@@ -1031,6 +1031,58 @@ function normalizeMediaWarningMessage(raw: unknown) {
   return s;
 }
 
+function getMediaErrorDiagnostic(raw: unknown) {
+  const error = raw as {
+    name?: unknown;
+    message?: unknown;
+    constraint?: unknown;
+  } | null;
+
+  return {
+    name: String(error?.name || ""),
+    message: String(error?.message || raw || ""),
+    constraint: String(error?.constraint || ""),
+  };
+}
+
+function findLocalCameraPublication(localParticipant: any) {
+  return Array.from(
+    localParticipant?.videoTrackPublications?.values?.() || [],
+  ).find(
+    (publication: any) => publication?.source === Track.Source.Camera,
+  ) as LocalTrackPublication | undefined;
+}
+
+function getCameraMediaTrackFromPublication(
+  publication: LocalTrackPublication | undefined,
+) {
+  return getMediaStreamTrackFromLiveKitTrack(publication?.track);
+}
+
+async function waitForLocalCameraTrackLive(
+  localParticipant: any,
+  timeoutMs = 3200,
+) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const publication = findLocalCameraPublication(localParticipant);
+    const mediaTrack = getCameraMediaTrackFromPublication(publication);
+
+    if (
+      publication?.track &&
+      !publication.isMuted &&
+      mediaTrack?.readyState === "live"
+    ) {
+      return { publication, mediaTrack };
+    }
+
+    await delay(100);
+  }
+
+  return null;
+}
+
 function getPiPIconSrc(name: string, isLight: boolean) {
   const themeSuffix = isLight ? "light" : "dark";
   return `/icons/${name}-${themeSuffix}.svg`;
@@ -4750,6 +4802,8 @@ export function RoomPageLiveKit({
   const prejoinTrackCreationPromiseRef = useRef<
     Promise<LocalVideoTrack | null> | null
   >(null);
+  const localCameraEndedCleanupRef = useRef<(() => void) | null>(null);
+  const cameraStopExpectedRef = useRef(false);
   const deviceLabelsWarmupAttemptedRef = useRef(false);
 
   // roles
@@ -7435,6 +7489,24 @@ export function RoomPageLiveKit({
       }
 
       prejoinPreparedVideoTrackRef.current = track;
+      const preparedMediaTrack = getMediaStreamTrackFromLiveKitTrack(track);
+      if (preparedMediaTrack) {
+        preparedMediaTrack.addEventListener(
+          "ended",
+          () => {
+            // cleanupPrejoinPreparedVideoTrack clears the ref before stopping
+            // the track, so only an unexpected browser/device stop reaches here.
+            if (prejoinPreparedVideoTrackRef.current !== track) return;
+            prejoinPreparedVideoTrackRef.current = null;
+            lastPrejoinFxSignatureRef.current = "";
+            setDeviceError(
+              "The camera stopped unexpectedly. Select Camera on to reconnect it.",
+            );
+            setPrejoinPreviewVersion((v) => v + 1);
+          },
+          { once: true },
+        );
+      }
       setDeviceError("");
       setPrejoinPreviewVersion((v) => v + 1);
       return track;
@@ -9233,6 +9305,207 @@ export function RoomPageLiveKit({
     ],
   );
 
+  const bindLocalCameraEndedListener = useCallback(
+    (mediaTrack: MediaStreamTrack, context: string) => {
+      localCameraEndedCleanupRef.current?.();
+
+      const onEnded = () => {
+        localCameraEndedCleanupRef.current = null;
+        if (cameraStopExpectedRef.current) return;
+
+        setCamOn(false);
+        const message =
+          "The camera stopped unexpectedly. Close other camera apps if needed, then select Camera on to reconnect it.";
+        setDeviceError(message);
+        setMediaWarning(message);
+        scheduleRebuildTiles();
+
+        void logRoomDiagnostic("camera_track_ended", {
+          context,
+          readyState: mediaTrack.readyState,
+        });
+        void writeConnectionDiagnostic("camera.track_ended", { context });
+      };
+
+      mediaTrack.addEventListener("ended", onEnded, { once: true });
+      localCameraEndedCleanupRef.current = () => {
+        mediaTrack.removeEventListener("ended", onEnded);
+      };
+    },
+    [logRoomDiagnostic, writeConnectionDiagnostic],
+  );
+
+  const releaseLocalCameraForRetry = useCallback(
+    async (localParticipant: any, settleMs: number) => {
+      const publication = findLocalCameraPublication(localParticipant);
+      const mediaTrack = getCameraMediaTrackFromPublication(publication);
+
+      cameraStopExpectedRef.current = true;
+      localCameraEndedCleanupRef.current?.();
+      localCameraEndedCleanupRef.current = null;
+
+      try {
+        await localParticipant.setCameraEnabled(false);
+      } catch {
+        try {
+          mediaTrack?.stop();
+        } catch { }
+      }
+
+      if (mediaTrack?.readyState === "live") {
+        const releaseStartedAt = Date.now();
+        while (
+          mediaTrack.readyState === "live" &&
+          Date.now() - releaseStartedAt < 900
+        ) {
+          await delay(75);
+        }
+      }
+
+      await delay(settleMs);
+      cameraStopExpectedRef.current = false;
+    },
+    [],
+  );
+
+  const enableLocalCameraWithRecovery = useCallback(
+    async (
+      localParticipant: any,
+      args: {
+        context: "join" | "toggle";
+        requestedDeviceId?: string;
+      },
+    ) => {
+      const baseOptions = {
+        resolution: {
+          width: lowPowerMobileMode ? 320 : capturePreset.width,
+          height: lowPowerMobileMode ? 180 : capturePreset.height,
+        },
+        frameRate: lowPowerMobileMode ? 8 : capturePreset.fps,
+      } as any;
+      const requestedDeviceId = String(args.requestedDeviceId || "").trim();
+      const attempts = [
+        {
+          name: "selected",
+          options: {
+            ...baseOptions,
+            deviceId:
+              lowPowerMobileMode || isSafariLike()
+                ? undefined
+                : requestedDeviceId || undefined,
+          },
+          settleMs: 0,
+        },
+        {
+          name: "default_constrained",
+          options: baseOptions,
+          settleMs: 350,
+        },
+        {
+          name: "default_unconstrained",
+          options: undefined,
+          settleMs: 700,
+        },
+      ];
+
+      let lastError: unknown = null;
+
+      for (let index = 0; index < attempts.length; index += 1) {
+        const attempt = attempts[index];
+
+        if (index > 0) {
+          await releaseLocalCameraForRetry(
+            localParticipant,
+            attempt.settleMs,
+          );
+        } else {
+          const stalePublication = findLocalCameraPublication(localParticipant);
+          const staleMediaTrack =
+            getCameraMediaTrackFromPublication(stalePublication);
+          if (
+            stalePublication?.track &&
+            staleMediaTrack?.readyState !== "live"
+          ) {
+            await releaseLocalCameraForRetry(localParticipant, 250);
+          }
+        }
+
+        try {
+          await localParticipant.setCameraEnabled(true, attempt.options);
+
+          const liveCamera = await waitForLocalCameraTrackLive(
+            localParticipant,
+            3200,
+          );
+          if (!liveCamera) {
+            throw new Error("camera_track_did_not_become_live");
+          }
+
+          bindLocalCameraEndedListener(liveCamera.mediaTrack, args.context);
+
+          // A live MediaStreamTrack is sufficient to keep the camera enabled.
+          // Frame readiness is also observed because WebKit can expose a live
+          // track before the first decoded frame, but a slow frame must not turn
+          // a valid privacy-shutter/virtual camera back off.
+          void waitForMediaTrackRenderableFrame(
+            liveCamera.mediaTrack,
+            2400,
+          ).then((renderable) => {
+            if (renderable) return;
+            void writeConnectionDiagnostic("camera.frame_delayed", {
+              context: args.context,
+              attempt: attempt.name,
+              readyState: liveCamera.mediaTrack.readyState,
+            });
+          });
+
+          void writeConnectionDiagnostic("camera.started", {
+            context: args.context,
+            attempt: attempt.name,
+          });
+
+          return {
+            ...liveCamera,
+            attemptName: attempt.name,
+          };
+        } catch (error) {
+          lastError = error;
+          const diagnostic = getMediaErrorDiagnostic(error);
+          console.warn(
+            `[camera-${args.context}] ${attempt.name} failed:`,
+            error,
+          );
+
+          void logRoomDiagnostic("camera_start_attempt_failed", {
+            context: args.context,
+            attempt: attempt.name,
+            ...diagnostic,
+          });
+          void writeConnectionDiagnostic(
+            `camera.start_failed.${attempt.name}`,
+            {
+              context: args.context,
+              ...diagnostic,
+            },
+          );
+        }
+      }
+
+      cameraStopExpectedRef.current = false;
+      throw lastError || new Error("camera_enable_failed");
+    },
+    [
+      bindLocalCameraEndedListener,
+      capturePreset.fps,
+      capturePreset.height,
+      capturePreset.width,
+      logRoomDiagnostic,
+      lowPowerMobileMode,
+      releaseLocalCameraForRetry,
+      writeConnectionDiagnostic,
+    ],
+  );
+
   useEffect(() => {
     const write = (
       eventType: string,
@@ -10853,14 +11126,6 @@ export function RoomPageLiveKit({
             }
           }
 
-          const defaultCameraOptions = {
-            resolution: {
-              width: lowPowerMobileMode ? 320 : capturePreset.width,
-              height: lowPowerMobileMode ? 180 : capturePreset.height,
-            },
-            frameRate: lowPowerMobileMode ? 8 : capturePreset.fps,
-          } as any;
-
           let cameraPublished = false;
 
           if (prepared) {
@@ -10873,7 +11138,15 @@ export function RoomPageLiveKit({
                 await r.localParticipant.publishTrack(prepared, {
                   source: Track.Source.Camera,
                 } as any);
+                const liveCamera = await waitForLocalCameraTrackLive(
+                  r.localParticipant,
+                  3200,
+                );
+                if (!liveCamera) {
+                  throw new Error("prepared_camera_track_did_not_become_live");
+                }
                 prejoinPreparedVideoTrackRef.current = null;
+                bindLocalCameraEndedListener(liveCamera.mediaTrack, "join");
                 cameraPublished = true;
               } catch (publishError) {
                 console.warn(
@@ -10890,35 +11163,18 @@ export function RoomPageLiveKit({
               pj.videoInputId || selectedVideoInputId || "",
             ).trim();
 
-            try {
-              await r.localParticipant.setCameraEnabled(true, {
-                ...defaultCameraOptions,
-                deviceId:
-                  lowPowerMobileMode || isSafariLike()
-                    ? undefined
-                    : requestedCameraId || undefined,
-              } as any);
-            } catch (selectedCameraError) {
-              console.warn(
-                "[join] selected camera failed; retrying browser default:",
-                selectedCameraError,
-              );
-              try {
-                await r.localParticipant.setCameraEnabled(false);
-              } catch { }
-              await delay(120);
-              try {
-                await r.localParticipant.setCameraEnabled(
-                  true,
-                  defaultCameraOptions,
-                );
-              } catch (constrainedDefaultError) {
-                console.warn(
-                  "[join] constrained default camera failed; retrying unconstrained camera:",
-                  constrainedDefaultError,
-                );
-                await r.localParticipant.setCameraEnabled(true);
-              }
+            const cameraResult = await enableLocalCameraWithRecovery(
+              r.localParticipant,
+              {
+                context: "join",
+                requestedDeviceId: requestedCameraId,
+              },
+            );
+
+            if (
+              requestedCameraId &&
+              cameraResult.attemptName !== "selected"
+            ) {
               setSelectedVideoInputId("");
               prejoinRef.current = {
                 ...prejoinRef.current,
@@ -11041,6 +11297,8 @@ export function RoomPageLiveKit({
         preserveTabPresence: preserveMobileBackgroundSession,
         preserveJoinRequested: preserveMobileBackgroundSession,
       }).catch(() => { });
+      localCameraEndedCleanupRef.current?.();
+      localCameraEndedCleanupRef.current = null;
       cleanupPrejoinPreparedVideoTrack().catch(() => { });
       if (uploadedBgUrlRef.current) {
         try {
@@ -11290,57 +11548,45 @@ export function RoomPageLiveKit({
     }
 
     const lp = room.localParticipant;
-    const currentPublication = Array.from(
-      lp.videoTrackPublications?.values?.() || [],
-    ).find((publication: any) => publication?.source === Track.Source.Camera) as
-      | LocalTrackPublication
-      | undefined;
+    const currentPublication = findLocalCameraPublication(lp);
+    const currentMediaTrack =
+      getCameraMediaTrackFromPublication(currentPublication);
     const currentlyEnabled =
-      !!currentPublication?.track && !currentPublication.isMuted;
+      !!currentPublication?.track &&
+      !currentPublication.isMuted &&
+      currentMediaTrack?.readyState === "live";
     const nextEnabled = typeof force === "boolean" ? force : !currentlyEnabled;
     const requestedCameraId = String(
       selectedVideoInputId || prejoinRef.current.videoInputId || "",
     ).trim();
-    const baseOptions = {
-      resolution: {
-        width: lowPowerMobileMode ? 320 : capturePreset.width,
-        height: lowPowerMobileMode ? 180 : capturePreset.height,
-      },
-      frameRate: lowPowerMobileMode ? 8 : capturePreset.fps,
-    } as any;
+
+    if (typeof force === "boolean" && force === currentlyEnabled) {
+      setCamOn(currentlyEnabled);
+      return;
+    }
 
     try {
       setMediaWarning("");
 
       if (!nextEnabled) {
-        await lp.setCameraEnabled(false);
-      } else {
+        cameraStopExpectedRef.current = true;
+        localCameraEndedCleanupRef.current?.();
+        localCameraEndedCleanupRef.current = null;
         try {
-          await lp.setCameraEnabled(true, {
-            ...baseOptions,
-            deviceId:
-              lowPowerMobileMode || isSafariLike()
-                ? undefined
-                : requestedCameraId || undefined,
-          } as any);
-        } catch (selectedCameraError) {
-          console.warn(
-            "[camera-toggle] selected camera failed; retrying browser default:",
-            selectedCameraError,
-          );
-          try {
-            await lp.setCameraEnabled(false);
-          } catch { }
-          await delay(120);
-          try {
-            await lp.setCameraEnabled(true, baseOptions);
-          } catch (constrainedDefaultError) {
-            console.warn(
-              "[camera-toggle] constrained default failed; retrying unconstrained camera:",
-              constrainedDefaultError,
-            );
-            await lp.setCameraEnabled(true);
-          }
+          await lp.setCameraEnabled(false);
+        } finally {
+          cameraStopExpectedRef.current = false;
+        }
+      } else {
+        const cameraResult = await enableLocalCameraWithRecovery(lp, {
+          context: "toggle",
+          requestedDeviceId: requestedCameraId,
+        });
+
+        if (
+          requestedCameraId &&
+          cameraResult.attemptName !== "selected"
+        ) {
           setSelectedVideoInputId("");
           setPrejoin((prev) => ({ ...prev, videoInputId: "" }));
           prejoinRef.current = {
@@ -11375,8 +11621,20 @@ export function RoomPageLiveKit({
         `${msg} Check the browser's site settings, allow Camera, close other apps using it, and try again.`,
       );
 
-      setCamOn(currentlyEnabled);
+      const actualPublication = findLocalCameraPublication(lp);
+      const actualMediaTrack =
+        getCameraMediaTrackFromPublication(actualPublication);
+      const actuallyEnabled =
+        !!actualPublication?.track &&
+        !actualPublication.isMuted &&
+        actualMediaTrack?.readyState === "live";
+
+      setCamOn(actuallyEnabled);
       setDeviceError(msg);
+      void logRoomDiagnostic("camera_toggle_failed", {
+        ...getMediaErrorDiagnostic(e),
+        requestedDevice: !!requestedCameraId,
+      });
       scheduleRebuildTiles();
     }
   };
