@@ -17,6 +17,7 @@ import {
   Users,
 } from "lucide-react";
 import {
+  DisconnectReason,
   Room,
   RoomEvent,
   Track,
@@ -2273,14 +2274,20 @@ const MOBILE_LAYOUT_SWITCHER_VISIBLE_KEY =
 const CONNECTION_DIAGNOSTICS_TABLE = "connection_diagnostics";
 const CONNECTION_DIAGNOSTICS_LOCAL_KEY =
   "mysession_connection_diagnostics_buffer_v1";
-const CONNECTION_DIAGNOSTICS_LOCAL_MAX = 60;
+const CONNECTION_DIAGNOSTICS_LOCAL_MAX = 120;
+const connectionDiagnosticsMemoryBuffer: Record<string, unknown>[] = [];
 const CONNECTION_DIAGNOSTICS_DEDUP_MS = 30_000;
 const CONNECTION_DIAGNOSTICS_REMOTE_SAMPLE_RATE = 1 / 20;
+const ROOM_RECOVERY_REQUEST_EVENT = "mysession:room-recovery-request";
 const CONNECTION_DIAGNOSTICS_CRITICAL_EVENTS = new Set([
   "livekit.connected",
   "livekit.disconnected",
   "livekit.reconnecting",
+  "livekit.signal_reconnecting",
   "livekit.reconnected",
+  "livekit.controlled_reconnect_started",
+  "livekit.controlled_reconnect_failed",
+  "attendance.leave_started",
   "window.offline",
 ]);
 
@@ -2344,19 +2351,107 @@ function getNetworkDiagnosticSnapshot() {
 }
 
 function pushConnectionDiagnosticToLocalBuffer(entry: Record<string, unknown>) {
+  connectionDiagnosticsMemoryBuffer.push(entry);
+  if (
+    connectionDiagnosticsMemoryBuffer.length >
+    CONNECTION_DIAGNOSTICS_LOCAL_MAX
+  ) {
+    connectionDiagnosticsMemoryBuffer.splice(
+      0,
+      connectionDiagnosticsMemoryBuffer.length -
+      CONNECTION_DIAGNOSTICS_LOCAL_MAX,
+    );
+  }
+
   if (typeof window === "undefined") return;
 
   try {
-    const raw = window.localStorage.getItem(CONNECTION_DIAGNOSTICS_LOCAL_KEY);
+    const raw = window.sessionStorage.getItem(CONNECTION_DIAGNOSTICS_LOCAL_KEY);
     const prev = raw ? JSON.parse(raw) : [];
     const list = Array.isArray(prev) ? prev : [];
 
-    window.localStorage.setItem(
+    window.sessionStorage.setItem(
       CONNECTION_DIAGNOSTICS_LOCAL_KEY,
       JSON.stringify([...list, entry].slice(-CONNECTION_DIAGNOSTICS_LOCAL_MAX)),
     );
   } catch {
     // local diagnostics are best-effort only
+  }
+}
+
+function readConnectionDiagnosticLocalBuffer() {
+  if (typeof window === "undefined") {
+    return [...connectionDiagnosticsMemoryBuffer];
+  }
+  try {
+    const raw = window.sessionStorage.getItem(CONNECTION_DIAGNOSTICS_LOCAL_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed)
+      ? parsed
+      : [...connectionDiagnosticsMemoryBuffer];
+  } catch {
+    return [...connectionDiagnosticsMemoryBuffer];
+  }
+}
+
+function createRoomLifecycleAttemptId() {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `room-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
+function getDisconnectReasonLabel(reason: unknown) {
+  const numericReason = Number(reason);
+  if (Number.isFinite(numericReason)) {
+    const labels = DisconnectReason as unknown as Record<number, string>;
+    return String(labels[numericReason] || numericReason);
+  }
+  return String(reason ?? "UNKNOWN") || "UNKNOWN";
+}
+
+function getUnknownErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message?: unknown }).message || "");
+  }
+  return String(error || "");
+}
+
+function isTerminalRoomDisconnect(reason: unknown) {
+  const numericReason = Number(reason);
+  return new Set<number>([
+    DisconnectReason.CLIENT_INITIATED,
+    DisconnectReason.DUPLICATE_IDENTITY,
+    DisconnectReason.PARTICIPANT_REMOVED,
+    DisconnectReason.ROOM_DELETED,
+    DisconnectReason.ROOM_CLOSED,
+  ]).has(numericReason);
+}
+
+function getJwtTimingWithoutToken(token: string) {
+  try {
+    const encoded = String(token || "").split(".")[1] || "";
+    const normalized = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const payload = JSON.parse(window.atob(padded));
+    const issuedAt = Number(payload?.iat || 0);
+    const expiresAt = Number(payload?.exp || 0);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    return {
+      issued_at: issuedAt || null,
+      expires_at: expiresAt || null,
+      age_seconds: issuedAt ? Math.max(0, nowSeconds - issuedAt) : null,
+      remaining_seconds: expiresAt ? expiresAt - nowSeconds : null,
+    };
+  } catch {
+    return {
+      issued_at: null,
+      expires_at: null,
+      age_seconds: null,
+      remaining_seconds: null,
+    };
   }
 }
 
@@ -4130,6 +4225,22 @@ export function RoomPageLiveKit({
   const { id: routeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const roomDebugEnabled = useMemo(() => {
+    const queryEnabled =
+      new URLSearchParams(location.search).get("roomDebug") === "1";
+    return Boolean(import.meta.env.DEV) || queryEnabled;
+  }, [location.search]);
+  const roomLifecycleAttemptIdRef = useRef(createRoomLifecycleAttemptId());
+  const roomLifecycleDiagnosticRef = useRef<
+    (eventType: string, payload?: Record<string, unknown>) => void
+  >((eventType, payload = {}) => {
+    pushConnectionDiagnosticToLocalBuffer({
+      at: new Date().toISOString(),
+      attempt_id: roomLifecycleAttemptIdRef.current,
+      event_type: eventType,
+      payload,
+    });
+  });
 
   const effectiveSessionParam = useMemo(
     () => String(sessionIdOverride || routeId || "").trim(),
@@ -7059,6 +7170,7 @@ export function RoomPageLiveKit({
     "restoring" | "needs_action"
   >("restoring");
   const mobileRestoreEscalationTimerRef = useRef<number | null>(null);
+  const mobileMediaRestoreBusyRef = useRef(false);
   const mobileAutoRestoreInFlightRef = useRef(false);
   const mobileRecoveryRetryTimerRef = useRef<number | null>(null);
   const mobileRecoveryAttemptRef = useRef(0);
@@ -8005,9 +8117,13 @@ export function RoomPageLiveKit({
   const ATT_HEARTBEAT_MS = 10_000;
 
   const attendanceHbTimerRef = useRef<number | null>(null);
+  const attendanceHeartbeatGenerationRef = useRef(0);
+  const attendanceHeartbeatPromiseRef = useRef<Promise<void> | null>(null);
+  const attendanceLastSuccessAtRef = useRef<number | null>(null);
   const attendanceActiveRef = useRef(false);
   const leaveOnceRef = useRef(false);
   const leavePromiseRef = useRef<Promise<void> | null>(null);
+  const unexpectedDisconnectRecoveryTimerRef = useRef<number | null>(null);
 
   // Mobile browser/app-switch recovery.
   // Switching apps / backgrounding a mobile browser tab is NOT the same as clicking Leave.
@@ -8146,15 +8262,31 @@ export function RoomPageLiveKit({
   const startAttendanceHeartbeat = () => {
     if (attendanceHbTimerRef.current) return;
 
+    attendanceHeartbeatGenerationRef.current += 1;
+    roomLifecycleDiagnosticRef.current("heartbeat.started", {
+      interval_ms: ATT_HEARTBEAT_MS,
+      generation: attendanceHeartbeatGenerationRef.current,
+      last_success_at: attendanceLastSuccessAtRef.current
+        ? new Date(attendanceLastSuccessAtRef.current).toISOString()
+        : null,
+    });
     attendanceHbTimerRef.current = window.setInterval(() => {
       void attendanceHeartbeat();
     }, ATT_HEARTBEAT_MS);
   };
 
   const stopAttendanceHeartbeat = () => {
-    if (!attendanceHbTimerRef.current) return;
-    window.clearInterval(attendanceHbTimerRef.current);
-    attendanceHbTimerRef.current = null;
+    attendanceHeartbeatGenerationRef.current += 1;
+    if (attendanceHbTimerRef.current) {
+      window.clearInterval(attendanceHbTimerRef.current);
+      attendanceHbTimerRef.current = null;
+    }
+    roomLifecycleDiagnosticRef.current("heartbeat.stopped", {
+      generation: attendanceHeartbeatGenerationRef.current,
+      last_success_at: attendanceLastSuccessAtRef.current
+        ? new Date(attendanceLastSuccessAtRef.current).toISOString()
+        : null,
+    });
   };
 
   const recordInfiniteRoomDailyAttendance = async () => {
@@ -8194,6 +8326,7 @@ export function RoomPageLiveKit({
   const attendanceJoin = async () => {
     if (!session?.id || !authUserId) return;
 
+    roomLifecycleDiagnosticRef.current("attendance.join_started");
     const nowIso = new Date().toISOString();
 
     // This RPC is idempotent for user + infinite room + local calendar day.
@@ -8208,6 +8341,9 @@ export function RoomPageLiveKit({
       if (!error) {
         attendanceActiveRef.current = true;
         leaveOnceRef.current = false;
+        roomLifecycleDiagnosticRef.current("attendance.join_succeeded", {
+          method: "rpc",
+        });
         return;
       }
     } catch { }
@@ -8227,42 +8363,98 @@ export function RoomPageLiveKit({
       if (!error) {
         attendanceActiveRef.current = true;
         leaveOnceRef.current = false;
+        roomLifecycleDiagnosticRef.current("attendance.join_succeeded", {
+          method: "upsert",
+        });
+      } else {
+        roomLifecycleDiagnosticRef.current("attendance.join_failed", {
+          method: "upsert",
+          code: String(error?.code || ""),
+        });
       }
-    } catch { }
+    } catch (error) {
+      roomLifecycleDiagnosticRef.current("attendance.join_failed", {
+        method: "upsert",
+        message: getUnknownErrorMessage(error),
+      });
+    }
   };
 
-  const attendanceHeartbeat = async () => {
-    if (!session?.id || !authUserId) return;
-    if (!attendanceActiveRef.current) return;
+  const attendanceHeartbeat = (): Promise<void> => {
+    if (!session?.id || !authUserId || !attendanceActiveRef.current) {
+      return Promise.resolve();
+    }
+    if (attendanceHeartbeatPromiseRef.current) {
+      return attendanceHeartbeatPromiseRef.current;
+    }
 
+    const generation = attendanceHeartbeatGenerationRef.current;
     const nowIso = new Date().toISOString();
+    const heartbeatPromise = (async () => {
+      try {
+        const { error } = await supabase.rpc("attendance_heartbeat", {
+          p_session_id: session.id,
+        });
 
-    try {
-      const { error } = await supabase.rpc("attendance_heartbeat", {
-        p_session_id: session.id,
-      });
+        if (!error) {
+          attendanceLastSuccessAtRef.current = Date.now();
+          roomLifecycleDiagnosticRef.current("heartbeat.succeeded", {
+            generation,
+            method: "rpc",
+          });
+          return;
+        }
 
-      if (!error) return;
-    } catch { }
+        if (
+          generation !== attendanceHeartbeatGenerationRef.current ||
+          !attendanceActiveRef.current
+        ) {
+          return;
+        }
 
-    try {
-      await supabase
-        .from("session_attendance")
-        .update({
-          last_seen_at: nowIso,
-          left_at: null,
-        })
-        .eq("session_id", session.id)
-        .eq("user_id", authUserId);
-    } catch { }
+        const { error: fallbackError } = await supabase
+          .from("session_attendance")
+          .update({
+            last_seen_at: nowIso,
+            left_at: null,
+          })
+          .eq("session_id", session.id)
+          .eq("user_id", authUserId);
+
+        if (fallbackError) throw fallbackError;
+        attendanceLastSuccessAtRef.current = Date.now();
+        roomLifecycleDiagnosticRef.current("heartbeat.succeeded", {
+          generation,
+          method: "update",
+        });
+      } catch (error) {
+        roomLifecycleDiagnosticRef.current("heartbeat.failed", {
+          generation,
+          message: getUnknownErrorMessage(error),
+          last_success_at: attendanceLastSuccessAtRef.current
+            ? new Date(attendanceLastSuccessAtRef.current).toISOString()
+            : null,
+        });
+      }
+    })().finally(() => {
+      if (attendanceHeartbeatPromiseRef.current === heartbeatPromise) {
+        attendanceHeartbeatPromiseRef.current = null;
+      }
+    });
+
+    attendanceHeartbeatPromiseRef.current = heartbeatPromise;
+    return heartbeatPromise;
   };
 
   const attendanceLeave = async () => {
+    const wasActive = attendanceActiveRef.current;
+    attendanceActiveRef.current = false;
     stopAttendanceHeartbeat();
 
-    if (!session?.id || !authUserId) return;
-    if (!attendanceActiveRef.current) return;
+    if (!session?.id || !authUserId || !wasActive) return;
 
+    roomLifecycleDiagnosticRef.current("attendance.leave_started");
+    await attendanceHeartbeatPromiseRef.current?.catch(() => { });
     const nowIso = new Date().toISOString();
 
     try {
@@ -8271,7 +8463,9 @@ export function RoomPageLiveKit({
       });
 
       if (!error) {
-        attendanceActiveRef.current = false;
+        roomLifecycleDiagnosticRef.current("attendance.leave_succeeded", {
+          method: "rpc",
+        });
         return;
       }
     } catch { }
@@ -8288,6 +8482,9 @@ export function RoomPageLiveKit({
     } catch { }
 
     attendanceActiveRef.current = false;
+    roomLifecycleDiagnosticRef.current("attendance.leave_succeeded", {
+      method: "update",
+    });
   };
 
   const keepaliveLeaveWrite = () => {
@@ -8420,6 +8617,8 @@ export function RoomPageLiveKit({
     tokenRequestInFlightRef.current = true;
     setTokenError("");
     setTokenLoading(true);
+    const tokenRequestStartedAt = Date.now();
+    roomLifecycleDiagnosticRef.current("token.fetch_started");
 
     try {
       const pj = prejoinRef.current;
@@ -8495,6 +8694,11 @@ export function RoomPageLiveKit({
 
       if (!res.ok) {
         const code = String(json?.error || "").trim();
+        roomLifecycleDiagnosticRef.current("token.fetch_failed", {
+          status: res.status,
+          code,
+          duration_ms: Date.now() - tokenRequestStartedAt,
+        });
 
         if (code.toUpperCase() === "USER_BANNED") {
           const banFromToken: ActiveBan = {
@@ -8582,9 +8786,18 @@ export function RoomPageLiveKit({
       lkServerUrlRef.current = nextUrl;
       setAssignedServerId(nextAssignedServerId);
       setTokenLoading(false);
+      roomLifecycleDiagnosticRef.current("token.fetch_succeeded", {
+        duration_ms: Date.now() - tokenRequestStartedAt,
+        assigned_server_id: nextAssignedServerId || null,
+        ...getJwtTimingWithoutToken(tok),
+      });
       return { token: tok, url: nextUrl };
     } catch (e: any) {
       console.error("requestToken exception:", e);
+      roomLifecycleDiagnosticRef.current("token.fetch_failed", {
+        duration_ms: Date.now() - tokenRequestStartedAt,
+        message: String(e?.message || e || ""),
+      });
       setTokenError(String(e?.message || e || "token_request_failed"));
       setTokenLoading(false);
 
@@ -9216,9 +9429,28 @@ export function RoomPageLiveKit({
 
       const localEntry = {
         at: new Date().toISOString(),
+        attempt_id: roomLifecycleAttemptIdRef.current,
         event_type: eventType,
         session_id: session?.id || null,
         user_id: authUserId || null,
+        route:
+          typeof window !== "undefined"
+            ? `${window.location.pathname}${window.location.search}`
+            : "",
+        user_agent:
+          typeof navigator !== "undefined" ? String(navigator.userAgent || "") : "",
+        platform:
+          typeof navigator !== "undefined"
+            ? String(
+              (
+                navigator as Navigator & {
+                  userAgentData?: { platform?: string };
+                }
+              ).userAgentData?.platform ||
+              navigator.platform ||
+              "",
+            )
+            : "",
         visibility_state:
           typeof document !== "undefined"
             ? document.visibilityState
@@ -9231,6 +9463,9 @@ export function RoomPageLiveKit({
       };
 
       pushConnectionDiagnosticToLocalBuffer(localEntry);
+      if (roomDebugEnabled) {
+        console.info("[ROOM-LIFECYCLE]", localEntry);
+      }
 
       const isCriticalEvent =
         CONNECTION_DIAGNOSTICS_CRITICAL_EVENTS.has(eventType);
@@ -9281,6 +9516,7 @@ export function RoomPageLiveKit({
               ? 1
               : CONNECTION_DIAGNOSTICS_REMOTE_SAMPLE_RATE,
             details: {
+              attempt_id: roomLifecycleAttemptIdRef.current,
               tab_id: tabId,
               is_mobile_layout: isMobileQuery,
               is_tablet_layout: isTabletQuery,
@@ -9302,8 +9538,25 @@ export function RoomPageLiveKit({
       tabId,
       micOn,
       camOn,
+      roomDebugEnabled,
     ],
   );
+
+  useEffect(() => {
+    roomLifecycleDiagnosticRef.current = (eventType, payload = {}) => {
+      void writeConnectionDiagnostic(eventType, payload);
+    };
+  }, [writeConnectionDiagnostic]);
+
+  const copyRoomLifecycleDiagnostics = useCallback(async () => {
+    const diagnostics = {
+      copied_at: new Date().toISOString(),
+      attempt_id: roomLifecycleAttemptIdRef.current,
+      route: `${location.pathname}${location.search}`,
+      entries: readConnectionDiagnosticLocalBuffer(),
+    };
+    await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+  }, [location.pathname, location.search]);
 
   const bindLocalCameraEndedListener = useCallback(
     (mediaTrack: MediaStreamTrack, context: string) => {
@@ -9517,25 +9770,57 @@ export function RoomPageLiveKit({
     const onVisibilityChange = () => {
       write(`document.visibilitychange:${document.visibilityState}`);
     };
-
-    const onOnline = () => {
-      write("window.online");
+    const onPageHide = (event: PageTransitionEvent) => {
+      write("window.pagehide", { persisted: event.persisted });
     };
-
-    const onOffline = () => {
-      write("window.offline");
+    const onPageShow = (event: PageTransitionEvent) => {
+      write("window.pageshow", { persisted: event.persisted });
     };
+    const onFreeze = () => write("document.freeze");
+    const onResume = () => write("document.resume");
+    const onOnline = () => write("window.online");
+    const onOffline = () => write("window.offline");
+    const onFocus = () => write("window.focus");
+    const onBlur = () => write("window.blur");
 
     document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+    document.addEventListener("freeze", onFreeze);
+    document.addEventListener("resume", onResume);
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
 
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("freeze", onFreeze);
+      document.removeEventListener("resume", onResume);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
     };
   }, [writeConnectionDiagnostic]);
+
+  useEffect(() => {
+    roomLifecycleDiagnosticRef.current("react.room_mounted");
+    return () => {
+      roomLifecycleDiagnosticRef.current("react.room_unmounted", {
+        explicit_leave_requested: explicitLeaveRequestedRef.current,
+      });
+    };
+  }, []);
+
+  useEffect(() => {
+    roomLifecycleDiagnosticRef.current("router.location_changed", {
+      pathname: location.pathname,
+      search: location.search,
+    });
+  }, [location.pathname, location.search]);
 
   const manualScreenShareRef = useRef<{
     mediaTrack: MediaStreamTrack;
@@ -9911,6 +10196,8 @@ export function RoomPageLiveKit({
       if (roomIsActuallyConnected()) {
         closeMobileRestoreState();
         setMediaWarning("");
+        void attendanceHeartbeat();
+        startAttendanceHeartbeat();
         void ensureRoomAudioPlaybackUnlocked("mobile-visible").catch(() => { });
         scheduleRebuildTiles();
         window.setTimeout(() => scheduleRebuildTiles(), 120);
@@ -9921,6 +10208,8 @@ export function RoomPageLiveKit({
       }
 
       if (roomIsRecovering()) {
+        void attendanceHeartbeat();
+        startAttendanceHeartbeat();
         openMobileRestoreState("restoring");
         setMediaWarning(
           "Restoring your connection… Mobile browsers may pause the room after you switch apps.",
@@ -10921,29 +11210,59 @@ export function RoomPageLiveKit({
         refresh();
       });
 
-      r.on(RoomEvent.Disconnected, (reason: any) => {
+      r.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
+        if (roomRef.current && roomRef.current !== r) {
+          void writeConnectionDiagnostic("livekit.stale_disconnected_ignored", {
+            reason: getDisconnectReasonLabel(reason),
+          });
+          return;
+        }
+
+        const reasonLabel = getDisconnectReasonLabel(reason);
+        const terminalDisconnect =
+          explicitLeaveRequestedRef.current ||
+          kickedBySignalRef.current ||
+          isTerminalRoomDisconnect(reason);
+
         void writeConnectionDiagnostic("livekit.disconnected", {
-          reason: String(reason || ""),
+          reason: reasonLabel,
+          reason_code: Number.isFinite(Number(reason)) ? Number(reason) : null,
+          terminal: terminalDisconnect,
           roomState: String((r as any)?.state || ""),
         });
-
-        const likelyBackgroundDisconnect =
-          !explicitLeaveRequestedRef.current &&
-          !kickedBySignalRef.current &&
-          (returningFromBackgroundRef.current ||
-            !!pageHiddenAtRef.current ||
-            document.visibilityState !== "visible");
 
         setConnected(false);
         setTiles([]);
         setScreenShareTiles([]);
         setOpenTileAdminMenuId(null);
 
-        if (likelyBackgroundDisconnect) {
-          openMobileRestoreState("needs_action");
-          setMediaWarning(
-            "Mobile browser paused the room while you were using another app. Rejoin the room to continue.",
+        if (!terminalDisconnect) {
+          // A final LiveKit Disconnected event can arrive after Safari has already
+          // made the page visible again. Treat network/OS disconnects as recoverable
+          // regardless of the current visibility state; they are not user intent.
+          returningFromBackgroundRef.current = true;
+          if (lowPowerMobileMode) {
+            writeMobileRoomLease(sessionId, authUserId, {
+              audioEnabled: prejoinRef.current.audioEnabled,
+              videoEnabled: prejoinRef.current.videoEnabled,
+            });
+          }
+          void attendanceHeartbeat();
+          startAttendanceHeartbeat();
+          openMobileRestoreState(
+            document.visibilityState === "visible" ? "restoring" : "needs_action",
           );
+          setMediaWarning("Restoring your connection…");
+
+          if (lowPowerMobileMode && document.visibilityState === "visible") {
+            if (unexpectedDisconnectRecoveryTimerRef.current) {
+              window.clearTimeout(unexpectedDisconnectRecoveryTimerRef.current);
+            }
+            unexpectedDisconnectRecoveryTimerRef.current = window.setTimeout(() => {
+              unexpectedDisconnectRecoveryTimerRef.current = null;
+              window.dispatchEvent(new Event(ROOM_RECOVERY_REQUEST_EVENT));
+            }, 300);
+          }
           return;
         }
 
@@ -10954,30 +11273,32 @@ export function RoomPageLiveKit({
           showSystemNotice({
             kind: "info",
             title: "Disconnected",
-            body: "You were disconnected from the room.",
+            body: "This room connection was closed.",
           });
         }
 
         releaseTabPresence();
       });
 
-      r.on(RoomEvent.Reconnecting as any, () => {
-        void writeConnectionDiagnostic("livekit.reconnecting", {
+      const handleLiveKitReconnecting = (eventType: string) => {
+        void writeConnectionDiagnostic(eventType, {
           roomState: String((r as any)?.state || ""),
         });
 
         if (
           !explicitLeaveRequestedRef.current &&
-          !kickedBySignalRef.current &&
-          (returningFromBackgroundRef.current ||
-            !!pageHiddenAtRef.current ||
-            document.visibilityState === "visible")
+          !kickedBySignalRef.current
         ) {
           openMobileRestoreState("restoring");
-          setMediaWarning(
-            "Restoring your connection… Mobile browsers may pause the room after you switch apps.",
-          );
+          setMediaWarning("Restoring your connection…");
         }
+      };
+
+      r.on(RoomEvent.Reconnecting, () => {
+        handleLiveKitReconnecting("livekit.reconnecting");
+      });
+      r.on(RoomEvent.SignalReconnecting, () => {
+        handleLiveKitReconnecting("livekit.signal_reconnecting");
       });
 
       r.on(RoomEvent.Reconnected, () => {
@@ -10985,7 +11306,13 @@ export function RoomPageLiveKit({
           roomState: String((r as any)?.state || ""),
         });
 
+        if (unexpectedDisconnectRecoveryTimerRef.current) {
+          window.clearTimeout(unexpectedDisconnectRecoveryTimerRef.current);
+          unexpectedDisconnectRecoveryTimerRef.current = null;
+        }
         setConnected(true);
+        void attendanceHeartbeat();
+        startAttendanceHeartbeat();
         closeMobileRestoreState();
         returningFromBackgroundRef.current = false;
         pageHiddenAtRef.current = null;
@@ -11057,7 +11384,7 @@ export function RoomPageLiveKit({
       await r.connect(connectServerUrl, connectToken, { autoSubscribe: true });
       connectedToRoom = true;
 
-      if (USAGE_TRACKING_ENABLED) {
+      if (USAGE_TRACKING_ENABLED && !opts.preserveAttendance) {
         sessionJoinStartedAtRef.current = Date.now();
         usageTrackedRef.current = false;
 
@@ -11096,9 +11423,14 @@ export function RoomPageLiveKit({
 
       leaveOnceRef.current = false;
       leavePromiseRef.current = null;
-      void attendanceJoin()
-        .then(() => startAttendanceHeartbeat())
-        .catch((e) => console.warn("attendance join failed:", e));
+      if (attendanceActiveRef.current) {
+        void attendanceHeartbeat();
+        startAttendanceHeartbeat();
+      } else {
+        void attendanceJoin()
+          .then(() => startAttendanceHeartbeat())
+          .catch((e) => console.warn("attendance join failed:", e));
+      }
 
       const shouldAutoStartCameraOnJoin = !!pj.videoEnabled;
 
@@ -11279,6 +11611,17 @@ export function RoomPageLiveKit({
 
   useEffect(() => {
     return () => {
+      roomLifecycleDiagnosticRef.current("react.room_cleanup_started", {
+        explicit_leave_requested: explicitLeaveRequestedRef.current,
+        visibility_state:
+          typeof document !== "undefined"
+            ? document.visibilityState
+            : "unknown",
+      });
+      if (unexpectedDisconnectRecoveryTimerRef.current) {
+        window.clearTimeout(unexpectedDisconnectRecoveryTimerRef.current);
+        unexpectedDisconnectRecoveryTimerRef.current = null;
+      }
       const retention = mobileRoomRetentionRef.current;
       const preserveMobileBackgroundSession =
         retention.enabled &&
@@ -12923,10 +13266,14 @@ export function RoomPageLiveKit({
   }, [connected, pipOpen]);
 
   const restoreMobileMediaFromBackground = async () => {
-    if (mobileMediaRestoreBusy) return;
+    if (mobileMediaRestoreBusyRef.current) return;
+    mobileMediaRestoreBusyRef.current = true;
 
     try {
       setMobileMediaRestoreBusy(true);
+      roomLifecycleDiagnosticRef.current(
+        "livekit.controlled_reconnect_started",
+      );
       closeMobileRestoreState();
       setClientError("");
       setTokenError("");
@@ -12936,6 +13283,10 @@ export function RoomPageLiveKit({
       await attendanceHeartbeat().catch(() => { });
 
       if (roomIsActuallyConnected()) {
+        roomLifecycleDiagnosticRef.current(
+          "livekit.controlled_reconnect_succeeded",
+          { reused_existing_room: true },
+        );
         await ensureRoomAudioPlaybackUnlocked("mobile-restore").catch(() => { });
         scheduleRebuildTiles();
         window.setTimeout(() => scheduleRebuildTiles(), 120);
@@ -13005,6 +13356,9 @@ export function RoomPageLiveKit({
       window.setTimeout(() => scheduleRebuildTiles(), 160);
 
       if (roomIsActuallyConnected()) {
+        roomLifecycleDiagnosticRef.current(
+          "livekit.controlled_reconnect_succeeded",
+        );
         writeMobileRoomLease(sessionId, authUserId, {
           audioEnabled: prejoinRef.current.audioEnabled,
           videoEnabled: prejoinRef.current.videoEnabled,
@@ -13014,13 +13368,28 @@ export function RoomPageLiveKit({
         pageHiddenAtRef.current = null;
         setMediaWarning("");
       } else {
+        roomLifecycleDiagnosticRef.current(
+          "livekit.controlled_reconnect_failed",
+          { reason: "room_not_connected_after_retry" },
+        );
         setMobileRestoreMode("needs_action");
         setMobileMediaRestoreOpen(true);
         setMediaWarning(
           "Still reconnecting automatically. You can tap Rejoin room to retry now.",
         );
       }
+    } catch (error) {
+      roomLifecycleDiagnosticRef.current(
+        "livekit.controlled_reconnect_failed",
+        { message: String((error as any)?.message || error || "") },
+      );
+      setMobileRestoreMode("needs_action");
+      setMobileMediaRestoreOpen(true);
+      setMediaWarning(
+        "Automatic reconnect failed. Tap Rejoin room to try again.",
+      );
     } finally {
+      mobileMediaRestoreBusyRef.current = false;
       setMobileMediaRestoreBusy(false);
     }
   };
@@ -13070,6 +13439,8 @@ export function RoomPageLiveKit({
           audioEnabled: lease.audioEnabled,
           videoEnabled: lease.videoEnabled,
         });
+        void attendanceHeartbeat();
+        startAttendanceHeartbeat();
         closeMobileRestoreState();
         returningFromBackgroundRef.current = false;
         pageHiddenAtRef.current = null;
@@ -13118,6 +13489,8 @@ export function RoomPageLiveKit({
     window.addEventListener("pageshow", onResumeSignal);
     window.addEventListener("online", onResumeSignal);
     window.addEventListener("focus", onResumeSignal);
+    document.addEventListener("resume", onResumeSignal);
+    window.addEventListener(ROOM_RECOVERY_REQUEST_EVENT, onResumeSignal);
     scheduleRecoveryRetry();
 
     return () => {
@@ -13126,6 +13499,8 @@ export function RoomPageLiveKit({
       window.removeEventListener("pageshow", onResumeSignal);
       window.removeEventListener("online", onResumeSignal);
       window.removeEventListener("focus", onResumeSignal);
+      document.removeEventListener("resume", onResumeSignal);
+      window.removeEventListener(ROOM_RECOVERY_REQUEST_EVENT, onResumeSignal);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lowPowerMobileMode, sessionId, authUserId]);
@@ -13369,6 +13744,7 @@ export function RoomPageLiveKit({
   };
 
   const leave = async () => {
+    roomLifecycleDiagnosticRef.current("explicit_leave.clicked");
     explicitLeaveRequestedRef.current = true;
     clearMobileRoomLease(sessionId, authUserId);
 
@@ -17323,8 +17699,8 @@ export function RoomPageLiveKit({
                       className={`mt-2 text-[13px] leading-5 ${isLight ? "text-black/60" : "text-white/65"}`}
                     >
                       {mobileRestoreMode === "restoring"
-                        ? "Mobile browsers may pause the room after you switch apps. Please wait a few seconds while MySession reconnects."
-                        : "Your browser paused the room while you were away. Rejoin to continue with your camera and microphone."}
+                        ? "Your browser or network paused the room. Please wait a few seconds while MySession reconnects."
+                        : "The room connection was interrupted. Rejoin to continue with your camera and microphone."}
                     </div>
 
                     {frozenLocalVideoFrame ? (
@@ -17369,6 +17745,26 @@ export function RoomPageLiveKit({
                     >
                       I can see/hear everything
                     </button>
+
+                    {roomDebugEnabled ? (
+                      <button
+                        type="button"
+                        disabled={mobileMediaRestoreBusy}
+                        onClick={() => {
+                          void copyRoomLifecycleDiagnostics()
+                            .then(() => setMediaWarning("Diagnostics copied."))
+                            .catch(() =>
+                              setMediaWarning("Could not copy diagnostics."),
+                            );
+                        }}
+                        className={`mt-2 h-9 w-full rounded-2xl text-[12px] font-semibold transition disabled:opacity-60 ${isLight
+                          ? "bg-black/[0.03] text-black/65 hover:bg-black/[0.06]"
+                          : "bg-[#252525] text-white/70 hover:bg-[#424242]"
+                          }`}
+                      >
+                        Copy diagnostics
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               )}
