@@ -13,11 +13,8 @@ import { supabase } from "../lib/supabase";
 import {
     Check,
     CheckCheck,
-    CornerUpLeft,
-    Pencil,
     SendHorizontal,
     Smile,
-    Trash2,
     X,
 } from "lucide-react";
 
@@ -383,24 +380,23 @@ type ChatActionIconName = "reply" | "react" | "edit" | "delete";
 
 function ChatActionIcon({
     name,
-    fallback,
 }: {
     name: ChatActionIconName;
-    fallback: React.ReactNode;
 }) {
-    const [failed, setFailed] = useState(false);
-
-    useEffect(() => setFailed(false), [name]);
-
-    if (failed) return <>{fallback}</>;
-
     return (
-        <img
-            src={`/icons/chat-${name}.svg`}
-            alt=""
+        <span
             aria-hidden="true"
-            className="block h-3.5 w-3.5 shrink-0 object-contain"
-            onError={() => setFailed(true)}
+            className="block h-3.5 w-3.5 shrink-0 bg-current"
+            style={{
+                WebkitMaskImage: `url(/icons/chat-${name}.svg)`,
+                maskImage: `url(/icons/chat-${name}.svg)`,
+                WebkitMaskPosition: "center",
+                maskPosition: "center",
+                WebkitMaskRepeat: "no-repeat",
+                maskRepeat: "no-repeat",
+                WebkitMaskSize: "contain",
+                maskSize: "contain",
+            }}
         />
     );
 }
@@ -789,7 +785,7 @@ function MessageCardInner({
                     ) : null}
 
                     {!isEditing && (
-                        <div className="ml-1 flex h-5 shrink-0 items-center gap-1 leading-none">
+                        <div className="ml-1 flex h-5 shrink-0 items-center gap-3 leading-none">
                             <button
                                 type="button"
                                 onClick={() => onReply(msg)}
@@ -799,10 +795,7 @@ function MessageCardInner({
                                 }
                                 title="Reply"
                             >
-                                <ChatActionIcon
-                                    name="reply"
-                                    fallback={<CornerUpLeft size={14} />}
-                                />
+                                <ChatActionIcon name="reply" />
                                 Reply
                             </button>
 
@@ -820,10 +813,7 @@ function MessageCardInner({
                                     }
                                     title="React"
                                 >
-                                    <ChatActionIcon
-                                        name="react"
-                                        fallback={<Smile size={14} />}
-                                    />
+                                    <ChatActionIcon name="react" />
                                     React
                                 </button>
 
@@ -912,10 +902,7 @@ function MessageCardInner({
                                         }
                                         title="Edit"
                                     >
-                                        <ChatActionIcon
-                                            name="edit"
-                                            fallback={<Pencil size={14} />}
-                                        />
+                                        <ChatActionIcon name="edit" />
                                     </button>
 
                                     <button
@@ -927,10 +914,7 @@ function MessageCardInner({
                                         }
                                         title="Delete"
                                     >
-                                        <ChatActionIcon
-                                            name="delete"
-                                            fallback={<Trash2 size={14} />}
-                                        />
+                                        <ChatActionIcon name="delete" />
                                     </button>
                                 </>
                             )}
