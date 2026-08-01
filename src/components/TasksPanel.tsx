@@ -1063,7 +1063,7 @@ export function TasksPanel({
     "group relative min-h-11 border-b border-[#D8D0D0]/70 px-1.5 py-2 bg-transparent hover:bg-black/[0.035] transition cursor-pointer";
 
   const teamCardCls =
-    "relative min-h-11 border-b border-[#D8D0D0]/70 px-1.5 py-2 bg-transparent hover:bg-black/[0.035] transition";
+    "group relative min-h-11 border-b border-[#D8D0D0]/70 px-1.5 py-2 bg-transparent hover:bg-black/[0.035] transition";
 
   const ghostBtn =
     "border border-[#CFC6C6] bg-transparent hover:bg-[#ECEAEA] text-black/75";
@@ -3717,7 +3717,7 @@ export function TasksPanel({
                         {!isEditing ? (
                           <div
                             className={
-                              "truncate text-[13px] leading-[18px] font-inter " +
+                              "max-h-[18px] overflow-hidden whitespace-nowrap text-ellipsis break-words text-[13px] leading-[18px] font-inter transition-[max-height] duration-300 ease-out will-change-[max-height] group-hover:max-h-40 group-hover:whitespace-normal group-focus-within:max-h-40 group-focus-within:whitespace-normal " +
                               (i.completed ? textDoneCls : textActiveCls)
                             }
                           >
@@ -3909,7 +3909,7 @@ export function TasksPanel({
                         </span>
                         <span
                           className={
-                            "min-w-0 flex-1 truncate text-[13px] leading-[18px] font-inter " +
+                            "min-w-0 flex-1 max-h-[18px] overflow-hidden whitespace-nowrap text-ellipsis break-words text-[13px] leading-[18px] font-inter transition-[max-height] duration-300 ease-out will-change-[max-height] group-hover:max-h-40 group-hover:whitespace-normal group-focus-within:max-h-40 group-focus-within:whitespace-normal " +
                             (item.completed ? bodyDone : bodyActive)
                           }
                           title={item.text}
