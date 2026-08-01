@@ -13754,19 +13754,11 @@ export function RoomPageLiveKit({
   };
 
   const leave = async () => {
+    if (explicitLeaveRequestedRef.current) return;
+
     roomLifecycleDiagnosticRef.current("explicit_leave.clicked");
     explicitLeaveRequestedRef.current = true;
     clearMobileRoomLease(sessionId, authUserId);
-
-    if (isTemporaryRoomHost && sessionId) {
-      try {
-        await supabase.rpc("release_infinite_room_host", {
-          p_session_id: sessionId,
-        });
-      } catch {
-        // The lease expires automatically if the network is already gone.
-      }
-    }
 
     const startedAt = sessionJoinStartedAtRef.current;
     const minutesSpent =
@@ -13786,9 +13778,33 @@ export function RoomPageLiveKit({
     }
     if (minutesSpent > 0) params.set("minutes", String(minutesSpent));
 
-    await disconnectRoom();
+    const destination = `/sessions?${params.toString()}`;
 
-    navigate(`/sessions?${params.toString()}`, { replace: true });
+    // Do not let network cleanup strand the user on an already-cleared room.
+    // Attendance has a keepalive fallback on pagehide, and a temporary host
+    // lease expires automatically if its explicit release cannot finish.
+    const cleanupPromise = (async () => {
+      if (isTemporaryRoomHost && sessionId) {
+        try {
+          await supabase.rpc("release_infinite_room_host", {
+            p_session_id: sessionId,
+          });
+        } catch {
+          // The lease expires automatically if the network is already gone.
+        }
+      }
+
+      await disconnectRoom();
+    })().catch((error) => {
+      console.warn("leave cleanup failed:", error);
+    });
+
+    await Promise.race([
+      cleanupPromise,
+      new Promise<void>((resolve) => window.setTimeout(resolve, 1200)),
+    ]);
+
+    window.location.replace(destination);
   };
 
   // admin endpoint
