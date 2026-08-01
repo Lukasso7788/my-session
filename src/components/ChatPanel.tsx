@@ -13,8 +13,11 @@ import { supabase } from "../lib/supabase";
 import {
     Check,
     CheckCheck,
+    CornerUpLeft,
+    Pencil,
     SendHorizontal,
     Smile,
+    Trash2,
     X,
 } from "lucide-react";
 
@@ -375,31 +378,6 @@ type DisplayedReaction = {
     count: number;
     exiting: boolean;
 };
-
-type ChatActionIconName = "reply" | "react" | "edit" | "delete";
-
-function ChatActionIcon({
-    name,
-}: {
-    name: ChatActionIconName;
-}) {
-    return (
-        <span
-            aria-hidden="true"
-            className="block h-3.5 w-3.5 shrink-0 bg-current"
-            style={{
-                WebkitMaskImage: `url(/icons/chat-${name}.svg)`,
-                maskImage: `url(/icons/chat-${name}.svg)`,
-                WebkitMaskPosition: "center",
-                maskPosition: "center",
-                WebkitMaskRepeat: "no-repeat",
-                maskRepeat: "no-repeat",
-                WebkitMaskSize: "contain",
-                maskSize: "contain",
-            }}
-        />
-    );
-}
 
 function MessageCardInner({
     msg,
@@ -790,13 +768,16 @@ function MessageCardInner({
                                 type="button"
                                 onClick={() => onReply(msg)}
                                 className={
-                                    "inline-flex h-5 items-center gap-1 whitespace-nowrap text-[11px] leading-none transition " +
+                                    "grid h-5 grid-cols-[14px_auto] items-center gap-1 whitespace-nowrap text-[11px] leading-none transition " +
                                     actionBtnCls
                                 }
                                 title="Reply"
                             >
-                                <ChatActionIcon name="reply" />
-                                Reply
+                                <CornerUpLeft
+                                    size={14}
+                                    className="block shrink-0 self-center"
+                                />
+                                <span className="flex h-4 items-center leading-4">Reply</span>
                             </button>
 
                             <div className="relative flex h-5 items-center leading-none">
@@ -808,13 +789,16 @@ function MessageCardInner({
                                         setOpenReactions((v) => !v);
                                     }}
                                     className={
-                                        "inline-flex h-5 items-center gap-1 whitespace-nowrap text-[11px] leading-none transition " +
+                                        "grid h-5 grid-cols-[14px_auto] items-center gap-1 whitespace-nowrap text-[11px] leading-none transition " +
                                         actionBtnCls
                                     }
                                     title="React"
                                 >
-                                    <ChatActionIcon name="react" />
-                                    React
+                                    <Smile
+                                        size={14}
+                                        className="block shrink-0 self-center"
+                                    />
+                                    <span className="flex h-4 items-center leading-4">React</span>
                                 </button>
 
                                 {openReactions &&
@@ -902,7 +886,7 @@ function MessageCardInner({
                                         }
                                         title="Edit"
                                     >
-                                        <ChatActionIcon name="edit" />
+                                        <Pencil size={14} className="block shrink-0" />
                                     </button>
 
                                     <button
@@ -914,7 +898,7 @@ function MessageCardInner({
                                         }
                                         title="Delete"
                                     >
-                                        <ChatActionIcon name="delete" />
+                                        <Trash2 size={14} className="block shrink-0" />
                                     </button>
                                 </>
                             )}
