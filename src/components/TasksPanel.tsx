@@ -3771,7 +3771,7 @@ export function TasksPanel({
                         {!isEditing ? (
                           <div
                             className={
-                              "max-h-[18px] overflow-hidden whitespace-nowrap text-ellipsis break-words text-[13px] leading-[18px] font-inter transition-[max-height] duration-300 ease-out will-change-[max-height] group-hover:max-h-40 group-hover:whitespace-normal group-focus-within:max-h-40 group-focus-within:whitespace-normal " +
+                              "max-h-[18px] overflow-hidden whitespace-normal break-words text-[13px] leading-[18px] font-inter transition-[max-height] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[max-height] group-hover:max-h-40 group-focus-within:max-h-40 " +
                               (i.completed ? textDoneCls : textActiveCls)
                             }
                           >
@@ -3814,7 +3814,7 @@ export function TasksPanel({
                               <TaskVisibilityIcon visibility={i.visibility} size={14} />
                             </button>
 
-                            <div className="max-w-0 overflow-hidden opacity-0 transition-all duration-150 group-hover:max-w-[44px] group-hover:opacity-100 focus-within:max-w-[44px] focus-within:opacity-100">
+                            <div className="w-8 shrink-0 translate-x-1 opacity-0 pointer-events-none transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0 group-hover:opacity-100 group-hover:pointer-events-auto focus-within:translate-x-0 focus-within:opacity-100 focus-within:pointer-events-auto">
                               <IconButton
                                 theme={panelTheme}
                                 className="!h-8 !w-8 !rounded-lg"
@@ -3828,7 +3828,7 @@ export function TasksPanel({
                               </IconButton>
                             </div>
 
-                            <div className="max-w-0 overflow-hidden opacity-0 transition-all duration-150 group-hover:max-w-[44px] group-hover:opacity-100 focus-within:max-w-[44px] focus-within:opacity-100">
+                            <div className="w-8 shrink-0 translate-x-1 opacity-0 pointer-events-none transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0 group-hover:opacity-100 group-hover:pointer-events-auto focus-within:translate-x-0 focus-within:opacity-100 focus-within:pointer-events-auto">
                               <IconButton
                                 theme={panelTheme}
                                 title="Delete"
@@ -3958,7 +3958,7 @@ export function TasksPanel({
                         </span>
                         <span
                           className={
-                            "min-w-0 flex-1 max-h-[18px] overflow-hidden whitespace-nowrap text-ellipsis break-words text-[13px] leading-[18px] font-inter transition-[max-height] duration-300 ease-out will-change-[max-height] group-hover:max-h-40 group-hover:whitespace-normal group-focus-within:max-h-40 group-focus-within:whitespace-normal " +
+                            "min-w-0 flex-1 max-h-[18px] overflow-hidden whitespace-normal break-words text-[13px] leading-[18px] font-inter transition-[max-height] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[max-height] group-hover:max-h-40 group-focus-within:max-h-40 " +
                             (item.completed ? bodyDone : bodyActive)
                           }
                           title={item.text}
