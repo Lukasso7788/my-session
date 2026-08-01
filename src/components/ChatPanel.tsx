@@ -379,6 +379,32 @@ type DisplayedReaction = {
     exiting: boolean;
 };
 
+type ChatActionIconName = "reply" | "react" | "edit" | "delete";
+
+function ChatActionIcon({
+    name,
+    fallback,
+}: {
+    name: ChatActionIconName;
+    fallback: React.ReactNode;
+}) {
+    const [failed, setFailed] = useState(false);
+
+    useEffect(() => setFailed(false), [name]);
+
+    if (failed) return <>{fallback}</>;
+
+    return (
+        <img
+            src={`/icons/chat-${name}.svg`}
+            alt=""
+            aria-hidden="true"
+            className="block h-3.5 w-3.5 shrink-0 object-contain"
+            onError={() => setFailed(true)}
+        />
+    );
+}
+
 function MessageCardInner({
     msg,
     mine,
@@ -763,21 +789,24 @@ function MessageCardInner({
                     ) : null}
 
                     {!isEditing && (
-                        <>
+                        <div className="ml-1 flex h-5 shrink-0 items-center gap-1 leading-none">
                             <button
                                 type="button"
                                 onClick={() => onReply(msg)}
                                 className={
-                                    "ml-1 inline-flex items-center gap-1 text-[11px] transition " +
+                                    "inline-flex h-5 items-center gap-1 whitespace-nowrap text-[11px] leading-none transition " +
                                     actionBtnCls
                                 }
                                 title="Reply"
                             >
-                                <CornerUpLeft size={14} />
+                                <ChatActionIcon
+                                    name="reply"
+                                    fallback={<CornerUpLeft size={14} />}
+                                />
                                 Reply
                             </button>
 
-                            <div className="relative">
+                            <div className="relative flex h-5 items-center leading-none">
                                 <button
                                     ref={reactionButtonRef}
                                     type="button"
@@ -786,12 +815,15 @@ function MessageCardInner({
                                         setOpenReactions((v) => !v);
                                     }}
                                     className={
-                                        "ml-1 inline-flex items-center gap-1 text-[11px] transition " +
+                                        "inline-flex h-5 items-center gap-1 whitespace-nowrap text-[11px] leading-none transition " +
                                         actionBtnCls
                                     }
                                     title="React"
                                 >
-                                    <Smile size={14} />
+                                    <ChatActionIcon
+                                        name="react"
+                                        fallback={<Smile size={14} />}
+                                    />
                                     React
                                 </button>
 
@@ -875,28 +907,34 @@ function MessageCardInner({
                                         type="button"
                                         onClick={() => setIsEditing(true)}
                                         className={
-                                            "ml-1 inline-flex items-center gap-1 text-[11px] transition " +
+                                            "inline-flex h-5 w-5 items-center justify-center leading-none transition " +
                                             actionBtnCls
                                         }
                                         title="Edit"
                                     >
-                                        <Pencil size={14} />
+                                        <ChatActionIcon
+                                            name="edit"
+                                            fallback={<Pencil size={14} />}
+                                        />
                                     </button>
 
                                     <button
                                         type="button"
                                         onClick={doDelete}
                                         className={
-                                            "ml-1 inline-flex items-center gap-1 text-[11px] transition " +
+                                            "inline-flex h-5 w-5 items-center justify-center leading-none transition " +
                                             dangerBtnCls
                                         }
                                         title="Delete"
                                     >
-                                        <Trash2 size={14} />
+                                        <ChatActionIcon
+                                            name="delete"
+                                            fallback={<Trash2 size={14} />}
+                                        />
                                     </button>
                                 </>
                             )}
-                        </>
+                        </div>
                     )}
                 </div>
 

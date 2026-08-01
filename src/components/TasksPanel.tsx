@@ -181,13 +181,13 @@ function AnimatedTodoCheck({
   return (
     <span
       className={[
-        "relative inline-flex shrink-0 items-center justify-center transition-transform duration-200",
+        "relative inline-flex shrink-0 items-center justify-center leading-none transition-transform duration-200",
         completed ? "scale-105" : "scale-100",
         className,
       ].join(" ")}
       aria-hidden="true"
     >
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <svg className="block" width={size} height={size} viewBox="0 0 24 24" fill="none">
         {completed ? (
           <circle cx="12" cy="12" r="8" stroke="#81DB86" strokeWidth="1.5" opacity="0">
             <animate attributeName="r" values="8;11" dur="0.38s" fill="freeze" />
@@ -3705,7 +3705,7 @@ export function TasksPanel({
                         </div>
                       ) : null}
 
-                      <div className="shrink-0">
+                      <div className="flex h-[18px] w-[18px] shrink-0 self-center items-center justify-center leading-none">
                         <AnimatedTodoCheck
                           completed={Boolean(i.completed)}
                           size={18}
@@ -3737,14 +3737,6 @@ export function TasksPanel({
                           />
                         )}
 
-                        {!isEditing
-                          ? renderTaskTimerControls({
-                            ownerUserId: user?.id || i.user_id,
-                            text: i.text,
-                            fallbackId: i.id,
-                            focusPlanItemId: i.focus_plan_item_id || null,
-                          })
-                          : null}
                       </div>
 
                       <div className="shrink-0 flex items-center gap-1.5 rounded-full bg-transparent">
@@ -3829,6 +3821,17 @@ export function TasksPanel({
                         )}
                       </div>
                     </div>
+
+                    {!isEditing ? (
+                      <div className="pl-[42px]">
+                        {renderTaskTimerControls({
+                          ownerUserId: user?.id || i.user_id,
+                          text: i.text,
+                          fallbackId: i.id,
+                          focusPlanItemId: i.focus_plan_item_id || null,
+                        })}
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}
