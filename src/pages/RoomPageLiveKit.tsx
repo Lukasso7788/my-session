@@ -1982,6 +1982,8 @@ const LK_TAB_TTL_MS = 18_000;
 const LK_TAB_HEARTBEAT_MS = 5_000;
 const LK_MAX_TABS_DEFAULT = 20;
 const MOBILE_ROOM_LEASE_MS = 50 * 60 * 1000;
+const ROOM_LIVEKIT_RECONNECT_WINDOW_MS = 45_000;
+const ROOM_AUTO_RECOVERY_MANUAL_THRESHOLD = 3;
 
 type MobileRoomLease = {
   lastSeenAt: number;
@@ -2051,7 +2053,15 @@ function clearMobileRoomLease(
 function createMobileReconnectPolicy() {
   return {
     nextRetryDelayInMs(context: { retryCount: number; elapsedMs: number }) {
-      if (context.elapsedMs >= MOBILE_ROOM_LEASE_MS) return null;
+      // Let LiveKit perform its fast in-place reconnect first. If signalling is
+      // still unavailable, finish this cycle so the controlled recovery path can
+      // refresh the token instead of spinning on a stale connection for 50 min.
+      if (
+        context.elapsedMs >= ROOM_LIVEKIT_RECONNECT_WINDOW_MS ||
+        context.retryCount >= 7
+      ) {
+        return null;
+      }
       if (context.retryCount === 0) return 0;
       if (context.retryCount === 1) return 300;
       return Math.min(7_000, context.retryCount * context.retryCount * 300);
@@ -2422,7 +2432,6 @@ function getUnknownErrorMessage(error: unknown) {
 function isTerminalRoomDisconnect(reason: unknown) {
   const numericReason = Number(reason);
   return new Set<number>([
-    DisconnectReason.CLIENT_INITIATED,
     DisconnectReason.DUPLICATE_IDENTITY,
     DisconnectReason.PARTICIPANT_REMOVED,
     DisconnectReason.ROOM_DELETED,
@@ -7735,9 +7744,10 @@ export function RoomPageLiveKit({
 
     prejoinBootstrappedSessionIdRef.current = sessionId;
 
-    const mobileLease = lowPowerMobileMode
-      ? readMobileRoomLease(sessionId, authUserId)
-      : null;
+    // The recovery lease is intentionally device-agnostic. Desktop browsers can
+    // suspend a background tab or lose the signalling socket during screen share
+    // just as mobile browsers can.
+    const mobileLease = readMobileRoomLease(sessionId, authUserId);
 
     if (mobileLease) {
       const restoredPrejoin = {
@@ -8125,8 +8135,7 @@ export function RoomPageLiveKit({
   const leavePromiseRef = useRef<Promise<void> | null>(null);
   const unexpectedDisconnectRecoveryTimerRef = useRef<number | null>(null);
 
-  // Mobile browser/app-switch recovery.
-  // Switching apps / backgrounding a mobile browser tab is NOT the same as clicking Leave.
+  // Browser/app-switch recovery. Backgrounding a tab is NOT the same as Leave.
   const explicitLeaveRequestedRef = useRef(false);
   const pageHiddenAtRef = useRef<number | null>(null);
   const returningFromBackgroundRef = useRef(false);
@@ -8139,7 +8148,7 @@ export function RoomPageLiveKit({
     userId: "",
   });
   mobileRoomRetentionRef.current = {
-    enabled: lowPowerMobileMode,
+    enabled: !!sessionId && !!authUserId,
     sessionId,
     userId: String(authUserId || ""),
   };
@@ -8191,12 +8200,10 @@ export function RoomPageLiveKit({
       pageHiddenAtRef.current = Date.now();
       returningFromBackgroundRef.current = true;
 
-      if (lowPowerMobileMode) {
-        writeMobileRoomLease(sessionId, authUserId, {
-          audioEnabled: prejoinRef.current.audioEnabled,
-          videoEnabled: prejoinRef.current.videoEnabled,
-        });
-      }
+      writeMobileRoomLease(sessionId, authUserId, {
+        audioEnabled: prejoinRef.current.audioEnabled,
+        videoEnabled: prejoinRef.current.videoEnabled,
+      });
 
       try {
         void attendanceHeartbeat();
@@ -8231,7 +8238,7 @@ export function RoomPageLiveKit({
       window.removeEventListener("beforeunload", onBeforeUnload);
       window.removeEventListener("pagehide", onPageHide);
     };
-  }, [lowPowerMobileMode, sessionId, authUserId]);
+  }, [sessionId, authUserId]);
 
   const buildAuthHeaders = async (): Promise<Record<string, string>> => {
     const headers: Record<string, string> = {
@@ -9201,9 +9208,7 @@ export function RoomPageLiveKit({
       adaptiveStream: true,
       dynacast: true,
       disconnectOnPageLeave: false,
-      ...(lowPowerMobileMode
-        ? { reconnectPolicy: createMobileReconnectPolicy() }
-        : {}),
+      reconnectPolicy: createMobileReconnectPolicy(),
       publishDefaults: {
         simulcast: !lowPowerMobileMode,
         videoCodec: "vp8",
@@ -10160,7 +10165,6 @@ export function RoomPageLiveKit({
 
   useEffect(() => {
     const shouldShowMobileRestore = () => {
-      if (!lowPowerMobileMode) return false;
       if (roomIsActuallyConnected()) return false;
       return joinRequestedRef.current || returningFromBackgroundRef.current;
     };
@@ -10169,12 +10173,10 @@ export function RoomPageLiveKit({
       pageHiddenAtRef.current = Date.now();
       returningFromBackgroundRef.current = true;
 
-      if (lowPowerMobileMode) {
-        writeMobileRoomLease(sessionId, authUserId, {
-          audioEnabled: micOn,
-          videoEnabled: camOn,
-        });
-      }
+      writeMobileRoomLease(sessionId, authUserId, {
+        audioEnabled: micOn,
+        videoEnabled: camOn,
+      });
 
       try {
         void attendanceHeartbeat();
@@ -10212,7 +10214,7 @@ export function RoomPageLiveKit({
         startAttendanceHeartbeat();
         openMobileRestoreState("restoring");
         setMediaWarning(
-          "Restoring your connection… Mobile browsers may pause the room after you switch apps.",
+          "Restoring your connection… Your browser or network may briefly pause the room.",
         );
         scheduleRebuildTiles();
         window.setTimeout(() => scheduleRebuildTiles(), 120);
@@ -11174,9 +11176,7 @@ export function RoomPageLiveKit({
           adaptiveStream: true,
           dynacast: true,
           disconnectOnPageLeave: false,
-          ...(lowPowerMobileMode
-            ? { reconnectPolicy: createMobileReconnectPolicy() }
-            : {}),
+          reconnectPolicy: createMobileReconnectPolicy(),
           publishDefaults: {
             simulcast: !lowPowerMobileMode,
             videoCodec: "vp8",
@@ -11195,12 +11195,10 @@ export function RoomPageLiveKit({
         });
 
         setConnected(true);
-        if (lowPowerMobileMode) {
-          writeMobileRoomLease(sessionId, authUserId, {
-            audioEnabled: prejoinRef.current.audioEnabled,
-            videoEnabled: prejoinRef.current.videoEnabled,
-          });
-        }
+        writeMobileRoomLease(sessionId, authUserId, {
+          audioEnabled: prejoinRef.current.audioEnabled,
+          videoEnabled: prejoinRef.current.videoEnabled,
+        });
         if (returningFromBackgroundRef.current || mobileMediaRestoreOpen) {
           closeMobileRestoreState();
           returningFromBackgroundRef.current = false;
@@ -11241,12 +11239,10 @@ export function RoomPageLiveKit({
           // made the page visible again. Treat network/OS disconnects as recoverable
           // regardless of the current visibility state; they are not user intent.
           returningFromBackgroundRef.current = true;
-          if (lowPowerMobileMode) {
-            writeMobileRoomLease(sessionId, authUserId, {
-              audioEnabled: prejoinRef.current.audioEnabled,
-              videoEnabled: prejoinRef.current.videoEnabled,
-            });
-          }
+          writeMobileRoomLease(sessionId, authUserId, {
+            audioEnabled: prejoinRef.current.audioEnabled,
+            videoEnabled: prejoinRef.current.videoEnabled,
+          });
           void attendanceHeartbeat();
           startAttendanceHeartbeat();
           openMobileRestoreState(
@@ -11254,7 +11250,7 @@ export function RoomPageLiveKit({
           );
           setMediaWarning("Restoring your connection…");
 
-          if (lowPowerMobileMode && document.visibilityState === "visible") {
+          if (document.visibilityState === "visible") {
             if (unexpectedDisconnectRecoveryTimerRef.current) {
               window.clearTimeout(unexpectedDisconnectRecoveryTimerRef.current);
             }
@@ -11623,7 +11619,7 @@ export function RoomPageLiveKit({
         unexpectedDisconnectRecoveryTimerRef.current = null;
       }
       const retention = mobileRoomRetentionRef.current;
-      const preserveMobileBackgroundSession =
+      const preserveBackgroundSession =
         retention.enabled &&
         !explicitLeaveRequestedRef.current &&
         typeof document !== "undefined" &&
@@ -11636,9 +11632,9 @@ export function RoomPageLiveKit({
         } catch { }
       }
       disconnectRoom({
-        preserveAttendance: preserveMobileBackgroundSession,
-        preserveTabPresence: preserveMobileBackgroundSession,
-        preserveJoinRequested: preserveMobileBackgroundSession,
+        preserveAttendance: preserveBackgroundSession,
+        preserveTabPresence: preserveBackgroundSession,
+        preserveJoinRequested: preserveBackgroundSession,
       }).catch(() => { });
       localCameraEndedCleanupRef.current?.();
       localCameraEndedCleanupRef.current = null;
@@ -13275,6 +13271,7 @@ export function RoomPageLiveKit({
         "livekit.controlled_reconnect_started",
       );
       closeMobileRestoreState();
+      openMobileRestoreState("restoring");
       setClientError("");
       setTokenError("");
       setMediaWarning("Restoring your room…");
@@ -13372,10 +13369,15 @@ export function RoomPageLiveKit({
           "livekit.controlled_reconnect_failed",
           { reason: "room_not_connected_after_retry" },
         );
-        setMobileRestoreMode("needs_action");
+        const offerManualRejoin =
+          mobileRecoveryAttemptRef.current >=
+          ROOM_AUTO_RECOVERY_MANUAL_THRESHOLD;
+        setMobileRestoreMode(offerManualRejoin ? "needs_action" : "restoring");
         setMobileMediaRestoreOpen(true);
         setMediaWarning(
-          "Still reconnecting automatically. You can tap Rejoin room to retry now.",
+          offerManualRejoin
+            ? "Automatic reconnect is taking longer than expected. You can use Rejoin room to retry now."
+            : "Still reconnecting automatically…",
         );
       }
     } catch (error) {
@@ -13383,10 +13385,15 @@ export function RoomPageLiveKit({
         "livekit.controlled_reconnect_failed",
         { message: String((error as any)?.message || error || "") },
       );
-      setMobileRestoreMode("needs_action");
+      const offerManualRejoin =
+        mobileRecoveryAttemptRef.current >=
+        ROOM_AUTO_RECOVERY_MANUAL_THRESHOLD;
+      setMobileRestoreMode(offerManualRejoin ? "needs_action" : "restoring");
       setMobileMediaRestoreOpen(true);
       setMediaWarning(
-        "Automatic reconnect failed. Tap Rejoin room to try again.",
+        offerManualRejoin
+          ? "Automatic reconnect failed. Use Rejoin room to try again."
+          : "Still reconnecting automatically…",
       );
     } finally {
       mobileMediaRestoreBusyRef.current = false;
@@ -13395,8 +13402,6 @@ export function RoomPageLiveKit({
   };
 
   useEffect(() => {
-    if (!lowPowerMobileMode) return;
-
     const clearRecoveryRetry = () => {
       if (!mobileRecoveryRetryTimerRef.current) return;
       window.clearTimeout(mobileRecoveryRetryTimerRef.current);
@@ -13503,7 +13508,7 @@ export function RoomPageLiveKit({
       window.removeEventListener(ROOM_RECOVERY_REQUEST_EVENT, onResumeSignal);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lowPowerMobileMode, sessionId, authUserId]);
+  }, [sessionId, authUserId]);
 
   const scheduleScreenShareRebuildBurst = () => {
     scheduleRebuildTiles();
@@ -13545,6 +13550,11 @@ export function RoomPageLiveKit({
     }
 
     setScreenShareOn(false);
+    if (reason === "display_media_track_ended") {
+      setMediaWarning(
+        "Screen sharing was stopped by your browser. Your room connection is still active; click Share screen to resume.",
+      );
+    }
     scheduleScreenShareRebuildBurst();
     void logRoomDiagnostic("screen_share_local_stop_cleanup", {
       reason,
@@ -17711,23 +17721,21 @@ export function RoomPageLiveKit({
                       </div>
                     ) : null}
 
-                    <button
-                      type="button"
-                      disabled={mobileMediaRestoreBusy}
-                      onClick={() => void restoreMobileMediaFromBackground()}
-                      className={[
-                        "mt-4 h-11 w-full rounded-2xl text-[14px] font-semibold transition disabled:opacity-60",
-                        isLight
-                          ? "bg-black text-white hover:bg-black/85"
-                          : "bg-[#F3F3F3] text-black hover:bg-[#F1F1F1]/90",
-                      ].join(" ")}
-                    >
-                      {mobileMediaRestoreBusy
-                        ? "Rejoining…"
-                        : mobileRestoreMode === "restoring"
-                          ? "Reconnect now"
-                          : "Rejoin room"}
-                    </button>
+                    {mobileRestoreMode === "needs_action" ? (
+                      <button
+                        type="button"
+                        disabled={mobileMediaRestoreBusy}
+                        onClick={() => void restoreMobileMediaFromBackground()}
+                        className={[
+                          "mt-4 h-11 w-full rounded-2xl text-[14px] font-semibold transition disabled:opacity-60",
+                          isLight
+                            ? "bg-black text-white hover:bg-black/85"
+                            : "bg-[#F3F3F3] text-black hover:bg-[#F1F1F1]/90",
+                        ].join(" ")}
+                      >
+                        {mobileMediaRestoreBusy ? "Rejoining…" : "Rejoin room"}
+                      </button>
+                    ) : null}
 
                     <button
                       type="button"
