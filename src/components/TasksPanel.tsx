@@ -155,6 +155,60 @@ function getVisibilityTitle(value: unknown) {
   return "Private — visible only to you. Click the globe to make public.";
 }
 
+function TaskVisibilityIcon({
+  visibility,
+  size = 14,
+}: {
+  visibility: unknown;
+  size?: number;
+}) {
+  const normalizedVisibility = normalizeTaskVisibility(visibility);
+  const source =
+    normalizedVisibility === "public"
+      ? "/icons/task-public.svg"
+      : "/icons/task-private.svg";
+  const [customIconAvailable, setCustomIconAvailable] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const image = new Image();
+    image.onload = () => active && setCustomIconAvailable(true);
+    image.onerror = () => active && setCustomIconAvailable(false);
+    image.src = source;
+
+    return () => {
+      active = false;
+    };
+  }, [source]);
+
+  if (!customIconAvailable) {
+    return normalizedVisibility === "public" ? (
+      <Globe2 size={size} />
+    ) : (
+      <Lock size={size} />
+    );
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      className="block shrink-0 bg-current"
+      style={{
+        width: size,
+        height: size,
+        WebkitMaskImage: `url(${source})`,
+        maskImage: `url(${source})`,
+        WebkitMaskPosition: "center",
+        maskPosition: "center",
+        WebkitMaskRepeat: "no-repeat",
+        maskRepeat: "no-repeat",
+        WebkitMaskSize: "contain",
+        maskSize: "contain",
+      }}
+    />
+  );
+}
+
 function orderPanelTasks(tasks: PanelTask[], order: string[]) {
   const indexById = new Map(order.map((id, index) => [id, index]));
   return [...tasks].sort((a, b) => {
@@ -3518,7 +3572,7 @@ export function TasksPanel({
                   aria-haspopup="menu"
                   aria-expanded={newTaskVisibilityMenuOpen}
                 >
-                  {newTaskVisibility === "public" ? <Globe2 size={15} /> : <Lock size={15} />}
+                  <TaskVisibilityIcon visibility={newTaskVisibility} size={15} />
                 </button>
 
                 {newTaskVisibilityMenuOpen ? (
@@ -3541,7 +3595,7 @@ export function TasksPanel({
                           : "text-black/65 hover:bg-black/[0.04]",
                       ].join(" ")}
                     >
-                      <Globe2 size={14} />
+                      <TaskVisibilityIcon visibility="public" size={14} />
                       Public
                     </button>
                     <button
@@ -3559,7 +3613,7 @@ export function TasksPanel({
                           : "text-black/65 hover:bg-black/[0.04]",
                       ].join(" ")}
                     >
-                      <Lock size={14} />
+                      <TaskVisibilityIcon visibility="private" size={14} />
                       Private
                     </button>
                   </div>
@@ -3757,12 +3811,7 @@ export function TasksPanel({
                                   : "border-[#CFC6C6] bg-[#F3F1F1] text-black/55 hover:bg-[#ECEAEA]",
                               ].join(" ")}
                             >
-                              {normalizeTaskVisibility(i.visibility) ===
-                                "private" ? (
-                                <Lock size={14} />
-                              ) : (
-                                <Globe2 size={14} />
-                              )}
+                              <TaskVisibilityIcon visibility={i.visibility} size={14} />
                             </button>
 
                             <div className="max-w-0 overflow-hidden opacity-0 transition-all duration-150 group-hover:max-w-[44px] group-hover:opacity-100 focus-within:max-w-[44px] focus-within:opacity-100">
