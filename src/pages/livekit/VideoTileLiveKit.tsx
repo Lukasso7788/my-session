@@ -168,7 +168,7 @@ type VideoTileProps = {
     audioLevel?: number;
     showMenuButton?: boolean;
     onToggleMenu?: (tileId: string, anchorEl: HTMLElement | null) => void;
-    onOpenProfile?: () => void;
+    onOpenProfile?: (tileId: string) => void;
     onEditName?: () => void;
     density?: "normal" | "compact";
     currentIntention?: string | null;
@@ -435,7 +435,10 @@ function VideoTileInner({
             (el.style as any).objectFit = "cover";
             el.style.display = "block";
             (el.style as any).backfaceVisibility = "hidden";
-            el.style.willChange = "transform";
+            // Avoid retaining a dedicated compositor surface for every tile.
+            // The local mirror transform works without permanently promoting
+            // all participant videos to their own GPU layers.
+            el.style.removeProperty("will-change");
         } catch { }
 
         if (el instanceof HTMLVideoElement) {
@@ -681,7 +684,7 @@ function VideoTileInner({
 
                 <button
                     type="button"
-                    onClick={() => onOpenProfile?.()}
+                    onClick={() => onOpenProfile?.(tileId)}
                     className="absolute inset-0 z-[1]"
                     aria-label={`Open ${label || "participant"} profile`}
                     title={label || "Participant"}

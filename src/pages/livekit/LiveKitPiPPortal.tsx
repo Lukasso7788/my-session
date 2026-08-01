@@ -244,10 +244,8 @@ export default function LiveKitPiPPortal({
             </div>
 
             <div className="relative flex-1 min-h-0 min-w-0 overflow-hidden">
-                <div
-                    className={`h-full min-h-0 min-w-0 overflow-hidden p-[clamp(0.28rem,0.9vw,0.56rem)] ${pipMode === "gallery" ? "block" : "hidden"}`}
-                    aria-hidden={pipMode !== "gallery"}
-                >
+                {pipMode === "gallery" ? (
+                    <div className="h-full min-h-0 min-w-0 overflow-hidden p-[clamp(0.28rem,0.9vw,0.56rem)]">
                     {pipGalleryTiles.length ? (
                         <div
                             className="grid h-full w-full min-h-0 min-w-0 overflow-hidden"
@@ -272,7 +270,8 @@ export default function LiveKitPiPPortal({
                             No video tiles yet
                         </div>
                     )}
-                </div>
+                    </div>
+                ) : null}
 
                 {chatPanel && pipMode === "chat" ? (
                     <div

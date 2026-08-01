@@ -14853,6 +14853,31 @@ export function RoomPageLiveKit({
     );
   };
 
+  const handleToggleTileMenu = useCallback(
+    (tileId: string, anchorEl: HTMLElement | null) => {
+      if (!anchorEl) return;
+      if (openTileAdminMenuId === tileId) {
+        closeTileMenu();
+        return;
+      }
+      openTileMenuAt(tileId, anchorEl);
+    },
+    [closeTileMenu, openTileAdminMenuId, openTileMenuAt],
+  );
+
+  const handleOpenTileProfile = useCallback(
+    (tileId: string) => {
+      const tile = tilesForRender.find((candidate) => candidate.id === tileId);
+      if (!tile?.participantUserId && !tile?.participantIdentity) return;
+
+      const profile =
+        profilesById[String(tile.participantUserId || "").toLowerCase()] ||
+        profilesById[String(tile.participantIdentity || "").toLowerCase()] ||
+        null;
+      if (profile) setSelectedUser(profile);
+    },
+    [profilesById, tilesForRender],
+  );
   const renderTile = (t: TileModel) => {
     const isMenuOpen = openTileAdminMenuId === t.id;
 
@@ -14959,31 +14984,11 @@ export function RoomPageLiveKit({
             mirrorVideo={t.isLocal ? previewMirrored : false}
             audioLevel={t.audioLevel || 0}
             currentIntention={getCurrentIntentionForTile(t)}
-            onToggleMenu={(tileId, anchorEl) => {
-              if (!anchorEl) return;
-
-              if (openTileAdminMenuId === tileId) {
-                closeTileMenu();
-                return;
-              }
-
-              openTileMenuAt(tileId, anchorEl);
-            }}
+            onToggleMenu={handleToggleTileMenu}
             showMenuButton={
               !!(t.isLocal || t.kind === "screen" || !!t.participantIdentity)
             }
-            onOpenProfile={() => {
-              if (!t.participantUserId) return;
-
-              const p =
-                profilesById[String(t.participantUserId).toLowerCase()] ||
-                profilesById[
-                String(t.participantIdentity || "").toLowerCase()
-                ] ||
-                null;
-
-              if (p) setSelectedUser(p);
-            }}
+            onOpenProfile={handleOpenTileProfile}
           />
         </div>
 
@@ -15056,29 +15061,11 @@ export function RoomPageLiveKit({
           audioLevel={t.audioLevel || 0}
           currentIntention={getCurrentIntentionForTile(t)}
           density="compact"
-          onToggleMenu={(tileId, anchorEl) => {
-            if (!anchorEl) return;
-
-            if (openTileAdminMenuId === tileId) {
-              closeTileMenu();
-              return;
-            }
-
-            openTileMenuAt(tileId, anchorEl);
-          }}
+          onToggleMenu={handleToggleTileMenu}
           showMenuButton={
             !!(t.isLocal || t.kind === "screen" || !!t.participantIdentity)
           }
-          onOpenProfile={() => {
-            if (!t.participantUserId) return;
-
-            const p =
-              profilesById[String(t.participantUserId).toLowerCase()] ||
-              profilesById[String(t.participantIdentity || "").toLowerCase()] ||
-              null;
-
-            if (p) setSelectedUser(p);
-          }}
+          onOpenProfile={handleOpenTileProfile}
         />
       </div>
     );
@@ -17263,9 +17250,16 @@ export function RoomPageLiveKit({
         hideBackgroundFx={shouldDisableBackgroundFx}
         onRefreshDevices={() => loadBrowserDevices().catch(() => { })}
         onCancel={() => {
-          cleanupPrejoinPreparedVideoTrack().catch(() => { });
+          // Cancel is an explicit route exit. Clear join state synchronously and
+          // use a document navigation so async media cleanup cannot leave the
+          // room route mounted without its modal (the previous white screen).
+          joinFlowStartedRef.current = false;
+          connectingFromPrejoinRef.current = false;
+          setJoinRequested(false);
+          setPrejoinOpen(false);
           releaseTabPresence();
-          navigate("/sessions", { replace: true });
+          void cleanupPrejoinPreparedVideoTrack().catch(() => { });
+          window.location.replace("/sessions");
         }}
         onJoin={onJoinGate}
         onPrepareAudioGesture={() => {
@@ -17672,7 +17666,20 @@ export function RoomPageLiveKit({
                 : "bg-[#1B1B1B] border border-[#252525]"
                 }`}
             >
-              {videoContent}
+              {pipOpen && pipMode === "gallery" ? (
+                <div
+                  className={`flex h-full w-full items-center justify-center px-6 text-center ${
+                    isLight ? "text-black/50" : "text-white/50"
+                  }`}
+                >
+                  <div>
+                    <div className="text-[14px] font-semibold">Video is playing in Picture-in-Picture</div>
+                    <div className="mt-1 text-[12px]">Close Picture-in-Picture to restore the room gallery here.</div>
+                  </div>
+                </div>
+              ) : (
+                videoContent
+              )}
 
               {mobileMediaRestoreOpen && (
                 <div className="absolute inset-0 z-[55] flex items-center justify-center p-4">
