@@ -613,6 +613,8 @@ export function TasksPanel({
   const [planSearch, setPlanSearch] = useState("");
   const [importingItemId, setImportingItemId] = useState<string | null>(null);
   const [lastPlansLoadedAt, setLastPlansLoadedAt] = useState<string>("");
+  const [savingPanelTasks, setSavingPanelTasks] = useState(false);
+  const [savePanelTasksFeedback, setSavePanelTasksFeedback] = useState("");
 
 
   const taskTimerStorageKey = useMemo(
@@ -1000,10 +1002,10 @@ export function TasksPanel({
     `;
 
   const myCardCls =
-    "group relative rounded-[18px] border border-[#CFC6C6] px-4 py-3 bg-[#F7F5F5] hover:bg-[#ECEAEA] transition cursor-pointer";
+    "group relative min-h-11 rounded-xl px-1.5 py-2 bg-transparent hover:bg-black/[0.035] transition cursor-pointer";
 
   const teamCardCls =
-    "relative rounded-[18px] border border-[#CFC6C6] px-3 py-3 bg-[#F7F5F5] hover:bg-[#ECEAEA] transition";
+    "relative min-h-11 rounded-xl px-1.5 py-2 bg-transparent hover:bg-black/[0.035] transition";
 
   const ghostBtn =
     "border border-[#CFC6C6] bg-transparent hover:bg-[#ECEAEA] text-black/75";
@@ -1886,6 +1888,139 @@ export function TasksPanel({
     [user?.id, panelTasks, loadPanelTasks, upsertOwnSessionTask],
   );
 
+  const savePanelTasksToTasks = useCallback(async () => {
+    if (!user?.id || savingPanelTasks) return;
+
+    const tasks = orderPanelTasks(panelTasks, panelTaskOrder).filter(
+      (task) => UUID_RE.test(String(task.id || "")) && safeTrim(task.text).length > 0,
+    );
+    if (tasks.length === 0) {
+      setSavePanelTasksFeedback("Add a task before saving this list.");
+      return;
+    }
+
+    setSavingPanelTasks(true);
+    setSavePanelTasksFeedback("");
+
+    try {
+      let planId = selectedPlanId;
+
+      if (!planId) {
+        const { data: createdPlan, error: createPlanError } = await supabase
+          .from("focus_plans")
+          .insert({ user_id: user.id, title: "My tasks" })
+          .select("id,user_id,title,created_at,updated_at")
+          .single();
+
+        if (createPlanError || !createdPlan) {
+          throw createPlanError || new Error("Task list was not created");
+        }
+
+        planId = String(createdPlan.id);
+        setPlans((current) => [createdPlan as FocusPlan, ...current]);
+        setSelectedPlanId(planId);
+      }
+
+      const { data: existingRows, error: existingRowsError } = await supabase
+        .from("focus_plan_items")
+        .select("id,plan_id,user_id,text,target_date,session_id,created_at,completed,sort_order")
+        .eq("user_id", user.id)
+        .eq("plan_id", planId)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: false });
+
+      if (existingRowsError) throw existingRowsError;
+
+      const existingItems = (Array.isArray(existingRows) ? existingRows : []) as FocusPlanItem[];
+      const itemByText = new Map<string, FocusPlanItem>();
+      for (const item of existingItems) {
+        const normalized = normalizeTextForMatch(item.text);
+        if (normalized && !itemByText.has(normalized)) itemByText.set(normalized, item);
+      }
+
+      let nextSortOrder = existingItems.reduce(
+        (maximum, item) => Math.max(maximum, Number(item.sort_order) || 0),
+        -1,
+      ) + 1;
+      const pendingTexts = new Set<string>();
+      const rowsToInsert = tasks.flatMap((task) => {
+        const normalized = normalizeTextForMatch(task.text);
+        if (!normalized || itemByText.has(normalized) || pendingTexts.has(normalized)) return [];
+        pendingTexts.add(normalized);
+        return [{
+          user_id: user.id,
+          plan_id: planId,
+          text: safeTrim(task.text),
+          target_date: null,
+          session_id: null,
+          completed: Boolean(task.completed),
+          sort_order: nextSortOrder++,
+        }];
+      });
+
+      if (rowsToInsert.length > 0) {
+        const { data: insertedRows, error: insertRowsError } = await supabase
+          .from("focus_plan_items")
+          .insert(rowsToInsert)
+          .select("id,plan_id,user_id,text,target_date,session_id,created_at,completed,sort_order");
+
+        if (insertRowsError) throw insertRowsError;
+        for (const item of (Array.isArray(insertedRows) ? insertedRows : []) as FocusPlanItem[]) {
+          const normalized = normalizeTextForMatch(item.text);
+          if (normalized) itemByText.set(normalized, item);
+        }
+      }
+
+      const linkedTasks = new Map<string, string>();
+      for (const task of tasks) {
+        const item = itemByText.get(normalizeTextForMatch(task.text));
+        if (!item) continue;
+        const { error: linkError } = await supabase
+          .from(PANEL_TASKS_TABLE)
+          .update({ focus_plan_item_id: item.id })
+          .eq("id", task.id)
+          .eq("user_id", user.id);
+        if (linkError) throw linkError;
+        linkedTasks.set(task.id, item.id);
+      }
+
+      setPanelTasks((current) =>
+        current.map((task) => ({
+          ...task,
+          focus_plan_item_id: linkedTasks.get(task.id) || task.focus_plan_item_id,
+        })),
+      );
+
+      await supabase
+        .from("focus_plans")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", planId)
+        .eq("user_id", user.id);
+
+      await Promise.all([loadPlans(), loadPlanItems(planId), loadPanelTasks()]);
+      emitTasksSync({ action: "save-panel-list", userId: user.id, planId });
+      setSavePanelTasksFeedback(
+        rowsToInsert.length > 0
+          ? `Saved ${rowsToInsert.length} new ${rowsToInsert.length === 1 ? "task" : "tasks"}.`
+          : "Everything is already saved in Tasks.",
+      );
+    } catch (error) {
+      console.error("[TasksPanel] Failed to save room tasks to Tasks", error);
+      setSavePanelTasksFeedback("Could not save tasks. Please try again.");
+    } finally {
+      setSavingPanelTasks(false);
+    }
+  }, [
+    loadPanelTasks,
+    loadPlanItems,
+    loadPlans,
+    panelTaskOrder,
+    panelTasks,
+    savingPanelTasks,
+    selectedPlanId,
+    user?.id,
+  ]);
+
   const handleAddPanelTask = async (
     textOverride?: string,
     visibilityOverride?: "public" | "private",
@@ -2376,7 +2511,10 @@ export function TasksPanel({
     return doc || document;
   }, []);
 
-  const openImportModal = useCallback(() => setImportModalOpen(true), []);
+  const openImportModal = useCallback(() => {
+    setSavePanelTasksFeedback("");
+    setImportModalOpen(true);
+  }, []);
   const closeImportModal = useCallback(() => setImportModalOpen(false), []);
 
   useEffect(() => {
@@ -2741,11 +2879,11 @@ export function TasksPanel({
                       " ",
                     )}
                   >
-                    Attach to Tasks Panel
+                    Tasks
                   </div>
                   <div className={["text-[11px] mt-0.5", modalSub].join(" ")}>
-                    Import tasks from your plans into the room task panel
-                    (visible in every session).
+                    Save this room todo list to Tasks, or bring saved tasks
+                    back into the room.
                   </div>
                 </div>
 
@@ -2802,6 +2940,59 @@ export function TasksPanel({
               className="p-4 overflow-y-auto custom-scrollbar"
               style={{ maxHeight: "calc(78vh - 56px)" }}
             >
+              <div
+                className={[
+                  "mb-4 rounded-xl px-3 py-3",
+                  isLight ? "bg-[#E9E7E7]" : "bg-[#242424]",
+                ].join(" ")}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className={["text-[13px] font-semibold", modalTitle].join(" ")}>
+                      Save current todo list
+                    </div>
+                    <div className={["mt-0.5 text-[11px]", modalSub].join(" ")}>
+                      Every row becomes a separate task. Existing tasks are not duplicated.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={savingPanelTasks || plansLoading || panelTasks.length === 0}
+                    onClick={() => void savePanelTasksToTasks()}
+                    className={[
+                      "h-10 shrink-0 rounded-xl px-3 text-[12px] font-semibold transition inline-flex items-center gap-2",
+                      primaryBtn,
+                      savingPanelTasks || plansLoading || panelTasks.length === 0
+                        ? "cursor-not-allowed opacity-45"
+                        : "",
+                    ].join(" ")}
+                  >
+                    {savingPanelTasks ? (
+                      <RefreshCw size={15} className="animate-spin" />
+                    ) : (
+                      <ListPlus size={15} />
+                    )}
+                    {savingPanelTasks ? "Saving..." : "Save to Tasks"}
+                  </button>
+                </div>
+                {savePanelTasksFeedback ? (
+                  <div
+                    className={[
+                      "mt-2 text-[11px]",
+                      savePanelTasksFeedback.startsWith("Could not")
+                        ? "text-[#F65252]"
+                        : modalSub,
+                    ].join(" ")}
+                  >
+                    {savePanelTasksFeedback}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className={["mb-3 text-[11px] font-semibold uppercase tracking-[0.12em]", modalSub].join(" ")}>
+                Add from Tasks
+              </div>
+
               {plansLoading ? (
                 <div className={"text-[12px] italic " + mutedText}>
                   Loading plans…
@@ -2817,7 +3008,7 @@ export function TasksPanel({
                 <>
                   <div className="flex flex-col gap-2">
                     <div className={"text-[11px] font-semibold " + mutedText}>
-                      Plan
+                      Task list
                     </div>
 
                     <select
@@ -2863,7 +3054,7 @@ export function TasksPanel({
                       <input
                         value={planSearch}
                         onChange={(e) => setPlanSearch(e.target.value)}
-                        placeholder="Type to filter plan items..."
+                        placeholder="Type to filter tasks..."
                         className={"flex-1 " + inputCls}
                       />
                     </div>
@@ -2924,7 +3115,7 @@ export function TasksPanel({
                                 >
                                   {already
                                     ? "Already in your panel"
-                                    : "Planned task"}
+                                    : "Saved task"}
                                   {it.target_date
                                     ? ` · Due: ${it.target_date}`
                                     : ""}
@@ -2974,8 +3165,8 @@ export function TasksPanel({
                   )}
 
                   <div className={"mt-4 text-[11px] " + mutedText}>
-                    Tip: this is your “always-on” tasks list. It stays
-                    the same across sessions.
+                    Tip: Tasks is your reusable list. Room tasks stay compact
+                    and each row remains an individual task.
                   </div>
                 </>
               )}
@@ -3111,7 +3302,7 @@ export function TasksPanel({
                 className={
                   "border border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
                 }
-                title="Add from Tasks"
+                title="Sync with Tasks"
                 onClick={(e) => {
                   e.preventDefault();
                   openImportModal();
@@ -3319,7 +3510,7 @@ export function TasksPanel({
               No panel tasks yet. Add one from Tasks or create it manually.
             </div>
           ) : (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-0.5">
               {orderedPanelTasks.map((i) => {
                 const isEditing = editingId === i.id;
                 const isPersistedTask = UUID_RE.test(String(i.id || ""));
@@ -3407,7 +3598,7 @@ export function TasksPanel({
                       startEdit(i.id, i.text);
                     }}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
                       {!isEditing ? (
                         <div
                           className="shrink-0 cursor-grab active:cursor-grabbing text-black/25 group-hover:text-black/45 transition"
@@ -3416,15 +3607,15 @@ export function TasksPanel({
                           onClick={(e) => e.stopPropagation()}
                           onDoubleClick={(e) => e.stopPropagation()}
                         >
-                          <GripVertical size={17} />
+                          <GripVertical size={15} />
                         </div>
                       ) : null}
 
                       <div className="shrink-0">
                         {i.completed ? (
-                          <CheckCircle size={18} className="text-[#81DB86]" />
+                          <CheckCircle size={17} className="text-[#81DB86]" />
                         ) : (
-                          <Circle size={18} className={circleCls} />
+                          <Circle size={17} className={circleCls} />
                         )}
                       </div>
 
@@ -3432,11 +3623,11 @@ export function TasksPanel({
                         {!isEditing ? (
                           <div
                             className={
-                              "text-[13px] break-words leading-5 font-inter " +
+                              "truncate text-[13px] leading-[18px] font-inter " +
                               (i.completed ? textDoneCls : textActiveCls)
                             }
                           >
-                            {i.text}
+                            <span title={i.text}>{i.text}</span>
                           </div>
                         ) : (
                           <input
@@ -3451,12 +3642,6 @@ export function TasksPanel({
                             onClick={(e) => e.stopPropagation()}
                           />
                         )}
-
-                        {i.focus_plan_item_id ? (
-                          <div className={"mt-1 text-[11px] " + mutedText}>
-                            Linked to planned task
-                          </div>
-                        ) : null}
 
                         {!isEditing
                           ? renderTaskTimerControls({
@@ -3479,7 +3664,7 @@ export function TasksPanel({
                                 void togglePanelVisibility(i);
                               }}
                               className={[
-                                "h-9 w-9 shrink-0 rounded-full border text-[13px] font-semibold transition inline-flex items-center justify-center",
+                                "h-8 w-8 shrink-0 rounded-lg border text-[13px] font-semibold transition inline-flex items-center justify-center",
                                 normalizeTaskVisibility(i.visibility) ===
                                   "public"
                                   ? "border-[#81DB86] bg-[#81DB86]/15 text-[#81DB86] hover:bg-[#81DB86]/25"
@@ -3497,6 +3682,7 @@ export function TasksPanel({
                             <div className="max-w-0 overflow-hidden opacity-0 transition-all duration-150 group-hover:max-w-[44px] group-hover:opacity-100 focus-within:max-w-[44px] focus-within:opacity-100">
                               <IconButton
                                 theme={panelTheme}
+                                className="!h-8 !w-8 !rounded-lg"
                                 title="Edit"
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -3515,7 +3701,7 @@ export function TasksPanel({
                                   e.stopPropagation();
                                   void deletePanelTask(i.id);
                                 }}
-                                className="hover:text-[#F65252]"
+                                className="!h-8 !w-8 !rounded-lg hover:text-[#F65252]"
                               >
                                 <Trash2 size={16} />
                               </IconButton>
@@ -3593,12 +3779,11 @@ export function TasksPanel({
             No Team Tasks
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-0.5">
             {teamTasks.map((item) => {
               const nameCls = "text-black/90";
               const bodyActive = "text-black/85";
               const bodyDone = "text-black/35 line-through";
-              const circleCls = "text-black/25";
               const encouragementCount = encouragementCounts[item.id] || 0;
               const encouragedByMe = myEncouragedIds.has(item.id);
               const statusText = item.completed ? "Completed" : "In progress";
@@ -3608,30 +3793,32 @@ export function TasksPanel({
 
               return (
                 <div key={item.id} className={teamCardCls + " font-inter"}>
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0">
                     <img
                       src={getAvatar(item.profiles)}
-                      className="w-9 h-9 rounded-full object-cover shrink-0"
+                      className="w-7 h-7 rounded-full object-cover shrink-0"
                       alt=""
                     />
 
                     <div className="flex-1 min-w-0">
-                      <div
-                        className={
-                          "text-[13px] font-semibold truncate font-inter " +
-                          nameCls
-                        }
-                      >
-                        {item.profiles?.full_name || "Participant"}
-                      </div>
-
-                      <div
-                        className={
-                          "text-[13px] leading-5 font-inter break-words " +
-                          (item.completed ? bodyDone : bodyActive)
-                        }
-                      >
-                        {item.text}
+                      <div className="flex min-w-0 items-baseline gap-1.5">
+                        <span
+                          className={
+                            "max-w-[34%] shrink-0 truncate text-[12px] font-semibold font-inter " +
+                            nameCls
+                          }
+                        >
+                          {item.profiles?.full_name || "Participant"}
+                        </span>
+                        <span
+                          className={
+                            "min-w-0 flex-1 truncate text-[13px] leading-[18px] font-inter " +
+                            (item.completed ? bodyDone : bodyActive)
+                          }
+                          title={item.text}
+                        >
+                          {item.text}
+                        </span>
                       </div>
 
                       {renderTaskTimerControls({
