@@ -397,14 +397,15 @@ const TASKS_SYNC_EVENT = "mysession:tasks-synced";
 
 function emitTasksSync(detail: Record<string, unknown> = {}) {
   try {
+    const eventDetail = { source: "tasks-panel", ...detail, at: Date.now() };
     window.dispatchEvent(
       new CustomEvent(TASKS_SYNC_EVENT, {
-        detail: { ...detail, at: Date.now() },
+        detail: eventDetail,
       }),
     );
     window.dispatchEvent(
       new CustomEvent("mysession:tasks-updated", {
-        detail: { ...detail, at: Date.now() },
+        detail: eventDetail,
       }),
     );
   } catch { }
@@ -1059,10 +1060,10 @@ export function TasksPanel({
     `;
 
   const myCardCls =
-    "group relative min-h-11 rounded-xl px-1.5 py-2 bg-transparent hover:bg-black/[0.035] transition cursor-pointer";
+    "group relative min-h-11 border-b border-[#D8D0D0]/70 px-1.5 py-2 bg-transparent hover:bg-black/[0.035] transition cursor-pointer";
 
   const teamCardCls =
-    "relative min-h-11 rounded-xl px-1.5 py-2 bg-transparent hover:bg-black/[0.035] transition";
+    "relative min-h-11 border-b border-[#D8D0D0]/70 px-1.5 py-2 bg-transparent hover:bg-black/[0.035] transition";
 
   const ghostBtn =
     "border border-[#CFC6C6] bg-transparent hover:bg-[#ECEAEA] text-black/75";
@@ -1262,7 +1263,9 @@ export function TasksPanel({
       }, 100);
     };
 
-    const onExternalTasksUpdated = () => {
+    const onExternalTasksUpdated = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail || {};
+      if (detail?.source === "tasks-panel") return;
       void loadPanelTasks();
     };
 
@@ -1282,11 +1285,46 @@ export function TasksPanel({
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
+          const eventType = String(payload.eventType || "").toUpperCase();
+          const nextTask = (payload.new || null) as Partial<PanelTask> | null;
+          const previousTask = (payload.old || null) as Partial<PanelTask> | null;
+          const taskId = String(nextTask?.id || previousTask?.id || "");
+
           logTaskReorder("realtime_received", {
-            eventType: payload.eventType,
-            taskId: String((payload.new as any)?.id || (payload.old as any)?.id || ""),
+            eventType,
+            taskId,
             reorderInFlight: reorderInFlightRef.current,
           });
+
+          if (taskId && eventType === "UPDATE" && nextTask) {
+            setPanelTasks((current) =>
+              current.map((task) =>
+                task.id === taskId ? { ...task, ...nextTask } as PanelTask : task,
+              ),
+            );
+            logTaskReorder("realtime_update_applied_locally", { taskId });
+            return;
+          }
+
+          if (taskId && eventType === "INSERT" && nextTask) {
+            setPanelTasks((current) => {
+              if (current.some((task) => task.id === taskId)) {
+                return current.map((task) =>
+                  task.id === taskId ? { ...task, ...nextTask } as PanelTask : task,
+                );
+              }
+              return [nextTask as PanelTask, ...current].slice(0, PANEL_TASKS_FETCH_LIMIT);
+            });
+            logTaskReorder("realtime_insert_applied_locally", { taskId });
+            return;
+          }
+
+          if (taskId && eventType === "DELETE") {
+            setPanelTasks((current) => current.filter((task) => task.id !== taskId));
+            logTaskReorder("realtime_delete_applied_locally", { taskId });
+            return;
+          }
+
           if (reorderInFlightRef.current > 0) {
             pendingPanelReloadRef.current = true;
             logTaskReorder("realtime_refetch_deferred");
@@ -1407,7 +1445,7 @@ export function TasksPanel({
 
       if (eventSessionId && eventSessionId !== String(sessionId)) return;
 
-      void loadPanelTasks();
+      if (detail?.source !== "tasks-panel") void loadPanelTasks();
       scheduleSessionTasksReload(sessionId);
     };
 
