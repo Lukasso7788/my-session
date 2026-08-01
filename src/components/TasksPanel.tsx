@@ -4,8 +4,6 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type { ReactNode, MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
-  CheckCircle,
-  Circle,
   Pencil,
   Trash2,
   X,
@@ -169,6 +167,65 @@ function orderPanelTasks(tasks: PanelTask[], order: string[]) {
     if (ai !== bi) return ai - bi;
     return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
   });
+}
+
+function AnimatedTodoCheck({
+  completed,
+  size = 18,
+  className = "",
+}: {
+  completed: boolean;
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <span
+      className={[
+        "relative inline-flex shrink-0 items-center justify-center transition-transform duration-200",
+        completed ? "scale-105" : "scale-100",
+        className,
+      ].join(" ")}
+      aria-hidden="true"
+    >
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+        {completed ? (
+          <circle cx="12" cy="12" r="8" stroke="#81DB86" strokeWidth="1.5" opacity="0">
+            <animate attributeName="r" values="8;11" dur="0.38s" fill="freeze" />
+            <animate attributeName="opacity" values="0.45;0" dur="0.38s" fill="freeze" />
+          </circle>
+        ) : null}
+        <circle
+          cx="12"
+          cy="12"
+          r="9"
+          fill={completed ? "#81DB86" : "transparent"}
+          stroke={completed ? "#81DB86" : "currentColor"}
+          strokeWidth="1.7"
+          style={{ transition: "fill 180ms ease, stroke 180ms ease" }}
+        />
+        {completed ? (
+          <path
+            d="M7.8 12.2 10.7 15l5.8-6.2"
+            stroke="white"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray="20"
+            strokeDashoffset="20"
+          >
+            <animate
+              attributeName="stroke-dashoffset"
+              from="20"
+              to="0"
+              dur="0.3s"
+              begin="0.05s"
+              fill="freeze"
+            />
+          </path>
+        ) : null}
+      </svg>
+    </span>
+  );
 }
 
 function PanelSmartIcon({
@@ -3515,7 +3572,6 @@ export function TasksPanel({
                 const isEditing = editingId === i.id;
                 const isPersistedTask = UUID_RE.test(String(i.id || ""));
 
-                const circleCls = "text-black/40";
                 const textDoneCls = "text-black/45 line-through";
                 const textActiveCls = "text-black/80";
 
@@ -3612,11 +3668,11 @@ export function TasksPanel({
                       ) : null}
 
                       <div className="shrink-0">
-                        {i.completed ? (
-                          <CheckCircle size={17} className="text-[#81DB86]" />
-                        ) : (
-                          <Circle size={17} className={circleCls} />
-                        )}
+                        <AnimatedTodoCheck
+                          completed={Boolean(i.completed)}
+                          size={18}
+                          className="text-black/40"
+                        />
                       </div>
 
                       <div className="flex-1 min-w-0">
@@ -3842,7 +3898,7 @@ export function TasksPanel({
                         aria-label={statusText}
                       >
                         {item.completed ? (
-                          <CheckCircle size={15} />
+                          <AnimatedTodoCheck completed size={17} />
                         ) : (
                           <TimerReset size={15} />
                         )}
