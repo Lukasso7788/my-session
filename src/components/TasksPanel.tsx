@@ -3793,7 +3793,7 @@ export function TasksPanel({
 
                       </div>
 
-                      <div className="shrink-0 flex items-center gap-1.5 rounded-full bg-transparent">
+                      <div className="relative shrink-0 flex items-center gap-1.5 rounded-full bg-transparent">
                         {!isEditing ? (
                           <>
                             <button
@@ -3814,7 +3814,7 @@ export function TasksPanel({
                               <TaskVisibilityIcon visibility={i.visibility} size={14} />
                             </button>
 
-                            <div className="w-8 shrink-0 translate-x-1 opacity-0 pointer-events-none transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0 group-hover:opacity-100 group-hover:pointer-events-auto focus-within:translate-x-0 focus-within:opacity-100 focus-within:pointer-events-auto">
+                            <div className="absolute right-10 z-10 w-8 translate-x-1 opacity-0 pointer-events-none transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0 group-hover:opacity-100 group-hover:pointer-events-auto focus-within:translate-x-0 focus-within:opacity-100 focus-within:pointer-events-auto">
                               <IconButton
                                 theme={panelTheme}
                                 className="!h-8 !w-8 !rounded-lg"
@@ -3828,7 +3828,7 @@ export function TasksPanel({
                               </IconButton>
                             </div>
 
-                            <div className="w-8 shrink-0 translate-x-1 opacity-0 pointer-events-none transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0 group-hover:opacity-100 group-hover:pointer-events-auto focus-within:translate-x-0 focus-within:opacity-100 focus-within:pointer-events-auto">
+                            <div className="absolute right-20 z-10 w-8 translate-x-1 opacity-0 pointer-events-none transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0 group-hover:opacity-100 group-hover:pointer-events-auto focus-within:translate-x-0 focus-within:opacity-100 focus-within:pointer-events-auto">
                               <IconButton
                                 theme={panelTheme}
                                 title="Delete"
