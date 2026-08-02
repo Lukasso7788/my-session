@@ -35,6 +35,56 @@ import {
 
 import { supabase } from "../lib/supabase";
 
+// --- Automatic Picture‑in‑Picture hook v2 ------------------------
+function useAutoPictureInPictureV2() {
+  const requestPiP = React.useCallback(async () => {
+    try {
+      const video = Array.from(document.querySelectorAll('video'))
+        .find(v => !v.paused && v.readyState >= 2);
+      if (!video) return;
+
+      try {
+        video.disablePictureInPicture = false;
+        video.setAttribute('playsinline', '');
+        video.playsInline = true;
+      } catch {}
+
+      if (document.pictureInPictureEnabled &&
+          !document.pictureInPictureElement &&
+          typeof video.requestPictureInPicture === 'function') {
+        await video.requestPictureInPicture();
+      } else if ((video).webkitSupportsPresentationMode &&
+                 (video).webkitSupportsPresentationMode('picture-in-picture')) {
+        (video).webkitSetPresentationMode?.('picture-in-picture');
+      }
+    } catch {}
+  }, []);
+
+  React.useEffect(() => {
+    const handleHidden = () => {
+      if (document.visibilityState === 'hidden') requestPiP();
+    };
+    const handlePageHide = () => requestPiP();
+
+    try {
+      navigator.mediaSession?.setActionHandler?.('enterpictureinpicture', requestPiP);
+    } catch {}
+
+    document.addEventListener('visibilitychange', handleHidden);
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      try {
+        navigator.mediaSession?.setActionHandler?.('enterpictureinpicture', null);
+      } catch {}
+      document.removeEventListener('visibilitychange', handleHidden);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [requestPiP]);
+}
+
+
+
 // --- Automatic Picture‑in‑Picture hook ------------------------
 function useAutoPictureInPicture() {
   React.useEffect(() => {
@@ -516,6 +566,8 @@ function ConnectedRoom({
   title: string;
   navigateBack: () => void;
 }) {
+  useAutoPictureInPictureV2();
+
   // enable automatic Picture‑in‑Picture across browsers
   useAutoPictureInPicture();
 
