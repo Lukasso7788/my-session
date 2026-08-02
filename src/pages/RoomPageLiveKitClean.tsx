@@ -1,5 +1,6 @@
 // src/pages/RoomPageLiveKitClean.tsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ConnectionState,
@@ -19,7 +20,16 @@ import {
   useConnectionState,
   useTracks,
 } from "@livekit/components-react";
-import { Mic, MicOff, Sparkles, Video, VideoOff, X } from "lucide-react";
+import "@livekit/components-styles";
+
+import {
+  Mic,
+  MicOff,
+  Sparkles,
+  Video,
+  VideoOff,
+  X,
+} from "lucide-react";
 
 import { supabase } from "../lib/supabase";
 import {
@@ -68,6 +78,7 @@ function makeTabId() {
 
 function svgBackground(colors: [string, string, string]) {
   const [a, b, c] = colors;
+
   return (
     "data:image/svg+xml;charset=UTF-8," +
     encodeURIComponent(`
@@ -96,26 +107,52 @@ function connectionLabel(state: ConnectionState) {
   return String(state || "Unknown");
 }
 
+function connectionBadgeClass(state: ConnectionState) {
+  if (state === ConnectionState.Connected) {
+    return "border-emerald-400/20 bg-emerald-400/10 text-emerald-200";
+  }
+
+  if (
+    state === ConnectionState.Connecting ||
+    state === ConnectionState.Reconnecting
+  ) {
+    return "border-amber-400/20 bg-amber-400/10 text-amber-200";
+  }
+
+  return "border-red-400/20 bg-red-400/10 text-red-200";
+}
+
 function CleanVideoGrid() {
   const tracks = useTracks([
-    { source: Track.Source.Camera, withPlaceholder: true },
+    {
+      source: Track.Source.Camera,
+      withPlaceholder: true,
+    },
   ]);
 
   if (tracks.length === 0) {
     return (
-      <div className="flex h-full min-h-[320px] items-center justify-center rounded-[24px] border border-white/10 bg-white/[0.03] text-sm text-white/50">
+      <div className="flex h-full min-h-[240px] items-center justify-center rounded-[20px] border border-white/10 bg-[#171717] px-4 text-center text-sm text-white/45 sm:min-h-[280px] sm:rounded-[22px]">
         Waiting for participants…
       </div>
     );
   }
 
   return (
-    <GridLayout
-      tracks={tracks}
-      className="h-full min-h-0 w-full gap-3"
-    >
-      <ParticipantTile className="overflow-hidden rounded-[24px] border border-white/10 bg-[#171717]" />
-    </GridLayout>
+    <div className="h-full min-h-0 w-full overflow-hidden">
+      <GridLayout
+        tracks={tracks}
+        className="h-full min-h-0 w-full"
+        style={{
+          width: "100%",
+          height: "100%",
+          gap: 12,
+          padding: 0,
+        }}
+      >
+        <ParticipantTile className="overflow-hidden rounded-[18px] border border-white/10 bg-[#171717] shadow-[0_8px_28px_rgba(0,0,0,0.22)] sm:rounded-[22px]" />
+      </GridLayout>
+    </div>
   );
 }
 
@@ -135,66 +172,123 @@ function CleanControls({
   const state = useConnectionState(room);
 
   return (
-    <div className="border-t border-white/10 bg-[#151515]/95 px-3 py-3 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-center gap-2">
+    <footer className="shrink-0 border-t border-white/10 bg-[#141414]/95 px-2.5 py-2.5 backdrop-blur-xl sm:px-3 sm:py-3">
+      <div className="mx-auto grid w-full max-w-5xl grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:flex-wrap sm:justify-center">
         <TrackToggle
           source={Track.Source.Microphone}
-          room={room}
-          className="inline-flex h-11 min-w-11 items-center justify-center rounded-[14px] border border-white/10 bg-white/[0.06] px-3 text-white transition hover:bg-white/[0.1] data-[lk-enabled=false]:bg-[#F65252]"
+          className="!inline-flex !h-11 !w-11 !min-w-11 !items-center !justify-center !rounded-[14px] !border !border-white/10 !bg-white/[0.06] !p-0 !text-white !shadow-none transition hover:!bg-white/[0.1] data-[lk-enabled=false]:!bg-[#F65252]"
+          aria-label="Toggle microphone"
+          title="Toggle microphone"
         >
           <span className="sr-only">Toggle microphone</span>
-          <Mic className="lk-when-enabled h-5 w-5" />
-          <MicOff className="lk-when-disabled h-5 w-5" />
+
+          {/*
+            @livekit/components-styles controls these two state classes.
+            Only one icon is visible at a time.
+          */}
+          <Mic className="lk-when-enabled h-5 w-5" aria-hidden="true" />
+          <MicOff className="lk-when-disabled h-5 w-5" aria-hidden="true" />
         </TrackToggle>
 
         <TrackToggle
           source={Track.Source.Camera}
-          room={room}
-          className="inline-flex h-11 min-w-11 items-center justify-center rounded-[14px] border border-white/10 bg-white/[0.06] px-3 text-white transition hover:bg-white/[0.1] data-[lk-enabled=false]:bg-[#F65252]"
+          className="!inline-flex !h-11 !w-11 !min-w-11 !items-center !justify-center !rounded-[14px] !border !border-white/10 !bg-white/[0.06] !p-0 !text-white !shadow-none transition hover:!bg-white/[0.1] data-[lk-enabled=false]:!bg-[#F65252]"
+          aria-label="Toggle camera"
+          title="Toggle camera"
         >
           <span className="sr-only">Toggle camera</span>
-          <Video className="lk-when-enabled h-5 w-5" />
-          <VideoOff className="lk-when-disabled h-5 w-5" />
+
+          {/*
+            @livekit/components-styles controls these two state classes.
+            Only one icon is visible at a time.
+          */}
+          <Video className="lk-when-enabled h-5 w-5" aria-hidden="true" />
+          <VideoOff className="lk-when-disabled h-5 w-5" aria-hidden="true" />
         </TrackToggle>
 
-        <div className="relative">
+        <div className="relative min-w-0 sm:w-auto">
           <select
             value={effectMode}
             onChange={(event) =>
               void onApplyEffect(event.target.value as EffectMode)
             }
             disabled={effectBusy}
-            className="h-11 rounded-[14px] border border-white/10 bg-white/[0.06] pl-10 pr-8 text-sm font-semibold text-white outline-none transition hover:bg-white/[0.1] disabled:opacity-50"
+            className="h-11 w-full min-w-0 appearance-none truncate rounded-[14px] border border-[#D6D6D6] bg-[#F5F5F5] pl-9 pr-8 text-[13px] font-semibold text-[#2F2F2F] outline-none transition hover:bg-white focus:border-[#A8A8A8] disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-[190px] sm:text-sm"
             aria-label="Camera background effect"
+            title="Camera background effect"
           >
-            <option value="off">Background off</option>
-            <option value="blur">Background blur</option>
-            <option value="ocean">Ocean background</option>
-            <option value="forest">Forest background</option>
+            <option
+              value="off"
+              style={{ color: "#2F2F2F", backgroundColor: "#FFFFFF" }}
+            >
+              Background off
+            </option>
+
+            <option
+              value="blur"
+              style={{ color: "#2F2F2F", backgroundColor: "#FFFFFF" }}
+            >
+              Background blur
+            </option>
+
+            <option
+              value="ocean"
+              style={{ color: "#2F2F2F", backgroundColor: "#FFFFFF" }}
+            >
+              Ocean background
+            </option>
+
+            <option
+              value="forest"
+              style={{ color: "#2F2F2F", backgroundColor: "#FFFFFF" }}
+            >
+              Forest background
+            </option>
           </select>
-          <Sparkles className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/70" />
+
+          <Sparkles className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#2F2F2F]/70" />
+
+          <svg
+            viewBox="0 0 20 20"
+            aria-hidden="true"
+            className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#2F2F2F]/60"
+          >
+            <path
+              d="m6 8 4 4 4-4"
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="1.8"
+            />
+          </svg>
         </div>
 
         <DisconnectButton
-          room={room}
           stopTracks
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-[14px] bg-[#F65252] px-4 text-sm font-bold text-white transition hover:bg-[#E64545]"
+          className="!inline-flex !h-11 !min-w-11 !items-center !justify-center !gap-2 !rounded-[14px] !border-0 !bg-[#F65252] !px-3 !text-sm !font-bold !text-white !shadow-none transition hover:!bg-[#E64545] sm:!px-4"
+          aria-label="Leave room"
+          title="Leave room"
         >
-          <X className="h-4 w-4" />
-          Leave
+          <X className="h-4 w-4" aria-hidden="true" />
+          <span className="hidden sm:inline">Leave</span>
         </DisconnectButton>
 
-        <div className="ml-1 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/60">
+        <div
+          className={`col-span-4 justify-self-center rounded-full border px-3 py-1.5 text-xs font-medium sm:col-auto ${connectionBadgeClass(
+            state,
+          )}`}
+        >
           {connectionLabel(state)}
         </div>
       </div>
 
       {effectError ? (
-        <div className="mx-auto mt-2 max-w-3xl text-center text-xs text-red-300">
+        <div className="mx-auto mt-2 max-w-3xl px-2 text-center text-xs text-red-300">
           {effectError}
         </div>
       ) : null}
-    </div>
+    </footer>
   );
 }
 
@@ -213,8 +307,12 @@ function ConnectedRoom({
   const activeProcessorTrackRef = useRef<LocalVideoTrack | null>(null);
 
   useEffect(() => {
-    const onDisconnected = () => navigateBack();
+    const onDisconnected = () => {
+      navigateBack();
+    };
+
     room.on(RoomEvent.Disconnected, onDisconnected);
+
     return () => {
       room.off(RoomEvent.Disconnected, onDisconnected);
     };
@@ -237,11 +335,15 @@ function ConnectedRoom({
 
       try {
         const cameraTrack = getLocalCameraTrack();
+
         if (!cameraTrack) {
           throw new Error("Turn on your camera before applying an effect.");
         }
 
-        if (activeProcessorTrackRef.current && activeProcessorTrackRef.current !== cameraTrack) {
+        if (
+          activeProcessorTrackRef.current &&
+          activeProcessorTrackRef.current !== cameraTrack
+        ) {
           try {
             await activeProcessorTrackRef.current.stopProcessor(true);
           } catch {
@@ -273,11 +375,12 @@ function ConnectedRoom({
         await cameraTrack.setProcessor(processor, true);
         activeProcessorTrackRef.current = cameraTrack;
         setEffectMode(mode);
-      } catch (error) {
+      } catch (effectApplyError) {
         const message =
-          error instanceof Error
-            ? error.message
+          effectApplyError instanceof Error
+            ? effectApplyError.message
             : "This background effect is not supported on this device.";
+
         setEffectError(message);
         setEffectMode("off");
       } finally {
@@ -291,6 +394,7 @@ function ConnectedRoom({
     return () => {
       const track = activeProcessorTrackRef.current;
       activeProcessorTrackRef.current = null;
+
       if (track) {
         void track.stopProcessor(true).catch(() => {});
       }
@@ -303,23 +407,29 @@ function ConnectedRoom({
         data-lk-theme="default"
         className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#101010] text-white"
       >
-        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-[#151515] px-4 py-3">
+        <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 bg-[#141414] px-3 py-2.5 sm:px-4 sm:py-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-bold">{title}</div>
-            <div className="text-xs text-white/45">
+            <div className="truncate text-[13px] font-bold text-white sm:text-sm">
+              {title}
+            </div>
+
+            <div className="mt-0.5 truncate text-[11px] text-white/45 sm:text-xs">
               Clean LiveKit video room
             </div>
           </div>
-          <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/55">
+
+          <div className="hidden shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/55 sm:block">
             Video + audio only
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 p-3 sm:p-4">
-          <CleanVideoGrid />
+        <main className="min-h-0 flex-1 overflow-hidden p-2 sm:p-4">
+          <div className="h-full min-h-0 w-full overflow-hidden rounded-[20px] border border-white/10 bg-[#151515] p-1.5 sm:rounded-[26px] sm:p-3">
+            <CleanVideoGrid />
+          </div>
         </main>
 
-        <RoomAudioRenderer room={room} />
+        <RoomAudioRenderer />
         <StartAudio label="Enable room audio" />
 
         <CleanControls
@@ -375,9 +485,9 @@ export default function RoomPageLiveKitClean() {
 
     return () => {
       mountedRef.current = false;
-      // This is the only automatic disconnect path.
-      // Hiding the tab, switching apps, pagehide and visibilitychange do not
-      // explicitly disconnect this clean room.
+
+      // The clean room does not disconnect merely because the tab becomes hidden.
+      // This cleanup runs only when this React page is actually unmounted.
       void room.disconnect(true);
     };
   }, [room]);
@@ -391,23 +501,29 @@ export default function RoomPageLiveKitClean() {
 
       try {
         const sessionId = String(id || "").trim();
-        if (!sessionId) throw new Error("Missing session id.");
 
-        const [{ data: sessionRow, error: sessionError }, authResult] =
-          await Promise.all([
-            supabase
-              .from("sessions")
-              .select("id,title,host_id")
-              .eq("id", sessionId)
-              .single(),
-            supabase.auth.getSession(),
-          ]);
+        if (!sessionId) {
+          throw new Error("Missing session id.");
+        }
+
+        const [
+          { data: sessionRow, error: sessionError },
+          authResult,
+        ] = await Promise.all([
+          supabase
+            .from("sessions")
+            .select("id,title,host_id")
+            .eq("id", sessionId)
+            .single(),
+          supabase.auth.getSession(),
+        ]);
 
         if (sessionError || !sessionRow?.id) {
           throw new Error("Session not found.");
         }
 
         const user = authResult.data.session?.user ?? null;
+
         let nextName =
           String(user?.user_metadata?.full_name || "").trim() ||
           String(user?.email || "").split("@")[0] ||
@@ -420,7 +536,9 @@ export default function RoomPageLiveKitClean() {
             .eq("id", user.id)
             .maybeSingle();
 
-          nextName = String(profile?.full_name || nextName).trim() || "User";
+          nextName =
+            String(profile?.full_name || nextName).trim() ||
+            "User";
         }
 
         if (!cancelled) {
@@ -436,7 +554,9 @@ export default function RoomPageLiveKitClean() {
           );
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
@@ -455,18 +575,28 @@ export default function RoomPageLiveKitClean() {
 
     try {
       const { data: authData } = await supabase.auth.getSession();
+
       const authSession = authData.session;
       const userId = String(authSession?.user?.id || "").trim();
-      const accessToken = String(authSession?.access_token || "").trim();
+      const accessToken = String(
+        authSession?.access_token || "",
+      ).trim();
 
-      const baseUserId = safeIdentity(userId || displayName || "guest");
+      const baseUserId = safeIdentity(
+        userId || displayName || "guest",
+      );
+
       const identity = safeIdentity(
         `${baseUserId}--clean-${tabIdRef.current}`,
       );
-      const roomName = safeIdentity(`session-${session.id}`);
+
+      const roomName = safeIdentity(
+        `session-${session.id}`,
+      );
 
       const tokenEndpoint = String(
-        import.meta.env.VITE_LIVEKIT_TOKEN_ENDPOINT || "/api/livekit/token",
+        import.meta.env.VITE_LIVEKIT_TOKEN_ENDPOINT ||
+          "/api/livekit/token",
       ).trim();
 
       const response = await fetch(tokenEndpoint, {
@@ -474,14 +604,18 @@ export default function RoomPageLiveKitClean() {
         headers: {
           "Content-Type": "application/json",
           ...(accessToken
-            ? { Authorization: `Bearer ${accessToken}` }
+            ? {
+                Authorization: `Bearer ${accessToken}`,
+              }
             : {}),
         },
         body: JSON.stringify({
           roomName,
           identity,
           name: displayName.trim() || "Guest",
-          isHost: Boolean(userId && session.host_id === userId),
+          isHost: Boolean(
+            userId && session.host_id === userId,
+          ),
           sessionId: session.id,
           isModerator: false,
           baseUserId,
@@ -489,9 +623,16 @@ export default function RoomPageLiveKitClean() {
         }),
       });
 
-      const payload = (await response.json().catch(() => ({}))) as TokenResponse;
+      const payload =
+        (await response
+          .json()
+          .catch(() => ({}))) as TokenResponse;
 
-      if (!response.ok || !payload.token || !payload.url) {
+      if (
+        !response.ok ||
+        !payload.token ||
+        !payload.url
+      ) {
         throw new Error(
           payload.message ||
             payload.error ||
@@ -499,10 +640,14 @@ export default function RoomPageLiveKitClean() {
         );
       }
 
-      await room.connect(payload.url, payload.token, {
-        autoSubscribe: true,
-        maxRetries: 3,
-      });
+      await room.connect(
+        payload.url,
+        payload.token,
+        {
+          autoSubscribe: true,
+          maxRetries: 3,
+        },
+      );
 
       await Promise.allSettled([
         room.localParticipant.setMicrophoneEnabled(true),
@@ -515,12 +660,14 @@ export default function RoomPageLiveKitClean() {
         }),
       ]);
 
-      if (mountedRef.current) setJoined(true);
+      if (mountedRef.current) {
+        setJoined(true);
+      }
     } catch (joinError) {
       try {
         await room.disconnect();
       } catch {
-        // ignore
+        // Best-effort cleanup after a failed initial join.
       }
 
       if (mountedRef.current) {
@@ -529,55 +676,74 @@ export default function RoomPageLiveKitClean() {
             ? joinError.message
             : "Could not join the room.",
         );
+
         setJoined(false);
       }
     } finally {
-      if (mountedRef.current) setJoining(false);
+      if (mountedRef.current) {
+        setJoining(false);
+      }
     }
-  }, [displayName, joined, joining, room, session]);
+  }, [
+    displayName,
+    joined,
+    joining,
+    room,
+    session,
+  ]);
+
+  const navigateBack = useCallback(() => {
+    navigate("/sessions");
+  }, [navigate]);
 
   if (joined && session) {
     return (
       <ConnectedRoom
         room={room}
         title={session.title || "MySession room"}
-        navigateBack={() => navigate("/sessions")}
+        navigateBack={navigateBack}
       />
     );
   }
 
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-[#101010] px-4 py-8 text-white">
-      <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-[#181818] p-5 shadow-2xl sm:p-6">
+    <div className="flex min-h-[100dvh] items-center justify-center bg-[#101010] px-3 py-6 text-white sm:px-4 sm:py-8">
+      <div className="w-full max-w-md rounded-[22px] border border-white/10 bg-[#181818] p-4 shadow-2xl sm:rounded-[28px] sm:p-6">
         <div className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-white/55">
           Clean LiveKit room
         </div>
 
-        <h1 className="mt-4 text-2xl font-bold tracking-tight">
-          {loading ? "Loading room…" : session?.title || "Video room"}
+        <h1 className="mt-4 text-xl font-bold tracking-tight sm:text-2xl">
+          {loading
+            ? "Loading room…"
+            : session?.title || "Video room"}
         </h1>
 
         <p className="mt-2 text-sm leading-6 text-white/55">
-          This version contains only LiveKit video, audio, device controls and
-          optional camera effects. It has no chat, tasks, attendance heartbeat,
-          Supabase presence or custom reconnect logic.
+          This version contains only LiveKit video, audio,
+          device controls and optional camera effects. It has
+          no chat, tasks, attendance heartbeat, Supabase
+          presence or custom reconnect logic.
         </p>
 
         <label className="mt-5 block">
           <span className="mb-2 block text-xs font-semibold text-white/65">
             Display name
           </span>
+
           <input
             value={displayName}
-            onChange={(event) => setDisplayName(event.target.value)}
+            onChange={(event) =>
+              setDisplayName(event.target.value)
+            }
             disabled={loading || joining}
-            className="h-12 w-full rounded-[16px] border border-white/10 bg-white/[0.05] px-4 text-sm text-white outline-none placeholder:text-white/30 focus:border-white/25"
+            className="h-12 w-full rounded-[14px] border border-white/10 bg-white/[0.05] px-4 text-sm text-white outline-none placeholder:text-white/30 focus:border-white/25 sm:rounded-[16px]"
             placeholder="Your name"
           />
         </label>
 
         {error ? (
-          <div className="mt-4 rounded-[16px] border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+          <div className="mt-4 rounded-[14px] border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-200 sm:rounded-[16px]">
             {error}
           </div>
         ) : null}
@@ -591,7 +757,7 @@ export default function RoomPageLiveKitClean() {
             !session ||
             !displayName.trim()
           }
-          className="mt-5 h-12 w-full rounded-[16px] bg-[#2F2F2F] text-sm font-bold text-white transition hover:bg-[#3A3A3A] disabled:cursor-not-allowed disabled:opacity-50"
+          className="mt-5 h-12 w-full rounded-[14px] bg-[#2F2F2F] text-sm font-bold text-white transition hover:bg-[#3A3A3A] disabled:cursor-not-allowed disabled:opacity-50 sm:rounded-[16px]"
         >
           {joining ? "Joining…" : "Join clean room"}
         </button>
@@ -599,7 +765,7 @@ export default function RoomPageLiveKitClean() {
         <button
           type="button"
           onClick={() => navigate("/sessions")}
-          className="mt-3 h-11 w-full rounded-[16px] border border-white/10 bg-transparent text-sm font-semibold text-white/65 transition hover:bg-white/[0.05]"
+          className="mt-3 h-11 w-full rounded-[14px] border border-white/10 bg-transparent text-sm font-semibold text-white/65 transition hover:bg-white/[0.05] sm:rounded-[16px]"
         >
           Back to sessions
         </button>
