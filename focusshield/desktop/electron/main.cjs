@@ -2,11 +2,12 @@ const { app, BrowserWindow, ipcMain, Menu, nativeImage, Notification, safeStorag
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { autoUpdater } = require("electron-updater");
 const { createExtensionBridge } = require("./bridge.cjs");
 const { CloudSync } = require("./cloud-sync.cjs");
 const { listInstalledApps } = require("./installed-apps.cjs");
 const { ProcessBlocker } = require("./process-blocker.cjs");
-const { inactivePolicy, isExpired, sanitizePolicy } = require("./policy.cjs");
+const { inactivePolicy, isExpired, sanitizePolicy, sanitizeSavedLists } = require("./policy.cjs");
 
 let mainWindow = null;
 let tray = null;
@@ -17,6 +18,14 @@ let expiryTimer = null;
 let policy = { ...inactivePolicy(), updatedAt: null };
 let settings = { launchAtLogin: true, deviceId: crypto.randomUUID() };
 let pairingNonce = crypto.randomBytes(24).toString("hex");
+let updateCheckTimer = null;
+let updateState = {
+  status: app.isPackaged ? "idle" : "development",
+  currentVersion: app.getVersion(),
+  availableVersion: "",
+  percent: 0,
+  error: "",
+};
 
 function dataPath(name) {
   return path.join(app.getPath("userData"), name);
@@ -70,6 +79,7 @@ function publicState() {
     settings,
     bridgeOnline: Boolean(bridge?.listening),
     account: cloudSync?.getAccount() || { connected: false },
+    update: updateState,
   };
 }
 
@@ -77,6 +87,83 @@ function notifyRenderers(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send(channel, payload);
   }
+}
+
+function setUpdateState(patch) {
+  updateState = { ...updateState, ...patch };
+  notifyRenderers("focusshield:update-changed", updateState);
+}
+
+function checkForUpdates() {
+  if (!app.isPackaged) {
+    setUpdateState({ status: "development", error: "" });
+    return Promise.resolve({ updateInfo: null });
+  }
+  return autoUpdater.checkForUpdates().catch((error) => {
+    setUpdateState({
+      status: "error",
+      error: String(error?.message || error || "update_check_failed"),
+    });
+    return null;
+  });
+}
+
+function configureAutoUpdates() {
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowDowngrade = false;
+
+  autoUpdater.on("checking-for-update", () =>
+    setUpdateState({ status: "checking", error: "", percent: 0 }),
+  );
+  autoUpdater.on("update-available", (info) =>
+    setUpdateState({
+      status: "downloading",
+      availableVersion: String(info?.version || ""),
+      error: "",
+      percent: 0,
+    }),
+  );
+  autoUpdater.on("update-not-available", () =>
+    setUpdateState({
+      status: "current",
+      availableVersion: "",
+      error: "",
+      percent: 0,
+    }),
+  );
+  autoUpdater.on("download-progress", (progress) =>
+    setUpdateState({
+      status: "downloading",
+      percent: Math.max(0, Math.min(100, Math.round(progress?.percent || 0))),
+    }),
+  );
+  autoUpdater.on("update-downloaded", (info) => {
+    setUpdateState({
+      status: "ready",
+      availableVersion: String(info?.version || updateState.availableVersion || ""),
+      error: "",
+      percent: 100,
+    });
+    if (Notification.isSupported()) {
+      new Notification({
+        title: "FocusShield update is ready",
+        body: "Open FocusShield and restart to install it.",
+        silent: true,
+      }).show();
+    }
+  });
+  autoUpdater.on("error", (error) =>
+    setUpdateState({
+      status: "error",
+      error: String(error?.message || error || "update_failed"),
+    }),
+  );
+
+  setTimeout(() => void checkForUpdates(), 8_000);
+  updateCheckTimer = setInterval(() => void checkForUpdates(), 4 * 60 * 60_000);
 }
 
 function updateTray() {
@@ -135,6 +222,30 @@ function updatePolicy(nextInput, source = "desktop", options = {}) {
     void cloudSync.syncNow({ preferLocal: true });
   }
   return { ok: true, policy };
+}
+
+function saveBlockList(input = {}) {
+  const now = Date.now();
+  const id = String(input.id || crypto.randomUUID()).slice(0, 80);
+  const existing = (policy.savedLists || []).find((item) => item.id === id);
+  const nextList = {
+    ...input,
+    id,
+    createdAt: Number(existing?.createdAt || input.createdAt) || now,
+    updatedAt: now,
+  };
+  const savedLists = sanitizeSavedLists([
+    nextList,
+    ...(policy.savedLists || []).filter((item) => item.id !== id),
+  ]);
+  return updatePolicy({ ...policy, savedLists }, "desktop");
+}
+
+function deleteBlockList(id) {
+  const savedLists = (policy.savedLists || []).filter(
+    (item) => item.id !== String(id || ""),
+  );
+  return updatePolicy({ ...policy, savedLists }, "desktop");
 }
 
 async function connectCloudAccount(body) {
@@ -259,6 +370,7 @@ if (!app.requestSingleInstanceLock()) {
       updatePolicy,
       connectAccount: connectCloudAccount,
     });
+    configureAutoUpdates();
     expiryTimer = setInterval(() => {
       if (isExpired(policy)) deactivatePolicy("expired");
     }, 1000);
@@ -280,8 +392,11 @@ ipcMain.handle("focusshield:start", (_event, input) => {
     endAt: Date.now() + minutes * 60_000,
     web: input?.web,
     desktop: input?.desktop,
+    savedLists: policy.savedLists,
   });
 });
+ipcMain.handle("focusshield:save-block-list", (_event, input) => saveBlockList(input));
+ipcMain.handle("focusshield:delete-block-list", (_event, id) => deleteBlockList(id));
 ipcMain.handle("focusshield:stop", () => deactivatePolicy("desktop"));
 ipcMain.handle("focusshield:set-launch-at-login", (_event, enabled) => {
   settings.launchAtLogin = Boolean(enabled);
@@ -306,12 +421,23 @@ ipcMain.handle("focusshield:sync-now", async () => {
   const result = await cloudSync?.syncNow();
   return { ...result, state: publicState() };
 });
+ipcMain.handle("focusshield:check-for-updates", async () => {
+  await checkForUpdates();
+  return updateState;
+});
+ipcMain.handle("focusshield:install-update", () => {
+  if (updateState.status !== "ready") return { ok: false, error: "update_not_ready" };
+  quitting = true;
+  setImmediate(() => autoUpdater.quitAndInstall(false, true));
+  return { ok: true };
+});
 
 app.on("before-quit", () => { quitting = true; });
 app.on("will-quit", () => {
   blocker.stop();
   cloudSync?.stop();
   if (expiryTimer) clearInterval(expiryTimer);
+  if (updateCheckTimer) clearInterval(updateCheckTimer);
   bridge?.close();
 });
 app.on("window-all-closed", () => {

@@ -7,6 +7,7 @@ const DEFAULT_POLICY = Object.freeze({
   source: "desktop",
   web: { domains: [], urls: [], allow: [] },
   desktop: { applications: [] },
+  savedLists: [],
 });
 
 const PROTECTED_EXECUTABLES = new Set([
@@ -41,6 +42,34 @@ function normalizeExecutable(value) {
   return PROTECTED_EXECUTABLES.has(withExtension) ? "" : withExtension;
 }
 
+function sanitizeSavedLists(value) {
+  return (Array.isArray(value) ? value : [])
+    .slice(0, 30)
+    .map((item, index) => {
+      const web = item?.web || {};
+      const desktop = item?.desktop || {};
+      const applications = [...new Set(
+        uniqueStrings(desktop.applications)
+          .map(normalizeExecutable)
+          .filter(Boolean),
+      )];
+
+      return {
+        id: String(item?.id || `list-${index + 1}`).slice(0, 80),
+        name: String(item?.name || `Block list ${index + 1}`).trim().slice(0, 48),
+        createdAt: Number(item?.createdAt) || Date.now(),
+        updatedAt: Number(item?.updatedAt) || Date.now(),
+        web: {
+          domains: [...new Set(uniqueStrings(web.domains).map((entry) => entry.toLowerCase()))],
+          urls: uniqueStrings(web.urls),
+          allow: [...new Set(uniqueStrings(web.allow).map((entry) => entry.toLowerCase()))],
+        },
+        desktop: { applications },
+      };
+    })
+    .filter((item) => item.name);
+}
+
 function sanitizePolicy(input = {}) {
   const now = Date.now();
   const web = input.web || {};
@@ -65,6 +94,7 @@ function sanitizePolicy(input = {}) {
       allow: [...new Set(uniqueStrings(web.allow).map((item) => item.toLowerCase()))],
     },
     desktop: { applications },
+    savedLists: sanitizeSavedLists(input.savedLists),
   };
 }
 
@@ -83,4 +113,5 @@ module.exports = {
   isExpired,
   normalizeExecutable,
   sanitizePolicy,
+  sanitizeSavedLists,
 };

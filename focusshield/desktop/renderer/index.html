@@ -6,15 +6,19 @@
   <title>FocusShield</title>
   <link rel="stylesheet" href="./styles.css" />
 </head>
-<body>
+<body data-theme="dark">
   <main class="shell">
     <header class="topbar">
-      <div class="brand-mark" aria-hidden="true">✓</div>
+      <div class="brand-mark" aria-hidden="true"><img src="../assets/focus-shield.svg" alt="" /></div>
       <div>
         <div class="eyebrow">MYSESSION</div>
         <h1>FocusShield</h1>
       </div>
       <div class="account-area">
+        <button id="themeButton" class="theme-button" title="Switch to light mode" aria-label="Switch to light mode">
+          <img id="themeIcon" src="../assets/theme-sun-dark.svg" alt="" />
+        </button>
+        <button id="updateButton" class="update-button" title="Check for updates">v0.3.0</button>
         <div class="sync-pill"><span></span> Browser bridge <b id="bridgeStatus">checking</b></div>
         <button id="accountButton" class="account-button">Connect MySession</button>
       </div>
@@ -62,13 +66,39 @@
       </div>
     </section>
 
+    <section class="saved-lists-panel" aria-labelledby="savedListsTitle">
+      <div class="saved-lists-heading">
+        <div>
+          <span class="section-label">REUSABLE SETUPS</span>
+          <h3 id="savedListsTitle">Saved block lists</h3>
+          <p class="muted">Save the apps and sites you usually block, then restore them with one click.</p>
+        </div>
+        <div class="save-list-field">
+          <input id="blockListName" maxlength="48" placeholder="e.g. Deep work" autocomplete="off" />
+          <button id="saveBlockList" class="secondary-button">Save current</button>
+        </div>
+      </div>
+      <div id="savedBlockLists" class="saved-block-lists"></div>
+    </section>
+
     <section class="control-bar">
-      <label class="duration-field">Duration
-        <select id="duration">
-          <option value="25">25 min</option><option value="50">50 min</option>
-          <option value="90">90 min</option><option value="120">2 hours</option>
-        </select>
-      </label>
+      <div class="duration-field">
+        <label for="duration">Duration</label>
+        <div class="duration-input">
+          <input id="duration" type="number" min="1" max="1440" step="1" value="25" inputmode="numeric" />
+          <select id="durationUnit" aria-label="Duration unit">
+            <option value="minutes">min</option>
+            <option value="hours">hours</option>
+          </select>
+        </div>
+        <div class="duration-presets" aria-label="Quick durations">
+          <button type="button" data-duration-minutes="25">25m</button>
+          <button type="button" data-duration-minutes="50">50m</button>
+          <button type="button" data-duration-minutes="120">2h</button>
+          <button type="button" data-duration-minutes="240">4h</button>
+          <button type="button" data-duration-minutes="480">8h</button>
+        </div>
+      </div>
       <label class="toggle-row"><input id="locked" type="checkbox" /><span class="toggle"></span><span><b>Locked mode</b><small>Cannot stop before timer ends</small></span></label>
       <label class="toggle-row"><input id="launchAtLogin" type="checkbox" /><span class="toggle"></span><span><b>Start with Windows</b><small>Keep app blocking available</small></span></label>
       <button id="stop" class="stop-button" disabled>Stop</button>

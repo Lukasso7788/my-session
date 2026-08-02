@@ -228,10 +228,10 @@ export default function BodyTriplingSessionCard(props: {
                     onClick={() => canJoin && onJoin(session.id)}
                     className={`
             flex-1 rounded-full px-4 py-2.5 text-[13px] font-semibold
-            transition border
+            transition border-0
             ${canJoin
-                            ? "bg-[#111827] text-white border-[#111827] hover:bg-black"
-                            : "bg-[#E5E7EB] text-[#9CA3AF] border-[#E5E7EB] cursor-not-allowed"
+                            ? "bg-[#2f2f2f] text-white hover:bg-[#242424]"
+                            : "bg-[#E5E7EB] text-[#9CA3AF] cursor-not-allowed"
                         }
           `}
                 >

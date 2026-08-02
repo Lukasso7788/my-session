@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld("focusShield", {
   listInstalledApps: (force = false) =>
     ipcRenderer.invoke("focusshield:list-installed-apps", Boolean(force)),
   start: (payload) => ipcRenderer.invoke("focusshield:start", payload),
+  saveBlockList: (payload) => ipcRenderer.invoke("focusshield:save-block-list", payload),
+  deleteBlockList: (id) => ipcRenderer.invoke("focusshield:delete-block-list", id),
   stop: () => ipcRenderer.invoke("focusshield:stop"),
   setLaunchAtLogin: (enabled) =>
     ipcRenderer.invoke("focusshield:set-launch-at-login", Boolean(enabled)),
@@ -13,6 +15,8 @@ contextBridge.exposeInMainWorld("focusShield", {
   connectAccount: () => ipcRenderer.invoke("focusshield:connect-account"),
   disconnectAccount: () => ipcRenderer.invoke("focusshield:disconnect-account"),
   syncNow: () => ipcRenderer.invoke("focusshield:sync-now"),
+  checkForUpdates: () => ipcRenderer.invoke("focusshield:check-for-updates"),
+  installUpdate: () => ipcRenderer.invoke("focusshield:install-update"),
   onPolicyChanged: (callback) => {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on("focusshield:policy-changed", listener);
@@ -22,5 +26,10 @@ contextBridge.exposeInMainWorld("focusShield", {
     const listener = (_event, item) => callback(item);
     ipcRenderer.on("focusshield:app-blocked", listener);
     return () => ipcRenderer.removeListener("focusshield:app-blocked", listener);
+  },
+  onUpdateChanged: (callback) => {
+    const listener = (_event, update) => callback(update);
+    ipcRenderer.on("focusshield:update-changed", listener);
+    return () => ipcRenderer.removeListener("focusshield:update-changed", listener);
   },
 });

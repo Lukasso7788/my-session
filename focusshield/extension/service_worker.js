@@ -15,8 +15,35 @@ const DEFAULT_POLICY = {
     },
     desktop: {
         applications: []
-    }
+    },
+    savedLists: []
 };
+
+function uniqueStrings(value) {
+    return [...new Set((Array.isArray(value) ? value : [])
+        .map((item) => String(item || "").trim())
+        .filter(Boolean))];
+}
+
+function normalizeSavedLists(value) {
+    return (Array.isArray(value) ? value : [])
+        .slice(0, 30)
+        .map((item, index) => ({
+            id: String(item?.id || `list-${index + 1}`).slice(0, 80),
+            name: String(item?.name || `Block list ${index + 1}`).trim().slice(0, 48),
+            createdAt: Number(item?.createdAt) || Date.now(),
+            updatedAt: Number(item?.updatedAt) || Date.now(),
+            web: {
+                domains: uniqueStrings(item?.web?.domains).map(normalizeDomain),
+                urls: uniqueStrings(item?.web?.urls).map(normalizeUrl),
+                allow: uniqueStrings(item?.web?.allow).map(normalizeDomain)
+            },
+            desktop: {
+                applications: uniqueStrings(item?.desktop?.applications)
+            }
+        }))
+        .filter((item) => item.name);
+}
 
 function deactivatePolicy(policy, source = "extension") {
     return {
@@ -254,13 +281,55 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
                     urls: (msg.urls || []).map(normalizeUrl).filter(Boolean),
                     allow: []
                 },
-                desktop: currentPolicy.desktop || DEFAULT_POLICY.desktop
+                desktop: {
+                    applications: Array.isArray(msg.applications)
+                        ? uniqueStrings(msg.applications)
+                        : (currentPolicy.desktop?.applications || [])
+                },
+                savedLists: normalizeSavedLists(currentPolicy.savedLists)
             };
 
             await chrome.storage.local.set({ policy });
             await applyPolicy(policy);
             await pushDesktopPolicy(policy);
 
+            sendResponse({ ok: true, policy });
+            return;
+        }
+
+        if (msg.type === "SAVE_LIST") {
+            const currentPolicy = await getPolicy();
+            const now = Date.now();
+            const id = String(msg.list?.id || crypto.randomUUID()).slice(0, 80);
+            const existing = (currentPolicy.savedLists || []).find((item) => item.id === id);
+            const savedLists = normalizeSavedLists([
+                {
+                    ...msg.list,
+                    id,
+                    createdAt: Number(existing?.createdAt || msg.list?.createdAt) || now,
+                    updatedAt: now
+                },
+                ...(currentPolicy.savedLists || []).filter((item) => item.id !== id)
+            ]);
+            const policy = { ...currentPolicy, savedLists, updatedAt: now, source: "extension" };
+            await chrome.storage.local.set({ policy });
+            await pushDesktopPolicy(policy);
+            sendResponse({ ok: true, policy });
+            return;
+        }
+
+        if (msg.type === "DELETE_LIST") {
+            const currentPolicy = await getPolicy();
+            const policy = {
+                ...currentPolicy,
+                savedLists: (currentPolicy.savedLists || []).filter(
+                    (item) => item.id !== String(msg.id || "")
+                ),
+                updatedAt: Date.now(),
+                source: "extension"
+            };
+            await chrome.storage.local.set({ policy });
+            await pushDesktopPolicy(policy);
             sendResponse({ ok: true, policy });
             return;
         }

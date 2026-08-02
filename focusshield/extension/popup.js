@@ -1,4 +1,6 @@
 let manualStatusUntil = 0;
+let cachedPolicy = null;
+let appliedSavedListId = "";
 
 function parseLines(text) {
     return text
@@ -83,6 +85,40 @@ async function getPolicy() {
     return response?.policy;
 }
 
+function renderSavedLists(policy) {
+    const lists = Array.isArray(policy?.savedLists) ? policy.savedLists : [];
+    const select = document.getElementById("savedListSelect");
+    const previous = select.value || appliedSavedListId;
+    select.replaceChildren();
+    if (lists.length) {
+        lists
+            .slice()
+            .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
+            .forEach((list) => select.add(new Option(list.name, list.id)));
+    } else {
+        select.add(new Option("No saved lists yet", ""));
+    }
+
+    if (lists.some((list) => list.id === previous)) select.value = previous;
+    document.getElementById("applyList").disabled = !lists.length;
+    document.getElementById("deleteList").disabled = !lists.length;
+}
+
+function applySavedList(list) {
+    document.querySelectorAll('input[type="checkbox"][value]').forEach((input) => {
+        if (input.id !== "locked") input.checked = false;
+    });
+    document.getElementById("custom").value = [
+        ...(list?.web?.domains || []),
+        ...(list?.web?.urls || [])
+    ].join("\n");
+    appliedSavedListId = list?.id || "";
+    document.getElementById("savedListSelect").value = appliedSavedListId;
+    const status = document.getElementById("status");
+    manualStatusUntil = Date.now() + 3500;
+    status.classList.remove("danger");
+    status.textContent = `Loaded “${list.name}”. Choose a duration and activate Shield.`;
+}
 function renderActiveList(policy) {
     const activeList = document.getElementById("activeList");
 
@@ -107,6 +143,8 @@ function renderActiveList(policy) {
 
 async function render() {
     const policy = await getPolicy();
+    cachedPolicy = policy;
+    renderSavedLists(policy);
     const status = document.getElementById("status");
 
     if (Date.now() < manualStatusUntil) {
@@ -126,6 +164,70 @@ async function render() {
     renderActiveList(policy);
 }
 
+document.getElementById("applyList").onclick = () => {
+    const id = document.getElementById("savedListSelect").value;
+    const list = (cachedPolicy?.savedLists || []).find((item) => item.id === id);
+    if (list) applySavedList(list);
+};
+
+document.getElementById("deleteList").onclick = async () => {
+    const id = document.getElementById("savedListSelect").value;
+    if (!id) return;
+    const response = await sendMessage({ type: "DELETE_LIST", id });
+    if (!response?.ok) {
+        showError(response?.error || "Could not delete this list.");
+        return;
+    }
+    if (appliedSavedListId === id) appliedSavedListId = "";
+    cachedPolicy = response.policy;
+    renderSavedLists(cachedPolicy);
+};
+
+document.getElementById("saveList").onclick = async () => {
+    const nameInput = document.getElementById("listName");
+    const name = nameInput.value.trim();
+    const selectedDomains = getSelectedPopularDomains();
+    const custom = getCustomDomainsAndUrls();
+    const domains = [...new Set([...selectedDomains, ...custom.domains])];
+    const urls = [...new Set(custom.urls)];
+    if (!name) {
+        showError("Give this block list a name.");
+        nameInput.focus();
+        return;
+    }
+    if (!domains.length && !urls.length) {
+        showError("Choose at least one site or page before saving.");
+        return;
+    }
+
+    const id = crypto.randomUUID();
+    const response = await sendMessage({
+        type: "SAVE_LIST",
+        list: {
+            id,
+            name,
+            web: { domains, urls, allow: [] },
+            desktop: {
+                applications: cachedPolicy?.desktop?.applications || []
+            }
+        }
+    });
+    if (!response?.ok) {
+        showError(response?.error || "Could not save this list.");
+        return;
+    }
+    nameInput.value = "";
+    cachedPolicy = response.policy;
+    appliedSavedListId = id;
+    renderSavedLists(cachedPolicy);
+};
+
+document.getElementById("listName").onkeydown = (event) => {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        document.getElementById("saveList").click();
+    }
+};
 document.getElementById("durationPreset").addEventListener("change", () => {
     const customInput = document.getElementById("customDuration");
     customInput.style.display =
@@ -160,7 +262,10 @@ document.getElementById("start").onclick = async () => {
         domains,
         urls,
         minutes,
-        locked
+        locked,
+        applications: (cachedPolicy?.savedLists || []).find(
+            (list) => list.id === appliedSavedListId
+        )?.desktop?.applications
     });
 
     await render();
