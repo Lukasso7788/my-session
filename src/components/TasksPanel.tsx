@@ -3948,7 +3948,7 @@ export function TasksPanel({
                 <div key={item.id} className={teamCardCls + " font-inter"}>
                   <div className="flex items-stretch gap-2 min-w-0">
                     <div
-                      className="flex h-7 max-w-7 shrink-0 self-start items-center overflow-hidden rounded-full bg-transparent transition-[max-width,background-color] duration-300 ease-out group-hover:max-w-[150px] group-hover:bg-black/[0.045] group-focus-within:max-w-[150px] group-focus-within:bg-black/[0.045]"
+                      className="flex h-7 max-w-7 shrink-0 self-center items-center overflow-hidden rounded-full bg-transparent transition-[max-width,background-color] duration-300 ease-out group-hover:max-w-[150px] group-hover:bg-black/[0.045] group-focus-within:max-w-[150px] group-focus-within:bg-black/[0.045]"
                       title={item.profiles?.full_name || "Participant"}
                     >
                       <img
