@@ -34,6 +34,53 @@ import {
 } from "lucide-react";
 
 import { supabase } from "../lib/supabase";
+
+// --- Automatic Picture‑in‑Picture hook ------------------------
+function useAutoPictureInPicture() {
+  React.useEffect(() => {
+    async function requestPiP(video) {
+      try {
+        if (!video) return;
+        if (
+          document.pictureInPictureEnabled &&
+          !document.pictureInPictureElement &&
+          typeof video.requestPictureInPicture === "function"
+        ) {
+          await video.requestPictureInPicture();
+        } else if (
+          (video).webkitSupportsPresentationMode &&
+          (video).webkitSupportsPresentationMode("picture-in-picture")
+        ) {
+          (video).webkitSetPresentationMode?.("picture-in-picture");
+        }
+      } catch {/* ignore */}
+    }
+
+    function onVisibility() {
+      if (document.visibilityState === "hidden") {
+        const vid = document.querySelector("video");
+        requestPiP(vid);
+      }
+    }
+
+    try {
+      navigator.mediaSession?.setActionHandler?.("enterpictureinpicture", () => {
+        const vid = document.querySelector("video");
+        requestPiP(vid);
+      });
+    } catch {/* safari might throw */}
+
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      try {
+        navigator.mediaSession?.setActionHandler?.("enterpictureinpicture", null);
+      } catch {}
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
+}
+
+
 import {
   createPersonColorBackgroundProcessor,
 } from "./livekit/PersonColorCorrectionProcessor";
@@ -469,6 +516,9 @@ function ConnectedRoom({
   title: string;
   navigateBack: () => void;
 }) {
+  // enable automatic Picture‑in‑Picture across browsers
+  useAutoPictureInPicture();
+
   const [effectMode, setEffectMode] = useState<EffectMode>("off");
   const [effectBusy, setEffectBusy] = useState(false);
   const [effectError, setEffectError] = useState("");
