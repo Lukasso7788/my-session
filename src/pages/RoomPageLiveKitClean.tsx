@@ -72,25 +72,75 @@ type CaptureStreamCanvas = HTMLCanvasElement & {
 const PIP_CANVAS_WIDTH = 960;
 const PIP_CANVAS_HEIGHT = 540;
 const PIP_COLLAGE_FPS = 8;
+const PIP_SNAPSHOT_REFRESH_MS = 500;
 
-function getRenderableRoomVideos(): PiPVideoElement[] {
-  const videos = Array.from(
+type CachedVideoFrame = {
+  canvas: HTMLCanvasElement;
+  updatedAt: number;
+};
+
+const pipVideoFrameCache = new WeakMap<HTMLVideoElement, CachedVideoFrame>();
+
+function getRoomVideoElements(): PiPVideoElement[] {
+  return Array.from(
     document.querySelectorAll<HTMLVideoElement>(
       ".clean-livekit-tile video, .clean-livekit-tile .lk-participant-media-video",
     ),
-  );
+  ) as PiPVideoElement[];
+}
 
-  return videos.filter((video) => {
-    const stream = video.srcObject;
-    return (
-      !video.ended &&
-      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
-      video.videoWidth > 0 &&
-      video.videoHeight > 0 &&
-      stream instanceof MediaStream &&
-      stream.getVideoTracks().some((track) => track.readyState === "live")
-    );
-  }) as PiPVideoElement[];
+function isVideoCurrentlyRenderable(video: HTMLVideoElement): boolean {
+  const stream = video.srcObject;
+
+  return (
+    !video.ended &&
+    video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+    video.videoWidth > 0 &&
+    video.videoHeight > 0 &&
+    stream instanceof MediaStream &&
+    stream.getVideoTracks().some((track) => track.readyState === "live")
+  );
+}
+
+function getRenderableRoomVideos(): PiPVideoElement[] {
+  return getRoomVideoElements().filter(isVideoCurrentlyRenderable);
+}
+
+function updateCachedVideoFrame(video: HTMLVideoElement): void {
+  if (!isVideoCurrentlyRenderable(video)) return;
+
+  let cached = pipVideoFrameCache.get(video);
+  if (!cached) {
+    cached = {
+      canvas: document.createElement("canvas"),
+      updatedAt: 0,
+    };
+    pipVideoFrameCache.set(video, cached);
+  }
+
+  if (
+    cached.canvas.width !== video.videoWidth ||
+    cached.canvas.height !== video.videoHeight
+  ) {
+    cached.canvas.width = video.videoWidth;
+    cached.canvas.height = video.videoHeight;
+  }
+
+  const context = cached.canvas.getContext("2d", { alpha: false });
+  if (!context) return;
+
+  try {
+    context.drawImage(video, 0, 0, cached.canvas.width, cached.canvas.height);
+    cached.updatedAt = Date.now();
+  } catch {
+    // Keep the previous valid cached frame.
+  }
+}
+
+function getCachedVideoFrame(
+  video: HTMLVideoElement,
+): HTMLCanvasElement | null {
+  return pipVideoFrameCache.get(video)?.canvas ?? null;
 }
 
 function isTabletOrMobileRuntime(): boolean {
@@ -108,16 +158,16 @@ function isTabletOrMobileRuntime(): boolean {
   );
 }
 
-function drawContainedVideo(
+function drawContainedSource(
   context: CanvasRenderingContext2D,
-  video: HTMLVideoElement,
+  source: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
   x: number,
   y: number,
   width: number,
   height: number,
 ): void {
-  const sourceWidth = video.videoWidth;
-  const sourceHeight = video.videoHeight;
   if (sourceWidth <= 0 || sourceHeight <= 0) return;
 
   const scale = Math.min(width / sourceWidth, height / sourceHeight);
@@ -126,7 +176,7 @@ function drawContainedVideo(
   const drawX = x + (width - drawWidth) / 2;
   const drawY = y + (height - drawHeight) / 2;
 
-  context.drawImage(video, drawX, drawY, drawWidth, drawHeight);
+  context.drawImage(source, drawX, drawY, drawWidth, drawHeight);
 }
 
 function drawPiPCollage(canvas: HTMLCanvasElement): void {
@@ -139,13 +189,17 @@ function drawPiPCollage(canvas: HTMLCanvasElement): void {
   context.fillStyle = "#0d0d0d";
   context.fillRect(0, 0, canvas.width, canvas.height);
 
-  const videos = getRenderableRoomVideos();
+  const videos = getRoomVideoElements();
   if (videos.length === 0) {
     context.fillStyle = "rgba(255,255,255,0.72)";
     context.font = "600 30px system-ui, sans-serif";
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.fillText("Waiting for participant video…", canvas.width / 2, canvas.height / 2);
+    context.fillText(
+      "Waiting for participant video…",
+      canvas.width / 2,
+      canvas.height / 2,
+    );
     return;
   }
 
@@ -165,10 +219,57 @@ function drawPiPCollage(canvas: HTMLCanvasElement): void {
     context.fillStyle = "#171717";
     context.fillRect(x, y, cellWidth, cellHeight);
 
-    try {
-      drawContainedVideo(context, video, x, y, cellWidth, cellHeight);
-    } catch {
-      // A video can become unavailable between collection and drawing.
+    if (isVideoCurrentlyRenderable(video)) {
+      updateCachedVideoFrame(video);
+
+      try {
+        drawContainedSource(
+          context,
+          video,
+          video.videoWidth,
+          video.videoHeight,
+          x,
+          y,
+          cellWidth,
+          cellHeight,
+        );
+      } catch {
+        // Fall through to the cached frame below.
+        const cached = getCachedVideoFrame(video);
+        if (cached) {
+          drawContainedSource(
+            context,
+            cached,
+            cached.width,
+            cached.height,
+            x,
+            y,
+            cellWidth,
+            cellHeight,
+          );
+        }
+      }
+    } else {
+      const cached = getCachedVideoFrame(video);
+
+      if (cached) {
+        drawContainedSource(
+          context,
+          cached,
+          cached.width,
+          cached.height,
+          x,
+          y,
+          cellWidth,
+          cellHeight,
+        );
+      } else {
+        context.fillStyle = "rgba(255,255,255,0.5)";
+        context.font = "500 22px system-ui, sans-serif";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText("Video paused", x + cellWidth / 2, y + cellHeight / 2);
+      }
     }
 
     context.strokeStyle = "rgba(255,255,255,0.16)";
@@ -227,6 +328,7 @@ function usePiPCollage(
   const streamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const intervalRef = useRef<number | null>(null);
+  const snapshotIntervalRef = useRef<number | null>(null);
 
   const pushCollageFrame = useCallback((): void => {
     const canvas = canvasRef.current;
@@ -314,6 +416,11 @@ function usePiPCollage(
       Math.max(125, Math.round(1000 / PIP_COLLAGE_FPS)),
     );
 
+    snapshotIntervalRef.current = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      getRoomVideoElements().forEach(updateCachedVideoFrame);
+    }, PIP_SNAPSHOT_REFRESH_MS);
+
     const handleVisibilityChange = (): void => {
       // Push one final complete frame synchronously before the browser freezes
       // canvas timers in the background.
@@ -341,6 +448,9 @@ function usePiPCollage(
       if (intervalRef.current !== null) {
         window.clearInterval(intervalRef.current);
       }
+      if (snapshotIntervalRef.current !== null) {
+        window.clearInterval(snapshotIntervalRef.current);
+      }
 
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -356,43 +466,47 @@ function useBrowserInitiatedPictureInPicture(
   stageRef: React.RefObject<PiPVideoElement | null>,
 ): void {
   useEffect(() => {
+    if (!isTabletOrMobileRuntime()) {
+      return;
+    }
+
     const mediaSession = navigator.mediaSession as unknown as
       | ExtendedMediaSession
       | undefined;
 
-    // Keep the collage warm while the page is visible. The automatic path must
-    // never need to create captureStream after the page has already been hidden.
+    // Prewarm the collage while the page is foregrounded. Do not call
+    // requestPictureInPicture from visibilitychange: on mobile that can consume
+    // the Home/app-switch gesture and leave the browser in the foreground.
     void preparePreferredVideo();
 
     const requestBrowserPiP = async (): Promise<void> => {
+      if (!isTabletOrMobileRuntime()) return;
+
       const stage = stageRef.current ?? (await preparePreferredVideo());
       await enterPictureInPicture(stage);
     };
 
     try {
-      if (navigator.mediaSession) navigator.mediaSession.playbackState = "playing";
-      mediaSession?.setActionHandler?.("enterpictureinpicture", requestBrowserPiP);
-    } catch (error) {
-      console.debug("[clean-room-pip] Browser auto-PiP handler unavailable", error);
-    }
-
-    const handleVisibilityChange = (): void => {
-      if (document.visibilityState !== "hidden" || !isTabletOrMobileRuntime()) {
-        return;
+      if (navigator.mediaSession) {
+        navigator.mediaSession.playbackState = "playing";
       }
 
-      // Do not await stream preparation here: mobile browsers revoke the chance
-      // to enter PiP almost immediately after the page becomes hidden.
-      const stage = stageRef.current;
-      if (stage) void enterPictureInPicture(stage);
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+      mediaSession?.setActionHandler?.(
+        "enterpictureinpicture",
+        requestBrowserPiP,
+      );
+    } catch (error) {
+      console.debug(
+        "[clean-room-pip] Browser auto-PiP handler unavailable",
+        error,
+      );
+    }
 
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
       try {
-        if (navigator.mediaSession) navigator.mediaSession.playbackState = "none";
+        if (navigator.mediaSession) {
+          navigator.mediaSession.playbackState = "none";
+        }
         mediaSession?.setActionHandler?.("enterpictureinpicture", null);
       } catch {
         // Ignore unsupported cleanup.
@@ -850,7 +964,7 @@ function ConnectedRoom({
   const [pipBusy, setPiPBusy] = useState(false);
   const [pipActive, setPiPActive] = useState(false);
   const [pipMessage, setPiPMessage] = useState(
-    "Keep Picture-in-Picture open to stay in the room while switching apps.",
+    "On phones and tablets, open Picture-in-Picture before switching apps. Desktop auto-PiP is disabled.",
   );
 
   const pipCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -887,7 +1001,7 @@ function ConnectedRoom({
     const handleLeave = (): void => {
       setPiPActive(false);
       setPiPMessage(
-        "Keep Picture-in-Picture open to stay in the room while switching apps.",
+        "On phones and tablets, open Picture-in-Picture before switching apps. Desktop auto-PiP is disabled.",
       );
     };
 
@@ -897,7 +1011,7 @@ function ConnectedRoom({
       setPiPMessage(
         active
           ? "Picture-in-Picture is active. It shows a live collage of everyone in the room."
-          : "Keep Picture-in-Picture open to stay in the room while switching apps.",
+          : "On phones and tablets, open Picture-in-Picture before switching apps. Desktop auto-PiP is disabled.",
       );
     };
 
