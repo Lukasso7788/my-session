@@ -19,7 +19,7 @@ import {
   useConnectionState,
   useTracks,
 } from "@livekit/components-react";
-import { Mic, MicOff, Video, VideoOff, WandSparkles, X } from "lucide-react";
+import { Mic, MicOff, Sparkles, Video, VideoOff, X } from "lucide-react";
 
 import { supabase } from "../lib/supabase";
 import {
@@ -172,7 +172,7 @@ function CleanControls({
             <option value="ocean">Ocean background</option>
             <option value="forest">Forest background</option>
           </select>
-          <WandSparkles className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/70" />
+          <Sparkles className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/70" />
         </div>
 
         <DisconnectButton
