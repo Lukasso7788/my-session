@@ -3946,9 +3946,9 @@ export function TasksPanel({
 
               return (
                 <div key={item.id} className={teamCardCls + " font-inter"}>
-                  <div className="flex items-start gap-2 min-w-0">
+                  <div className="flex items-stretch gap-2 min-w-0">
                     <div
-                      className="flex h-7 max-w-7 shrink-0 items-center overflow-hidden rounded-full bg-transparent transition-[max-width,background-color] duration-300 ease-out group-hover:max-w-[150px] group-hover:bg-black/[0.045] group-focus-within:max-w-[150px] group-focus-within:bg-black/[0.045]"
+                      className="flex h-7 max-w-7 shrink-0 self-start items-center overflow-hidden rounded-full bg-transparent transition-[max-width,background-color] duration-300 ease-out group-hover:max-w-[150px] group-hover:bg-black/[0.045] group-focus-within:max-w-[150px] group-focus-within:bg-black/[0.045]"
                       title={item.profiles?.full_name || "Participant"}
                     >
                       <img
@@ -3966,7 +3966,7 @@ export function TasksPanel({
                       </span>
                     </div>
 
-                    <div className="flex-1 min-w-0">
+                    <div className="flex min-h-8 flex-1 min-w-0 self-stretch flex-col justify-center">
                       <div className="flex min-w-0 items-start">
                         <span
                           className={
@@ -3988,7 +3988,7 @@ export function TasksPanel({
                       })}
                     </div>
 
-                    <div className="shrink-0 flex items-center gap-2">
+                    <div className="shrink-0 self-center flex items-center gap-2">
                       <div
                         className={[
                           "h-8 w-8 rounded-full border text-[12px] font-medium inline-flex items-center justify-center shrink-0",
