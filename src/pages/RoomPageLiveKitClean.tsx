@@ -1,6 +1,6 @@
 // src/pages/RoomPageLiveKitClean.tsx
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ConnectionState,
@@ -11,13 +11,12 @@ import {
 } from "livekit-client";
 import {
   DisconnectButton,
-  GridLayout,
   ParticipantTile,
   RoomAudioRenderer,
   RoomContext,
   StartAudio,
-  TrackToggle,
   useConnectionState,
+  useTrackToggle,
   useTracks,
 } from "@livekit/components-react";
 import "@livekit/components-styles";
@@ -51,6 +50,7 @@ type TokenResponse = {
 };
 
 type EffectMode = "off" | "blur" | "ocean" | "forest";
+type MediaSource = Track.Source.Microphone | Track.Source.Camera;
 
 const DEFAULT_CORRECTION = {
   brightness: 100,
@@ -122,6 +122,21 @@ function connectionBadgeClass(state: ConnectionState) {
   return "border-red-400/20 bg-red-400/10 text-red-200";
 }
 
+function getTrackKey(trackRef: any, index: number) {
+  const participantIdentity = String(
+    trackRef?.participant?.identity || "participant",
+  );
+
+  const source = String(trackRef?.source || "camera");
+  const publicationSid = String(
+    trackRef?.publication?.trackSid ||
+      trackRef?.publication?.sid ||
+      "",
+  );
+
+  return `${participantIdentity}-${source}-${publicationSid || index}`;
+}
+
 function CleanVideoGrid() {
   const tracks = useTracks([
     {
@@ -130,29 +145,111 @@ function CleanVideoGrid() {
     },
   ]);
 
+  const gridClass = useMemo(() => {
+    if (tracks.length <= 1) {
+      return "grid-cols-1 place-items-center";
+    }
+
+    if (tracks.length === 2) {
+      return "grid-cols-1 md:grid-cols-2";
+    }
+
+    if (tracks.length <= 4) {
+      return "grid-cols-1 sm:grid-cols-2";
+    }
+
+    return "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3";
+  }, [tracks.length]);
+
   if (tracks.length === 0) {
     return (
-      <div className="flex h-full min-h-[240px] items-center justify-center rounded-[20px] border border-white/10 bg-[#171717] px-4 text-center text-sm text-white/45 sm:min-h-[280px] sm:rounded-[22px]">
+      <div className="flex aspect-video w-full max-w-5xl items-center justify-center rounded-[20px] border border-white/10 bg-[#171717] px-4 text-center text-sm text-white/45 sm:rounded-[22px]">
         Waiting for participants…
       </div>
     );
   }
 
   return (
-    <div className="h-full min-h-0 w-full overflow-hidden">
-      <GridLayout
-        tracks={tracks}
-        className="h-full min-h-0 w-full"
-        style={{
-          width: "100%",
-          height: "100%",
-          gap: 12,
-          padding: 0,
-        }}
-      >
-        <ParticipantTile className="overflow-hidden rounded-[18px] border border-white/10 bg-[#171717] shadow-[0_8px_28px_rgba(0,0,0,0.22)] sm:rounded-[22px]" />
-      </GridLayout>
+    <div
+      className={`grid h-full min-h-0 w-full content-center gap-2.5 overflow-y-auto p-0.5 sm:gap-3 ${gridClass}`}
+    >
+      {tracks.map((trackRef, index) => (
+        <div
+          key={getTrackKey(trackRef, index)}
+          className={[
+            "aspect-video w-full min-w-0 overflow-hidden rounded-[18px] border border-white/10 bg-[#171717] shadow-[0_8px_28px_rgba(0,0,0,0.22)] sm:rounded-[22px]",
+            tracks.length === 1
+              ? "max-h-full max-w-[min(100%,calc((100dvh-170px)*16/9))]"
+              : "",
+          ].join(" ")}
+        >
+          <ParticipantTile
+            trackRef={trackRef}
+            className="!h-full !w-full !overflow-hidden !rounded-[inherit] !border-0 !bg-[#171717]"
+            style={{
+              width: "100%",
+              height: "100%",
+              aspectRatio: "16 / 9",
+            }}
+          />
+        </div>
+      ))}
     </div>
+  );
+}
+
+function MediaToggleButton({
+  room,
+  source,
+}: {
+  room: Room;
+  source: MediaSource;
+}) {
+  const {
+    buttonProps,
+    enabled,
+    pending,
+  } = useTrackToggle({
+    source,
+    room,
+  });
+
+  const isMicrophone = source === Track.Source.Microphone;
+  const label = isMicrophone
+    ? enabled
+      ? "Mute microphone"
+      : "Unmute microphone"
+    : enabled
+      ? "Turn camera off"
+      : "Turn camera on";
+
+  return (
+    <button
+      {...buttonProps}
+      type="button"
+      aria-label={label}
+      title={label}
+      disabled={pending || buttonProps.disabled}
+      className={[
+        "inline-flex h-11 w-11 min-w-11 items-center justify-center rounded-[14px] border p-0 shadow-none transition",
+        enabled
+          ? "border-white/10 bg-white/[0.06] text-white hover:bg-white/[0.1]"
+          : "border-red-400/20 bg-[#F65252] text-white hover:bg-[#E64545]",
+        pending ? "cursor-wait opacity-60" : "",
+      ].join(" ")}
+    >
+      {isMicrophone ? (
+        enabled ? (
+          <Mic className="h-5 w-5" aria-hidden="true" />
+        ) : (
+          <MicOff className="h-5 w-5" aria-hidden="true" />
+        )
+      ) : enabled ? (
+        <Video className="h-5 w-5" aria-hidden="true" />
+      ) : (
+        <VideoOff className="h-5 w-5" aria-hidden="true" />
+      )}
+    </button>
   );
 }
 
@@ -174,37 +271,15 @@ function CleanControls({
   return (
     <footer className="shrink-0 border-t border-white/10 bg-[#141414]/95 px-2.5 py-2.5 backdrop-blur-xl sm:px-3 sm:py-3">
       <div className="mx-auto grid w-full max-w-5xl grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:flex-wrap sm:justify-center">
-        <TrackToggle
+        <MediaToggleButton
+          room={room}
           source={Track.Source.Microphone}
-          className="!inline-flex !h-11 !w-11 !min-w-11 !items-center !justify-center !rounded-[14px] !border !border-white/10 !bg-white/[0.06] !p-0 !text-white !shadow-none transition hover:!bg-white/[0.1] data-[lk-enabled=false]:!bg-[#F65252]"
-          aria-label="Toggle microphone"
-          title="Toggle microphone"
-        >
-          <span className="sr-only">Toggle microphone</span>
+        />
 
-          {/*
-            @livekit/components-styles controls these two state classes.
-            Only one icon is visible at a time.
-          */}
-          <Mic className="lk-when-enabled h-5 w-5" aria-hidden="true" />
-          <MicOff className="lk-when-disabled h-5 w-5" aria-hidden="true" />
-        </TrackToggle>
-
-        <TrackToggle
+        <MediaToggleButton
+          room={room}
           source={Track.Source.Camera}
-          className="!inline-flex !h-11 !w-11 !min-w-11 !items-center !justify-center !rounded-[14px] !border !border-white/10 !bg-white/[0.06] !p-0 !text-white !shadow-none transition hover:!bg-white/[0.1] data-[lk-enabled=false]:!bg-[#F65252]"
-          aria-label="Toggle camera"
-          title="Toggle camera"
-        >
-          <span className="sr-only">Toggle camera</span>
-
-          {/*
-            @livekit/components-styles controls these two state classes.
-            Only one icon is visible at a time.
-          */}
-          <Video className="lk-when-enabled h-5 w-5" aria-hidden="true" />
-          <VideoOff className="lk-when-disabled h-5 w-5" aria-hidden="true" />
-        </TrackToggle>
+        />
 
         <div className="relative min-w-0 sm:w-auto">
           <select
@@ -219,28 +294,40 @@ function CleanControls({
           >
             <option
               value="off"
-              style={{ color: "#2F2F2F", backgroundColor: "#FFFFFF" }}
+              style={{
+                color: "#2F2F2F",
+                backgroundColor: "#FFFFFF",
+              }}
             >
               Background off
             </option>
 
             <option
               value="blur"
-              style={{ color: "#2F2F2F", backgroundColor: "#FFFFFF" }}
+              style={{
+                color: "#2F2F2F",
+                backgroundColor: "#FFFFFF",
+              }}
             >
               Background blur
             </option>
 
             <option
               value="ocean"
-              style={{ color: "#2F2F2F", backgroundColor: "#FFFFFF" }}
+              style={{
+                color: "#2F2F2F",
+                backgroundColor: "#FFFFFF",
+              }}
             >
               Ocean background
             </option>
 
             <option
               value="forest"
-              style={{ color: "#2F2F2F", backgroundColor: "#FFFFFF" }}
+              style={{
+                color: "#2F2F2F",
+                backgroundColor: "#FFFFFF",
+              }}
             >
               Forest background
             </option>
@@ -424,7 +511,7 @@ function ConnectedRoom({
         </header>
 
         <main className="min-h-0 flex-1 overflow-hidden p-2 sm:p-4">
-          <div className="h-full min-h-0 w-full overflow-hidden rounded-[20px] border border-white/10 bg-[#151515] p-1.5 sm:rounded-[26px] sm:p-3">
+          <div className="flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-[20px] border border-white/10 bg-[#151515] p-1.5 sm:rounded-[26px] sm:p-3">
             <CleanVideoGrid />
           </div>
         </main>
@@ -456,9 +543,9 @@ export default function RoomPageLiveKitClean() {
         disconnectOnPageLeave: false,
         videoCaptureDefaults: {
           resolution: {
-            width: 640,
-            height: 360,
-            frameRate: 15,
+            width: 1280,
+            height: 720,
+            frameRate: 24,
           },
         },
         publishDefaults: {
@@ -653,9 +740,9 @@ export default function RoomPageLiveKitClean() {
         room.localParticipant.setMicrophoneEnabled(true),
         room.localParticipant.setCameraEnabled(true, {
           resolution: {
-            width: 640,
-            height: 360,
-            frameRate: 15,
+            width: 1280,
+            height: 720,
+            frameRate: 24,
           },
         }),
       ]);
