@@ -1,6 +1,6 @@
 // src/pages/RoomPageLiveKitClean.tsx
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ConnectionState,
@@ -10,7 +10,10 @@ import {
   Track,
 } from "livekit-client";
 import {
+  CarouselLayout,
+  Chat,
   DisconnectButton,
+  GridLayout,
   ParticipantTile,
   RoomAudioRenderer,
   RoomContext,
@@ -51,6 +54,8 @@ type TokenResponse = {
 
 type EffectMode = "off" | "blur" | "ocean" | "forest";
 type MediaSource = Track.Source.Microphone | Track.Source.Camera;
+
+const TABLET_LAYOUT_QUERY = "(max-width: 1180px)";
 
 const DEFAULT_CORRECTION = {
   brightness: 100,
@@ -99,6 +104,32 @@ function svgBackground(colors: [string, string, string]) {
 const OCEAN_BG = svgBackground(["#0f172a", "#075985", "#0891b2"]);
 const FOREST_BG = svgBackground(["#111827", "#14532d", "#4d7c0f"]);
 
+function useMediaQuery(query: string) {
+  const [matches, setMatches] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia(query).matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const media = window.matchMedia(query);
+
+    const update = () => {
+      setMatches(media.matches);
+    };
+
+    update();
+    media.addEventListener("change", update);
+
+    return () => {
+      media.removeEventListener("change", update);
+    };
+  }, [query]);
+
+  return matches;
+}
+
 function connectionLabel(state: ConnectionState) {
   if (state === ConnectionState.Connected) return "Connected";
   if (state === ConnectionState.Connecting) return "Connecting";
@@ -122,44 +153,44 @@ function connectionBadgeClass(state: ConnectionState) {
   return "border-red-400/20 bg-red-400/10 text-red-200";
 }
 
-function getTrackKey(trackRef: any, index: number) {
-  const participantIdentity = String(
-    trackRef?.participant?.identity || "participant",
+function ChatIcon({
+  className = "h-5 w-5",
+}: {
+  className?: string;
+}) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      className={className}
+    >
+      <path
+        d="M7.5 18.5 3.5 21l1.15-4.62A8.5 8.5 0 1 1 7.5 18.5Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8 10.5h8M8 14h5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
   );
-
-  const source = String(trackRef?.source || "camera");
-  const publicationSid = String(
-    trackRef?.publication?.trackSid ||
-      trackRef?.publication?.sid ||
-      "",
-  );
-
-  return `${participantIdentity}-${source}-${publicationSid || index}`;
 }
 
-function CleanVideoGrid() {
+function CleanVideoLayout() {
+  const isTabletOrMobile = useMediaQuery(TABLET_LAYOUT_QUERY);
+
   const tracks = useTracks([
     {
       source: Track.Source.Camera,
       withPlaceholder: true,
     },
   ]);
-
-  const gridClass = useMemo(() => {
-    if (tracks.length <= 1) {
-      return "grid-cols-1 place-items-center";
-    }
-
-    if (tracks.length === 2) {
-      return "grid-cols-1 md:grid-cols-2";
-    }
-
-    if (tracks.length <= 4) {
-      return "grid-cols-1 sm:grid-cols-2";
-    }
-
-    return "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3";
-  }, [tracks.length]);
 
   if (tracks.length === 0) {
     return (
@@ -169,32 +200,25 @@ function CleanVideoGrid() {
     );
   }
 
+  if (isTabletOrMobile) {
+    return (
+      <CarouselLayout
+        tracks={tracks}
+        orientation="vertical"
+        className="clean-livekit-carousel h-full min-h-0 w-full"
+      >
+        <ParticipantTile className="clean-livekit-tile" />
+      </CarouselLayout>
+    );
+  }
+
   return (
-    <div
-      className={`grid h-full min-h-0 w-full content-center gap-2.5 overflow-y-auto p-0.5 sm:gap-3 ${gridClass}`}
+    <GridLayout
+      tracks={tracks}
+      className="clean-livekit-grid h-full min-h-0 w-full"
     >
-      {tracks.map((trackRef, index) => (
-        <div
-          key={getTrackKey(trackRef, index)}
-          className={[
-            "aspect-video w-full min-w-0 overflow-hidden rounded-[18px] border border-white/10 bg-[#171717] shadow-[0_8px_28px_rgba(0,0,0,0.22)] sm:rounded-[22px]",
-            tracks.length === 1
-              ? "max-h-full max-w-[min(100%,calc((100dvh-170px)*16/9))]"
-              : "",
-          ].join(" ")}
-        >
-          <ParticipantTile
-            trackRef={trackRef}
-            className="!h-full !w-full !overflow-hidden !rounded-[inherit] !border-0 !bg-[#171717]"
-            style={{
-              width: "100%",
-              height: "100%",
-              aspectRatio: "16 / 9",
-            }}
-          />
-        </div>
-      ))}
-    </div>
+      <ParticipantTile className="clean-livekit-tile" />
+    </GridLayout>
   );
 }
 
@@ -215,6 +239,7 @@ function MediaToggleButton({
   });
 
   const isMicrophone = source === Track.Source.Microphone;
+
   const label = isMicrophone
     ? enabled
       ? "Mute microphone"
@@ -258,19 +283,23 @@ function CleanControls({
   effectMode,
   effectBusy,
   effectError,
+  chatOpen,
+  onToggleChat,
   onApplyEffect,
 }: {
   room: Room;
   effectMode: EffectMode;
   effectBusy: boolean;
   effectError: string;
+  chatOpen: boolean;
+  onToggleChat: () => void;
   onApplyEffect: (mode: EffectMode) => Promise<void>;
 }) {
   const state = useConnectionState(room);
 
   return (
     <footer className="shrink-0 border-t border-white/10 bg-[#141414]/95 px-2.5 py-2.5 backdrop-blur-xl sm:px-3 sm:py-3">
-      <div className="mx-auto grid w-full max-w-5xl grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:flex-wrap sm:justify-center">
+      <div className="mx-auto grid w-full max-w-5xl grid-cols-[auto_auto_auto_minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:flex-wrap sm:justify-center">
         <MediaToggleButton
           room={room}
           source={Track.Source.Microphone}
@@ -280,6 +309,22 @@ function CleanControls({
           room={room}
           source={Track.Source.Camera}
         />
+
+        <button
+          type="button"
+          onClick={onToggleChat}
+          aria-label={chatOpen ? "Close chat" : "Open chat"}
+          title={chatOpen ? "Close chat" : "Open chat"}
+          aria-pressed={chatOpen}
+          className={[
+            "inline-flex h-11 w-11 min-w-11 items-center justify-center rounded-[14px] border p-0 shadow-none transition",
+            chatOpen
+              ? "border-[#81DB86]/35 bg-[#81DB86]/15 text-[#B7F2BA]"
+              : "border-white/10 bg-white/[0.06] text-white hover:bg-white/[0.1]",
+          ].join(" ")}
+        >
+          <ChatIcon />
+        </button>
 
         <div className="relative min-w-0 sm:w-auto">
           <select
@@ -362,7 +407,7 @@ function CleanControls({
         </DisconnectButton>
 
         <div
-          className={`col-span-4 justify-self-center rounded-full border px-3 py-1.5 text-xs font-medium sm:col-auto ${connectionBadgeClass(
+          className={`col-span-5 justify-self-center rounded-full border px-3 py-1.5 text-xs font-medium sm:col-auto ${connectionBadgeClass(
             state,
           )}`}
         >
@@ -379,6 +424,42 @@ function CleanControls({
   );
 }
 
+function NativeLiveKitChat({
+  onClose,
+}: {
+  onClose: () => void;
+}) {
+  return (
+    <aside className="clean-chat-panel absolute inset-2 z-40 flex min-h-0 flex-col overflow-hidden rounded-[20px] border border-white/10 bg-[#181818] shadow-[0_24px_70px_rgba(0,0,0,0.55)] sm:inset-y-3 sm:left-auto sm:right-3 sm:w-[360px] sm:rounded-[22px] lg:static lg:h-full lg:w-[360px] lg:shrink-0">
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/10 px-3.5">
+        <div>
+          <div className="text-sm font-bold text-white">
+            Room chat
+          </div>
+
+          <div className="text-[10px] text-white/40">
+            LiveKit realtime chat
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-[10px] border border-white/10 bg-white/[0.05] text-white/75 transition hover:bg-white/[0.1] hover:text-white"
+          aria-label="Close chat"
+          title="Close chat"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="min-h-0 flex-1">
+        <Chat />
+      </div>
+    </aside>
+  );
+}
+
 function ConnectedRoom({
   room,
   title,
@@ -391,6 +472,8 @@ function ConnectedRoom({
   const [effectMode, setEffectMode] = useState<EffectMode>("off");
   const [effectBusy, setEffectBusy] = useState(false);
   const [effectError, setEffectError] = useState("");
+  const [chatOpen, setChatOpen] = useState(false);
+
   const activeProcessorTrackRef = useRef<LocalVideoTrack | null>(null);
 
   useEffect(() => {
@@ -490,6 +573,102 @@ function ConnectedRoom({
 
   return (
     <RoomContext.Provider value={room}>
+      <style>{`
+        /*
+          Every participant remains inside the same 16:9 MySession frame.
+
+          Landscape desktop/webcam feeds naturally fill the frame.
+
+          Portrait phone/iPad feeds use object-fit: contain, so the entire
+          vertical video remains visible with side letterboxing instead of
+          being cropped or stretched.
+        */
+        .clean-livekit-tile {
+          width: 100% !important;
+          aspect-ratio: 16 / 9 !important;
+          overflow: hidden !important;
+          border-radius: 18px !important;
+          border: 1px solid rgba(255,255,255,0.10) !important;
+          background: #0d0d0d !important;
+          box-shadow: 0 8px 28px rgba(0,0,0,0.22) !important;
+        }
+
+        .clean-livekit-tile video,
+        .clean-livekit-tile .lk-participant-media-video,
+        .clean-livekit-tile .lk-video-track {
+          width: 100% !important;
+          height: 100% !important;
+          object-fit: contain !important;
+          background: #0d0d0d !important;
+        }
+
+        /*
+          Desktop uses LiveKit GridLayout.
+        */
+        .clean-livekit-grid {
+          gap: 12px !important;
+          padding: 2px !important;
+          align-content: center !important;
+        }
+
+        /*
+          Mobile and tablets use LiveKit CarouselLayout in vertical mode.
+          Each item is still a 16:9 frame; portrait source video is contained.
+        */
+        .clean-livekit-carousel {
+          padding: 2px !important;
+          gap: 10px !important;
+          overflow-y: auto !important;
+          overflow-x: hidden !important;
+        }
+
+        .clean-livekit-carousel > * {
+          width: 100% !important;
+          min-width: 0 !important;
+          flex: 0 0 auto !important;
+        }
+
+        .clean-chat-panel .lk-chat {
+          height: 100%;
+          min-height: 0;
+          background: #181818;
+          color: #ffffff;
+        }
+
+        .clean-chat-panel .lk-chat-messages {
+          min-height: 0;
+        }
+
+        .clean-chat-panel .lk-chat-form {
+          border-top: 1px solid rgba(255,255,255,0.10);
+          background: #181818;
+        }
+
+        .clean-chat-panel .lk-chat-form-input {
+          color: #2f2f2f;
+          background: #f5f5f5;
+          border-color: #d6d6d6;
+          border-radius: 12px;
+        }
+
+        .clean-chat-panel .lk-chat-form-input::placeholder {
+          color: rgba(47,47,47,0.55);
+        }
+
+        @media (min-width: 640px) {
+          .clean-livekit-tile {
+            border-radius: 22px !important;
+          }
+        }
+
+        @media (max-width: 1180px) {
+          .clean-livekit-carousel .clean-livekit-tile {
+            max-width: min(100%, 920px) !important;
+            margin-inline: auto !important;
+          }
+        }
+      `}</style>
+
       <div
         data-lk-theme="default"
         className="flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#101010] text-white"
@@ -506,14 +685,20 @@ function ConnectedRoom({
           </div>
 
           <div className="hidden shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/55 sm:block">
-            Video + audio only
+            Video + audio + chat
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-hidden p-2 sm:p-4">
-          <div className="flex h-full min-h-0 w-full items-center justify-center overflow-hidden rounded-[20px] border border-white/10 bg-[#151515] p-1.5 sm:rounded-[26px] sm:p-3">
-            <CleanVideoGrid />
+        <main className="relative min-h-0 flex-1 overflow-hidden p-2 sm:p-3 lg:flex lg:gap-3 lg:p-4">
+          <div className="flex h-full min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden rounded-[20px] border border-white/10 bg-[#151515] p-1.5 sm:rounded-[26px] sm:p-3">
+            <CleanVideoLayout />
           </div>
+
+          {chatOpen ? (
+            <NativeLiveKitChat
+              onClose={() => setChatOpen(false)}
+            />
+          ) : null}
         </main>
 
         <RoomAudioRenderer />
@@ -524,6 +709,8 @@ function ConnectedRoom({
           effectMode={effectMode}
           effectBusy={effectBusy}
           effectError={effectError}
+          chatOpen={chatOpen}
+          onToggleChat={() => setChatOpen((current) => !current)}
           onApplyEffect={applyEffect}
         />
       </div>
@@ -807,9 +994,9 @@ export default function RoomPageLiveKitClean() {
         </h1>
 
         <p className="mt-2 text-sm leading-6 text-white/55">
-          This version contains only LiveKit video, audio,
-          device controls and optional camera effects. It has
-          no chat, tasks, attendance heartbeat, Supabase
+          This version contains LiveKit video, audio, native
+          realtime chat, device controls and optional camera
+          effects. It has no attendance heartbeat, Supabase
           presence or custom reconnect logic.
         </p>
 
