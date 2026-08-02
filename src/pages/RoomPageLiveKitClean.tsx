@@ -106,6 +106,18 @@ function getRenderableRoomVideos(): PiPVideoElement[] {
   return getRoomVideoElements().filter(isVideoCurrentlyRenderable);
 }
 
+
+function getPreferredAutomaticPiPVideo(): PiPVideoElement | null {
+  const videos = getRenderableRoomVideos();
+  if (videos.length === 0) return null;
+
+  // LiveKit normally mutes the local preview to avoid feedback. Prefer a remote
+  // participant for background PiP because mobile OSes are more likely to pause
+  // the local camera when the browser leaves the foreground.
+  const remoteVideo = videos.find((video) => !video.muted);
+  return remoteVideo ?? videos[0] ?? null;
+}
+
 function updateCachedVideoFrame(video: HTMLVideoElement): void {
   if (!isVideoCurrentlyRenderable(video)) return;
 
@@ -470,8 +482,8 @@ function usePiPCollage(
 }
 
 function useBrowserInitiatedPictureInPicture(
-  preparePreferredVideo: () => Promise<PiPVideoElement | null>,
-  stageRef: React.RefObject<PiPVideoElement | null>,
+  prepareCollageVideo: () => Promise<PiPVideoElement | null>,
+  collageStageRef: React.RefObject<PiPVideoElement | null>,
 ): void {
   useEffect(() => {
     if (!isTabletOrMobileRuntime()) return;
@@ -480,25 +492,39 @@ function useBrowserInitiatedPictureInPicture(
       | ExtendedMediaSession
       | undefined;
 
-    let preparedStage: PiPVideoElement | null = stageRef.current;
     let autoPiPRequested = false;
 
-    void preparePreferredVideo().then((stage) => {
-      if (stage) preparedStage = stage;
-    });
+    // Keep the collage warm for the manual Open PiP button, but do not use the
+    // canvas stream for the automatic background transition. On mobile Chrome,
+    // a canvas capture stream can enter PiP before its decoded frame is ready,
+    // which produces the blank white window.
+    void prepareCollageVideo();
 
-    const requestBrowserPiP = async (): Promise<void> => {
+    const openAutomaticPiP = async (): Promise<void> => {
       if (!isTabletOrMobileRuntime()) return;
 
-      const stage =
-        preparedStage ??
-        stageRef.current ??
-        (await preparePreferredVideo());
+      const pipDocument = document as PiPDocument;
+      if (pipDocument.pictureInPictureElement) return;
 
-      if (!stage) return;
+      const directVideo = getPreferredAutomaticPiPVideo();
 
-      preparedStage = stage;
-      await enterPictureInPicture(stage);
+      if (directVideo) {
+        await enterPictureInPicture(directVideo);
+        return;
+      }
+
+      // Last-resort fallback when no participant video is decoded yet.
+      const collageStage =
+        collageStageRef.current ?? (await prepareCollageVideo());
+
+      if (
+        collageStage &&
+        collageStage.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+        collageStage.videoWidth > 0 &&
+        collageStage.videoHeight > 0
+      ) {
+        await enterPictureInPicture(collageStage);
+      }
     };
 
     try {
@@ -508,7 +534,7 @@ function useBrowserInitiatedPictureInPicture(
 
       mediaSession?.setActionHandler?.(
         "enterpictureinpicture",
-        requestBrowserPiP,
+        openAutomaticPiP,
       );
     } catch (error) {
       console.debug(
@@ -528,11 +554,11 @@ function useBrowserInitiatedPictureInPicture(
 
       autoPiPRequested = true;
 
-      const stage = preparedStage ?? stageRef.current;
-      if (stage) {
-        // Must be synchronous with the visibility transition. Preparing a new
-        // stream here is too late on Android/iPadOS.
-        void enterPictureInPicture(stage);
+      // Use an already playing LiveKit <video>. Do not create, replace or wait
+      // for a canvas stream after the document becomes hidden.
+      const directVideo = getPreferredAutomaticPiPVideo();
+      if (directVideo) {
+        void enterPictureInPicture(directVideo);
       }
     };
 
@@ -566,7 +592,7 @@ function useBrowserInitiatedPictureInPicture(
         // Ignore unsupported cleanup.
       }
     };
-  }, [preparePreferredVideo, stageRef]);
+  }, [prepareCollageVideo, collageStageRef]);
 }
 
 type SessionRow = {
@@ -1018,7 +1044,7 @@ function ConnectedRoom({
   const [pipBusy, setPiPBusy] = useState(false);
   const [pipActive, setPiPActive] = useState(false);
   const [pipMessage, setPiPMessage] = useState(
-    "On phones and tablets, open Picture-in-Picture before switching apps. Desktop auto-PiP is disabled.",
+    "On phones and tablets, switching apps opens a live participant in PiP. Open PiP manually for the full room collage. Desktop auto-PiP is disabled.",
   );
 
   const pipCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1055,7 +1081,7 @@ function ConnectedRoom({
     const handleLeave = (): void => {
       setPiPActive(false);
       setPiPMessage(
-        "On phones and tablets, open Picture-in-Picture before switching apps. Desktop auto-PiP is disabled.",
+        "On phones and tablets, switching apps opens a live participant in PiP. Open PiP manually for the full room collage. Desktop auto-PiP is disabled.",
       );
     };
 
@@ -1065,7 +1091,7 @@ function ConnectedRoom({
       setPiPMessage(
         active
           ? "Picture-in-Picture is active. It shows a live collage of everyone in the room."
-          : "On phones and tablets, open Picture-in-Picture before switching apps. Desktop auto-PiP is disabled.",
+          : "On phones and tablets, switching apps opens a live participant in PiP. Open PiP manually for the full room collage. Desktop auto-PiP is disabled.",
       );
     };
 
