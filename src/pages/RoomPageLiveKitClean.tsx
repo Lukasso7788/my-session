@@ -27,6 +27,7 @@ import "@livekit/components-styles";
 import {
   Mic,
   MicOff,
+  PictureInPicture,
   Sparkles,
   Video,
   VideoOff,
@@ -38,11 +39,13 @@ import {
   createPersonColorBackgroundProcessor,
 } from "./livekit/PersonColorCorrectionProcessor";
 
+
 type PiPVideoElement = HTMLVideoElement & {
   disablePictureInPicture?: boolean;
   requestPictureInPicture?: () => Promise<unknown>;
   webkitSupportsPresentationMode?: (mode: "picture-in-picture") => boolean;
   webkitSetPresentationMode?: (mode: "picture-in-picture") => void;
+  webkitPresentationMode?: string;
 };
 
 type PiPDocument = Document & {
@@ -57,31 +60,75 @@ type ExtendedMediaSession = {
   ) => void;
 };
 
-function findPiPVideo(): PiPVideoElement | null {
-  const videos = Array.from(document.querySelectorAll<HTMLVideoElement>("video"));
+const PIP_ROTATION_INTERVAL_MS = 8_000;
 
-  const playingVideo = videos.find(
+function getRenderableRoomVideos(): PiPVideoElement[] {
+  return Array.from(
+    document.querySelectorAll<HTMLVideoElement>(
+      ".clean-livekit-tile video, .clean-livekit-tile .lk-participant-media-video",
+    ),
+  ).filter(
     (video) =>
-      !video.paused &&
       !video.ended &&
-      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA,
-  );
-
-  return (playingVideo ?? videos[0] ?? null) as PiPVideoElement | null;
+      video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+      video.videoWidth > 0 &&
+      video.videoHeight > 0 &&
+      video.srcObject instanceof MediaStream &&
+      video.srcObject.getVideoTracks().some((track) => track.readyState === "live"),
+  ) as PiPVideoElement[];
 }
 
-async function enterPictureInPicture(): Promise<boolean> {
-  const video = findPiPVideo();
+function copyVideoStreamToPiPStage(
+  stage: PiPVideoElement,
+  source: PiPVideoElement,
+): boolean {
+  const sourceStream = source.srcObject;
+
+  if (!(sourceStream instanceof MediaStream)) return false;
+
+  const liveVideoTracks = sourceStream
+    .getVideoTracks()
+    .filter((track) => track.readyState === "live");
+
+  if (liveVideoTracks.length === 0) return false;
+
+  const currentStream =
+    stage.srcObject instanceof MediaStream ? stage.srcObject : null;
+  const currentTrackId = currentStream?.getVideoTracks()[0]?.id;
+  const nextTrackId = liveVideoTracks[0]?.id;
+
+  if (currentTrackId === nextTrackId) return true;
+
+  stage.srcObject = new MediaStream(liveVideoTracks);
+  stage.muted = true;
+  stage.autoplay = true;
+  stage.playsInline = true;
+  stage.setAttribute("autoplay", "");
+  stage.setAttribute("muted", "");
+  stage.setAttribute("playsinline", "");
+  stage.removeAttribute("disablepictureinpicture");
+
+  return true;
+}
+
+async function enterPictureInPicture(
+  preferredVideo?: PiPVideoElement | null,
+): Promise<boolean> {
+  const fallbackVideo = getRenderableRoomVideos()[0] ?? null;
+  const video = preferredVideo ?? fallbackVideo;
   if (!video) return false;
 
   if ("disablePictureInPicture" in video) {
     video.disablePictureInPicture = false;
   }
+
   video.playsInline = true;
   video.setAttribute("playsinline", "");
   video.removeAttribute("disablepictureinpicture");
 
   try {
+    await video.play().catch(() => undefined);
+
     const pipDocument = document as PiPDocument;
 
     if (
@@ -107,14 +154,16 @@ async function enterPictureInPicture(): Promise<boolean> {
   return false;
 }
 
-function useAutoPictureInPicture(): void {
+function useBrowserInitiatedPictureInPicture(
+  getPreferredVideo: () => PiPVideoElement | null,
+): void {
   useEffect(() => {
     const mediaSession = navigator.mediaSession as unknown as
       | ExtendedMediaSession
       | undefined;
 
     const handleBrowserAutoPiP = (): void => {
-      void enterPictureInPicture();
+      void enterPictureInPicture(getPreferredVideo());
     };
 
     try {
@@ -136,9 +185,8 @@ function useAutoPictureInPicture(): void {
         // Ignore unsupported Media Session cleanup.
       }
     };
-  }, []);
+  }, [getPreferredVideo]);
 }
-
 
 type SessionRow = {
   id: string;
@@ -441,14 +489,17 @@ function CleanControls({
           aria-label="Open Picture-in-Picture"
           title="Open Picture-in-Picture before switching apps"
           className={[
-            "inline-flex h-11 min-w-11 items-center justify-center rounded-[14px] border px-3 text-xs font-bold shadow-none transition",
+            "inline-flex h-11 min-w-11 items-center justify-center gap-2 rounded-[14px] border px-3 text-xs font-bold shadow-none transition",
             pipActive
               ? "border-[#81DB86]/35 bg-[#81DB86]/15 text-[#B7F2BA]"
               : "border-white/10 bg-white/[0.06] text-white hover:bg-white/[0.1]",
             pipBusy ? "cursor-wait opacity-60" : "",
           ].join(" ")}
         >
-          {pipBusy ? "Opening…" : pipActive ? "PiP active" : "Open PiP"}
+          <PictureInPicture className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <span className="hidden sm:inline">
+            {pipBusy ? "Opening…" : pipActive ? "PiP active" : "Open PiP"}
+          </span>
         </button>
 
         <div className="relative min-w-0 sm:w-auto">
@@ -458,7 +509,7 @@ function CleanControls({
               void onApplyEffect(event.target.value as EffectMode)
             }
             disabled={effectBusy}
-            className="h-11 w-full min-w-0 appearance-none truncate rounded-[14px] border border-[#D6D6D6] bg-[#F5F5F5] pl-9 pr-8 text-[13px] font-semibold text-[#2F2F2F] outline-none transition hover:bg-white focus:border-[#A8A8A8] disabled:cursor-not-allowed disabled:opacity-50 sm:min-w-[190px] sm:text-sm"
+            className="h-11 w-11 appearance-none rounded-[14px] border border-[#D6D6D6] bg-[#F5F5F5] text-transparent outline-none transition hover:bg-white focus:border-[#A8A8A8] disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Camera background effect"
             title="Camera background effect"
           >
@@ -503,22 +554,7 @@ function CleanControls({
             </option>
           </select>
 
-          <Sparkles className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#2F2F2F]/70" />
-
-          <svg
-            viewBox="0 0 20 20"
-            aria-hidden="true"
-            className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#2F2F2F]/60"
-          >
-            <path
-              d="m6 8 4 4 4-4"
-              fill="none"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="1.8"
-            />
-          </svg>
+          <Sparkles className="pointer-events-none absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 text-[#2F2F2F]/75" />
         </div>
 
         <DisconnectButton
@@ -594,8 +630,6 @@ function ConnectedRoom({
   title: string;
   navigateBack: () => void;
 }) {
-  useAutoPictureInPicture();
-
   const [effectMode, setEffectMode] = useState<EffectMode>("off");
   const [effectBusy, setEffectBusy] = useState(false);
   const [effectError, setEffectError] = useState("");
@@ -603,8 +637,17 @@ function ConnectedRoom({
   const [pipBusy, setPiPBusy] = useState(false);
   const [pipActive, setPiPActive] = useState(false);
   const [pipMessage, setPiPMessage] = useState(
-    "On phones and tablets, open Picture-in-Picture before switching apps.",
+    "Keep Picture-in-Picture open to stay visible while switching apps.",
   );
+
+  const pipStageRef = useRef<PiPVideoElement | null>(null);
+  const pipRotationIndexRef = useRef(0);
+
+  const getPiPStage = useCallback((): PiPVideoElement | null => {
+    return pipStageRef.current;
+  }, []);
+
+  useBrowserInitiatedPictureInPicture(getPiPStage);
 
   const activeProcessorTrackRef = useRef<LocalVideoTrack | null>(null);
 
@@ -621,42 +664,109 @@ function ConnectedRoom({
   }, [navigateBack, room]);
 
   useEffect(() => {
+    const stage = pipStageRef.current;
+    if (!stage) return;
+
     const handleEnter = (): void => {
       setPiPActive(true);
-      setPiPMessage("Picture-in-Picture is active. You can switch apps now.");
-    };
-    const handleLeave = (): void => {
-      setPiPActive(false);
       setPiPMessage(
-        "On phones and tablets, open Picture-in-Picture before switching apps.",
+        "Picture-in-Picture is active. Participants will rotate automatically.",
       );
     };
 
-    document.addEventListener("enterpictureinpicture", handleEnter);
-    document.addEventListener("leavepictureinpicture", handleLeave);
+    const handleLeave = (): void => {
+      setPiPActive(false);
+      setPiPMessage(
+        "Keep Picture-in-Picture open to stay visible while switching apps.",
+      );
+    };
+
+    const handleWebKitModeChange = (): void => {
+      const active = stage.webkitPresentationMode === "picture-in-picture";
+      setPiPActive(active);
+      setPiPMessage(
+        active
+          ? "Picture-in-Picture is active. Participants will rotate automatically."
+          : "Keep Picture-in-Picture open to stay visible while switching apps.",
+      );
+    };
+
+    stage.addEventListener("enterpictureinpicture", handleEnter);
+    stage.addEventListener("leavepictureinpicture", handleLeave);
+    stage.addEventListener(
+      "webkitpresentationmodechanged",
+      handleWebKitModeChange,
+    );
 
     return () => {
-      document.removeEventListener("enterpictureinpicture", handleEnter);
-      document.removeEventListener("leavepictureinpicture", handleLeave);
+      stage.removeEventListener("enterpictureinpicture", handleEnter);
+      stage.removeEventListener("leavepictureinpicture", handleLeave);
+      stage.removeEventListener(
+        "webkitpresentationmodechanged",
+        handleWebKitModeChange,
+      );
     };
   }, []);
+
+  useEffect(() => {
+    if (!pipActive) return;
+
+    const rotate = (): void => {
+      const stage = pipStageRef.current;
+      const videos = getRenderableRoomVideos();
+      if (!stage || videos.length === 0) return;
+
+      pipRotationIndexRef.current =
+        pipRotationIndexRef.current % videos.length;
+
+      const nextVideo = videos[pipRotationIndexRef.current];
+      copyVideoStreamToPiPStage(stage, nextVideo);
+
+      pipRotationIndexRef.current =
+        (pipRotationIndexRef.current + 1) % videos.length;
+    };
+
+    rotate();
+    const intervalId = window.setInterval(rotate, PIP_ROTATION_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [pipActive]);
 
   const enablePiP = useCallback(async (): Promise<void> => {
     setPiPBusy(true);
     setPiPMessage("");
 
-    const opened = await enterPictureInPicture();
+    try {
+      const stage = pipStageRef.current;
+      const videos = getRenderableRoomVideos();
 
-    if (opened) {
-      setPiPActive(true);
-      setPiPMessage("Picture-in-Picture is active. You can switch apps now.");
-    } else {
-      setPiPMessage(
-        "Picture-in-Picture could not open. Make sure a video is playing, then tap Open PiP again.",
-      );
+      if (!stage || videos.length === 0) {
+        setPiPMessage(
+          "Picture-in-Picture could not open because no participant video is ready yet.",
+        );
+        return;
+      }
+
+      pipRotationIndexRef.current = 1 % videos.length;
+      copyVideoStreamToPiPStage(stage, videos[0]);
+
+      const opened = await enterPictureInPicture(stage);
+
+      if (opened) {
+        setPiPActive(true);
+        setPiPMessage(
+          "Picture-in-Picture is active. Participants will rotate automatically.",
+        );
+      } else {
+        setPiPMessage(
+          "Picture-in-Picture could not open. Tap Open PiP again while a participant video is playing.",
+        );
+      }
+    } finally {
+      setPiPBusy(false);
     }
-
-    setPiPBusy(false);
   }, []);
 
     const getLocalCameraTrack = useCallback(() => {
@@ -885,6 +995,18 @@ function ConnectedRoom({
             />
           ) : null}
         </main>
+
+        <video
+          ref={(node) => {
+            pipStageRef.current = node as PiPVideoElement | null;
+          }}
+          data-pip-stage="true"
+          muted
+          autoPlay
+          playsInline
+          aria-hidden="true"
+          className="fixed bottom-0 left-0 h-[2px] w-[2px] opacity-[0.01] pointer-events-none"
+        />
 
         <RoomAudioRenderer />
         <StartAudio label="Enable room audio" />
