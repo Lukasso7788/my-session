@@ -3800,6 +3800,7 @@ export default function SessionCard({
 
     const [isHoveringCancel, setIsHoveringCancel] = useState(false);
     const [isHoveringBook, setIsHoveringBook] = useState(false);
+    const [isHoveringJoinIframe, setIsHoveringJoinIframe] = useState(false);
     const [isHoveringOptions, setIsHoveringOptions] = useState(false);
     const [isHoveringCard, setIsHoveringCard] = useState(false);
 
@@ -4835,13 +4836,18 @@ export default function SessionCard({
 
                         <button
                             onClick={handleJoinRoom}
+                            onMouseEnter={() => setIsHoveringJoinIframe(true)}
+                            onMouseLeave={() => setIsHoveringJoinIframe(false)}
                             className="
                                 h-12 rounded-full px-6 text-[14px] font-semibold
                                 flex items-center justify-center
                                 transition-all duration-200 ease-in-out
                                 w-full min-[769px]:flex-1 xl:w-auto xl:flex-none xl:min-w-[160px]
-                                bg-[#2f2f2f] text-white hover:bg-[#242424]
+                                text-white
                             "
+                            style={{
+                                backgroundColor: isHoveringJoinIframe ? joinHoverBg : "#2f2f2f",
+                            }}
                         >
                             Join session
                         </button>
