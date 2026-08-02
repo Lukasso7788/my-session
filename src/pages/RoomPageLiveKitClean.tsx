@@ -35,8 +35,12 @@ import {
 
 import { supabase } from "../lib/supabase";
 
-// --- Automatic Picture‑in‑Picture hook v2 ------------------------
-function useAutoPictureInPictureV2() {
+// --- Automatic Picture‑in‑Picture hook v3 ------------------------
+/**
+ * Tries to force PiP when the page/tab goes to background.
+ * Works on modern Chrome/Edge (Android 12+, desktop) and WebKit (iOS/iPadOS 15+).
+ */
+function useAutoPictureInPicture() {
   const requestPiP = React.useCallback(async () => {
     try {
       const video = Array.from(document.querySelectorAll('video'))
@@ -48,6 +52,49 @@ function useAutoPictureInPictureV2() {
         video.setAttribute('playsinline', '');
         video.playsInline = true;
       } catch {}
+
+      if (document.pictureInPictureEnabled &&
+          !document.pictureInPictureElement &&
+          typeof video.requestPictureInPicture === 'function') {
+        await video.requestPictureInPicture().catch(() => {});
+      } else if ((video).webkitSupportsPresentationMode &&
+                 (video).webkitSupportsPresentationMode('picture-in-picture')) {
+        (video).webkitSetPresentationMode?.('picture-in-picture');
+      }
+    } catch { /* swallow */ }
+  }, []);
+
+  React.useEffect(() => {
+
+    const tryPiP = () => {
+      // Give the browser a tick to handle visibility change before requesting PiP
+      setTimeout(requestPiP, 50);
+    };
+
+    // Chrome – automatic handler
+    try {
+      navigator.mediaSession?.setActionHandler?.('enterpictureinpicture', requestPiP);
+    } catch {}
+
+    // Fallbacks
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') tryPiP();
+    });
+    window.addEventListener('pagehide', tryPiP);
+    window.addEventListener('blur', tryPiP);
+
+    return () => {
+      try {
+        navigator.mediaSession?.setActionHandler?.('enterpictureinpicture', null);
+      } catch {}
+      window.removeEventListener('pagehide', tryPiP);
+      window.removeEventListener('blur', tryPiP);
+    };
+  }, [requestPiP]);
+}
+
+
+
 
       if (document.pictureInPictureEnabled &&
           !document.pictureInPictureElement &&
@@ -85,24 +132,6 @@ function useAutoPictureInPictureV2() {
 
 
 
-// --- Automatic Picture‑in‑Picture hook ------------------------
-function useAutoPictureInPicture() {
-  React.useEffect(() => {
-    async function requestPiP(video) {
-      try {
-        if (!video) return;
-        if (
-          document.pictureInPictureEnabled &&
-          !document.pictureInPictureElement &&
-          typeof video.requestPictureInPicture === "function"
-        ) {
-          await video.requestPictureInPicture();
-        } else if (
-          (video).webkitSupportsPresentationMode &&
-          (video).webkitSupportsPresentationMode("picture-in-picture")
-        ) {
-          (video).webkitSetPresentationMode?.("picture-in-picture");
-        }
       } catch {/* ignore */}
     }
 
@@ -566,10 +595,11 @@ function ConnectedRoom({
   title: string;
   navigateBack: () => void;
 }) {
-  useAutoPictureInPictureV2();
+  // Activate automatic PiP (v3)
+  useAutoPictureInPicture();
+
 
   // enable automatic Picture‑in‑Picture across browsers
-  useAutoPictureInPicture();
 
   const [effectMode, setEffectMode] = useState<EffectMode>("off");
   const [effectBusy, setEffectBusy] = useState(false);
