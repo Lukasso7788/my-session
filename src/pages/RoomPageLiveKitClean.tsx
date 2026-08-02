@@ -61,85 +61,138 @@ type ExtendedMediaSession = {
   ) => void;
 };
 
+type CaptureStreamCanvas = HTMLCanvasElement & {
+  captureStream?: (frameRate?: number) => MediaStream;
+};
+
+const PIP_CANVAS_WIDTH = 960;
+const PIP_CANVAS_HEIGHT = 540;
+const PIP_COLLAGE_FPS = 8;
+
 function getRenderableRoomVideos(): PiPVideoElement[] {
-  return Array.from(
+  const videos = Array.from(
     document.querySelectorAll<HTMLVideoElement>(
       ".clean-livekit-tile video, .clean-livekit-tile .lk-participant-media-video",
     ),
-  ).filter(
-    (video) =>
+  );
+
+  return videos.filter((video) => {
+    const stream = video.srcObject;
+    return (
       !video.ended &&
       video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
       video.videoWidth > 0 &&
       video.videoHeight > 0 &&
-      video.srcObject instanceof MediaStream &&
-      video.srcObject.getVideoTracks().some((track) => track.readyState === "live"),
-  ) as PiPVideoElement[];
+      stream instanceof MediaStream &&
+      stream.getVideoTracks().some((track) => track.readyState === "live")
+    );
+  }) as PiPVideoElement[];
 }
 
-function copyVideoStreamToPiPStage(
-  stage: PiPVideoElement,
-  source: PiPVideoElement,
-): boolean {
-  const sourceStream = source.srcObject;
-
-  if (!(sourceStream instanceof MediaStream)) return false;
-
-  const sourceTrack = sourceStream
-    .getVideoTracks()
-    .find((track) => track.readyState === "live");
-
-  if (!sourceTrack) return false;
-
-  const currentStream =
-    stage.srcObject instanceof MediaStream ? stage.srcObject : null;
-  const currentTrack = currentStream?.getVideoTracks()[0] ?? null;
-
-  if (
-    stage.dataset.pipSourceTrackId === sourceTrack.id &&
-    currentTrack?.readyState === "live"
-  ) {
-    return true;
+function isTabletOrMobileRuntime(): boolean {
+  if (typeof navigator === "undefined" || typeof window === "undefined") {
+    return false;
   }
 
-  currentStream?.getTracks().forEach((track) => track.stop());
+  const userAgent = navigator.userAgent.toLowerCase();
+  const touchPoints = navigator.maxTouchPoints || 0;
+  const shortSide = Math.min(window.screen.width, window.screen.height);
 
-  const stableTrack = sourceTrack.clone();
-  stage.dataset.pipSourceTrackId = sourceTrack.id;
-  stage.srcObject = new MediaStream([stableTrack]);
-  stage.muted = true;
-  stage.autoplay = true;
-  stage.playsInline = true;
-  stage.setAttribute("autoplay", "");
-  stage.setAttribute("muted", "");
-  stage.setAttribute("playsinline", "");
-  stage.setAttribute("autopictureinpicture", "");
-  stage.autoPictureInPicture = true;
-  stage.removeAttribute("disablepictureinpicture");
+  return (
+    /android|iphone|ipad|ipod|mobile|tablet/.test(userAgent) ||
+    (touchPoints > 1 && shortSide >= 600)
+  );
+}
 
-  return true;
+function drawContainedVideo(
+  context: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): void {
+  const sourceWidth = video.videoWidth;
+  const sourceHeight = video.videoHeight;
+  if (sourceWidth <= 0 || sourceHeight <= 0) return;
+
+  const scale = Math.min(width / sourceWidth, height / sourceHeight);
+  const drawWidth = sourceWidth * scale;
+  const drawHeight = sourceHeight * scale;
+  const drawX = x + (width - drawWidth) / 2;
+  const drawY = y + (height - drawHeight) / 2;
+
+  context.drawImage(video, drawX, drawY, drawWidth, drawHeight);
+}
+
+function drawPiPCollage(canvas: HTMLCanvasElement): void {
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context) return;
+
+  if (canvas.width !== PIP_CANVAS_WIDTH) canvas.width = PIP_CANVAS_WIDTH;
+  if (canvas.height !== PIP_CANVAS_HEIGHT) canvas.height = PIP_CANVAS_HEIGHT;
+
+  context.fillStyle = "#0d0d0d";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  const videos = getRenderableRoomVideos();
+  if (videos.length === 0) {
+    context.fillStyle = "rgba(255,255,255,0.72)";
+    context.font = "600 30px system-ui, sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText("Waiting for participant video…", canvas.width / 2, canvas.height / 2);
+    return;
+  }
+
+  const count = videos.length;
+  const columns = Math.ceil(Math.sqrt(count * (16 / 9)));
+  const rows = Math.ceil(count / columns);
+  const gap = 8;
+  const cellWidth = (canvas.width - gap * (columns + 1)) / columns;
+  const cellHeight = (canvas.height - gap * (rows + 1)) / rows;
+
+  videos.forEach((video, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const x = gap + column * (cellWidth + gap);
+    const y = gap + row * (cellHeight + gap);
+
+    context.fillStyle = "#171717";
+    context.fillRect(x, y, cellWidth, cellHeight);
+
+    try {
+      drawContainedVideo(context, video, x, y, cellWidth, cellHeight);
+    } catch {
+      // A video can become unavailable between collection and drawing.
+    }
+
+    context.strokeStyle = "rgba(255,255,255,0.16)";
+    context.lineWidth = 2;
+    context.strokeRect(x, y, cellWidth, cellHeight);
+  });
 }
 
 async function enterPictureInPicture(
-  preferredVideo?: PiPVideoElement | null,
+  video: PiPVideoElement | null,
 ): Promise<boolean> {
-  const fallbackVideo = getRenderableRoomVideos()[0] ?? null;
-  const video = preferredVideo ?? fallbackVideo;
   if (!video) return false;
 
-  if ("disablePictureInPicture" in video) {
-    video.disablePictureInPicture = false;
-  }
-
+  video.disablePictureInPicture = false;
+  video.autoPictureInPicture = true;
+  video.autoplay = true;
+  video.muted = true;
   video.playsInline = true;
+  video.setAttribute("autoplay", "");
+  video.setAttribute("muted", "");
   video.setAttribute("playsinline", "");
+  video.setAttribute("autopictureinpicture", "");
   video.removeAttribute("disablepictureinpicture");
 
   try {
-    await video.play().catch(() => undefined);
+    await video.play();
 
     const pipDocument = document as PiPDocument;
-
     if (
       pipDocument.pictureInPictureEnabled === true &&
       !pipDocument.pictureInPictureElement &&
@@ -163,44 +216,116 @@ async function enterPictureInPicture(
   return false;
 }
 
+function usePiPCollage(
+  canvasRef: React.RefObject<HTMLCanvasElement | null>,
+  stageRef: React.RefObject<PiPVideoElement | null>,
+): () => Promise<PiPVideoElement | null> {
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const prepareCollage = useCallback(async (): Promise<PiPVideoElement | null> => {
+    const canvas = canvasRef.current as CaptureStreamCanvas | null;
+    const stage = stageRef.current;
+    if (!canvas || !stage || typeof canvas.captureStream !== "function") {
+      return null;
+    }
+
+    drawPiPCollage(canvas);
+
+    if (!streamRef.current || streamRef.current.getVideoTracks()[0]?.readyState !== "live") {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = canvas.captureStream(PIP_COLLAGE_FPS);
+      stage.srcObject = streamRef.current;
+    }
+
+    stage.disablePictureInPicture = false;
+    stage.autoPictureInPicture = true;
+    stage.autoplay = true;
+    stage.muted = true;
+    stage.playsInline = true;
+    stage.setAttribute("autoplay", "");
+    stage.setAttribute("muted", "");
+    stage.setAttribute("playsinline", "");
+    stage.setAttribute("autopictureinpicture", "");
+    stage.removeAttribute("disablepictureinpicture");
+
+    await stage.play().catch(() => undefined);
+    return stage;
+  }, [canvasRef, stageRef]);
+
+  useEffect(() => {
+    const draw = (): void => {
+      const canvas = canvasRef.current;
+      if (canvas) drawPiPCollage(canvas);
+    };
+
+    draw();
+    const intervalId = window.setInterval(draw, 1000 / PIP_COLLAGE_FPS);
+
+    const resumeMedia = (): void => {
+      if (document.visibilityState !== "visible") return;
+      getRenderableRoomVideos().forEach((video) => {
+        void video.play().catch(() => undefined);
+      });
+      if (stageRef.current) {
+        void stageRef.current.play().catch(() => undefined);
+      }
+      draw();
+    };
+
+    document.addEventListener("visibilitychange", resumeMedia);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", resumeMedia);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      if (stageRef.current) stageRef.current.srcObject = null;
+    };
+  }, [canvasRef, stageRef]);
+
+  return prepareCollage;
+}
+
 function useBrowserInitiatedPictureInPicture(
-  getPreferredVideo: () => PiPVideoElement | null,
+  preparePreferredVideo: () => Promise<PiPVideoElement | null>,
 ): void {
   useEffect(() => {
     const mediaSession = navigator.mediaSession as unknown as
       | ExtendedMediaSession
       | undefined;
 
-    const handleBrowserAutoPiP = (): void => {
-      void enterPictureInPicture(getPreferredVideo());
+    const requestBrowserPiP = async (): Promise<void> => {
+      const stage = await preparePreferredVideo();
+      await enterPictureInPicture(stage);
     };
 
     try {
-      if (navigator.mediaSession) {
-        navigator.mediaSession.playbackState = "playing";
-      }
-      mediaSession?.setActionHandler?.(
-        "enterpictureinpicture",
-        handleBrowserAutoPiP,
-      );
+      if (navigator.mediaSession) navigator.mediaSession.playbackState = "playing";
+      mediaSession?.setActionHandler?.("enterpictureinpicture", requestBrowserPiP);
     } catch (error) {
-      console.debug(
-        "[clean-room-pip] Browser auto-PiP handler unavailable",
-        error,
-      );
+      console.debug("[clean-room-pip] Browser auto-PiP handler unavailable", error);
     }
 
-    return () => {
-      try {
-        if (navigator.mediaSession) {
-          navigator.mediaSession.playbackState = "none";
-        }
-        mediaSession?.setActionHandler?.("enterpictureinpicture", null);
-      } catch {
-        // Ignore unsupported Media Session cleanup.
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState === "hidden" && isTabletOrMobileRuntime()) {
+        // Some mobile browsers allow this only for eligible conferencing pages.
+        // It remains a best-effort attempt; the visible button is the reliable fallback.
+        void requestBrowserPiP();
       }
     };
-  }, [getPreferredVideo]);
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      try {
+        if (navigator.mediaSession) navigator.mediaSession.playbackState = "none";
+        mediaSession?.setActionHandler?.("enterpictureinpicture", null);
+      } catch {
+        // Ignore unsupported cleanup.
+      }
+    };
+  }, [preparePreferredVideo]);
 }
 
 type SessionRow = {
@@ -652,16 +777,14 @@ function ConnectedRoom({
   const [pipBusy, setPiPBusy] = useState(false);
   const [pipActive, setPiPActive] = useState(false);
   const [pipMessage, setPiPMessage] = useState(
-    "Keep Picture-in-Picture open to stay visible while switching apps.",
+    "Keep Picture-in-Picture open to stay in the room while switching apps.",
   );
 
+  const pipCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const pipStageRef = useRef<PiPVideoElement | null>(null);
+  const preparePiPCollage = usePiPCollage(pipCanvasRef, pipStageRef);
 
-  const getPiPStage = useCallback((): PiPVideoElement | null => {
-    return pipStageRef.current;
-  }, []);
-
-  useBrowserInitiatedPictureInPicture(getPiPStage);
+  useBrowserInitiatedPictureInPicture(preparePiPCollage);
 
   const activeProcessorTrackRef = useRef<LocalVideoTrack | null>(null);
 
@@ -684,14 +807,14 @@ function ConnectedRoom({
     const handleEnter = (): void => {
       setPiPActive(true);
       setPiPMessage(
-        "Picture-in-Picture is active. The selected participant video will stay pinned.",
+        "Picture-in-Picture is active. It shows a live collage of everyone in the room.",
       );
     };
 
     const handleLeave = (): void => {
       setPiPActive(false);
       setPiPMessage(
-        "Keep Picture-in-Picture open to stay visible while switching apps.",
+        "Keep Picture-in-Picture open to stay in the room while switching apps.",
       );
     };
 
@@ -700,37 +823,19 @@ function ConnectedRoom({
       setPiPActive(active);
       setPiPMessage(
         active
-          ? "Picture-in-Picture is active. The selected participant video will stay pinned."
-          : "Keep Picture-in-Picture open to stay visible while switching apps.",
+          ? "Picture-in-Picture is active. It shows a live collage of everyone in the room."
+          : "Keep Picture-in-Picture open to stay in the room while switching apps.",
       );
     };
 
     stage.addEventListener("enterpictureinpicture", handleEnter);
     stage.addEventListener("leavepictureinpicture", handleLeave);
-    stage.addEventListener(
-      "webkitpresentationmodechanged",
-      handleWebKitModeChange,
-    );
+    stage.addEventListener("webkitpresentationmodechanged", handleWebKitModeChange);
 
     return () => {
       stage.removeEventListener("enterpictureinpicture", handleEnter);
       stage.removeEventListener("leavepictureinpicture", handleLeave);
-      stage.removeEventListener(
-        "webkitpresentationmodechanged",
-        handleWebKitModeChange,
-      );
-    };
-  }, []);
-
-
-
-  useEffect(() => {
-    return () => {
-      const stage = pipStageRef.current;
-      if (stage?.srcObject instanceof MediaStream) {
-        stage.srcObject.getTracks().forEach((track) => track.stop());
-        stage.srcObject = null;
-      }
+      stage.removeEventListener("webkitpresentationmodechanged", handleWebKitModeChange);
     };
   }, []);
 
@@ -739,36 +844,31 @@ function ConnectedRoom({
     setPiPMessage("");
 
     try {
-      const stage = pipStageRef.current;
-      const videos = getRenderableRoomVideos();
-
-      if (!stage || videos.length === 0) {
+      const stage = await preparePiPCollage();
+      if (!stage) {
         setPiPMessage(
-          "Picture-in-Picture could not open because no participant video is ready yet.",
+          "Picture-in-Picture is unavailable because this browser cannot create the room collage stream.",
         );
         return;
       }
 
-      copyVideoStreamToPiPStage(stage, videos[0]);
-
       const opened = await enterPictureInPicture(stage);
-
       if (opened) {
         setPiPActive(true);
         setPiPMessage(
-          "Picture-in-Picture is active. The selected participant video will stay pinned.",
+          "Picture-in-Picture is active. It shows a live collage of everyone in the room.",
         );
       } else {
         setPiPMessage(
-          "Picture-in-Picture could not open. Tap Open PiP again while a participant video is playing.",
+          "Automatic PiP was blocked. Tap Open PiP before switching to another app.",
         );
       }
     } finally {
       setPiPBusy(false);
     }
-  }, []);
+  }, [preparePiPCollage]);
 
-    const getLocalCameraTrack = useCallback(() => {
+  const getLocalCameraTrack = useCallback(() => {
     const publication = Array.from(
       room.localParticipant.videoTrackPublications.values(),
     ).find((item) => item.source === Track.Source.Camera);
@@ -995,11 +1095,19 @@ function ConnectedRoom({
           ) : null}
         </main>
 
+        <canvas
+          ref={pipCanvasRef}
+          width={PIP_CANVAS_WIDTH}
+          height={PIP_CANVAS_HEIGHT}
+          aria-hidden="true"
+          className="fixed bottom-2 right-2 z-[-2] h-[180px] w-[320px] opacity-[0.01] pointer-events-none"
+        />
+
         <video
           ref={(node) => {
             pipStageRef.current = node as PiPVideoElement | null;
           }}
-          data-pip-stage="true"
+          data-pip-stage="collage"
           muted
           autoPlay
           playsInline
