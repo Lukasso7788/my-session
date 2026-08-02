@@ -109,30 +109,25 @@ async function enterPictureInPicture(): Promise<boolean> {
 
 function useAutoPictureInPicture(): void {
   useEffect(() => {
-    const mediaSession = navigator.mediaSession as unknown as ExtendedMediaSession | undefined;
+    const mediaSession = navigator.mediaSession as unknown as
+      | ExtendedMediaSession
+      | undefined;
 
-    const requestPiP = (): void => {
+    const handleBrowserAutoPiP = (): void => {
       void enterPictureInPicture();
     };
 
-    const handleVisibilityChange = (): void => {
-      if (document.visibilityState === "hidden") {
-        requestPiP();
-      }
-    };
-
-    const handlePageHide = (): void => {
-      requestPiP();
-    };
-
     try {
-      mediaSession?.setActionHandler?.("enterpictureinpicture", requestPiP);
+      mediaSession?.setActionHandler?.(
+        "enterpictureinpicture",
+        handleBrowserAutoPiP,
+      );
     } catch (error) {
-      console.debug("[clean-room-pip] Media Session auto-PiP unavailable", error);
+      console.debug(
+        "[clean-room-pip] Browser auto-PiP handler unavailable",
+        error,
+      );
     }
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("pagehide", handlePageHide);
 
     return () => {
       try {
@@ -140,9 +135,6 @@ function useAutoPictureInPicture(): void {
       } catch {
         // Ignore unsupported Media Session cleanup.
       }
-
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("pagehide", handlePageHide);
     };
   }, []);
 }
@@ -394,7 +386,10 @@ function CleanControls({
   effectBusy,
   effectError,
   chatOpen,
+  pipBusy,
+  pipActive,
   onToggleChat,
+  onEnablePiP,
   onApplyEffect,
 }: {
   room: Room;
@@ -402,7 +397,10 @@ function CleanControls({
   effectBusy: boolean;
   effectError: string;
   chatOpen: boolean;
+  pipBusy: boolean;
+  pipActive: boolean;
   onToggleChat: () => void;
+  onEnablePiP: () => Promise<void>;
   onApplyEffect: (mode: EffectMode) => Promise<void>;
 }) {
   const state = useConnectionState(room);
@@ -434,6 +432,23 @@ function CleanControls({
           ].join(" ")}
         >
           <ChatIcon />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => void onEnablePiP()}
+          disabled={pipBusy}
+          aria-label="Open Picture-in-Picture"
+          title="Open Picture-in-Picture before switching apps"
+          className={[
+            "inline-flex h-11 min-w-11 items-center justify-center rounded-[14px] border px-3 text-xs font-bold shadow-none transition",
+            pipActive
+              ? "border-[#81DB86]/35 bg-[#81DB86]/15 text-[#B7F2BA]"
+              : "border-white/10 bg-white/[0.06] text-white hover:bg-white/[0.1]",
+            pipBusy ? "cursor-wait opacity-60" : "",
+          ].join(" ")}
+        >
+          {pipBusy ? "Opening…" : pipActive ? "PiP active" : "Open PiP"}
         </button>
 
         <div className="relative min-w-0 sm:w-auto">
@@ -585,6 +600,11 @@ function ConnectedRoom({
   const [effectBusy, setEffectBusy] = useState(false);
   const [effectError, setEffectError] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
+  const [pipBusy, setPiPBusy] = useState(false);
+  const [pipActive, setPiPActive] = useState(false);
+  const [pipMessage, setPiPMessage] = useState(
+    "On phones and tablets, open Picture-in-Picture before switching apps.",
+  );
 
   const activeProcessorTrackRef = useRef<LocalVideoTrack | null>(null);
 
@@ -600,7 +620,46 @@ function ConnectedRoom({
     };
   }, [navigateBack, room]);
 
-  const getLocalCameraTrack = useCallback(() => {
+  useEffect(() => {
+    const handleEnter = (): void => {
+      setPiPActive(true);
+      setPiPMessage("Picture-in-Picture is active. You can switch apps now.");
+    };
+    const handleLeave = (): void => {
+      setPiPActive(false);
+      setPiPMessage(
+        "On phones and tablets, open Picture-in-Picture before switching apps.",
+      );
+    };
+
+    document.addEventListener("enterpictureinpicture", handleEnter);
+    document.addEventListener("leavepictureinpicture", handleLeave);
+
+    return () => {
+      document.removeEventListener("enterpictureinpicture", handleEnter);
+      document.removeEventListener("leavepictureinpicture", handleLeave);
+    };
+  }, []);
+
+  const enablePiP = useCallback(async (): Promise<void> => {
+    setPiPBusy(true);
+    setPiPMessage("");
+
+    const opened = await enterPictureInPicture();
+
+    if (opened) {
+      setPiPActive(true);
+      setPiPMessage("Picture-in-Picture is active. You can switch apps now.");
+    } else {
+      setPiPMessage(
+        "Picture-in-Picture could not open. Make sure a video is playing, then tap Open PiP again.",
+      );
+    }
+
+    setPiPBusy(false);
+  }, []);
+
+    const getLocalCameraTrack = useCallback(() => {
     const publication = Array.from(
       room.localParticipant.videoTrackPublications.values(),
     ).find((item) => item.source === Track.Source.Camera);
@@ -801,6 +860,20 @@ function ConnectedRoom({
           </div>
         </header>
 
+        <div className="shrink-0 border-b border-white/10 bg-[#191919] px-3 py-2 sm:px-4">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
+            <p className="text-xs leading-5 text-white/60">{pipMessage}</p>
+            <button
+              type="button"
+              onClick={() => void enablePiP()}
+              disabled={pipBusy || pipActive}
+              className="shrink-0 rounded-[10px] bg-white px-3 py-2 text-xs font-bold text-[#222] transition hover:bg-white/90 disabled:cursor-default disabled:opacity-55"
+            >
+              {pipBusy ? "Opening…" : pipActive ? "PiP active" : "Open PiP"}
+            </button>
+          </div>
+        </div>
+
         <main className="relative min-h-0 flex-1 overflow-hidden p-2 sm:p-3 lg:flex lg:gap-3 lg:p-4">
           <div className="flex h-full min-h-0 min-w-0 flex-1 items-center justify-center overflow-hidden rounded-[20px] border border-white/10 bg-[#151515] p-1.5 sm:rounded-[26px] sm:p-3">
             <CleanVideoLayout />
@@ -822,7 +895,10 @@ function ConnectedRoom({
           effectBusy={effectBusy}
           effectError={effectError}
           chatOpen={chatOpen}
+          pipBusy={pipBusy}
+          pipActive={pipActive}
           onToggleChat={() => setChatOpen((current) => !current)}
+          onEnablePiP={enablePiP}
           onApplyEffect={applyEffect}
         />
       </div>
