@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Routes, Route } from "react-router-dom";
 import type { User } from "@supabase/supabase-js";
 
@@ -6,6 +6,7 @@ import { SessionsPage } from "./pages/SessionsPage";
 import LandingPage from "./pages/LandingPage";
 import RoomPageIFrame from "./pages/RoomPageIFrame";
 import RoomPageLiveKit from "./pages/RoomPageLiveKit";
+import RoomPageLiveKitClean from "./pages/RoomPageLiveKitClean";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import UpdatePasswordPage from "./pages/UpdatePasswordPage";
@@ -50,12 +51,13 @@ import AIAssistantPage from "./pages/seo/AIAssistantPage";
 
 import HowItWorksPage from "./pages/seo/HowItWorksPage";
 import FaqPage from "./pages/seo/FaqPage";
-import DataDrivenSeoPage from "./pages/seo/DataDrivenSeoPage";
-import { seoPages } from "./data/seoPageRegistry";
+import { seoRouteManifest } from "./data/seoRouteManifest";
 
 import NotFoundPage from "./pages/NotFoundPage";
 import SessionCardsPlayground from "./SessionCardsPlayground";
 import IconVectorizerPage from "./pages/IconVectorizerPage";
+
+const DataDrivenSeoPage = lazy(() => import("./pages/seo/DataDrivenSeoPage"));
 
 export default function App() {
   console.log("[ROUTER] App mounted");
@@ -165,11 +167,15 @@ export default function App() {
           <Route path="/blog/:slug" element={<BlogPost />} />
 
           {/* SEO pages */}
-          {seoPages.map((page) => (
+          {seoRouteManifest.map((page) => (
             <Route
               key={page.slug}
               path={page.route}
-              element={<DataDrivenSeoPage page={page} />}
+              element={(
+                <Suspense fallback={<main className="min-h-screen bg-[#fafafa]" aria-label="Loading guide" />}>
+                  <DataDrivenSeoPage slug={page.slug} />
+                </Suspense>
+              )}
             />
           ))}
 
@@ -189,7 +195,7 @@ export default function App() {
 
           <Route
             path="/focus-sessions"
-            element={<GroupFocusSessionsPage />}
+            element={<Navigate to="/group-focus-sessions" replace />}
           />
 
           <Route
@@ -220,6 +226,10 @@ export default function App() {
 
         <Route path="/room-iframe/:id" element={<RoomPageIFrame />} />
         <Route path="/room-livekit/:id" element={<RoomPageLiveKit />} />
+        <Route
+          path="/room-livekit-clean/:id"
+          element={<RoomPageLiveKitClean />}
+        />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/update-password" element={<UpdatePasswordPage />} />
