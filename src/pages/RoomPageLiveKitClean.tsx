@@ -360,7 +360,7 @@ function usePiPCollage(
 
       // 0 FPS lets us explicitly push frames with requestFrame where supported.
       // Browsers that ignore requestFrame still receive the visible render loop.
-      streamRef.current = canvas.captureStream(0);
+      streamRef.current = canvas.captureStream(PIP_COLLAGE_FPS);
       stage.srcObject = streamRef.current;
     }
 
@@ -402,9 +402,7 @@ function usePiPCollage(
     });
 
     const animate = (): void => {
-      if (document.visibilityState === "visible") {
-        pushCollageFrame();
-      }
+      pushCollageFrame();
       animationFrameRef.current = window.requestAnimationFrame(animate);
     };
 
@@ -436,11 +434,21 @@ function usePiPCollage(
       }
     };
 
+    const handlePageFreeze = (): void => {
+      pushCollageFrame();
+      const stage = stageRef.current;
+      if (stage) void stage.play().catch(() => undefined);
+    };
+
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", handlePageFreeze);
+    document.addEventListener("freeze", handlePageFreeze as EventListener);
 
     return () => {
       cancelled = true;
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handlePageFreeze);
+      document.removeEventListener("freeze", handlePageFreeze as EventListener);
 
       if (animationFrameRef.current !== null) {
         window.cancelAnimationFrame(animationFrameRef.current);
@@ -466,23 +474,30 @@ function useBrowserInitiatedPictureInPicture(
   stageRef: React.RefObject<PiPVideoElement | null>,
 ): void {
   useEffect(() => {
-    if (!isTabletOrMobileRuntime()) {
-      return;
-    }
+    if (!isTabletOrMobileRuntime()) return;
 
     const mediaSession = navigator.mediaSession as unknown as
       | ExtendedMediaSession
       | undefined;
 
-    // Prewarm the collage while the page is foregrounded. Do not call
-    // requestPictureInPicture from visibilitychange: on mobile that can consume
-    // the Home/app-switch gesture and leave the browser in the foreground.
-    void preparePreferredVideo();
+    let preparedStage: PiPVideoElement | null = stageRef.current;
+    let autoPiPRequested = false;
+
+    void preparePreferredVideo().then((stage) => {
+      if (stage) preparedStage = stage;
+    });
 
     const requestBrowserPiP = async (): Promise<void> => {
       if (!isTabletOrMobileRuntime()) return;
 
-      const stage = stageRef.current ?? (await preparePreferredVideo());
+      const stage =
+        preparedStage ??
+        stageRef.current ??
+        (await preparePreferredVideo());
+
+      if (!stage) return;
+
+      preparedStage = stage;
       await enterPictureInPicture(stage);
     };
 
@@ -502,7 +517,46 @@ function useBrowserInitiatedPictureInPicture(
       );
     }
 
+    const handleVisibilityChange = (): void => {
+      if (
+        document.visibilityState !== "hidden" ||
+        autoPiPRequested ||
+        !isTabletOrMobileRuntime()
+      ) {
+        return;
+      }
+
+      autoPiPRequested = true;
+
+      const stage = preparedStage ?? stageRef.current;
+      if (stage) {
+        // Must be synchronous with the visibility transition. Preparing a new
+        // stream here is too late on Android/iPadOS.
+        void enterPictureInPicture(stage);
+      }
+    };
+
+    const resetAutoAttempt = (): void => {
+      if (document.visibilityState === "visible") {
+        autoPiPRequested = false;
+      }
+    };
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange,
+      { capture: true },
+    );
+    window.addEventListener("pageshow", resetAutoAttempt);
+
     return () => {
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange,
+        { capture: true },
+      );
+      window.removeEventListener("pageshow", resetAutoAttempt);
+
       try {
         if (navigator.mediaSession) {
           navigator.mediaSession.playbackState = "none";
@@ -1287,7 +1341,7 @@ function ConnectedRoom({
           width={PIP_CANVAS_WIDTH}
           height={PIP_CANVAS_HEIGHT}
           aria-hidden="true"
-          className="fixed left-[-10000px] top-0 h-[180px] w-[320px] pointer-events-none"
+          className="fixed bottom-0 left-0 z-[-1] h-[2px] w-[2px] opacity-[0.01] pointer-events-none"
         />
 
         <video
@@ -1299,7 +1353,7 @@ function ConnectedRoom({
           autoPlay
           playsInline
           aria-hidden="true"
-          className="fixed left-[-10000px] top-0 h-[180px] w-[320px] object-contain pointer-events-none"
+          className="fixed bottom-0 left-0 z-[-1] h-[2px] w-[2px] object-contain opacity-[0.01] pointer-events-none"
         />
 
         <RoomAudioRenderer />
