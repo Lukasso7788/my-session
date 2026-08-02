@@ -3946,23 +3946,28 @@ export function TasksPanel({
 
               return (
                 <div key={item.id} className={teamCardCls + " font-inter"}>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <img
-                      src={getAvatar(item.profiles)}
-                      className="w-7 h-7 rounded-full object-cover shrink-0"
-                      alt=""
-                    />
+                  <div className="flex items-start gap-2 min-w-0">
+                    <div
+                      className="flex h-7 max-w-7 shrink-0 items-center overflow-hidden rounded-full bg-transparent transition-[max-width,background-color] duration-300 ease-out group-hover:max-w-[150px] group-hover:bg-black/[0.045] group-focus-within:max-w-[150px] group-focus-within:bg-black/[0.045]"
+                      title={item.profiles?.full_name || "Participant"}
+                    >
+                      <img
+                        src={getAvatar(item.profiles)}
+                        className="w-7 h-7 rounded-full object-cover shrink-0"
+                        alt=""
+                      />
+                      <span
+                        className={
+                          "min-w-0 max-w-0 overflow-hidden whitespace-nowrap pl-0 pr-0 text-[12px] font-semibold font-inter opacity-0 transition-[max-width,opacity,padding] duration-300 ease-out group-hover:max-w-[110px] group-hover:pl-2 group-hover:pr-2 group-hover:opacity-100 group-focus-within:max-w-[110px] group-focus-within:pl-2 group-focus-within:pr-2 group-focus-within:opacity-100 " +
+                          nameCls
+                        }
+                      >
+                        {item.profiles?.full_name || "Participant"}
+                      </span>
+                    </div>
 
                     <div className="flex-1 min-w-0">
-                      <div className="flex min-w-0 items-baseline gap-1.5">
-                        <span
-                          className={
-                            "max-w-[34%] shrink-0 truncate text-[12px] font-semibold font-inter " +
-                            nameCls
-                          }
-                        >
-                          {item.profiles?.full_name || "Participant"}
-                        </span>
+                      <div className="flex min-w-0 items-start">
                         <span
                           className={
                             "min-w-0 flex-1 max-h-[18px] overflow-hidden whitespace-normal break-words text-[13px] leading-[18px] font-inter transition-[max-height] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[max-height] group-hover:max-h-40 group-focus-within:max-h-40 " +
