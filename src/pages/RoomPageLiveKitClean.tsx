@@ -46,6 +46,7 @@ type PiPVideoElement = HTMLVideoElement & {
   webkitSupportsPresentationMode?: (mode: "picture-in-picture") => boolean;
   webkitSetPresentationMode?: (mode: "picture-in-picture") => void;
   webkitPresentationMode?: string;
+  autoPictureInPicture?: boolean;
 };
 
 type PiPDocument = Document & {
@@ -59,8 +60,6 @@ type ExtendedMediaSession = {
     handler: (() => void | Promise<void>) | null,
   ) => void;
 };
-
-const PIP_ROTATION_INTERVAL_MS = 8_000;
 
 function getRenderableRoomVideos(): PiPVideoElement[] {
   return Array.from(
@@ -86,26 +85,36 @@ function copyVideoStreamToPiPStage(
 
   if (!(sourceStream instanceof MediaStream)) return false;
 
-  const liveVideoTracks = sourceStream
+  const sourceTrack = sourceStream
     .getVideoTracks()
-    .filter((track) => track.readyState === "live");
+    .find((track) => track.readyState === "live");
 
-  if (liveVideoTracks.length === 0) return false;
+  if (!sourceTrack) return false;
 
   const currentStream =
     stage.srcObject instanceof MediaStream ? stage.srcObject : null;
-  const currentTrackId = currentStream?.getVideoTracks()[0]?.id;
-  const nextTrackId = liveVideoTracks[0]?.id;
+  const currentTrack = currentStream?.getVideoTracks()[0] ?? null;
 
-  if (currentTrackId === nextTrackId) return true;
+  if (
+    stage.dataset.pipSourceTrackId === sourceTrack.id &&
+    currentTrack?.readyState === "live"
+  ) {
+    return true;
+  }
 
-  stage.srcObject = new MediaStream(liveVideoTracks);
+  currentStream?.getTracks().forEach((track) => track.stop());
+
+  const stableTrack = sourceTrack.clone();
+  stage.dataset.pipSourceTrackId = sourceTrack.id;
+  stage.srcObject = new MediaStream([stableTrack]);
   stage.muted = true;
   stage.autoplay = true;
   stage.playsInline = true;
   stage.setAttribute("autoplay", "");
   stage.setAttribute("muted", "");
   stage.setAttribute("playsinline", "");
+  stage.setAttribute("autopictureinpicture", "");
+  stage.autoPictureInPicture = true;
   stage.removeAttribute("disablepictureinpicture");
 
   return true;
@@ -167,6 +176,9 @@ function useBrowserInitiatedPictureInPicture(
     };
 
     try {
+      if (navigator.mediaSession) {
+        navigator.mediaSession.playbackState = "playing";
+      }
       mediaSession?.setActionHandler?.(
         "enterpictureinpicture",
         handleBrowserAutoPiP,
@@ -180,6 +192,9 @@ function useBrowserInitiatedPictureInPicture(
 
     return () => {
       try {
+        if (navigator.mediaSession) {
+          navigator.mediaSession.playbackState = "none";
+        }
         mediaSession?.setActionHandler?.("enterpictureinpicture", null);
       } catch {
         // Ignore unsupported Media Session cleanup.
@@ -641,7 +656,6 @@ function ConnectedRoom({
   );
 
   const pipStageRef = useRef<PiPVideoElement | null>(null);
-  const pipRotationIndexRef = useRef(0);
 
   const getPiPStage = useCallback((): PiPVideoElement | null => {
     return pipStageRef.current;
@@ -670,7 +684,7 @@ function ConnectedRoom({
     const handleEnter = (): void => {
       setPiPActive(true);
       setPiPMessage(
-        "Picture-in-Picture is active. Participants will rotate automatically.",
+        "Picture-in-Picture is active. The selected participant video will stay pinned.",
       );
     };
 
@@ -686,7 +700,7 @@ function ConnectedRoom({
       setPiPActive(active);
       setPiPMessage(
         active
-          ? "Picture-in-Picture is active. Participants will rotate automatically."
+          ? "Picture-in-Picture is active. The selected participant video will stay pinned."
           : "Keep Picture-in-Picture open to stay visible while switching apps.",
       );
     };
@@ -708,31 +722,17 @@ function ConnectedRoom({
     };
   }, []);
 
+
+
   useEffect(() => {
-    if (!pipActive) return;
-
-    const rotate = (): void => {
-      const stage = pipStageRef.current;
-      const videos = getRenderableRoomVideos();
-      if (!stage || videos.length === 0) return;
-
-      pipRotationIndexRef.current =
-        pipRotationIndexRef.current % videos.length;
-
-      const nextVideo = videos[pipRotationIndexRef.current];
-      copyVideoStreamToPiPStage(stage, nextVideo);
-
-      pipRotationIndexRef.current =
-        (pipRotationIndexRef.current + 1) % videos.length;
-    };
-
-    rotate();
-    const intervalId = window.setInterval(rotate, PIP_ROTATION_INTERVAL_MS);
-
     return () => {
-      window.clearInterval(intervalId);
+      const stage = pipStageRef.current;
+      if (stage?.srcObject instanceof MediaStream) {
+        stage.srcObject.getTracks().forEach((track) => track.stop());
+        stage.srcObject = null;
+      }
     };
-  }, [pipActive]);
+  }, []);
 
   const enablePiP = useCallback(async (): Promise<void> => {
     setPiPBusy(true);
@@ -749,7 +749,6 @@ function ConnectedRoom({
         return;
       }
 
-      pipRotationIndexRef.current = 1 % videos.length;
       copyVideoStreamToPiPStage(stage, videos[0]);
 
       const opened = await enterPictureInPicture(stage);
@@ -757,7 +756,7 @@ function ConnectedRoom({
       if (opened) {
         setPiPActive(true);
         setPiPMessage(
-          "Picture-in-Picture is active. Participants will rotate automatically.",
+          "Picture-in-Picture is active. The selected participant video will stay pinned.",
         );
       } else {
         setPiPMessage(
@@ -1005,7 +1004,7 @@ function ConnectedRoom({
           autoPlay
           playsInline
           aria-hidden="true"
-          className="fixed bottom-0 left-0 h-[2px] w-[2px] opacity-[0.01] pointer-events-none"
+          className="fixed bottom-2 right-2 z-[-1] h-[180px] w-[320px] object-contain opacity-[0.02] pointer-events-none"
         />
 
         <RoomAudioRenderer />
@@ -1035,7 +1034,9 @@ export default function RoomPageLiveKitClean() {
   const [room] = useState(
     () =>
       new Room({
-        adaptiveStream: true,
+        // Keep subscribed video flowing while PiP/background mode is active.
+        // Adaptive stream pauses tracks whose attached elements are considered hidden.
+        adaptiveStream: false,
         dynacast: true,
         disconnectOnPageLeave: false,
         videoCaptureDefaults: {
