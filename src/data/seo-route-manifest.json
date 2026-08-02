@@ -1,0 +1,15 @@
+[
+  { "slug": "body-doubling", "route": "/body-doubling" },
+  { "slug": "body-doubling-for-adhd", "route": "/body-doubling-for-adhd" },
+  { "slug": "body-doubling-for-studying", "route": "/body-doubling-for-studying" },
+  { "slug": "body-doubling-for-procrastination", "route": "/body-doubling-for-procrastination" },
+  { "slug": "virtual-coworking", "route": "/virtual-coworking" },
+  { "slug": "virtual-coworking-for-remote-workers", "route": "/virtual-coworking-for-remote-workers" },
+  { "slug": "virtual-coworking-for-students", "route": "/virtual-coworking-for-students" },
+  { "slug": "focusmate-alternative", "route": "/focusmate-alternative" },
+  { "slug": "flow-club-alternative", "route": "/flow-club-alternative" },
+  { "slug": "flown-alternative", "route": "/flown-alternative" },
+  { "slug": "focus-session-25-minutes", "route": "/focus-session-25-minutes" },
+  { "slug": "focus-session-50-minutes", "route": "/focus-session-50-minutes" },
+  { "slug": "focus-session-90-minutes", "route": "/focus-session-90-minutes" }
+]
