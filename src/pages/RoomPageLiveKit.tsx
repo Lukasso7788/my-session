@@ -18016,28 +18016,41 @@ export function RoomPageLiveKit({
         }
 
         /*
-          Keep the participant microphone activity fill stretched across the
-          complete microphone badge. LiveKit's single-bar visualizer can
-          otherwise shrink to its intrinsic bar width after responsive layout
-          changes, leaving only a narrow strip on the left.
+          The participant microphone badge uses LiveKit BarVisualizer with one
+          bar. LiveKit's stylesheet gives that bar an intrinsic narrow width,
+          which leaves a small strip on the left. Force the visualizer to be a
+          full-badge layer and keep the bar anchored from left to right. Its
+          height/scale is still controlled by LiveKit's audio level.
         */
         .ms-room-page .lk-audio-visualizer {
+          position: absolute !important;
+          inset: 0 !important;
+          display: block !important;
+          width: 100% !important;
+          height: 100% !important;
+          min-width: 0 !important;
+          max-width: none !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          gap: 0 !important;
+          overflow: hidden !important;
+        }
+
+        .ms-room-page .lk-audio-visualizer > *,
+        .ms-room-page .lk-audio-visualizer > .lk-audio-bar,
+        .ms-room-page .lk-audio-visualizer > [data-lk-highlighted] {
+          position: absolute !important;
           left: 0 !important;
           right: 0 !important;
+          bottom: 0 !important;
           width: 100% !important;
           min-width: 100% !important;
           max-width: none !important;
-          flex: 1 1 100% !important;
-          justify-content: stretch !important;
-        }
-        .ms-room-page .lk-audio-visualizer > *,
-        .ms-room-page .lk-audio-visualizer .lk-audio-bar {
-          width: 100% !important;
-          min-width: 100% !important;
-          max-width: none !important;
-          flex: 1 1 100% !important;
-          margin-left: 0 !important;
-          margin-right: 0 !important;
+          flex: none !important;
+          flex-basis: 100% !important;
+          margin: 0 !important;
+          border-radius: 0 !important;
+          transform-origin: center bottom !important;
         }
 
         .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar,
