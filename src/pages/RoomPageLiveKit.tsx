@@ -983,6 +983,21 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
+function getMicrophoneBadgeFillPercent(
+  audioLevel: number | null | undefined,
+  micMuted: boolean,
+) {
+  if (micMuted) return 0;
+
+  const level = clamp(Number(audioLevel || 0), 0, 1);
+  if (level <= 0.025) return 0;
+
+  // LiveKit speech levels are commonly concentrated near the lower end of
+  // 0..1. Expand that useful range so normal speech visibly fills the badge.
+  const normalized = clamp((level - 0.025) / 0.24, 0, 1);
+  return Math.round(18 + normalized * 82);
+}
+
 function isFirefoxLike() {
   if (typeof navigator === "undefined") return false;
   return /firefox|fxios/i.test(String(navigator.userAgent || ""));
@@ -15801,7 +15816,15 @@ export function RoomPageLiveKit({
     return (
       <div
         className="relative group w-full min-w-0 min-h-0"
-        style={{ aspectRatio: "16 / 9" }}
+        style={
+          {
+            aspectRatio: "16 / 9",
+            "--ms-mic-fill": `${getMicrophoneBadgeFillPercent(
+              t.audioLevel,
+              micMuted,
+            )}%`,
+          } as React.CSSProperties
+        }
       >
         <div
           className="absolute inset-0"
@@ -15882,7 +15905,17 @@ export function RoomPageLiveKit({
     const micMuted = !!t.micMuted;
 
     return (
-      <div className="relative h-full w-full min-h-0 min-w-0">
+      <div
+        className="relative h-full w-full min-h-0 min-w-0"
+        style={
+          {
+            "--ms-mic-fill": `${getMicrophoneBadgeFillPercent(
+              t.audioLevel,
+              micMuted,
+            )}%`,
+          } as React.CSSProperties
+        }
+      >
         <VideoTile
           tileId={t.id}
           label={nameText}
@@ -18016,41 +18049,36 @@ export function RoomPageLiveKit({
         }
 
         /*
-          The participant microphone badge uses LiveKit BarVisualizer with one
-          bar. LiveKit's stylesheet gives that bar an intrinsic narrow width,
-          which leaves a small strip on the left. Force the visualizer to be a
-          full-badge layer and keep the bar anchored from left to right. Its
-          height/scale is still controlled by LiveKit's audio level.
+          Stable microphone activity fill.
+
+          The LiveKit one-bar visualizer has its own intrinsic bar width and can
+          collapse into a narrow bubble. Hide only that visualizer and draw the
+          activity level on the microphone badge itself. The fill always spans
+          the complete badge width; only its height responds to audio level.
         */
         .ms-room-page .lk-audio-visualizer {
-          position: absolute !important;
-          inset: 0 !important;
-          display: block !important;
-          width: 100% !important;
-          height: 100% !important;
-          min-width: 0 !important;
-          max-width: none !important;
-          padding: 0 !important;
-          margin: 0 !important;
-          gap: 0 !important;
-          overflow: hidden !important;
+          display: none !important;
         }
 
-        .ms-room-page .lk-audio-visualizer > *,
-        .ms-room-page .lk-audio-visualizer > .lk-audio-bar,
-        .ms-room-page .lk-audio-visualizer > [data-lk-highlighted] {
-          position: absolute !important;
-          left: 0 !important;
-          right: 0 !important;
-          bottom: 0 !important;
-          width: 100% !important;
-          min-width: 100% !important;
-          max-width: none !important;
-          flex: none !important;
-          flex-basis: 100% !important;
-          margin: 0 !important;
-          border-radius: 0 !important;
-          transform-origin: center bottom !important;
+        .ms-room-page [aria-label="Microphone on"],
+        .ms-room-page [aria-label="Speaking"] {
+          isolation: isolate;
+        }
+
+        .ms-room-page [aria-label="Microphone on"]::before,
+        .ms-room-page [aria-label="Speaking"]::before {
+          content: "";
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          width: 100%;
+          height: var(--ms-mic-fill, 0%);
+          background: rgba(82, 134, 246, 0.92);
+          border-radius: 0;
+          pointer-events: none;
+          z-index: 0;
+          transition: height 75ms linear;
         }
 
         .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar,
