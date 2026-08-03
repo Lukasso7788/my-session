@@ -37,6 +37,7 @@ import {
 
 import { supabase } from "../lib/supabase";
 import { withTimeout } from "../lib/promiseTimeout";
+import { captureProductEvent } from "../lib/analytics";
 import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
 import {
@@ -2723,6 +2724,657 @@ type WindowWithDocumentPiP = Window & {
   documentPictureInPicture?: DocumentPiPApi;
 };
 
+
+type MobilePiPVideoElement = HTMLVideoElement & {
+  disablePictureInPicture?: boolean;
+  requestPictureInPicture?: () => Promise<unknown>;
+  webkitSupportsPresentationMode?: (mode: "picture-in-picture") => boolean;
+  webkitSetPresentationMode?: (mode: "picture-in-picture" | "inline") => void;
+  webkitPresentationMode?: string;
+  autoPictureInPicture?: boolean;
+  requestVideoFrameCallback?: (
+    callback: (now: DOMHighResTimeStamp, metadata: unknown) => void,
+  ) => number;
+  cancelVideoFrameCallback?: (handle: number) => void;
+};
+
+type MobileVideoPiPDocument = Document & {
+  pictureInPictureEnabled?: boolean;
+  pictureInPictureElement?: Element | null;
+  exitPictureInPicture?: () => Promise<void>;
+};
+
+type MobilePiPMediaSession = {
+  setActionHandler?: (
+    action: string,
+    handler: (() => void | Promise<void>) | null,
+  ) => void;
+};
+
+type MobileCanvasCaptureTrack = MediaStreamTrack & {
+  requestFrame?: () => void;
+};
+
+type MobileCaptureStreamCanvas = HTMLCanvasElement & {
+  captureStream?: (frameRate?: number) => MediaStream;
+};
+
+type MobileCachedVideoFrame = {
+  canvas: HTMLCanvasElement;
+  updatedAt: number;
+};
+
+const MOBILE_PIP_CANVAS_WIDTH = 960;
+const MOBILE_PIP_CANVAS_HEIGHT = 540;
+const MOBILE_PIP_COLLAGE_FPS = 8;
+const MOBILE_PIP_SNAPSHOT_REFRESH_MS = 500;
+
+const mobilePiPVideoFrameCache = new WeakMap<
+  HTMLVideoElement,
+  MobileCachedVideoFrame
+>();
+
+function isTabletOrMobilePiPRuntime(): boolean {
+  if (typeof navigator === "undefined" || typeof window === "undefined") {
+    return false;
+  }
+
+  const userAgent = navigator.userAgent.toLowerCase();
+  const touchPoints = navigator.maxTouchPoints || 0;
+  const iPadUsingDesktopUserAgent =
+    /macintosh/.test(userAgent) && touchPoints > 1;
+
+  return (
+    /android|iphone|ipad|ipod|mobile|tablet/.test(userAgent) ||
+    iPadUsingDesktopUserAgent
+  );
+}
+
+function getMobilePiPRoomVideos(
+  root: HTMLElement | null,
+): MobilePiPVideoElement[] {
+  if (!root) return [];
+
+  return Array.from(
+    root.querySelectorAll<HTMLVideoElement>("video"),
+  ).filter((video) => video.dataset.mobilePipStage !== "true") as MobilePiPVideoElement[];
+}
+
+function isMobilePiPSourceRenderable(video: HTMLVideoElement): boolean {
+  const stream = video.srcObject;
+
+  return (
+    !video.ended &&
+    video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+    video.videoWidth > 0 &&
+    video.videoHeight > 0 &&
+    stream instanceof MediaStream &&
+    stream.getVideoTracks().some((track) => track.readyState === "live")
+  );
+}
+
+function updateMobilePiPCachedFrame(video: HTMLVideoElement): void {
+  if (!isMobilePiPSourceRenderable(video)) return;
+
+  let cached = mobilePiPVideoFrameCache.get(video);
+  if (!cached) {
+    cached = {
+      canvas: document.createElement("canvas"),
+      updatedAt: 0,
+    };
+    mobilePiPVideoFrameCache.set(video, cached);
+  }
+
+  if (
+    cached.canvas.width !== video.videoWidth ||
+    cached.canvas.height !== video.videoHeight
+  ) {
+    cached.canvas.width = video.videoWidth;
+    cached.canvas.height = video.videoHeight;
+  }
+
+  const context = cached.canvas.getContext("2d", { alpha: false });
+  if (!context) return;
+
+  try {
+    context.drawImage(video, 0, 0, cached.canvas.width, cached.canvas.height);
+    cached.updatedAt = Date.now();
+  } catch {
+    // Preserve the last valid frame.
+  }
+}
+
+function getMobilePiPCachedFrame(
+  video: HTMLVideoElement,
+): HTMLCanvasElement | null {
+  return mobilePiPVideoFrameCache.get(video)?.canvas ?? null;
+}
+
+function drawMobilePiPContainedSource(
+  context: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  sourceWidth: number,
+  sourceHeight: number,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): void {
+  if (sourceWidth <= 0 || sourceHeight <= 0) return;
+
+  const scale = Math.min(width / sourceWidth, height / sourceHeight);
+  const drawWidth = sourceWidth * scale;
+  const drawHeight = sourceHeight * scale;
+  const drawX = x + (width - drawWidth) / 2;
+  const drawY = y + (height - drawHeight) / 2;
+
+  context.drawImage(source, drawX, drawY, drawWidth, drawHeight);
+}
+
+function drawMobilePiPCollage(
+  canvas: HTMLCanvasElement,
+  roomRoot: HTMLElement | null,
+): void {
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context) return;
+
+  if (canvas.width !== MOBILE_PIP_CANVAS_WIDTH) {
+    canvas.width = MOBILE_PIP_CANVAS_WIDTH;
+  }
+  if (canvas.height !== MOBILE_PIP_CANVAS_HEIGHT) {
+    canvas.height = MOBILE_PIP_CANVAS_HEIGHT;
+  }
+
+  context.fillStyle = "#0d0d0d";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  const videos = getMobilePiPRoomVideos(roomRoot);
+  if (videos.length === 0) {
+    context.fillStyle = "rgba(255,255,255,0.72)";
+    context.font = "600 30px system-ui, sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(
+      "Waiting for participant video…",
+      canvas.width / 2,
+      canvas.height / 2,
+    );
+    return;
+  }
+
+  const count = videos.length;
+  const columns = Math.ceil(Math.sqrt(count * (16 / 9)));
+  const rows = Math.ceil(count / columns);
+  const gap = 8;
+  const cellWidth = (canvas.width - gap * (columns + 1)) / columns;
+  const cellHeight = (canvas.height - gap * (rows + 1)) / rows;
+
+  videos.forEach((video, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const x = gap + column * (cellWidth + gap);
+    const y = gap + row * (cellHeight + gap);
+
+    context.fillStyle = "#171717";
+    context.fillRect(x, y, cellWidth, cellHeight);
+
+    if (isMobilePiPSourceRenderable(video)) {
+      updateMobilePiPCachedFrame(video);
+
+      try {
+        drawMobilePiPContainedSource(
+          context,
+          video,
+          video.videoWidth,
+          video.videoHeight,
+          x,
+          y,
+          cellWidth,
+          cellHeight,
+        );
+      } catch {
+        const cached = getMobilePiPCachedFrame(video);
+        if (cached) {
+          drawMobilePiPContainedSource(
+            context,
+            cached,
+            cached.width,
+            cached.height,
+            x,
+            y,
+            cellWidth,
+            cellHeight,
+          );
+        }
+      }
+    } else {
+      const cached = getMobilePiPCachedFrame(video);
+
+      if (cached) {
+        drawMobilePiPContainedSource(
+          context,
+          cached,
+          cached.width,
+          cached.height,
+          x,
+          y,
+          cellWidth,
+          cellHeight,
+        );
+      } else {
+        context.fillStyle = "rgba(255,255,255,0.5)";
+        context.font = "500 22px system-ui, sans-serif";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText(
+          "Video paused",
+          x + cellWidth / 2,
+          y + cellHeight / 2,
+        );
+      }
+    }
+
+    context.strokeStyle = "rgba(255,255,255,0.16)";
+    context.lineWidth = 2;
+    context.strokeRect(x, y, cellWidth, cellHeight);
+  });
+}
+
+async function waitForMobilePiPDecodedFrame(
+  video: MobilePiPVideoElement,
+  timeoutMs = 1800,
+): Promise<boolean> {
+  if (
+    video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+    video.videoWidth > 0 &&
+    video.videoHeight > 0
+  ) {
+    return true;
+  }
+
+  return await new Promise<boolean>((resolve) => {
+    let settled = false;
+    let frameCallbackHandle: number | null = null;
+
+    const finish = (ready: boolean): void => {
+      if (settled) return;
+      settled = true;
+
+      window.clearTimeout(timeoutId);
+      video.removeEventListener("loadeddata", checkReady);
+      video.removeEventListener("playing", checkReady);
+      video.removeEventListener("resize", checkReady);
+
+      if (
+        frameCallbackHandle !== null &&
+        typeof video.cancelVideoFrameCallback === "function"
+      ) {
+        video.cancelVideoFrameCallback(frameCallbackHandle);
+      }
+
+      resolve(ready);
+    };
+
+    const checkReady = (): void => {
+      finish(
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+          video.videoWidth > 0 &&
+          video.videoHeight > 0,
+      );
+    };
+
+    const timeoutId = window.setTimeout(() => finish(false), timeoutMs);
+
+    video.addEventListener("loadeddata", checkReady);
+    video.addEventListener("playing", checkReady);
+    video.addEventListener("resize", checkReady);
+
+    if (typeof video.requestVideoFrameCallback === "function") {
+      frameCallbackHandle = video.requestVideoFrameCallback(() => {
+        checkReady();
+      });
+    }
+
+    checkReady();
+  });
+}
+
+function isMobilePiPStageReady(
+  video: MobilePiPVideoElement | null,
+): boolean {
+  if (!video) return false;
+
+  const stream = video.srcObject;
+  const track =
+    stream instanceof MediaStream ? stream.getVideoTracks()[0] : undefined;
+
+  return (
+    video.dataset.pipReady === "true" &&
+    !video.paused &&
+    video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+    video.videoWidth > 0 &&
+    video.videoHeight > 0 &&
+    track?.readyState === "live" &&
+    track.muted === false
+  );
+}
+
+async function enterMobileVideoPictureInPicture(
+  video: MobilePiPVideoElement | null,
+  options: { skipPlay?: boolean; requireReady?: boolean } = {},
+): Promise<boolean> {
+  if (!video) return false;
+
+  video.disablePictureInPicture = false;
+  video.autoPictureInPicture = true;
+  video.autoplay = true;
+  video.muted = true;
+  video.playsInline = true;
+  video.setAttribute("autoplay", "");
+  video.setAttribute("muted", "");
+  video.setAttribute("playsinline", "");
+  video.setAttribute("autopictureinpicture", "");
+  video.removeAttribute("disablepictureinpicture");
+
+  try {
+    if (options.requireReady && !isMobilePiPStageReady(video)) {
+      return false;
+    }
+
+    if (!options.skipPlay) {
+      await video.play();
+    } else if (video.paused) {
+      return false;
+    }
+
+    const pipDocument = document as MobileVideoPiPDocument;
+    if (
+      pipDocument.pictureInPictureEnabled === true &&
+      !pipDocument.pictureInPictureElement &&
+      typeof video.requestPictureInPicture === "function"
+    ) {
+      await video.requestPictureInPicture();
+      return true;
+    }
+
+    if (
+      video.webkitSupportsPresentationMode?.("picture-in-picture") &&
+      video.webkitSetPresentationMode
+    ) {
+      video.webkitSetPresentationMode("picture-in-picture");
+      return true;
+    }
+  } catch (error) {
+    console.warn("[room-mobile-pip] Unable to enter PiP", error);
+  }
+
+  return false;
+}
+
+function useMobilePiPCollage(
+  roomRootRef: React.RefObject<HTMLElement | null>,
+  canvasRef: React.RefObject<HTMLCanvasElement | null>,
+  stageRef: React.RefObject<MobilePiPVideoElement | null>,
+  enabled: boolean,
+): () => Promise<MobilePiPVideoElement | null> {
+  const streamRef = useRef<MediaStream | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const intervalRef = useRef<number | null>(null);
+  const snapshotIntervalRef = useRef<number | null>(null);
+
+  const pushCollageFrame = useCallback((): void => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    drawMobilePiPCollage(canvas, roomRootRef.current);
+
+    const captureTrack = streamRef.current?.getVideoTracks()[0] as
+      | MobileCanvasCaptureTrack
+      | undefined;
+    captureTrack?.requestFrame?.();
+  }, [canvasRef, roomRootRef]);
+
+  const ensureCollageStream = useCallback(
+    async (): Promise<MobilePiPVideoElement | null> => {
+      if (!enabled) return null;
+
+      const canvas = canvasRef.current as MobileCaptureStreamCanvas | null;
+      const stage = stageRef.current;
+
+      if (!canvas || !stage || typeof canvas.captureStream !== "function") {
+        return null;
+      }
+
+      pushCollageFrame();
+
+      const existingTrack = streamRef.current?.getVideoTracks()[0];
+      if (!existingTrack || existingTrack.readyState !== "live") {
+        streamRef.current?.getTracks().forEach((track) => track.stop());
+
+        stage.dataset.pipReady = "false";
+        streamRef.current = canvas.captureStream(MOBILE_PIP_COLLAGE_FPS);
+        stage.srcObject = streamRef.current;
+      }
+
+      stage.disablePictureInPicture = false;
+      stage.autoPictureInPicture = true;
+      stage.autoplay = true;
+      stage.muted = true;
+      stage.playsInline = true;
+      stage.setAttribute("autoplay", "");
+      stage.setAttribute("muted", "");
+      stage.setAttribute("playsinline", "");
+      stage.setAttribute("autopictureinpicture", "");
+      stage.removeAttribute("disablepictureinpicture");
+
+      stage.dataset.pipReady = "false";
+      pushCollageFrame();
+      await stage.play().catch(() => undefined);
+
+      const decoded = await waitForMobilePiPDecodedFrame(stage);
+      pushCollageFrame();
+
+      if (decoded) {
+        stage.dataset.pipReady = "true";
+
+        try {
+          stage.poster = canvas.toDataURL("image/jpeg", 0.82);
+        } catch {
+          // Poster is only a fallback for a short Android transition stall.
+        }
+      }
+
+      return decoded ? stage : null;
+    },
+    [canvasRef, enabled, pushCollageFrame, stageRef],
+  );
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    let cancelled = false;
+
+    void ensureCollageStream().then(() => {
+      if (!cancelled) pushCollageFrame();
+    });
+
+    const animate = (): void => {
+      pushCollageFrame();
+      animationFrameRef.current = window.requestAnimationFrame(animate);
+    };
+
+    animationFrameRef.current = window.requestAnimationFrame(animate);
+
+    intervalRef.current = window.setInterval(
+      pushCollageFrame,
+      Math.max(125, Math.round(1000 / MOBILE_PIP_COLLAGE_FPS)),
+    );
+
+    snapshotIntervalRef.current = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      getMobilePiPRoomVideos(roomRootRef.current).forEach(
+        updateMobilePiPCachedFrame,
+      );
+    }, MOBILE_PIP_SNAPSHOT_REFRESH_MS);
+
+    const handleVisibilityChange = (): void => {
+      pushCollageFrame();
+
+      if (document.visibilityState === "visible") {
+        getMobilePiPRoomVideos(roomRootRef.current).forEach((video) => {
+          void video.play().catch(() => undefined);
+        });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+
+      if (animationFrameRef.current !== null) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+      }
+      if (intervalRef.current !== null) {
+        window.clearInterval(intervalRef.current);
+      }
+      if (snapshotIntervalRef.current !== null) {
+        window.clearInterval(snapshotIntervalRef.current);
+      }
+
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+
+      if (stageRef.current) {
+        stageRef.current.dataset.pipReady = "false";
+        stageRef.current.srcObject = null;
+      }
+    };
+  }, [
+    enabled,
+    ensureCollageStream,
+    pushCollageFrame,
+    roomRootRef,
+    stageRef,
+  ]);
+
+  return ensureCollageStream;
+}
+
+function useMobileBrowserInitiatedPiP(
+  enabled: boolean,
+  preparePreferredVideo: () => Promise<MobilePiPVideoElement | null>,
+  stageRef: React.RefObject<MobilePiPVideoElement | null>,
+): void {
+  useEffect(() => {
+    if (!enabled || !isTabletOrMobilePiPRuntime()) return;
+
+    const mediaSession = navigator.mediaSession as unknown as
+      | MobilePiPMediaSession
+      | undefined;
+
+    let preparedStage: MobilePiPVideoElement | null = null;
+    let autoPiPRequested = false;
+
+    const prewarm = async (): Promise<void> => {
+      const stage = await preparePreferredVideo();
+      if (stage && isMobilePiPStageReady(stage)) {
+        preparedStage = stage;
+      }
+    };
+
+    void prewarm();
+
+    const requestBrowserPiP = async (): Promise<void> => {
+      const stage =
+        preparedStage ??
+        (isMobilePiPStageReady(stageRef.current)
+          ? stageRef.current
+          : null) ??
+        (await preparePreferredVideo());
+
+      if (!isMobilePiPStageReady(stage)) return;
+
+      preparedStage = stage;
+      await enterMobileVideoPictureInPicture(stage, {
+        requireReady: true,
+      });
+    };
+
+    try {
+      if (navigator.mediaSession) {
+        navigator.mediaSession.playbackState = "playing";
+      }
+
+      mediaSession?.setActionHandler?.(
+        "enterpictureinpicture",
+        requestBrowserPiP,
+      );
+    } catch (error) {
+      console.debug(
+        "[room-mobile-pip] Browser auto-PiP handler unavailable",
+        error,
+      );
+    }
+
+    const handleVisibilityChange = (): void => {
+      if (
+        document.visibilityState !== "hidden" ||
+        autoPiPRequested
+      ) {
+        return;
+      }
+
+      const stage =
+        preparedStage ??
+        (isMobilePiPStageReady(stageRef.current)
+          ? stageRef.current
+          : null);
+
+      if (!stage || !isMobilePiPStageReady(stage)) return;
+
+      autoPiPRequested = true;
+      void enterMobileVideoPictureInPicture(stage, {
+        skipPlay: true,
+        requireReady: true,
+      });
+    };
+
+    const resetAutoAttempt = (): void => {
+      if (document.visibilityState === "visible") {
+        autoPiPRequested = false;
+        void prewarm();
+      }
+    };
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange,
+      { capture: true },
+    );
+    window.addEventListener("pageshow", resetAutoAttempt);
+
+    return () => {
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange,
+        { capture: true },
+      );
+      window.removeEventListener("pageshow", resetAutoAttempt);
+
+      try {
+        if (navigator.mediaSession) {
+          navigator.mediaSession.playbackState = "none";
+        }
+        mediaSession?.setActionHandler?.("enterpictureinpicture", null);
+      } catch {
+        // Ignore unsupported cleanup.
+      }
+    };
+  }, [enabled, preparePreferredVideo, stageRef]);
+}
+
 function getRoomAuthCallbackUrl(redirectPath: string) {
   const safeRedirect =
     redirectPath &&
@@ -4756,6 +5408,9 @@ export function RoomPageLiveKit({
   const [prejoinOpen, setPrejoinOpen] = useState(false);
   const [joinRequested, setJoinRequested] = useState(false);
   useEffect(() => {
+    if (prejoinOpen) captureProductEvent("prejoin_opened");
+  }, [prejoinOpen]);
+  useEffect(() => {
     joinRequestedRef.current = joinRequested;
   }, [joinRequested]);
   const prejoinBootstrappedSessionIdRef = useRef<string>("");
@@ -5072,11 +5727,11 @@ export function RoomPageLiveKit({
       setRightTab(null);
       return;
     }
-    setRightTab((prev) => {
-      const same = prev === tab;
-      setRightPanelOpen((prevOpen) => (same ? !prevOpen : true));
-      return tab;
-    });
+
+    const nextOpen = rightTab === tab ? !rightPanelOpen : true;
+    setRightTab(tab);
+    setRightPanelOpen(nextOpen);
+    if (nextOpen) captureProductEvent("panel_opened", { panel: tab });
   };
 
   const openTileMenuAt = useCallback(
@@ -9205,7 +9860,7 @@ export function RoomPageLiveKit({
     if (!session?.id || !defaultLivekitUrl) return;
 
     const warmRoom = new Room({
-      adaptiveStream: true,
+      adaptiveStream: false,
       dynacast: true,
       disconnectOnPageLeave: false,
       reconnectPolicy: createMobileReconnectPolicy(),
@@ -10398,6 +11053,64 @@ export function RoomPageLiveKit({
   const [pipMountEl, setPipMountEl] = useState<HTMLElement | null>(null);
   const [pipOpen, setPipOpen] = useState(false);
 
+  const videoWrapRef = useRef<HTMLDivElement | null>(null);
+  const mobilePiPCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mobilePiPStageRef = useRef<MobilePiPVideoElement | null>(null);
+  const [mobilePipOpen, setMobilePipOpen] = useState(false);
+  const mobilePiPRuntime = useMemo(
+    () => isTabletOrMobilePiPRuntime(),
+    [],
+  );
+
+  const prepareMobilePiPCollage = useMobilePiPCollage(
+    videoWrapRef,
+    mobilePiPCanvasRef,
+    mobilePiPStageRef,
+    connected && mobilePiPRuntime,
+  );
+
+  useMobileBrowserInitiatedPiP(
+    connected && mobilePiPRuntime,
+    prepareMobilePiPCollage,
+    mobilePiPStageRef,
+  );
+
+  const pictureInPictureOpen = pipOpen || mobilePipOpen;
+
+  useEffect(() => {
+    if (!connected || !mobilePiPRuntime) {
+      setMobilePipOpen(false);
+      return;
+    }
+
+    const stage = mobilePiPStageRef.current;
+    if (!stage) return;
+
+    const handleEnter = (): void => setMobilePipOpen(true);
+    const handleLeave = (): void => setMobilePipOpen(false);
+    const handleWebKitModeChange = (): void => {
+      setMobilePipOpen(
+        stage.webkitPresentationMode === "picture-in-picture",
+      );
+    };
+
+    stage.addEventListener("enterpictureinpicture", handleEnter);
+    stage.addEventListener("leavepictureinpicture", handleLeave);
+    stage.addEventListener(
+      "webkitpresentationmodechanged",
+      handleWebKitModeChange,
+    );
+
+    return () => {
+      stage.removeEventListener("enterpictureinpicture", handleEnter);
+      stage.removeEventListener("leavepictureinpicture", handleLeave);
+      stage.removeEventListener(
+        "webkitpresentationmodechanged",
+        handleWebKitModeChange,
+      );
+    };
+  }, [connected, mobilePiPRuntime]);
+
   const documentPipSupported =
     typeof window !== "undefined" &&
     typeof (window as WindowWithDocumentPiP).documentPictureInPicture !==
@@ -11173,7 +11886,7 @@ export function RoomPageLiveKit({
       const r =
         prewarmedRoomRef.current ||
         new Room({
-          adaptiveStream: true,
+          adaptiveStream: false,
           dynacast: true,
           disconnectOnPageLeave: false,
           reconnectPolicy: createMobileReconnectPolicy(),
@@ -11190,6 +11903,7 @@ export function RoomPageLiveKit({
       const refresh = () => scheduleRebuildTiles();
 
       r.on(RoomEvent.Connected, () => {
+        captureProductEvent("room_connected", { recovered: false });
         void writeConnectionDiagnostic("livekit.connected", {
           roomState: String((r as any)?.state || ""),
         });
@@ -11221,6 +11935,11 @@ export function RoomPageLiveKit({
           explicitLeaveRequestedRef.current ||
           kickedBySignalRef.current ||
           isTerminalRoomDisconnect(reason);
+
+        captureProductEvent("room_disconnected", {
+          terminal: terminalDisconnect,
+          reason_code: Number.isFinite(Number(reason)) ? Number(reason) : null,
+        });
 
         void writeConnectionDiagnostic("livekit.disconnected", {
           reason: reasonLabel,
@@ -11277,6 +11996,9 @@ export function RoomPageLiveKit({
       });
 
       const handleLiveKitReconnecting = (eventType: string) => {
+        captureProductEvent("room_reconnecting", {
+          signal_only: eventType === "livekit.signal_reconnecting",
+        });
         void writeConnectionDiagnostic(eventType, {
           roomState: String((r as any)?.state || ""),
         });
@@ -11298,6 +12020,7 @@ export function RoomPageLiveKit({
       });
 
       r.on(RoomEvent.Reconnected, () => {
+        captureProductEvent("room_connected", { recovered: true });
         void writeConnectionDiagnostic("livekit.reconnected", {
           roomState: String((r as any)?.state || ""),
         });
@@ -11516,6 +12239,9 @@ export function RoomPageLiveKit({
           setDeviceError("");
         } catch (e: any) {
           console.warn("[join] camera enable failed:", e);
+          captureProductEvent("camera_permission_failed", {
+            error_name: String(e?.name || "camera_enable_failed"),
+          });
           setCamOn(false);
 
           const msg = normalizeMediaWarningMessage(
@@ -11645,7 +12371,7 @@ export function RoomPageLiveKit({
         } catch { }
       }
       stopWelcomeLoop();
-      if (!preserveMobileBackgroundSession) {
+      if (!preserveBackgroundSession) {
         releaseTabPresence();
       }
     };
@@ -12607,11 +13333,11 @@ export function RoomPageLiveKit({
         setVoiceUiLastCommand("Screen sharing stopped");
         break;
       case "pip_open":
-        if (!pipOpen && pipSupported) await togglePictureInPicture();
+        if (!pictureInPictureOpen && pipSupported) await togglePictureInPicture();
         setVoiceUiLastCommand("Picture in Picture opened");
         break;
       case "pip_close":
-        if (pipOpen) await closePictureInPicture();
+        if (pictureInPictureOpen) await closePictureInPicture();
         setVoiceUiLastCommand("Picture in Picture closed");
         break;
       case "accountability_open":
@@ -13126,7 +13852,7 @@ export function RoomPageLiveKit({
     });
   };
 
-  const closePictureInPicture = async () => {
+  const closeDesktopPictureInPicture = useCallback(async () => {
     const pipWindow = pipWindowRef.current;
 
     pipWindowRef.current = null;
@@ -13136,9 +13862,45 @@ export function RoomPageLiveKit({
     try {
       pipWindow?.close();
     } catch { }
-  };
+  }, []);
 
-  const openPictureInPicture = async () => {
+  const closeMobilePictureInPicture = useCallback(async () => {
+    const stage = mobilePiPStageRef.current;
+    const pipDocument = document as MobileVideoPiPDocument;
+
+    try {
+      if (
+        stage &&
+        pipDocument.pictureInPictureElement === stage &&
+        typeof pipDocument.exitPictureInPicture === "function"
+      ) {
+        await pipDocument.exitPictureInPicture();
+      } else if (
+        stage?.webkitPresentationMode === "picture-in-picture" &&
+        stage.webkitSetPresentationMode
+      ) {
+        stage.webkitSetPresentationMode("inline");
+      }
+    } catch { }
+
+    setMobilePipOpen(false);
+  }, []);
+
+  const closePictureInPicture = useCallback(async () => {
+    if (mobilePipOpen) {
+      await closeMobilePictureInPicture();
+    }
+    if (pipOpen) {
+      await closeDesktopPictureInPicture();
+    }
+  }, [
+    closeDesktopPictureInPicture,
+    closeMobilePictureInPicture,
+    mobilePipOpen,
+    pipOpen,
+  ]);
+
+  const openDesktopPictureInPicture = useCallback(async () => {
     setPipMode("gallery");
 
     if (!pipSupported) {
@@ -13211,16 +13973,59 @@ export function RoomPageLiveKit({
     pipWindowRef.current = pipWindow;
     setPipMountEl(mount);
     setPipOpen(true);
-  };
+  }, [connected, pipSupported, session?.title, theme]);
+
+  const openMobilePictureInPicture = useCallback(async () => {
+    if (!connected) {
+      alert("Join the room first.");
+      return;
+    }
+
+    const stage = await prepareMobilePiPCollage();
+    if (!stage || !isMobilePiPStageReady(stage)) {
+      throw new Error(
+        "The mobile Picture-in-Picture collage is not ready yet. Try again after participant video appears.",
+      );
+    }
+
+    const opened = await enterMobileVideoPictureInPicture(stage, {
+      requireReady: true,
+    });
+
+    if (!opened) {
+      throw new Error(
+        "Picture-in-Picture was blocked by the mobile browser.",
+      );
+    }
+
+    setMobilePipOpen(true);
+  }, [connected, prepareMobilePiPCollage]);
+
+  const openPictureInPicture = useCallback(async () => {
+    if (mobilePiPRuntime) {
+      await openMobilePictureInPicture();
+      return;
+    }
+
+    await openDesktopPictureInPicture();
+  }, [
+    mobilePiPRuntime,
+    openDesktopPictureInPicture,
+    openMobilePictureInPicture,
+  ]);
 
   const togglePictureInPicture = useCallback(async () => {
-    if (pipOpen) {
+    if (pictureInPictureOpen) {
       await closePictureInPicture();
       return;
     }
 
     await openPictureInPicture();
-  }, [pipOpen, connected, pipSupported, theme, session?.title]);
+  }, [
+    closePictureInPicture,
+    openPictureInPicture,
+    pictureInPictureOpen,
+  ]);
 
   const openTasksFromPictureInPicture = useCallback(() => {
     closePictureInPicture().catch(() => { });
@@ -13256,10 +14061,10 @@ export function RoomPageLiveKit({
 
   useEffect(() => {
     if (connected) return;
-    if (!pipOpen) return;
+    if (!pictureInPictureOpen) return;
 
     closePictureInPicture().catch(() => { });
-  }, [connected, pipOpen]);
+  }, [connected, pictureInPictureOpen, closePictureInPicture]);
 
   const restoreMobileMediaFromBackground = async () => {
     if (mobileMediaRestoreBusyRef.current) return;
@@ -13756,6 +14561,7 @@ export function RoomPageLiveKit({
   const leave = async () => {
     if (explicitLeaveRequestedRef.current) return;
 
+    captureProductEvent("leave_clicked", { connected });
     roomLifecycleDiagnosticRef.current("explicit_leave.clicked");
     explicitLeaveRequestedRef.current = true;
     clearMobileRoomLease(sessionId, authUserId);
@@ -14748,7 +15554,6 @@ export function RoomPageLiveKit({
   }, [tilesBaseForUi, hiddenTileIds, pinnedTileId]);
 
   // sizing
-  const videoWrapRef = useRef<HTMLDivElement | null>(null);
   const {
     ref: videoSizerRef,
     width: videoWrapW,
@@ -16538,7 +17343,7 @@ export function RoomPageLiveKit({
                       sessionId={session.id}
                       timerText={remainingTime || "--:--"}
                       pictureInPictureSupported={connected && pipSupported}
-                      pictureInPictureOpen={pipOpen}
+                      pictureInPictureOpen={pictureInPictureOpen}
                       onOpenPictureInPicture={() => {
                         togglePictureInPicture().catch((e) => {
                           console.error(
@@ -17083,6 +17888,7 @@ export function RoomPageLiveKit({
   }
 
   const onJoinGate = () => {
+    captureProductEvent("prejoin_opened", { action: "join_confirmed" });
     if (sessionCloseInfo.closed) {
       setPrejoinOpen(false);
       setJoinRequested(false);
@@ -17921,7 +18727,7 @@ export function RoomPageLiveKit({
           screenShareOn={screenShareOn}
           unreadChat={unreadChat}
           showPiP={connected && pipSupported}
-          pipActive={pipOpen}
+          pipActive={pictureInPictureOpen}
           onTogglePiP={() => {
             togglePictureInPicture().catch((e) => {
               console.error("togglePictureInPicture failed", e);
@@ -18935,6 +19741,32 @@ export function RoomPageLiveKit({
           </div>,
           tileMenuAnchor?.portalDocument?.body || document.body,
         )}
+      {mobilePiPRuntime ? (
+        <>
+          <canvas
+            ref={mobilePiPCanvasRef}
+            width={MOBILE_PIP_CANVAS_WIDTH}
+            height={MOBILE_PIP_CANVAS_HEIGHT}
+            aria-hidden="true"
+            className="fixed left-[-10000px] top-0 h-[540px] w-[960px] pointer-events-none"
+          />
+
+          <video
+            ref={(node) => {
+              mobilePiPStageRef.current =
+                node as MobilePiPVideoElement | null;
+            }}
+            data-mobile-pip-stage="true"
+            data-pip-ready="false"
+            muted
+            autoPlay
+            playsInline
+            aria-hidden="true"
+            className="fixed left-[-10000px] top-0 h-[180px] w-[320px] object-contain pointer-events-none"
+          />
+        </>
+      ) : null}
+
       {pipPortal}
     </>
   );
