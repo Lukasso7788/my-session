@@ -5399,10 +5399,20 @@ export function RoomPageLiveKit({
     [session?.title],
   );
 
-  // profile cache for remote
+  // Profile cache for remote participants.
+  //
+  // LiveKit events can schedule a tile rebuild before React has committed the
+  // latest profilesById state. Keep a synchronous ref as the source of truth so
+  // names loaded from Supabase appear immediately, without waiting for a later
+  // mute/unmute or track event to trigger another rebuild.
   const [profilesById, setProfilesById] = useState<Record<string, HostProfile>>(
     {},
   );
+  const profilesByIdRef = useRef<Record<string, HostProfile>>({});
+
+  useEffect(() => {
+    profilesByIdRef.current = profilesById;
+  }, [profilesById]);
 
   // prejoin
   const [prejoinOpen, setPrejoinOpen] = useState(false);
@@ -11322,12 +11332,17 @@ export function RoomPageLiveKit({
         }
 
         if (Object.keys(patch).length) {
-          setProfilesById((prev) => ({ ...prev, ...patch }));
-        }
+          setProfilesById((prev) => {
+            const next = { ...prev, ...patch };
+            profilesByIdRef.current = next;
+            return next;
+          });
 
-        window.setTimeout(() => {
+          // Rebuild immediately from profilesByIdRef. Waiting for an unrelated
+          // microphone event is what previously left some tiles labelled User.
           scheduleRebuildTiles();
-        }, 80);
+          window.setTimeout(() => scheduleRebuildTiles(), 80);
+        }
       } catch (e) {
         console.warn("profiles fetch failed", e);
       }
@@ -11402,6 +11417,7 @@ export function RoomPageLiveKit({
     const room = roomRef.current;
     if (!room) return;
 
+    const currentProfilesById = profilesByIdRef.current;
     const next: TileModel[] = [];
     const lp = room.localParticipant;
 
@@ -11511,7 +11527,7 @@ export function RoomPageLiveKit({
       const exactIdentity = String(rp.identity || "");
       const baseUserId = extractBaseUserIdFromIdentity(exactIdentity);
       const prof = looksLikeUuid(baseUserId)
-        ? profilesById[String(baseUserId).toLowerCase()]
+        ? currentProfilesById[String(baseUserId).toLowerCase()]
         : undefined;
 
       const nameFromProfile = String(prof?.full_name || "").trim();
@@ -11576,7 +11592,7 @@ export function RoomPageLiveKit({
       authUserId,
       displayName,
       userName,
-      profilesById,
+      profilesById: currentProfilesById,
     }) as TileModel[];
 
     const nextScreenShares =
@@ -17997,6 +18013,31 @@ export function RoomPageLiveKit({
           width: 0 !important;
           height: 0 !important;
           display: none !important;
+        }
+
+        /*
+          Keep the participant microphone activity fill stretched across the
+          complete microphone badge. LiveKit's single-bar visualizer can
+          otherwise shrink to its intrinsic bar width after responsive layout
+          changes, leaving only a narrow strip on the left.
+        */
+        .ms-room-page .lk-audio-visualizer {
+          left: 0 !important;
+          right: 0 !important;
+          width: 100% !important;
+          min-width: 100% !important;
+          max-width: none !important;
+          flex: 1 1 100% !important;
+          justify-content: stretch !important;
+        }
+        .ms-room-page .lk-audio-visualizer > *,
+        .ms-room-page .lk-audio-visualizer .lk-audio-bar {
+          width: 100% !important;
+          min-width: 100% !important;
+          max-width: none !important;
+          flex: 1 1 100% !important;
+          margin-left: 0 !important;
+          margin-right: 0 !important;
         }
 
         .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar,
