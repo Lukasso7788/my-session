@@ -983,21 +983,6 @@ function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
 }
 
-function getMicrophoneBadgeFillPercent(
-  audioLevel: number | null | undefined,
-  micMuted: boolean,
-) {
-  if (micMuted) return 0;
-
-  const level = clamp(Number(audioLevel || 0), 0, 1);
-  if (level <= 0.025) return 0;
-
-  // LiveKit speech levels are commonly concentrated near the lower end of
-  // 0..1. Expand that useful range so normal speech visibly fills the badge.
-  const normalized = clamp((level - 0.025) / 0.24, 0, 1);
-  return Math.round(18 + normalized * 82);
-}
-
 function isFirefoxLike() {
   if (typeof navigator === "undefined") return false;
   return /firefox|fxios/i.test(String(navigator.userAgent || ""));
@@ -15897,17 +15882,7 @@ export function RoomPageLiveKit({
     const micMuted = !!t.micMuted;
 
     return (
-      <div
-        className="relative h-full w-full min-h-0 min-w-0"
-        style={
-          {
-            "--ms-mic-fill": `${getMicrophoneBadgeFillPercent(
-              t.audioLevel,
-              micMuted,
-            )}%`,
-          } as React.CSSProperties
-        }
-      >
+      <div className="relative h-full w-full min-h-0 min-w-0">
         <VideoTile
           tileId={t.id}
           label={nameText}
