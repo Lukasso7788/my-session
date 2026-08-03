@@ -15816,15 +15816,7 @@ export function RoomPageLiveKit({
     return (
       <div
         className="relative group w-full min-w-0 min-h-0"
-        style={
-          {
-            aspectRatio: "16 / 9",
-            "--ms-mic-fill": `${getMicrophoneBadgeFillPercent(
-              t.audioLevel,
-              micMuted,
-            )}%`,
-          } as React.CSSProperties
-        }
+        style={{ aspectRatio: "16 / 9" }}
       >
         <div
           className="absolute inset-0"
@@ -18048,38 +18040,6 @@ export function RoomPageLiveKit({
           display: none !important;
         }
 
-        /*
-          Stable microphone activity fill.
-
-          The LiveKit one-bar visualizer has its own intrinsic bar width and can
-          collapse into a narrow bubble. Hide only that visualizer and draw the
-          activity level on the microphone badge itself. The fill always spans
-          the complete badge width; only its height responds to audio level.
-        */
-        .ms-room-page .lk-audio-visualizer {
-          display: none !important;
-        }
-
-        .ms-room-page [aria-label="Microphone on"],
-        .ms-room-page [aria-label="Speaking"] {
-          isolation: isolate;
-        }
-
-        .ms-room-page [aria-label="Microphone on"]::before,
-        .ms-room-page [aria-label="Speaking"]::before {
-          content: "";
-          position: absolute;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          width: 100%;
-          height: var(--ms-mic-fill, 0%);
-          background: rgba(82, 134, 246, 0.92);
-          border-radius: 0;
-          pointer-events: none;
-          z-index: 0;
-          transition: height 75ms linear;
-        }
 
         .ms-room-page .ms-chat-panel-scrollbars .custom-scrollbar,
         .ms-room-page .ms-tasks-panel-scrollbars .custom-scrollbar,

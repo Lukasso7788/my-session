@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Track, LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
-import { BarVisualizer } from "@livekit/components-react";
 import { Pencil } from "lucide-react";
 
 type RoomTheme = "dark" | "light";
@@ -177,7 +176,6 @@ type VideoTileProps = {
 function MicBadgeWithBarVisualizer({
     theme,
     micMuted,
-    audioTrack,
     audioLevel = 0,
     isLocal,
     hasCameraOn,
@@ -201,11 +199,26 @@ function MicBadgeWithBarVisualizer({
                 : "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm";
 
     const micIconTheme: RoomTheme =
-        isSelfMutedBadge || hasCameraOn ? "dark" : isLight ? "light" : "dark";
+        isSelfMutedBadge || hasCameraOn
+            ? "dark"
+            : isLight
+                ? "light"
+                : "dark";
 
     const safeAudioLevel = clamp(Number(audioLevel || 0), 0, 1);
-    const speaking = !micMuted && safeAudioLevel > 0.04;
-    const showVisualizer = !micMuted && !!audioTrack;
+    const speaking = !micMuted && safeAudioLevel > 0.03;
+
+    /*
+     * LiveKit обычно отдаёт голосовой уровень в нижней части диапазона 0..1.
+     * Расширяем этот диапазон, чтобы обычная речь была хорошо видна.
+     */
+    const normalizedLevel = speaking
+        ? clamp((safeAudioLevel - 0.03) / 0.22, 0, 1)
+        : 0;
+
+    const fillPercent = speaking
+        ? Math.round(18 + normalizedLevel * 82)
+        : 0;
 
     const micGlowClass = speaking
         ? isLight
@@ -215,42 +228,56 @@ function MicBadgeWithBarVisualizer({
 
     return (
         <div
-            className={`pointer-events-auto relative flex h-6 min-w-6 shrink-0 items-center justify-center overflow-hidden rounded-[10px] border p-1 backdrop-blur-md ${badgeBaseClass} ${micGlowClass}`}
+            className={[
+                "pointer-events-auto relative flex h-6 w-6 shrink-0",
+                "items-center justify-center overflow-hidden rounded-[10px]",
+                "border p-1 backdrop-blur-md",
+                badgeBaseClass,
+                micGlowClass,
+            ].join(" ")}
             title={
-                micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"
+                micMuted
+                    ? "Microphone off"
+                    : speaking
+                        ? "Speaking"
+                        : "Microphone on"
             }
             aria-label={
-                micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"
+                micMuted
+                    ? "Microphone off"
+                    : speaking
+                        ? "Speaking"
+                        : "Microphone on"
             }
         >
-            {showVisualizer ? (
+            {!micMuted ? (
                 <>
                     <div
-                        className={`absolute inset-0 ${hasCameraOn || !isLight ? "bg-white/[0.07]" : "bg-black/[0.05]"
-                            }`}
+                        aria-hidden="true"
+                        className={[
+                            "absolute inset-0 z-0",
+                            hasCameraOn || !isLight
+                                ? "bg-white/[0.07]"
+                                : "bg-black/[0.05]",
+                        ].join(" ")}
                     />
 
-                    <div className="absolute inset-0 overflow-hidden rounded-[9px]">
-                        <BarVisualizer
-                            track={audioTrack}
-                            barCount={1}
-                            options={{ minHeight: 16, maxHeight: 100 }}
-                            className="absolute inset-0 flex items-end justify-stretch"
-                        >
-                            <span
-                                className={
-                                    "lk-audio-bar block h-full w-full rounded-none transition-all duration-75 " +
-                                    (hasCameraOn || !isLight
-                                        ? "bg-[#5286F6]/18 data-[lk-highlighted=true]:bg-[#5286F6]/95"
-                                        : "bg-[#5286F6]/16 data-[lk-highlighted=true]:bg-[#5286F6]/90")
-                                }
-                            />
-                        </BarVisualizer>
-                    </div>
+                    <div
+                        aria-hidden="true"
+                        className={[
+                            "absolute inset-x-0 bottom-0 z-[1]",
+                            "transition-[height] duration-75 ease-out",
+                        ].join(" ")}
+                        style={{
+                            width: "100%",
+                            height: `${fillPercent}%`,
+                            backgroundColor: "rgba(82, 134, 246, 0.92)",
+                        }}
+                    />
                 </>
             ) : null}
 
-            <div className="relative z-[1] flex items-center justify-center">
+            <div className="relative z-10 flex items-center justify-center">
                 <Icon
                     name={micMuted ? "mic-off" : "mic-on"}
                     theme={micIconTheme}
