@@ -47,6 +47,10 @@ type PiPVideoElement = HTMLVideoElement & {
   webkitSetPresentationMode?: (mode: "picture-in-picture") => void;
   webkitPresentationMode?: string;
   autoPictureInPicture?: boolean;
+  requestVideoFrameCallback?: (
+    callback: (now: DOMHighResTimeStamp, metadata: unknown) => void,
+  ) => number;
+  cancelVideoFrameCallback?: (handle: number) => void;
 };
 
 type PiPDocument = Document & {
@@ -104,18 +108,6 @@ function isVideoCurrentlyRenderable(video: HTMLVideoElement): boolean {
 
 function getRenderableRoomVideos(): PiPVideoElement[] {
   return getRoomVideoElements().filter(isVideoCurrentlyRenderable);
-}
-
-
-function getPreferredAutomaticPiPVideo(): PiPVideoElement | null {
-  const videos = getRenderableRoomVideos();
-  if (videos.length === 0) return null;
-
-  // LiveKit normally mutes the local preview to avoid feedback. Prefer a remote
-  // participant for background PiP because mobile OSes are more likely to pause
-  // the local camera when the browser leaves the foreground.
-  const remoteVideo = videos.find((video) => !video.muted);
-  return remoteVideo ?? videos[0] ?? null;
 }
 
 function updateCachedVideoFrame(video: HTMLVideoElement): void {
@@ -290,8 +282,90 @@ function drawPiPCollage(canvas: HTMLCanvasElement): void {
   });
 }
 
+async function waitForDecodedPiPFrame(
+  video: PiPVideoElement,
+  timeoutMs = 1800,
+): Promise<boolean> {
+  if (
+    video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+    video.videoWidth > 0 &&
+    video.videoHeight > 0
+  ) {
+    return true;
+  }
+
+  return await new Promise<boolean>((resolve) => {
+    let settled = false;
+    let frameCallbackHandle: number | null = null;
+
+    const finish = (ready: boolean): void => {
+      if (settled) return;
+      settled = true;
+
+      window.clearTimeout(timeoutId);
+      video.removeEventListener("loadeddata", handleLoadedData);
+      video.removeEventListener("playing", handlePlaying);
+      video.removeEventListener("resize", handleResize);
+
+      if (
+        frameCallbackHandle !== null &&
+        typeof video.cancelVideoFrameCallback === "function"
+      ) {
+        video.cancelVideoFrameCallback(frameCallbackHandle);
+      }
+
+      resolve(ready);
+    };
+
+    const checkReady = (): void => {
+      finish(
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+          video.videoWidth > 0 &&
+          video.videoHeight > 0,
+      );
+    };
+
+    const handleLoadedData = (): void => checkReady();
+    const handlePlaying = (): void => checkReady();
+    const handleResize = (): void => checkReady();
+
+    const timeoutId = window.setTimeout(() => finish(false), timeoutMs);
+
+    video.addEventListener("loadeddata", handleLoadedData);
+    video.addEventListener("playing", handlePlaying);
+    video.addEventListener("resize", handleResize);
+
+    if (typeof video.requestVideoFrameCallback === "function") {
+      frameCallbackHandle = video.requestVideoFrameCallback(() => {
+        checkReady();
+      });
+    }
+
+    checkReady();
+  });
+}
+
+function isPiPStageReady(video: PiPVideoElement | null): boolean {
+  if (!video) return false;
+
+  const stream = video.srcObject;
+  const track =
+    stream instanceof MediaStream ? stream.getVideoTracks()[0] : undefined;
+
+  return (
+    video.dataset.pipReady === "true" &&
+    !video.paused &&
+    video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+    video.videoWidth > 0 &&
+    video.videoHeight > 0 &&
+    track?.readyState === "live" &&
+    track.muted === false
+  );
+}
+
 async function enterPictureInPicture(
   video: PiPVideoElement | null,
+  options: { skipPlay?: boolean; requireReady?: boolean } = {},
 ): Promise<boolean> {
   if (!video) return false;
 
@@ -307,7 +381,15 @@ async function enterPictureInPicture(
   video.removeAttribute("disablepictureinpicture");
 
   try {
-    await video.play();
+    if (options.requireReady && !isPiPStageReady(video)) {
+      return false;
+    }
+
+    if (!options.skipPlay) {
+      await video.play();
+    } else if (video.paused) {
+      return false;
+    }
 
     const pipDocument = document as PiPDocument;
     if (
@@ -372,6 +454,7 @@ function usePiPCollage(
 
       // 0 FPS lets us explicitly push frames with requestFrame where supported.
       // Browsers that ignore requestFrame still receive the visible render loop.
+      stage.dataset.pipReady = "false";
       streamRef.current = canvas.captureStream(PIP_COLLAGE_FPS);
       stage.srcObject = streamRef.current;
     }
@@ -387,22 +470,29 @@ function usePiPCollage(
     stage.setAttribute("autopictureinpicture", "");
     stage.removeAttribute("disablepictureinpicture");
 
+    stage.dataset.pipReady = "false";
     pushCollageFrame();
     await stage.play().catch(() => undefined);
 
-    // Wait briefly while the page is still visible so the PiP video has decoded
-    // at least one canvas frame before a Home/app switch can throttle the tab.
-    const startedAt = performance.now();
-    while (
-      stage.readyState < HTMLMediaElement.HAVE_CURRENT_DATA &&
-      performance.now() - startedAt < 900
-    ) {
-      pushCollageFrame();
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 40));
+    // Confirm that the stage has produced an actual decoded video frame. A live
+    // captureStream track alone is not sufficient on mobile Chrome and can still
+    // produce an empty white PiP surface.
+    const decoded = await waitForDecodedPiPFrame(stage);
+    pushCollageFrame();
+
+    if (decoded) {
+      stage.dataset.pipReady = "true";
+
+      try {
+        // Poster is a non-white fallback if Android briefly stalls the stream
+        // while moving the already-playing video into PiP.
+        stage.poster = canvas.toDataURL("image/jpeg", 0.82);
+      } catch {
+        // Ignore poster generation failures.
+      }
     }
 
-    pushCollageFrame();
-    return stage;
+    return decoded ? stage : null;
   }, [canvasRef, pushCollageFrame, stageRef]);
 
   useEffect(() => {
@@ -474,7 +564,10 @@ function usePiPCollage(
 
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
-      if (stageRef.current) stageRef.current.srcObject = null;
+      if (stageRef.current) {
+        stageRef.current.dataset.pipReady = "false";
+        stageRef.current.srcObject = null;
+      }
     };
   }, [ensureCollageStream, pushCollageFrame, stageRef]);
 
@@ -482,8 +575,8 @@ function usePiPCollage(
 }
 
 function useBrowserInitiatedPictureInPicture(
-  prepareCollageVideo: () => Promise<PiPVideoElement | null>,
-  collageStageRef: React.RefObject<PiPVideoElement | null>,
+  preparePreferredVideo: () => Promise<PiPVideoElement | null>,
+  stageRef: React.RefObject<PiPVideoElement | null>,
 ): void {
   useEffect(() => {
     if (!isTabletOrMobileRuntime()) return;
@@ -492,39 +585,30 @@ function useBrowserInitiatedPictureInPicture(
       | ExtendedMediaSession
       | undefined;
 
+    let preparedStage: PiPVideoElement | null = null;
     let autoPiPRequested = false;
 
-    // Keep the collage warm for the manual Open PiP button, but do not use the
-    // canvas stream for the automatic background transition. On mobile Chrome,
-    // a canvas capture stream can enter PiP before its decoded frame is ready,
-    // which produces the blank white window.
-    void prepareCollageVideo();
+    const prewarm = async (): Promise<void> => {
+      const stage = await preparePreferredVideo();
+      if (stage && isPiPStageReady(stage)) {
+        preparedStage = stage;
+      }
+    };
 
-    const openAutomaticPiP = async (): Promise<void> => {
+    void prewarm();
+
+    const requestBrowserPiP = async (): Promise<void> => {
       if (!isTabletOrMobileRuntime()) return;
 
-      const pipDocument = document as PiPDocument;
-      if (pipDocument.pictureInPictureElement) return;
+      const stage =
+        preparedStage ??
+        (isPiPStageReady(stageRef.current) ? stageRef.current : null) ??
+        (await preparePreferredVideo());
 
-      const directVideo = getPreferredAutomaticPiPVideo();
+      if (!isPiPStageReady(stage)) return;
 
-      if (directVideo) {
-        await enterPictureInPicture(directVideo);
-        return;
-      }
-
-      // Last-resort fallback when no participant video is decoded yet.
-      const collageStage =
-        collageStageRef.current ?? (await prepareCollageVideo());
-
-      if (
-        collageStage &&
-        collageStage.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
-        collageStage.videoWidth > 0 &&
-        collageStage.videoHeight > 0
-      ) {
-        await enterPictureInPicture(collageStage);
-      }
+      preparedStage = stage;
+      await enterPictureInPicture(stage, { requireReady: true });
     };
 
     try {
@@ -534,7 +618,7 @@ function useBrowserInitiatedPictureInPicture(
 
       mediaSession?.setActionHandler?.(
         "enterpictureinpicture",
-        openAutomaticPiP,
+        requestBrowserPiP,
       );
     } catch (error) {
       console.debug(
@@ -552,19 +636,28 @@ function useBrowserInitiatedPictureInPicture(
         return;
       }
 
+      const stage =
+        preparedStage ??
+        (isPiPStageReady(stageRef.current) ? stageRef.current : null);
+
+      // Never open an undecoded stream. It is better to skip one automatic
+      // attempt than to leave the user with Chrome's blank white PiP surface.
+      if (!stage || !isPiPStageReady(stage)) return;
+
       autoPiPRequested = true;
 
-      // Use an already playing LiveKit <video>. Do not create, replace or wait
-      // for a canvas stream after the document becomes hidden.
-      const directVideo = getPreferredAutomaticPiPVideo();
-      if (directVideo) {
-        void enterPictureInPicture(directVideo);
-      }
+      // The stage was fully prepared while foregrounded. Do not call play(),
+      // replace srcObject or redraw the canvas after the document is hidden.
+      void enterPictureInPicture(stage, {
+        skipPlay: true,
+        requireReady: true,
+      });
     };
 
     const resetAutoAttempt = (): void => {
       if (document.visibilityState === "visible") {
         autoPiPRequested = false;
+        void prewarm();
       }
     };
 
@@ -592,7 +685,7 @@ function useBrowserInitiatedPictureInPicture(
         // Ignore unsupported cleanup.
       }
     };
-  }, [prepareCollageVideo, collageStageRef]);
+  }, [preparePreferredVideo, stageRef]);
 }
 
 type SessionRow = {
@@ -1044,7 +1137,7 @@ function ConnectedRoom({
   const [pipBusy, setPiPBusy] = useState(false);
   const [pipActive, setPiPActive] = useState(false);
   const [pipMessage, setPiPMessage] = useState(
-    "On phones and tablets, switching apps opens a live participant in PiP. Open PiP manually for the full room collage. Desktop auto-PiP is disabled.",
+    "On phones and tablets, open Picture-in-Picture before switching apps. Desktop auto-PiP is disabled.",
   );
 
   const pipCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1081,7 +1174,7 @@ function ConnectedRoom({
     const handleLeave = (): void => {
       setPiPActive(false);
       setPiPMessage(
-        "On phones and tablets, switching apps opens a live participant in PiP. Open PiP manually for the full room collage. Desktop auto-PiP is disabled.",
+        "On phones and tablets, open Picture-in-Picture before switching apps. Desktop auto-PiP is disabled.",
       );
     };
 
@@ -1091,7 +1184,7 @@ function ConnectedRoom({
       setPiPMessage(
         active
           ? "Picture-in-Picture is active. It shows a live collage of everyone in the room."
-          : "On phones and tablets, switching apps opens a live participant in PiP. Open PiP manually for the full room collage. Desktop auto-PiP is disabled.",
+          : "On phones and tablets, open Picture-in-Picture before switching apps. Desktop auto-PiP is disabled.",
       );
     };
 
@@ -1119,7 +1212,7 @@ function ConnectedRoom({
         return;
       }
 
-      const opened = await enterPictureInPicture(stage);
+      const opened = await enterPictureInPicture(stage, { requireReady: true });
       if (opened) {
         setPiPActive(true);
         setPiPMessage(
@@ -1367,7 +1460,7 @@ function ConnectedRoom({
           width={PIP_CANVAS_WIDTH}
           height={PIP_CANVAS_HEIGHT}
           aria-hidden="true"
-          className="fixed bottom-0 left-0 z-[-1] h-[2px] w-[2px] opacity-[0.01] pointer-events-none"
+          className="fixed left-[-10000px] top-0 h-[540px] w-[960px] pointer-events-none"
         />
 
         <video
@@ -1379,7 +1472,7 @@ function ConnectedRoom({
           autoPlay
           playsInline
           aria-hidden="true"
-          className="fixed bottom-0 left-0 z-[-1] h-[2px] w-[2px] object-contain opacity-[0.01] pointer-events-none"
+          className="fixed left-[-10000px] top-0 h-[180px] w-[320px] object-contain pointer-events-none"
         />
 
         <RoomAudioRenderer />
