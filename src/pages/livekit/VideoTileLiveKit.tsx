@@ -260,26 +260,21 @@ function MicBadgeWithBarVisualizer({
                             track={audioTrack}
                             barCount={1}
                             options={{ minHeight: 16, maxHeight: 100 }}
-                            className="absolute inset-0 flex items-end justify-stretch"
+                            className="absolute inset-0"
                             style={
                                 {
                                     "--lk-va-bar-width": "100%",
                                     "--lk-va-bar-border-radius": "0px",
                                     "--lk-va-bar-bg": hasCameraOn || !isLight
-                                        ? "rgba(82, 134, 246, 0.18)"
-                                        : "rgba(82, 134, 246, 0.16)",
+                                        ? "rgba(82, 134, 246, 0.92)"
+                                        : "rgba(82, 134, 246, 0.88)",
                                     "--lk-fg": hasCameraOn || !isLight
-                                        ? "rgba(82, 134, 246, 0.95)"
-                                        : "rgba(82, 134, 246, 0.90)",
+                                        ? "rgba(82, 134, 246, 0.92)"
+                                        : "rgba(82, 134, 246, 0.88)",
                                     background: "transparent",
                                 } as React.CSSProperties
                             }
-                        >
-                            <span
-                                className="lk-audio-bar block h-full w-full rounded-none bg-[#5286F6]/90 transition-[height] duration-150 ease-out"
-                                style={{ width: "100%" }}
-                            />
-                        </BarVisualizer>
+                        />
                     </div>
                 </>
             ) : null}
