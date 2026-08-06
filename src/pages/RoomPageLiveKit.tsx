@@ -620,6 +620,7 @@ type TileModel = {
   videoTrack?: Track;
   audioTrack?: LocalAudioTrack | RemoteAudioTrack;
   audioLevel?: number;
+  isSpeaking?: boolean;
 
   participantIdentity?: string;
   participantUserId?: string;
@@ -652,6 +653,7 @@ function areTileListsEqual(prev: TileModel[], next: TileModel[]) {
       a.videoTrack === b.videoTrack &&
       a.audioTrack === b.audioTrack &&
       a.audioLevel === b.audioLevel &&
+      a.isSpeaking === b.isSpeaking &&
       a.participantIdentity === b.participantIdentity &&
       a.participantUserId === b.participantUserId &&
       a.micTrackSid === b.micTrackSid &&
@@ -11489,6 +11491,7 @@ export function RoomPageLiveKit({
       isLocal: true,
       videoTrack: localCamTrack,
       audioTrack: localAudioTrackRaw,
+      isSpeaking: !localMicMuted && !!lp.isSpeaking,
       participantIdentity: localIdentity || undefined,
       participantUserId: localUserId || undefined,
       micMuted: localMicMuted,
@@ -11558,6 +11561,7 @@ export function RoomPageLiveKit({
         isLocal: false,
         videoTrack: vt,
         audioTrack: remoteAudioTrack,
+        isSpeaking: !remoteMicMuted && !!rp.isSpeaking,
         participantIdentity: exactIdentity || undefined,
         participantUserId: baseUserId || undefined,
         micTrackSid: micPub?.trackSid,
@@ -12073,6 +12077,7 @@ export function RoomPageLiveKit({
       r.on(RoomEvent.TrackPublished as any, refresh as any);
       r.on(RoomEvent.TrackUnpublished as any, refresh as any);
       r.on(RoomEvent.TrackSubscriptionFailed as any, refresh as any);
+      r.on(RoomEvent.ActiveSpeakersChanged, refresh);
       r.on(RoomEvent.LocalTrackPublished as any, refresh as any);
       r.on(RoomEvent.LocalTrackUnpublished as any, refresh as any);
       r.on(
@@ -15819,7 +15824,7 @@ export function RoomPageLiveKit({
             avatarUrl={tileAvatarUrl}
             micMuted={micMuted}
             mirrorVideo={t.isLocal ? previewMirrored : false}
-            audioLevel={t.audioLevel || 0}
+            isSpeaking={!!t.isSpeaking}
             currentIntention={getCurrentIntentionForTile(t)}
             onToggleMenu={handleToggleTileMenu}
             showMenuButton={
@@ -15895,7 +15900,7 @@ export function RoomPageLiveKit({
           avatarUrl={tileAvatarUrl}
           micMuted={micMuted}
           mirrorVideo={t.isLocal ? previewMirrored : false}
-          audioLevel={t.audioLevel || 0}
+          isSpeaking={!!t.isSpeaking}
           currentIntention={getCurrentIntentionForTile(t)}
           density="compact"
           onToggleMenu={handleToggleTileMenu}

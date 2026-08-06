@@ -39,9 +39,6 @@ function getInitials(name: string) {
     return out || "U";
 }
 
-function clamp(n: number, a: number, b: number) {
-    return Math.max(a, Math.min(b, n));
-}
 
 function getStatusLabel(status: unknown): string {
     const key = String(status || "")
@@ -165,7 +162,7 @@ type VideoTileProps = {
     avatarUrl?: string;
     micMuted?: boolean;
     mirrorVideo?: boolean;
-    audioLevel?: number;
+    isSpeaking?: boolean;
     showMenuButton?: boolean;
     onToggleMenu?: (tileId: string, anchorEl: HTMLElement | null) => void;
     onOpenProfile?: (tileId: string) => void;
@@ -174,18 +171,49 @@ type VideoTileProps = {
     currentIntention?: string | null;
 };
 
+function useHeldSpeaking(active: boolean, holdMs = 650) {
+    const [held, setHeld] = useState(active);
+    const releaseTimerRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (active) {
+            if (releaseTimerRef.current !== null) {
+                window.clearTimeout(releaseTimerRef.current);
+                releaseTimerRef.current = null;
+            }
+            setHeld(true);
+            return;
+        }
+
+        if (releaseTimerRef.current === null) {
+            releaseTimerRef.current = window.setTimeout(() => {
+                releaseTimerRef.current = null;
+                setHeld(false);
+            }, holdMs);
+        }
+    }, [active, holdMs]);
+
+    useEffect(() => () => {
+        if (releaseTimerRef.current !== null) {
+            window.clearTimeout(releaseTimerRef.current);
+        }
+    }, []);
+
+    return held;
+}
+
 function MicBadgeWithBarVisualizer({
     theme,
     micMuted,
     audioTrack,
-    audioLevel = 0,
+    isSpeaking = false,
     isLocal,
     hasCameraOn,
 }: {
     theme: RoomTheme;
     micMuted?: boolean;
     audioTrack?: LocalAudioTrack | RemoteAudioTrack;
-    audioLevel?: number;
+    isSpeaking?: boolean;
     isLocal: boolean;
     hasCameraOn: boolean;
 }) {
@@ -203,15 +231,9 @@ function MicBadgeWithBarVisualizer({
     const micIconTheme: RoomTheme =
         isSelfMutedBadge || hasCameraOn ? "dark" : isLight ? "light" : "dark";
 
-    const safeAudioLevel = clamp(Number(audioLevel || 0), 0, 1);
-    const speaking = !micMuted && safeAudioLevel > 0.04;
+    const speaking = !micMuted && isSpeaking;
     const showVisualizer = !micMuted && !!audioTrack;
 
-    const micGlowClass = speaking
-        ? isLight
-            ? "shadow-[0_0_0.8rem_rgba(82,134,246,0.30)]"
-            : "shadow-[0_0_0.8rem_rgba(82,134,246,0.32)]"
-        : "";
 
     return (
         <div
@@ -236,7 +258,6 @@ function MicBadgeWithBarVisualizer({
                     <div className="absolute inset-0 overflow-hidden rounded-[9px]">
                         <BarVisualizer
                             track={audioTrack}
-                            state={speaking ? "speaking" : "listening"}
                             barCount={1}
                             options={{ minHeight: 16, maxHeight: 100 }}
                             className="absolute inset-0 flex items-end justify-stretch"
@@ -255,12 +276,7 @@ function MicBadgeWithBarVisualizer({
                             }
                         >
                             <span
-                                className={
-                                    "lk-audio-bar block h-full w-full rounded-none transition-all duration-75 " +
-                                    (hasCameraOn || !isLight
-                                        ? "bg-[#5286F6]/18 data-[lk-highlighted=true]:bg-[#5286F6]/95"
-                                        : "bg-[#5286F6]/16 data-[lk-highlighted=true]:bg-[#5286F6]/90")
-                                }
+                                className="lk-audio-bar block h-full w-full rounded-none bg-[#5286F6]/90 transition-[height] duration-150 ease-out"
                                 style={{ width: "100%" }}
                             />
                         </BarVisualizer>
@@ -292,7 +308,7 @@ function VideoTileInner({
     avatarUrl,
     micMuted,
     mirrorVideo = true,
-    audioLevel = 0,
+    isSpeaking = false,
     showMenuButton = false,
     density = "normal",
     currentIntention,
@@ -317,6 +333,14 @@ function VideoTileInner({
         : "bg-[#81DB86]/80 text-[#F3F3F3] border-[#2B2B2B]";
 
     const hasCameraOn = !!videoTrack;
+    const heldSpeaking = useHeldSpeaking(!micMuted && isSpeaking);
+    const speakingFrameClass = heldSpeaking
+        ? isLight
+            ? "border-[#5286F6] shadow-[0_0_0_2px_rgba(82,134,246,0.28),0_0_1.1rem_rgba(82,134,246,0.18)]"
+            : "border-[#5286F6] shadow-[0_0_0_2px_rgba(82,134,246,0.34),0_0_1.1rem_rgba(82,134,246,0.22)]"
+        : isLight
+            ? "border-[#D8D0D0] shadow-none"
+            : "border-[#2B2B2B] shadow-none";
 
     const namePillClass = hasCameraOn
         ? "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm"
@@ -541,9 +565,9 @@ function VideoTileInner({
         <div
             ref={wrapRef}
             className={
-                "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border " +
+                "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border transition-[border-color,box-shadow] duration-300 ease-out " +
                 (isCompact ? "rounded-xl " : "rounded-2xl ") +
-                (isLight ? "border-[#D8D0D0]" : "border-[#2B2B2B]") +
+                speakingFrameClass +
                 " " +
                 tileBgClass
             }
@@ -761,7 +785,7 @@ function VideoTileInner({
                     theme={theme}
                     micMuted={micMuted}
                     audioTrack={audioTrack}
-                    audioLevel={audioLevel}
+                    isSpeaking={heldSpeaking}
                     isLocal={isLocal}
                     hasCameraOn={hasCameraOn}
                 />
@@ -783,7 +807,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.avatarUrl === next.avatarUrl &&
         prev.micMuted === next.micMuted &&
         prev.mirrorVideo === next.mirrorVideo &&
-        prev.audioLevel === next.audioLevel &&
+        prev.isSpeaking === next.isSpeaking &&
         prev.showMenuButton === next.showMenuButton &&
         prev.density === next.density &&
         prev.currentIntention === next.currentIntention &&
