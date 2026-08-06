@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Track, LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
-import { BarVisualizer } from "@livekit/components-react";
+import { Track, LocalAudioTrack, RemoteAudioTrack, type Participant } from "livekit-client";
+import { BarVisualizer, useIsSpeaking } from "@livekit/components-react";
 import { Pencil } from "lucide-react";
 
 type RoomTheme = "dark" | "light";
@@ -162,7 +162,7 @@ type VideoTileProps = {
     avatarUrl?: string;
     micMuted?: boolean;
     mirrorVideo?: boolean;
-    isSpeaking?: boolean;
+    participant?: Participant;
     showMenuButton?: boolean;
     onToggleMenu?: (tileId: string, anchorEl: HTMLElement | null) => void;
     onOpenProfile?: (tileId: string) => void;
@@ -185,13 +185,15 @@ function useHeldSpeaking(active: boolean, holdMs = 650) {
             return;
         }
 
+        if (!held) return;
+
         if (releaseTimerRef.current === null) {
             releaseTimerRef.current = window.setTimeout(() => {
                 releaseTimerRef.current = null;
                 setHeld(false);
             }, holdMs);
         }
-    }, [active, holdMs]);
+    }, [active, held, holdMs]);
 
     useEffect(() => () => {
         if (releaseTimerRef.current !== null) {
@@ -259,22 +261,18 @@ function MicBadgeWithBarVisualizer({
                         <BarVisualizer
                             track={audioTrack}
                             barCount={1}
-                            options={{ minHeight: 16, maxHeight: 100 }}
-                            className="absolute inset-0"
+                            options={{ minHeight: 12, maxHeight: 100 }}
+                            className="absolute inset-0 flex items-end justify-stretch bg-transparent"
                             style={
                                 {
                                     "--lk-va-bar-width": "100%",
                                     "--lk-va-bar-border-radius": "0px",
-                                    "--lk-va-bar-bg": hasCameraOn || !isLight
-                                        ? "rgba(82, 134, 246, 0.92)"
-                                        : "rgba(82, 134, 246, 0.88)",
-                                    "--lk-fg": hasCameraOn || !isLight
-                                        ? "rgba(82, 134, 246, 0.92)"
-                                        : "rgba(82, 134, 246, 0.88)",
                                     background: "transparent",
                                 } as React.CSSProperties
                             }
-                        />
+                        >
+                            <span className="block w-full rounded-none bg-[#5286F6]/90 transition-[height] duration-100 ease-out" />
+                        </BarVisualizer>
                     </div>
                 </>
             ) : null}
@@ -290,7 +288,7 @@ function MicBadgeWithBarVisualizer({
     );
 }
 
-function VideoTileInner({
+function VideoTileContent({
     tileId,
     label,
     status,
@@ -303,14 +301,15 @@ function VideoTileInner({
     avatarUrl,
     micMuted,
     mirrorVideo = true,
-    isSpeaking = false,
+    livekitIsSpeaking,
+    participant: _participant,
     showMenuButton = false,
     density = "normal",
     currentIntention,
     onToggleMenu,
     onOpenProfile,
     onEditName,
-}: VideoTileProps) {
+}: VideoTileProps & { livekitIsSpeaking: boolean }) {
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const mediaHostRef = useRef<HTMLDivElement | null>(null);
     const attachedElRef = useRef<HTMLElement | null>(null);
@@ -328,7 +327,7 @@ function VideoTileInner({
         : "bg-[#81DB86]/80 text-[#F3F3F3] border-[#2B2B2B]";
 
     const hasCameraOn = !!videoTrack;
-    const heldSpeaking = useHeldSpeaking(!micMuted && isSpeaking);
+    const heldSpeaking = useHeldSpeaking(!micMuted && livekitIsSpeaking);
     const speakingFrameClass = heldSpeaking
         ? isLight
             ? "border-[#5286F6] shadow-[0_0_0_2px_rgba(82,134,246,0.28),0_0_1.1rem_rgba(82,134,246,0.18)]"
@@ -789,6 +788,19 @@ function VideoTileInner({
     );
 }
 
+function LiveKitSpeakingVideoTile(
+    props: VideoTileProps & { participant: Participant },
+) {
+    const isSpeaking = useIsSpeaking(props.participant);
+    return <VideoTileContent {...props} livekitIsSpeaking={isSpeaking} />;
+}
+
+function VideoTileInner(props: VideoTileProps) {
+    if (props.participant) {
+        return <LiveKitSpeakingVideoTile {...props} participant={props.participant} />;
+    }
+    return <VideoTileContent {...props} livekitIsSpeaking={false} />;
+}
 const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
     return (
         prev.tileId === next.tileId &&
@@ -802,7 +814,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.avatarUrl === next.avatarUrl &&
         prev.micMuted === next.micMuted &&
         prev.mirrorVideo === next.mirrorVideo &&
-        prev.isSpeaking === next.isSpeaking &&
+        prev.participant === next.participant &&
         prev.showMenuButton === next.showMenuButton &&
         prev.density === next.density &&
         prev.currentIntention === next.currentIntention &&
