@@ -25,6 +25,7 @@ import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
 import { ListChecks } from "lucide-react";
 import SessionsTasksSidebar from "../components/SessionsTasksSidebar";
+import { captureProductEvent } from "../lib/analytics";
 
 type BookingProfile = {
   id: string;
@@ -1686,6 +1687,8 @@ export function SessionsPage() {
 
     if (showBanModal()) return;
 
+    captureProductEvent("join_clicked", { authenticated: Boolean(user) });
+
     if (!user) {
       // RoomPageLiveKit now has in-room auth, so guests should go directly to the room.
       return navigate(next);
@@ -1711,6 +1714,10 @@ export function SessionsPage() {
       });
 
       if (error) throw error;
+
+      captureProductEvent("session_booked", {
+        booking_mode: opts.booked_start_time || opts.booked_end_time ? "timed" : "whole_session",
+      });
 
       await fetchSessions();
     } catch (err) {

@@ -6,6 +6,7 @@ import HeaderLite from "../components/HeaderLite";
 import { attachReferralToNewUser } from "../lib/referrals";
 import { OperationTimeoutError, withTimeout } from "../lib/promiseTimeout";
 import { startOAuthRedirect } from "../lib/oauthRedirect";
+import { captureProductEvent } from "../lib/analytics";
 
 const AUTH_REQUEST_TIMEOUT_MS = 15_000;
 
@@ -101,6 +102,8 @@ export default function RegisterPage() {
       return;
     }
 
+    captureProductEvent("registration_started", { provider: "email" });
+
     try {
       setLoading(true);
       setFormError("");
@@ -125,6 +128,11 @@ export default function RegisterPage() {
         setFormError(error.message);
         return;
       }
+
+      captureProductEvent("registration_completed", {
+        provider: "email",
+        confirmation_required: !data.session,
+      });
 
       if (data.user && data.session) {
         navigate("/sessions", { replace: true });
@@ -189,6 +197,8 @@ export default function RegisterPage() {
 
       const redirectTo = getOauthRedirectUrl();
 
+      captureProductEvent("registration_started", { provider: "google" });
+
       await startOAuthRedirect({
         provider: "google",
         redirectTo,
@@ -206,6 +216,8 @@ export default function RegisterPage() {
       setOauthLoading("discord");
 
       const redirectTo = getOauthRedirectUrl();
+
+      captureProductEvent("registration_started", { provider: "discord" });
 
       await startOAuthRedirect({
         provider: "discord",
@@ -225,6 +237,8 @@ export default function RegisterPage() {
       setOauthLoading("facebook");
 
       const redirectTo = getOauthRedirectUrl();
+
+      captureProductEvent("registration_started", { provider: "facebook" });
 
       await startOAuthRedirect({
         provider: "facebook",

@@ -7,8 +7,12 @@ import IconVectorizerPage from "./pages/IconVectorizerPage";
 import "./index.css";
 
 import { AuthProvider } from "./context/AuthContext";
+import AnalyticsProvider from "./components/AnalyticsProvider";
+import { initializeAnalytics } from "./lib/analytics";
 
 const isStandaloneVectorizer = window.location.pathname.replace(/\/$/, "") === "/vectorizer";
+
+initializeAnalytics();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -17,7 +21,9 @@ createRoot(document.getElementById("root")!).render(
     ) : (
       <BrowserRouter basename="/">
         <AuthProvider>
-          <App />
+          <AnalyticsProvider>
+            <App />
+          </AnalyticsProvider>
         </AuthProvider>
       </BrowserRouter>
     )}
