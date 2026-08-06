@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Track, LocalAudioTrack, RemoteAudioTrack, type Participant } from "livekit-client";
-import { BarVisualizer, useIsSpeaking } from "@livekit/components-react";
+import { BarVisualizer, ParticipantTile } from "@livekit/components-react";
+import "@livekit/components-styles/components/participant";
+import "@livekit/components-styles/themes/default";
 import { Pencil } from "lucide-react";
 
 type RoomTheme = "dark" | "light";
@@ -171,51 +173,16 @@ type VideoTileProps = {
     currentIntention?: string | null;
 };
 
-function useHeldSpeaking(active: boolean, holdMs = 650) {
-    const [held, setHeld] = useState(active);
-    const releaseTimerRef = useRef<number | null>(null);
-
-    useEffect(() => {
-        if (active) {
-            if (releaseTimerRef.current !== null) {
-                window.clearTimeout(releaseTimerRef.current);
-                releaseTimerRef.current = null;
-            }
-            setHeld(true);
-            return;
-        }
-
-        if (!held) return;
-
-        if (releaseTimerRef.current === null) {
-            releaseTimerRef.current = window.setTimeout(() => {
-                releaseTimerRef.current = null;
-                setHeld(false);
-            }, holdMs);
-        }
-    }, [active, held, holdMs]);
-
-    useEffect(() => () => {
-        if (releaseTimerRef.current !== null) {
-            window.clearTimeout(releaseTimerRef.current);
-        }
-    }, []);
-
-    return held;
-}
-
 function MicBadgeWithBarVisualizer({
     theme,
     micMuted,
     audioTrack,
-    isSpeaking = false,
     isLocal,
     hasCameraOn,
 }: {
     theme: RoomTheme;
     micMuted?: boolean;
     audioTrack?: LocalAudioTrack | RemoteAudioTrack;
-    isSpeaking?: boolean;
     isLocal: boolean;
     hasCameraOn: boolean;
 }) {
@@ -233,7 +200,6 @@ function MicBadgeWithBarVisualizer({
     const micIconTheme: RoomTheme =
         isSelfMutedBadge || hasCameraOn ? "dark" : isLight ? "light" : "dark";
 
-    const speaking = !micMuted && isSpeaking;
     const showVisualizer = !micMuted && !!audioTrack;
 
 
@@ -241,10 +207,10 @@ function MicBadgeWithBarVisualizer({
         <div
             className={`pointer-events-auto relative flex h-6 min-w-6 shrink-0 items-center justify-center overflow-hidden rounded-[10px] border p-1 backdrop-blur-md ${badgeBaseClass}`}
             title={
-                micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"
+                micMuted ? "Microphone off" : "Microphone on"
             }
             aria-label={
-                micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"
+                micMuted ? "Microphone off" : "Microphone on"
             }
         >
             {showVisualizer ? (
@@ -271,7 +237,7 @@ function MicBadgeWithBarVisualizer({
                                 } as React.CSSProperties
                             }
                         >
-                            <span className="block w-full rounded-none bg-[#5286F6]/90 transition-[height] duration-100 ease-out" />
+                            <span className="block w-full rounded-none bg-[#5286F6] transition-[height] duration-100 ease-out" />
                         </BarVisualizer>
                     </div>
                 </>
@@ -288,7 +254,7 @@ function MicBadgeWithBarVisualizer({
     );
 }
 
-function VideoTileContent({
+function VideoTileInner({
     tileId,
     label,
     status,
@@ -301,15 +267,14 @@ function VideoTileContent({
     avatarUrl,
     micMuted,
     mirrorVideo = true,
-    livekitIsSpeaking,
-    participant: _participant,
+    participant,
     showMenuButton = false,
     density = "normal",
     currentIntention,
     onToggleMenu,
     onOpenProfile,
     onEditName,
-}: VideoTileProps & { livekitIsSpeaking: boolean }) {
+}: VideoTileProps) {
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const mediaHostRef = useRef<HTMLDivElement | null>(null);
     const attachedElRef = useRef<HTMLElement | null>(null);
@@ -327,14 +292,14 @@ function VideoTileContent({
         : "bg-[#81DB86]/80 text-[#F3F3F3] border-[#2B2B2B]";
 
     const hasCameraOn = !!videoTrack;
-    const heldSpeaking = useHeldSpeaking(!micMuted && livekitIsSpeaking);
-    const speakingFrameClass = heldSpeaking
-        ? isLight
-            ? "border-[#5286F6] shadow-[0_0_0_2px_rgba(82,134,246,0.28),0_0_1.1rem_rgba(82,134,246,0.18)]"
-            : "border-[#5286F6] shadow-[0_0_0_2px_rgba(82,134,246,0.34),0_0_1.1rem_rgba(82,134,246,0.22)]"
-        : isLight
-            ? "border-[#D8D0D0] shadow-none"
-            : "border-[#2B2B2B] shadow-none";
+    const nativeTrackRef = participant
+        ? {
+            participant,
+            source: Track.Source.Camera,
+            publication: participant.getTrackPublication(Track.Source.Camera),
+        }
+        : undefined;
+    const TileRoot: React.ElementType = nativeTrackRef ? ParticipantTile : "div";
 
     const namePillClass = hasCameraOn
         ? "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm"
@@ -556,13 +521,22 @@ function VideoTileContent({
     const shouldShowAvatar = !!normalizedAvatarUrl && !avatarBroken;
 
     return (
-        <div
+        <TileRoot
             ref={wrapRef}
+            {...(nativeTrackRef
+                ? {
+                    trackRef: nativeTrackRef,
+                    "data-lk-theme": "default",
+                    style: {
+                        "--lk-accent-bg": "#5286F6",
+                        "--lk-border-radius": isCompact ? "0.75rem" : "1rem",
+                    } as React.CSSProperties,
+                }
+                : {})}
             className={
-                "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border transition-[border-color,box-shadow] duration-300 ease-out " +
+                "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border " +
                 (isCompact ? "rounded-xl " : "rounded-2xl ") +
-                speakingFrameClass +
-                " " +
+                (isLight ? "border-[#D8D0D0] " : "border-[#2B2B2B] ") +
                 tileBgClass
             }
         >
@@ -779,28 +753,14 @@ function VideoTileContent({
                     theme={theme}
                     micMuted={micMuted}
                     audioTrack={audioTrack}
-                    isSpeaking={heldSpeaking}
                     isLocal={isLocal}
                     hasCameraOn={hasCameraOn}
                 />
             </div>
-        </div>
+        </TileRoot>
     );
 }
 
-function LiveKitSpeakingVideoTile(
-    props: VideoTileProps & { participant: Participant },
-) {
-    const isSpeaking = useIsSpeaking(props.participant);
-    return <VideoTileContent {...props} livekitIsSpeaking={isSpeaking} />;
-}
-
-function VideoTileInner(props: VideoTileProps) {
-    if (props.participant) {
-        return <LiveKitSpeakingVideoTile {...props} participant={props.participant} />;
-    }
-    return <VideoTileContent {...props} livekitIsSpeaking={false} />;
-}
 const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
     return (
         prev.tileId === next.tileId &&
