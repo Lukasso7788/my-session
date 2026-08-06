@@ -172,31 +172,16 @@ type VideoTileProps = {
 };
 
 function MicBadgeWithBarVisualizer({
-    theme,
     micMuted,
     audioTrack,
-    isLocal,
-    hasCameraOn,
 }: {
-    theme: RoomTheme;
     micMuted?: boolean;
     audioTrack?: LocalAudioTrack | RemoteAudioTrack;
-    isLocal: boolean;
-    hasCameraOn: boolean;
 }) {
-    const isLight = theme === "light";
-    const isSelfMutedBadge = !!isLocal && !!micMuted;
+    const badgeBaseClass =
+        "bg-[#315FAE] border-[#5286F6] text-white shadow-sm";
 
-    const badgeBaseClass = isSelfMutedBadge
-        ? "bg-[#F65252] border-red-700/70 text-white shadow-sm"
-        : hasCameraOn
-            ? "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm"
-            : isLight
-                ? "bg-[#F5F5F5] border-[#D8D0D0] text-neutral-800 shadow-sm"
-                : "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm";
-
-    const micIconTheme: RoomTheme =
-        isSelfMutedBadge || hasCameraOn ? "dark" : isLight ? "light" : "dark";
+    const micIconTheme: RoomTheme = "dark";
 
     const showVisualizer = !micMuted && !!audioTrack;
 
@@ -213,13 +198,7 @@ function MicBadgeWithBarVisualizer({
         >
             {showVisualizer ? (
                 <>
-                    <div
-                        className={`absolute inset-0 ${
-                            hasCameraOn || !isLight
-                                ? "bg-white/[0.07]"
-                                : "bg-black/[0.05]"
-                        }`}
-                    />
+                    <div className="absolute inset-0 bg-[#315FAE]" />
 
                     <div className="absolute inset-0 overflow-hidden rounded-[9px]">
                         <BarVisualizer
@@ -526,21 +505,17 @@ function VideoTileInner({
             ref={wrapRef}
             data-lk-speaking={showSpeakingFrame}
             className={
-                "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border " +
+                "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border transition-[box-shadow] duration-150 ease-out " +
                 (isCompact ? "rounded-xl " : "rounded-2xl ") +
                 (isLight ? "border-[#D8D0D0] " : "border-[#2B2B2B] ") +
                 tileBgClass
             }
+            style={{
+                boxShadow: showSpeakingFrame
+                    ? `0 0 0 ${speakingFrameWidth}px rgba(82, 134, 246, ${speakingFrameOpacity})`
+                    : "0 0 0 0 rgba(82, 134, 246, 0)",
+            }}
         >
-            <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 z-[30] rounded-[inherit] border-solid transition-[border-width,border-color,opacity] duration-150 ease-out"
-                style={{
-                    borderWidth: `${speakingFrameWidth}px`,
-                    borderColor: "#5286F6",
-                    opacity: speakingFrameOpacity,
-                }}
-            />
             <div className="absolute inset-0">
                 {videoTrack ? (
                     <div
@@ -751,11 +726,8 @@ function VideoTileInner({
                 </div>
 
                 <MicBadgeWithBarVisualizer
-                    theme={theme}
                     micMuted={micMuted}
                     audioTrack={audioTrack}
-                    isLocal={isLocal}
-                    hasCameraOn={hasCameraOn}
                 />
             </div>
         </div>
