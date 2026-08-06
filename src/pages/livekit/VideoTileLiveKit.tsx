@@ -1,8 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Track, LocalAudioTrack, RemoteAudioTrack, type Participant } from "livekit-client";
-import { BarVisualizer, ParticipantTile } from "@livekit/components-react";
-import "@livekit/components-styles/components/participant";
-import "@livekit/components-styles/themes/default";
+import { LocalAudioTrack, RemoteAudioTrack, type Participant } from "livekit-client";
+import { BarVisualizer, useIsSpeaking, useTrackVolume } from "@livekit/components-react";
 import { Pencil } from "lucide-react";
 
 type RoomTheme = "dark" | "light";
@@ -237,7 +235,7 @@ function MicBadgeWithBarVisualizer({
                                 } as React.CSSProperties
                             }
                         >
-                            <span className="block w-full rounded-none bg-[#5286F6] transition-[height] duration-100 ease-out" />
+                            <span className="block w-full rounded-none bg-[#5286F6] transition-[height] duration-150 ease-out" />
                         </BarVisualizer>
                     </div>
                 </>
@@ -292,14 +290,17 @@ function VideoTileInner({
         : "bg-[#81DB86]/80 text-[#F3F3F3] border-[#2B2B2B]";
 
     const hasCameraOn = !!videoTrack;
-    const nativeTrackRef = participant
-        ? {
-            participant,
-            source: Track.Source.Camera,
-            publication: participant.getTrackPublication(Track.Source.Camera),
-        }
-        : undefined;
-    const TileRoot: React.ElementType = nativeTrackRef ? ParticipantTile : "div";
+    const livekitIsSpeaking = useIsSpeaking(participant);
+    const livekitVolume = useTrackVolume(audioTrack);
+    const speakingLevel = micMuted
+        ? 0
+        : Math.min(1, Math.max(0, (livekitVolume - 0.015) * 3.2));
+    const showSpeakingFrame =
+        !micMuted && !!audioTrack && (livekitIsSpeaking || speakingLevel > 0.015);
+    const speakingFrameWidth = 2 + speakingLevel * 3;
+    const speakingFrameOpacity = showSpeakingFrame
+        ? Math.min(1, 0.52 + speakingLevel * 0.48)
+        : 0;
 
     const namePillClass = hasCameraOn
         ? "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm"
@@ -521,18 +522,9 @@ function VideoTileInner({
     const shouldShowAvatar = !!normalizedAvatarUrl && !avatarBroken;
 
     return (
-        <TileRoot
+        <div
             ref={wrapRef}
-            {...(nativeTrackRef
-                ? {
-                    trackRef: nativeTrackRef,
-                    "data-lk-theme": "default",
-                    style: {
-                        "--lk-accent-bg": "#5286F6",
-                        "--lk-border-radius": isCompact ? "0.75rem" : "1rem",
-                    } as React.CSSProperties,
-                }
-                : {})}
+            data-lk-speaking={showSpeakingFrame}
             className={
                 "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border " +
                 (isCompact ? "rounded-xl " : "rounded-2xl ") +
@@ -540,6 +532,15 @@ function VideoTileInner({
                 tileBgClass
             }
         >
+            <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 z-[30] rounded-[inherit] border-solid transition-[border-width,border-color,opacity] duration-150 ease-out"
+                style={{
+                    borderWidth: `${speakingFrameWidth}px`,
+                    borderColor: "#5286F6",
+                    opacity: speakingFrameOpacity,
+                }}
+            />
             <div className="absolute inset-0">
                 {videoTrack ? (
                     <div
@@ -757,7 +758,7 @@ function VideoTileInner({
                     hasCameraOn={hasCameraOn}
                 />
             </div>
-        </TileRoot>
+        </div>
     );
 }
 
