@@ -237,7 +237,7 @@ function MicBadgeWithBarVisualizer({
 
     return (
         <div
-            className={`pointer-events-auto relative flex h-6 min-w-6 shrink-0 items-center justify-center overflow-hidden rounded-[10px] border p-1 backdrop-blur-md ${badgeBaseClass} ${micGlowClass}`}
+            className={`pointer-events-auto relative flex h-6 min-w-6 shrink-0 items-center justify-center overflow-hidden rounded-[10px] border p-1 backdrop-blur-md ${badgeBaseClass}`}
             title={
                 micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"
             }
