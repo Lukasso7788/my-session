@@ -5373,10 +5373,29 @@ export function RoomPageLiveKit({
       status, // 👈 ВОТ ЭТО
     };
 
+    const wasSelfDeafened =
+      String((currentMeta as { status?: unknown })?.status || "") ===
+      "skip_deafened";
+    const shouldSelfDeafen = status === "skip_deafened";
+
+    // Local playback must react immediately. Waiting for the metadata round-trip
+    // leaves already-playing remote audio audible for noticeable seconds.
+    if (shouldSelfDeafen) {
+      for (const participant of room.remoteParticipants.values()) {
+        for (const publication of participant.audioTrackPublications.values()) {
+          const track = publication.track;
+          if (track instanceof RemoteAudioTrack) {
+            track.setVolume(0);
+          }
+        }
+      }
+    }
+    setSelfDeafened(shouldSelfDeafen);
+
     try {
       await me.setMetadata(JSON.stringify(nextMeta));
-      setSelfDeafened(status === "skip_deafened");
     } catch (e) {
+      setSelfDeafened(wasSelfDeafened);
       console.error("setMetadata failed", e);
     }
   };
