@@ -91,10 +91,10 @@ export default function OneOnOnePage() {
       const { data: auth } = await supabase.auth.getSession();
       const accessToken = auth.session?.access_token;
       if (!accessToken) throw new Error("Your sign-in expired. Please sign in again.");
-      const response = await fetch("/api/one-on-one/session", {
+      const response = await fetch("/api/livekit/admin", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ partnerUserId: partner.userId, durationMinutes: own.duration, matchKey }),
+        body: JSON.stringify({ action: "create_one_on_one_session", partnerUserId: partner.userId, durationMinutes: own.duration, matchKey }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.sessionId) throw new Error(String(payload?.error || "Could not create your 1:1 room."));

@@ -51,6 +51,9 @@ type Body = {
   roomName?: string;
   sessionId?: string;
   participantIdentity?: string;
+  partnerUserId?: string;
+  durationMinutes?: number;
+  matchKey?: string;
   trackSid?: string;
   trackKind?: "camera" | "microphone" | "video" | "audio" | string;
 
@@ -1959,6 +1962,105 @@ async function handleRoomSoundtrackUploadPrepare(params: {
   });
 }
 
+async function handleCreateOneOnOneSession(params: {
+  res: VercelResponse;
+  sb: SupabaseClient;
+  accessToken: string;
+  body: Body;
+}) {
+  const { res, sb, accessToken, body } = params;
+  const partnerUserId = String(body.partnerUserId || "").trim().toLowerCase();
+  const durationMinutes = Math.round(Number(body.durationMinutes || 0));
+  const matchKey = String(body.matchKey || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]/g, "")
+    .slice(0, 120);
+
+  if (!looksLikeUuid(partnerUserId)) {
+    return res.status(400).json({ error: "valid_partner_required" });
+  }
+  if (![25, 45, 60].includes(durationMinutes)) {
+    return res.status(400).json({ error: "invalid_duration" });
+  }
+  if (!matchKey) return res.status(400).json({ error: "match_key_required" });
+
+  const { data: authData, error: authError } = await sb.auth.getUser(accessToken);
+  const user = authData?.user;
+  if (authError || !user?.id) return res.status(401).json({ error: "unauthorized" });
+  if (user.id === partnerUserId) {
+    return res.status(400).json({ error: "partner_must_be_different" });
+  }
+
+  const { data: partnerData, error: partnerError } =
+    await sb.auth.admin.getUserById(partnerUserId);
+  if (partnerError || !partnerData?.user?.id) {
+    return res.status(404).json({ error: "partner_not_found" });
+  }
+
+  const marker = `one-on-one:${matchKey}`;
+  const { data: existing } = await sb
+    .from("sessions")
+    .select("id")
+    .eq("description", marker)
+    .limit(1)
+    .maybeSingle();
+  if (existing?.id) {
+    return res.status(200).json({ sessionId: existing.id, reused: true });
+  }
+
+  const { data: profile } = await sb
+    .from("profiles")
+    .select("full_name,email")
+    .eq("id", user.id)
+    .maybeSingle();
+  const hostName = String(
+    profile?.full_name || profile?.email || user.email || "Focus partner"
+  ).trim();
+
+  const { data: session, error: sessionError } = await sb
+    .from("sessions")
+    .insert({
+      title: `${durationMinutes} min 1:1 focus session`,
+      description: marker,
+      host_id: user.id,
+      host_name: hostName,
+      duration_minutes: durationMinutes,
+      format: "one_on_one",
+      session_format_type: "one_on_one",
+      start_time: new Date().toISOString(),
+      status: "planned",
+      is_silent: false,
+      is_private: true,
+      max_participants: 2,
+      schedule: [
+        {
+          name: "Focus",
+          duration: durationMinutes,
+          type: "focus",
+          color: "#4F8CFF",
+        },
+      ],
+    })
+    .select("id")
+    .single();
+
+  if (sessionError || !session?.id) {
+    console.error("one-on-one session create failed", sessionError);
+    return res.status(500).json({ error: "session_create_failed" });
+  }
+
+  const { error: bookingError } = await sb.from("session_bookings").insert([
+    { session_id: session.id, user_id: user.id },
+    { session_id: session.id, user_id: partnerUserId },
+  ]);
+  if (bookingError) {
+    await sb.from("sessions").delete().eq("id", session.id);
+    console.error("one-on-one bookings create failed", bookingError);
+    return res.status(500).json({ error: "booking_create_failed" });
+  }
+
+  return res.status(200).json({ sessionId: session.id, reused: false });
+}
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const totalStartedAt = nowMs();
   let authMs = 0;
@@ -2033,6 +2135,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    if (String(body.action || "").trim().toLowerCase() === "create_one_on_one_session") {
+      return await handleCreateOneOnOneSession({
+        res,
+        sb,
+        accessToken,
+        body,
+      });
+    }
     if (rawSenderAdminAction) {
       return await handleSenderAdminAction({
         res,
