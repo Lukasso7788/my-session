@@ -41,6 +41,7 @@ export default function OneOnOnePage() {
   const [inviteLink, setInviteLink] = useState("");
   const [errorText, setErrorText] = useState("");
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const channelReadyRef = useRef(false);
   const presenceRef = useRef<QueuePresence | null>(null);
   const creatingRef = useRef(false);
 
@@ -63,31 +64,13 @@ export default function OneOnOnePage() {
   }, []);
 
   const stopSearching = useCallback(async () => {
-    const channel = channelRef.current;
-    channelRef.current = null;
     presenceRef.current = null;
     creatingRef.current = false;
-    if (channel) {
+    const channel = channelRef.current;
+    if (channel && channelReadyRef.current) {
       try { await channel.untrack(); } catch { }
-      await supabase.removeChannel(channel);
     }
     setStatus("idle");
-  }, []);
-
-  useEffect(() => () => { if (channelRef.current) void supabase.removeChannel(channelRef.current); }, []);
-
-  useEffect(() => {
-    const observers = DURATIONS.map((minutes) => {
-      const channel = supabase.channel(`one-on-one-matchmaking-v1-${minutes}`);
-      channel.on("presence", { event: "sync" }, () => {
-        const count = flattenPresence(channel.presenceState() as Record<string, unknown>)
-          .filter((entry) => entry.status === "searching" && entry.duration === minutes).length;
-        setQueueCounts((current) => current[minutes] === count ? current : { ...current, [minutes]: count });
-      });
-      channel.subscribe();
-      return channel;
-    });
-    return () => { observers.forEach((channel) => { void supabase.removeChannel(channel); }); };
   }, []);
 
   const enterRoom = useCallback((sessionId: string) => {
@@ -122,13 +105,73 @@ export default function OneOnOnePage() {
       enterRoom(payload.sessionId);
     } catch (error) {
       creatingRef.current = false;
-      channelRef.current = null;
       presenceRef.current = null;
-      void supabase.removeChannel(channel);
+      try { await channel.untrack(); } catch { }
       setErrorText(error instanceof Error ? error.message : "Matching failed. Please try again.");
       setStatus("error");
     }
   }, [enterRoom, user]);
+
+  useEffect(() => {
+    if (!authReady) return;
+    const currentUserId = user?.id || "";
+    const presenceKey = currentUserId || `observer-${randomTicket()}`;
+    const channel = supabase.channel("one-on-one-matchmaking-v2", {
+      config: { presence: { key: presenceKey }, broadcast: { self: false } },
+    });
+    channelRef.current = channel;
+
+    channel.on("broadcast", { event: "matched" }, ({ payload }) => {
+      const userIds = Array.isArray(payload?.userIds) ? payload.userIds.map(String) : [];
+      if (currentUserId && userIds.includes(currentUserId) && payload?.sessionId) enterRoom(String(payload.sessionId));
+    });
+    channel.on("presence", { event: "sync" }, () => {
+      const all = flattenPresence(channel.presenceState() as Record<string, unknown>);
+      const nextCounts: Record<number, number> = { 25: 0, 50: 0, 75: 0 };
+      for (const entry of all) {
+        if (entry.status === "searching" && DURATIONS.includes(entry.duration as (typeof DURATIONS)[number])) {
+          nextCounts[entry.duration] = (nextCounts[entry.duration] || 0) + 1;
+        }
+      }
+      setQueueCounts((current) => DURATIONS.every((minutes) => current[minutes] === nextCounts[minutes]) ? current : nextCounts);
+
+      const matched = all.find((entry) => entry.status === "matched" && entry.partnerUserId === currentUserId && entry.sessionId);
+      if (matched?.sessionId) {
+        enterRoom(matched.sessionId);
+        return;
+      }
+
+      const own = presenceRef.current;
+      if (!own || own.status !== "searching") return;
+      const searching = all
+        .filter((entry) => entry.status === "searching" && entry.duration === own.duration)
+        .sort((a, b) => a.joinedAt - b.joinedAt || a.ticket.localeCompare(b.ticket));
+      const ownIndex = searching.findIndex((entry) => entry.ticket === own.ticket);
+      if (ownIndex < 0) return;
+      const pairStart = ownIndex % 2 === 0 ? ownIndex : ownIndex - 1;
+      const first = searching[pairStart];
+      const second = searching[pairStart + 1];
+      if (first?.ticket === own.ticket && second) void createMatchedSession(second, channel);
+    });
+    channel.subscribe((subscriptionStatus) => {
+      if (subscriptionStatus === "SUBSCRIBED") channelReadyRef.current = true;
+      if (subscriptionStatus === "CHANNEL_ERROR" || subscriptionStatus === "TIMED_OUT") {
+        channelReadyRef.current = false;
+        if (presenceRef.current) {
+          presenceRef.current = null;
+          creatingRef.current = false;
+          setErrorText("The matching queue is temporarily unavailable. Please try again.");
+          setStatus("error");
+        }
+      }
+    });
+
+    return () => {
+      channelReadyRef.current = false;
+      if (channelRef.current === channel) channelRef.current = null;
+      void supabase.removeChannel(channel);
+    };
+  }, [authReady, createMatchedSession, enterRoom, user]);
 
   const startSearching = useCallback(async () => {
     setErrorText("");
@@ -137,7 +180,18 @@ export default function OneOnOnePage() {
       navigate(`/login?next=${encodeURIComponent("/one-on-one")}`);
       return;
     }
-    if (channelRef.current) return;
+    if (presenceRef.current) return;
+
+    const deadline = Date.now() + 6000;
+    while (!channelReadyRef.current && Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 100));
+    }
+    const channel = channelRef.current;
+    if (!channel || !channelReadyRef.current) {
+      setErrorText("The matching queue is still connecting. Please try again in a moment.");
+      setStatus("error");
+      return;
+    }
 
     const own: QueuePresence = {
       userId: user.id,
@@ -148,47 +202,16 @@ export default function OneOnOnePage() {
       status: "searching",
     };
     presenceRef.current = own;
+    creatingRef.current = false;
     setStatus("searching");
-
-    const channel = supabase.channel(`one-on-one-matchmaking-v1-${duration}`, {
-      config: { presence: { key: user.id }, broadcast: { self: false } },
-    });
-    channelRef.current = channel;
-
-    channel.on("broadcast", { event: "matched" }, ({ payload }) => {
-      const userIds = Array.isArray(payload?.userIds) ? payload.userIds.map(String) : [];
-      if (userIds.includes(user.id) && payload?.sessionId) enterRoom(String(payload.sessionId));
-    });
-    channel.on("presence", { event: "sync" }, () => {
-      const all = flattenPresence(channel.presenceState() as Record<string, unknown>);
-      const searching = all
-        .filter((entry) => entry.status === "searching" && entry.duration === duration)
-        .sort((a, b) => a.joinedAt - b.joinedAt || a.ticket.localeCompare(b.ticket));
-      setQueueCounts((current) => ({ ...current, [duration]: searching.length }));
-
-      const matched = all.find((entry) => entry.status === "matched" && entry.partnerUserId === user.id && entry.sessionId);
-      if (matched?.sessionId) return enterRoom(matched.sessionId);
-
-      const ownIndex = searching.findIndex((entry) => entry.ticket === own.ticket);
-      if (ownIndex < 0) return;
-      const pairStart = ownIndex % 2 === 0 ? ownIndex : ownIndex - 1;
-      const first = searching[pairStart];
-      const second = searching[pairStart + 1];
-      if (first?.ticket === own.ticket && second) void createMatchedSession(second, channel);
-    });
-    channel.subscribe(async (subscriptionStatus) => {
-      if (subscriptionStatus === "SUBSCRIBED") await channel.track(own);
-      if (subscriptionStatus === "CHANNEL_ERROR" || subscriptionStatus === "TIMED_OUT") {
-        channelRef.current = null;
-        presenceRef.current = null;
-        creatingRef.current = false;
-        void supabase.removeChannel(channel);
-        setErrorText("The matching queue is temporarily unavailable. Please try again.");
-        setStatus("error");
-      }
-    });
-  }, [authReady, createMatchedSession, displayName, duration, enterRoom, navigate, user]);
-
+    try {
+      await channel.track(own);
+    } catch (error) {
+      presenceRef.current = null;
+      setErrorText(error instanceof Error ? error.message : "Could not enter the matching queue.");
+      setStatus("error");
+    }
+  }, [authReady, displayName, duration, navigate, user]);
   const createInviteRoom = useCallback(async () => {
     setErrorText("");
     if (!authReady) return;
