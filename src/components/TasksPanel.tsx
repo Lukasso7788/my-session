@@ -71,6 +71,7 @@ type FocusPlanItem = {
 
 type TasksPanelProps = {
   sessionId?: string; // uuid or slug
+  oneOnOneMode?: boolean;
   theme?: RoomTheme;
   timerText?: string;
   timerTextClassName?: string;
@@ -650,6 +651,7 @@ async function fetchProfilesMap(
 
 export function TasksPanel({
   sessionId: sessionIdProp,
+  oneOnOneMode = false,
   theme = "dark",
   timerText: timerTextProp,
   timerTextClassName,
@@ -2685,12 +2687,14 @@ export function TasksPanel({
 
   const teamTasks = useMemo(() => {
     const uid = String(user?.id || "").trim();
-    const base = hideTeamTasks
-      ? sessionTasks.filter((task) => String(task.user_id || "") === uid)
-      : sessionTasks;
+    const base = oneOnOneMode
+      ? sessionTasks.filter((task) => String(task.user_id || "") !== uid)
+      : hideTeamTasks
+        ? sessionTasks.filter((task) => String(task.user_id || "") === uid)
+        : sessionTasks;
 
     return base.slice(0, TEAM_TASKS_RENDER_LIMIT);
-  }, [hideTeamTasks, sessionTasks, user?.id]);
+  }, [hideTeamTasks, oneOnOneMode, sessionTasks, user?.id]);
 
 
   const toggleTaskTimersEnabled = useCallback(() => {
@@ -3516,7 +3520,7 @@ export function TasksPanel({
         <div className="mb-5">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className={titleText + " font-inter font-bold text-[17px]"}>
-              My Tasks
+              {oneOnOneMode ? "Your Tasks" : "My Tasks"}
             </div>
 
             {onToggleAccountabilityWall ? (
@@ -3899,10 +3903,10 @@ export function TasksPanel({
 
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className={titleText + " font-inter font-bold text-[17px]"}>
-            Team Tasks
+            {oneOnOneMode ? "Your Partner's Tasks" : "Team Tasks"}
           </div>
 
-          <button
+          {!oneOnOneMode ? <button
             type="button"
             onClick={toggleHideTeamTasks}
             className={[
@@ -3920,7 +3924,7 @@ export function TasksPanel({
           >
             {hideTeamTasks ? <EyeOff size={15} /> : <Eye size={15} />}
             <span>{hideTeamTasks ? "Mine only" : "Hide others"}</span>
-          </button>
+          </button> : null}
         </div>
 
         {sessionLoading ? (
@@ -3929,7 +3933,7 @@ export function TasksPanel({
           </div>
         ) : teamTasks.length === 0 ? (
           <div className={"text-[12px] italic font-inter " + mutedText}>
-            No Team Tasks
+            {oneOnOneMode ? "Your partner's tasks will appear here" : "No Team Tasks"}
           </div>
         ) : (
           <div className="flex flex-col gap-0.5">

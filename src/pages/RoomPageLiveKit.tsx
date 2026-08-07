@@ -553,6 +553,7 @@ type SessionTemplate = {
   slug?: string | null;
   type?: string | null;
   format?: string | null;
+  session_format_type?: string | null;
 };
 
 type SessionRow = {
@@ -560,6 +561,7 @@ type SessionRow = {
   title: string;
   schedule: unknown;
   format?: string | null;
+  session_format_type?: string | null;
   start_time?: string | null;
   created_at?: string | null;
   duration_minutes?: number | null;
@@ -17614,6 +17616,11 @@ export function RoomPageLiveKit({
                       key={`tasks-${session.id}`}
                       theme="light"
                       sessionId={session.id}
+                      oneOnOneMode={
+                        String(session.session_format_type || session.format || "")
+                          .trim()
+                          .toLowerCase() === "one_on_one"
+                      }
                       timerText={remainingTime || "--:--"}
                       pictureInPictureSupported={connected && pipSupported}
                       pictureInPictureOpen={pictureInPictureOpen}

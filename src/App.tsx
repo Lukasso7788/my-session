@@ -25,6 +25,7 @@ import SenderEmailAdminPage from "./pages/SenderEmailAdminPage";
 import BlogAdminPage from "./pages/BlogAdminPage";
 import BlogIndex from "./pages/BlogIndex";
 import BlogPost from "./pages/BlogPost";
+import OneOnOnePage from "./pages/OneOnOnePage";
 
 import PricingPage from "./pages/PricingPage";
 import PricingSuccessPage from "./pages/PricingSuccessPage";
@@ -61,6 +62,9 @@ const DataDrivenSeoPage = lazy(() => import("./pages/seo/DataDrivenSeoPage"));
 
 export default function App() {
   console.log("[ROUTER] App mounted");
+  const isOneOnOneHost =
+    typeof window !== "undefined" &&
+    window.location.hostname.toLowerCase() === "1-on-1.mysession.club";
 
   useEffect(() => {
     storeReferralCodeFromUrl();
@@ -120,7 +124,8 @@ export default function App() {
     <CreateSessionModalProvider>
       <Routes>
         <Route element={<AppLayout />}>
-          <Route path="/" element={<LandingPage />} />
+          <Route path="/" element={isOneOnOneHost ? <OneOnOnePage /> : <LandingPage />} />
+          <Route path="/one-on-one" element={<OneOnOnePage />} />
 
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/pricing" element={<PricingPage />} />
