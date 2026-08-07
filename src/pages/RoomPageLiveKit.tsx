@@ -302,6 +302,7 @@ type VoiceUiCommandDefinition = {
   group: VoiceUiCommandGroupId;
   phrase: string;
   aliases?: readonly string[];
+  hint?: string;
 };
 
 const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
@@ -336,6 +337,9 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "background_forest", group: "panels", phrase: "Forest background", aliases: ["Forest", "Choose Forest", "Apply Forest"] },
   { command: "background_violet", group: "panels", phrase: "Violet background", aliases: ["Violet", "Choose Violet", "Apply Violet"] },
   { command: "background_sunset", group: "panels", phrase: "Sunset background", aliases: ["Sunset", "Choose Sunset", "Apply Sunset"] },
+  { command: "custom_background_one", group: "panels", phrase: "bg1", aliases: ["BG 1", "Custom bg1", "Custom BG 1"], hint: "bg1 / custom bg1" },
+  { command: "custom_background_two", group: "panels", phrase: "bg2", aliases: ["BG 2", "Custom bg2", "Custom BG 2"], hint: "bg2 / custom bg2" },
+  { command: "custom_background_three", group: "panels", phrase: "bg3", aliases: ["BG 3", "Custom bg3", "Custom BG 3"], hint: "bg3 / custom bg3" },
   { command: "effects_off", group: "panels", phrase: "Turn off effects", aliases: ["Remove background", "Effects off", "Disable background"] },
   { command: "background_reset", group: "panels", phrase: "Reset background", aliases: ["Default background"] },
   { command: "mirror_on", group: "panels", phrase: "Mirror camera", aliases: ["Mirror my camera"] },
@@ -2289,9 +2293,9 @@ const CUSTOM_BACKGROUND_STORE_NAME = "settings";
 const CUSTOM_BACKGROUND_STORE_KEY = "custom-background-slots-v1";
 const CUSTOM_BACKGROUND_MAX_FILE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_CUSTOM_BACKGROUND_SLOTS: CustomBackgroundSlot[] = [
-  { id: "one", label: "Custom 1", command: "Custom background one", dataUrl: "" },
-  { id: "two", label: "Custom 2", command: "Custom background two", dataUrl: "" },
-  { id: "three", label: "Custom 3", command: "Custom background three", dataUrl: "" },
+  { id: "one", label: "Custom 1", command: "bg1", dataUrl: "" },
+  { id: "two", label: "Custom 2", command: "bg2", dataUrl: "" },
+  { id: "three", label: "Custom 3", command: "bg3", dataUrl: "" },
 ];
 
 function normalizeCustomBackgroundSlots(value: unknown): CustomBackgroundSlot[] {
@@ -2300,7 +2304,7 @@ function normalizeCustomBackgroundSlots(value: unknown): CustomBackgroundSlot[] 
     const candidate = saved.find((item: any) => item?.id === fallback.id);
     return {
       ...fallback,
-      command: String(candidate?.command || fallback.command).trim().slice(0, 48),
+      command: fallback.command,
       dataUrl: typeof candidate?.dataUrl === "string" ? candidate.dataUrl : "",
     };
   });
@@ -7766,12 +7770,11 @@ export function RoomPageLiveKit({
   const matchCustomBackgroundVoiceCommand = (raw: string): VoiceUiCommand | null => {
     const normalized = normalizeVoiceUiTranscript(raw);
     if (!normalized || /[^\x00-\x7F]/.test(normalized)) return null;
-    const slot = customBackgroundSlotsRef.current.find(
-      (item) =>
-        !!item.dataUrl &&
-        !!item.command.trim() &&
-        normalizeVoiceUiTranscript(item.command) === normalized,
-    );
+    const slot = customBackgroundSlotsRef.current.find((item) => {
+      if (!item.dataUrl) return false;
+      const slotNumber = item.id === "one" ? "1" : item.id === "two" ? "2" : "3";
+      return normalized === `bg${slotNumber}` || normalized === `custom bg${slotNumber}`;
+    });
     return slot ? (`custom_background_${slot.id}` as VoiceUiCommand) : null;
   };
 
@@ -18433,7 +18436,7 @@ export function RoomPageLiveKit({
                   <div>
                     <div className="text-[12px] font-semibold">My backgrounds</div>
                     <div className={`mt-0.5 text-[10px] ${isLight ? "text-black/50" : "text-white/50"}`}>
-                      Three saved slots with your own English voice commands.
+                      Three saved slots with fixed English voice commands.
                     </div>
                   </div>
                   <span className={`text-[9px] ${isLight ? "text-black/40" : "text-white/40"}`}>8 MB each</span>
@@ -18472,24 +18475,12 @@ export function RoomPageLiveKit({
                         </button>
 
                         <div className="p-2">
-                          <input
-                            type="text"
-                            value={slot.command}
-                            maxLength={48}
-                            spellCheck={false}
-                            aria-label={`${slot.label} voice command`}
-                            title="Say this exact phrase to apply the background"
-                            onChange={(event) => {
-                              const command = event.target.value;
-                              setCustomBackgroundSlots((current) =>
-                                current.map((item) =>
-                                  item.id === slot.id ? { ...item, command } : item,
-                                ),
-                              );
-                            }}
-                            className={`h-8 w-full rounded-lg px-2 text-[10px] outline-none transition focus:ring-2 focus:ring-[#81DB86]/35 ${isLight ? "bg-black/[0.04] text-black placeholder:text-black/35" : "bg-white/[0.06] text-white placeholder:text-white/35"}`}
-                            placeholder="Voice command"
-                          />
+                          <div
+                            className={`flex h-8 w-full items-center rounded-lg px-2 text-[10px] font-semibold ${isLight ? "bg-black/[0.04] text-black/65" : "bg-white/[0.06] text-white/65"}`}
+                            title="Either command applies this background"
+                          >
+                            {slot.command} / custom {slot.command}
+                          </div>
                           <div className="mt-2 flex gap-1.5">
                             <button
                               type="button"
@@ -18716,7 +18707,7 @@ export function RoomPageLiveKit({
                                 key={definition.command}
                                 className={`rounded-xl border px-2 py-1.5 ${isLight ? "border-black/[0.08] bg-white" : "border-white/[0.08] bg-white/[0.03]"}`}
                               >
-                                <div className="text-[10px] font-semibold leading-4">{definition.phrase}</div>
+                                <div className="text-[10px] font-semibold leading-4">{definition.hint || definition.phrase}</div>
                               </div>
                             ))}
                         </div>
