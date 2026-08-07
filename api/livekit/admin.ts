@@ -54,6 +54,7 @@ type Body = {
   partnerUserId?: string;
   durationMinutes?: number;
   matchKey?: string;
+  inviteOnly?: boolean;
   trackSid?: string;
   trackKind?: "camera" | "microphone" | "video" | "audio" | string;
 
@@ -1969,6 +1970,7 @@ async function handleCreateOneOnOneSession(params: {
   body: Body;
 }) {
   const { res, sb, accessToken, body } = params;
+  const inviteOnly = body.inviteOnly === true;
   const partnerUserId = String(body.partnerUserId || "").trim().toLowerCase();
   const durationMinutes = Math.round(Number(body.durationMinutes || 0));
   const matchKey = String(body.matchKey || "")
@@ -1976,7 +1978,7 @@ async function handleCreateOneOnOneSession(params: {
     .replace(/[^a-zA-Z0-9_-]/g, "")
     .slice(0, 120);
 
-  if (!looksLikeUuid(partnerUserId)) {
+  if (!inviteOnly && !looksLikeUuid(partnerUserId)) {
     return res.status(400).json({ error: "valid_partner_required" });
   }
   if (![25, 50, 75].includes(durationMinutes)) {
@@ -1987,17 +1989,19 @@ async function handleCreateOneOnOneSession(params: {
   const { data: authData, error: authError } = await sb.auth.getUser(accessToken);
   const user = authData?.user;
   if (authError || !user?.id) return res.status(401).json({ error: "unauthorized" });
-  if (user.id === partnerUserId) {
+  if (!inviteOnly && user.id === partnerUserId) {
     return res.status(400).json({ error: "partner_must_be_different" });
   }
 
-  const { data: partnerData, error: partnerError } =
-    await sb.auth.admin.getUserById(partnerUserId);
-  if (partnerError || !partnerData?.user?.id) {
-    return res.status(404).json({ error: "partner_not_found" });
+  if (!inviteOnly) {
+    const { data: partnerData, error: partnerError } =
+      await sb.auth.admin.getUserById(partnerUserId);
+    if (partnerError || !partnerData?.user?.id) {
+      return res.status(404).json({ error: "partner_not_found" });
+    }
   }
 
-  const marker = `one-on-one:${matchKey}`;
+  const marker = inviteOnly ? `one-on-one:invite:${matchKey}` : `one-on-one:${matchKey}`;
   const { data: existing } = await sb
     .from("sessions")
     .select("id")
@@ -2005,7 +2009,15 @@ async function handleCreateOneOnOneSession(params: {
     .limit(1)
     .maybeSingle();
   if (existing?.id) {
-    return res.status(200).json({ sessionId: existing.id, reused: true });
+    if (!inviteOnly) return res.status(200).json({ sessionId: existing.id, reused: true });
+    const { data: inviteBooking } = await sb
+      .from("session_bookings")
+      .select("invite_uid")
+      .eq("session_id", existing.id)
+      .is("user_id", null)
+      .not("invite_uid", "is", null)
+      .maybeSingle();
+    return res.status(200).json({ sessionId: existing.id, inviteToken: inviteBooking?.invite_uid || null, reused: true });
   }
 
   const { data: profile } = await sb
@@ -2053,17 +2065,24 @@ async function handleCreateOneOnOneSession(params: {
     return res.status(500).json({ error: "session_create_failed", details: sessionError?.message || null, code: sessionError?.code || null });
   }
 
-  const { error: bookingError } = await sb.from("session_bookings").insert([
-    { session_id: session.id, user_id: user.id },
-    { session_id: session.id, user_id: partnerUserId },
-  ]);
+  const inviteToken = inviteOnly ? randomUUID() : "";
+  const bookingRows = inviteOnly
+    ? [
+        { session_id: session.id, user_id: user.id },
+        { session_id: session.id, user_id: null, invite_uid: inviteToken },
+      ]
+    : [
+        { session_id: session.id, user_id: user.id },
+        { session_id: session.id, user_id: partnerUserId },
+      ];
+  const { error: bookingError } = await sb.from("session_bookings").insert(bookingRows);
   if (bookingError) {
     await sb.from("sessions").delete().eq("id", session.id);
     console.error("one-on-one bookings create failed", bookingError);
     return res.status(500).json({ error: "booking_create_failed" });
   }
 
-  return res.status(200).json({ sessionId: session.id, reused: false });
+  return res.status(200).json({ sessionId: session.id, inviteToken: inviteToken || undefined, reused: false });
 }
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const totalStartedAt = nowMs();

@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { AccessToken } from "livekit-server-sdk";
 import { createClient } from "@supabase/supabase-js";
 
-type Body = { roomName?: string; identity?: string; name?: string; sessionId?: string; isHost?: boolean; isModerator?: boolean; baseUserId?: string; tabId?: string; };
+type Body = { roomName?: string; identity?: string; name?: string; sessionId?: string; isHost?: boolean; isModerator?: boolean; baseUserId?: string; tabId?: string; inviteToken?: string; };
 type ResolvedRole = { userId: string; isHost: boolean; isModerator: boolean; };
 type SessionServerResolution = { assignedServerId: string | null; livekitWsUrl: string; };
 type AdmissionResult = { allowed: boolean; error?: string; message?: string; bookedCount?: number; maxParticipants?: number; opensAt?: string | null; isBooked?: boolean; };
@@ -99,7 +99,7 @@ async function resolveRole(params: { supabaseUrl: string; serviceKey: string; ac
 }
 
 async function resolveAdmission(params: {
-  supabaseUrl: string; serviceKey: string; sessionId: string; userId: string; isHost: boolean; isModerator: boolean;
+  supabaseUrl: string; serviceKey: string; sessionId: string; userId: string; isHost: boolean; isModerator: boolean; inviteToken?: string;
 }): Promise<AdmissionResult> {
   if (params.isHost || params.isModerator) return { allowed: true };
 
@@ -122,7 +122,7 @@ async function resolveAdmission(params: {
 
   const { data: bookings, error: bErr } = await sb
     .from("session_bookings")
-    .select("user_id")
+    .select("id,user_id,invite_uid")
     .eq("session_id", params.sessionId);
 
   if (bErr) {
@@ -145,6 +145,24 @@ async function resolveAdmission(params: {
   const admissionLimit = isOneOnOneSession ? 2 : maxParticipants;
   if (isBooked) return { allowed: true, bookedCount, maxParticipants: admissionLimit, isBooked: true };
   if (isOneOnOneSession) {
+    const inviteToken = String(params.inviteToken || "").trim();
+    if (inviteToken && bookedCount < admissionLimit) {
+      const { data: claimed, error: claimError } = await sb
+        .from("session_bookings")
+        .update({ user_id: userId, invite_uid: null })
+        .eq("session_id", params.sessionId)
+        .eq("invite_uid", inviteToken)
+        .is("user_id", null)
+        .select("id")
+        .maybeSingle();
+      if (claimError) {
+        console.error("token: one-on-one invite claim failed", claimError);
+        throw new Error("admission_check_failed");
+      }
+      if (claimed?.id) {
+        return { allowed: true, bookedCount: bookedCount + 1, maxParticipants: admissionLimit, isBooked: true };
+      }
+    }
     return {
       allowed: false,
       error: "ONE_ON_ONE_ROOM_FULL",
@@ -249,7 +267,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(405).json({ error: "method_not_allowed" });
     }
 
-    const { roomName, identity, name, sessionId: bodySessionId } = parseBody(req);
+    const { roomName, identity, name, sessionId: bodySessionId, inviteToken } = parseBody(req);
 
     if (!roomName || !identity) return res.status(400).json({ error: "roomName_and_identity_required" });
 
@@ -312,6 +330,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         userId: resolved.userId,
         isHost: resolved.isHost,
         isModerator: resolved.isModerator,
+        inviteToken,
       });
 
       if (!admission.allowed) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clock3, Shuffle, UsersRound, Video } from "lucide-react";
+import { Clock3, Copy, Link2, Shuffle, UsersRound, Video } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { RealtimeChannel, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
@@ -36,7 +36,9 @@ export default function OneOnOnePage() {
   const [displayName, setDisplayName] = useState("");
   const [duration, setDuration] = useState<(typeof DURATIONS)[number]>(50);
   const [status, setStatus] = useState<"idle" | "searching" | "creating" | "matched" | "error">("idle");
-  const [queueCount, setQueueCount] = useState(0);
+  const [queueCounts, setQueueCounts] = useState<Record<number, number>>({ 25: 0, 50: 0, 75: 0 });
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteLink, setInviteLink] = useState("");
   const [errorText, setErrorText] = useState("");
   const channelRef = useRef<RealtimeChannel | null>(null);
   const presenceRef = useRef<QueuePresence | null>(null);
@@ -69,11 +71,24 @@ export default function OneOnOnePage() {
       try { await channel.untrack(); } catch { }
       await supabase.removeChannel(channel);
     }
-    setQueueCount(0);
     setStatus("idle");
   }, []);
 
   useEffect(() => () => { if (channelRef.current) void supabase.removeChannel(channelRef.current); }, []);
+
+  useEffect(() => {
+    const observers = DURATIONS.map((minutes) => {
+      const channel = supabase.channel(`one-on-one-matchmaking-v1-${minutes}`);
+      channel.on("presence", { event: "sync" }, () => {
+        const count = flattenPresence(channel.presenceState() as Record<string, unknown>)
+          .filter((entry) => entry.status === "searching" && entry.duration === minutes).length;
+        setQueueCounts((current) => current[minutes] === count ? current : { ...current, [minutes]: count });
+      });
+      channel.subscribe();
+      return channel;
+    });
+    return () => { observers.forEach((channel) => { void supabase.removeChannel(channel); }); };
+  }, []);
 
   const enterRoom = useCallback((sessionId: string) => {
     if (!sessionId) return;
@@ -149,7 +164,7 @@ export default function OneOnOnePage() {
       const searching = all
         .filter((entry) => entry.status === "searching" && entry.duration === duration)
         .sort((a, b) => a.joinedAt - b.joinedAt || a.ticket.localeCompare(b.ticket));
-      setQueueCount(searching.length);
+      setQueueCounts((current) => ({ ...current, [duration]: searching.length }));
 
       const matched = all.find((entry) => entry.status === "matched" && entry.partnerUserId === user.id && entry.sessionId);
       if (matched?.sessionId) return enterRoom(matched.sessionId);
@@ -174,6 +189,37 @@ export default function OneOnOnePage() {
     });
   }, [authReady, createMatchedSession, displayName, duration, enterRoom, navigate, user]);
 
+  const createInviteRoom = useCallback(async () => {
+    setErrorText("");
+    if (!authReady) return;
+    if (!user) {
+      navigate(`/login?next=${encodeURIComponent("/one-on-one")}`);
+      return;
+    }
+    setInviteBusy(true);
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const accessToken = auth.session?.access_token;
+      if (!accessToken) throw new Error("Your sign-in expired. Please sign in again.");
+      const response = await fetch("/api/livekit/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ action: "create_one_on_one_session", durationMinutes: duration, matchKey: randomTicket(), inviteOnly: true }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.sessionId || !payload?.inviteToken) {
+        throw new Error(String(payload?.details || payload?.error || "Could not create your private room."));
+      }
+      const relative = `/room-livekit/${payload.sessionId}?mode=one-on-one&invite=${encodeURIComponent(payload.inviteToken)}`;
+      setInviteLink(`${window.location.origin}${relative}`);
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "Could not create your private room.");
+    } finally {
+      setInviteBusy(false);
+    }
+  }, [authReady, duration, navigate, user]);
+
+  const queueCount = queueCounts[duration] || 0;
   const isBusy = status === "searching" || status === "creating" || status === "matched";
   const canCancel = status === "searching";
   const statusLabel = useMemo(() => {
@@ -201,8 +247,9 @@ export default function OneOnOnePage() {
 
             <div className="mt-5 grid grid-cols-3 gap-2">
               {DURATIONS.map((minutes) => (
-                <button key={minutes} type="button" disabled={isBusy} onClick={() => setDuration(minutes)} className={`h-11 rounded-2xl text-[14px] font-semibold transition ${duration === minutes ? "bg-[#2F2F2F] text-white" : "bg-white text-[#404040] hover:bg-[#EAE8E8]"}`}>
-                  {`${minutes} min`}
+                <button key={minutes} type="button" disabled={isBusy} onClick={() => setDuration(minutes)} className={`flex min-h-14 flex-col items-center justify-center rounded-2xl text-[14px] font-semibold transition ${duration === minutes ? "bg-[#2F2F2F] text-white" : "bg-white text-[#404040] hover:bg-[#EAE8E8]"}`}>
+                  <span>{`${minutes} min`}</span>
+                  <span className={`mt-0.5 text-[10px] font-medium ${duration === minutes ? "text-white/65" : "text-[#8A8A8A]"}`}>{`${queueCounts[minutes] || 0} searching`}</span>
                 </button>
               ))}
             </div>
@@ -211,6 +258,21 @@ export default function OneOnOnePage() {
               <Shuffle size={18} /> {canCancel ? "Cancel matching" : status === "creating" || status === "matched" ? "Preparing room" : user ? "Random match" : "Sign in to match"}
             </button>
             <p className="mt-3 min-h-5 text-center text-[13px] text-[#777]">{statusLabel}</p>
+
+            <div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-[0.12em] text-[#999]"><span className="h-px flex-1 bg-black/10" />or invite someone<span className="h-px flex-1 bg-black/10" /></div>
+            <button type="button" disabled={inviteBusy || isBusy} onClick={() => void createInviteRoom()} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-5 py-3 text-[14px] font-bold text-[#2F2F2F] ring-1 ring-black/10 transition hover:bg-[#ECEAEA] disabled:opacity-55">
+              <Link2 size={17} /> {inviteBusy ? "Creating private room…" : "Create private room link"}
+            </button>
+            {inviteLink ? (
+              <div className="mt-3 rounded-2xl bg-white p-3 ring-1 ring-black/10">
+                <p className="mb-2 text-[12px] text-[#777]">Share this one-time link. The first person who opens it becomes your partner.</p>
+                <div className="flex gap-2">
+                  <input readOnly value={inviteLink} className="min-w-0 flex-1 rounded-xl bg-[#F5F4F4] px-3 text-[12px] outline-none" />
+                  <button type="button" onClick={() => void navigator.clipboard.writeText(inviteLink)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#2F2F2F] text-white" aria-label="Copy private room link"><Copy size={16} /></button>
+                </div>
+                <button type="button" onClick={() => window.location.assign(inviteLink)} className="mt-2 w-full rounded-xl bg-[#EAF9EC] px-3 py-2 text-[13px] font-bold text-[#277D37]">Enter your room</button>
+              </div>
+            ) : null}
             {errorText ? <p className="mt-2 rounded-xl bg-[#FFF0F0] px-3 py-2 text-center text-[13px] text-[#B43D3D]">{errorText}</p> : null}
           </div>
 

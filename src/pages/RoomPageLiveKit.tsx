@@ -9546,6 +9546,7 @@ export function RoomPageLiveKit({
               : false,
           baseUserId: baseUser,
           tabId,
+          inviteToken: new URLSearchParams(window.location.search).get("invite") || undefined,
         }),
       });
 

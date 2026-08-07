@@ -19,6 +19,8 @@ type SessionRow = {
   format?: string | null;
   session_format_type?: string | null;
   is_silent?: boolean | null;
+  is_private?: boolean | null;
+  description?: string | null;
   host_profile?: {
     id?: string | null;
     full_name?: string | null;
@@ -31,6 +33,9 @@ type ActiveInfiniteRoom = {
   title?: string | null;
   participant_count?: number | string | null;
   is_private?: boolean | null;
+  format?: string | null;
+  session_format_type?: string | null;
+  description?: string | null;
 };
 
 const KYIV_TIME_ZONE = "Europe/Kyiv";
@@ -38,6 +43,20 @@ const DUE_GRACE_MINUTES = 8;
 const PRESENCE_MIN_PARTICIPANTS = 2;
 const PRESENCE_ACTIVE_WINDOW_SECONDS = 90;
 const PRESENCE_COOLDOWN_MINUTES = 45;
+
+function isDiscordEligibleSession(session: {
+  is_private?: boolean | null;
+  format?: string | null;
+  session_format_type?: string | null;
+  description?: string | null;
+}) {
+  if (session.is_private === true) return false;
+  const mode = `${session.session_format_type || ""} ${session.format || ""}`.trim().toLowerCase();
+  const description = String(session.description || "").trim().toLowerCase();
+  if (mode.includes("body") || mode.includes("one_on_one") || mode.includes("one-on-one")) return false;
+  if (description.startsWith("one-on-one:")) return false;
+  return true;
+}
 
 function boundedNumber(value: string | undefined, fallback: number, min: number, max: number) {
   const parsed = Number(value);
@@ -218,7 +237,22 @@ async function fetchActiveInfiniteRooms(env: Env) {
     }),
   });
 
-  return Array.isArray(rows) ? (rows as ActiveInfiniteRoom[]) : [];
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+
+  const activeRooms = rows as ActiveInfiniteRoom[];
+  const ids = activeRooms.map((room) => String(room.session_id || "").trim()).filter(Boolean);
+  if (ids.length === 0) return [];
+  const metadataRows = await supabaseFetch(
+    env,
+    `sessions?select=id,is_private,format,session_format_type,description&id=in.(${ids.join(",")})`,
+    { method: "GET" },
+  );
+  const metadata = new Map(
+    (Array.isArray(metadataRows) ? metadataRows : []).map((row: any) => [String(row.id), row]),
+  );
+  return activeRooms
+    .map((room) => ({ ...room, ...(metadata.get(String(room.session_id)) || {}) }))
+    .filter(isDiscordEligibleSession);
 }
 
 async function getRecentPresenceBroadcast(env: Env, sessionId: string, now: Date) {
@@ -423,6 +457,8 @@ async function fetchSessionsBetween(env: Env, start: Date, end: Date) {
     "format",
     "session_format_type",
     "is_silent",
+    "is_private",
+    "description",
     "host_profile:profiles!sessions_host_id_fkey(id,full_name,avatar_url)",
   ].join(",");
 
@@ -433,7 +469,7 @@ async function fetchSessionsBetween(env: Env, start: Date, end: Date) {
     `&order=start_time.asc`;
 
   const rows = await supabaseFetch(env, path, { method: "GET" });
-  return Array.isArray(rows) ? (rows as SessionRow[]) : [];
+  return Array.isArray(rows) ? (rows as SessionRow[]).filter(isDiscordEligibleSession) : [];
 }
 
 function buildSessionReminderMessage(env: Env, session: SessionRow, type: "session_24h" | "session_30m" | "session_started") {
