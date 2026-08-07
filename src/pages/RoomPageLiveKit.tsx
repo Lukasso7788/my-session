@@ -82,7 +82,7 @@ import {
 
 import { PreJoinModal } from "./livekit/PreJoinModalLiveKit";
 import { RoomSettingsModalLiveKit } from "./livekit/RoomSettingsModalLiveKit";
-import { VideoTile } from "./livekit/VideoTileLiveKit";
+import { SkipMeMutedStatusIcon, VideoTile } from "./livekit/VideoTileLiveKit";
 import {
   RoomAudioRenderer,
   StartAudio,
@@ -315,7 +315,7 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "screen_share_off", group: "media", phrase: "Stop sharing screen", aliases: ["Stop screen share", "Stop screen sharing", "Turn off screen sharing"] },
 
   { command: "status_skip", group: "status", phrase: "Skip me", aliases: ["Set skip me", "Mark me as skip me"] },
-  { command: "status_skip_deafened", group: "status", phrase: "Skip me + deafen", aliases: ["Skip me deafen", "Skip me deafened", "Skip me muted", "Skip me with mute", "Silent skip me"] },
+  { command: "status_skip_deafened", group: "status", phrase: "Skip me muted", aliases: ["Skip me deafen", "Skip me deafened", "Skip me muted", "Skip me with mute", "Silent skip me"] },
   { command: "status_call", group: "status", phrase: "On a call", aliases: ["I'm on a call", "I am on a call", "Set on a call"] },
   { command: "status_afk", group: "status", phrase: "AFK", aliases: ["I'm AFK", "I am AFK", "Set AFK"] },
   { command: "status_break", group: "status", phrase: "Taking a break", aliases: ["Take a break", "On a break", "I'm taking a break", "I am taking a break", "Set taking a break"] },
@@ -1963,7 +1963,7 @@ const STATUS_LABELS: Record<string, string> = {
   afk: "AFK",
   break: "Break",
   skip: "Skip me",
-  skip_deafened: "Skip me + deafen",
+  skip_deafened: "Skip me",
   call: "On a call",
   eating: "Eating",
   private: "Private",
@@ -4837,8 +4837,13 @@ function AccountabilityWall({
                       <div className="truncate font-inter text-[15px] font-bold leading-tight">
                         {name}
                       </div>
-                      <div className={`mt-1 text-[12px] ${mutedText}`}>
-                        {tile.status ? getStatusLabel(tile.status) || tile.status : tile.isLocal ? "You" : "In room"}
+                      <div className={`mt-1 flex items-center gap-1 text-[12px] ${mutedText}`}>
+                        <span>
+                          {tile.status ? getStatusLabel(tile.status) || tile.status : tile.isLocal ? "You" : "In room"}
+                        </span>
+                        {tile.isLocal && tile.status === "skip_deafened" ? (
+                          <SkipMeMutedStatusIcon theme={theme} className="h-3 w-3 shrink-0" />
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -13589,7 +13594,7 @@ export function RoomPageLiveKit({
       case "status_skip_deafened":
         await setMyStatus("skip_deafened");
         refreshStatusBadges();
-        setVoiceUiLastCommand("Skip me + deafen set");
+        setVoiceUiLastCommand("Skip me muted set");
         break;
       case "status_call":
         await setMyStatus("call");
@@ -17067,7 +17072,7 @@ export function RoomPageLiveKit({
 
                               {statusLabel ? (
                                 <span
-                                  className={`shrink-0 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${statusTone === "yellow"
+                                  className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${statusTone === "yellow"
                                     ? "border-yellow-300/60 bg-yellow-100 text-yellow-800"
                                     : statusTone === "purple"
                                       ? "border-purple-300/60 bg-purple-100 text-purple-800"
@@ -17077,9 +17082,12 @@ export function RoomPageLiveKit({
                                           ? "border-orange-300/60 bg-orange-100 text-orange-800"
                                           : "border-neutral-300/60 bg-neutral-100 text-neutral-700"
                                     }`}
-                                  title={statusLabel}
+                                  title={p.isLocal && p.status === "skip_deafened" ? "Skip me (room audio muted for you)" : statusLabel}
                                 >
-                                  {statusLabel}
+                                  <span>{statusLabel}</span>
+                                  {p.isLocal && p.status === "skip_deafened" ? (
+                                    <SkipMeMutedStatusIcon theme={theme} className="h-2.5 w-2.5" />
+                                  ) : null}
                                 </span>
                               ) : null}
                             </div>
@@ -20121,7 +20129,10 @@ export function RoomPageLiveKit({
                           }}
                           className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
                         >
-                          Skip me + deafen
+                          <span className="inline-flex items-center gap-2">
+                            <span>Skip me</span>
+                            <SkipMeMutedStatusIcon theme={theme} className="h-3.5 w-3.5" />
+                          </span>
                         </button>
 
                         <button

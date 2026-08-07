@@ -47,8 +47,7 @@ function getStatusLabel(status: unknown): string {
 
     if (key === "afk") return "AFK";
     if (key === "break") return "Break";
-    if (key === "skip") return "Skip me";
-    if (key === "skip_deafened") return "Skip me + deafen";
+    if (key === "skip" || key === "skip_deafened") return "Skip me";
     if (key === "call") return "On a call";
     if (key === "eating") return "Eating";
     if (key === "private") return "Private";
@@ -100,6 +99,39 @@ function getStatusClass(status: unknown, isLight: boolean): string {
     return isLight
         ? "bg-neutral-100 text-neutral-700 border-[#D8D0D0]"
         : "bg-white/10 text-white/80 border-[#2B2B2B]";
+}
+
+export function SkipMeMutedStatusIcon({
+    theme,
+    className = "h-3 w-3",
+}: {
+    theme: RoomTheme;
+    className?: string;
+}) {
+    const customSrc = `/icons/status-skip-muted-${theme}.svg`;
+    const fallbackSrc = `/icons/mic-off-${theme}.svg`;
+    const [src, setSrc] = useState(customSrc);
+
+    useEffect(() => {
+        setSrc(customSrc);
+    }, [customSrc]);
+
+    return (
+        <img
+            src={src}
+            className={className}
+            alt=""
+            aria-hidden="true"
+            draggable={false}
+            onError={(event) => {
+                if (src !== fallbackSrc) {
+                    setSrc(fallbackSrc);
+                    return;
+                }
+                event.currentTarget.style.display = "none";
+            }}
+        />
+    );
 }
 
 function Icon({
@@ -772,10 +804,13 @@ function VideoTileInner({
 
                             {status ? (
                                 <span
-                                    className={`shrink-0 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${getStatusClass(status, isLight)}`}
-                                    title={getStatusLabel(status)}
+                                    className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${getStatusClass(status, isLight)}`}
+                                    title={isLocal && status === "skip_deafened" ? "Skip me (room audio muted for you)" : getStatusLabel(status)}
                                 >
-                                    {getStatusLabel(status)}
+                                    <span>{getStatusLabel(status)}</span>
+                                    {isLocal && status === "skip_deafened" ? (
+                                        <SkipMeMutedStatusIcon theme={theme} className="h-2.5 w-2.5" />
+                                    ) : null}
                                 </span>
                             ) : null}
                         </>
