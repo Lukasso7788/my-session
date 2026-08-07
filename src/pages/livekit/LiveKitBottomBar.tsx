@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { AudioLines } from "lucide-react";
 import {
     Icon,
     reactionEmoji,
@@ -104,6 +105,7 @@ export function LiveKitBottomBar(props: {
     micOn: boolean;
     camOn: boolean;
     screenShareOn: boolean;
+    voiceUiEnabled?: boolean;
     unreadChat?: number;
 
     showPiP?: boolean;
@@ -123,6 +125,7 @@ export function LiveKitBottomBar(props: {
     onToggleMic: () => void;
     onToggleCam: () => void;
     onToggleScreenShare: () => void;
+    onToggleVoiceUi?: () => void;
     onLeave: () => void;
 
     onOpenParticipants: () => void;
@@ -143,6 +146,7 @@ export function LiveKitBottomBar(props: {
         micOn,
         camOn,
         screenShareOn,
+        voiceUiEnabled = false,
         unreadChat = 0,
 
         showPiP = false,
@@ -162,6 +166,7 @@ export function LiveKitBottomBar(props: {
         onToggleMic,
         onToggleCam,
         onToggleScreenShare,
+        onToggleVoiceUi,
         onLeave,
         onOpenParticipants,
         onOpenChat,
@@ -672,7 +677,7 @@ export function LiveKitBottomBar(props: {
                             className={
                                 "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " +
                                 (screenShareOn
-                                    ? "bg-[#242424] hover:bg-[#2E2E2E] text-white"
+                                    ? "bg-[#5286F6] hover:bg-[#4678E4] text-white"
                                     : ctlBtnBase)
                             }
                             title="Share screen"
@@ -684,6 +689,31 @@ export function LiveKitBottomBar(props: {
                                 className="w-5 h-5"
                             />
                         </button>
+
+                        {onToggleVoiceUi ? (
+                            <button
+                                onClick={onToggleVoiceUi}
+                                disabled={!connected}
+                                className={
+                                    "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " +
+                                    (voiceUiEnabled
+                                        ? "bg-[#5286F6] hover:bg-[#4678E4] text-white"
+                                        : ctlBtnBase)
+                                }
+                                title={voiceUiEnabled ? "Turn off voice controls" : "Turn on voice controls"}
+                                aria-pressed={voiceUiEnabled}
+                                type="button"
+                            >
+                                <AudioLines
+                                    aria-hidden="true"
+                                    className={`h-5 w-5 ${voiceUiEnabled ? "text-white" : isLight ? "text-[#2F2F2F]" : "text-white"}`}
+                                    strokeWidth={2}
+                                />
+                                <span className="sr-only">
+                                    {voiceUiEnabled ? "Voice controls on" : "Voice controls off"}
+                                </span>
+                            </button>
+                        ) : null}
 
                         <div className="relative" ref={reactionsMenuRef}>
                             <button

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { LocalAudioTrack, RemoteAudioTrack, type Participant } from "livekit-client";
-import { BarVisualizer, useIsSpeaking, useTrackVolume } from "@livekit/components-react";
+import { Track, LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
+import { BarVisualizer } from "@livekit/components-react";
 import { Pencil } from "lucide-react";
 
 type RoomTheme = "dark" | "light";
@@ -162,7 +162,7 @@ type VideoTileProps = {
     avatarUrl?: string;
     micMuted?: boolean;
     mirrorVideo?: boolean;
-    participant?: Participant;
+    isSpeaking?: boolean;
     showMenuButton?: boolean;
     onToggleMenu?: (tileId: string, anchorEl: HTMLElement | null) => void;
     onOpenProfile?: (tileId: string) => void;
@@ -171,18 +171,67 @@ type VideoTileProps = {
     currentIntention?: string | null;
 };
 
+function useHeldSpeaking(active: boolean, holdMs = 650) {
+    const [held, setHeld] = useState(active);
+    const releaseTimerRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (active) {
+            if (releaseTimerRef.current !== null) {
+                window.clearTimeout(releaseTimerRef.current);
+                releaseTimerRef.current = null;
+            }
+            setHeld(true);
+            return;
+        }
+
+        if (releaseTimerRef.current === null) {
+            releaseTimerRef.current = window.setTimeout(() => {
+                releaseTimerRef.current = null;
+                setHeld(false);
+            }, holdMs);
+        }
+    }, [active, holdMs]);
+
+    useEffect(() => () => {
+        if (releaseTimerRef.current !== null) {
+            window.clearTimeout(releaseTimerRef.current);
+        }
+    }, []);
+
+    return held;
+}
+
 function MicBadgeWithBarVisualizer({
+    theme,
     micMuted,
     audioTrack,
+    isSpeaking = false,
+    isLocal,
+    hasCameraOn,
 }: {
+    theme: RoomTheme;
     micMuted?: boolean;
     audioTrack?: LocalAudioTrack | RemoteAudioTrack;
+    isSpeaking?: boolean;
+    isLocal: boolean;
+    hasCameraOn: boolean;
 }) {
-    const badgeBaseClass =
-        "bg-[#315FAE] border-[#5286F6] text-white shadow-sm";
+    const isLight = theme === "light";
+    const isSelfMutedBadge = !!isLocal && !!micMuted;
 
-    const micIconTheme: RoomTheme = "dark";
+    const badgeBaseClass = isSelfMutedBadge
+        ? "bg-[#F65252] border-red-700/70 text-white shadow-sm"
+        : hasCameraOn
+            ? "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm"
+            : isLight
+                ? "bg-[#F5F5F5] border-[#D8D0D0] text-neutral-800 shadow-sm"
+                : "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm";
 
+    const micIconTheme: RoomTheme =
+        isSelfMutedBadge || hasCameraOn ? "dark" : isLight ? "light" : "dark";
+
+    const speaking = !micMuted && isSpeaking;
     const showVisualizer = !micMuted && !!audioTrack;
 
 
@@ -190,31 +239,46 @@ function MicBadgeWithBarVisualizer({
         <div
             className={`pointer-events-auto relative flex h-6 min-w-6 shrink-0 items-center justify-center overflow-hidden rounded-[10px] border p-1 backdrop-blur-md ${badgeBaseClass}`}
             title={
-                micMuted ? "Microphone off" : "Microphone on"
+                micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"
             }
             aria-label={
-                micMuted ? "Microphone off" : "Microphone on"
+                micMuted ? "Microphone off" : speaking ? "Speaking" : "Microphone on"
             }
         >
             {showVisualizer ? (
                 <>
-                    <div className="absolute inset-0 bg-[#315FAE]" />
+                    <div
+                        className={`absolute inset-0 ${
+                            hasCameraOn || !isLight
+                                ? "bg-white/[0.07]"
+                                : "bg-black/[0.05]"
+                        }`}
+                    />
 
                     <div className="absolute inset-0 overflow-hidden rounded-[9px]">
                         <BarVisualizer
                             track={audioTrack}
                             barCount={1}
-                            options={{ minHeight: 12, maxHeight: 100 }}
-                            className="absolute inset-0 flex items-end justify-stretch bg-transparent"
+                            options={{ minHeight: 16, maxHeight: 100 }}
+                            className="absolute inset-0 flex items-end justify-stretch"
                             style={
                                 {
                                     "--lk-va-bar-width": "100%",
                                     "--lk-va-bar-border-radius": "0px",
+                                    "--lk-va-bar-bg": hasCameraOn || !isLight
+                                        ? "rgba(82, 134, 246, 0.18)"
+                                        : "rgba(82, 134, 246, 0.16)",
+                                    "--lk-fg": hasCameraOn || !isLight
+                                        ? "rgba(82, 134, 246, 0.95)"
+                                        : "rgba(82, 134, 246, 0.90)",
                                     background: "transparent",
                                 } as React.CSSProperties
                             }
                         >
-                            <span className="block w-full rounded-none bg-[#5286F6] transition-[height] duration-150 ease-out" />
+                            <span
+                                className="lk-audio-bar block h-full w-full rounded-none bg-[#5286F6]/90 transition-[height] duration-150 ease-out"
+                                style={{ width: "100%" }}
+                            />
                         </BarVisualizer>
                     </div>
                 </>
@@ -244,7 +308,7 @@ function VideoTileInner({
     avatarUrl,
     micMuted,
     mirrorVideo = true,
-    participant,
+    isSpeaking = false,
     showMenuButton = false,
     density = "normal",
     currentIntention,
@@ -269,17 +333,14 @@ function VideoTileInner({
         : "bg-[#81DB86]/80 text-[#F3F3F3] border-[#2B2B2B]";
 
     const hasCameraOn = !!videoTrack;
-    const livekitIsSpeaking = useIsSpeaking(participant);
-    const livekitVolume = useTrackVolume(audioTrack);
-    const speakingLevel = micMuted
-        ? 0
-        : Math.min(1, Math.max(0, (livekitVolume - 0.015) * 3.2));
-    const showSpeakingFrame =
-        !micMuted && !!audioTrack && (livekitIsSpeaking || speakingLevel > 0.015);
-    const speakingFrameWidth = 2 + speakingLevel * 3;
-    const speakingFrameOpacity = showSpeakingFrame
-        ? Math.min(1, 0.52 + speakingLevel * 0.48)
-        : 0;
+    const heldSpeaking = useHeldSpeaking(!micMuted && isSpeaking);
+    const speakingFrameClass = heldSpeaking
+        ? isLight
+            ? "border-[#5286F6] shadow-[0_0_0_2px_rgba(82,134,246,0.28),0_0_1.1rem_rgba(82,134,246,0.18)]"
+            : "border-[#5286F6] shadow-[0_0_0_2px_rgba(82,134,246,0.34),0_0_1.1rem_rgba(82,134,246,0.22)]"
+        : isLight
+            ? "border-[#D8D0D0] shadow-none"
+            : "border-[#2B2B2B] shadow-none";
 
     const namePillClass = hasCameraOn
         ? "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm"
@@ -503,18 +564,13 @@ function VideoTileInner({
     return (
         <div
             ref={wrapRef}
-            data-lk-speaking={showSpeakingFrame}
             className={
-                "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border transition-[box-shadow] duration-150 ease-out " +
+                "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border transition-[border-color,box-shadow] duration-300 ease-out " +
                 (isCompact ? "rounded-xl " : "rounded-2xl ") +
-                (isLight ? "border-[#D8D0D0] " : "border-[#2B2B2B] ") +
+                speakingFrameClass +
+                " " +
                 tileBgClass
             }
-            style={{
-                boxShadow: showSpeakingFrame
-                    ? `0 0 0 ${speakingFrameWidth}px rgba(82, 134, 246, ${speakingFrameOpacity})`
-                    : "0 0 0 0 rgba(82, 134, 246, 0)",
-            }}
         >
             <div className="absolute inset-0">
                 {videoTrack ? (
@@ -726,8 +782,12 @@ function VideoTileInner({
                 </div>
 
                 <MicBadgeWithBarVisualizer
+                    theme={theme}
                     micMuted={micMuted}
                     audioTrack={audioTrack}
+                    isSpeaking={heldSpeaking}
+                    isLocal={isLocal}
+                    hasCameraOn={hasCameraOn}
                 />
             </div>
         </div>
@@ -747,7 +807,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.avatarUrl === next.avatarUrl &&
         prev.micMuted === next.micMuted &&
         prev.mirrorVideo === next.mirrorVideo &&
-        prev.participant === next.participant &&
+        prev.isSpeaking === next.isSpeaking &&
         prev.showMenuButton === next.showMenuButton &&
         prev.density === next.density &&
         prev.currentIntention === next.currentIntention &&

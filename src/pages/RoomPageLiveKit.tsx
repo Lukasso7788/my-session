@@ -22,7 +22,6 @@ import {
   RoomEvent,
   Track,
   RemoteParticipant,
-  type Participant,
   LocalVideoTrack,
   LocalAudioTrack,
   RemoteAudioTrack,
@@ -621,7 +620,7 @@ type TileModel = {
   videoTrack?: Track;
   audioTrack?: LocalAudioTrack | RemoteAudioTrack;
   audioLevel?: number;
-  participant?: Participant;
+  isSpeaking?: boolean;
 
   participantIdentity?: string;
   participantUserId?: string;
@@ -654,7 +653,7 @@ function areTileListsEqual(prev: TileModel[], next: TileModel[]) {
       a.videoTrack === b.videoTrack &&
       a.audioTrack === b.audioTrack &&
       a.audioLevel === b.audioLevel &&
-      a.participant === b.participant &&
+      a.isSpeaking === b.isSpeaking &&
       a.participantIdentity === b.participantIdentity &&
       a.participantUserId === b.participantUserId &&
       a.micTrackSid === b.micTrackSid &&
@@ -11492,7 +11491,7 @@ export function RoomPageLiveKit({
       isLocal: true,
       videoTrack: localCamTrack,
       audioTrack: localAudioTrackRaw,
-      participant: lp,
+      isSpeaking: !localMicMuted && !!lp.isSpeaking,
       participantIdentity: localIdentity || undefined,
       participantUserId: localUserId || undefined,
       micMuted: localMicMuted,
@@ -11562,7 +11561,7 @@ export function RoomPageLiveKit({
         isLocal: false,
         videoTrack: vt,
         audioTrack: remoteAudioTrack,
-        participant: rp,
+        isSpeaking: !remoteMicMuted && !!rp.isSpeaking,
         participantIdentity: exactIdentity || undefined,
         participantUserId: baseUserId || undefined,
         micTrackSid: micPub?.trackSid,
@@ -12078,6 +12077,7 @@ export function RoomPageLiveKit({
       r.on(RoomEvent.TrackPublished as any, refresh as any);
       r.on(RoomEvent.TrackUnpublished as any, refresh as any);
       r.on(RoomEvent.TrackSubscriptionFailed as any, refresh as any);
+      r.on(RoomEvent.ActiveSpeakersChanged, refresh);
       r.on(RoomEvent.LocalTrackPublished as any, refresh as any);
       r.on(RoomEvent.LocalTrackUnpublished as any, refresh as any);
       r.on(
@@ -15824,7 +15824,7 @@ export function RoomPageLiveKit({
             avatarUrl={tileAvatarUrl}
             micMuted={micMuted}
             mirrorVideo={t.isLocal ? previewMirrored : false}
-            participant={t.kind === "screen" ? undefined : t.participant}
+            isSpeaking={!!t.isSpeaking}
             currentIntention={getCurrentIntentionForTile(t)}
             onToggleMenu={handleToggleTileMenu}
             showMenuButton={
@@ -15900,7 +15900,7 @@ export function RoomPageLiveKit({
           avatarUrl={tileAvatarUrl}
           micMuted={micMuted}
           mirrorVideo={t.isLocal ? previewMirrored : false}
-          participant={t.kind === "screen" ? undefined : t.participant}
+          isSpeaking={!!t.isSpeaking}
           currentIntention={getCurrentIntentionForTile(t)}
           density="compact"
           onToggleMenu={handleToggleTileMenu}
@@ -18747,6 +18747,7 @@ export function RoomPageLiveKit({
           micOn={micOn}
           camOn={camOn}
           screenShareOn={screenShareOn}
+          voiceUiEnabled={voiceUiEnabled}
           unreadChat={unreadChat}
           showPiP={connected && pipSupported}
           pipActive={pictureInPictureOpen}
@@ -18759,6 +18760,13 @@ export function RoomPageLiveKit({
           onToggleMic={() => toggleMic().catch(() => { })}
           onToggleCam={() => toggleCam().catch(() => { })}
           onToggleScreenShare={() => toggleScreenShare().catch(() => { })}
+          onToggleVoiceUi={() => {
+            const nextEnabled = !voiceUiEnabled;
+            setVoiceUiEnabled(nextEnabled);
+            setVoiceUiHelpOpen(false);
+            setVoiceUiLastCommand("");
+            setVoiceUiLastHeard("");
+          }}
           onLeave={() => leave().catch(() => { })}
           onOpenParticipants={() => openRightTab("participants")}
           onOpenChat={() => {
@@ -18928,13 +18936,6 @@ export function RoomPageLiveKit({
           onResetAllParticipantVolumes={() =>
             setVolumePctByParticipantKey({})
           }
-          voiceUiEnabled={voiceUiEnabled}
-          onChangeVoiceUiEnabled={(enabled) => {
-            setVoiceUiEnabled(enabled);
-            setVoiceUiHelpOpen(false);
-            setVoiceUiLastCommand("");
-            setVoiceUiLastHeard("");
-          }}
           colorCorrectionEnabled={isLgUp && colorCorrectionEnabled}
           brightness={colorCorrection.brightness}
           contrast={colorCorrection.contrast}

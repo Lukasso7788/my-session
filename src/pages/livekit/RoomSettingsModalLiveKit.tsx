@@ -1114,9 +1114,6 @@ export function RoomSettingsModalLiveKit({
     onChangeStageSoundsEnabled,
     stageSoundsVolume,
     onChangeStageSoundsVolume,
-    voiceUiEnabled = false,
-    onChangeVoiceUiEnabled,
-
     colorCorrectionEnabled,
     brightness,
     contrast,
@@ -1192,9 +1189,6 @@ export function RoomSettingsModalLiveKit({
     onChangeStageSoundsEnabled: (v: boolean) => void;
     stageSoundsVolume: number;
     onChangeStageSoundsVolume: (v: number) => void;
-    voiceUiEnabled?: boolean;
-    onChangeVoiceUiEnabled?: (v: boolean) => void;
-
     colorCorrectionEnabled: boolean;
     brightness: number;
     contrast: number;
@@ -1388,17 +1382,6 @@ export function RoomSettingsModalLiveKit({
                 </div>
 
                 <div className="ms-room-settings-scrollbar custom-scrollbar px-5 sm:px-6 py-4 sm:py-5 flex-1 overflow-y-auto overscroll-contain">
-                    {onChangeVoiceUiEnabled ? (
-                        <div className={`mb-5 rounded-2xl p-4 ${sectionCls}`}>
-                            <ToggleRow
-                                label="Voice control"
-                                description="Listen for English voice commands in the room. Turning this off also hides the Voice Control indicator and command popup."
-                                checked={voiceUiEnabled}
-                                onChange={onChangeVoiceUiEnabled}
-                                isLight={isLight}
-                            />
-                        </div>
-                    ) : null}
 
                     <div className={`mb-5 rounded-2xl p-4 ${sectionCls}`}>
                         <div className="flex items-start justify-between gap-3 mb-4">
