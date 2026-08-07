@@ -172,6 +172,7 @@ type VoiceUiCommand =
   | `click_control_${string}`
   | "status_afk"
   | "status_skip"
+  | "status_skip_deafened"
   | "status_call"
   | "status_break"
   | "status_eating"
@@ -314,6 +315,7 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "screen_share_off", group: "media", phrase: "Stop sharing screen", aliases: ["Stop screen share", "Stop screen sharing", "Turn off screen sharing"] },
 
   { command: "status_skip", group: "status", phrase: "Skip me", aliases: ["Set skip me", "Mark me as skip me"] },
+  { command: "status_skip_deafened", group: "status", phrase: "Skip me + deafen", aliases: ["Skip me deafen", "Skip me deafened", "Skip me muted", "Skip me with mute", "Silent skip me"] },
   { command: "status_call", group: "status", phrase: "On a call", aliases: ["I'm on a call", "I am on a call", "Set on a call"] },
   { command: "status_afk", group: "status", phrase: "AFK", aliases: ["I'm AFK", "I am AFK", "Set AFK"] },
   { command: "status_break", group: "status", phrase: "Taking a break", aliases: ["Take a break", "On a break", "I'm taking a break", "I am taking a break", "Set taking a break"] },
@@ -1961,6 +1963,7 @@ const STATUS_LABELS: Record<string, string> = {
   afk: "AFK",
   break: "Break",
   skip: "Skip me",
+  skip_deafened: "Skip me + deafen",
   call: "On a call",
   eating: "Eating",
   private: "Private",
@@ -1980,7 +1983,7 @@ function getStatusTone(status: unknown): string {
 
   if (key === "afk") return "neutral";
   if (key === "break") return "yellow";
-  if (key === "skip") return "purple";
+  if (key === "skip" || key === "skip_deafened") return "purple";
   if (key === "call") return "blue";
   if (key === "eating") return "orange";
   if (key === "private") return "neutral";
@@ -5367,7 +5370,7 @@ export function RoomPageLiveKit({
 
     try {
       await me.setMetadata(JSON.stringify(nextMeta));
-      setSelfDeafened(status === "skip");
+      setSelfDeafened(status === "skip_deafened");
     } catch (e) {
       console.error("setMetadata failed", e);
     }
@@ -8062,7 +8065,7 @@ export function RoomPageLiveKit({
     const syncSkipMeDeafen = () => {
       try {
         const metadata = JSON.parse(room.localParticipant.metadata || "{}");
-        setSelfDeafened(metadata?.status === "skip");
+        setSelfDeafened(metadata?.status === "skip_deafened");
       } catch {
         setSelfDeafened(false);
       }
@@ -13582,6 +13585,11 @@ export function RoomPageLiveKit({
         await setMyStatus("skip");
         refreshStatusBadges();
         setVoiceUiLastCommand("Skip me badge set");
+        break;
+      case "status_skip_deafened":
+        await setMyStatus("skip_deafened");
+        refreshStatusBadges();
+        setVoiceUiLastCommand("Skip me + deafen set");
         break;
       case "status_call":
         await setMyStatus("call");
@@ -20098,6 +20106,22 @@ export function RoomPageLiveKit({
                           className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
                         >
                           Skip me
+                        </button>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await setMyStatus("skip_deafened");
+                            closeTileMenu();
+                            scheduleRebuildTiles();
+                            window.setTimeout(() => scheduleRebuildTiles(), 80);
+                            window.setTimeout(
+                              () => scheduleRebuildTiles(),
+                              220,
+                            );
+                          }}
+                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
+                        >
+                          Skip me + deafen
                         </button>
 
                         <button

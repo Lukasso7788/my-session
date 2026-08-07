@@ -48,6 +48,7 @@ function getStatusLabel(status: unknown): string {
     if (key === "afk") return "AFK";
     if (key === "break") return "Break";
     if (key === "skip") return "Skip me";
+    if (key === "skip_deafened") return "Skip me + deafen";
     if (key === "call") return "On a call";
     if (key === "eating") return "Eating";
     if (key === "private") return "Private";
@@ -72,7 +73,7 @@ function getStatusClass(status: unknown, isLight: boolean): string {
             : "bg-yellow-400/15 text-yellow-200 border-yellow-300/25";
     }
 
-    if (key === "skip") {
+    if (key === "skip" || key === "skip_deafened") {
         return isLight
             ? "bg-purple-100 text-purple-800 border-purple-300/60"
             : "bg-purple-400/15 text-purple-200 border-purple-300/25";
