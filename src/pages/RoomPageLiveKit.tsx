@@ -134,6 +134,7 @@ type VoiceUiCommand =
   | "background_forest"
   | "background_violet"
   | "background_sunset"
+  | `custom_background_${string}`
   | "blur_apply"
   | `blur_strength_${number}`
   | "effects_off"
@@ -2274,6 +2275,91 @@ const FX_BG_PRESETS = [
     url: makeBgPresetDataUrl("#1c0d10", "#7c2d12", "#11070a", "#fb7185"),
   },
 ];
+
+type CustomBackgroundSlotId = "one" | "two" | "three";
+type CustomBackgroundSlot = {
+  id: CustomBackgroundSlotId;
+  label: string;
+  command: string;
+  dataUrl: string;
+};
+
+const CUSTOM_BACKGROUND_DB_NAME = "mysession-room-backgrounds";
+const CUSTOM_BACKGROUND_STORE_NAME = "settings";
+const CUSTOM_BACKGROUND_STORE_KEY = "custom-background-slots-v1";
+const CUSTOM_BACKGROUND_MAX_FILE_BYTES = 8 * 1024 * 1024;
+const DEFAULT_CUSTOM_BACKGROUND_SLOTS: CustomBackgroundSlot[] = [
+  { id: "one", label: "Custom 1", command: "Custom background one", dataUrl: "" },
+  { id: "two", label: "Custom 2", command: "Custom background two", dataUrl: "" },
+  { id: "three", label: "Custom 3", command: "Custom background three", dataUrl: "" },
+];
+
+function normalizeCustomBackgroundSlots(value: unknown): CustomBackgroundSlot[] {
+  const saved = Array.isArray(value) ? value : [];
+  return DEFAULT_CUSTOM_BACKGROUND_SLOTS.map((fallback) => {
+    const candidate = saved.find((item: any) => item?.id === fallback.id);
+    return {
+      ...fallback,
+      command: String(candidate?.command || fallback.command).trim().slice(0, 48),
+      dataUrl: typeof candidate?.dataUrl === "string" ? candidate.dataUrl : "",
+    };
+  });
+}
+
+function readImageFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error("background_file_read_failed"));
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.readAsDataURL(file);
+  });
+}
+
+function openCustomBackgroundDb(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === "undefined") return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(CUSTOM_BACKGROUND_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const database = request.result;
+      if (!database.objectStoreNames.contains(CUSTOM_BACKGROUND_STORE_NAME)) {
+        database.createObjectStore(CUSTOM_BACKGROUND_STORE_NAME);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("background_db_open_failed"));
+  });
+}
+
+async function loadCustomBackgroundSlots(): Promise<CustomBackgroundSlot[]> {
+  try {
+    const database = await openCustomBackgroundDb();
+    if (!database) return DEFAULT_CUSTOM_BACKGROUND_SLOTS;
+    const value = await new Promise<unknown>((resolve, reject) => {
+      const transaction = database.transaction(CUSTOM_BACKGROUND_STORE_NAME, "readonly");
+      const request = transaction.objectStore(CUSTOM_BACKGROUND_STORE_NAME).get(CUSTOM_BACKGROUND_STORE_KEY);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("background_db_read_failed"));
+    });
+    database.close();
+    return normalizeCustomBackgroundSlots(value);
+  } catch (error) {
+    console.warn("custom background slots could not be loaded", error);
+    return DEFAULT_CUSTOM_BACKGROUND_SLOTS;
+  }
+}
+
+async function saveCustomBackgroundSlots(slots: CustomBackgroundSlot[]) {
+  const database = await openCustomBackgroundDb();
+  if (!database) return;
+  await new Promise<void>((resolve, reject) => {
+    const transaction = database.transaction(CUSTOM_BACKGROUND_STORE_NAME, "readwrite");
+    transaction.objectStore(CUSTOM_BACKGROUND_STORE_NAME).put(slots, CUSTOM_BACKGROUND_STORE_KEY);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error || new Error("background_db_write_failed"));
+    transaction.onabort = () => reject(transaction.error || new Error("background_db_write_aborted"));
+  });
+  database.close();
+}
 
 const LK_CAPTURE_WIDTH = 960;
 const LK_CAPTURE_HEIGHT = 540;
@@ -7566,6 +7652,14 @@ export function RoomPageLiveKit({
   // FX
   const [videoFxMode, setVideoFxMode] = useState<FxMode>("off");
   const [bgImageUrl, setBgImageUrl] = useState<string>(DEFAULT_BG_DATA_URL);
+  const [customBackgroundSlots, setCustomBackgroundSlots] = useState<CustomBackgroundSlot[]>(
+    DEFAULT_CUSTOM_BACKGROUND_SLOTS,
+  );
+  const [customBackgroundSlotsLoaded, setCustomBackgroundSlotsLoaded] = useState(false);
+  const customBackgroundSlotsRef = useRef<CustomBackgroundSlot[]>(
+    DEFAULT_CUSTOM_BACKGROUND_SLOTS,
+  );
+  const customBgUploadSlotRef = useRef<CustomBackgroundSlotId | null>(null);
   const [fxError, setFxError] = useState<string>("");
   const [fxApplying, setFxApplying] = useState(false);
   const [fxStatusText, setFxStatusText] = useState<string>("");
@@ -7646,6 +7740,40 @@ export function RoomPageLiveKit({
   const voiceUiCommandHandlerRef = useRef<
     (command: VoiceUiCommand) => Promise<void>
   >(async () => undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCustomBackgroundSlots().then((slots) => {
+      if (cancelled) return;
+      customBackgroundSlotsRef.current = slots;
+      setCustomBackgroundSlots(slots);
+      setCustomBackgroundSlotsLoaded(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    customBackgroundSlotsRef.current = customBackgroundSlots;
+    if (!customBackgroundSlotsLoaded) return;
+    void saveCustomBackgroundSlots(customBackgroundSlots).catch((error) => {
+      console.warn("custom background slots could not be saved", error);
+      setFxError("Custom background could not be saved on this device");
+    });
+  }, [customBackgroundSlots, customBackgroundSlotsLoaded]);
+
+  const matchCustomBackgroundVoiceCommand = (raw: string): VoiceUiCommand | null => {
+    const normalized = normalizeVoiceUiTranscript(raw);
+    if (!normalized || /[^\x00-\x7F]/.test(normalized)) return null;
+    const slot = customBackgroundSlotsRef.current.find(
+      (item) =>
+        !!item.dataUrl &&
+        !!item.command.trim() &&
+        normalizeVoiceUiTranscript(item.command) === normalized,
+    );
+    return slot ? (`custom_background_${slot.id}` as VoiceUiCommand) : null;
+  };
 
   const playSoundscapeLocally = async (
     id: RoomSoundscapeId,
@@ -12981,6 +13109,24 @@ export function RoomPageLiveKit({
       return;
     }
 
+    if (command.startsWith("custom_background_")) {
+      if (shouldDisableBackgroundFx) {
+        setVoiceUiLastCommand("Backgrounds unavailable on this device");
+        return;
+      }
+      const slotId = command.slice("custom_background_".length) as CustomBackgroundSlotId;
+      const slot = customBackgroundSlotsRef.current.find((item) => item.id === slotId);
+      if (!slot?.dataUrl) {
+        setVoiceUiLastCommand("Custom background slot is empty");
+        return;
+      }
+      openVoiceFxPopup();
+      setBgImageUrl(slot.dataUrl);
+      await applyVideoFx("bg", slot.dataUrl);
+      setVoiceUiLastCommand(`${slot.label} applied`);
+      return;
+    }
+
     if (command.startsWith("blur_strength_")) {
       if (shouldDisableBackgroundFx) {
         setVoiceUiLastCommand("Blur unavailable on this device");
@@ -13657,7 +13803,9 @@ export function RoomPageLiveKit({
               continue;
             }
 
-            matchedCommand = parseVoiceUiCommand(transcript);
+            matchedCommand =
+              parseVoiceUiCommand(transcript) ||
+              matchCustomBackgroundVoiceCommand(transcript);
             if (matchedCommand) {
               matchedTranscript = transcript;
               break;
@@ -18182,8 +18330,34 @@ export function RoomPageLiveKit({
           onChange={async (event) => {
             const file = event.target.files?.[0];
             event.currentTarget.value = "";
-            if (!file) return;
+            if (!file) {
+              customBgUploadSlotRef.current = null;
+              return;
+            }
             setVoiceFxUploadRequested(false);
+            const customSlotId = customBgUploadSlotRef.current;
+            customBgUploadSlotRef.current = null;
+            if (customSlotId) {
+              if (file.size > CUSTOM_BACKGROUND_MAX_FILE_BYTES) {
+                setFxError("Custom backgrounds must be 8 MB or smaller");
+                return;
+              }
+              try {
+                const dataUrl = await readImageFileAsDataUrl(file);
+                setCustomBackgroundSlots((current) =>
+                  current.map((slot) =>
+                    slot.id === customSlotId ? { ...slot, dataUrl } : slot,
+                  ),
+                );
+                setBgImageUrl(dataUrl);
+                await applyVideoFx("bg", dataUrl);
+                setVoiceUiLastCommand("Custom background saved and applied");
+              } catch (error) {
+                console.error("custom background upload failed", error);
+                setFxError("Failed to save selected background");
+              }
+              return;
+            }
             try {
               if (uploadedBgUrlRef.current) URL.revokeObjectURL(uploadedBgUrlRef.current);
               const url = URL.createObjectURL(file);
@@ -18212,7 +18386,7 @@ export function RoomPageLiveKit({
               onClick={closeVoiceFxPopup}
             />
             <div
-              className={`relative w-full max-w-[520px] rounded-3xl border p-4 shadow-2xl transition-[opacity,transform] duration-200 ease-out ${voiceFxPopupVisible ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-[0.97] opacity-0"} ${isLight ? "border-black/10 bg-[#F8F8F8] text-black" : "border-white/10 bg-[#1B1B1B] text-white"}`}
+              className={`relative max-h-[min(760px,calc(100dvh-2rem))] w-full max-w-[680px] overflow-y-auto rounded-3xl border p-4 shadow-2xl transition-[opacity,transform] duration-200 ease-out ${voiceFxPopupVisible ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-[0.97] opacity-0"} ${isLight ? "border-black/10 bg-[#F8F8F8] text-black" : "border-white/10 bg-[#1B1B1B] text-white"}`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -18252,6 +18426,112 @@ export function RoomPageLiveKit({
                     </button>
                   );
                 })}
+              </div>
+
+              <div className="mt-4">
+                <div className="flex items-end justify-between gap-3">
+                  <div>
+                    <div className="text-[12px] font-semibold">My backgrounds</div>
+                    <div className={`mt-0.5 text-[10px] ${isLight ? "text-black/50" : "text-white/50"}`}>
+                      Three saved slots with your own English voice commands.
+                    </div>
+                  </div>
+                  <span className={`text-[9px] ${isLight ? "text-black/40" : "text-white/40"}`}>8 MB each</span>
+                </div>
+
+                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {customBackgroundSlots.map((slot) => {
+                    const selected =
+                      !!slot.dataUrl && videoFxMode === "bg" && bgImageUrl === slot.dataUrl;
+                    return (
+                      <div
+                        key={slot.id}
+                        className={`overflow-hidden rounded-2xl border transition ${selected ? "border-[#81DB86] ring-2 ring-[#81DB86]/25" : isLight ? "border-black/10 bg-white" : "border-white/10 bg-white/[0.04]"}`}
+                      >
+                        <button
+                          type="button"
+                          disabled={!slot.dataUrl || fxApplying}
+                          onClick={async () => {
+                            if (!slot.dataUrl) return;
+                            setBgImageUrl(slot.dataUrl);
+                            await applyVideoFx("bg", slot.dataUrl);
+                            setVoiceUiLastCommand(`${slot.label} applied`);
+                          }}
+                          className={`relative block aspect-video w-full overflow-hidden text-left transition disabled:cursor-default ${slot.dataUrl ? "hover:brightness-105" : isLight ? "bg-black/[0.04]" : "bg-white/[0.04]"}`}
+                        >
+                          {slot.dataUrl ? (
+                            <img src={slot.dataUrl} alt={`${slot.label} preview`} className="h-full w-full object-cover" />
+                          ) : (
+                            <span className={`absolute inset-0 flex items-center justify-center text-[10px] ${isLight ? "text-black/35" : "text-white/35"}`}>
+                              Empty slot
+                            </span>
+                          )}
+                          {selected ? (
+                            <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#81DB86] text-[11px] text-black">✓</span>
+                          ) : null}
+                        </button>
+
+                        <div className="p-2">
+                          <input
+                            type="text"
+                            value={slot.command}
+                            maxLength={48}
+                            spellCheck={false}
+                            aria-label={`${slot.label} voice command`}
+                            title="Say this exact phrase to apply the background"
+                            onChange={(event) => {
+                              const command = event.target.value;
+                              setCustomBackgroundSlots((current) =>
+                                current.map((item) =>
+                                  item.id === slot.id ? { ...item, command } : item,
+                                ),
+                              );
+                            }}
+                            className={`h-8 w-full rounded-lg px-2 text-[10px] outline-none transition focus:ring-2 focus:ring-[#81DB86]/35 ${isLight ? "bg-black/[0.04] text-black placeholder:text-black/35" : "bg-white/[0.06] text-white placeholder:text-white/35"}`}
+                            placeholder="Voice command"
+                          />
+                          <div className="mt-2 flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                customBgUploadSlotRef.current = slot.id;
+                                setVoiceFxUploadRequested(false);
+                                try {
+                                  voiceFxUploadInputRef.current?.showPicker();
+                                } catch {
+                                  voiceFxUploadInputRef.current?.click();
+                                }
+                              }}
+                              className={`h-7 flex-1 rounded-lg text-[10px] font-semibold transition ${isLight ? "bg-[#2F2F2F] text-white hover:bg-black" : "bg-white text-black hover:bg-white/85"}`}
+                            >
+                              {slot.dataUrl ? "Replace" : "Upload"}
+                            </button>
+                            {slot.dataUrl ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCustomBackgroundSlots((current) =>
+                                    current.map((item) =>
+                                      item.id === slot.id ? { ...item, dataUrl: "" } : item,
+                                    ),
+                                  );
+                                  if (bgImageUrl === slot.dataUrl) {
+                                    setBgImageUrl(DEFAULT_BG_DATA_URL);
+                                    void applyVideoFx("bg", DEFAULT_BG_DATA_URL);
+                                  }
+                                }}
+                                className={`h-7 rounded-lg px-2 text-[10px] transition ${isLight ? "bg-black/[0.05] hover:bg-black/10" : "bg-white/[0.07] hover:bg-white/10"}`}
+                                aria-label={`Clear ${slot.label}`}
+                              >
+                                Clear
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="mt-3 grid grid-cols-2 gap-2">
@@ -18329,7 +18609,7 @@ export function RoomPageLiveKit({
               ) : null}
 
               <div className={`mt-3 text-center text-[10px] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                Voice: “Forest background”, “Apply Blur”, or “Upload Image”
+                Voice: use a preset command, “Apply Blur”, or the phrase assigned to a custom slot
               </div>
             </div>
           </div>
