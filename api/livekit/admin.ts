@@ -2031,7 +2031,11 @@ async function handleCreateOneOnOneSession(params: {
       status: "planned",
       is_silent: false,
       is_private: true,
-      max_participants: 2,
+      // Production currently enforces sessions.max_participants >= 3.
+      // max_slots keeps the intended product capacity, while token admission
+      // restricts this private room to the two matched bookings.
+      max_slots: 2,
+      max_participants: 3,
       schedule: [
         {
           name: "Focus",

@@ -97,7 +97,9 @@ export default function OneOnOnePage() {
         body: JSON.stringify({ action: "create_one_on_one_session", partnerUserId: partner.userId, durationMinutes: own.duration, matchKey }),
       });
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload?.sessionId) throw new Error(String(payload?.error || "Could not create your 1:1 room."));
+      if (!response.ok || !payload?.sessionId) {
+        throw new Error(String(payload?.details || payload?.error || "Could not create your 1:1 room."));
+      }
       const matchedPresence: QueuePresence = { ...own, status: "matched", sessionId: payload.sessionId, partnerUserId: partner.userId };
       presenceRef.current = matchedPresence;
       await channel.track(matchedPresence);

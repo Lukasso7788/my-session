@@ -107,7 +107,7 @@ async function resolveAdmission(params: {
 
   const { data: s, error: sErr } = await sb
     .from("sessions")
-    .select("id, host_id, start_time, max_participants, status, format, session_format_type, description")
+    .select("id, host_id, start_time, max_participants, max_slots, status, format, session_format_type, description")
     .eq("id", params.sessionId)
     .maybeSingle();
 
@@ -142,14 +142,15 @@ async function resolveAdmission(params: {
   const isOneOnOneSession =
     sessionMode === "one_on_one" ||
     String((s as any).description || "").startsWith("one-on-one:");
-  if (isBooked) return { allowed: true, bookedCount, maxParticipants, isBooked: true };
-  if (isOneOnOneSession && bookedCount >= maxParticipants) {
+  const admissionLimit = isOneOnOneSession ? 2 : maxParticipants;
+  if (isBooked) return { allowed: true, bookedCount, maxParticipants: admissionLimit, isBooked: true };
+  if (isOneOnOneSession) {
     return {
       allowed: false,
       error: "ONE_ON_ONE_ROOM_FULL",
       message: "This 1:1 room is reserved for its matched pair.",
       bookedCount,
-      maxParticipants,
+      maxParticipants: admissionLimit,
       isBooked: false,
     };
   }
