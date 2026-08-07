@@ -5367,6 +5367,7 @@ export function RoomPageLiveKit({
 
     try {
       await me.setMetadata(JSON.stringify(nextMeta));
+      setSelfDeafened(status === "skip");
     } catch (e) {
       console.error("setMetadata failed", e);
     }
@@ -6036,6 +6037,7 @@ export function RoomPageLiveKit({
     readSoundPreference(STAGE_SOUNDS_PREF_KEY),
   );
   const stageSoundsEnabledRef = useRef(stageSoundsEnabled);
+  const [selfDeafened, setSelfDeafened] = useState(false);
 
   const [roomSoundsVolume, setRoomSoundsVolume] = useState<number>(() => {
     try {
@@ -8057,8 +8059,20 @@ export function RoomPageLiveKit({
     const room = roomRef.current;
     if (!room) return;
 
+    const syncSkipMeDeafen = () => {
+      try {
+        const metadata = JSON.parse(room.localParticipant.metadata || "{}");
+        setSelfDeafened(metadata?.status === "skip");
+      } catch {
+        setSelfDeafened(false);
+      }
+    };
+
+    syncSkipMeDeafen();
+
     const onParticipantMetadataChanged = () => {
       try {
+        syncSkipMeDeafen();
         scheduleRebuildTiles();
         window.setTimeout(() => scheduleRebuildTiles(), 80);
         window.setTimeout(() => scheduleRebuildTiles(), 220);
@@ -19053,7 +19067,7 @@ export function RoomPageLiveKit({
           <>
             <RoomAudioRenderer
               room={roomState}
-              volume={1}
+              volume={selfDeafened ? 0 : 1}
             />
             <div className="fixed bottom-[5.25rem] left-1/2 z-[80] -translate-x-1/2">
               <StartAudio
