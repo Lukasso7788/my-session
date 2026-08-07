@@ -2892,6 +2892,38 @@ function getMobilePiPRoomVideos(
   ).filter((video) => video.dataset.mobilePipStage !== "true") as MobilePiPVideoElement[];
 }
 
+function getPreferredMobilePiPSourceVideo(
+  root: HTMLElement | null,
+): MobilePiPVideoElement | null {
+  const candidates = getMobilePiPRoomVideos(root).filter(
+    isMobilePiPSourceRenderable,
+  );
+
+  if (candidates.length === 0) return null;
+
+  return candidates.sort((left, right) => {
+    const score = (video: HTMLVideoElement): number => {
+      const rect = video.getBoundingClientRect();
+      const visibleArea =
+        Math.max(0, rect.width) * Math.max(0, rect.height);
+      const remoteVideoPreference = video.muted ? 0 : 1_000_000;
+      const playingPreference = video.paused ? 0 : 100_000;
+      return remoteVideoPreference + playingPreference + visibleArea;
+    };
+
+    return score(right) - score(left);
+  })[0] ?? null;
+}
+
+function supportsWebKitVideoPiP(
+  video: MobilePiPVideoElement | null,
+): boolean {
+  return !!(
+    video?.webkitSetPresentationMode &&
+    video.webkitSupportsPresentationMode?.("picture-in-picture")
+  );
+}
+
 function isMobilePiPSourceRenderable(video: HTMLVideoElement): boolean {
   const stream = video.srcObject;
 
@@ -3140,8 +3172,12 @@ function isMobilePiPStageReady(
   const track =
     stream instanceof MediaStream ? stream.getVideoTracks()[0] : undefined;
 
+  const readinessFlag =
+    video.dataset.mobilePipStage !== "true" ||
+    video.dataset.pipReady === "true";
+
   return (
-    video.dataset.pipReady === "true" &&
+    readinessFlag &&
     !video.paused &&
     video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
     video.videoWidth > 0 &&
@@ -3151,26 +3187,45 @@ function isMobilePiPStageReady(
   );
 }
 
+function configureMobilePiPVideo(
+  video: MobilePiPVideoElement,
+): void {
+  video.disablePictureInPicture = false;
+  video.autoPictureInPicture = true;
+  video.autoplay = true;
+  video.playsInline = true;
+  video.setAttribute("autoplay", "");
+  video.setAttribute("playsinline", "");
+  video.setAttribute("autopictureinpicture", "");
+  video.removeAttribute("disablepictureinpicture");
+
+  // The generated collage has no audio. Preserve the actual LiveKit element's
+  // existing mute state so Safari PiP does not unexpectedly change room audio.
+  if (video.dataset.mobilePipStage === "true") {
+    video.muted = true;
+    video.setAttribute("muted", "");
+  }
+}
+
 async function enterMobileVideoPictureInPicture(
   video: MobilePiPVideoElement | null,
   options: { skipPlay?: boolean; requireReady?: boolean } = {},
 ): Promise<boolean> {
   if (!video) return false;
 
-  video.disablePictureInPicture = false;
-  video.autoPictureInPicture = true;
-  video.autoplay = true;
-  video.muted = true;
-  video.playsInline = true;
-  video.setAttribute("autoplay", "");
-  video.setAttribute("muted", "");
-  video.setAttribute("playsinline", "");
-  video.setAttribute("autopictureinpicture", "");
-  video.removeAttribute("disablepictureinpicture");
+  configureMobilePiPVideo(video);
 
   try {
     if (options.requireReady && !isMobilePiPStageReady(video)) {
       return false;
+    }
+
+    // iPadOS Safari requires this call to remain inside the original tap.
+    // Do it before awaiting play() so transient user activation is preserved.
+    if (supportsWebKitVideoPiP(video)) {
+      if (video.paused && options.skipPlay) return false;
+      video.webkitSetPresentationMode?.("picture-in-picture");
+      return true;
     }
 
     if (!options.skipPlay) {
@@ -3189,13 +3244,7 @@ async function enterMobileVideoPictureInPicture(
       return true;
     }
 
-    if (
-      video.webkitSupportsPresentationMode?.("picture-in-picture") &&
-      video.webkitSetPresentationMode
-    ) {
-      video.webkitSetPresentationMode("picture-in-picture");
-      return true;
-    }
+
   } catch (error) {
     console.warn("[room-mobile-pip] Unable to enter PiP", error);
   }
@@ -3358,6 +3407,7 @@ function useMobileBrowserInitiatedPiP(
   enabled: boolean,
   preparePreferredVideo: () => Promise<MobilePiPVideoElement | null>,
   stageRef: React.RefObject<MobilePiPVideoElement | null>,
+  onOpened: (video: MobilePiPVideoElement) => void,
 ): void {
   useEffect(() => {
     if (!enabled || !isTabletOrMobilePiPRuntime()) return;
@@ -3389,9 +3439,10 @@ function useMobileBrowserInitiatedPiP(
       if (!isMobilePiPStageReady(stage)) return;
 
       preparedStage = stage;
-      await enterMobileVideoPictureInPicture(stage, {
+      const opened = await enterMobileVideoPictureInPicture(stage, {
         requireReady: true,
       });
+      if (opened) onOpened(stage);
     };
 
     try {
@@ -3430,6 +3481,8 @@ function useMobileBrowserInitiatedPiP(
       void enterMobileVideoPictureInPicture(stage, {
         skipPlay: true,
         requireReady: true,
+      }).then((opened) => {
+        if (opened) onOpened(stage);
       });
     };
 
@@ -3464,7 +3517,7 @@ function useMobileBrowserInitiatedPiP(
         // Ignore unsupported cleanup.
       }
     };
-  }, [enabled, preparePreferredVideo, stageRef]);
+  }, [enabled, onOpened, preparePreferredVideo, stageRef]);
 }
 
 function getRoomAuthCallbackUrl(redirectPath: string) {
@@ -11207,6 +11260,8 @@ export function RoomPageLiveKit({
   const mobilePiPCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const mobilePiPStageRef = useRef<MobilePiPVideoElement | null>(null);
   const [mobilePipOpen, setMobilePipOpen] = useState(false);
+  const [mobilePiPVideoElement, setMobilePiPVideoElement] =
+    useState<MobilePiPVideoElement | null>(null);
   const mobilePiPRuntime = useMemo(
     () => isTabletOrMobilePiPRuntime(),
     [],
@@ -11219,10 +11274,38 @@ export function RoomPageLiveKit({
     connected && mobilePiPRuntime,
   );
 
+  const preparePreferredMobilePiPVideo = useCallback(async () => {
+    const nativeVideo = getPreferredMobilePiPSourceVideo(videoWrapRef.current);
+
+    // Every iPad browser uses WebKit. Prefer the already-playing LiveKit video
+    // because Safari cannot reliably create a PiP stream from canvas.captureStream().
+    if (nativeVideo && supportsWebKitVideoPiP(nativeVideo)) {
+      configureMobilePiPVideo(nativeVideo);
+      return nativeVideo;
+    }
+
+    const collageVideo = await prepareMobilePiPCollage();
+    if (collageVideo && isMobilePiPStageReady(collageVideo)) {
+      return collageVideo;
+    }
+
+    if (nativeVideo) configureMobilePiPVideo(nativeVideo);
+    return nativeVideo;
+  }, [prepareMobilePiPCollage]);
+
+  const handleMobilePiPOpened = useCallback(
+    (video: MobilePiPVideoElement): void => {
+      setMobilePiPVideoElement(video);
+      setMobilePipOpen(true);
+    },
+    [],
+  );
+
   useMobileBrowserInitiatedPiP(
     connected && mobilePiPRuntime,
-    prepareMobilePiPCollage,
+    preparePreferredMobilePiPVideo,
     mobilePiPStageRef,
+    handleMobilePiPOpened,
   );
 
   const pictureInPictureOpen = pipOpen || mobilePipOpen;
@@ -11233,11 +11316,17 @@ export function RoomPageLiveKit({
       return;
     }
 
-    const stage = mobilePiPStageRef.current;
+    const stage = mobilePiPVideoElement ?? mobilePiPStageRef.current;
     if (!stage) return;
 
-    const handleEnter = (): void => setMobilePipOpen(true);
-    const handleLeave = (): void => setMobilePipOpen(false);
+    const handleEnter = (): void => {
+      setMobilePiPVideoElement(stage);
+      setMobilePipOpen(true);
+    };
+    const handleLeave = (): void => {
+      setMobilePipOpen(false);
+      setMobilePiPVideoElement(null);
+    };
     const handleWebKitModeChange = (): void => {
       setMobilePipOpen(
         stage.webkitPresentationMode === "picture-in-picture",
@@ -11259,7 +11348,7 @@ export function RoomPageLiveKit({
         handleWebKitModeChange,
       );
     };
-  }, [connected, mobilePiPRuntime]);
+  }, [connected, mobilePiPRuntime, mobilePiPVideoElement]);
 
   const documentPipSupported =
     typeof window !== "undefined" &&
@@ -14044,7 +14133,7 @@ export function RoomPageLiveKit({
   }, []);
 
   const closeMobilePictureInPicture = useCallback(async () => {
-    const stage = mobilePiPStageRef.current;
+    const stage = mobilePiPVideoElement ?? mobilePiPStageRef.current;
     const pipDocument = document as MobileVideoPiPDocument;
 
     try {
@@ -14063,7 +14152,8 @@ export function RoomPageLiveKit({
     } catch { }
 
     setMobilePipOpen(false);
-  }, []);
+    setMobilePiPVideoElement(null);
+  }, [mobilePiPVideoElement]);
 
   const closePictureInPicture = useCallback(async () => {
     if (mobilePipOpen) {
@@ -14160,10 +14250,10 @@ export function RoomPageLiveKit({
       return;
     }
 
-    const stage = await prepareMobilePiPCollage();
+    const stage = await preparePreferredMobilePiPVideo();
     if (!stage || !isMobilePiPStageReady(stage)) {
       throw new Error(
-        "The mobile Picture-in-Picture collage is not ready yet. Try again after participant video appears.",
+        "Picture-in-Picture is waiting for a playing participant video. Try again after video appears.",
       );
     }
 
@@ -14177,8 +14267,12 @@ export function RoomPageLiveKit({
       );
     }
 
-    setMobilePipOpen(true);
-  }, [connected, prepareMobilePiPCollage]);
+    handleMobilePiPOpened(stage);
+  }, [
+    connected,
+    handleMobilePiPOpened,
+    preparePreferredMobilePiPVideo,
+  ]);
 
   const openPictureInPicture = useCallback(async () => {
     if (mobilePiPRuntime) {
