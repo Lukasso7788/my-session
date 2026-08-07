@@ -559,6 +559,7 @@ type SessionTemplate = {
 type SessionRow = {
   id: string;
   title: string;
+  description?: string | null;
   schedule: unknown;
   format?: string | null;
   session_format_type?: string | null;
@@ -17619,7 +17620,8 @@ export function RoomPageLiveKit({
                       oneOnOneMode={
                         String(session.session_format_type || session.format || "")
                           .trim()
-                          .toLowerCase() === "one_on_one"
+                          .toLowerCase() === "one_on_one" ||
+                        String(session.description || "").startsWith("one-on-one:")
                       }
                       timerText={remainingTime || "--:--"}
                       pictureInPictureSupported={connected && pipSupported}

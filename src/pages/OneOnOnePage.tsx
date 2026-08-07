@@ -15,7 +15,7 @@ type QueuePresence = {
   partnerUserId?: string;
 };
 
-const DURATIONS = [25, 45, 60] as const;
+const DURATIONS = [25, 50, 75] as const;
 
 function randomTicket() {
   return typeof crypto?.randomUUID === "function"
@@ -34,7 +34,7 @@ export default function OneOnOnePage() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [displayName, setDisplayName] = useState("");
-  const [duration, setDuration] = useState<(typeof DURATIONS)[number]>(45);
+  const [duration, setDuration] = useState<(typeof DURATIONS)[number]>(50);
   const [status, setStatus] = useState<"idle" | "searching" | "creating" | "matched" | "error">("idle");
   const [queueCount, setQueueCount] = useState(0);
   const [errorText, setErrorText] = useState("");
@@ -200,7 +200,7 @@ export default function OneOnOnePage() {
             <div className="mt-5 grid grid-cols-3 gap-2">
               {DURATIONS.map((minutes) => (
                 <button key={minutes} type="button" disabled={isBusy} onClick={() => setDuration(minutes)} className={`h-11 rounded-2xl text-[14px] font-semibold transition ${duration === minutes ? "bg-[#2F2F2F] text-white" : "bg-white text-[#404040] hover:bg-[#EAE8E8]"}`}>
-                  {minutes === 60 ? "1 hour" : `${minutes} min`}
+                  {`${minutes} min`}
                 </button>
               ))}
             </div>

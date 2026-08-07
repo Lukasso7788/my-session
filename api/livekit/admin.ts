@@ -1979,7 +1979,7 @@ async function handleCreateOneOnOneSession(params: {
   if (!looksLikeUuid(partnerUserId)) {
     return res.status(400).json({ error: "valid_partner_required" });
   }
-  if (![25, 45, 60].includes(durationMinutes)) {
+  if (![25, 50, 75].includes(durationMinutes)) {
     return res.status(400).json({ error: "invalid_duration" });
   }
   if (!matchKey) return res.status(400).json({ error: "match_key_required" });
@@ -2025,8 +2025,8 @@ async function handleCreateOneOnOneSession(params: {
       host_id: user.id,
       host_name: hostName,
       duration_minutes: durationMinutes,
-      format: "one_on_one",
-      session_format_type: "one_on_one",
+      format: "uninterrupted",
+      session_format_type: "group",
       start_time: new Date().toISOString(),
       status: "planned",
       is_silent: false,
@@ -2046,7 +2046,7 @@ async function handleCreateOneOnOneSession(params: {
 
   if (sessionError || !session?.id) {
     console.error("one-on-one session create failed", sessionError);
-    return res.status(500).json({ error: "session_create_failed" });
+    return res.status(500).json({ error: "session_create_failed", details: sessionError?.message || null, code: sessionError?.code || null });
   }
 
   const { error: bookingError } = await sb.from("session_bookings").insert([
