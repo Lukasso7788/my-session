@@ -4,7 +4,7 @@ import { supabase } from "../lib/supabase";
 import {
   formatBanEnd,
   isCurrentUserAdmin,
-  isShadowBan,
+  isQuietRestriction,
   listActiveBans,
   revokeUserBan,
   searchAdminUsers,
@@ -1414,12 +1414,12 @@ export default function AdminPage() {
                             </div>
                             <span
                               className={
-                                isShadowBan(ban)
+                                isQuietRestriction(ban)
                                   ? "rounded-full bg-violet-100 px-2 py-1 text-[11px] font-bold text-violet-700"
                                   : "rounded-full bg-red-100 px-2 py-1 text-[11px] font-bold text-red-700"
                               }
                             >
-                              {isShadowBan(ban) ? "Shadow ban" : "Regular ban"}
+                              {isQuietRestriction(ban) ? "Shadow ban" : "Regular ban"}
                             </span>
                           </div>
                           <div className="mt-1 text-[13px] leading-5 text-[#666]">{ban.reason}</div>

@@ -38,11 +38,18 @@ type RoomMediaAdminAction =
   | "prepare_room_soundtrack_upload"
   | "upload_room_soundtrack";
 
+type AccessControlAction =
+  | "session_bootstrap"
+  | "moderation_restriction_create"
+  | "moderation_restriction_list"
+  | "moderation_restriction_revoke";
+
 type AdminAction =
   | LiveKitAdminAction
   | EmailAdminAction
   | SenderAdminAction
-  | RoomMediaAdminAction;
+  | RoomMediaAdminAction
+  | AccessControlAction;
 
 type TrackKind = "camera" | "microphone" | "";
 
@@ -55,6 +62,11 @@ type Body = {
   durationMinutes?: number;
   matchKey?: string;
   inviteOnly?: boolean;
+  targetUserId?: string;
+  restrictionId?: string;
+  reason?: string;
+  internalNotes?: string;
+  expiresAt?: string | null;
   trackSid?: string;
   trackKind?: "camera" | "microphone" | "video" | "audio" | string;
 
@@ -355,6 +367,15 @@ function normalizeSenderAdminAction(raw: unknown): SenderAdminAction | "" {
   return "";
 }
 
+function normalizeAccessControlAction(raw: unknown): AccessControlAction | "" {
+  const action = String(raw || "").trim().toLowerCase();
+  if (action === "session_bootstrap") return "session_bootstrap";
+  if (action === "moderation_restriction_create") return "moderation_restriction_create";
+  if (action === "moderation_restriction_list") return "moderation_restriction_list";
+  if (action === "moderation_restriction_revoke") return "moderation_restriction_revoke";
+  return "";
+}
+
 function normalizeRoomMediaAdminAction(raw: unknown): RoomMediaAdminAction | "" {
   const action = String(raw || "").trim().toLowerCase();
   if (action === "prepare_room_soundtrack_upload") {
@@ -488,6 +509,146 @@ async function assertAppAdmin(params: {
   return { userId };
 }
 
+type AccountAccessControlRow = {
+  id: string;
+  user_id: string;
+  created_by_user_id: string | null;
+  reason: string;
+  internal_notes: string | null;
+  starts_at: string;
+  expires_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+};
+
+function isMissingAccessControlStorage(error: unknown) {
+  const code = String((error as { code?: string } | null)?.code || "");
+  return code === "42P01" || code === "PGRST205";
+}
+
+function toAdminRestriction(row: AccountAccessControlRow) {
+  return {
+    id: `control:${row.id}`,
+    banned_user_id: row.user_id,
+    banned_by_user_id: row.created_by_user_id,
+    reason: row.reason,
+    internal_notes: row.internal_notes,
+    starts_at: row.starts_at,
+    expires_at: row.expires_at,
+    revoked_at: row.revoked_at,
+    created_at: row.created_at,
+    control_source: "private" as const,
+  };
+}
+
+async function handleAccessControlAction(params: {
+  res: VercelResponse;
+  sb: SupabaseClient;
+  accessToken: string;
+  body: Body;
+  action: AccessControlAction;
+}) {
+  const { res, sb, accessToken, body, action } = params;
+  res.setHeader("Cache-Control", "private, no-store, max-age=0");
+
+  if (action === "session_bootstrap") {
+    const { data: authData, error: authError } = await sb.auth.getUser(accessToken);
+    const userId = String(authData?.user?.id || "").trim().toLowerCase();
+    if (authError || !looksLikeUuid(userId)) return res.status(401).json({ state: "ready" });
+
+    const now = new Date().toISOString();
+    const { data, error } = await sb
+      .from("account_access_controls")
+      .select("id")
+      .eq("user_id", userId)
+      .is("revoked_at", null)
+      .lte("starts_at", now)
+      .or(`expires_at.is.null,expires_at.gt.${now}`)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      if (!isMissingAccessControlStorage(error)) {
+        console.error("[bootstrap] state lookup failed", { code: String(error.code || "") });
+      }
+      return res.status(200).json({ state: "ready" });
+    }
+
+    return res.status(200).json({ state: data?.id ? "syncing" : "ready" });
+  }
+
+  const admin = await assertAppAdmin({ sb, accessToken });
+
+  if (action === "moderation_restriction_create") {
+    const targetUserId = String(body.targetUserId || "").trim().toLowerCase();
+    const reason = String(body.reason || "").trim();
+    const internalNotes = String(body.internalNotes || "").trim();
+    const expiresAtRaw = body.expiresAt == null ? null : String(body.expiresAt).trim();
+    const expiresAt = expiresAtRaw ? new Date(expiresAtRaw).toISOString() : null;
+
+    if (!looksLikeUuid(targetUserId)) return res.status(400).json({ error: "invalid_target" });
+    if (!reason) return res.status(400).json({ error: "reason_required" });
+
+    const { data, error } = await sb
+      .from("account_access_controls")
+      .insert({
+        user_id: targetUserId,
+        created_by_user_id: admin.userId,
+        reason,
+        internal_notes: internalNotes || null,
+        starts_at: new Date().toISOString(),
+        expires_at: expiresAt,
+      })
+      .select("id, user_id, created_by_user_id, reason, internal_notes, starts_at, expires_at, revoked_at, created_at")
+      .single<AccountAccessControlRow>();
+
+    if (error || !data?.id) {
+      if (isMissingAccessControlStorage(error)) {
+        return res.status(503).json({ error: "moderation_setup_required" });
+      }
+      throw error || new Error("restriction_create_failed");
+    }
+
+    return res.status(200).json({ item: toAdminRestriction(data) });
+  }
+
+  if (action === "moderation_restriction_list") {
+    const now = new Date().toISOString();
+    const { data, error } = await sb
+      .from("account_access_controls")
+      .select("id, user_id, created_by_user_id, reason, internal_notes, starts_at, expires_at, revoked_at, created_at")
+      .is("revoked_at", null)
+      .lte("starts_at", now)
+      .or(`expires_at.is.null,expires_at.gt.${now}`)
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    if (error) {
+      if (isMissingAccessControlStorage(error)) return res.status(200).json({ items: [] });
+      throw error;
+    }
+
+    return res.status(200).json({ items: ((data || []) as AccountAccessControlRow[]).map(toAdminRestriction) });
+  }
+
+  const restrictionId = String(body.restrictionId || "").trim().toLowerCase();
+  if (!looksLikeUuid(restrictionId)) return res.status(400).json({ error: "invalid_restriction" });
+
+  const { data, error } = await sb
+    .from("account_access_controls")
+    .update({
+      revoked_at: new Date().toISOString(),
+      revoked_by_user_id: admin.userId,
+    })
+    .eq("id", restrictionId)
+    .is("revoked_at", null)
+    .select("id")
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data?.id) return res.status(404).json({ error: "restriction_not_found" });
+  return res.status(200).json({ ok: true });
+}
 async function resolveSessionContext(params: {
   sb: SupabaseClient;
   sessionId: string;
@@ -2118,6 +2279,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const rawEmailAction = cronAction || normalizeEmailAction(body.action);
     const rawSenderAdminAction = normalizeSenderAdminAction(body.action);
     const rawRoomMediaAction = normalizeRoomMediaAdminAction(body.action);
+    const rawAccessControlAction = normalizeAccessControlAction(body.action);
 
     const supabaseUrl = String(
       process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ""
@@ -2155,6 +2317,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({
         error: "auth_required",
         hint: "Send Authorization: Bearer <supabase_access_token>",
+      });
+    }
+
+    if (rawAccessControlAction) {
+      return await handleAccessControlAction({
+        res,
+        sb,
+        accessToken,
+        body,
+        action: rawAccessControlAction,
       });
     }
 

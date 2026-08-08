@@ -1,7 +1,5 @@
 import { supabase } from "./supabase";
 
-export const SHADOW_BAN_MARKER = "[mysession:shadow-ban]";
-
 export type ActiveBan = {
   id: string;
   banned_user_id: string;
@@ -12,6 +10,7 @@ export type ActiveBan = {
   expires_at?: string | null;
   revoked_at?: string | null;
   created_at?: string | null;
+  control_source?: "private";
 };
 
 export type BanPreset =
@@ -126,8 +125,8 @@ export function getBanExpiresAtFromPreset(preset: BanPreset, customExpiresAt?: s
   return new Date(Date.now() + ms).toISOString();
 }
 
-export function isShadowBan(ban?: Pick<ActiveBan, "internal_notes"> | null) {
-  return String(ban?.internal_notes || "").split(/\r?\n/).includes(SHADOW_BAN_MARKER);
+export function isQuietRestriction(ban?: Pick<ActiveBan, "control_source"> | null) {
+  return ban?.control_source === "private";
 }
 
 export function isBanActive(ban: Pick<ActiveBan, "starts_at" | "expires_at" | "revoked_at">) {
@@ -171,29 +170,26 @@ export async function getCurrentUserActiveBan(): Promise<ActiveBan | null> {
     return null;
   }
 
-  const active = ((data || []) as ActiveBan[]).find((ban) => isBanActive(ban) && !isShadowBan(ban));
+  const active = ((data || []) as ActiveBan[]).find(isBanActive);
   return active || null;
 }
 
-export async function getCurrentUserActiveShadowBan(): Promise<ActiveBan | null> {
+async function callModerationApi<T>(body: Record<string, unknown>): Promise<T> {
   const { data: sessionData } = await supabase.auth.getSession();
-  const userId = String(sessionData.session?.user?.id || "").trim();
-  if (!userId) return null;
+  const accessToken = String(sessionData.session?.access_token || "").trim();
+  if (!accessToken) throw new Error("Admin auth required.");
 
-  const { data, error } = await supabase
-    .from("user_bans")
-    .select("id, banned_user_id, banned_by_user_id, reason, internal_notes, starts_at, expires_at, revoked_at, created_at")
-    .eq("banned_user_id", userId)
-    .is("revoked_at", null)
-    .order("created_at", { ascending: false })
-    .limit(20);
-
-  if (error) {
-    console.warn("[bans] shadow ban load failed:", error);
-    return null;
-  }
-
-  return ((data || []) as ActiveBan[]).find((ban) => isBanActive(ban) && isShadowBan(ban)) || null;
+  const response = await fetch("/api/livekit/admin", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (!response.ok) throw new Error(payload.error || "Moderation request failed.");
+  return payload;
 }
 export async function createUserBan(params: {
   bannedUserId: string;
@@ -210,12 +206,20 @@ export async function createUserBan(params: {
   const bannedUserId = String(params.bannedUserId || "").trim();
   const reason = String(params.reason || "").trim();
   const internalNotes = String(params.internalNotes || "").trim();
-  const storedInternalNotes = params.shadowBan
-    ? [SHADOW_BAN_MARKER, internalNotes].filter(Boolean).join("\n")
-    : internalNotes;
 
   if (!bannedUserId) throw new Error("Choose a user to ban.");
   if (!reason) throw new Error("Ban reason is required.");
+
+  if (params.shadowBan) {
+    const result = await callModerationApi<{ item: ActiveBan }>({
+      action: "moderation_restriction_create",
+      targetUserId: bannedUserId,
+      reason,
+      internalNotes,
+      expiresAt: params.expiresAt || null,
+    });
+    return result.item;
+  }
 
   const { data, error } = await supabase
     .from("user_bans")
@@ -223,7 +227,7 @@ export async function createUserBan(params: {
       banned_user_id: bannedUserId,
       banned_by_user_id: adminUserId,
       reason,
-      internal_notes: storedInternalNotes || null,
+      internal_notes: internalNotes || null,
       starts_at: new Date().toISOString(),
       expires_at: params.expiresAt || null,
     })
@@ -242,6 +246,14 @@ export async function revokeUserBan(params: {
   const adminUserId = String(sessionData.session?.user?.id || "").trim();
 
   if (!adminUserId) throw new Error("Admin auth required.");
+
+  if (params.banId.startsWith("control:")) {
+    await callModerationApi({
+      action: "moderation_restriction_revoke",
+      restrictionId: params.banId.slice("control:".length),
+    });
+    return;
+  }
 
   // Keep this update aligned with the minimal SQL schema.
   // Do NOT write revoked_reason here: some deployed DBs do not have that optional column yet,
@@ -263,16 +275,22 @@ export async function revokeUserBan(params: {
 }
 
 export async function listActiveBans() {
-  const { data, error } = await supabase
-    .from("user_bans")
-    .select("*")
-    .is("revoked_at", null)
-    .order("created_at", { ascending: false })
-    .limit(200);
+  const [{ data, error }, privateControls] = await Promise.all([
+    supabase
+      .from("user_bans")
+      .select("*")
+      .is("revoked_at", null)
+      .order("created_at", { ascending: false })
+      .limit(200),
+    callModerationApi<{ items: ActiveBan[] }>({ action: "moderation_restriction_list" }),
+  ]);
 
   if (error) throw error;
 
-  return ((data || []) as ActiveBan[]).filter(isBanActive);
+  const regular = ((data || []) as ActiveBan[]).filter(isBanActive);
+  return [...(privateControls.items || []), ...regular].sort((a, b) =>
+    String(b.created_at || "").localeCompare(String(a.created_at || "")),
+  );
 }
 
 export async function searchAdminUsers(query: string) {

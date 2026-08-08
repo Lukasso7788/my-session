@@ -44,7 +44,7 @@ import AppLayout from "./layouts/AppLayout";
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
 import { storeReferralCodeFromUrl } from "./lib/referrals";
 import { supabase } from "./lib/supabase";
-import ShadowBanGate from "./components/ShadowBanGate";
+import AppBootstrapGate from "./components/AppBootstrapGate";
 
 import GroupFocusSessionsPage from "./pages/seo/GroupFocusSessionsPage";
 import SilentCoworkingPage from "./pages/seo/SilentCoworkingPage";
@@ -123,7 +123,7 @@ export default function App() {
 
   return (
     <CreateSessionModalProvider>
-      <ShadowBanGate>
+      <AppBootstrapGate>
         <Routes>
         <Route element={<AppLayout />}>
           <Route path="/" element={isOneOnOneHost ? <OneOnOnePage /> : <LandingPage />} />
@@ -245,7 +245,7 @@ export default function App() {
         <Route path="/auth/callback/" element={<AuthCallback />} />
         </Routes>
 
-      </ShadowBanGate>
+      </AppBootstrapGate>
     </CreateSessionModalProvider>
   );
 }
