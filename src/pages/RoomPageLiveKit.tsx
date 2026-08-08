@@ -6557,11 +6557,31 @@ export function RoomPageLiveKit({
     };
   }, []);
 
+  const isOneOnOneRoom = useMemo(() => {
+    const queryMode = new URLSearchParams(location.search)
+      .get("mode")
+      ?.trim()
+      .toLowerCase();
+    const sessionMode = String(
+      session?.session_format_type || session?.format || "",
+    )
+      .trim()
+      .toLowerCase();
+
+    return (
+      queryMode === "one-on-one" ||
+      queryMode === "one_on_one" ||
+      sessionMode === "one_on_one" ||
+      String(session?.description || "").startsWith("one-on-one:")
+    );
+  }, [location.search, session]);
+
   const maxParticipants = useMemo(() => {
+    if (isOneOnOneRoom) return 2;
     const raw = num((session as any)?.max_participants);
     const v = raw > 0 ? raw : 16;
     return Math.max(2, Math.min(50, Math.round(v)));
-  }, [session]);
+  }, [isOneOnOneRoom, session]);
 
   const isInfiniteRoom = useMemo(() => {
     const raw = session?.schedule;
@@ -17956,12 +17976,7 @@ export function RoomPageLiveKit({
                       key={`tasks-${session.id}`}
                       theme="light"
                       sessionId={session.id}
-                      oneOnOneMode={
-                        String(session.session_format_type || session.format || "")
-                          .trim()
-                          .toLowerCase() === "one_on_one" ||
-                        String(session.description || "").startsWith("one-on-one:")
-                      }
+                      oneOnOneMode={isOneOnOneRoom}
                       timerText={remainingTime || "--:--"}
                       pictureInPictureSupported={connected && pipSupported}
                       pictureInPictureOpen={pictureInPictureOpen}
