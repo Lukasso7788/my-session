@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useLocation } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
 type BootstrapState = "checking" | "ready" | "waiting";
@@ -19,10 +20,21 @@ async function loadBootstrapState(accessToken: string) {
 }
 
 export default function AppBootstrapGate({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
   const [state, setState] = useState<BootstrapState>("checking");
   const generationRef = useRef(0);
+  const stateRef = useRef<BootstrapState>("checking");
+  const isRoomRoute = /^\/room-(?:livekit(?:-clean)?|iframe)\//.test(pathname);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const refresh = useCallback(async (showChecking = false) => {
+    // Replacing the gate unmounts LiveKit. Once a room is active, background
+    // account checks must never turn a harmless tab switch into a full rejoin.
+    if (isRoomRoute && stateRef.current === "ready") return;
+
     const generation = ++generationRef.current;
     if (showChecking) setState("checking");
 
@@ -41,36 +53,31 @@ export default function AppBootstrapGate({ children }: { children: ReactNode }) 
     } catch {
       if (generation === generationRef.current) setState("ready");
     }
-  }, []);
+  }, [isRoomRoute]);
 
   useEffect(() => {
     void refresh(true);
 
     let authTimer: number | null = null;
-    const { data: authListener } = supabase.auth.onAuthStateChange(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== "SIGNED_IN") return;
+      if (isRoomRoute && stateRef.current === "ready") return;
       if (authTimer) window.clearTimeout(authTimer);
-      authTimer = window.setTimeout(() => void refresh(true), 0);
+      authTimer = window.setTimeout(() => void refresh(false), 0);
     });
 
     const refreshQuietly = () => void refresh(false);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") refreshQuietly();
-    };
     const interval = window.setInterval(refreshQuietly, 30_000);
 
-    window.addEventListener("focus", refreshQuietly);
     window.addEventListener("mysession-ban-refresh", refreshQuietly);
-    document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       if (authTimer) window.clearTimeout(authTimer);
       window.clearInterval(interval);
-      window.removeEventListener("focus", refreshQuietly);
       window.removeEventListener("mysession-ban-refresh", refreshQuietly);
-      document.removeEventListener("visibilitychange", onVisible);
       authListener.subscription.unsubscribe();
     };
-  }, [refresh]);
+  }, [isRoomRoute, refresh]);
 
   if (state !== "ready") {
     return (
