@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Clock3, Copy, Link2, Shuffle, UsersRound, Video } from "lucide-react";
+import { ArrowRight, CheckCircle2, Clock3, Copy, Link2, Loader2, Shuffle, UsersRound, Video } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { RealtimeChannel, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
@@ -13,6 +13,15 @@ type QueuePresence = {
   status: "searching" | "matched";
   sessionId?: string;
   partnerUserId?: string;
+  partnerDisplayName?: string;
+  joinedRoom?: boolean;
+};
+
+type MatchedPair = {
+  sessionId: string;
+  partnerUserId?: string;
+  partnerDisplayName?: string;
+  partnerInRoom: boolean;
 };
 
 const DURATIONS = [25, 50, 75] as const;
@@ -40,6 +49,8 @@ export default function OneOnOnePage() {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteLink, setInviteLink] = useState("");
   const [errorText, setErrorText] = useState("");
+  const [matchedPair, setMatchedPair] = useState<MatchedPair | null>(null);
+  const [joinBusy, setJoinBusy] = useState(false);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const channelReadyRef = useRef(false);
   const presenceRef = useRef<QueuePresence | null>(null);
@@ -73,11 +84,18 @@ export default function OneOnOnePage() {
     setStatus("idle");
   }, []);
 
-  const enterRoom = useCallback((sessionId: string) => {
-    if (!sessionId) return;
+  const revealMatchedPair = useCallback((next: Omit<MatchedPair, "partnerInRoom"> & { partnerInRoom?: boolean }) => {
+    if (!next.sessionId) return;
     setStatus("matched");
-    window.setTimeout(() => navigate(`/room-livekit/${sessionId}?mode=one-on-one`), 350);
-  }, [navigate]);
+    setMatchedPair((current) => current?.sessionId === next.sessionId
+      ? {
+          ...current,
+          partnerUserId: next.partnerUserId || current.partnerUserId,
+          partnerDisplayName: next.partnerDisplayName || current.partnerDisplayName,
+          partnerInRoom: Boolean(current.partnerInRoom || next.partnerInRoom),
+        }
+      : { ...next, partnerInRoom: Boolean(next.partnerInRoom) });
+  }, []);
 
   const createMatchedSession = useCallback(async (partner: QueuePresence, channel: RealtimeChannel) => {
     if (!user || creatingRef.current || !presenceRef.current) return;
@@ -98,11 +116,32 @@ export default function OneOnOnePage() {
       if (!response.ok || !payload?.sessionId) {
         throw new Error(String(payload?.details || payload?.error || "Could not create your 1:1 room."));
       }
-      const matchedPresence: QueuePresence = { ...own, status: "matched", sessionId: payload.sessionId, partnerUserId: partner.userId };
+      const matchedPresence: QueuePresence = {
+        ...own,
+        status: "matched",
+        sessionId: payload.sessionId,
+        partnerUserId: partner.userId,
+        partnerDisplayName: partner.displayName,
+      };
       presenceRef.current = matchedPresence;
       await channel.track(matchedPresence);
-      await channel.send({ type: "broadcast", event: "matched", payload: { sessionId: payload.sessionId, userIds: [user.id, partner.userId] } });
-      enterRoom(payload.sessionId);
+      await channel.send({
+        type: "broadcast",
+        event: "matched",
+        payload: {
+          sessionId: payload.sessionId,
+          userIds: [user.id, partner.userId],
+          participants: [
+            { userId: user.id, displayName: own.displayName },
+            { userId: partner.userId, displayName: partner.displayName },
+          ],
+        },
+      });
+      revealMatchedPair({
+        sessionId: payload.sessionId,
+        partnerUserId: partner.userId,
+        partnerDisplayName: partner.displayName,
+      });
     } catch (error) {
       creatingRef.current = false;
       presenceRef.current = null;
@@ -110,7 +149,7 @@ export default function OneOnOnePage() {
       setErrorText(error instanceof Error ? error.message : "Matching failed. Please try again.");
       setStatus("error");
     }
-  }, [enterRoom, user]);
+  }, [revealMatchedPair, user]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -123,7 +162,35 @@ export default function OneOnOnePage() {
 
     channel.on("broadcast", { event: "matched" }, ({ payload }) => {
       const userIds = Array.isArray(payload?.userIds) ? payload.userIds.map(String) : [];
-      if (currentUserId && userIds.includes(currentUserId) && payload?.sessionId) enterRoom(String(payload.sessionId));
+      if (!currentUserId || !userIds.includes(currentUserId) || !payload?.sessionId) return;
+      const participants = Array.isArray(payload?.participants) ? payload.participants : [];
+      const partner = participants.find((entry: { userId?: unknown }) => String(entry?.userId || "") !== currentUserId);
+      const partnerUserId = String(partner?.userId || userIds.find((id: string) => id !== currentUserId) || "");
+      const own = presenceRef.current;
+      if (own) {
+        const matchedOwn: QueuePresence = {
+          ...own,
+          status: "matched",
+          sessionId: String(payload.sessionId),
+          partnerUserId,
+          partnerDisplayName: String(partner?.displayName || "Focus partner"),
+        };
+        presenceRef.current = matchedOwn;
+        void channel.track(matchedOwn).catch(() => undefined);
+      }
+      revealMatchedPair({
+        sessionId: String(payload.sessionId),
+        partnerUserId,
+        partnerDisplayName: String(partner?.displayName || "Focus partner"),
+      });
+    });
+    channel.on("broadcast", { event: "joining_room" }, ({ payload }) => {
+      const sessionId = String(payload?.sessionId || "");
+      const joiningUserId = String(payload?.userId || "");
+      if (!sessionId || !joiningUserId || joiningUserId === currentUserId) return;
+      setMatchedPair((current) => current?.sessionId === sessionId
+        ? { ...current, partnerInRoom: true }
+        : current);
     });
     channel.on("presence", { event: "sync" }, () => {
       const all = flattenPresence(channel.presenceState() as Record<string, unknown>);
@@ -137,7 +204,12 @@ export default function OneOnOnePage() {
 
       const matched = all.find((entry) => entry.status === "matched" && entry.partnerUserId === currentUserId && entry.sessionId);
       if (matched?.sessionId) {
-        enterRoom(matched.sessionId);
+        revealMatchedPair({
+          sessionId: matched.sessionId,
+          partnerUserId: matched.userId,
+          partnerDisplayName: matched.displayName,
+          partnerInRoom: Boolean(matched.joinedRoom),
+        });
         return;
       }
 
@@ -171,7 +243,7 @@ export default function OneOnOnePage() {
       if (channelRef.current === channel) channelRef.current = null;
       void supabase.removeChannel(channel);
     };
-  }, [authReady, createMatchedSession, enterRoom, user]);
+  }, [authReady, createMatchedSession, revealMatchedPair, user]);
 
   const startSearching = useCallback(async () => {
     setErrorText("");
@@ -242,12 +314,47 @@ export default function OneOnOnePage() {
     }
   }, [authReady, duration, navigate, user]);
 
+  const joinMatchedRoom = useCallback(async () => {
+    if (!matchedPair?.sessionId || joinBusy) return;
+    setJoinBusy(true);
+    const channel = channelRef.current;
+    const own = presenceRef.current;
+    if (channel && channelReadyRef.current) {
+      try {
+        if (own) {
+          const joiningPresence: QueuePresence = {
+            ...own,
+            status: "matched",
+            sessionId: matchedPair.sessionId,
+            partnerUserId: matchedPair.partnerUserId || own.partnerUserId,
+            partnerDisplayName: matchedPair.partnerDisplayName || own.partnerDisplayName,
+            joinedRoom: true,
+          };
+          presenceRef.current = joiningPresence;
+          await channel.track(joiningPresence);
+        }
+        await channel.send({
+          type: "broadcast",
+          event: "joining_room",
+          payload: {
+            sessionId: matchedPair.sessionId,
+            userId: user?.id,
+            partnerUserId: matchedPair.partnerUserId,
+          },
+        });
+      } catch {
+        // Realtime status is best-effort; joining the already-created room must still work.
+      }
+    }
+    navigate(`/room-livekit/${matchedPair.sessionId}?mode=one-on-one`);
+  }, [joinBusy, matchedPair, navigate, user?.id]);
+
   const queueCount = queueCounts[duration] || 0;
   const isBusy = status === "searching" || status === "creating" || status === "matched";
   const canCancel = status === "searching";
   const statusLabel = useMemo(() => {
     if (status === "creating") return "Pair found — preparing your room…";
-    if (status === "matched") return "Matched — joining your room…";
+    if (status === "matched") return "Matched — ready when you are.";
     if (status === "searching") return queueCount > 1 ? "Checking the queue for your pair…" : "Waiting for a focus partner…";
     return "One click puts you in the matching queue.";
   }, [queueCount, status]);
@@ -306,6 +413,58 @@ export default function OneOnOnePage() {
           </div>
         </div>
       </section>
+
+      {matchedPair ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/35 px-4 backdrop-blur-[2px] animate-[fadeIn_180ms_ease-out]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="one-on-one-match-title"
+        >
+          <div className="w-full max-w-[430px] rounded-[28px] bg-white p-6 text-[#202124] shadow-[0_24px_80px_rgba(0,0,0,0.18)] animate-[postSessionIn_280ms_cubic-bezier(0.22,1,0.36,1)] sm:p-7">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#EAF9EC] text-[#36A94C]">
+                <CheckCircle2 size={25} strokeWidth={2.2} />
+              </div>
+              <div className="min-w-0 pt-0.5">
+                <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#36A94C]">Match found</p>
+                <h2 id="one-on-one-match-title" className="mt-1 text-[24px] font-extrabold leading-tight tracking-[-0.035em]">
+                  You were matched with another partner.
+                </h2>
+                {matchedPair.partnerDisplayName ? (
+                  <p className="mt-2 text-[14px] leading-6 text-[#6D6D6D]">
+                    {matchedPair.partnerDisplayName} is your focus partner for this session.
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            <div className={`mt-6 flex items-center gap-3 rounded-2xl px-4 py-3 ${matchedPair.partnerInRoom ? "bg-[#EAF9EC]" : "bg-[#F4F3F3]"}`}>
+              <span className={`relative flex h-2.5 w-2.5 shrink-0 rounded-full ${matchedPair.partnerInRoom ? "bg-[#43B95A]" : "bg-[#A7A7A7]"}`}>
+                {matchedPair.partnerInRoom ? <span className="absolute inset-0 animate-ping rounded-full bg-[#43B95A]/45" /> : null}
+              </span>
+              <div className="min-w-0">
+                <p className="text-[13px] font-bold text-[#343434]">
+                  {matchedPair.partnerInRoom ? "Your partner is already in the room" : "Your partner has not joined yet"}
+                </p>
+                <p className="mt-0.5 text-[11px] text-[#7A7A7A]">
+                  {matchedPair.partnerInRoom ? "Join them when you are ready." : "You can enter now — their status will update automatically."}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void joinMatchedRoom()}
+              disabled={joinBusy}
+              className="mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#2F2F2F] px-5 text-[14px] font-bold text-white transition hover:bg-[#1F1F1F] disabled:cursor-wait disabled:opacity-70"
+            >
+              {joinBusy ? <Loader2 size={17} className="animate-spin" /> : <ArrowRight size={17} />}
+              {joinBusy ? "Opening room…" : "Join room"}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }
