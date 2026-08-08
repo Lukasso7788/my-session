@@ -26,6 +26,7 @@ function getInitial(name: string) {
 }
 
 export default function BanUserModal({ open, user, onClose, onBanned }: Props) {
+  const [banMode, setBanMode] = useState<"regular" | "shadow">("regular");
   const [presetId, setPresetId] = useState("1d");
   const [customExpiresAt, setCustomExpiresAt] = useState("");
   const [reason, setReason] = useState("");
@@ -52,7 +53,11 @@ export default function BanUserModal({ open, user, onClose, onBanned }: Props) {
 
       const cleanReason = reason.trim();
       if (!cleanReason) {
-        setError("Reason is required. The banned user will see it.");
+        setError(
+          banMode === "shadow"
+            ? "A private moderation reason is required."
+            : "Reason is required. The banned user will see it.",
+        );
         return;
       }
 
@@ -66,12 +71,14 @@ export default function BanUserModal({ open, user, onClose, onBanned }: Props) {
         reason: cleanReason,
         internalNotes,
         expiresAt,
+        shadowBan: banMode === "shadow",
       });
 
       setReason("");
       setInternalNotes("");
       setPresetId("1d");
       setCustomExpiresAt("");
+      setBanMode("regular");
 
       onBanned();
       onClose();
@@ -93,9 +100,13 @@ export default function BanUserModal({ open, user, onClose, onBanned }: Props) {
             <div className="text-[12px] font-semibold uppercase tracking-[0.14em] text-red-600">
               Admin action
             </div>
-            <h2 className="mt-2 text-[26px] font-bold">Ban user</h2>
+            <h2 className="mt-2 text-[26px] font-bold">
+              {banMode === "shadow" ? "Shadow ban user" : "Ban user"}
+            </h2>
             <p className="mt-2 max-w-[620px] text-[14px] leading-6 text-[#666]">
-              Create a temporary or permanent ban. The reason is required and will be shown to the user.
+              {banMode === "shadow"
+                ? "Silently revoke access. The user will see a neutral loading screen instead of a ban notice."
+                : "Create a temporary or permanent ban. The reason is required and will be shown to the user."}
             </p>
           </div>
 
@@ -124,6 +135,27 @@ export default function BanUserModal({ open, user, onClose, onBanned }: Props) {
             <div className="truncate text-[15px] font-semibold">{displayName}</div>
             <div className="truncate text-[12px] text-[#666]">{user.id}</div>
             {user.email ? <div className="truncate text-[12px] text-[#666]">{user.email}</div> : null}
+          </div>
+        </div>
+
+        <div className="mt-6">
+          <div className="text-[14px] font-semibold">Restriction type</div>
+          <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl bg-black/[0.04] p-1.5">
+            {(["regular", "shadow"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setBanMode(mode)}
+                className={[
+                  "rounded-xl px-3 py-2.5 text-[13px] font-semibold transition",
+                  banMode === mode
+                    ? "bg-[#2F2F2F] text-white"
+                    : "text-[#555] hover:bg-white/80",
+                ].join(" ")}
+              >
+                {mode === "shadow" ? "Shadow ban" : "Regular ban"}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -169,13 +201,18 @@ export default function BanUserModal({ open, user, onClose, onBanned }: Props) {
 
         <div className="mt-6">
           <label className="text-[14px] font-semibold">
-            Reason shown to user <span className="text-red-600">*</span>
+            {banMode === "shadow" ? "Private moderation reason" : "Reason shown to user"}{" "}
+            <span className="text-red-600">*</span>
           </label>
           <textarea
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             className="mt-2 min-h-[110px] w-full resize-none rounded-2xl border border-black/10 px-4 py-3 text-[14px] outline-none focus:ring-2 focus:ring-black/15"
-            placeholder="Example: Repeatedly disrupting focus sessions after warnings."
+            placeholder={
+              banMode === "shadow"
+                ? "Example: Coordinated abuse or ban evasion."
+                : "Example: Repeatedly disrupting focus sessions after warnings."
+            }
           />
         </div>
 
@@ -209,7 +246,11 @@ export default function BanUserModal({ open, user, onClose, onBanned }: Props) {
             onClick={() => void submit()}
             className="rounded-full bg-red-600 px-5 py-3 text-[14px] font-semibold text-white hover:bg-red-700 disabled:opacity-60"
           >
-            {saving ? "Banning..." : "Create ban"}
+            {saving
+              ? "Saving..."
+              : banMode === "shadow"
+                ? "Create shadow ban"
+                : "Create ban"}
           </button>
         </div>
       </div>

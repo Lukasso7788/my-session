@@ -1,5 +1,7 @@
 import { supabase } from "./supabase";
 
+export const SHADOW_BAN_MARKER = "[mysession:shadow-ban]";
+
 export type ActiveBan = {
   id: string;
   banned_user_id: string;
@@ -124,6 +126,10 @@ export function getBanExpiresAtFromPreset(preset: BanPreset, customExpiresAt?: s
   return new Date(Date.now() + ms).toISOString();
 }
 
+export function isShadowBan(ban?: Pick<ActiveBan, "internal_notes"> | null) {
+  return String(ban?.internal_notes || "").split(/\r?\n/).includes(SHADOW_BAN_MARKER);
+}
+
 export function isBanActive(ban: Pick<ActiveBan, "starts_at" | "expires_at" | "revoked_at">) {
   if (ban.revoked_at) return false;
 
@@ -165,15 +171,36 @@ export async function getCurrentUserActiveBan(): Promise<ActiveBan | null> {
     return null;
   }
 
-  const active = ((data || []) as ActiveBan[]).find(isBanActive);
+  const active = ((data || []) as ActiveBan[]).find((ban) => isBanActive(ban) && !isShadowBan(ban));
   return active || null;
 }
 
+export async function getCurrentUserActiveShadowBan(): Promise<ActiveBan | null> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = String(sessionData.session?.user?.id || "").trim();
+  if (!userId) return null;
+
+  const { data, error } = await supabase
+    .from("user_bans")
+    .select("id, banned_user_id, banned_by_user_id, reason, internal_notes, starts_at, expires_at, revoked_at, created_at")
+    .eq("banned_user_id", userId)
+    .is("revoked_at", null)
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (error) {
+    console.warn("[bans] shadow ban load failed:", error);
+    return null;
+  }
+
+  return ((data || []) as ActiveBan[]).find((ban) => isBanActive(ban) && isShadowBan(ban)) || null;
+}
 export async function createUserBan(params: {
   bannedUserId: string;
   reason: string;
   expiresAt: string | null;
   internalNotes?: string;
+  shadowBan?: boolean;
 }) {
   const { data: sessionData } = await supabase.auth.getSession();
   const adminUserId = String(sessionData.session?.user?.id || "").trim();
@@ -183,6 +210,9 @@ export async function createUserBan(params: {
   const bannedUserId = String(params.bannedUserId || "").trim();
   const reason = String(params.reason || "").trim();
   const internalNotes = String(params.internalNotes || "").trim();
+  const storedInternalNotes = params.shadowBan
+    ? [SHADOW_BAN_MARKER, internalNotes].filter(Boolean).join("\n")
+    : internalNotes;
 
   if (!bannedUserId) throw new Error("Choose a user to ban.");
   if (!reason) throw new Error("Ban reason is required.");
@@ -193,7 +223,7 @@ export async function createUserBan(params: {
       banned_user_id: bannedUserId,
       banned_by_user_id: adminUserId,
       reason,
-      internal_notes: internalNotes || null,
+      internal_notes: storedInternalNotes || null,
       starts_at: new Date().toISOString(),
       expires_at: params.expiresAt || null,
     })

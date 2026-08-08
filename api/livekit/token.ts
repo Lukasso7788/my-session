@@ -241,21 +241,27 @@ async function getActiveBan(params: { supabaseUrl: string; serviceKey: string; u
 
   const { data, error } = await sb
     .from("user_bans")
-    .select("id, banned_user_id, reason, starts_at, expires_at, revoked_at, created_at")
+    .select("id, banned_user_id, reason, internal_notes, starts_at, expires_at, revoked_at, created_at")
     .eq("banned_user_id", params.userId)
     .is("revoked_at", null)
     .lte("starts_at", now)
     .or(`expires_at.is.null,expires_at.gt.${now}`)
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(20);
 
   if (error) {
     console.error("token: failed to check active ban", error);
     throw new Error("ban_check_failed");
   }
 
-  return data || null;
+  const activeBans = Array.isArray(data) ? data : [];
+  return (
+    activeBans.find((ban) =>
+      String(ban?.internal_notes || "")
+        .split(/\r?\n/)
+        .includes("[mysession:shadow-ban]"),
+    ) || activeBans[0] || null
+  );
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -314,11 +320,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const activeBan = await getActiveBan({ supabaseUrl, serviceKey, userId: resolved.userId });
       if (activeBan) {
+        const activeBanRecord = activeBan as {
+          internal_notes?: string | null;
+          reason?: string | null;
+          expires_at?: string | null;
+          starts_at?: string | null;
+        };
+        const shadowBanned = String(activeBanRecord.internal_notes || "")
+          .split(/\r?\n/)
+          .includes("[mysession:shadow-ban]");
+
+        if (shadowBanned) {
+          return res.status(503).json({ error: "SERVICE_UNAVAILABLE" });
+        }
+
         return res.status(403).json({
           error: "USER_BANNED",
-          reason: String((activeBan as any).reason || "You are banned from MySession."),
-          expires_at: (activeBan as any).expires_at || null,
-          starts_at: (activeBan as any).starts_at || null,
+          reason: String(activeBanRecord.reason || "You are banned from MySession."),
+          expires_at: activeBanRecord.expires_at || null,
+          starts_at: activeBanRecord.starts_at || null,
           server_now: new Date().toISOString(),
         });
       }

@@ -4,6 +4,7 @@ import { supabase } from "../lib/supabase";
 import {
   formatBanEnd,
   isCurrentUserAdmin,
+  isShadowBan,
   listActiveBans,
   revokeUserBan,
   searchAdminUsers,
@@ -1407,8 +1408,19 @@ export default function AdminPage() {
                     <div key={ban.id} className="rounded-2xl border border-black/10 bg-gray-50 px-4 py-3">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
-                          <div className="text-[13px] font-bold text-[#2F2F2F]">
-                            User: {ban.banned_user_id}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-[13px] font-bold text-[#2F2F2F]">
+                              User: {ban.banned_user_id}
+                            </div>
+                            <span
+                              className={
+                                isShadowBan(ban)
+                                  ? "rounded-full bg-violet-100 px-2 py-1 text-[11px] font-bold text-violet-700"
+                                  : "rounded-full bg-red-100 px-2 py-1 text-[11px] font-bold text-red-700"
+                              }
+                            >
+                              {isShadowBan(ban) ? "Shadow ban" : "Regular ban"}
+                            </span>
                           </div>
                           <div className="mt-1 text-[13px] leading-5 text-[#666]">{ban.reason}</div>
                           <div className="mt-2 text-[12px] text-[#777]">
