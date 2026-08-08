@@ -2997,6 +2997,12 @@ type MobileCachedVideoFrame = {
   updatedAt: number;
 };
 
+type MobilePiPRoomTile = {
+  video: MobilePiPVideoElement | null;
+  label: string;
+  avatarUrl: string;
+};
+
 const MOBILE_PIP_CANVAS_WIDTH = 960;
 const MOBILE_PIP_CANVAS_HEIGHT = 540;
 const MOBILE_PIP_COLLAGE_FPS = 8;
@@ -3006,6 +3012,7 @@ const mobilePiPVideoFrameCache = new WeakMap<
   HTMLVideoElement,
   MobileCachedVideoFrame
 >();
+const mobilePiPAvatarCache = new Map<string, HTMLImageElement | null>();
 
 function isTabletOrMobilePiPRuntime(): boolean {
   if (typeof navigator === "undefined" || typeof window === "undefined") {
@@ -3031,6 +3038,34 @@ function getMobilePiPRoomVideos(
   return Array.from(
     root.querySelectorAll<HTMLVideoElement>("video"),
   ).filter((video) => video.dataset.mobilePipStage !== "true") as MobilePiPVideoElement[];
+}
+
+function getMobilePiPRoomTiles(root: HTMLElement | null): MobilePiPRoomTile[] {
+  if (!root) return [];
+
+  return Array.from(
+    root.querySelectorAll<HTMLElement>('[data-mobile-pip-tile="true"]'),
+  ).map((element) => ({
+    video: element.querySelector<HTMLVideoElement>("video") as MobilePiPVideoElement | null,
+    label: String(element.dataset.mobilePipLabel || "Participant").trim(),
+    avatarUrl: String(element.dataset.mobilePipAvatarUrl || "").trim(),
+  }));
+}
+
+function getMobilePiPAvatar(avatarUrl: string): HTMLImageElement | null {
+  if (!avatarUrl) return null;
+  const cached = mobilePiPAvatarCache.get(avatarUrl);
+  if (cached !== undefined) {
+    return cached?.complete && cached.naturalWidth > 0 ? cached : null;
+  }
+
+  const image = new Image();
+  image.crossOrigin = "anonymous";
+  image.referrerPolicy = "no-referrer";
+  image.onerror = () => mobilePiPAvatarCache.set(avatarUrl, null);
+  mobilePiPAvatarCache.set(avatarUrl, image);
+  image.src = avatarUrl;
+  return null;
 }
 
 function getPreferredMobilePiPSourceVideo(
@@ -3065,16 +3100,25 @@ function supportsWebKitVideoPiP(
   );
 }
 
-function isMobilePiPSourceRenderable(video: HTMLVideoElement): boolean {
+function isMobilePiPCameraTrackActive(video: HTMLVideoElement): boolean {
   const stream = video.srcObject;
+  if (!(stream instanceof MediaStream)) return false;
 
+  return stream.getVideoTracks().some(
+    (track) =>
+      track.readyState === "live" &&
+      track.enabled !== false &&
+      track.muted === false,
+  );
+}
+
+function isMobilePiPSourceRenderable(video: HTMLVideoElement): boolean {
   return (
     !video.ended &&
     video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
     video.videoWidth > 0 &&
     video.videoHeight > 0 &&
-    stream instanceof MediaStream &&
-    stream.getVideoTracks().some((track) => track.readyState === "live")
+    isMobilePiPCameraTrackActive(video)
   );
 }
 
@@ -3136,6 +3180,65 @@ function drawMobilePiPContainedSource(
   context.drawImage(source, drawX, drawY, drawWidth, drawHeight);
 }
 
+function drawMobilePiPAvatarFallback(
+  context: CanvasRenderingContext2D,
+  tile: MobilePiPRoomTile,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): void {
+  const label = tile.label || "Participant";
+  const initials = label
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || "")
+    .join("") || "?";
+  const radius = Math.max(28, Math.min(width, height) * 0.19);
+  const centerX = x + width / 2;
+  const centerY = y + height / 2 - 12;
+  const avatar = getMobilePiPAvatar(tile.avatarUrl);
+
+  context.save();
+  context.beginPath();
+  context.arc(centerX, centerY, radius, 0, Math.PI * 2);
+  context.clip();
+
+  if (avatar) {
+    const sourceSize = Math.min(avatar.naturalWidth, avatar.naturalHeight);
+    const sourceX = (avatar.naturalWidth - sourceSize) / 2;
+    const sourceY = (avatar.naturalHeight - sourceSize) / 2;
+    context.drawImage(
+      avatar,
+      sourceX,
+      sourceY,
+      sourceSize,
+      sourceSize,
+      centerX - radius,
+      centerY - radius,
+      radius * 2,
+      radius * 2,
+    );
+  } else {
+    context.fillStyle = "#334155";
+    context.fillRect(centerX - radius, centerY - radius, radius * 2, radius * 2);
+    context.fillStyle = "#ffffff";
+    context.font = `700 ${Math.round(radius * 0.72)}px Inter, system-ui, sans-serif`;
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillText(initials, centerX, centerY + 1);
+  }
+  context.restore();
+
+  context.fillStyle = "rgba(255,255,255,0.92)";
+  context.font = "600 20px Inter, system-ui, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  const safeLabel = label.length > 28 ? `${label.slice(0, 27)}…` : label;
+  context.fillText(safeLabel, centerX, centerY + radius + 27);
+}
+
 function drawMobilePiPCollage(
   canvas: HTMLCanvasElement,
   roomRoot: HTMLElement | null,
@@ -3153,28 +3256,29 @@ function drawMobilePiPCollage(
   context.fillStyle = "#0d0d0d";
   context.fillRect(0, 0, canvas.width, canvas.height);
 
-  const videos = getMobilePiPRoomVideos(roomRoot);
-  if (videos.length === 0) {
+  const tiles = getMobilePiPRoomTiles(roomRoot);
+  if (tiles.length === 0) {
     context.fillStyle = "rgba(255,255,255,0.72)";
     context.font = "600 30px system-ui, sans-serif";
     context.textAlign = "center";
     context.textBaseline = "middle";
     context.fillText(
-      "Waiting for participant video…",
+      "Waiting for participants…",
       canvas.width / 2,
       canvas.height / 2,
     );
     return;
   }
 
-  const count = videos.length;
+  const count = tiles.length;
   const columns = Math.ceil(Math.sqrt(count * (16 / 9)));
   const rows = Math.ceil(count / columns);
   const gap = 8;
   const cellWidth = (canvas.width - gap * (columns + 1)) / columns;
   const cellHeight = (canvas.height - gap * (rows + 1)) / rows;
 
-  videos.forEach((video, index) => {
+  tiles.forEach((tile, index) => {
+    const video = tile.video;
     const column = index % columns;
     const row = Math.floor(index / columns);
     const x = gap + column * (cellWidth + gap);
@@ -3183,7 +3287,7 @@ function drawMobilePiPCollage(
     context.fillStyle = "#171717";
     context.fillRect(x, y, cellWidth, cellHeight);
 
-    if (isMobilePiPSourceRenderable(video)) {
+    if (video && isMobilePiPSourceRenderable(video)) {
       updateMobilePiPCachedFrame(video);
 
       try {
@@ -3198,7 +3302,7 @@ function drawMobilePiPCollage(
           cellHeight,
         );
       } catch {
-        const cached = getMobilePiPCachedFrame(video);
+        const cached = video ? getMobilePiPCachedFrame(video) : null;
         if (cached) {
           drawMobilePiPContainedSource(
             context,
@@ -3213,7 +3317,10 @@ function drawMobilePiPCollage(
         }
       }
     } else {
-      const cached = getMobilePiPCachedFrame(video);
+      const cached =
+        video && isMobilePiPCameraTrackActive(video)
+          ? getMobilePiPCachedFrame(video)
+          : null;
 
       if (cached) {
         drawMobilePiPContainedSource(
@@ -3227,14 +3334,13 @@ function drawMobilePiPCollage(
           cellHeight,
         );
       } else {
-        context.fillStyle = "rgba(255,255,255,0.5)";
-        context.font = "500 22px system-ui, sans-serif";
-        context.textAlign = "center";
-        context.textBaseline = "middle";
-        context.fillText(
-          "Video paused",
-          x + cellWidth / 2,
-          y + cellHeight / 2,
+        drawMobilePiPAvatarFallback(
+          context,
+          tile,
+          x,
+          y,
+          cellWidth,
+          cellHeight,
         );
       }
     }
@@ -11455,10 +11561,23 @@ export function RoomPageLiveKit({
   );
 
   const preparePreferredMobilePiPVideo = useCallback(async () => {
-    const nativeVideo = getPreferredMobilePiPSourceVideo(videoWrapRef.current);
+    const root = videoWrapRef.current;
+    const nativeVideo = getPreferredMobilePiPSourceVideo(root);
+    const roomTiles = getMobilePiPRoomTiles(root);
+    const needsAvatarFallback = roomTiles.some(
+      (tile) => !tile.video || !isMobilePiPCameraTrackActive(tile.video),
+    );
 
-    // Every iPad browser uses WebKit. Prefer the already-playing LiveKit video
-    // because Safari cannot reliably create a PiP stream from canvas.captureStream().
+    // When any camera is off, prefer the generated stage so the iPad PiP can
+    // keep every participant visible as video or avatar. If Safari rejects a
+    // canvas MediaStream, fall back to its native playing LiveKit video.
+    if (needsAvatarFallback) {
+      const collageVideo = await prepareMobilePiPCollage();
+      if (collageVideo && isMobilePiPStageReady(collageVideo)) {
+        return collageVideo;
+      }
+    }
+
     if (nativeVideo && supportsWebKitVideoPiP(nativeVideo)) {
       configureMobilePiPVideo(nativeVideo);
       return nativeVideo;

@@ -597,6 +597,9 @@ function VideoTileInner({
     return (
         <div
             ref={wrapRef}
+            data-mobile-pip-tile="true"
+            data-mobile-pip-label={label || "Participant"}
+            data-mobile-pip-avatar-url={normalizedAvatarUrl || undefined}
             className={
                 "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border transition-[border-color,box-shadow] duration-300 ease-out " +
                 (isCompact ? "rounded-xl " : "rounded-2xl ") +
@@ -620,6 +623,7 @@ function VideoTileInner({
                             <img
                                 src={normalizedAvatarUrl}
                                 alt={label || "User"}
+                                data-mobile-pip-avatar="true"
                                 className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)]"} rounded-full object-cover border shadow-2xl ${isLight ? "border-[#D8D0D0]" : "border-[#2B2B2B]"
                                     }`}
                                 referrerPolicy="no-referrer"
@@ -628,6 +632,7 @@ function VideoTileInner({
                             />
                         ) : (
                             <div
+                                data-mobile-pip-initials="true"
                                 className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)] text-[clamp(0.8rem,5vmin,1.05rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)] text-[clamp(1.1rem,3vw,1.45rem)]"} rounded-full border flex items-center justify-center font-bold shadow-2xl ${initialsBgClass}`}
                             >
                                 {initials}
