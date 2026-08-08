@@ -293,8 +293,91 @@ function normalizeVoiceUiTranscript(raw: string) {
     .toLocaleLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
-    .replace(/^(?:please |hey mysession |mysession |can you |could you )+/, "")
+    .replace(/^(?:(?:please|hey mysession|hey my session|mysession|my session|can you|could you|would you|will you|i want you to|let s|go ahead and)\s+)+/, "")
+    .replace(/\s+(?:please|for me|right now)$/g, "")
+    .replace(/\b(?:cam|web cam|webcam|video)\s+of$/g, "camera off")
+    .replace(/\b(?:mic|mike|microphone|sound|audio|voice)\s+of$/g, "microphone off")
+    .replace(/\b(?:cam|web cam|webcam|video)\s+one$/g, "camera on")
+    .replace(/\b(?:mic|mike|microphone|sound|audio|voice)\s+one$/g, "microphone on")
     .trim();
+}
+
+function getVoiceUiPhraseVariants(rawPhrase: string): string[] {
+  const normalized = normalizeVoiceUiTranscript(rawPhrase);
+  if (!normalized || rawPhrase.includes("[")) return normalized ? [normalized] : [];
+
+  const variants = new Set<string>([normalized]);
+  const substitutions: ReadonlyArray<readonly [RegExp, readonly string[]]> = [
+    [/\bcamera\b/g, ["cam", "webcam", "web cam", "video"]],
+    [/\bmicrophone\b/g, ["mic", "mike", "sound", "audio", "voice"]],
+    [/\bopen\b/g, ["show", "display", "bring up"]],
+    [/\bclose\b/g, ["hide", "dismiss"]],
+    [/\benable\b/g, ["turn on", "switch on", "start"]],
+    [/\bdisable\b/g, ["turn off", "switch off", "stop"]],
+    [/\bstart\b/g, ["begin", "enable", "turn on"]],
+    [/\bstop\b/g, ["end", "disable", "turn off"]],
+    [/\bparticipants\b/g, ["people", "members"]],
+    [/\bsettings\b/g, ["preferences", "options"]],
+    [/\bbackground\b/g, ["backdrop", "video background"]],
+    [/\bpicture in picture\b/g, ["pip", "picture over picture"]],
+    [/\btasks\b/g, ["task panel", "to do list", "todo list"]],
+    [/\bchat\b/g, ["messages", "message panel"]],
+  ];
+
+  for (const [pattern, replacements] of substitutions) {
+    if (!pattern.test(normalized)) continue;
+    pattern.lastIndex = 0;
+    for (const replacement of replacements) {
+      variants.add(normalized.replace(pattern, replacement));
+      pattern.lastIndex = 0;
+    }
+  }
+
+  if (/\boff$/.test(normalized)) variants.add(normalized.replace(/\boff$/, "of"));
+  if (/\bon$/.test(normalized)) variants.add(normalized.replace(/\bon$/, "one"));
+  return [...variants];
+}
+
+function parseVoiceUiSpokenNumber(raw: string): number | null {
+  const cleaned = normalizeVoiceUiTranscript(raw)
+    .replace(/\s+(?:percent|per cent)$/, "")
+    .replace(/\band\b/g, " ")
+    .trim();
+  if (/^\d{1,3}$/.test(cleaned)) return Number(cleaned);
+
+  const values: Record<string, number> = {
+    zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
+    six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+    eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
+    sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+    twenty: 20, thirty: 30, forty: 40, fifty: 50,
+    sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+  };
+  const tokens = cleaned.split(/\s+/).filter(Boolean);
+  if (!tokens.length) return null;
+
+  let value = 0;
+  let matched = false;
+  for (const token of tokens) {
+    if (token === "hundred") {
+      value = Math.max(1, value) * 100;
+      matched = true;
+      continue;
+    }
+    const part = values[token];
+    if (part == null) return null;
+    value += part;
+    matched = true;
+  }
+  return matched ? value : null;
+}
+function getVoiceUiCommandHint(definition: VoiceUiCommandDefinition): string {
+  if (definition.hint) return definition.hint;
+  const examples = [definition.phrase, ...(definition.aliases || [])]
+    .filter((phrase) => !phrase.includes("["))
+    .filter((phrase, index, phrases) => phrases.indexOf(phrase) === index)
+    .slice(0, 3);
+  return examples.join(" / ") || definition.phrase;
 }
 
 type VoiceUiCommandGroupId = "media" | "status" | "panels" | "views" | "tools" | "reactions";
@@ -308,10 +391,10 @@ type VoiceUiCommandDefinition = {
 };
 
 const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
-  { command: "camera_on", group: "media", phrase: "Cam-on", aliases: ["Cam on", "Cam one", "Camon", "Camp on", "Come on", "Came on", "Cameron", "Camera on", "Webcam on", "Web cam on", "Video on", "Turn on camera", "Turn on the camera", "Turn camera on", "Turn the camera on", "Switch camera on", "Switch the camera on", "Enable camera", "Enable the camera", "Start camera", "Start the camera"] },
-  { command: "camera_off", group: "media", phrase: "Cam-off", aliases: ["Cam off", "Cam of", "Camoff", "Camp off", "Come off", "Came off", "Camera off", "Webcam off", "Web cam off", "Video off", "Turn off camera", "Turn off the camera", "Turn of camera", "Turn of the camera", "Turn camera off", "Turn the camera off", "Switch camera off", "Switch the camera off", "Disable camera", "Disable the camera", "Stop camera", "Stop the camera"] },
-  { command: "microphone_on", group: "media", phrase: "Unmute", aliases: ["Mic on", "Microphone on", "Unmute mic", "Unmute the mic", "Unmute microphone", "Unmute the microphone", "Turn on mic", "Turn on the mic", "Turn on microphone", "Turn on the microphone", "Turn mic on", "Turn microphone on", "Switch mic on", "Switch microphone on", "Enable mic", "Enable microphone", "Start mic", "Start microphone"] },
-  { command: "microphone_off", group: "media", phrase: "Mute", aliases: ["Mic off", "Microphone off", "Mute mic", "Mute the mic", "Mute microphone", "Mute the microphone", "Turn off mic", "Turn off the mic", "Turn off microphone", "Turn off the microphone", "Turn of microphone", "Turn of the microphone", "Turn mic off", "Turn microphone off", "Switch mic off", "Switch microphone off", "Disable mic", "Disable microphone", "Stop mic", "Stop microphone"] },
+  { command: "camera_on", group: "media", phrase: "Cam-on", aliases: ["Cam on", "Cam one", "Camon", "Camp on", "Come on", "Came on", "Cameron", "Camera on", "Webcam on", "Web cam on", "Video on", "Turn on camera", "Turn on the camera", "Turn camera on", "Turn the camera on", "Switch camera on", "Switch the camera on", "Enable camera", "Enable the camera", "Start camera", "Start the camera"], hint: "Cam on / Video on / Camera on" },
+  { command: "camera_off", group: "media", phrase: "Cam-off", aliases: ["Cam off", "Cam of", "Camoff", "Camp off", "Come off", "Came off", "Camera off", "Webcam off", "Web cam off", "Video off", "Turn off camera", "Turn off the camera", "Turn of camera", "Turn of the camera", "Turn camera off", "Turn the camera off", "Switch camera off", "Switch the camera off", "Disable camera", "Disable the camera", "Stop camera", "Stop the camera"], hint: "Cam off / Video off / Video of" },
+  { command: "microphone_on", group: "media", phrase: "Unmute", aliases: ["Mic on", "Microphone on", "Unmute mic", "Unmute the mic", "Unmute microphone", "Unmute the microphone", "Turn on mic", "Turn on the mic", "Turn on microphone", "Turn on the microphone", "Turn mic on", "Turn microphone on", "Switch mic on", "Switch microphone on", "Enable mic", "Enable microphone", "Start mic", "Start microphone"], hint: "Unmute / Mic on / Sound on" },
+  { command: "microphone_off", group: "media", phrase: "Mute", aliases: ["Mic off", "Microphone off", "Mute mic", "Mute the mic", "Mute microphone", "Mute the microphone", "Turn off mic", "Turn off the mic", "Turn off microphone", "Turn off the microphone", "Turn of microphone", "Turn of the microphone", "Turn mic off", "Turn microphone off", "Switch mic off", "Switch microphone off", "Disable mic", "Disable microphone", "Stop mic", "Stop microphone"], hint: "Mute / Mic off / Sound of" },
   { command: "screen_share_on", group: "media", phrase: "Share screen", aliases: ["Share my screen", "Start screen share", "Start screen sharing", "Enable screen sharing"] },
   { command: "screen_share_off", group: "media", phrase: "Stop sharing screen", aliases: ["Stop screen share", "Stop screen sharing", "Turn off screen sharing"] },
 
@@ -448,10 +531,9 @@ const VOICE_UI_COMMAND_GROUPS: readonly {
 const VOICE_UI_COMMAND_LOOKUP = new Map<string, VoiceUiCommand>();
 for (const definition of VOICE_UI_COMMAND_DEFINITIONS) {
   for (const phrase of [definition.phrase, ...(definition.aliases || [])]) {
-    VOICE_UI_COMMAND_LOOKUP.set(
-      normalizeVoiceUiTranscript(phrase),
-      definition.command,
-    );
+    for (const variant of getVoiceUiPhraseVariants(phrase)) {
+      VOICE_UI_COMMAND_LOOKUP.set(variant, definition.command);
+    }
   }
 }
 
@@ -463,15 +545,15 @@ function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
   const rawCommandText = String(raw || "")
     .trim()
     .replace(
-      /^(?:(?:please|hey mysession|mysession|can you|could you)\s+)+/i,
+      /^(?:(?:please|hey mysession|hey my session|mysession|my session|can you|could you|would you|will you|i want you to|let s|go ahead and)\s+)+/i,
       "",
     )
     .trim();
   const textCommands: Array<[RegExp, string]> = [
-    [/^(?:type|dictate)\s+(.+)$/i, "dictate_"],
-    [/^(?:add|create)\s+task\s+(.+)$/i, "task_text_"],
-    [/^send\s+message\s+(.+)$/i, "message_send_text_"],
-    [/^(?:write|compose|type)\s+message\s+(.+)$/i, "message_text_"],
+    [/^(?:type|dictate|enter|input|write down)\s+(.+)$/i, "dictate_"],
+    [/^(?:add|create|make|new)\s+(?:a\s+)?task\s+(.+)$/i, "task_text_"],
+    [/^(?:send|post)\s+(?:a\s+)?message\s+(.+)$/i, "message_send_text_"],
+    [/^(?:write|compose|type|draft)\s+(?:a\s+)?message\s+(.+)$/i, "message_text_"],
   ];
   for (const [pattern, prefix] of textCommands) {
     const match = rawCommandText.match(pattern);
@@ -479,7 +561,7 @@ function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
     if (payload) return `${prefix}${encodeURIComponent(payload)}` as VoiceUiCommand;
   }
   const clickControlMatch = rawCommandText.match(
-    /^(?:click|press|activate)\s+(.+)$/i,
+    /^(?:click|press|tap|activate|select|choose)\s+(.+)$/i,
   );
   const clickControlLabel = String(clickControlMatch?.[1] || "").trim();
   if (clickControlLabel) {
@@ -496,25 +578,28 @@ function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
   if (namedBlurStrengths[normalized]) {
     return `blur_strength_${namedBlurStrengths[normalized]}`;
   }
-  const blurStrengthMatch = normalized.match(/^(?:set )?blur(?: strength)?(?: to)? (\d{1,2})$/);
+  const blurStrengthMatch = normalized.match(/^(?:set )?blur(?: strength)?(?: to)? (.+)$/);
   if (blurStrengthMatch) {
-    const requested = Number(blurStrengthMatch[1]);
+    const requested = parseVoiceUiSpokenNumber(blurStrengthMatch[1]);
+    if (requested == null) return null;
     const strength = Math.max(4, Math.min(30, requested));
     return `blur_strength_${strength}`;
   }
   const numericCommands: Array<[RegExp, string, number, number]> = [
-    [/^(?:set )?(?:layout )?columns?(?: to)? (\d{1,2})$/, "layout_columns_", 1, 6],
-    [/^(?:set )?(?:layout )?rows?(?: to)? (\d{1,2})$/, "layout_rows_", 1, 6],
-    [/^(?:set )?brightness(?: to)? (\d{1,3})$/, "brightness_", 50, 150],
-    [/^(?:set )?contrast(?: to)? (\d{1,3})$/, "contrast_", 50, 150],
-    [/^(?:set )?saturation(?: to)? (\d{1,3})$/, "saturation_", 0, 200],
-    [/^(?:set )?(?:stage|timeline|sound) volume(?: to)? (\d{1,3})$/, "stage_volume_", 0, 100],
-    [/^(?:set )?(?:participant|room|people) volume(?: to)? (\d{1,3})$/, "participant_volume_", 0, 300],
+    [/^(?:set )?(?:layout )?columns?(?: to)? (.+)$/, "layout_columns_", 1, 6],
+    [/^(?:set )?(?:layout )?rows?(?: to)? (.+)$/, "layout_rows_", 1, 6],
+    [/^(?:set )?brightness(?: to)? (.+)$/, "brightness_", 50, 150],
+    [/^(?:set )?contrast(?: to)? (.+)$/, "contrast_", 50, 150],
+    [/^(?:set )?saturation(?: to)? (.+)$/, "saturation_", 0, 200],
+    [/^(?:set )?(?:stage|timeline|sound) volume(?: to)? (.+)$/, "stage_volume_", 0, 100],
+    [/^(?:set )?(?:participant|room|people) volume(?: to)? (.+)$/, "participant_volume_", 0, 300],
   ];
   for (const [pattern, prefix, min, max] of numericCommands) {
     const match = normalized.match(pattern);
     if (!match) continue;
-    const value = Math.max(min, Math.min(max, Number(match[1])));
+    const requested = parseVoiceUiSpokenNumber(match[1]);
+    if (requested == null) continue;
+    const value = Math.max(min, Math.min(max, requested));
     return `${prefix}${value}` as VoiceUiCommand;
   }
   const participantCommands: Array<[RegExp, string]> = [
@@ -18873,7 +18958,7 @@ export function RoomPageLiveKit({
                                 key={definition.command}
                                 className={`rounded-xl border px-2 py-1.5 ${isLight ? "border-black/[0.08] bg-white" : "border-white/[0.08] bg-white/[0.03]"}`}
                               >
-                                <div className="text-[10px] font-semibold leading-4">{definition.hint || definition.phrase}</div>
+                                <div className="text-[10px] font-semibold leading-4">{getVoiceUiCommandHint(definition)}</div>
                               </div>
                             ))}
                         </div>
@@ -18882,7 +18967,7 @@ export function RoomPageLiveKit({
                   </div>
 
                   <div className={`mt-4 rounded-2xl px-3 py-2 text-[10px] leading-4 ${isLight ? "bg-amber-50 text-amber-900/70" : "bg-amber-400/10 text-amber-100/65"}`}>
-                    “Leave room” exits immediately. Participant moderation commands open the matching management menu so you can confirm the action.
+                    Common alternatives such as video/camera, mic/sound, show/open, hide/close and turn on/off are accepted. “Leave room” exits immediately. Participant moderation commands open the matching management menu so you can confirm the action.
                   </div>
                 </div>
               </>
