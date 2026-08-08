@@ -234,7 +234,8 @@ type VoiceUiCommand =
   | "reaction_clap"
   | "reaction_ok"
   | "reaction_wave"
-  | "reaction_celebrate";
+  | "reaction_celebrate"
+  | "reaction_clover";
 
 type VoiceUiStatus =
   | "idle"
@@ -420,15 +421,16 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "click_control_example", group: "tools", phrase: "Click [button label]" },
   { command: "leave_room", group: "tools", phrase: "Leave room", aliases: ["Exit room", "Leave session"] },
 
-  { command: "reaction_fire", group: "reactions", phrase: "Fire", aliases: ["Fire reaction", "Send fire", "React with fire"] },
-  { command: "reaction_laugh", group: "reactions", phrase: "Laugh", aliases: ["Laughter", "Laugh reaction", "Send laugh", "React with laugh"] },
-  { command: "reaction_thumbs_up", group: "reactions", phrase: "Thumbs up", aliases: ["Thumbs up reaction", "Send thumbs up", "React with thumbs up"] },
-  { command: "reaction_thumbs_down", group: "reactions", phrase: "Thumbs down", aliases: ["Thumbs down reaction", "Send thumbs down", "React with thumbs down"] },
-  { command: "reaction_heart", group: "reactions", phrase: "Heart", aliases: ["Love", "Heart reaction", "Send heart", "React with heart"] },
-  { command: "reaction_clap", group: "reactions", phrase: "Clap", aliases: ["Applause", "Clap reaction", "Send clap", "React with clap"] },
-  { command: "reaction_ok", group: "reactions", phrase: "OK", aliases: ["OK reaction", "Send OK", "React with OK"] },
-  { command: "reaction_wave", group: "reactions", phrase: "Wave", aliases: ["Wave reaction", "Send wave", "React with wave"] },
-  { command: "reaction_celebrate", group: "reactions", phrase: "Celebrate", aliases: ["Celebration", "Celebrate reaction", "Send celebrate", "React with celebrate"] },
+  { command: "reaction_fire", group: "reactions", phrase: "Fire", aliases: ["Fire reaction", "Send fire", "React with fire", "That's fire", "This is fire", "Hot", "Amazing"], hint: "Fire / That's fire / Hot" },
+  { command: "reaction_laugh", group: "reactions", phrase: "Laugh", aliases: ["Laughter", "Laugh reaction", "Send laugh", "React with laugh", "Funny", "That's funny", "So funny", "LOL", "Ha ha"], hint: "Laugh / Funny / LOL" },
+  { command: "reaction_thumbs_up", group: "reactions", phrase: "Thumbs up", aliases: ["Thumbs up reaction", "Send thumbs up", "React with thumbs up", "Like", "Nice", "Good", "Great", "Well done", "Good job", "Approve", "Approved"], hint: "Thumbs up / Nice / Good job" },
+  { command: "reaction_thumbs_down", group: "reactions", phrase: "Thumbs down", aliases: ["Thumbs down reaction", "Send thumbs down", "React with thumbs down", "Dislike", "Not good", "Nope", "Bad", "Disapprove"], hint: "Thumbs down / Dislike / Nope" },
+  { command: "reaction_heart", group: "reactions", phrase: "Heart", aliases: ["Love", "Heart reaction", "Send heart", "React with heart", "Love it", "I love it", "Much love", "Send love"], hint: "Heart / Love / Love it" },
+  { command: "reaction_clap", group: "reactions", phrase: "Clap", aliases: ["Applause", "Clap reaction", "Send clap", "React with clap", "Bravo", "Well played", "Give applause", "Round of applause"], hint: "Clap / Applause / Bravo" },
+  { command: "reaction_ok", group: "reactions", phrase: "OK", aliases: ["Okay", "OK reaction", "Send OK", "React with OK", "Sounds good", "All good", "Got it", "Deal", "Perfect"], hint: "OK / Sounds good / Got it" },
+  { command: "reaction_wave", group: "reactions", phrase: "Wave", aliases: ["Wave reaction", "Send wave", "React with wave", "Hello", "Hi everyone", "Hey everyone", "Bye", "Goodbye", "See you"], hint: "Wave / Hello / Goodbye" },
+  { command: "reaction_celebrate", group: "reactions", phrase: "Celebrate", aliases: ["Celebration", "Celebrate reaction", "Send celebrate", "React with celebrate", "Congrats", "Congratulations", "Hooray", "We did it", "Party", "Victory"], hint: "Celebrate / Congrats / Hooray" },
+  { command: "reaction_clover", group: "reactions", phrase: "Clover", aliases: ["Luck", "Good luck", "Best of luck", "Lucky", "Send luck", "Wish me luck", "Wishing you luck", "Clover reaction", "Send clover", "React with clover", "Four leaf clover", "Four-leaf clover"], hint: "Clover / Luck / Good luck" },
 ];
 
 const VOICE_UI_COMMAND_GROUPS: readonly {
@@ -13808,6 +13810,10 @@ export function RoomPageLiveKit({
       case "reaction_celebrate":
         sendReaction("celebrate");
         setVoiceUiLastCommand("Celebration sent");
+        break;
+      case "reaction_clover":
+        sendReaction("clover");
+        setVoiceUiLastCommand("Good luck sent");
         break;
     }
   };

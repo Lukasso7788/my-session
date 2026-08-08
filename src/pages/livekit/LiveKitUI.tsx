@@ -80,7 +80,8 @@ export type ReactionType =
     | "clap"
     | "ok"
     | "wave"
-    | "celebrate";
+    | "celebrate"
+    | "clover";
 
 export const reactionEmoji: Record<ReactionType, string> = {
     fire: "🔥",
@@ -92,4 +93,5 @@ export const reactionEmoji: Record<ReactionType, string> = {
     ok: "👌",
     wave: "👋",
     celebrate: "🎉",
+    clover: "🍀",
 };

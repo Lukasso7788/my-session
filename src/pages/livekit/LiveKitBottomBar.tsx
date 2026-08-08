@@ -17,6 +17,7 @@ const REACTION_MENU_ITEMS: ReactionType[] = [
     "ok",
     "wave",
     "celebrate",
+    "clover",
 ];
 
 function AIHostIcon({
