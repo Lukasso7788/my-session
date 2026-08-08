@@ -310,6 +310,7 @@ function getVoiceUiPhraseVariants(rawPhrase: string): string[] {
   const substitutions: ReadonlyArray<readonly [RegExp, readonly string[]]> = [
     [/\bcamera\b/g, ["cam", "webcam", "web cam", "video"]],
     [/\bmicrophone\b/g, ["mic", "mike", "sound", "audio", "voice"]],
+    [/\bscreen share\b/g, ["screen sharing", "share my screen", "display sharing"]],
     [/\bopen\b/g, ["show", "display", "bring up"]],
     [/\bclose\b/g, ["hide", "dismiss"]],
     [/\benable\b/g, ["turn on", "switch on", "start"]],
@@ -317,20 +318,55 @@ function getVoiceUiPhraseVariants(rawPhrase: string): string[] {
     [/\bstart\b/g, ["begin", "enable", "turn on"]],
     [/\bstop\b/g, ["end", "disable", "turn off"]],
     [/\bparticipants\b/g, ["people", "members"]],
+    [/\bdirect messages\b/g, ["dms", "private messages"]],
     [/\bsettings\b/g, ["preferences", "options"]],
     [/\bbackground\b/g, ["backdrop", "video background"]],
     [/\bpicture in picture\b/g, ["pip", "picture over picture"]],
     [/\btasks\b/g, ["task panel", "to do list", "todo list"]],
+    [/\btask\b/g, ["todo", "to do", "intention"]],
     [/\bchat\b/g, ["messages", "message panel"]],
+    [/\bmessage\b/g, ["chat message", "text"]],
+    [/\baccountability wall\b/g, ["accountability view", "task wall", "focus wall"]],
+    [/\btimeline\b/g, ["session timeline", "schedule"]],
+    [/\blayout\b/g, ["grid", "view layout"]],
+    [/\bbug report\b/g, ["issue report", "report a problem"]],
+    [/\bcolor correction\b/g, ["video colors", "color adjustment"]],
+    [/\bnoise suppression\b/g, ["noise reduction", "background noise reduction"]],
+    [/\bauto gain\b/g, ["automatic gain", "gain control"]],
+    [/\bjoin sound\b/g, ["entrance sound", "entry sound"]],
+    [/\bleave sound\b/g, ["exit sound", "departure sound"]],
+    [/\bstage sounds\b/g, ["timeline sounds", "session sounds"]],
+    [/\broom audio\b/g, ["room sound", "audio playback"]],
   ];
 
-  for (const [pattern, replacements] of substitutions) {
-    if (!pattern.test(normalized)) continue;
-    pattern.lastIndex = 0;
-    for (const replacement of replacements) {
-      variants.add(normalized.replace(pattern, replacement));
+  const queue: Array<{ phrase: string; usedSubstitutions: ReadonlySet<number> }> = [
+    { phrase: normalized, usedSubstitutions: new Set<number>() },
+  ];
+  while (queue.length > 0 && variants.size < 96) {
+    const current = queue.shift();
+    if (!current) break;
+    substitutions.forEach(([pattern, replacements], substitutionIndex) => {
+      if (current.usedSubstitutions.has(substitutionIndex)) return;
       pattern.lastIndex = 0;
-    }
+      if (!pattern.test(current.phrase)) return;
+      pattern.lastIndex = 0;
+      for (const replacement of replacements) {
+        const candidate = current.phrase.replace(pattern, replacement).replace(/\s+/g, " ").trim();
+        pattern.lastIndex = 0;
+        if (!candidate || variants.has(candidate)) continue;
+        variants.add(candidate);
+        queue.push({
+          phrase: candidate,
+          usedSubstitutions: new Set([...current.usedSubstitutions, substitutionIndex]),
+        });
+        if (variants.size >= 96) break;
+      }
+    });
+  }
+
+  for (const phrase of [...variants]) {
+    const withoutArticles = phrase.replace(/\b(?:a|the|my)\b/g, " ").replace(/\s+/g, " ").trim();
+    if (withoutArticles) variants.add(withoutArticles);
   }
 
   if (/\boff$/.test(normalized)) variants.add(normalized.replace(/\boff$/, "of"));
@@ -504,16 +540,16 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "click_control_example", group: "tools", phrase: "Click [button label]" },
   { command: "leave_room", group: "tools", phrase: "Leave room", aliases: ["Exit room", "Leave session"] },
 
-  { command: "reaction_fire", group: "reactions", phrase: "Fire", aliases: ["Fire reaction", "Send fire", "React with fire", "That's fire", "This is fire", "Hot", "Amazing"], hint: "Fire / That's fire / Hot" },
-  { command: "reaction_laugh", group: "reactions", phrase: "Laugh", aliases: ["Laughter", "Laugh reaction", "Send laugh", "React with laugh", "Funny", "That's funny", "So funny", "LOL", "Ha ha"], hint: "Laugh / Funny / LOL" },
-  { command: "reaction_thumbs_up", group: "reactions", phrase: "Thumbs up", aliases: ["Thumbs up reaction", "Send thumbs up", "React with thumbs up", "Like", "Nice", "Good", "Great", "Well done", "Good job", "Approve", "Approved"], hint: "Thumbs up / Nice / Good job" },
-  { command: "reaction_thumbs_down", group: "reactions", phrase: "Thumbs down", aliases: ["Thumbs down reaction", "Send thumbs down", "React with thumbs down", "Dislike", "Not good", "Nope", "Bad", "Disapprove"], hint: "Thumbs down / Dislike / Nope" },
-  { command: "reaction_heart", group: "reactions", phrase: "Heart", aliases: ["Love", "Heart reaction", "Send heart", "React with heart", "Love it", "I love it", "Much love", "Send love"], hint: "Heart / Love / Love it" },
-  { command: "reaction_clap", group: "reactions", phrase: "Clap", aliases: ["Applause", "Clap reaction", "Send clap", "React with clap", "Bravo", "Well played", "Give applause", "Round of applause"], hint: "Clap / Applause / Bravo" },
-  { command: "reaction_ok", group: "reactions", phrase: "OK", aliases: ["Okay", "OK reaction", "Send OK", "React with OK", "Sounds good", "All good", "Got it", "Deal", "Perfect"], hint: "OK / Sounds good / Got it" },
-  { command: "reaction_wave", group: "reactions", phrase: "Wave", aliases: ["Wave reaction", "Send wave", "React with wave", "Hello", "Hi everyone", "Hey everyone", "Bye", "Goodbye", "See you"], hint: "Wave / Hello / Goodbye" },
-  { command: "reaction_celebrate", group: "reactions", phrase: "Celebrate", aliases: ["Celebration", "Celebrate reaction", "Send celebrate", "React with celebrate", "Congrats", "Congratulations", "Hooray", "We did it", "Party", "Victory"], hint: "Celebrate / Congrats / Hooray" },
-  { command: "reaction_clover", group: "reactions", phrase: "Clover", aliases: ["Luck", "Good luck", "Best of luck", "Lucky", "Send luck", "Wish me luck", "Wishing you luck", "Clover reaction", "Send clover", "React with clover", "Four leaf clover", "Four-leaf clover"], hint: "Clover / Luck / Good luck" },
+  { command: "reaction_fire", group: "reactions", phrase: "Fire", aliases: ["Fire reaction", "Send fire", "React with fire", "That's fire", "This is fire", "Hot", "Amazing", "Awesome", "Incredible", "Fantastic", "Impressive"], hint: "Fire / That's fire / Hot" },
+  { command: "reaction_laugh", group: "reactions", phrase: "Laugh", aliases: ["Laughter", "Laugh reaction", "Send laugh", "React with laugh", "Funny", "That's funny", "So funny", "LOL", "Ha ha", "Hilarious", "That is hilarious", "So hilarious"], hint: "Laugh / Funny / LOL" },
+  { command: "reaction_thumbs_up", group: "reactions", phrase: "Thumbs up", aliases: ["Thumbs up reaction", "Send thumbs up", "React with thumbs up", "Like", "Nice", "Great", "Well done", "Good job", "Approve", "Approved", "Excellent", "Nice work", "Great work"], hint: "Thumbs up / Nice / Good job" },
+  { command: "reaction_thumbs_down", group: "reactions", phrase: "Thumbs down", aliases: ["Thumbs down reaction", "Send thumbs down", "React with thumbs down", "Dislike", "Not good", "Nope", "Bad", "Disapprove", "I disagree", "Do not like", "Not for me"], hint: "Thumbs down / Dislike / Nope" },
+  { command: "reaction_heart", group: "reactions", phrase: "Heart", aliases: ["Love", "Heart reaction", "Send heart", "React with heart", "Love it", "I love it", "Much love", "Send love", "Lovely", "Sending love", "Love this"], hint: "Heart / Love / Love it" },
+  { command: "reaction_clap", group: "reactions", phrase: "Clap", aliases: ["Applause", "Clap reaction", "Send clap", "React with clap", "Bravo", "Well played", "Give applause", "Round of applause", "Clapping", "Big applause", "Take a bow"], hint: "Clap / Applause / Bravo" },
+  { command: "reaction_ok", group: "reactions", phrase: "OK", aliases: ["Okay", "OK reaction", "Send OK", "React with OK", "Sounds good", "All good", "Got it", "Deal", "Perfect", "Understood", "Works for me", "Sure"], hint: "OK / Sounds good / Got it" },
+  { command: "reaction_wave", group: "reactions", phrase: "Wave", aliases: ["Wave reaction", "Send wave", "React with wave", "Hello", "Hi everyone", "Hey everyone", "Bye", "Goodbye", "See you", "Greetings", "See ya", "Hello there"], hint: "Wave / Hello / Goodbye" },
+  { command: "reaction_celebrate", group: "reactions", phrase: "Celebrate", aliases: ["Celebration", "Celebrate reaction", "Send celebrate", "React with celebrate", "Congrats", "Congratulations", "Hooray", "We did it", "Party", "Victory", "Cheers", "Woohoo", "We made it"], hint: "Celebrate / Congrats / Hooray" },
+  { command: "reaction_clover", group: "reactions", phrase: "Clover", aliases: ["Luck", "Good luck", "Best of luck", "Lucky", "Send luck", "Wish me luck", "Wishing you luck", "Clover reaction", "Send clover", "React with clover", "Four leaf clover", "Four-leaf clover", "Fingers crossed", "Sending luck", "Wish you luck", "All the best", "You got this", "Good lock", "Good look", "God luck", "Gud luck", "Best of lock"], hint: "Clover / Luck / Good luck" },
 ];
 
 const VOICE_UI_COMMAND_GROUPS: readonly {
@@ -533,6 +569,18 @@ for (const definition of VOICE_UI_COMMAND_DEFINITIONS) {
   for (const phrase of [definition.phrase, ...(definition.aliases || [])]) {
     for (const variant of getVoiceUiPhraseVariants(phrase)) {
       VOICE_UI_COMMAND_LOOKUP.set(variant, definition.command);
+    }
+  }
+}
+
+const VOICE_UI_AMBIGUOUS_INTERIM_PHRASES = new Set<string>();
+for (const [longerPhrase, longerCommand] of VOICE_UI_COMMAND_LOOKUP) {
+  const words = longerPhrase.split(" ");
+  for (let wordCount = 1; wordCount < words.length; wordCount += 1) {
+    const prefix = words.slice(0, wordCount).join(" ");
+    const prefixCommand = VOICE_UI_COMMAND_LOOKUP.get(prefix);
+    if (prefixCommand && prefixCommand !== longerCommand) {
+      VOICE_UI_AMBIGUOUS_INTERIM_PHRASES.add(prefix);
     }
   }
 }
@@ -14037,9 +14085,13 @@ export function RoomPageLiveKit({
             const isDictationPhrase = /^(?:type|dictate|add task|create task|write message|compose message|type message|send message)(?: |$)/.test(
               normalizedTranscript,
             );
-            if (isDictationPhrase && result.isFinal === false) {
-              // Dictation must wait for the final transcript; executing an
-              // interim result truncates everything after the first word.
+            const shouldWaitForFinal =
+              isDictationPhrase ||
+              VOICE_UI_AMBIGUOUS_INTERIM_PHRASES.has(normalizedTranscript);
+            if (shouldWaitForFinal && result.isFinal === false) {
+              // Dictation and ambiguous prefixes must wait for the final
+              // transcript. For example, executing "good" immediately would
+              // steal "good luck" from the clover reaction.
               continue;
             }
 
