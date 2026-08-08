@@ -3007,6 +3007,7 @@ const MOBILE_PIP_CANVAS_WIDTH = 960;
 const MOBILE_PIP_CANVAS_HEIGHT = 540;
 const MOBILE_PIP_COLLAGE_FPS = 8;
 const MOBILE_PIP_SNAPSHOT_REFRESH_MS = 500;
+const MOBILE_PIP_HINT_DISMISSED_KEY = "mysession_mobile_pip_hint_dismissed_v1";
 
 const mobilePiPVideoFrameCache = new WeakMap<
   HTMLVideoElement,
@@ -11546,6 +11547,7 @@ export function RoomPageLiveKit({
   const mobilePiPCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const mobilePiPStageRef = useRef<MobilePiPVideoElement | null>(null);
   const [mobilePipOpen, setMobilePipOpen] = useState(false);
+  const [mobilePiPHintVisible, setMobilePiPHintVisible] = useState(false);
   const [mobilePiPVideoElement, setMobilePiPVideoElement] =
     useState<MobilePiPVideoElement | null>(null);
   const mobilePiPRuntime = useMemo(
@@ -11608,6 +11610,31 @@ export function RoomPageLiveKit({
   );
 
   const pictureInPictureOpen = pipOpen || mobilePipOpen;
+
+  useEffect(() => {
+    if (!connected || !mobilePiPRuntime) {
+      setMobilePiPHintVisible(false);
+      return;
+    }
+
+    if (pictureInPictureOpen) {
+      setMobilePiPHintVisible(false);
+      try {
+        localStorage.setItem(MOBILE_PIP_HINT_DISMISSED_KEY, "1");
+      } catch { }
+      return;
+    }
+
+    try {
+      if (localStorage.getItem(MOBILE_PIP_HINT_DISMISSED_KEY) === "1") {
+        setMobilePiPHintVisible(false);
+        return;
+      }
+    } catch { }
+
+    const timer = window.setTimeout(() => setMobilePiPHintVisible(true), 1_400);
+    return () => window.clearTimeout(timer);
+  }, [connected, mobilePiPRuntime, pictureInPictureOpen]);
 
   useEffect(() => {
     if (!connected || !mobilePiPRuntime) {
@@ -19429,6 +19456,83 @@ export function RoomPageLiveKit({
               )}
             </div>
           </>
+        ) : null}
+
+        {mobilePiPHintVisible && connected && mobilePiPRuntime ? (
+          <div className="fixed inset-x-3 bottom-[5.65rem] z-[90] flex justify-center sm:inset-x-auto sm:right-4 sm:w-[390px]">
+            <div
+              className={`w-full rounded-2xl px-3 py-3 shadow-lg ${
+                isLight
+                  ? "bg-[#2F2F2F] text-white"
+                  : "bg-[#F3F3F3] text-[#2F2F2F]"
+              }`}
+              role="status"
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                    isLight ? "bg-white/10" : "bg-black/[0.06]"
+                  }`}
+                >
+                  <Icon
+                    name="pip"
+                    theme={isLight ? "light" : "dark"}
+                    className="h-[18px] w-[18px]"
+                  />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-semibold leading-5">
+                    Switching apps or tabs?
+                  </div>
+                  <div
+                    className={`mt-0.5 text-[11px] leading-[1.45] ${
+                      isLight ? "text-white/70" : "text-black/60"
+                    }`}
+                  >
+                    Open Picture-in-Picture first to stay connected to the room.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  aria-label="Dismiss Picture-in-Picture tip"
+                  onClick={() => {
+                    setMobilePiPHintVisible(false);
+                    try {
+                      localStorage.setItem(MOBILE_PIP_HINT_DISMISSED_KEY, "1");
+                    } catch { }
+                  }}
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-lg leading-none transition ${
+                    isLight ? "hover:bg-white/10" : "hover:bg-black/[0.06]"
+                  }`}
+                >
+                  ×
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMobilePiPHintVisible(false);
+                  try {
+                    localStorage.setItem(MOBILE_PIP_HINT_DISMISSED_KEY, "1");
+                  } catch { }
+                  togglePictureInPicture().catch((error) => {
+                    console.error("togglePictureInPicture failed", error);
+                    alert(String((error as any)?.message || error || "pip_toggle_failed"));
+                  });
+                }}
+                className={`mt-2.5 h-9 w-full rounded-xl text-[12px] font-semibold transition ${
+                  isLight
+                    ? "bg-white text-[#2F2F2F] hover:bg-white/90"
+                    : "bg-[#2F2F2F] text-white hover:bg-[#383838]"
+                }`}
+              >
+                Open Picture-in-Picture
+              </button>
+            </div>
+          </div>
         ) : null}
 
         <LiveKitBottomBar
