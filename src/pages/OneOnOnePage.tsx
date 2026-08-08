@@ -7,6 +7,7 @@ import { supabase } from "../lib/supabase";
 type QueuePresence = {
   userId: string;
   displayName: string;
+  avatarUrl?: string;
   duration: number;
   ticket: string;
   joinedAt: number;
@@ -21,6 +22,7 @@ type MatchedPair = {
   sessionId: string;
   partnerUserId?: string;
   partnerDisplayName?: string;
+  partnerAvatarUrl?: string;
   partnerInRoom: boolean;
 };
 
@@ -43,6 +45,7 @@ export default function OneOnOnePage() {
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
   const [displayName, setDisplayName] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
   const [duration, setDuration] = useState<(typeof DURATIONS)[number]>(50);
   const [status, setStatus] = useState<"idle" | "searching" | "creating" | "matched" | "error">("idle");
   const [queueCounts, setQueueCounts] = useState<Record<number, number>>({ 25: 0, 50: 0, 75: 0 });
@@ -66,10 +69,13 @@ export default function OneOnOnePage() {
       if (!nextUser) return;
       const { data: profile } = await supabase
         .from("profiles")
-        .select("full_name")
+        .select("full_name, avatar_url")
         .eq("id", nextUser.id)
         .maybeSingle();
-      if (mounted) setDisplayName(String(profile?.full_name || nextUser.user_metadata?.full_name || nextUser.email || "Focus partner"));
+      if (mounted) {
+        setDisplayName(String(profile?.full_name || nextUser.user_metadata?.full_name || nextUser.email || "Focus partner"));
+        setAvatarUrl(String(profile?.avatar_url || nextUser.user_metadata?.avatar_url || nextUser.user_metadata?.picture || "").trim());
+      }
     });
     return () => { mounted = false; };
   }, []);
@@ -92,6 +98,7 @@ export default function OneOnOnePage() {
           ...current,
           partnerUserId: next.partnerUserId || current.partnerUserId,
           partnerDisplayName: next.partnerDisplayName || current.partnerDisplayName,
+          partnerAvatarUrl: next.partnerAvatarUrl || current.partnerAvatarUrl,
           partnerInRoom: Boolean(current.partnerInRoom || next.partnerInRoom),
         }
       : { ...next, partnerInRoom: Boolean(next.partnerInRoom) });
@@ -132,8 +139,8 @@ export default function OneOnOnePage() {
           sessionId: payload.sessionId,
           userIds: [user.id, partner.userId],
           participants: [
-            { userId: user.id, displayName: own.displayName },
-            { userId: partner.userId, displayName: partner.displayName },
+            { userId: user.id, displayName: own.displayName, avatarUrl: own.avatarUrl },
+            { userId: partner.userId, displayName: partner.displayName, avatarUrl: partner.avatarUrl },
           ],
         },
       });
@@ -141,6 +148,7 @@ export default function OneOnOnePage() {
         sessionId: payload.sessionId,
         partnerUserId: partner.userId,
         partnerDisplayName: partner.displayName,
+        partnerAvatarUrl: partner.avatarUrl,
       });
     } catch (error) {
       creatingRef.current = false;
@@ -182,6 +190,7 @@ export default function OneOnOnePage() {
         sessionId: String(payload.sessionId),
         partnerUserId,
         partnerDisplayName: String(partner?.displayName || "Focus partner"),
+        partnerAvatarUrl: String(partner?.avatarUrl || ""),
       });
     });
     channel.on("broadcast", { event: "joining_room" }, ({ payload }) => {
@@ -208,6 +217,7 @@ export default function OneOnOnePage() {
           sessionId: matched.sessionId,
           partnerUserId: matched.userId,
           partnerDisplayName: matched.displayName,
+          partnerAvatarUrl: matched.avatarUrl,
           partnerInRoom: Boolean(matched.joinedRoom),
         });
         return;
@@ -268,6 +278,7 @@ export default function OneOnOnePage() {
     const own: QueuePresence = {
       userId: user.id,
       displayName: displayName.trim() || "Focus partner",
+      avatarUrl,
       duration,
       ticket: randomTicket(),
       joinedAt: Date.now(),
@@ -283,7 +294,7 @@ export default function OneOnOnePage() {
       setErrorText(error instanceof Error ? error.message : "Could not enter the matching queue.");
       setStatus("error");
     }
-  }, [authReady, displayName, duration, navigate, user]);
+  }, [authReady, avatarUrl, displayName, duration, navigate, user]);
   const createInviteRoom = useCallback(async () => {
     setErrorText("");
     if (!authReady) return;
@@ -422,9 +433,22 @@ export default function OneOnOnePage() {
           aria-labelledby="one-on-one-match-title"
         >
           <div className="w-full max-w-[430px] rounded-[28px] bg-white p-6 text-[#202124] shadow-[0_24px_80px_rgba(0,0,0,0.18)] animate-[postSessionIn_280ms_cubic-bezier(0.22,1,0.36,1)] sm:p-7">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#EAF9EC] text-[#36A94C]">
-                <CheckCircle2 size={25} strokeWidth={2.2} />
+            <div className="flex items-center gap-4">
+              <div className="relative h-16 w-16 shrink-0">
+                <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-[20px] bg-[#F0EFEF] text-[22px] font-extrabold text-[#555] ring-1 ring-black/[0.06]">
+                  {matchedPair.partnerAvatarUrl ? (
+                    <img
+                      src={matchedPair.partnerAvatarUrl}
+                      alt={`${matchedPair.partnerDisplayName || "Focus partner"} avatar`}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span aria-hidden="true">{(matchedPair.partnerDisplayName || "F").trim().charAt(0).toUpperCase()}</span>
+                  )}
+                </div>
+                <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#43B95A] text-white ring-4 ring-white">
+                  <CheckCircle2 size={15} strokeWidth={2.5} />
+                </span>
               </div>
               <div className="min-w-0 pt-0.5">
                 <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#36A94C]">Match found</p>
