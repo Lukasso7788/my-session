@@ -123,7 +123,9 @@ type SessionActivityRow = {
   startsAt: string;
   type: string;
   bookings: number;
+  bookedPeople: ProfileSummary[];
   uniqueAttendees: number;
+  attendees: ProfileSummary[];
   attendanceRecords: number;
 };
 
@@ -470,7 +472,11 @@ async function buildAdminActivity(
     .map((row) => {
       const id = String(row.id || "");
       const attendance = attendanceBySession.get(id) || [];
-      const uniqueAttendees = new Set(attendance.map(getAttendanceUserId).filter(Boolean));
+      const sessionBookings = bookingsBySession.get(id) || [];
+      const bookedPeople = [...new Set(sessionBookings.map(getBookingUserId).filter(Boolean))]
+        .map((userId) => profiles.get(userId) || emptyProfile(userId));
+      const attendees = [...new Set(attendance.map(getAttendanceUserId).filter(Boolean))]
+        .map((userId) => profiles.get(userId) || emptyProfile(userId));
       const hostId = String(row.host_id || row.created_by || "");
       return {
         id,
@@ -479,8 +485,10 @@ async function buildAdminActivity(
         createdAt: String(row.created_at || ""),
         startsAt: String(row.start_time || row.starts_at || ""),
         type: getSessionType(row),
-        bookings: (bookingsBySession.get(id) || []).length,
-        uniqueAttendees: uniqueAttendees.size,
+        bookings: bookedPeople.length,
+        bookedPeople,
+        uniqueAttendees: attendees.length,
+        attendees,
         attendanceRecords: attendance.length,
       };
     })
@@ -849,6 +857,67 @@ function ProfileChip({ profile }: { profile: ProfileSummary }) {
   );
 }
 
+function PeopleCountButton({
+  count,
+  people,
+  label,
+  accent = false,
+  onOpen,
+}: {
+  count: number;
+  people: ProfileSummary[];
+  label: string;
+  accent?: boolean;
+  onOpen: () => void;
+}) {
+  const preview = people.slice(0, 3);
+  const names = people.map((person) => person.fullName).join(", ");
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      disabled={count === 0}
+      title={names || `No ${label.toLowerCase()}`}
+      className={`group relative inline-flex min-w-[42px] items-center justify-center rounded-full px-3 py-1.5 text-[15px] font-bold transition-colors disabled:cursor-default disabled:opacity-45 ${
+        accent
+          ? "bg-[#EAF8ED] text-[#16803B] hover:bg-[#DDF4E2]"
+          : "bg-[#F1F3F5] text-[#2F2F2F] hover:bg-[#E6E9EC]"
+      }`}
+      aria-label={`${count} ${label}. Open people list.`}
+    >
+      {count}
+      {count > 0 ? (
+        <span className="pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 z-30 w-max max-w-[260px] -translate-x-1/2 translate-y-1 rounded-xl bg-[#2F2F2F] px-3 py-2 text-left text-white opacity-0 shadow-lg transition-all duration-150 group-hover:translate-y-0 group-hover:opacity-100">
+          <span className="flex items-center gap-2">
+            <span className="flex -space-x-1.5">
+              {preview.map((person) => person.avatarUrl ? (
+                <img
+                  key={person.id}
+                  src={person.avatarUrl}
+                  alt=""
+                  className="h-6 w-6 rounded-full border-2 border-[#2F2F2F] object-cover"
+                />
+              ) : (
+                <span
+                  key={person.id}
+                  className="grid h-6 w-6 place-items-center rounded-full border-2 border-[#2F2F2F] bg-[#E9EDF1] text-[9px] font-bold text-[#2F2F2F]"
+                >
+                  {getInitial(person.fullName)}
+                </span>
+              ))}
+            </span>
+            <span className="max-w-[185px] truncate text-[11px] font-semibold">
+              {names}{people.length > 3 ? ` (+${people.length - 3})` : ""}
+            </span>
+          </span>
+          <span className="mt-1 block text-[9px] font-medium text-white/55">Click to view everyone</span>
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
 function MonthlyAttendanceChart({ data }: { data: MonthlyAttendancePoint[] }) {
   const max = Math.max(...data.map((item) => item.uniqueAttendees), 1);
 
@@ -904,6 +973,11 @@ function MonthlyAttendanceChart({ data }: { data: MonthlyAttendancePoint[] }) {
 function ActivityExplorer({ activity }: { activity: AdminActivityData }) {
   const [view, setView] = useState<"sessions" | "bookings" | "attendance">("sessions");
   const [search, setSearch] = useState("");
+  const [peopleDialog, setPeopleDialog] = useState<{
+    title: string;
+    subtitle: string;
+    people: ProfileSummary[];
+  } | null>(null);
   const needle = search.trim().toLowerCase();
 
   const sessions = activity.sessions.filter((row) =>
@@ -918,6 +992,7 @@ function ActivityExplorer({ activity }: { activity: AdminActivityData }) {
   );
 
   return (
+    <>
     <section className="mt-8 overflow-hidden rounded-[28px] border border-black/10 bg-white">
       <div className="flex flex-col gap-4 border-b border-black/[0.07] p-5 lg:flex-row lg:items-center lg:justify-between">
         <div>
@@ -981,8 +1056,31 @@ function ActivityExplorer({ activity }: { activity: AdminActivityData }) {
                     <span className="block">Created {formatDateTime(row.createdAt)}</span>
                     <span className="block">Starts {formatDateTime(row.startsAt)}</span>
                   </td>
-                  <td className="px-4 py-3 text-center text-[15px] font-bold">{row.bookings}</td>
-                  <td className="px-4 py-3 text-center text-[15px] font-bold text-[#16803B]">{row.uniqueAttendees}</td>
+                  <td className="px-4 py-3 text-center">
+                    <PeopleCountButton
+                      count={row.bookings}
+                      people={row.bookedPeople}
+                      label="people booked"
+                      onOpen={() => setPeopleDialog({
+                        title: `${row.title} · Booked`,
+                        subtitle: `${row.bookings} unique ${row.bookings === 1 ? "person" : "people"} booked this session`,
+                        people: row.bookedPeople,
+                      })}
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-center">
+                    <PeopleCountButton
+                      count={row.uniqueAttendees}
+                      people={row.attendees}
+                      label="unique attendees"
+                      accent
+                      onOpen={() => setPeopleDialog({
+                        title: `${row.title} · Attendees`,
+                        subtitle: `${row.uniqueAttendees} unique ${row.uniqueAttendees === 1 ? "person" : "people"} attended · ${row.attendanceRecords} total visits`,
+                        people: row.attendees,
+                      })}
+                    />
+                  </td>
                   <td className="px-5 py-3 text-center text-[15px] font-bold">{row.attendanceRecords}</td>
                 </tr>
               ))}
@@ -1018,6 +1116,51 @@ function ActivityExplorer({ activity }: { activity: AdminActivityData }) {
         ) : null}
       </div>
     </section>
+
+    {peopleDialog ? (
+      <div
+        className="fixed inset-0 z-[100] grid place-items-center bg-black/35 p-4 backdrop-blur-[2px]"
+        role="presentation"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setPeopleDialog(null);
+        }}
+      >
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-people-dialog-title"
+          className="flex max-h-[min(680px,85vh)] w-full max-w-[520px] flex-col overflow-hidden rounded-[24px] bg-white shadow-2xl"
+        >
+          <header className="flex items-start justify-between gap-4 border-b border-black/[0.07] px-5 py-4">
+            <div className="min-w-0">
+              <h3 id="admin-people-dialog-title" className="truncate text-[18px] font-bold">
+                {peopleDialog.title}
+              </h3>
+              <p className="mt-1 text-[12px] text-[#6B6B6B]">{peopleDialog.subtitle}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPeopleDialog(null)}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#F1F3F5] text-[22px] leading-none text-[#555] transition-colors hover:bg-[#E5E8EB] hover:text-[#222]"
+              aria-label="Close people list"
+            >
+              ×
+            </button>
+          </header>
+          <div className="overflow-y-auto p-3">
+            {peopleDialog.people.map((profile, index) => (
+              <div
+                key={profile.id || `${profile.email}-${index}`}
+                className="rounded-2xl px-3 py-2.5 transition-colors hover:bg-[#F5F7F6]"
+              >
+                <ProfileChip profile={profile} />
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    ) : null}
+    </>
   );
 }
 
