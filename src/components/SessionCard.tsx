@@ -4247,9 +4247,7 @@ export default function SessionCard({
 
         const status = safeLower(session?.status);
         const shouldLoadLiveAvatars =
-            isInfinite ||
             liveNowCount > 0 ||
-            liveCountFromSession != null ||
             status === "active" ||
             status === "live" ||
             status === "started" ||

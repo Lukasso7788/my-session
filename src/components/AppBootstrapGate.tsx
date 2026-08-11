@@ -4,6 +4,11 @@ import { supabase } from "../lib/supabase";
 
 type BootstrapState = "checking" | "ready" | "waiting";
 
+// The access-control endpoint performs both an auth lookup and a database
+// lookup. Auth changes and explicit admin actions already trigger an immediate
+// refresh, so a short global poll only creates duplicate Supabase egress.
+const ACCESS_CONTROL_REFRESH_MS = 5 * 60_000;
+
 async function loadBootstrapState(accessToken: string) {
   const response = await fetch("/api/livekit/admin", {
     method: "POST",
@@ -66,8 +71,14 @@ export default function AppBootstrapGate({ children }: { children: ReactNode }) 
       authTimer = window.setTimeout(() => void refresh(false), 0);
     });
 
-    const refreshQuietly = () => void refresh(false);
-    const interval = window.setInterval(refreshQuietly, 30_000);
+    const refreshQuietly = () => {
+      if (document.visibilityState !== "visible") return;
+      void refresh(false);
+    };
+    const interval = window.setInterval(
+      refreshQuietly,
+      ACCESS_CONTROL_REFRESH_MS,
+    );
 
     window.addEventListener("mysession-ban-refresh", refreshQuietly);
 

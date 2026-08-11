@@ -1569,7 +1569,32 @@ export function SessionsPage() {
           schema: "public",
           table: "infinite_room_host_leases",
         },
-        () => void fetchSessions()
+        (payload) => {
+          // heartbeat_infinite_room_host updates the same lease every 30s.
+          // That does not require downloading sessions, bookings, profiles,
+          // slugs and counts again. Apply the expiry/user fields locally and
+          // reserve a full refresh for actual INSERT/DELETE lifecycle changes.
+          if (String(payload?.eventType || "").toUpperCase() === "UPDATE") {
+            const row = payload?.new as any;
+            const sid = String(row?.session_id || "").trim();
+            const uid = String(row?.user_id || "").trim();
+            if (!sid) return;
+
+            setSessions((previousSessions) =>
+              previousSessions.map((session) => {
+                if (String(session.id || "") !== sid) return session;
+                if (String(session.active_host_user_id || "") === uid) return session;
+                return {
+                  ...session,
+                  active_host_user_id: uid || null,
+                  active_host_profile: null,
+                };
+              })
+            );
+            return;
+          }
+          void fetchSessions();
+        }
       )
       .subscribe();
 

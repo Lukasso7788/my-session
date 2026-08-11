@@ -923,7 +923,7 @@ export default function RoomPageIFrame() {
     }, [session]);
 
     // ✅ PRESENCE
-    useAttendancePresence(session?.id && currentUserId ? String(session.id) : null, { heartbeatMs: 10_000 });
+    useAttendancePresence(session?.id && currentUserId ? String(session.id) : null, { heartbeatMs: 30_000 });
 
     const attendanceLeave = async () => {
         try {

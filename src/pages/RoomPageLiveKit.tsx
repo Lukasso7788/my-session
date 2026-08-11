@@ -2521,7 +2521,7 @@ const CONNECTION_DIAGNOSTICS_LOCAL_KEY =
 const CONNECTION_DIAGNOSTICS_LOCAL_MAX = 120;
 const connectionDiagnosticsMemoryBuffer: Record<string, unknown>[] = [];
 const CONNECTION_DIAGNOSTICS_DEDUP_MS = 30_000;
-const CONNECTION_DIAGNOSTICS_REMOTE_SAMPLE_RATE = 1 / 20;
+const CONNECTION_DIAGNOSTICS_REMOTE_SAMPLE_RATE = 1 / 100;
 const ROOM_RECOVERY_REQUEST_EVENT = "mysession:room-recovery-request";
 const CONNECTION_DIAGNOSTICS_CRITICAL_EVENTS = new Set([
   "livekit.connected",
@@ -9288,7 +9288,10 @@ export function RoomPageLiveKit({
   const [kickRedirecting, setKickRedirecting] = useState(false);
   const kickEventChannelRef = useRef<any>(null);
   const kickedBySignalRef = useRef(false);
-  const ATT_HEARTBEAT_MS = 10_000;
+  // Attendance is a TTL lease, not a realtime media signal. Thirty seconds is
+  // well below the 90-second live-user window and avoids needless PostgREST
+  // writes while preserving immediate heartbeats on join/background recovery.
+  const ATT_HEARTBEAT_MS = 30_000;
 
   const attendanceHbTimerRef = useRef<number | null>(null);
   const attendanceHeartbeatGenerationRef = useRef(0);

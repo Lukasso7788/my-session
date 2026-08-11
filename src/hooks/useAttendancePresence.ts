@@ -6,7 +6,10 @@ export function useAttendancePresence(
     sessionId: string | null,
     opts?: { heartbeatMs?: number }
 ) {
-    const heartbeatMs = opts?.heartbeatMs ?? 10_000;
+    // Presence RPCs are only used as a TTL lease. A 30-second heartbeat stays
+    // comfortably inside the 90-120 second live-presence window while cutting
+    // write traffic by two thirds.
+    const heartbeatMs = opts?.heartbeatMs ?? 30_000;
     const timerRef = useRef<number | null>(null);
 
     useEffect(() => {
