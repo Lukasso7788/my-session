@@ -592,7 +592,7 @@ async function loadRecentRows(table: string, fromIso: string, preferredColumn: s
     "updated_at",
   ];
   const pageSize = 1000;
-  const maxPages = 50;
+  const maxPages = 200;
 
   for (const column of Array.from(new Set(attempts))) {
     const rows: AnyRow[] = [];
@@ -919,11 +919,14 @@ function PeopleCountButton({
 }
 
 function MonthlyAttendanceChart({ data }: { data: MonthlyAttendancePoint[] }) {
-  const max = Math.max(...data.map((item) => item.uniqueAttendees), 1);
+  const [rangeMonths, setRangeMonths] = useState<12 | 24 | 36>(12);
+  const visibleData = data.slice(-rangeMonths);
+  const max = Math.max(...visibleData.map((item) => item.uniqueAttendees), 1);
+  const rangeLabel = rangeMonths === 12 ? "12 months" : rangeMonths === 24 ? "2 years" : "3 years";
 
   return (
     <section className="mt-8 overflow-hidden rounded-[28px] bg-[#1F2328] p-6 text-white">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">
             Retention pulse
@@ -933,38 +936,66 @@ function MonthlyAttendanceChart({ data }: { data: MonthlyAttendancePoint[] }) {
             Distinct people who produced at least one attendance record in each calendar month.
           </p>
         </div>
-        <div className="rounded-full bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white/75">
-          Last {data.length} months
+        <div className="flex w-fit rounded-full bg-white/[0.08] p-1">
+          {([
+            [12, "12 months"],
+            [24, "2 years"],
+            [36, "3 years"],
+          ] as const).map(([months, label]) => (
+            <button
+              key={months}
+              type="button"
+              onClick={() => setRangeMonths(months)}
+              className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                rangeMonths === months
+                  ? "bg-white text-[#1F2328]"
+                  : "text-white/55 hover:text-white"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="mt-7 grid h-56 grid-cols-6 items-end gap-2 sm:gap-4">
-        {data.map((item) => {
-          const height = Math.max(8, (item.uniqueAttendees / max) * 100);
-          return (
-            <div key={item.key} className="group flex h-full min-w-0 flex-col justify-end">
-              <div className="mb-2 text-center text-[13px] font-bold opacity-0 transition-opacity group-hover:opacity-100">
-                {item.uniqueAttendees}
+      <div className="mt-7 overflow-x-auto pb-2">
+        <div
+          className="grid h-56 items-end gap-2 sm:gap-3"
+          style={{
+            gridTemplateColumns: `repeat(${visibleData.length}, minmax(42px, 1fr))`,
+            minWidth: `${Math.max(visibleData.length * 52, 640)}px`,
+          }}
+        >
+          {visibleData.map((item) => {
+            const height = Math.max(8, (item.uniqueAttendees / max) * 100);
+            return (
+              <div key={item.key} className="group flex h-full min-w-0 flex-col justify-end">
+                <div className="mb-2 text-center text-[13px] font-bold opacity-0 transition-opacity group-hover:opacity-100">
+                  {item.uniqueAttendees}
+                </div>
+                <div className="relative flex h-[150px] items-end overflow-hidden rounded-xl bg-white/[0.06]">
+                  <div
+                    className="w-full rounded-xl bg-[#75D67F] transition-[height,filter] duration-500 group-hover:brightness-110"
+                    style={{ height: `${height}%` }}
+                    title={`${item.uniqueAttendees} unique attendees · ${item.attendanceRecords} visits · ${item.attendedSessions} sessions`}
+                  />
+                </div>
+                <div className="mt-3 truncate text-center text-[10px] font-semibold text-white/55 sm:text-[11px]">
+                  {item.label}
+                </div>
               </div>
-              <div className="relative flex h-[150px] items-end overflow-hidden rounded-xl bg-white/[0.06]">
-                <div
-                  className="w-full rounded-xl bg-[#75D67F] transition-[height,filter] duration-500 group-hover:brightness-110"
-                  style={{ height: `${height}%` }}
-                  title={`${item.uniqueAttendees} unique attendees · ${item.attendanceRecords} visits · ${item.attendedSessions} sessions`}
-                />
-              </div>
-              <div className="mt-3 truncate text-center text-[10px] font-semibold text-white/55 sm:text-[11px]">
-                {item.label}
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-4 border-t border-white/10 pt-4 text-[11px] text-white/55">
-        <span><b className="text-white">{data.at(-1)?.uniqueAttendees || 0}</b> unique this month</span>
-        <span><b className="text-white">{data.at(-1)?.attendanceRecords || 0}</b> attendance records</span>
-        <span><b className="text-white">{data.at(-1)?.attendedSessions || 0}</b> sessions attended</span>
+      <div className="mt-4 flex flex-wrap items-center gap-4 border-t border-white/10 pt-4 text-[11px] text-white/55">
+        <span className="rounded-full bg-white/[0.08] px-2.5 py-1 font-semibold text-white/70">
+          Last {rangeLabel}
+        </span>
+        <span><b className="text-white">{visibleData.at(-1)?.uniqueAttendees || 0}</b> unique this month</span>
+        <span><b className="text-white">{visibleData.at(-1)?.attendanceRecords || 0}</b> attendance records</span>
+        <span><b className="text-white">{visibleData.at(-1)?.attendedSessions || 0}</b> sessions attended</span>
       </div>
     </section>
   );
@@ -1248,9 +1279,9 @@ export default function AdminPage() {
       const weekIso = daysAgoIso(7);
       const monthIso = daysAgoIso(30);
       const chartIso = daysAgoIso(14);
-      const oldestMonth = makeLastMonths(6)[0]?.key;
+      const oldestMonth = makeLastMonths(36)[0]?.key;
       const attendanceHistoryIso = oldestMonth
-        ? new Date(`${oldestMonth}-01T00:00:00`).toISOString() : daysAgoIso(190);
+        ? new Date(`${oldestMonth}-01T00:00:00`).toISOString() : daysAgoIso(1100);
       const nowIso = new Date().toISOString();
 
       const [
@@ -1322,7 +1353,7 @@ export default function AdminPage() {
 
       const activityData = await buildAdminActivity(attendanceRows, bookingRows, monthIso);
       setActivity(activityData);
-      setMonthlyAttendance(buildMonthlyAttendance(attendanceHistoryRows));
+      setMonthlyAttendance(buildMonthlyAttendance(attendanceHistoryRows, 36));
 
       if (notificationsResult.error) {
         console.warn("[admin] notifications load failed:", notificationsResult.error);
