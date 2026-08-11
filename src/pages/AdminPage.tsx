@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import {
@@ -108,6 +108,22 @@ type ChartPoint = {
 
 type ChartKey = keyof Omit<ChartPoint, "label" | "dateKey">;
 
+type DrilldownRow = {
+  id: string;
+  primary: string;
+  secondary: string;
+  avatarUrl?: string;
+};
+
+type DrilldownState = {
+  title: string;
+  subtitle: string;
+  rows: DrilldownRow[];
+  loading?: boolean;
+};
+
+type ChartDrilldownHandler = (dataKey: ChartKey, point: ChartPoint) => void;
+
 type ProfileSummary = {
   id: string;
   fullName: string;
@@ -150,6 +166,7 @@ type MonthlyAttendancePoint = {
   uniqueAttendees: number;
   attendanceRecords: number;
   attendedSessions: number;
+  attendeeIds: string[];
 };
 
 const EMPTY_ACTIVITY: AdminActivityData = {
@@ -304,6 +321,7 @@ function buildMonthlyAttendance(rows: AnyRow[], count = 6): MonthlyAttendancePoi
     uniqueAttendees: people.get(key)?.size || 0,
     attendanceRecords: records.get(key) || 0,
     attendedSessions: sessions.get(key)?.size || 0,
+    attendeeIds: [...(people.get(key) || [])],
   }));
 }
 
@@ -658,6 +676,7 @@ function MiniMetricChart({
   decimals?: number;
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const openDrilldown = useContext(ChartDrilldownContext);
 
   const values = data.map((d) => Number(d[dataKey] || 0));
   const max = Math.max(...values, 1);
@@ -687,15 +706,34 @@ function MiniMetricChart({
         <span className="font-semibold text-[#777]">
           {activePoint?.dateKey || "—"}
         </span>
-        <span className="font-bold" style={{ color }}>
+        <button
+          type="button"
+          disabled={!activePoint || !openDrilldown}
+          onClick={() => activePoint && openDrilldown?.(dataKey, activePoint)}
+          className="rounded-full px-2 py-0.5 font-bold transition-colors hover:bg-black/[0.05] disabled:cursor-default"
+          style={{ color }}
+          title="Open details for this day"
+        >
           {displayValue}
-        </span>
+        </button>
       </div>
 
       <svg viewBox="0 0 100 40" className="h-20 w-full overflow-visible">
+        <defs>
+          <linearGradient id={`metric-fill-${String(dataKey)}-${color.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
         <line x1="0" y1="34" x2="100" y2="34" stroke="rgba(0,0,0,0.12)" />
         <line x1="0" y1="20" x2="100" y2="20" stroke="rgba(0,0,0,0.06)" />
         <line x1="0" y1="6" x2="100" y2="6" stroke="rgba(0,0,0,0.06)" />
+
+        <polygon
+          points={`0,34 ${points} 100,34`}
+          fill={`url(#metric-fill-${String(dataKey)}-${color.replace("#", "")})`}
+          opacity="0.9"
+        />
 
         <polyline
           fill="none"
@@ -750,7 +788,8 @@ function MiniMetricChart({
                 width="8"
                 height="40"
                 fill="transparent"
-                className="cursor-crosshair"
+                className="cursor-pointer"
+                onClick={() => data[index] && openDrilldown?.(dataKey, data[index])}
                 onMouseEnter={() => setHoverIndex(index)}
                 onMouseLeave={() => setHoverIndex(null)}
               />
@@ -814,7 +853,7 @@ function MetricCard({
   decimals?: number;
 }) {
   return (
-    <div className="rounded-[24px] border border-black/10 bg-gray-50 p-5 shadow-sm">
+    <div className="rounded-[24px] border border-black/[0.07] bg-gradient-to-b from-white to-[#F7F8F8] p-5 transition-transform duration-200 hover:-translate-y-0.5">
       <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
         {label}
       </div>
@@ -918,7 +957,77 @@ function PeopleCountButton({
   );
 }
 
-function MonthlyAttendanceChart({ data }: { data: MonthlyAttendancePoint[] }) {
+function AdminDrilldownModal({
+  state,
+  onClose,
+}: {
+  state: DrilldownState | null;
+  onClose: () => void;
+}) {
+  if (!state) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[120] grid place-items-center bg-black/35 p-4 backdrop-blur-[2px]"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="admin-drilldown-title"
+        className="flex max-h-[min(720px,88vh)] w-full max-w-[580px] flex-col overflow-hidden rounded-[26px] bg-white shadow-2xl"
+      >
+        <header className="flex items-start justify-between gap-4 border-b border-black/[0.07] px-5 py-4">
+          <div className="min-w-0">
+            <h3 id="admin-drilldown-title" className="truncate text-[19px] font-bold">{state.title}</h3>
+            <p className="mt-1 text-[12px] text-[#6B6B6B]">{state.subtitle}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#F1F3F5] text-[22px] leading-none text-[#555] hover:bg-[#E5E8EB]"
+            aria-label="Close details"
+          >
+            ×
+          </button>
+        </header>
+        <div className="overflow-y-auto p-3">
+          {state.loading ? (
+            <div className="grid min-h-40 place-items-center text-[13px] text-[#777]">Loading details…</div>
+          ) : state.rows.length ? (
+            state.rows.map((row) => (
+              <div key={row.id} className="flex items-center gap-3 rounded-2xl px-3 py-2.5 hover:bg-[#F5F7F6]">
+                {row.avatarUrl ? (
+                  <img src={row.avatarUrl} alt="" className="h-9 w-9 shrink-0 rounded-full object-cover" />
+                ) : (
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#EEF2F6] text-[11px] font-bold">
+                    {getInitial(row.primary)}
+                  </span>
+                )}
+                <span className="min-w-0">
+                  <b className="block truncate text-[13px]">{row.primary}</b>
+                  <small className="block truncate text-[11px] text-[#777]">{row.secondary}</small>
+                </span>
+              </div>
+            ))
+          ) : (
+            <div className="grid min-h-40 place-items-center text-[13px] text-[#777]">No matching records.</div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+function MonthlyAttendanceChart({
+  data,
+  onMonthClick,
+}: {
+  data: MonthlyAttendancePoint[];
+  onMonthClick?: (point: MonthlyAttendancePoint) => void;
+}) {
   const [rangeMonths, setRangeMonths] = useState<12 | 24 | 36>(12);
   const visibleData = data.slice(-rangeMonths);
   const max = Math.max(...visibleData.map((item) => item.uniqueAttendees), 1);
@@ -973,13 +1082,18 @@ function MonthlyAttendanceChart({ data }: { data: MonthlyAttendancePoint[] }) {
                 <div className="mb-2 text-center text-[13px] font-bold opacity-0 transition-opacity group-hover:opacity-100">
                   {item.uniqueAttendees}
                 </div>
-                <div className="relative flex h-[150px] items-end overflow-hidden rounded-xl bg-white/[0.06]">
+                <button
+                  type="button"
+                  onClick={() => onMonthClick?.(item)}
+                  className="relative flex h-[150px] w-full items-end overflow-hidden rounded-xl bg-white/[0.06] text-left outline-none ring-white/35 transition-transform hover:-translate-y-1 focus-visible:ring-2"
+                  aria-label={`Open attendees for ${item.label}`}
+                >
                   <div
                     className="w-full rounded-xl bg-[#75D67F] transition-[height,filter] duration-500 group-hover:brightness-110"
                     style={{ height: `${height}%` }}
                     title={`${item.uniqueAttendees} unique attendees · ${item.attendanceRecords} visits · ${item.attendedSessions} sessions`}
                   />
-                </div>
+                </button>
                 <div className="mt-3 truncate text-center text-[10px] font-semibold text-white/55 sm:text-[11px]">
                   {item.label}
                 </div>
@@ -1220,6 +1334,7 @@ export default function AdminPage() {
   const [monthlyAttendance, setMonthlyAttendance] = useState<MonthlyAttendancePoint[]>([]);
   const [activity, setActivity] = useState<AdminActivityData>(EMPTY_ACTIVITY);
   const [error, setError] = useState("");
+  const [drilldown, setDrilldown] = useState<DrilldownState | null>(null);
 
   const [stats, setStats] = useState<AdminStats>({
     registrationsToday: 0,
@@ -1727,6 +1842,191 @@ export default function AdminPage() {
     }
   };
 
+  const openChartDrilldown: ChartDrilldownHandler = async (dataKey, point) => {
+    const titleByKey: Record<ChartKey, string> = {
+      registrations: "Registrations",
+      sessionsCreated: "Sessions created",
+      sessionsHosted: "Sessions hosted",
+      activeHosts: "Active hosts",
+      bookedUsers: "Booked users",
+      attendanceRecords: "Attendance records",
+      uniqueAttendees: "Unique attendees",
+      attendedSessions: "Attended sessions",
+      avgAttendeesPerSession: "Attendance details",
+      supportUsd: "Host support payments",
+      pendingPayoutUsd: "Pending payouts",
+      openPayoutRequests: "Open payout requests",
+    };
+    const dayMatches = (value?: string | null) => toLocalDateKey(value) === point.dateKey;
+    const sessionById = new Map(activity.sessions.map((session) => [session.id, session]));
+    const profileToRow = (profile: ProfileSummary): DrilldownRow => ({
+      id: profile.id,
+      primary: profile.fullName,
+      secondary: profile.email || profile.id,
+      avatarUrl: profile.avatarUrl,
+    });
+    const uniqueRows = (rows: DrilldownRow[]) => [
+      ...new Map(rows.map((row) => [row.id, row])).values(),
+    ];
+
+    setDrilldown({
+      title: `${titleByKey[dataKey]} · ${point.dateKey}`,
+      subtitle: "Loading the people and records behind this chart point.",
+      rows: [],
+      loading: true,
+    });
+
+    try {
+      let rows: DrilldownRow[] = [];
+
+      if (dataKey === "registrations") {
+        const start = new Date(`${point.dateKey}T00:00:00`);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 1);
+        const result = await supabase
+          .from("profiles")
+          .select("id, full_name, email, avatar_url, created_at")
+          .gte("created_at", start.toISOString())
+          .lt("created_at", end.toISOString())
+          .order("created_at", { ascending: false });
+        if (result.error) throw result.error;
+        rows = ((result.data as AnyRow[]) || []).map((row) => ({
+          id: String(row.id),
+          primary: String(row.full_name || row.email || "New user"),
+          secondary: `${String(row.email || row.id)} · ${formatDateTime(row.created_at)}`,
+          avatarUrl: String(row.avatar_url || ""),
+        }));
+      } else if (dataKey === "sessionsCreated" || dataKey === "sessionsHosted") {
+        const sessions = activity.sessions.filter((session) =>
+          dayMatches(dataKey === "sessionsCreated" ? session.createdAt : session.startsAt)
+        );
+        rows = sessions.map((session) => ({
+          id: session.id,
+          primary: session.title,
+          secondary: `${session.host.fullName} · ${formatDateTime(dataKey === "sessionsCreated" ? session.createdAt : session.startsAt)}`,
+          avatarUrl: session.host.avatarUrl,
+        }));
+      } else if (dataKey === "activeHosts") {
+        const hosts = activity.sessions
+          .filter((session) => dayMatches(session.createdAt) || dayMatches(session.startsAt))
+          .map((session) => session.host);
+        rows = uniqueRows(hosts.map((profile) => profileToRow(profile)));
+      } else if (dataKey === "bookedUsers") {
+        const bookings = activity.bookings.filter((booking) => dayMatches(booking.occurredAt));
+        rows = uniqueRows(bookings.map((booking) => ({
+          ...profileToRow(booking.user),
+          secondary: `${booking.user.email || booking.user.id} · ${booking.sessionTitle}`,
+        })));
+      } else if (
+        dataKey === "attendanceRecords" ||
+        dataKey === "uniqueAttendees" ||
+        dataKey === "avgAttendeesPerSession"
+      ) {
+        const attendance = activity.attendance.filter((entry) => dayMatches(entry.occurredAt));
+        rows = dataKey === "attendanceRecords"
+          ? attendance.map((entry) => ({
+              ...profileToRow(entry.user),
+              id: entry.id,
+              secondary: `${entry.user.email || entry.user.id} · ${entry.sessionTitle} · ${formatDateTime(entry.occurredAt)}`,
+            }))
+          : uniqueRows(attendance.map((entry) => ({
+              ...profileToRow(entry.user),
+              secondary: `${entry.user.email || entry.user.id} · ${entry.sessionTitle}`,
+            })));
+      } else if (dataKey === "attendedSessions") {
+        const sessionIds = new Set(
+          activity.attendance.filter((entry) => dayMatches(entry.occurredAt)).map((entry) => entry.sessionId)
+        );
+        rows = [...sessionIds].map((sessionId) => {
+          const session = sessionById.get(sessionId);
+          return {
+            id: sessionId,
+            primary: session?.title || "Unknown session",
+            secondary: session
+              ? `${session.host.fullName} · ${formatDateTime(session.startsAt)}`
+              : sessionId,
+            avatarUrl: session?.host.avatarUrl,
+          };
+        });
+      } else if (dataKey === "supportUsd") {
+        const start = new Date(`${point.dateKey}T00:00:00`);
+        const end = new Date(start);
+        end.setDate(end.getDate() + 1);
+        const result = await supabase
+          .from("host_support_payments")
+          .select("id, host_user_id, host_amount_usd, status, created_at")
+          .gte("created_at", start.toISOString())
+          .lt("created_at", end.toISOString())
+          .order("created_at", { ascending: false });
+        if (result.error) throw result.error;
+        const paymentRows = (result.data as AnyRow[]) || [];
+        const profiles = await loadProfilesByIds(paymentRows.map((row) => String(row.host_user_id || "")));
+        rows = paymentRows.map((row) => {
+          const profile = profiles.get(String(row.host_user_id)) || emptyProfile(String(row.host_user_id || ""));
+          return {
+            id: String(row.id),
+            primary: profile.fullName,
+            secondary: `${formatMoney(Number(row.host_amount_usd || 0))} · ${String(row.status || "unknown")} · ${formatDateTime(row.created_at)}`,
+            avatarUrl: profile.avatarUrl,
+          };
+        });
+      } else {
+        rows = payoutRequests
+          .filter((row) => dayMatches(row.created_at || row.requested_at))
+          .map((row) => {
+            const profile = {
+              id: row.host_user_id,
+              fullName: String(row.profiles?.full_name || row.profiles?.email || row.host_user_id),
+              email: String(row.profiles?.email || ""),
+              avatarUrl: String(row.profiles?.avatar_url || ""),
+            };
+            return {
+              id: row.id,
+              primary: profile.fullName,
+              secondary: `${formatMoney(Number(row.amount_usd || 0))} · ${String(row.status || "unknown")} · ${formatDateTime(row.created_at || row.requested_at)}`,
+              avatarUrl: profile.avatarUrl,
+            };
+          });
+      }
+
+      setDrilldown({
+        title: `${titleByKey[dataKey]} · ${point.dateKey}`,
+        subtitle: `${rows.length} underlying ${rows.length === 1 ? "record" : "records"} · chart value ${formatNumber(Number(point[dataKey] || 0), 2)}`,
+        rows,
+      });
+    } catch (error) {
+      console.error("[admin] chart drilldown failed", error);
+      setDrilldown({
+        title: `${titleByKey[dataKey]} · ${point.dateKey}`,
+        subtitle: "Could not load details for this point.",
+        rows: [],
+      });
+    }
+  };
+
+  const openMonthlyAttendance = async (point: MonthlyAttendancePoint) => {
+    setDrilldown({
+      title: `Unique attendance · ${point.label}`,
+      subtitle: "Loading people who attended during this month.",
+      rows: [],
+      loading: true,
+    });
+    const profiles = await loadProfilesByIds(point.attendeeIds);
+    const rows = point.attendeeIds.map((id) => {
+      const profile = profiles.get(id) || emptyProfile(id);
+      return {
+        id,
+        primary: profile.fullName,
+        secondary: profile.email || profile.id,
+        avatarUrl: profile.avatarUrl,
+      };
+    });
+    setDrilldown({
+      title: `Unique attendance · ${point.label}`,
+      subtitle: `${point.uniqueAttendees} unique people · ${point.attendanceRecords} visits · ${point.attendedSessions} sessions`,
+      rows,
+    });
+  };
   if (loading) {
     return (
       <main className="min-h-screen bg-white px-6 py-16 font-inter text-[#2F2F2F]">
@@ -1758,6 +2058,7 @@ export default function AdminPage() {
   }
 
   return (
+    <ChartDrilldownContext.Provider value={openChartDrilldown}>
     <main className="min-h-screen bg-white px-6 py-10 font-inter text-[#2F2F2F]">
       <div className="mx-auto max-w-7xl">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -1879,7 +2180,7 @@ export default function AdminPage() {
               <MetricCard label="Sessions created 30d" value={stats.sessionsCreatedMonth} hint="Rows created in sessions table in 30 days." data={chartData} dataKey="sessionsCreated" color="#7C3AED" />
               <MetricCard label="Sessions hosted 30d" value={stats.sessionsHostedMonth} hint="Sessions started in the last 30 days." data={chartData} dataKey="sessionsHosted" color="#059669" />
             </section>
-            <MonthlyAttendanceChart data={monthlyAttendance} />
+            <MonthlyAttendanceChart data={monthlyAttendance} onMonthClick={(point) => void openMonthlyAttendance(point)} />
             <ActivityExplorer activity={activity} />
 
 
@@ -2133,6 +2434,8 @@ export default function AdminPage() {
           void loadBans();
         }}
       />
+      <AdminDrilldownModal state={drilldown} onClose={() => setDrilldown(null)} />
     </main>
+    </ChartDrilldownContext.Provider>
   );
 }
