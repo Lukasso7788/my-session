@@ -124,6 +124,8 @@ type DrilldownState = {
 
 type ChartDrilldownHandler = (dataKey: ChartKey, point: ChartPoint) => void;
 
+const ChartDrilldownContext = createContext<ChartDrilldownHandler | null>(null);
+
 type ProfileSummary = {
   id: string;
   fullName: string;
