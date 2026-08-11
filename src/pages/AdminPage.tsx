@@ -689,20 +689,7 @@ function MiniMetricChart({
 
   const getY = (value: number) => 34 - (value / max) * 28;
 
-  const chartPoints = values.map((value, index) => ({ x: getX(index), y: getY(value) }));
-  const linePath = chartPoints.length
-    ? chartPoints.slice(1).reduce((path, point, index) => {
-        const previous = chartPoints[index];
-        const midpointX = (previous.x + point.x) / 2;
-        const midpointY = (previous.y + point.y) / 2;
-        return `${path} Q ${previous.x} ${previous.y} ${midpointX} ${midpointY}`;
-      }, `M ${chartPoints[0].x} ${chartPoints[0].y}`) +
-      ` T ${chartPoints.at(-1)?.x || 0} ${chartPoints.at(-1)?.y || 34}`
-    : "";
-  const areaPath = linePath ? `${linePath} L 100 36 L 0 36 Z` : "";
-  const firstValue = values[0] || 0;
-  const latestValue = values.at(-1) || 0;
-  const trend = firstValue > 0 ? ((latestValue - firstValue) / firstValue) * 100 : null;
+  const points = values.map((value, index) => `${getX(index)},${getY(value)}`).join(" ");
 
   const activeValue = values[activeIndex] || 0;
   const activePoint = data[activeIndex];
@@ -716,58 +703,57 @@ function MiniMetricChart({
       : formatNumber(activeValue, decimals);
 
   return (
-    <div className="mt-5">
-      <div className="mb-2 flex items-center justify-between text-[11px]">
-        <span className="font-semibold text-[#8A8D88]">
+    <div className="mt-4">
+      <div className="mb-2 flex items-center justify-between rounded-xl bg-white/70 px-3 py-2 text-[11px]">
+        <span className="font-semibold text-[#777]">
           {activePoint?.dateKey || "—"}
         </span>
-        <div className="flex items-center gap-2">
-          {trend !== null ? (
-            <span className={`rounded-full px-2 py-1 font-bold ${trend >= 0 ? "bg-[#E1F7E6] text-[#16803B]" : "bg-[#FDE8E8] text-[#B42318]"}`}>
-              {trend >= 0 ? "↗" : "↘"} {Math.abs(trend).toFixed(1)}%
-            </span>
-          ) : null}
-          <button
-            type="button"
-            disabled={!activePoint || !openDrilldown}
-            onClick={() => activePoint && openDrilldown?.(dataKey, activePoint)}
-            className="rounded-full bg-white px-2.5 py-1 font-bold shadow-[0_1px_0_rgba(0,0,0,0.04)] transition-transform hover:-translate-y-0.5 disabled:cursor-default"
-            style={{ color }}
-            title="Open details for this day"
-          >{displayValue}</button>
-        </div>
+        <button
+          type="button"
+          disabled={!activePoint || !openDrilldown}
+          onClick={() => activePoint && openDrilldown?.(dataKey, activePoint)}
+          className="rounded-full px-2 py-0.5 font-bold transition-colors hover:bg-black/[0.05] disabled:cursor-default"
+          style={{ color }}
+          title="Open details for this day"
+        >
+          {displayValue}
+        </button>
       </div>
 
-      <svg viewBox="0 0 100 40" className="h-24 w-full overflow-visible" role="img" aria-label={`${String(dataKey)} trend`}>
+      <svg viewBox="0 0 100 40" className="h-20 w-full overflow-visible">
         <defs>
           <linearGradient id={`metric-fill-${String(dataKey)}-${color.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.28" />
+            <stop offset="0%" stopColor={color} stopOpacity="0.2" />
             <stop offset="100%" stopColor={color} stopOpacity="0" />
           </linearGradient>
         </defs>
-        <line x1="0" y1="34" x2="100" y2="34" stroke="rgba(47,47,47,0.09)" strokeDasharray="2 3" />
-        <line x1="0" y1="20" x2="100" y2="20" stroke="rgba(47,47,47,0.07)" strokeDasharray="2 3" />
-        <line x1="0" y1="6" x2="100" y2="6" stroke="rgba(47,47,47,0.07)" strokeDasharray="2 3" />
+        <line x1="0" y1="34" x2="100" y2="34" stroke="rgba(0,0,0,0.12)" />
+        <line x1="0" y1="20" x2="100" y2="20" stroke="rgba(0,0,0,0.06)" />
+        <line x1="0" y1="6" x2="100" y2="6" stroke="rgba(0,0,0,0.06)" />
 
-        <path d={areaPath} fill={`url(#metric-fill-${String(dataKey)}-${color.replace("#", "")})`} />
-
-        <path
-          fill="none"
-          stroke={color}
-          strokeWidth="7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d={linePath}
-          opacity="0.08"
+        <polygon
+          points={`0,34 ${points} 100,34`}
+          fill={`url(#metric-fill-${String(dataKey)}-${color.replace("#", "")})`}
+          opacity="0.9"
         />
 
-        <path
+        <polyline
           fill="none"
           stroke={color}
-          strokeWidth="2.15"
+          strokeWidth="8"
           strokeLinecap="round"
           strokeLinejoin="round"
-          d={linePath}
+          points={points}
+          opacity="0.12"
+        />
+
+        <polyline
+          fill="none"
+          stroke={color}
+          strokeWidth="2.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          points={points}
         />
 
         {hoverIndex !== null && (
@@ -792,10 +778,10 @@ function MiniMetricChart({
               <circle
                 cx={x}
                 cy={y}
-                r={active ? 3.2 : 1.45}
-                fill={active ? color : "white"}
+                r={active ? 3.4 : 2.2}
+                fill="white"
                 stroke={color}
-                strokeWidth={active ? 1.3 : 1.25}
+                strokeWidth={active ? 2.4 : 1.7}
               />
 
               <rect
@@ -839,7 +825,7 @@ function MiniMetricChart({
         )}
       </svg>
 
-      <div className="mt-1 flex justify-between text-[10px] font-semibold uppercase tracking-[0.08em] text-[#A0A39E]">
+      <div className="mt-1 flex justify-between text-[10px] text-[#999]">
         <span>{data[0]?.label || "—"}</span>
         <span>{data[data.length - 1]?.label || "—"}</span>
       </div>
@@ -868,23 +854,17 @@ function MetricCard({
   percent?: boolean;
   decimals?: number;
 }) {
-  const normalizedLabel = label.toLowerCase();
-  const periodLabel = normalizedLabel.includes("today")
-    ? "Today"
-    : normalizedLabel.includes("7d") ? "7d" : "30d";
   return (
-    <article className="group relative overflow-hidden rounded-[30px] bg-[#F4F5F2] p-6 transition-[transform,background-color] duration-300 hover:-translate-y-1 hover:bg-[#F0F2ED]">
-      <span className="absolute left-6 top-0 h-1 w-12 rounded-b-full" style={{ backgroundColor: color }} />
-      <div className="flex items-start justify-between gap-3">
-        <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#787C76]">{label}</div>
-        <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#858984]">{periodLabel}</span>
+    <div className="rounded-[24px] border border-black/[0.07] bg-gradient-to-b from-white to-[#F7F8F8] p-5 transition-transform duration-200 hover:-translate-y-0.5">
+      <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
+        {label}
       </div>
 
-      <div className="mt-5 text-[42px] font-semibold leading-none tracking-[-0.055em] text-[#252725]">
+      <div className="mt-2 text-[30px] font-bold text-[#2F2F2F]">
         {value}
       </div>
 
-      <p className="mt-2 min-h-10 text-[12px] leading-5 text-[#737771]">{hint}</p>
+      <p className="mt-1 text-[12px] leading-5 text-[#777]">{hint}</p>
 
       <MiniMetricChart
         data={data}
@@ -894,7 +874,7 @@ function MetricCard({
         percent={percent}
         decimals={decimals}
       />
-    </article>
+    </div>
   );
 }
 
@@ -1056,23 +1036,18 @@ function MonthlyAttendanceChart({
   const rangeLabel = rangeMonths === 12 ? "12 months" : rangeMonths === 24 ? "2 years" : "3 years";
 
   return (
-    <section className="mt-8 overflow-hidden rounded-[34px] bg-[#EAF8ED] p-6 text-[#243028] sm:p-8">
+    <section className="mt-8 overflow-hidden rounded-[28px] bg-[#1F2328] p-6 text-white">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#4F7258]">
+          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">
             Retention pulse
           </div>
-          <div className="mt-3 flex flex-wrap items-end gap-x-4 gap-y-1">
-            <h2 className="text-[24px] font-semibold tracking-[-0.03em]">Unique attendance</h2>
-            <strong className="text-[44px] font-semibold leading-none tracking-[-0.06em] text-[#17391F]">
-              {visibleData.at(-1)?.uniqueAttendees || 0}
-            </strong>
-          </div>
-          <p className="mt-2 max-w-2xl text-[13px] text-[#597060]">
+          <h2 className="mt-1 text-[22px] font-bold">Unique attendance by month</h2>
+          <p className="mt-1 text-[13px] text-white/55">
             Distinct people who produced at least one attendance record in each calendar month.
           </p>
         </div>
-        <div className="flex w-fit rounded-full bg-[#D9EADC] p-1">
+        <div className="flex w-fit rounded-full bg-white/[0.08] p-1">
           {([
             [12, "12 months"],
             [24, "2 years"],
@@ -1084,8 +1059,8 @@ function MonthlyAttendanceChart({
               onClick={() => setRangeMonths(months)}
               className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors ${
                 rangeMonths === months
-                  ? "bg-white text-[#243028] shadow-[0_1px_3px_rgba(31,58,38,0.08)]"
-                  : "text-[#65806C] hover:text-[#243028]"
+                  ? "bg-white text-[#1F2328]"
+                  : "text-white/55 hover:text-white"
               }`}
             >
               {label}
@@ -1096,7 +1071,7 @@ function MonthlyAttendanceChart({
 
       <div className="mt-7 overflow-x-auto pb-2">
         <div
-          className="grid h-64 items-end gap-2 sm:gap-3"
+          className="grid h-56 items-end gap-2 sm:gap-3"
           style={{
             gridTemplateColumns: `repeat(${visibleData.length}, minmax(42px, 1fr))`,
             minWidth: `${Math.max(visibleData.length * 52, 640)}px`,
@@ -1106,25 +1081,22 @@ function MonthlyAttendanceChart({
             const height = Math.max(8, (item.uniqueAttendees / max) * 100);
             return (
               <div key={item.key} className="group flex h-full min-w-0 flex-col justify-end">
-                <div className="mb-2 text-center text-[12px] font-bold text-[#41634A] transition-transform duration-200 group-hover:-translate-y-0.5">
+                <div className="mb-2 text-center text-[13px] font-bold opacity-0 transition-opacity group-hover:opacity-100">
                   {item.uniqueAttendees}
                 </div>
                 <button
                   type="button"
                   onClick={() => onMonthClick?.(item)}
-                  className="relative flex h-[170px] w-full items-end overflow-hidden rounded-[18px] bg-white/45 text-left outline-none ring-[#2F6F3E]/35 transition-transform duration-200 hover:-translate-y-1 focus-visible:ring-2"
+                  className="relative flex h-[150px] w-full items-end overflow-hidden rounded-xl bg-white/[0.06] text-left outline-none ring-white/35 transition-transform hover:-translate-y-1 focus-visible:ring-2"
                   aria-label={`Open attendees for ${item.label}`}
                 >
                   <div
-                    className="w-full rounded-[18px] transition-[height,background-color,filter] duration-500 group-hover:brightness-95"
-                    style={{
-                      height: `${height}%`,
-                      backgroundColor: item.key === visibleData.at(-1)?.key ? "#2F2F2F" : "#78D784",
-                    }}
+                    className="w-full rounded-xl bg-[#75D67F] transition-[height,filter] duration-500 group-hover:brightness-110"
+                    style={{ height: `${height}%` }}
                     title={`${item.uniqueAttendees} unique attendees · ${item.attendanceRecords} visits · ${item.attendedSessions} sessions`}
                   />
                 </button>
-                <div className="mt-3 truncate text-center text-[10px] font-semibold uppercase tracking-[0.06em] text-[#66806D] sm:text-[11px]">
+                <div className="mt-3 truncate text-center text-[10px] font-semibold text-white/55 sm:text-[11px]">
                   {item.label}
                 </div>
               </div>
@@ -1133,13 +1105,13 @@ function MonthlyAttendanceChart({
         </div>
       </div>
 
-      <div className="mt-5 flex flex-wrap items-center gap-2 text-[11px] text-[#5E7564]">
-        <span className="rounded-full bg-white px-3 py-1.5 font-semibold text-[#36543E]">
+      <div className="mt-4 flex flex-wrap items-center gap-4 border-t border-white/10 pt-4 text-[11px] text-white/55">
+        <span className="rounded-full bg-white/[0.08] px-2.5 py-1 font-semibold text-white/70">
           Last {rangeLabel}
         </span>
-        <span className="rounded-full bg-[#DDEFE1] px-3 py-1.5"><b className="text-[#234A2D]">{visibleData.at(-1)?.attendanceRecords || 0}</b> records</span>
-        <span className="rounded-full bg-[#DDEFE1] px-3 py-1.5"><b className="text-[#234A2D]">{visibleData.at(-1)?.attendedSessions || 0}</b> sessions</span>
-        <span className="ml-auto hidden text-[#78907E] sm:inline">Click any bar to inspect people</span>
+        <span><b className="text-white">{visibleData.at(-1)?.uniqueAttendees || 0}</b> unique this month</span>
+        <span><b className="text-white">{visibleData.at(-1)?.attendanceRecords || 0}</b> attendance records</span>
+        <span><b className="text-white">{visibleData.at(-1)?.attendedSessions || 0}</b> sessions attended</span>
       </div>
     </section>
   );
@@ -2174,22 +2146,17 @@ export default function AdminPage() {
 
         {tab === "dashboard" && (
           <>
-            <div className="mt-10 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#7B807A]">Live analytics</div>
-                <h2 className="mt-1 text-[28px] font-semibold tracking-[-0.045em] text-[#252725]">Product pulse</h2>
-                <p className="mt-1 text-[13px] text-[#747873]">Hover to inspect the trend. Click a value or point to see the people behind it.</p>
-              </div>
+            <div className="mt-8 flex justify-end">
               <button
                 type="button"
                 onClick={() => void loadDashboard()}
-                className="w-fit rounded-full bg-[#2F2F2F] px-4 py-2.5 text-[12px] font-semibold text-white transition-transform hover:-translate-y-0.5"
+                className="rounded-full border border-black/10 px-4 py-2 text-[13px] font-semibold hover:bg-black/[0.04]"
               >
                 {dashboardLoading ? "Refreshing..." : "Refresh dashboard"}
               </button>
             </div>
 
-            <section className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
+            <section className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               <MetricCard label="Registrations today" value={stats.registrationsToday} hint="New profiles created today." data={chartData} dataKey="registrations" color="#2563EB" />
               <MetricCard label="Registrations 7d" value={stats.registrationsWeek} hint="New profiles in the last 7 days." data={chartData} dataKey="registrations" color="#2563EB" />
               <MetricCard label="Registrations 30d" value={stats.registrationsMonth} hint="New profiles in the last 30 days." data={chartData} dataKey="registrations" color="#2563EB" />
