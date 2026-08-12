@@ -2133,6 +2133,8 @@ const LK_MAX_TABS_DEFAULT = 20;
 const MOBILE_ROOM_LEASE_MS = 50 * 60 * 1000;
 const ROOM_LIVEKIT_RECONNECT_WINDOW_MS = 45_000;
 const ROOM_AUTO_RECOVERY_MANUAL_THRESHOLD = 3;
+const ROOM_CONNECT_TIMEOUT_MS = 20_000;
+const ROOM_TOKEN_TIMEOUT_MS = 15_000;
 
 type MobileRoomLease = {
   lastSeenAt: number;
@@ -9837,24 +9839,30 @@ export function RoomPageLiveKit({
         }
       }
 
-      const res = await fetch(tokenEndpoint, {
-        method: "POST",
-        headers: await buildAuthHeaders(),
-        body: JSON.stringify({
-          roomName,
-          identity,
-          name: nameToUse,
-          isHost,
-          sessionId: session.id,
-          isModerator:
-            !isHost && !!authUserId
-              ? moderatorUserIds.includes(String(authUserId).toLowerCase())
-              : false,
-          baseUserId: baseUser,
-          tabId,
-          inviteToken: new URLSearchParams(window.location.search).get("invite") || undefined,
+      const res = await withTimeout(
+        fetch(tokenEndpoint, {
+          method: "POST",
+          headers: await buildAuthHeaders(),
+          body: JSON.stringify({
+            roomName,
+            identity,
+            name: nameToUse,
+            isHost,
+            sessionId: session.id,
+            isModerator:
+              !isHost && !!authUserId
+                ? moderatorUserIds.includes(String(authUserId).toLowerCase())
+                : false,
+            baseUserId: baseUser,
+            tabId,
+            inviteToken:
+              new URLSearchParams(window.location.search).get("invite") ||
+              undefined,
+          }),
         }),
-      });
+        ROOM_TOKEN_TIMEOUT_MS,
+        "Preparing the room timed out. Please try again.",
+      );
 
       const json = (await res.json().catch(() => ({}))) as {
         token?: string;
@@ -12448,18 +12456,6 @@ export function RoomPageLiveKit({
 
     let connectedToRoom = false;
 
-    const failAfter = window.setTimeout(() => {
-      if (connectAttemptIdRef.current !== attemptId) return;
-      setClientError("Connecting to LiveKit timed out. Please try again.");
-      void disconnectRoom({
-        preserveAttendance: opts.preserveAttendance,
-        preserveTabPresence: opts.preserveTabPresence,
-        preserveJoinRequested: opts.preserveJoinRequested,
-      });
-      setPrejoinOpen(true);
-      setJoinRequested(false);
-    }, 15000);
-
     setClientError("");
     setFxError("");
     setMediaWarning("");
@@ -12697,7 +12693,18 @@ export function RoomPageLiveKit({
         }) as any,
       );
 
-      await r.connect(connectServerUrl, connectToken, { autoSubscribe: true });
+      // Limit only the signalling connection itself. The previous watchdog kept
+      // running while camera/microphone permissions and tracks were prepared, so
+      // a slow permission prompt could disconnect an already connected room.
+      await withTimeout(
+        r.connect(connectServerUrl, connectToken, { autoSubscribe: true }),
+        ROOM_CONNECT_TIMEOUT_MS,
+        "Connecting to LiveKit timed out. Please try again.",
+      );
+
+      if (connectAttemptIdRef.current !== attemptId) {
+        throw new Error("LiveKit connection attempt was superseded.");
+      }
       connectedToRoom = true;
 
       if (USAGE_TRACKING_ENABLED && !opts.preserveAttendance) {
@@ -12906,6 +12913,11 @@ export function RoomPageLiveKit({
           preserveTabPresence: opts.preserveTabPresence,
           preserveJoinRequested: opts.preserveJoinRequested,
         });
+
+        if (!opts.preserveJoinRequested) {
+          setJoinRequested(false);
+          setPrejoinOpen(true);
+        }
       } else {
         setMediaWarning(normalizeMediaWarningMessage(msg));
         console.warn(
@@ -12913,7 +12925,6 @@ export function RoomPageLiveKit({
         );
       }
     } finally {
-      window.clearTimeout(failAfter);
       if (connectAttemptIdRef.current === attemptId) {
         connectInFlightRef.current = false;
       }
@@ -14701,7 +14712,9 @@ export function RoomPageLiveKit({
     closePictureInPicture().catch(() => { });
   }, [connected, pictureInPictureOpen, closePictureInPicture]);
 
-  const restoreMobileMediaFromBackground = async () => {
+  const restoreMobileMediaFromBackground = async (
+    forceReconnectNow = false,
+  ) => {
     if (mobileMediaRestoreBusyRef.current) return;
     mobileMediaRestoreBusyRef.current = true;
 
@@ -14734,26 +14747,21 @@ export function RoomPageLiveKit({
         return;
       }
 
+      // LiveKit's native reconnect preserves tracks and is faster than tearing
+      // the room down. Automatic recovery must not interrupt it. The explicit
+      // Rejoin button can still force a fresh connection when the user asks.
+      if (roomIsRecovering() && !forceReconnectNow) {
+        openMobileRestoreState("restoring");
+        setMediaWarning("Restoring your connection…");
+        return;
+      }
+
       setPrejoinOpen(false);
       setJoinRequested(true);
 
-      if (lkToken && lkServerUrl) {
-        await connectRoom({
-          forceReconnect: true,
-          preserveAttendance: true,
-          preserveTabPresence: true,
-          preserveJoinRequested: true,
-        }).catch((e) => {
-          console.warn("mobile restore reconnect failed:", e);
-          setClientError(
-            String((e as any)?.message || e || "restore_reconnect_failed"),
-          );
-        });
-      }
-
       // A token cached before the browser was suspended may no longer be usable.
-      // Fetch a fresh token and connect with it directly; relying only on React
-      // state here can miss a retry when two JWT strings happen to be identical.
+      // Go straight to a fresh token instead of spending a full connection cycle
+      // retrying a stale JWT first.
       for (let attempt = 0; attempt < 2 && !roomIsActuallyConnected(); attempt += 1) {
         if (document.visibilityState !== "visible") return;
 
@@ -14893,6 +14901,12 @@ export function RoomPageLiveKit({
       }
 
       if (connectInFlightRef.current || tokenRequestInFlightRef.current) {
+        scheduleRecoveryRetry();
+        return;
+      }
+
+      if (roomIsRecovering()) {
+        openMobileRestoreState("restoring");
         scheduleRecoveryRetry();
         return;
       }
@@ -19314,7 +19328,7 @@ export function RoomPageLiveKit({
                       <button
                         type="button"
                         disabled={mobileMediaRestoreBusy}
-                        onClick={() => void restoreMobileMediaFromBackground()}
+                        onClick={() => void restoreMobileMediaFromBackground(true)}
                         className={[
                           "mt-4 h-11 w-full rounded-2xl text-[14px] font-semibold transition disabled:opacity-60",
                           isLight
