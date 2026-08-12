@@ -19343,6 +19343,17 @@ export function RoomPageLiveKit({
                       I can see/hear everything
                     </button>
 
+                    <button
+                      type="button"
+                      disabled={mobileMediaRestoreBusy}
+                      onClick={() => window.location.reload()}
+                      className={`mt-2 h-9 w-full rounded-2xl text-[12px] font-semibold transition disabled:opacity-60 ${isLight
+                        ? "text-black/65 hover:bg-black/[0.05]"
+                        : "text-white/65 hover:bg-white/[0.06]"
+                        }`}
+                    >
+                      Refresh page
+                    </button>
                     {roomDebugEnabled ? (
                       <button
                         type="button"
