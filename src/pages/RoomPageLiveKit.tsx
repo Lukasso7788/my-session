@@ -2133,6 +2133,7 @@ const LK_TAB_TTL_MS = 18_000;
 const LK_TAB_HEARTBEAT_MS = 5_000;
 const LK_MAX_TABS_DEFAULT = 20;
 const MOBILE_ROOM_LEASE_MS = 50 * 60 * 1000;
+const MOBILE_PIP_ROOM_LEASE_MS = 4 * 60 * 60 * 1000;
 const ROOM_LIVEKIT_RECONNECT_WINDOW_MS = 45_000;
 const ROOM_AUTO_RECOVERY_MANUAL_THRESHOLD = 3;
 const ROOM_CONNECT_TIMEOUT_MS = 20_000;
@@ -2142,6 +2143,7 @@ type MobileRoomLease = {
   lastSeenAt: number;
   audioEnabled: boolean;
   videoEnabled: boolean;
+  pictureInPictureActive?: boolean;
 };
 
 function mobileRoomLeaseKey(sessionId: string, userId: string) {
@@ -2159,7 +2161,12 @@ function readMobileRoomLease(
     const parsed = JSON.parse(localStorage.getItem(key) || "null") as MobileRoomLease | null;
     const lastSeenAt = Number(parsed?.lastSeenAt || 0);
 
-    if (!lastSeenAt || Date.now() - lastSeenAt > MOBILE_ROOM_LEASE_MS) {
+    const pictureInPictureActive = parsed?.pictureInPictureActive === true;
+    const leaseLifetime = pictureInPictureActive
+      ? MOBILE_PIP_ROOM_LEASE_MS
+      : MOBILE_ROOM_LEASE_MS;
+
+    if (!lastSeenAt || Date.now() - lastSeenAt > leaseLifetime) {
       localStorage.removeItem(key);
       return null;
     }
@@ -2168,6 +2175,7 @@ function readMobileRoomLease(
       lastSeenAt,
       audioEnabled: !!parsed?.audioEnabled,
       videoEnabled: !!parsed?.videoEnabled,
+      pictureInPictureActive,
     };
   } catch {
     return null;
@@ -2177,17 +2185,33 @@ function readMobileRoomLease(
 function writeMobileRoomLease(
   sessionId: string,
   userId: string | null | undefined,
-  media: { audioEnabled: boolean; videoEnabled: boolean },
+  media: {
+    audioEnabled: boolean;
+    videoEnabled: boolean;
+    pictureInPictureActive?: boolean;
+  },
 ) {
   if (!sessionId || !userId) return;
 
   try {
+    const key = mobileRoomLeaseKey(sessionId, userId);
+    let previousPiPState = false;
+    if (media.pictureInPictureActive === undefined) {
+      try {
+        previousPiPState =
+          JSON.parse(localStorage.getItem(key) || "null")
+            ?.pictureInPictureActive === true;
+      } catch { }
+    }
+
     localStorage.setItem(
-      mobileRoomLeaseKey(sessionId, userId),
+      key,
       JSON.stringify({
         lastSeenAt: Date.now(),
         audioEnabled: !!media.audioEnabled,
         videoEnabled: !!media.videoEnabled,
+        pictureInPictureActive:
+          media.pictureInPictureActive ?? previousPiPState,
       } satisfies MobileRoomLease),
     );
   } catch { }
@@ -11641,13 +11665,37 @@ export function RoomPageLiveKit({
     return nativeVideo;
   }, [prepareMobilePiPCollage]);
 
+  const persistMobilePiPRetention = useCallback(
+    (active: boolean): void => {
+      writeMobileRoomLease(sessionId, authUserId, {
+        audioEnabled: micOn,
+        videoEnabled: camOn,
+        pictureInPictureActive: active,
+      });
+    },
+    [authUserId, camOn, micOn, sessionId],
+  );
+
   const handleMobilePiPOpened = useCallback(
     (video: MobilePiPVideoElement): void => {
+      persistMobilePiPRetention(true);
       setMobilePiPVideoElement(video);
       setMobilePipOpen(true);
     },
-    [],
+    [persistMobilePiPRetention],
   );
+
+  useEffect(() => {
+    if (!connected || !mobilePipOpen) return;
+
+    persistMobilePiPRetention(true);
+    const timer = window.setInterval(
+      () => persistMobilePiPRetention(true),
+      30_000,
+    );
+
+    return () => window.clearInterval(timer);
+  }, [connected, mobilePipOpen, persistMobilePiPRetention]);
 
   useMobileBrowserInitiatedPiP(
     connected && mobilePiPRuntime,
@@ -11693,17 +11741,21 @@ export function RoomPageLiveKit({
     if (!stage) return;
 
     const handleEnter = (): void => {
+      persistMobilePiPRetention(true);
       setMobilePiPVideoElement(stage);
       setMobilePipOpen(true);
     };
     const handleLeave = (): void => {
+      persistMobilePiPRetention(false);
       setMobilePipOpen(false);
       setMobilePiPVideoElement(null);
     };
     const handleWebKitModeChange = (): void => {
-      setMobilePipOpen(
-        stage.webkitPresentationMode === "picture-in-picture",
-      );
+      const active =
+        stage.webkitPresentationMode === "picture-in-picture";
+      persistMobilePiPRetention(active);
+      setMobilePipOpen(active);
+      if (!active) setMobilePiPVideoElement(null);
     };
 
     stage.addEventListener("enterpictureinpicture", handleEnter);
@@ -11721,7 +11773,12 @@ export function RoomPageLiveKit({
         handleWebKitModeChange,
       );
     };
-  }, [connected, mobilePiPRuntime, mobilePiPVideoElement]);
+  }, [
+    connected,
+    mobilePiPRuntime,
+    mobilePiPVideoElement,
+    persistMobilePiPRetention,
+  ]);
 
   const documentPipSupported =
     typeof window !== "undefined" &&
@@ -14540,9 +14597,10 @@ export function RoomPageLiveKit({
       }
     } catch { }
 
+    persistMobilePiPRetention(false);
     setMobilePipOpen(false);
     setMobilePiPVideoElement(null);
-  }, [mobilePiPVideoElement]);
+  }, [mobilePiPVideoElement, persistMobilePiPRetention]);
 
   const closePictureInPicture = useCallback(async () => {
     if (mobilePipOpen) {
