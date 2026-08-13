@@ -1,4 +1,5 @@
 import React from "react";
+import type { CameraFramingMode } from "./VideoTileLiveKit";
 
 type RoomTheme = "dark" | "light";
 type FxMode = "off" | "blur" | "bg";
@@ -393,8 +394,9 @@ function VideoPreviewBox(props: {
     isLight: boolean;
     label?: string;
     mirrored?: boolean;
+    framingMode?: CameraFramingMode;
 }) {
-    const { track, filterCss, isLight, label = "Camera preview", mirrored = true } = props;
+    const { track, filterCss, isLight, label = "Camera preview", mirrored = true, framingMode = "full" } = props;
     const hostRef = React.useRef<HTMLDivElement | null>(null);
     const mediaElRef = React.useRef<HTMLMediaElement | null>(null);
 
@@ -418,7 +420,8 @@ function VideoPreviewBox(props: {
         media.playsInline = true;
         media.style.width = "100%";
         media.style.height = "100%";
-        media.style.objectFit = "cover";
+        media.style.objectFit = "contain";
+        media.style.objectPosition = "center center";
         host.appendChild(media);
         mediaElRef.current = media;
 
@@ -452,7 +455,9 @@ function VideoPreviewBox(props: {
         if (!media) return;
         media.style.transform = mirrored ? "scaleX(-1)" : "scaleX(1)";
         media.style.filter = filterCss || "";
-    }, [track, filterCss, mirrored]);
+        media.style.objectFit = framingMode === "fill" ? "cover" : "contain";
+        media.style.objectPosition = "center center";
+    }, [track, filterCss, mirrored, framingMode]);
 
     return (
         <div>
@@ -1079,6 +1084,8 @@ export function RoomSettingsModalLiveKit({
     previewVideoFilterCss,
     previewMirrored,
     onTogglePreviewMirrored,
+    cameraFramingMode,
+    onChangeCameraFramingMode,
     onUploadBg,
     onResetBg,
 
@@ -1149,6 +1156,8 @@ export function RoomSettingsModalLiveKit({
     previewVideoFilterCss?: string;
     previewMirrored: boolean;
     onTogglePreviewMirrored: (v: boolean) => void;
+    cameraFramingMode: CameraFramingMode;
+    onChangeCameraFramingMode: (mode: CameraFramingMode) => void;
     onUploadBg: (file: File) => void;
     onResetBg: () => void;
 
@@ -1668,6 +1677,38 @@ export function RoomSettingsModalLiveKit({
                                         </div>
                                     </div>
 
+                                    <div>
+                                        <div className="mb-2 text-[13px] font-semibold">Camera framing</div>
+                                        <div className={`grid grid-cols-2 gap-1 rounded-xl p-1 ${isLight ? "bg-black/[0.045]" : "bg-white/[0.06]"}`}>
+                                            {([
+                                                ["full", "Full view"],
+                                                ["fill", "Fill tile"],
+                                            ] as const).map(([value, label]) => {
+                                                const active = cameraFramingMode === value;
+                                                return (
+                                                    <button
+                                                        key={value}
+                                                        type="button"
+                                                        onClick={() => onChangeCameraFramingMode(value)}
+                                                        className={`h-9 rounded-lg text-[12px] font-semibold transition-colors ${active
+                                                            ? isLight
+                                                                ? "bg-white text-[#2F2F2F] shadow-sm"
+                                                                : "bg-[#2F2F2F] text-white"
+                                                            : isLight
+                                                                ? "text-black/50 hover:text-black/75"
+                                                                : "text-white/50 hover:text-white/75"
+                                                            }`}
+                                                    >
+                                                        {label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        <p className={`mt-2 text-[11px] leading-4 ${isLight ? "text-black/45" : "text-white/45"}`}>
+                                            Full view keeps the complete portrait feed from phones visible. Fill tile crops the edges to fill the frame.
+                                        </p>
+                                    </div>
+
                                     <ToggleRow
                                         label="Mirror camera preview"
                                         description="Flip your local preview horizontally like a typical selfie view."
@@ -1687,6 +1728,7 @@ export function RoomSettingsModalLiveKit({
                                     isLight={isLight}
                                     label="Live preview"
                                     mirrored={previewMirrored}
+                                    framingMode={cameraFramingMode}
                                 />
                             </div>
 

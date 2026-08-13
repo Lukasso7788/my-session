@@ -83,6 +83,7 @@ import {
 import { PreJoinModal } from "./livekit/PreJoinModalLiveKit";
 import { RoomSettingsModalLiveKit } from "./livekit/RoomSettingsModalLiveKit";
 import { SkipMeMutedStatusIcon, VideoTile } from "./livekit/VideoTileLiveKit";
+import type { CameraFramingMode } from "./livekit/VideoTileLiveKit";
 import {
   RoomAudioRenderer,
   StartAudio,
@@ -1899,6 +1900,7 @@ const BACKGROUND_SOUNDSCAPE_MUTED_PREF_KEY =
   "mysession_lk_background_soundscape_muted";
 const ROOM_SOUNDTRACK_TOPIC = "mysession_room_soundtrack_v1";
 const PREVIEW_MIRROR_PREF_KEY = "mysession_lk_preview_mirror";
+const CAMERA_FRAMING_PREF_KEY = "mysession_lk_camera_framing_v1";
 const AUDIO_PROCESSING_PREF_KEY = "mysession_lk_audio_processing_v1";
 const DEFAULT_AUDIO_PROCESSING: AudioProcessingPreferences = {
   echoCancellation: true,
@@ -6322,6 +6324,20 @@ export function RoomPageLiveKit({
     }
   });
   const roomSoundsVolumeRef = useRef(roomSoundsVolume);
+
+  const [cameraFramingMode, setCameraFramingMode] = useState<CameraFramingMode>(() => {
+    try {
+      return localStorage.getItem(CAMERA_FRAMING_PREF_KEY) === "fill" ? "fill" : "full";
+    } catch {
+      return "full";
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CAMERA_FRAMING_PREF_KEY, cameraFramingMode);
+    } catch { }
+  }, [cameraFramingMode]);
 
   const [previewMirrored, setPreviewMirrored] = useState<boolean>(() => {
     try {
@@ -16452,6 +16468,9 @@ export function RoomPageLiveKit({
             avatarUrl={tileAvatarUrl}
             micMuted={micMuted}
             mirrorVideo={t.isLocal ? previewMirrored : false}
+            cameraFramingMode={cameraFramingMode}
+            showCameraFramingControl={t.kind !== "screen"}
+            onChangeCameraFramingMode={setCameraFramingMode}
             isSpeaking={!!t.isSpeaking}
             currentIntention={getCurrentIntentionForTile(t)}
             onToggleMenu={handleToggleTileMenu}
@@ -16528,6 +16547,7 @@ export function RoomPageLiveKit({
           avatarUrl={tileAvatarUrl}
           micMuted={micMuted}
           mirrorVideo={t.isLocal ? previewMirrored : false}
+          cameraFramingMode={cameraFramingMode}
           isSpeaking={!!t.isSpeaking}
           currentIntention={getCurrentIntentionForTile(t)}
           density="compact"
@@ -19679,6 +19699,8 @@ export function RoomPageLiveKit({
           previewVideoFilterCss={localVideoFilterCss}
           previewMirrored={previewMirrored}
           onTogglePreviewMirrored={setPreviewMirrored}
+          cameraFramingMode={cameraFramingMode}
+          onChangeCameraFramingMode={setCameraFramingMode}
           onUploadBg={(file) => {
             try {
               if (uploadedBgUrlRef.current) {

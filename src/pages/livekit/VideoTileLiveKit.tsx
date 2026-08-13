@@ -4,6 +4,7 @@ import { BarVisualizer } from "@livekit/components-react";
 import { Pencil } from "lucide-react";
 
 type RoomTheme = "dark" | "light";
+export type CameraFramingMode = "full" | "fill";
 
 type HostTileActions = {
     canMuteMic: boolean;
@@ -202,6 +203,9 @@ type VideoTileProps = {
     onEditName?: () => void;
     density?: "normal" | "compact";
     currentIntention?: string | null;
+    cameraFramingMode?: CameraFramingMode;
+    showCameraFramingControl?: boolean;
+    onChangeCameraFramingMode?: (mode: CameraFramingMode) => void;
 };
 
 function useHeldSpeaking(active: boolean, holdMs = 650) {
@@ -345,6 +349,9 @@ function VideoTileInner({
     showMenuButton = false,
     density = "normal",
     currentIntention,
+    cameraFramingMode = "full",
+    showCameraFramingControl = false,
+    onChangeCameraFramingMode,
     onToggleMenu,
     onOpenProfile,
     onEditName,
@@ -352,6 +359,8 @@ function VideoTileInner({
     const wrapRef = useRef<HTMLDivElement | null>(null);
     const mediaHostRef = useRef<HTMLDivElement | null>(null);
     const attachedElRef = useRef<HTMLElement | null>(null);
+    const cameraFramingModeRef = useRef(cameraFramingMode);
+    cameraFramingModeRef.current = cameraFramingMode;
 
     const isLight = theme === "light";
     const isCompact = density === "compact";
@@ -507,7 +516,8 @@ function VideoTileInner({
         try {
             el.style.width = "100%";
             el.style.height = "100%";
-            (el.style as any).objectFit = "cover";
+            (el.style as any).objectFit = cameraFramingModeRef.current === "fill" ? "cover" : "contain";
+            (el.style as any).objectPosition = "center center";
             el.style.display = "block";
             (el.style as any).backfaceVisibility = "hidden";
             // Avoid retaining a dedicated compositor surface for every tile.
@@ -555,6 +565,19 @@ function VideoTileInner({
         }
         return cleanup;
     }, [videoTrack]);
+
+    // Change framing without detaching and recreating the LiveKit media element.
+    // `contain` preserves the complete portrait feed from phones; `cover` keeps
+    // the previous edge-to-edge crop for people who prefer a filled tile.
+    useEffect(() => {
+        const el = attachedElRef.current;
+        if (!el) return;
+
+        try {
+            (el.style as any).objectFit = cameraFramingMode === "fill" ? "cover" : "contain";
+            (el.style as any).objectPosition = "center center";
+        } catch { }
+    }, [cameraFramingMode, videoTrack]);
 
     // Theme, mirroring, and local/remote presentation are UI concerns. Update
     // the existing media element in place so a theme switch never detaches the
@@ -659,6 +682,21 @@ function VideoTileInner({
                     >
                         {sizeText}
                     </div>
+                ) : null}
+
+                {videoTrack && showCameraFramingControl && onChangeCameraFramingMode ? (
+                    <button
+                        type="button"
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            onChangeCameraFramingMode(cameraFramingMode === "full" ? "fill" : "full");
+                        }}
+                        className={`absolute left-1/2 top-[0.55rem] z-20 -translate-x-1/2 rounded-full px-2.5 py-1 text-[10px] font-semibold backdrop-blur-md transition ${menuBtnClass} opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100`}
+                        aria-label={cameraFramingMode === "full" ? "Fill video tile" : "Show full camera view"}
+                        title={cameraFramingMode === "full" ? "Full camera view — click to fill tile" : "Fill tile — click to show full camera"}
+                    >
+                        {cameraFramingMode === "full" ? "Full view" : "Fill"}
+                    </button>
                 ) : null}
 
                 {showBadge ? (
@@ -852,6 +890,9 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.showMenuButton === next.showMenuButton &&
         prev.density === next.density &&
         prev.currentIntention === next.currentIntention &&
+        prev.cameraFramingMode === next.cameraFramingMode &&
+        prev.showCameraFramingControl === next.showCameraFramingControl &&
+        prev.onChangeCameraFramingMode === next.onChangeCameraFramingMode &&
         prev.onToggleMenu === next.onToggleMenu &&
         prev.onOpenProfile === next.onOpenProfile &&
         prev.onEditName === next.onEditName &&
