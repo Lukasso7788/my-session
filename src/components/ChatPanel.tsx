@@ -423,6 +423,8 @@ function MessageCardInner({
 
     const [isEditing, setIsEditing] = useState(false);
     const [draft, setDraft] = useState(msg.body);
+    const [editEmojiOpen, setEditEmojiOpen] = useState(false);
+    const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
     const [savingEdit, setSavingEdit] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [readersOpen, setReadersOpen] = useState(false);
@@ -598,6 +600,33 @@ function MessageCardInner({
         [msg.body],
     );
 
+    const insertEmojiToEdit = (emoji: string) => {
+        const textarea = editTextareaRef.current;
+        const start = textarea?.selectionStart ?? draft.length;
+        const end = textarea?.selectionEnd ?? draft.length;
+
+        setDraft((current) => {
+            const safeStart = Math.max(0, Math.min(start, current.length));
+            const safeEnd = Math.max(safeStart, Math.min(end, current.length));
+            return current.slice(0, safeStart) + emoji + current.slice(safeEnd);
+        });
+        setEditEmojiOpen(false);
+
+        renderWindow.requestAnimationFrame(() => {
+            const current = editTextareaRef.current;
+            if (!current) return;
+            const nextPosition = start + emoji.length;
+            current.focus();
+            current.setSelectionRange(nextPosition, nextPosition);
+        });
+    };
+
+    const cancelEdit = () => {
+        setIsEditing(false);
+        setEditEmojiOpen(false);
+        setDraft(msg.body);
+    };
+
     const saveEdit = async () => {
         const next = draft.trim();
         if (!next) return;
@@ -606,6 +635,7 @@ function MessageCardInner({
         try {
             await onUpdateMessage(msg.id, next);
             setIsEditing(false);
+            setEditEmojiOpen(false);
         } finally {
             setSavingEdit(false);
         }
@@ -938,6 +968,7 @@ function MessageCardInner({
                 ) : (
                     <div className={bubbleCls}>
                         <textarea
+                            ref={editTextareaRef}
                             className={inputCls}
                             value={draft}
                             onChange={(e) => setDraft(e.target.value)}
@@ -947,8 +978,7 @@ function MessageCardInner({
                                     void saveEdit();
                                 }
                                 if (e.key === "Escape") {
-                                    setIsEditing(false);
-                                    setDraft(msg.body);
+                                    cancelEdit();
                                 }
                             }}
                             autoFocus
@@ -956,10 +986,22 @@ function MessageCardInner({
                         <div className="mt-2 flex items-center justify-end gap-2">
                             <button
                                 type="button"
-                                onClick={() => {
-                                    setIsEditing(false);
-                                    setDraft(msg.body);
-                                }}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => setEditEmojiOpen((current) => !current)}
+                                className={
+                                    isLight
+                                        ? "grid h-9 w-9 place-items-center rounded-xl bg-[#ECEAEA] text-black/60 transition hover:bg-[#DCDCDC] hover:text-[#2FA84F]"
+                                        : "grid h-9 w-9 place-items-center rounded-xl bg-[#F7F5F5] text-black/65 transition hover:bg-[#303030] hover:text-[#2FA84F]"
+                                }
+                                disabled={savingEdit}
+                                title="Add emoji"
+                                aria-label="Add emoji while editing"
+                            >
+                                <Smile size={17} />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={cancelEdit}
                                 className={
                                     isLight
                                         ? "px-3 h-9 rounded-xl bg-[#ECEAEA] hover:bg-[#DCDCDC] border border-[#D8D0D0] text-black/70 text-sm"
@@ -986,6 +1028,30 @@ function MessageCardInner({
                                 Save
                             </button>
                         </div>
+                        {editEmojiOpen && (
+                            <div
+                                className={
+                                    "mt-2 overflow-hidden rounded-2xl border border-[#D8D0D0] shadow-xl " +
+                                    (isLight ? "bg-[#F3F1F1]" : "bg-[#F7F5F5]")
+                                }
+                                onMouseDown={(e) => e.stopPropagation()}
+                            >
+                                <Picker
+                                    data={emojiData}
+                                    theme="light"
+                                    set="native"
+                                    previewPosition="none"
+                                    searchPosition="sticky"
+                                    navPosition="bottom"
+                                    skinTonePosition="preview"
+                                    onEmojiSelect={(event: any) => {
+                                        const native = event?.native || event?.emoji || "";
+                                        if (native) insertEmojiToEdit(String(native));
+                                    }}
+                                />
+                            </div>
+                        )}
+
                         <div
                             className={
                                 "mt-1 text-[11px] " +
