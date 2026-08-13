@@ -103,6 +103,7 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
   });
   const [scheduleBusy, setScheduleBusy] = useState(false);
   const [bookingBusyId, setBookingBusyId] = useState("");
+  const [cancellingBookingId, setCancellingBookingId] = useState("");
   const channelRef = useRef<RealtimeChannel | null>(null);
   const previewVideoRef = useRef<HTMLVideoElement | null>(null);
   const previewStreamRef = useRef<MediaStream | null>(null);
@@ -295,6 +296,30 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
     }
   }, [loadScheduledSessions, matchingPath, navigate, user]);
 
+  const cancelScheduledSession = useCallback(async (session: ScheduledOneOnOne) => {
+    setErrorText("");
+    if (!user || cancellingBookingId) return;
+    setCancellingBookingId(session.id);
+    try {
+      const { data: auth } = await supabase.auth.getSession();
+      const accessToken = auth.session?.access_token;
+      if (!accessToken) throw new Error("Your sign-in expired. Please sign in again.");
+      const response = await fetch("/api/livekit/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ action: "cancel_one_on_one_session", sessionId: session.id }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload?.cancelled) {
+        throw new Error(String(payload?.details || payload?.error || "Could not cancel this session."));
+      }
+      await loadScheduledSessions();
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "Could not cancel this session.");
+    } finally {
+      setCancellingBookingId("");
+    }
+  }, [cancellingBookingId, loadScheduledSessions, user]);
   const stopSearching = useCallback(async () => {
     presenceRef.current = null;
     creatingRef.current = false;
@@ -619,12 +644,12 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
           <div className="rounded-[28px] border border-[#DDD8D8] bg-white px-5 py-7 sm:px-8 sm:py-8">
             <div className="text-center">
               <div className="flex flex-wrap items-center justify-center gap-3">
-                <span className="grid h-11 w-11 place-items-center rounded-[12px] bg-[#F4F4F4]">
-                  <img src="/icons/one-on-one-inactive.svg" className="h-6 w-6" alt="" />
-                </span>
                 <h1 className="text-[30px] font-extrabold leading-none tracking-[-0.045em] sm:text-[38px]">
-                  One-on-One · 1:1
+                  MySession One-on-One
                 </h1>
+                <span className="grid h-11 w-11 place-items-center rounded-[12px] bg-[#2F2F2F]">
+                  <img src="/icons/one-on-one-active.svg" className="h-6 w-6" alt="" />
+                </span>
               </div>
               <p className="mt-2 text-[16px] font-medium text-[#334E8A]">Classical body doubling</p>
               <p className="mx-auto mt-4 max-w-[540px] text-[15px] leading-6 text-[#4F5F82]">
@@ -840,14 +865,26 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
                         <p className="mt-0.5 text-[11px] text-[#596889]">{formatScheduledDate(session.startTime)} · 50 min</p>
                         <p className="mt-0.5 text-[10px] text-[#8B93A3]">{session.bookedUserIds.length}/2 booked</p>
                       </div>
-                      <button
-                        type="button"
-                        disabled={isBooking || (isFull && !alreadyBooked)}
-                        onClick={() => void bookScheduledSession(session)}
-                        className={`min-w-[64px] rounded-[10px] px-3 py-2 text-[11px] font-bold transition ${alreadyBooked ? "bg-[#2F2F2F] text-white hover:bg-[#1F1F1F]" : isFull ? "cursor-not-allowed bg-[#ECEEF1] text-[#A4AAB5]" : "bg-white text-[#2F2F2F] ring-1 ring-inset ring-[#DADDE3] hover:bg-[#F0F1F3]"}`}
-                      >
-                        {isBooking ? "…" : alreadyBooked ? "Join" : isFull ? "Full" : "Book"}
-                      </button>
+                      <div className="flex shrink-0 flex-col gap-1.5">
+                        <button
+                          type="button"
+                          disabled={isBooking || cancellingBookingId === session.id || (isFull && !alreadyBooked)}
+                          onClick={() => void bookScheduledSession(session)}
+                          className={`min-w-[64px] rounded-[10px] px-3 py-2 text-[11px] font-bold transition ${alreadyBooked ? "bg-[#2F2F2F] text-white hover:bg-[#1F1F1F]" : isFull ? "cursor-not-allowed bg-[#ECEEF1] text-[#A4AAB5]" : "bg-white text-[#2F2F2F] ring-1 ring-inset ring-[#DADDE3] hover:bg-[#F0F1F3]"}`}
+                        >
+                          {isBooking ? "…" : alreadyBooked ? "Join" : isFull ? "Full" : "Book"}
+                        </button>
+                        {alreadyBooked ? (
+                          <button
+                            type="button"
+                            disabled={cancellingBookingId === session.id}
+                            onClick={() => void cancelScheduledSession(session)}
+                            className="min-w-[64px] rounded-[9px] px-2 py-1.5 text-[10px] font-semibold text-[#8B4A4A] transition hover:bg-[#FCEEEE] disabled:cursor-wait disabled:opacity-55"
+                          >
+                            {cancellingBookingId === session.id ? "Cancelling…" : session.hostId === user?.id ? "Cancel slot" : "Cancel booking"}
+                          </button>
+                        ) : null}
+                      </div>
                     </div>
                   );
                 }) : (

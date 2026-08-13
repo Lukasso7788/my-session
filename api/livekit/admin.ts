@@ -2260,6 +2260,67 @@ async function handleCreateOneOnOneSession(params: {
 
   return res.status(200).json({ sessionId: session.id, inviteToken: inviteToken || undefined, reused: false });
 }
+async function handleCancelOneOnOneSession(params: {
+  res: VercelResponse;
+  sb: SupabaseClient;
+  accessToken: string;
+  body: Record<string, unknown>;
+}) {
+  const { res, sb, accessToken, body } = params;
+  const sessionId = String(body.sessionId || "").trim();
+  if (!looksLikeUuid(sessionId)) {
+    return res.status(400).json({ error: "valid_session_required" });
+  }
+
+  const { data: authData, error: authError } = await sb.auth.getUser(accessToken);
+  const user = authData?.user;
+  if (authError || !user?.id) return res.status(401).json({ error: "unauthorized" });
+
+  const { data: session, error: sessionError } = await sb
+    .from("sessions")
+    .select("id,host_id,description")
+    .eq("id", sessionId)
+    .maybeSingle();
+  if (sessionError) return res.status(500).json({ error: "session_lookup_failed" });
+  if (!session?.id || !String(session.description || "").startsWith("one-on-one:scheduled:")) {
+    return res.status(404).json({ error: "scheduled_session_not_found" });
+  }
+
+  const isHost = String(session.host_id || "") === user.id;
+  if (isHost) {
+    const { error: bookingsDeleteError } = await sb
+      .from("session_bookings")
+      .delete()
+      .eq("session_id", sessionId);
+    if (bookingsDeleteError) {
+      return res.status(500).json({ error: "booking_cancel_failed", details: bookingsDeleteError.message });
+    }
+    const { error: deleteError } = await sb.from("sessions").delete().eq("id", sessionId);
+    if (deleteError) {
+      return res.status(500).json({ error: "session_cancel_failed", details: deleteError.message });
+    }
+    return res.status(200).json({ cancelled: true, sessionDeleted: true });
+  }
+
+  const { data: booking, error: bookingLookupError } = await sb
+    .from("session_bookings")
+    .select("session_id")
+    .eq("session_id", sessionId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (bookingLookupError) return res.status(500).json({ error: "booking_lookup_failed" });
+  if (!booking?.session_id) return res.status(403).json({ error: "booking_not_owned" });
+
+  const { error: cancelError } = await sb
+    .from("session_bookings")
+    .delete()
+    .eq("session_id", sessionId)
+    .eq("user_id", user.id);
+  if (cancelError) {
+    return res.status(500).json({ error: "booking_cancel_failed", details: cancelError.message });
+  }
+  return res.status(200).json({ cancelled: true, sessionDeleted: false });
+}
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const totalStartedAt = nowMs();
   let authMs = 0;
@@ -2345,6 +2406,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    if (String(body.action || "").trim().toLowerCase() === "cancel_one_on_one_session") {
+      return await handleCancelOneOnOneSession({
+        res,
+        sb,
+        accessToken,
+        body,
+      });
+    }
     if (String(body.action || "").trim().toLowerCase() === "create_one_on_one_session") {
       return await handleCreateOneOnOneSession({
         res,
