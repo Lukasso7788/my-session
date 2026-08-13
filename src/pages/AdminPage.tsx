@@ -171,6 +171,16 @@ type MonthlyAttendancePoint = {
   attendeeIds: string[];
 };
 
+type AdminRecordMetric = {
+  id: string;
+  label: string;
+  value: number;
+  period: string;
+  description: string;
+  personIds: string[];
+  accent: string;
+};
+
 const EMPTY_ACTIVITY: AdminActivityData = {
   sessions: [],
   bookings: [],
@@ -599,7 +609,12 @@ async function safeCount(
   return count || 0;
 }
 
-async function loadRecentRows(table: string, fromIso: string, preferredColumn: string) {
+async function loadRecentRows(
+  table: string,
+  fromIso: string,
+  preferredColumn: string,
+  selectColumns = "*",
+) {
   const attempts = [
     preferredColumn,
     "created_at",
@@ -622,7 +637,7 @@ async function loadRecentRows(table: string, fromIso: string, preferredColumn: s
       const from = page * pageSize;
       const { data, error } = await supabase
         .from(table)
-        .select("*")
+        .select(selectColumns)
         .gte(column, fromIso)
         .order(column, { ascending: true })
         .range(from, from + pageSize - 1);
@@ -645,7 +660,7 @@ async function loadRecentRows(table: string, fromIso: string, preferredColumn: s
     const from = page * pageSize;
     const { data, error } = await supabase
       .from(table)
-      .select("*")
+      .select(selectColumns)
       .range(from, from + pageSize - 1);
 
     if (error) {
@@ -1117,6 +1132,66 @@ function MonthlyAttendanceChart({
   );
 }
 
+function RecordsSection({
+  records,
+  onOpen,
+}: {
+  records: AdminRecordMetric[];
+  onOpen: (record: AdminRecordMetric) => void;
+}) {
+  return (
+    <section className="mt-8 rounded-[28px] bg-[#F4F5F4] p-5 sm:p-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#7B817D]">
+            Historical records
+          </div>
+          <h2 className="mt-1 text-[22px] font-bold tracking-[-0.03em]">
+            Best-performing moments
+          </h2>
+          <p className="mt-1 text-[13px] text-[#6D736F]">
+            Peaks across the last 36 calendar months. Click a record to see the people behind it.
+          </p>
+        </div>
+        <span className="rounded-full bg-white px-3 py-1.5 text-[11px] font-bold text-[#69706B]">
+          Rolling 3-year view
+        </span>
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {records.map((record) => (
+          <button
+            key={record.id}
+            type="button"
+            disabled={record.value === 0}
+            onClick={() => onOpen(record)}
+            className="group min-h-[150px] rounded-[22px] bg-white p-5 text-left transition duration-200 hover:-translate-y-0.5 hover:bg-[#FCFCFC] disabled:cursor-default disabled:opacity-55"
+          >
+            <span
+              className="block h-1.5 w-10 rounded-full transition-all duration-200 group-hover:w-16"
+              style={{ backgroundColor: record.accent }}
+            />
+            <span className="mt-4 block text-[11px] font-bold uppercase tracking-[0.12em] text-[#7C827E]">
+              {record.label}
+            </span>
+            <span className="mt-1 flex items-baseline justify-between gap-3">
+              <b className="text-[32px] leading-none tracking-[-0.05em] text-[#2F2F2F]">
+                {formatNumber(record.value)}
+              </b>
+              <span className="text-right text-[12px] font-semibold text-[#5E665F]">
+                {record.period || "No data"}
+              </span>
+            </span>
+            <span className="mt-3 block text-[12px] leading-5 text-[#777D79]">
+              {record.description}
+            </span>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ActivityExplorer({ activity }: { activity: AdminActivityData }) {
   const [view, setView] = useState<"sessions" | "bookings" | "attendance">("sessions");
   const [search, setSearch] = useState("");
@@ -1334,6 +1409,7 @@ export default function AdminPage() {
   const [processingPayoutId, setProcessingPayoutId] = useState("");
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   const [monthlyAttendance, setMonthlyAttendance] = useState<MonthlyAttendancePoint[]>([]);
+  const [recordMetrics, setRecordMetrics] = useState<AdminRecordMetric[]>([]);
   const [activity, setActivity] = useState<AdminActivityData>(EMPTY_ACTIVITY);
   const [error, setError] = useState("");
   const [drilldown, setDrilldown] = useState<DrilldownState | null>(null);
@@ -1417,6 +1493,8 @@ export default function AdminPage() {
         attendanceRows,
         bookingRows,
         attendanceHistoryRows,
+        bookingHistoryRows,
+        sessionHistoryRows,
         weeklySessionsResult,
         registrationsChartResult,
         sessionsCreatedChartResult,
@@ -1452,6 +1530,18 @@ export default function AdminPage() {
         loadRecentRows("session_attendance", monthIso, "created_at"),
         loadRecentRows("session_bookings", monthIso, "created_at"),
         loadRecentRows("session_attendance", attendanceHistoryIso, "created_at"),
+        loadRecentRows(
+          "session_bookings",
+          attendanceHistoryIso,
+          "created_at",
+          "session_id,user_id,created_at",
+        ),
+        loadRecentRows(
+          "sessions",
+          attendanceHistoryIso,
+          "start_time",
+          "id,host_id,created_at,start_time",
+        ),
 
         supabase.from("sessions").select("host_id").gte("created_at", weekIso),
 
@@ -1469,8 +1559,137 @@ export default function AdminPage() {
       ]);
 
       const activityData = await buildAdminActivity(attendanceRows, bookingRows, monthIso);
+      const monthlyAttendanceData = buildMonthlyAttendance(attendanceHistoryRows, 36);
       setActivity(activityData);
-      setMonthlyAttendance(buildMonthlyAttendance(attendanceHistoryRows, 36));
+      setMonthlyAttendance(monthlyAttendanceData);
+
+      const peakPeopleByDay = (
+        rows: AnyRow[],
+        getPersonId: (row: AnyRow) => string,
+        getTimestamp: (row: AnyRow) => string = getRowTimestamp,
+      ) => {
+        const groups = new Map<string, Set<string>>();
+        rows.forEach((row) => {
+          const key = toLocalDateKey(getTimestamp(row));
+          const personId = getPersonId(row);
+          if (!key || !personId) return;
+          if (!groups.has(key)) groups.set(key, new Set());
+          groups.get(key)?.add(personId);
+        });
+        return [...groups.entries()].reduce(
+          (best, [period, people]) =>
+            people.size > best.value
+              ? { period, value: people.size, personIds: [...people] }
+              : best,
+          { period: "", value: 0, personIds: [] as string[] },
+        );
+      };
+
+      const peakRowsByDay = (
+        rows: AnyRow[],
+        getTimestamp: (row: AnyRow) => string = getRowTimestamp,
+      ) => {
+        const groups = new Map<string, number>();
+        rows.forEach((row) => {
+          const key = toLocalDateKey(getTimestamp(row));
+          if (key) groups.set(key, (groups.get(key) || 0) + 1);
+        });
+        return [...groups.entries()].reduce(
+          (best, [period, value]) => value > best.value ? { period, value } : best,
+          { period: "", value: 0 },
+        );
+      };
+
+      const attendanceDay = peakPeopleByDay(
+        attendanceHistoryRows,
+        getAttendanceUserId,
+      );
+      const attendanceRecordDay = peakRowsByDay(attendanceHistoryRows);
+      const bookingDay = peakPeopleByDay(
+        bookingHistoryRows,
+        getBookingUserId,
+      );
+      const hostedSessionRows = sessionHistoryRows.filter((row) => {
+        const startsAt = toMs(row.start_time);
+        return startsAt > 0 && startsAt <= Date.now();
+      });
+      const hostDay = peakPeopleByDay(
+        hostedSessionRows,
+        (row) => String(row.host_id || "").trim(),
+        (row) => String(row.start_time || ""),
+      );
+      const hostedSessionsDay = peakRowsByDay(
+        hostedSessionRows,
+        (row) => String(row.start_time || ""),
+      );
+      const bestMonth = monthlyAttendanceData.reduce<MonthlyAttendancePoint | null>(
+        (best, point) =>
+          !best || point.uniqueAttendees > best.uniqueAttendees ? point : best,
+        null,
+      );
+
+      setRecordMetrics([
+        {
+          id: "attendance-month",
+          label: "Most people in a month",
+          value: bestMonth?.uniqueAttendees || 0,
+          period: bestMonth?.label || "",
+          description: "Highest number of distinct people who attended during one calendar month.",
+          personIds: bestMonth?.attendeeIds || [],
+          accent: "#18A867",
+        },
+        {
+          id: "attendance-day",
+          label: "Most people in a day",
+          value: attendanceDay.value,
+          period: attendanceDay.period,
+          description: "Record number of unique attendees seen on a single day.",
+          personIds: attendanceDay.personIds,
+          accent: "#2563EB",
+        },
+        {
+          id: "attendance-records-day",
+          label: "Most visits in a day",
+          value: attendanceRecordDay.value,
+          period: attendanceRecordDay.period,
+          description: "Largest number of attendance records produced in one day.",
+          personIds: attendanceHistoryRows
+            .filter((row) => toLocalDateKey(getRowTimestamp(row)) === attendanceRecordDay.period)
+            .map(getAttendanceUserId)
+            .filter(Boolean),
+          accent: "#7C3AED",
+        },
+        {
+          id: "bookings-day",
+          label: "Most people booked",
+          value: bookingDay.value,
+          period: bookingDay.period,
+          description: "Highest number of distinct people who booked sessions in one day.",
+          personIds: bookingDay.personIds,
+          accent: "#0891B2",
+        },
+        {
+          id: "hosts-day",
+          label: "Most active hosts",
+          value: hostDay.value,
+          period: hostDay.period,
+          description: "Highest number of distinct hosts who ran sessions on the same day.",
+          personIds: hostDay.personIds,
+          accent: "#EA580C",
+        },
+        {
+          id: "sessions-hosted-day",
+          label: "Most sessions hosted",
+          value: hostedSessionsDay.value,
+          period: hostedSessionsDay.period,
+          description: "Largest number of sessions that started during a single day.",
+          personIds: hostedSessionRows
+            .filter((row) => toLocalDateKey(row.start_time) === hostedSessionsDay.period)
+            .map((row) => String(row.host_id || "").trim())
+            .filter(Boolean),
+          accent: "#BE123C",
+        },
+      ]);
 
       if (notificationsResult.error) {
         console.warn("[admin] notifications load failed:", notificationsResult.error);
@@ -2006,6 +2225,41 @@ export default function AdminPage() {
     }
   };
 
+  const openRecordMetric = async (record: AdminRecordMetric) => {
+    const personIds = [...new Set(record.personIds.filter(Boolean))];
+    setDrilldown({
+      title: record.label + " · " + (record.period || "No date"),
+      subtitle: "Loading the people behind this historical record.",
+      rows: [],
+      loading: true,
+    });
+
+    try {
+      const profiles = await loadProfilesByIds(personIds);
+      const rows = personIds.map((id) => {
+        const profile = profiles.get(id) || emptyProfile(id);
+        return {
+          id,
+          primary: profile.fullName,
+          secondary: profile.email || profile.id,
+          avatarUrl: profile.avatarUrl,
+        };
+      });
+      setDrilldown({
+        title: record.label + " · " + (record.period || "No date"),
+        subtitle: formatNumber(record.value) + " record value · " + formatNumber(rows.length) + " unique " + (rows.length === 1 ? "person" : "people"),
+        rows,
+      });
+    } catch (error) {
+      console.error("[admin] record drilldown failed", error);
+      setDrilldown({
+        title: record.label + " · " + (record.period || "No date"),
+        subtitle: "Could not load the people behind this record.",
+        rows: [],
+      });
+    }
+  };
+
   const openMonthlyAttendance = async (point: MonthlyAttendancePoint) => {
     setDrilldown({
       title: `Unique attendance · ${point.label}`,
@@ -2182,6 +2436,7 @@ export default function AdminPage() {
               <MetricCard label="Sessions created 30d" value={stats.sessionsCreatedMonth} hint="Rows created in sessions table in 30 days." data={chartData} dataKey="sessionsCreated" color="#7C3AED" />
               <MetricCard label="Sessions hosted 30d" value={stats.sessionsHostedMonth} hint="Sessions started in the last 30 days." data={chartData} dataKey="sessionsHosted" color="#059669" />
             </section>
+            <RecordsSection records={recordMetrics} onOpen={(record) => void openRecordMetric(record)} />
             <MonthlyAttendanceChart data={monthlyAttendance} onMonthClick={(point) => void openMonthlyAttendance(point)} />
             <ActivityExplorer activity={activity} />
 
