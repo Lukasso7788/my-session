@@ -1200,7 +1200,8 @@ export function SessionsPage() {
             session_format_type,
             is_silent,
             is_private,
-            max_participants
+            max_participants,
+            description
           `
           )
           .or(
@@ -1227,7 +1228,9 @@ export function SessionsPage() {
 
       if (error) throw error;
 
-      const rows = (data || []) as unknown as SessionWithRelations[];
+      const rows = ((data || []) as unknown as SessionWithRelations[]).filter(
+        (session) => !String(session.description || "").startsWith("one-on-one:")
+      );
 
       const ids = rows
         .map((session) => String(session.id || "").trim())

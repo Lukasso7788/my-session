@@ -204,8 +204,6 @@ type VideoTileProps = {
     density?: "normal" | "compact";
     currentIntention?: string | null;
     cameraFramingMode?: CameraFramingMode;
-    showCameraFramingControl?: boolean;
-    onChangeCameraFramingMode?: (mode: CameraFramingMode) => void;
 };
 
 function useHeldSpeaking(active: boolean, holdMs = 650) {
@@ -350,8 +348,6 @@ function VideoTileInner({
     density = "normal",
     currentIntention,
     cameraFramingMode = "full",
-    showCameraFramingControl = false,
-    onChangeCameraFramingMode,
     onToggleMenu,
     onOpenProfile,
     onEditName,
@@ -684,20 +680,6 @@ function VideoTileInner({
                     </div>
                 ) : null}
 
-                {videoTrack && showCameraFramingControl && onChangeCameraFramingMode ? (
-                    <button
-                        type="button"
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            onChangeCameraFramingMode(cameraFramingMode === "full" ? "fill" : "full");
-                        }}
-                        className={`absolute left-1/2 top-[0.55rem] z-20 -translate-x-1/2 rounded-full px-2.5 py-1 text-[10px] font-semibold backdrop-blur-md transition ${menuBtnClass} opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100`}
-                        aria-label={cameraFramingMode === "full" ? "Fill video tile" : "Show full camera view"}
-                        title={cameraFramingMode === "full" ? "Full camera view — click to fill tile" : "Fill tile — click to show full camera"}
-                    >
-                        {cameraFramingMode === "full" ? "Full view" : "Fill"}
-                    </button>
-                ) : null}
 
                 {showBadge ? (
                     <div
@@ -891,8 +873,6 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.density === next.density &&
         prev.currentIntention === next.currentIntention &&
         prev.cameraFramingMode === next.cameraFramingMode &&
-        prev.showCameraFramingControl === next.showCameraFramingControl &&
-        prev.onChangeCameraFramingMode === next.onChangeCameraFramingMode &&
         prev.onToggleMenu === next.onToggleMenu &&
         prev.onOpenProfile === next.onOpenProfile &&
         prev.onEditName === next.onEditName &&

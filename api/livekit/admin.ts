@@ -2210,7 +2210,9 @@ async function handleCreateOneOnOneSession(params: {
       host_name: hostName,
       duration_minutes: durationMinutes,
       format: "uninterrupted",
-      session_format_type: "one_on_one",
+      // Production constrains this legacy column to group/infinite/body.
+      // The one-on-one mode is identified by the durable description marker.
+      session_format_type: "group",
       start_time: isScheduled ? new Date(scheduledStartMs).toISOString() : new Date().toISOString(),
       status: "planned",
       is_silent: false,

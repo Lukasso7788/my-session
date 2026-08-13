@@ -180,7 +180,6 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
       const { data: sessionRows, error: sessionError } = await supabase
         .from("sessions")
         .select("id,start_time,host_id,host_name")
-        .eq("session_format_type", "one_on_one")
         .like("description", "one-on-one:scheduled:%")
         .gte("start_time", new Date().toISOString())
         .order("start_time", { ascending: true })
@@ -263,11 +262,11 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.sessionId) {
-        throw new Error(String(payload?.details || payload?.error || "Could not schedule your 1|1 session."));
+        throw new Error(String(payload?.details || payload?.error || "Could not schedule your 1:1 session."));
       }
       await loadScheduledSessions();
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : "Could not schedule your 1|1 session.");
+      setErrorText(error instanceof Error ? error.message : "Could not schedule your 1:1 session.");
     } finally {
       setScheduleBusy(false);
     }
@@ -290,7 +289,7 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
       if (error) throw error;
       await loadScheduledSessions();
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : "Could not book this 1|1 session.");
+      setErrorText(error instanceof Error ? error.message : "Could not book this 1:1 session.");
     } finally {
       setBookingBusyId("");
     }
@@ -473,12 +472,12 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
 
   const startSearching = useCallback(async () => {
     setErrorText("");
-    if (!authReady) return;
+    if (!authReady) return false;
     if (!user) {
       navigate(`/login?next=${encodeURIComponent(matchingPath)}`);
-      return;
+      return false;
     }
-    if (presenceRef.current) return;
+    if (presenceRef.current) return true;
 
     const deadline = Date.now() + 6000;
     while (!channelReadyRef.current && Date.now() < deadline) {
@@ -488,7 +487,7 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
     if (!channel || !channelReadyRef.current) {
       setErrorText("The matching queue is still connecting. Please try again in a moment.");
       setStatus("error");
-      return;
+      return false;
     }
 
     const own: QueuePresence = {
@@ -505,13 +504,15 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
     setStatus("searching");
     try {
       await channel.track(own);
+      return true;
     } catch (error) {
       presenceRef.current = null;
       setErrorText(error instanceof Error ? error.message : "Could not enter the matching queue.");
       setStatus("error");
+      return false;
     }
   }, [authReady, avatarUrl, displayName, duration, matchingPath, navigate, user]);
-  const createInviteRoom = useCallback(async () => {
+  const createInviteRoom = useCallback(async (soloWindow?: Window | null) => {
     setErrorText("");
     if (!authReady) return;
     if (!user) {
@@ -534,12 +535,35 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
       }
       const relative = `/room-livekit/${payload.sessionId}?mode=one-on-one&invite=${encodeURIComponent(payload.inviteToken)}`;
       setInviteLink(`${window.location.origin}${relative}`);
+      if (soloWindow) {
+        soloWindow.opener = null;
+        soloWindow.location.replace(`/room-livekit/${payload.sessionId}?mode=one-on-one`);
+      }
+      return true;
     } catch (error) {
+      if (soloWindow && !soloWindow.closed) soloWindow.close();
       setErrorText(error instanceof Error ? error.message : "Could not create your private room.");
+      return false;
     } finally {
       setInviteBusy(false);
     }
   }, [authReady, duration, matchingPath, navigate, user]);
+
+  const startSoloWhileSearching = useCallback(() => {
+    const soloWindow = window.open("about:blank", "_blank");
+    if (!soloWindow) {
+      setErrorText("Allow pop-ups to start a solo room while matching continues.");
+      return;
+    }
+    void (async () => {
+      const searching = await startSearching();
+      if (!searching) {
+        if (!soloWindow.closed) soloWindow.close();
+        return;
+      }
+      await createInviteRoom(soloWindow);
+    })();
+  }, [createInviteRoom, startSearching]);
 
   const joinMatchedRoom = useCallback(async () => {
     if (!matchedPair?.sessionId || joinBusy) return;
@@ -599,7 +623,7 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
                   <img src="/icons/one-on-one-active.svg" className="h-6 w-6" alt="" />
                 </span>
                 <h1 className="text-[30px] font-extrabold leading-none tracking-[-0.045em] sm:text-[38px]">
-                  MySession 1|1
+                  One-on-One · 1:1
                 </h1>
               </div>
               <p className="mt-2 text-[16px] font-medium text-[#334E8A]">Classical body doubling</p>
@@ -679,7 +703,7 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
                           {mediaDevices.filter((device) => device.kind === "audioinput").map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Microphone ${index + 1}`}</option>)}
                         </select>
                       </label>
-                      <p className="text-[11px] leading-4 text-[#737E94]">Camera is required for 1|1 sessions. Your preview is local and stops when this panel closes.</p>
+                      <p className="text-[11px] leading-4 text-[#737E94]">Camera is required for 1:1 sessions. Your preview is local and stops when this panel closes.</p>
                     </div>
                   </div>
                 ) : null}
@@ -724,7 +748,16 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
                 className={`mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-[12px] px-5 py-3 text-[15px] font-bold transition disabled:cursor-wait disabled:opacity-70 ${isBusy ? "bg-[#F3F3F3] text-[#2F2F2F] hover:bg-[#E9E9E9]" : "bg-[#2F2F2F] text-white hover:bg-[#1F1F1F]"}`}
               >
                 <Shuffle size={18} />
-                {canCancel ? "Cancel matching" : status === "creating" || status === "matched" ? "Preparing room" : user ? "Match me now" : "Sign in to match"}
+                {canCancel ? "Cancel matching" : status === "creating" || status === "matched" ? "Preparing room" : user ? "Match Me Now" : "Sign in to match"}
+              </button>
+              <button
+                type="button"
+                disabled={inviteBusy || status === "creating" || status === "matched"}
+                onClick={startSoloWhileSearching}
+                className="mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-[12px] bg-[#F7F8FA] px-5 py-3 text-[14px] font-bold text-[#2F2F2F] transition hover:bg-[#ECEEF2] disabled:cursor-wait disabled:opacity-55"
+              >
+                {inviteBusy ? <Loader2 size={17} className="animate-spin" /> : <Shuffle size={17} />}
+                {inviteBusy ? "Opening solo room…" : "Start Solo While We Search"}
               </button>
               <p className="mt-2 min-h-5 text-center text-[12px] text-[#6D7892]">{statusLabel}</p>
 
@@ -820,7 +853,7 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
                 }) : (
                   <div className="rounded-[15px] bg-[#F8F9FA] px-4 py-5 text-center">
                     <CalendarDays size={20} className="mx-auto text-[#8D96A7]" />
-                    <p className="mt-2 text-[12px] font-semibold text-[#596889]">No scheduled 1|1 sessions yet.</p>
+                    <p className="mt-2 text-[12px] font-semibold text-[#596889]">No scheduled 1:1 sessions yet.</p>
                     <p className="mt-1 text-[11px] text-[#9299A6]">Create the first available slot above.</p>
                   </div>
                 )}
@@ -838,8 +871,8 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
           </aside>
         </div>
 
-        <div className="mt-auto pt-5">
-          <div className="rounded-[22px] border border-[#E0E2E7] bg-white px-5 py-5">
+        <div className="sticky bottom-0 z-30 mt-auto -mx-3 pt-5 sm:-mx-5">
+          <div className="border-t border-[#E0E2E7] bg-white/95 px-5 py-4 shadow-[0_-8px_24px_rgba(31,35,48,0.04)] backdrop-blur-md">
           <div className="mb-4 flex items-center gap-4">
             <span className="h-px flex-1 bg-[#E1E3E8]" />
             <h2 className="text-[15px] font-semibold text-[#405077]">How it works</h2>

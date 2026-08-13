@@ -16469,8 +16469,6 @@ export function RoomPageLiveKit({
             micMuted={micMuted}
             mirrorVideo={t.isLocal ? previewMirrored : false}
             cameraFramingMode={cameraFramingMode}
-            showCameraFramingControl={t.kind !== "screen"}
-            onChangeCameraFramingMode={setCameraFramingMode}
             isSpeaking={!!t.isSpeaking}
             currentIntention={getCurrentIntentionForTile(t)}
             onToggleMenu={handleToggleTileMenu}
