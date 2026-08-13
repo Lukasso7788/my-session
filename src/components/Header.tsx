@@ -27,7 +27,7 @@ const tabs = [
         iconInactive: "/icons/infinite-inactive.svg",
     },
     {
-        id: "body",
+        id: "one-on-one",
         label: "1-on-1",
         iconActive: "/icons/one-on-one-inactive.svg",
         iconInactive: "/icons/one-on-one-inactive.svg",
@@ -122,12 +122,12 @@ export default function Header() {
         `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
 
     const activeSessionsTab: SessionTabId = useMemo(() => {
-        if (location.pathname === "/one-on-one") return "body";
+        if (location.pathname === "/one-on-one") return "one-on-one";
 
         const params = new URLSearchParams(location.search);
         const tab = (params.get("tab") || "group").toLowerCase();
 
-        if (tab === "infinite" || tab === "body" || tab === "group") return tab as SessionTabId;
+        if (tab === "infinite" || tab === "one-on-one" || tab === "group") return tab as SessionTabId;
         return "group";
     }, [location.pathname, location.search]);
 
@@ -247,13 +247,6 @@ export default function Header() {
     }, []);
 
     const goToSessions = (tabId: SessionTabId) => {
-        if (tabId === "body") {
-            navigate("/one-on-one");
-            setSessionsOpen(false);
-            setMobileMenu(false);
-            return;
-        }
-
         navigate(`/sessions?tab=${tabId}`);
         setSessionsOpen(false);
         setMobileMenu(false);

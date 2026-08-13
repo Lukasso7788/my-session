@@ -17,7 +17,7 @@ const tabs = [
     iconInactive: "/icons/infinite-inactive.svg",
   },
   {
-    id: "body",
+    id: "one-on-one",
     label: "1-on-1",
     iconActive: "/icons/one-on-one-active.svg",
     iconInactive: "/icons/one-on-one-inactive.svg",
@@ -38,7 +38,7 @@ export function SessionTypeSwitcher({ value, onChange, className = "" }: Props) 
   const btnRefs = useRef<Record<TabId, HTMLButtonElement | null>>({
     group: null,
     infinite: null,
-    body: null,
+    "one-on-one": null,
   });
 
   const [slider, setSlider] = useState<{ left: number; width: number } | null>(null);

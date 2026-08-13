@@ -9,8 +9,7 @@ import SupportMySessionModal from "../components/SupportMySessionModal";
 import HostSessionPromptModal, { type HostPromptKind } from "../components/HostSessionPromptModal";
 import CommunityPromptModal from "../components/CommunityPromptModal";
 import { SessionsDateFilter } from "../components/SessionsDateFilter";
-import BodyTriplingBody from "../components/body/BodyTriplingBody";
-import { BodyTriplingIntro } from "../components/body/BodyTriplingIntro";
+import OneOnOnePage from "./OneOnOnePage";
 import { supabase } from "../lib/supabase";
 import {
   getCurrentUserActiveBan,
@@ -459,23 +458,6 @@ function SessionsDateGroupHeader({
   );
 }
 
-function combineLocalDateTimeToISO(dateYMD: string, timeHHMM: string) {
-  const d = new Date(`${dateYMD}T${timeHHMM}:00`);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString();
-}
-
-function buildBodySchedule(duration: 25 | 50) {
-  const kind = duration === 25 ? "pomodoro" : "deep_work";
-
-  return {
-    kind: "body_session",
-    preset: kind,
-    timer: {
-      phases: [{ name: "focus", minutes: duration, mode: kind }],
-    },
-  };
-}
 
 
 const SESSIONS_BASE_TIMEOUT_MS = 12_000;
@@ -522,7 +504,7 @@ export function SessionsPage() {
   const [banChecking, setBanChecking] = useState(false);
 
   const [sessionTypeTab, setSessionTypeTab] = useState<
-    "group" | "infinite" | "body"
+    "group" | "infinite" | "one-on-one"
   >("infinite");
 
   const [dateFilter, setDateFilter] = useState<string | null>(null);
@@ -909,11 +891,11 @@ export function SessionsPage() {
     const tab = (searchParams.get("tab") || "").toLowerCase();
 
     if (tab === "body") {
-      navigate("/one-on-one", { replace: true });
+      navigate("/sessions?tab=one-on-one", { replace: true });
       return;
     }
 
-    if (tab === "group" || tab === "infinite") {
+    if (tab === "group" || tab === "infinite" || tab === "one-on-one") {
       setSessionTypeTab(tab);
 
       if (DEBUG) console.log("[DEBUG Sessions] Tab from query:", tab);
@@ -1061,11 +1043,6 @@ export function SessionsPage() {
     };
   }, [searchParams, user?.id]);
 
-  useEffect(() => {
-    if (sessionTypeTab === "body" && !dateFilter) {
-      setDateFilter(todayLocalYMD());
-    }
-  }, [sessionTypeTab, dateFilter]);
 
   useEffect(() => {
     const run = async () => {
@@ -1858,50 +1835,6 @@ export function SessionsPage() {
     modal.open();
   };
 
-  const createBodySession = async (payload: {
-    duration: 25 | 50;
-    dateYMD: string;
-    timeHHMM: string;
-  }) => {
-    if (showBanModal()) return;
-
-    if (!user?.id) {
-      return navigate(`/login?next=${encodeURIComponent("/sessions?tab=body")}`);
-    }
-
-    const iso = combineLocalDateTimeToISO(payload.dateYMD, payload.timeHHMM);
-    if (!iso) throw new Error("Invalid date/time");
-
-    const hostName =
-      (currentProfile?.full_name || "").trim() ||
-      (currentProfile?.email || "").trim() ||
-      ((user as any)?.email || "").trim() ||
-      "Host";
-
-    const title = payload.duration === 25 ? "25min session" : "50min session";
-
-    const { error } = await supabase.from("sessions").insert({
-      title,
-      host_id: user.id,
-      host_name: hostName,
-      duration_minutes: payload.duration,
-      format: "body",
-      session_format_type: "body",
-      start_time: iso,
-      status: "planned",
-      is_silent: false,
-      max_participants: 3,
-      schedule: buildBodySchedule(payload.duration),
-    });
-
-    if (error) {
-      console.error("[DEBUG Sessions] create body session error:", error);
-      throw error;
-    }
-
-    await fetchSessions();
-  };
-
   const submitPostSessionFeedback = useCallback(async () => {
     if (!user?.id) {
       return navigate(`/login?next=${encodeURIComponent("/sessions")}`);
@@ -2138,20 +2071,16 @@ export function SessionsPage() {
 
         <div className="w-full">
           {sessionTypeTab === "infinite" && <InfiniteRoomsIntroCard />}
-          {sessionTypeTab === "body" && <BodyTriplingIntro />}
+
 
           <div className="relative w-full flex justify-center mb-[55px]">
             <SessionTypeSwitcher
               value={sessionTypeTab}
               onChange={(v) => {
-                if (v === "body") {
-                  navigate("/one-on-one");
-                  return;
-                }
-
                 setSessionTypeTab(v);
+                navigate(`/sessions?tab=${v}`);
 
-                if (v === "infinite") setDateFilter(null);
+                if (v === "infinite" || v === "one-on-one") setDateFilter(null);
               }}
             />
             {user?.id ? (
@@ -2195,20 +2124,8 @@ export function SessionsPage() {
             </button>
           ) : null}
 
-          {sessionTypeTab === "body" ? (
-            <div className="w-full max-w-[980px] mx-auto">
-              <BodyTriplingBody
-                sessions={visibleSessions}
-                isLoading={isLoading}
-                dateFilter={dateFilter || todayLocalYMD()}
-                onDateChange={setDateFilter}
-                userId={user?.id}
-                onJoin={join}
-                onBook={book}
-                onCancelBooking={cancel}
-                onCreateBodySession={createBodySession}
-              />
-            </div>
+          {sessionTypeTab === "one-on-one" ? (
+            <OneOnOnePage embedded />
           ) : (
             <>
               {sessionTypeTab === "group" && (

@@ -127,7 +127,7 @@ export default function App() {
         <Routes>
         <Route element={<AppLayout />}>
           <Route path="/" element={isOneOnOneHost ? <OneOnOnePage /> : <LandingPage />} />
-          <Route path="/one-on-one" element={<OneOnOnePage />} />
+          <Route path="/one-on-one" element={<Navigate to="/sessions?tab=one-on-one" replace />} />
 
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/pricing" element={<PricingPage />} />
