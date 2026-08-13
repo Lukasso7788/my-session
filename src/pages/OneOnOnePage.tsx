@@ -619,8 +619,8 @@ export default function OneOnOnePage({ embedded = false }: OneOnOnePageProps) {
           <div className="rounded-[28px] border border-[#DDD8D8] bg-white px-5 py-7 sm:px-8 sm:py-8">
             <div className="text-center">
               <div className="flex flex-wrap items-center justify-center gap-3">
-                <span className="grid h-11 w-11 place-items-center rounded-[12px] bg-[#2F2F2F]">
-                  <img src="/icons/one-on-one-active.svg" className="h-6 w-6" alt="" />
+                <span className="grid h-11 w-11 place-items-center rounded-[12px] bg-[#F4F4F4]">
+                  <img src="/icons/one-on-one-inactive.svg" className="h-6 w-6" alt="" />
                 </span>
                 <h1 className="text-[30px] font-extrabold leading-none tracking-[-0.045em] sm:text-[38px]">
                   One-on-One · 1:1
