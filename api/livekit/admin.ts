@@ -62,6 +62,7 @@ type Body = {
   durationMinutes?: number;
   matchKey?: string;
   inviteOnly?: boolean;
+  scheduledAt?: string;
   targetUserId?: string;
   restrictionId?: string;
   reason?: string;
@@ -2132,6 +2133,9 @@ async function handleCreateOneOnOneSession(params: {
 }) {
   const { res, sb, accessToken, body } = params;
   const inviteOnly = body.inviteOnly === true;
+  const scheduledAt = String(body.scheduledAt || "").trim();
+  const scheduledStartMs = scheduledAt ? Date.parse(scheduledAt) : Number.NaN;
+  const isScheduled = Number.isFinite(scheduledStartMs);
   const partnerUserId = String(body.partnerUserId || "").trim().toLowerCase();
   const durationMinutes = Math.round(Number(body.durationMinutes || 0));
   const matchKey = String(body.matchKey || "")
@@ -2139,10 +2143,13 @@ async function handleCreateOneOnOneSession(params: {
     .replace(/[^a-zA-Z0-9_-]/g, "")
     .slice(0, 120);
 
-  if (!inviteOnly && !looksLikeUuid(partnerUserId)) {
+  if (!inviteOnly && !isScheduled && !looksLikeUuid(partnerUserId)) {
     return res.status(400).json({ error: "valid_partner_required" });
   }
-  if (![25, 50, 75].includes(durationMinutes)) {
+  if (isScheduled && scheduledStartMs < Date.now() + 5 * 60_000) {
+    return res.status(400).json({ error: "scheduled_time_must_be_in_future" });
+  }
+  if (durationMinutes !== 50) {
     return res.status(400).json({ error: "invalid_duration" });
   }
   if (!matchKey) return res.status(400).json({ error: "match_key_required" });
@@ -2150,11 +2157,11 @@ async function handleCreateOneOnOneSession(params: {
   const { data: authData, error: authError } = await sb.auth.getUser(accessToken);
   const user = authData?.user;
   if (authError || !user?.id) return res.status(401).json({ error: "unauthorized" });
-  if (!inviteOnly && user.id === partnerUserId) {
+  if (!inviteOnly && !isScheduled && user.id === partnerUserId) {
     return res.status(400).json({ error: "partner_must_be_different" });
   }
 
-  if (!inviteOnly) {
+  if (!inviteOnly && !isScheduled) {
     const { data: partnerData, error: partnerError } =
       await sb.auth.admin.getUserById(partnerUserId);
     if (partnerError || !partnerData?.user?.id) {
@@ -2162,7 +2169,11 @@ async function handleCreateOneOnOneSession(params: {
     }
   }
 
-  const marker = inviteOnly ? `one-on-one:invite:${matchKey}` : `one-on-one:${matchKey}`;
+  const marker = isScheduled
+    ? `one-on-one:scheduled:${matchKey}`
+    : inviteOnly
+      ? `one-on-one:invite:${matchKey}`
+      : `one-on-one:${matchKey}`;
   const { data: existing } = await sb
     .from("sessions")
     .select("id")
@@ -2170,7 +2181,7 @@ async function handleCreateOneOnOneSession(params: {
     .limit(1)
     .maybeSingle();
   if (existing?.id) {
-    if (!inviteOnly) return res.status(200).json({ sessionId: existing.id, reused: true });
+    if (!inviteOnly || isScheduled) return res.status(200).json({ sessionId: existing.id, reused: true });
     const { data: inviteBooking } = await sb
       .from("session_bookings")
       .select("invite_uid")
@@ -2199,11 +2210,11 @@ async function handleCreateOneOnOneSession(params: {
       host_name: hostName,
       duration_minutes: durationMinutes,
       format: "uninterrupted",
-      session_format_type: "group",
-      start_time: new Date().toISOString(),
+      session_format_type: "one_on_one",
+      start_time: isScheduled ? new Date(scheduledStartMs).toISOString() : new Date().toISOString(),
       status: "planned",
       is_silent: false,
-      is_private: true,
+      is_private: !isScheduled,
       // Production currently enforces sessions.max_participants >= 3.
       // max_slots keeps the intended product capacity, while token admission
       // restricts this private room to the two matched bookings.
@@ -2227,15 +2238,17 @@ async function handleCreateOneOnOneSession(params: {
   }
 
   const inviteToken = inviteOnly ? randomUUID() : "";
-  const bookingRows = inviteOnly
-    ? [
-        { session_id: session.id, user_id: user.id },
-        { session_id: session.id, user_id: null, invite_uid: inviteToken },
-      ]
-    : [
-        { session_id: session.id, user_id: user.id },
-        { session_id: session.id, user_id: partnerUserId },
-      ];
+  const bookingRows = isScheduled
+    ? [{ session_id: session.id, user_id: user.id }]
+    : inviteOnly
+      ? [
+          { session_id: session.id, user_id: user.id },
+          { session_id: session.id, user_id: null, invite_uid: inviteToken },
+        ]
+      : [
+          { session_id: session.id, user_id: user.id },
+          { session_id: session.id, user_id: partnerUserId },
+        ];
   const { error: bookingError } = await sb.from("session_bookings").insert(bookingRows);
   if (bookingError) {
     await sb.from("sessions").delete().eq("id", session.id);
