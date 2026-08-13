@@ -908,15 +908,19 @@ export function SessionsPage() {
   useEffect(() => {
     const tab = (searchParams.get("tab") || "").toLowerCase();
 
-    if (tab === "group" || tab === "infinite" || tab === "body") {
-      setSessionTypeTab(tab as "group" | "infinite" | "body");
+    if (tab === "body") {
+      navigate("/one-on-one", { replace: true });
+      return;
+    }
+
+    if (tab === "group" || tab === "infinite") {
+      setSessionTypeTab(tab);
 
       if (DEBUG) console.log("[DEBUG Sessions] Tab from query:", tab);
 
-      if (tab === "body") setDateFilter((prev) => prev || todayLocalYMD());
       if (tab === "infinite") setDateFilter(null);
     }
-  }, [searchParams]);
+  }, [navigate, searchParams]);
 
   useEffect(() => {
     if (searchParams.get("postSession") !== "1") return;
@@ -2140,12 +2144,14 @@ export function SessionsPage() {
             <SessionTypeSwitcher
               value={sessionTypeTab}
               onChange={(v) => {
+                if (v === "body") {
+                  navigate("/one-on-one");
+                  return;
+                }
+
                 setSessionTypeTab(v);
 
                 if (v === "infinite") setDateFilter(null);
-                if (v === "body") {
-                  setDateFilter((prev) => prev || todayLocalYMD());
-                }
               }}
             />
             {user?.id ? (

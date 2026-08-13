@@ -28,9 +28,9 @@ const tabs = [
     },
     {
         id: "body",
-        label: "Body tripling",
-        iconActive: "/icons/body-active-black.svg",
-        iconInactive: "/icons/body-inactive.svg",
+        label: "1-on-1",
+        iconActive: "/icons/one-on-one-inactive.svg",
+        iconInactive: "/icons/one-on-one-inactive.svg",
     },
 ] as const;
 
@@ -122,12 +122,14 @@ export default function Header() {
         `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
 
     const activeSessionsTab: SessionTabId = useMemo(() => {
+        if (location.pathname === "/one-on-one") return "body";
+
         const params = new URLSearchParams(location.search);
         const tab = (params.get("tab") || "group").toLowerCase();
 
         if (tab === "infinite" || tab === "body" || tab === "group") return tab as SessionTabId;
         return "group";
-    }, [location.search]);
+    }, [location.pathname, location.search]);
 
     const planBadgeLabel = useMemo(() => getPlanBadgeLabel(entitlementState), [entitlementState]);
     const planPopoverTitle = useMemo(() => getPlanPopoverTitle(entitlementState), [entitlementState]);
@@ -245,6 +247,13 @@ export default function Header() {
     }, []);
 
     const goToSessions = (tabId: SessionTabId) => {
+        if (tabId === "body") {
+            navigate("/one-on-one");
+            setSessionsOpen(false);
+            setMobileMenu(false);
+            return;
+        }
+
         navigate(`/sessions?tab=${tabId}`);
         setSessionsOpen(false);
         setMobileMenu(false);

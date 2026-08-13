@@ -18,9 +18,9 @@ const tabs = [
   },
   {
     id: "body",
-    label: "Body tripling",
-    iconActive: "/icons/body-active.svg",
-    iconInactive: "/icons/body-inactive.svg",
+    label: "1-on-1",
+    iconActive: "/icons/one-on-one-active.svg",
+    iconInactive: "/icons/one-on-one-inactive.svg",
   },
 ] as const;
 
