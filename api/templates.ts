@@ -49,12 +49,19 @@ function extractResponseText(payload: any) {
   );
 }
 
-async function hasPaidTaskAiAccess(userId: string, token: string) {
-  const scopedSupabase = createClient(supabaseUrl, supabaseKey, {
+async function hasPaidTaskAiAccess(userId: string) {
+  const serviceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  if (!serviceRoleKey) {
+    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+  }
+
+  // Authentication is verified before this function is called. Use the
+  // server-only key for the entitlement lookup so RLS cannot turn a valid
+  // paid row into an indistinguishable `null` result.
+  const serviceSupabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: `Bearer ${token}` } },
   });
-  const { data, error } = await scopedSupabase
+  const { data, error } = await serviceSupabase
     .from("user_entitlements")
     .select("plan,status,current_period_end")
     .eq("user_id", userId)
@@ -223,7 +230,7 @@ async function handleTaskAiSuggestions(req: VercelRequest, res: VercelResponse) 
   }
 
   try {
-    const hasPaidAccess = await hasPaidTaskAiAccess(authData.user.id, token);
+    const hasPaidAccess = await hasPaidTaskAiAccess(authData.user.id);
     if (!hasPaidAccess) {
       return res.status(402).json({
         error: "payment_required",
