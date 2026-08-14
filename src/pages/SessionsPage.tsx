@@ -64,6 +64,7 @@ type SessionWithRelations = Session & {
   session_format_type?: "group" | "infinite" | "body" | string;
   is_silent?: boolean;
   is_private?: boolean;
+  is_hidden?: boolean;
 
   max_participants?: number | null;
   schedule?: any;
@@ -1019,6 +1020,7 @@ export function SessionsPage() {
             .from("sessions")
             .select("id, title, start_time, duration_minutes, host_id")
             .eq("host_id", finalHostId)
+            .or("is_hidden.is.null,is_hidden.eq.false")
             .gte("start_time", new Date().toISOString())
             .order("start_time", { ascending: true })
             .limit(3);
@@ -1200,6 +1202,7 @@ export function SessionsPage() {
             session_format_type,
             is_silent,
             is_private,
+            is_hidden,
             max_participants,
             description
           `
@@ -1644,6 +1647,7 @@ export function SessionsPage() {
 
   const privacyFilteredSessions = useMemo(() => {
     return activeSessions.filter((session) => {
+      if (session.is_hidden && !isSuperAdmin) return false;
       if (!session.is_private) return true;
       return isSuperAdmin || (!!user?.id && String(session.host_id || "") === String(user.id));
     });
@@ -1801,6 +1805,27 @@ export function SessionsPage() {
       console.error("[DEBUG Sessions] Edit session error:", err);
       throw err;
     }
+  };
+
+  const setSessionHidden = async (sessionId: string, hidden: boolean) => {
+    if (!user || !isSuperAdmin) {
+      throw new Error("Super-admin access is required.");
+    }
+
+    const { error } = await supabase.rpc("set_session_catalog_visibility", {
+      p_session_id: sessionId,
+      p_hidden: hidden,
+    });
+
+    if (error) throw error;
+
+    setSessions((previous) =>
+      previous.map((session) =>
+        String(session.id) === String(sessionId)
+          ? { ...session, is_hidden: hidden }
+          : session
+      )
+    );
   };
 
   const inviteToSession = async (
@@ -2052,6 +2077,7 @@ export function SessionsPage() {
       onInviteToSession={inviteToSession}
       onHostTransferComplete={fetchSessions}
       canManageAnySession={isSuperAdmin}
+      onVisibilityChange={isSuperAdmin ? setSessionHidden : undefined}
     />
   );
 

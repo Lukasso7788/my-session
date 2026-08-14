@@ -401,6 +401,7 @@ export default function ProfilePage() {
         .select("id, title, start_time, schedule, duration_minutes, created_at")
         .eq("host_id", user.id)
         .or("is_private.is.null,is_private.eq.false")
+        .or("is_hidden.is.null,is_hidden.eq.false")
         .order("created_at", { ascending: false });
 
       if (!error && data) setSessions(data);

@@ -8,7 +8,7 @@ import {
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock } from "lucide-react";
+import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock, Eye, EyeOff } from "lucide-react";
 import { SessionStageBar } from "./SessionStageBar";
 import { supabase } from "../lib/supabase";
 import {
@@ -64,6 +64,7 @@ interface SessionCardProps {
 
     onHostTransferComplete?: () => void | Promise<void>;
     canManageAnySession?: boolean;
+    onVisibilityChange?: (sessionId: string, hidden: boolean) => void | Promise<void>;
 
     currentUser?: {
         id: string;
@@ -3777,6 +3778,7 @@ export default function SessionCard({
     onEditSession,
     onHostTransferComplete,
     canManageAnySession = false,
+    onVisibilityChange,
     currentUser,
 }: SessionCardProps) {
     const navigate = useNavigate();
@@ -3803,6 +3805,7 @@ export default function SessionCard({
     const [isHoveringJoinIframe, setIsHoveringJoinIframe] = useState(false);
     const [isHoveringOptions, setIsHoveringOptions] = useState(false);
     const [isHoveringCard, setIsHoveringCard] = useState(false);
+    const [isSavingVisibility, setIsSavingVisibility] = useState(false);
 
     const CANCEL_HOVER_DELAY_MS = 120;
     const [cancelHoverTimer, setCancelHoverTimer] = useState<number | null>(null);
@@ -4541,6 +4544,8 @@ export default function SessionCard({
     const canEdit = canManageSession && !!onEditSession;
     const canCancelBooking = !!isBookingConfirmed;
     const canCancelSession = canManageSession;
+    const canToggleVisibility = canManageAnySession && !!onVisibilityChange;
+    const isHidden = session?.is_hidden === true;
 
     const hasPrettySessionSlug = !!getSessionPublicSlug(session);
     const hasHostSlug = !!String(resolvedHostSlug || "").trim();
@@ -4731,6 +4736,15 @@ export default function SessionCard({
                                             className="shrink-0 text-[#606060]"
                                             aria-label="Private session"
                                         />
+                                    )}
+                                    {isHidden && (
+                                        <span
+                                            className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[#F1F1F1] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[#606060]"
+                                            title="Hidden from public session lists; direct links still work"
+                                        >
+                                            <EyeOff size={13} aria-hidden="true" />
+                                            Hidden
+                                        </span>
                                     )}
                                     <span className="min-w-0 break-words">{session.title}</span>
                                 </h3>
@@ -4943,6 +4957,32 @@ export default function SessionCard({
                                             />
                                         )}
 
+                                        {canToggleVisibility && (
+                                            <MenuItem
+                                                icon={isHidden ? <Eye /> : <EyeOff />}
+                                                label={
+                                                    isSavingVisibility
+                                                        ? "Saving…"
+                                                        : isHidden
+                                                          ? "Unhide session"
+                                                          : "Hide session"
+                                                }
+                                                outlined
+                                                onClick={async () => {
+                                                    if (isSavingVisibility) return;
+                                                    setIsSavingVisibility(true);
+                                                    try {
+                                                        await onVisibilityChange?.(session.id, !isHidden);
+                                                        setIsOptionsOpen(false);
+                                                    } catch (error) {
+                                                        console.error("[SessionCard] visibility update failed:", error);
+                                                        window.alert("Could not update session visibility. Please try again.");
+                                                    } finally {
+                                                        setIsSavingVisibility(false);
+                                                    }
+                                                }}
+                                            />
+                                        )}
                                         {canCancelBooking && (
                                             <MenuItem
                                                 icon={<IconCancel />}

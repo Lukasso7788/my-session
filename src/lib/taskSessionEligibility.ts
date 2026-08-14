@@ -73,6 +73,7 @@ export async function loadEligibleTaskSessions(userId: string) {
     .select(
       "id,title,start_time,duration_minutes,session_format_type,custom_slug,host_id",
     )
+    .or("is_hidden.is.null,is_hidden.eq.false")
     .or(`session_format_type.eq.infinite,start_time.gte.${activeWindowStart}`)
     .order("start_time", { ascending: true })
     .limit(500);

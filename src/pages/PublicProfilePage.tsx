@@ -316,6 +316,7 @@ export default function PublicProfilePage() {
             .select("id, title, start_time, schedule, duration_minutes, created_at")
             .eq("host_id", id)
             .or("is_private.is.null,is_private.eq.false")
+            .or("is_hidden.is.null,is_hidden.eq.false")
             .order("created_at", { ascending: false }),
           supabase
             .from("host_followers")

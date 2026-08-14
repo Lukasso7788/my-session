@@ -179,6 +179,7 @@ export default function PublicSlugRedirectPage() {
               "id, host_id, title, start_time, duration_minutes, session_format_type, format, schedule, status, created_at"
             )
             .eq("host_id", row.owner_id)
+            .or("is_hidden.is.null,is_hidden.eq.false")
             .order("start_time", { ascending: true });
 
           if (sessionsError) throw sessionsError;

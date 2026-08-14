@@ -76,7 +76,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method === "GET") {
-    const { data, error } = await supabase.from("sessions").select("*");
+    const { data, error } = await supabase
+      .from("sessions")
+      .select("*")
+      .or("is_hidden.is.null,is_hidden.eq.false");
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json(data);
   }
