@@ -32,6 +32,7 @@ type BookSessionOptions = {
     booked_start_time?: string | null;
     booked_end_time?: string | null;
     booking_note?: string | null;
+    booking_role?: "participant" | "host";
 };
 
 interface SessionCardProps {
@@ -74,7 +75,7 @@ interface SessionCardProps {
     };
 }
 
-type BookedUser = { id: string; full_name?: string; avatar_url?: string; created_at?: string | null; booked_start_time?: string | null; booked_end_time?: string | null };
+type BookedUser = { id: string; full_name?: string; avatar_url?: string; created_at?: string | null; booked_start_time?: string | null; booked_end_time?: string | null; booking_role?: "participant" | "host" };
 type HostTransferCandidate = {
     id: string;
     full_name?: string | null;
@@ -116,6 +117,7 @@ function extractBookers(session: any): BookedUser[] {
                 created_at: b?.created_at ?? b?.booked_at ?? null,
                 booked_start_time: b?.booked_start_time ?? b?.start_time ?? null,
                 booked_end_time: b?.booked_end_time ?? b?.end_time ?? null,
+                booking_role: b?.booking_role === "host" ? "host" : "participant",
             };
         })
         .filter((u): u is BookedUser => !!u);
@@ -213,6 +215,7 @@ async function persistInfiniteBookingTimeRangeFallback(args: {
     bookedStartTime: string;
     bookedEndTime: string;
     bookingNote?: string | null;
+    bookingRole: "participant" | "host";
 }) {
     const sb = getSupabase();
     if (!sb) return;
@@ -226,6 +229,7 @@ async function persistInfiniteBookingTimeRangeFallback(args: {
             booked_start_time: args.bookedStartTime,
             booked_end_time: args.bookedEndTime,
             booking_note: args.bookingNote ?? null,
+            booking_role: args.bookingRole,
         };
 
         const { data: existing, error: findError } = await sb
@@ -247,6 +251,7 @@ async function persistInfiniteBookingTimeRangeFallback(args: {
                     booked_start_time: args.bookedStartTime,
                     booked_end_time: args.bookedEndTime,
                     booking_note: args.bookingNote ?? null,
+                    booking_role: args.bookingRole,
                 })
                 .eq("id", existingId);
 
@@ -3791,12 +3796,19 @@ export default function SessionCard({
     const effectiveHostId = hostIdOverride || session.host_id;
     const isHost = !!userId && effectiveHostId === userId;
     const canManageSession = isHost || canManageAnySession;
-
+    const sessionIsInfinite = resolveSessionType(session) === "infinite";
+    const hasUpcomingTimedBooking = (booking: any) => {
+        const startMs = Date.parse(String(booking?.booked_start_time || ""));
+        const endMs = Date.parse(String(booking?.booked_end_time || ""));
+        return Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > Date.now() && endMs > startMs;
+    };
     const initialIsBooked =
         !!userId &&
         (
-            session.session_bookings?.some((b: any) => b.user_id === userId) ||
-            session?.is_booked === true
+            session.session_bookings?.some((booking: any) =>
+                booking.user_id === userId && (!sessionIsInfinite || hasUpcomingTimedBooking(booking))
+            ) ||
+            (!sessionIsInfinite && session?.is_booked === true)
         );
     const [isBookingConfirmed, setIsBookingConfirmed] = useState<boolean>(!!initialIsBooked);
 
@@ -3813,14 +3825,21 @@ export default function SessionCard({
     const initialBookers = useMemo(() => extractBookers(session), [session]);
     const [bookers, setBookers] = useState<BookedUser[]>(initialBookers);
     const sortedBookingTimeline = useMemo(() => {
-        return [...bookers].sort((a, b) => {
-            const aStart = Date.parse(String(a.booked_start_time || ""));
-            const bStart = Date.parse(String(b.booked_start_time || ""));
-            const aValue = Number.isFinite(aStart) ? aStart : Number.POSITIVE_INFINITY;
-            const bValue = Number.isFinite(bStart) ? bStart : Number.POSITIVE_INFINITY;
-            if (aValue !== bValue) return aValue - bValue;
-            return String(a.full_name || a.id).localeCompare(String(b.full_name || b.id));
-        });
+        const nowMs = Date.now();
+        return [...bookers]
+            .filter((booking) => {
+                const startMs = Date.parse(String(booking.booked_start_time || ""));
+                const endMs = Date.parse(String(booking.booked_end_time || ""));
+                return Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > nowMs && endMs > startMs;
+            })
+            .sort((a, b) => {
+                const aStart = Date.parse(String(a.booked_start_time || ""));
+                const bStart = Date.parse(String(b.booked_start_time || ""));
+                const aValue = Number.isFinite(aStart) ? aStart : Number.POSITIVE_INFINITY;
+                const bValue = Number.isFinite(bStart) ? bStart : Number.POSITIVE_INFINITY;
+                if (aValue !== bValue) return aValue - bValue;
+                return String(a.full_name || a.id).localeCompare(String(b.full_name || b.id));
+            });
     }, [bookers]);
 
     const [stages, setStages] = useState<SessionStage[]>([]);
@@ -3851,7 +3870,7 @@ export default function SessionCard({
         const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
         return toLocalTimeInputValue(end);
     });
-    const [bookingDraftError, setBookingDraftError] = useState("");
+    const [bookingRoleDraft, setBookingRoleDraft] = useState<"participant" | "host">("participant");
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
     const [paywallOpen, setPaywallOpen] = useState(false);
@@ -4014,7 +4033,7 @@ export default function SessionCard({
     }, [session?.id, session?.description, isBookersModalOpen, isEditModalOpen]);
 
     const sessionType = resolveSessionType(session);
-    const isInfinite = sessionType === "infinite";
+    const isInfinite = sessionIsInfinite;
 
     useEffect(() => {
         if (!isBookersModalOpen) return;
@@ -4065,7 +4084,7 @@ export default function SessionCard({
         null
     );
 
-    const bookedCount = bookers.length;
+    const bookedCount = isInfinite ? sortedBookingTimeline.length : bookers.length;
     const liveUsersCount = liveUsers.length;
 
     const liveNowDisplay =
@@ -4336,7 +4355,11 @@ export default function SessionCard({
         };
     }, [session?.id, isBookersModalOpen, isLiveUsersModalOpen]);
 
-    const ensureCurrentUserAsBooked = (opts?: { booked_start_time?: string | null; booked_end_time?: string | null }) => {
+    const ensureCurrentUserAsBooked = (opts?: {
+        booked_start_time?: string | null;
+        booked_end_time?: string | null;
+        booking_role?: "participant" | "host";
+    }) => {
         if (!userId) return;
 
         const cu: BookedUser = currentUser?.id
@@ -4346,12 +4369,14 @@ export default function SessionCard({
                 avatar_url: currentUser.avatar_url,
                 booked_start_time: opts?.booked_start_time || null,
                 booked_end_time: opts?.booked_end_time || null,
+                booking_role: opts?.booking_role || "participant",
             }
             : {
                 id: userId,
                 full_name: "You",
                 booked_start_time: opts?.booked_start_time || null,
                 booked_end_time: opts?.booked_end_time || null,
+                booking_role: opts?.booking_role || "participant",
             };
 
         setBookers((prev) => {
@@ -4364,6 +4389,7 @@ export default function SessionCard({
                         ...u,
                         booked_start_time: opts?.booked_start_time ?? u.booked_start_time ?? null,
                         booked_end_time: opts?.booked_end_time ?? u.booked_end_time ?? null,
+                        booking_role: opts?.booking_role ?? u.booking_role ?? "participant",
                     }
                     : u
             );
@@ -4391,7 +4417,7 @@ export default function SessionCard({
             setBookingEndDateDraft(toLocalDateInputValue(end));
             setBookingStartTimeDraft(toLocalTimeInputValue(start));
             setBookingEndTimeDraft(toLocalTimeInputValue(end));
-            setIsBookingTimeModalOpen(true);
+            setBookingRoleDraft("participant");
             setIsHoveringBook(false);
             return;
         }
@@ -4430,6 +4456,7 @@ export default function SessionCard({
             booked_start_time: startIso,
             booked_end_time: endIso,
             booking_note: null,
+            booking_role: bookingRoleDraft,
         }));
 
         await persistInfiniteBookingTimeRangeFallback({
@@ -4438,12 +4465,14 @@ export default function SessionCard({
             bookedStartTime: startIso,
             bookedEndTime: endIso,
             bookingNote: null,
+            bookingRole: bookingRoleDraft,
         });
 
         setIsBookingConfirmed(true);
         ensureCurrentUserAsBooked({
             booked_start_time: startIso,
             booked_end_time: endIso,
+            booking_role: bookingRoleDraft,
         });
         setIsBookingTimeModalOpen(false);
         setIsHoveringBook(false);
@@ -5031,6 +5060,31 @@ export default function SessionCard({
                         Choose when you plan to use this 24/7 room. The room stays open, but your booking helps others see when people are planning to focus.
                     </div>
 
+                    <div>
+                        <div className="mb-2 text-[12px] font-semibold text-[#606060]">Reserve as</div>
+                        <div className="grid grid-cols-2 gap-2 rounded-[16px] bg-[#F3F4F6] p-1">
+                            {(["participant", "host"] as const).map((role) => {
+                                const selected = bookingRoleDraft === role;
+                                return (
+                                    <button
+                                        key={role}
+                                        type="button"
+                                        onClick={() => setBookingRoleDraft(role)}
+                                        className={`h-10 rounded-[13px] px-3 text-[13px] font-semibold transition ${selected ? "bg-white text-[#111827] shadow-sm" : "text-[#6B7280] hover:text-[#111827]"}`}
+                                        aria-pressed={selected}
+                                    >
+                                        {role === "host" ? "Host the room" : "Join as participant"}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        <p className="mt-2 text-[11px] leading-4 text-[#7A7A7A]">
+                            {bookingRoleDraft === "host"
+                                ? "Your name and hosting window will appear in today's schedule."
+                                : "Let others know when you plan to focus in this room."}
+                        </p>
+                    </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <label className="flex flex-col gap-1.5">
                             <span className="text-[12px] font-semibold text-[#606060]">Start date</span>
@@ -5320,7 +5374,12 @@ export default function SessionCard({
                                                                     <div className="truncate text-[13px] font-bold text-[#111827]">
                                                                         {isCurrentUser ? `${label} (you)` : label}
                                                                     </div>
-                                                                    {isLive ? <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-[#49A650]">Online</span> : null}
+                                                                    <div className="flex shrink-0 items-center gap-1.5">
+                                                                        {booking.booking_role === "host" ? (
+                                                                            <span className="rounded-full bg-[#111827] px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">Host</span>
+                                                                        ) : null}
+                                                                        {isLive ? <span className="text-[10px] font-bold uppercase tracking-wide text-[#49A650]">Online</span> : null}
+                                                                    </div>
                                                                 </div>
                                                                 <div className="mt-1 text-[12px] font-semibold text-[#334155]">
                                                                     {hasStart

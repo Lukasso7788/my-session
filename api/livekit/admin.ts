@@ -138,6 +138,15 @@ type DailyScheduleSessionRow = {
   } | null;
 };
 
+type InfiniteHostingSlot = {
+  sessionId: string;
+  sessionTitle: string;
+  hostUserId: string;
+  hostName: string;
+  bookedStartTime: string;
+  bookedEndTime: string;
+};
+
 type RecipientCandidate = {
   userId: string;
   email: string;
@@ -1029,9 +1038,69 @@ function groupEmailSessionsByHost(sessions: DailyScheduleSessionRow[]) {
   }));
 }
 
+function isInfiniteScheduleSession(session: DailyScheduleSessionRow) {
+  const mode = `${session.session_format_type || ""} ${session.format || ""}`.toLowerCase();
+  return mode.includes("infinite");
+}
+
+async function loadInfiniteHostingSlots(params: {
+  sb: SupabaseClient;
+  startIso: string;
+  endIso: string;
+}) {
+  const { sb, startIso, endIso } = params;
+  const { data: bookingRows, error: bookingsError } = await sb
+    .from("session_bookings")
+    .select("session_id,user_id,booked_start_time,booked_end_time,booking_role")
+    .eq("booking_role", "host")
+    .lt("booked_start_time", endIso)
+    .gt("booked_end_time", startIso)
+    .order("booked_start_time", { ascending: true });
+
+  if (bookingsError) throw bookingsError;
+
+  const sessionIds = Array.from(new Set((bookingRows || []).map((row: any) => String(row.session_id || "")).filter(Boolean)));
+  if (sessionIds.length === 0) return [] as InfiniteHostingSlot[];
+
+  const { data: sessionRows, error: sessionsError } = await sb
+    .from("sessions")
+    .select("id,title,format,session_format_type,is_private")
+    .in("id", sessionIds)
+    .or("is_private.is.null,is_private.eq.false");
+  if (sessionsError) throw sessionsError;
+
+  const sessionsById = new Map(
+    ((sessionRows || []) as DailyScheduleSessionRow[])
+      .filter(isInfiniteScheduleSession)
+      .map((session) => [String(session.id), session])
+  );
+
+  const userIds = Array.from(new Set((bookingRows || []).map((row: any) => String(row.user_id || "")).filter(Boolean)));
+  const { data: profileRows } = userIds.length
+    ? await sb.from("profiles").select("id,full_name").in("id", userIds)
+    : { data: [] as any[] };
+  const profilesById = new Map((profileRows || []).map((profile: any) => [String(profile.id), profile]));
+
+  return (bookingRows || []).flatMap((row: any) => {
+    const session = sessionsById.get(String(row.session_id || ""));
+    const start = String(row.booked_start_time || "");
+    const end = String(row.booked_end_time || "");
+    if (!session || !start || !end) return [];
+    const profile = profilesById.get(String(row.user_id || ""));
+    return [{
+      sessionId: String(session.id),
+      sessionTitle: String(session.title || "24/7 Focus Room"),
+      hostUserId: String(row.user_id || ""),
+      hostName: String(profile?.full_name || "MySession host"),
+      bookedStartTime: start,
+      bookedEndTime: end,
+    } satisfies InfiniteHostingSlot];
+  });
+}
 function buildDailyScheduleEmail(params: {
   scheduleDate: string;
   sessions: DailyScheduleSessionRow[];
+  infiniteHostingSlots: InfiniteHostingSlot[];
   recipientName: string;
   recipientTimeZone: string | null;
   unsubscribeToken: string;
@@ -1040,6 +1109,7 @@ function buildDailyScheduleEmail(params: {
   const unsubscribeUrl = `${appUrl}/email/unsubscribe?token=${encodeURIComponent(params.unsubscribeToken)}`;
   const dateLabel = formatDateForSubject(params.scheduleDate);
   const groups = groupEmailSessionsByHost(params.sessions);
+  const hostingSlots = params.infiniteHostingSlots;
   const primaryTimeZone = params.recipientTimeZone || "UTC";
   const timeZoneIntro = params.recipientTimeZone
     ? `Times are shown in your timezone (${params.recipientTimeZone}), followed by key regions.`
@@ -1047,19 +1117,20 @@ function buildDailyScheduleEmail(params: {
 
   const subject = `Today on MySession — ${dateLabel}`;
 
-  const sessionListText =
-    groups.length === 0
-      ? "No scheduled sessions today yet. Check the sessions page for updates."
-      : groups
-        .map((group) => {
-          const lines = group.sessions.map((s) => {
-            const title = String(s.title || "Focus session").trim();
-            return `- ${formatEmailTime(s.start_time, primaryTimeZone)} — ${title}\n  ${formatRegionalEmailTimes(s.start_time)}`;
-          });
-
-          return `${group.hostName} is hosting:\n${lines.join("\n")}`;
-        })
-        .join("\n\n");
+  const scheduledSessionsText = groups
+    .map((group) => {
+      const lines = group.sessions.map((s) => {
+        const title = String(s.title || "Focus session").trim();
+        return `- ${formatEmailTime(s.start_time, primaryTimeZone)} — ${title}\n  ${formatRegionalEmailTimes(s.start_time)}`;
+      });
+      return `${group.hostName} is hosting:\n${lines.join("\n")}`;
+    })
+    .join("\n\n");
+  const infiniteHostsText = hostingSlots.length
+    ? `Hosts in 24/7 rooms:\n${hostingSlots.map((slot) => `- ${formatEmailTime(slot.bookedStartTime, primaryTimeZone)} — ${slot.hostName} in ${slot.sessionTitle}\n  ${formatRegionalEmailTimes(slot.bookedStartTime)}`).join("\n")}`
+    : "";
+  const sessionListText = [scheduledSessionsText, infiniteHostsText].filter(Boolean).join("\n\n")
+    || "No scheduled sessions today yet. Check the sessions page for updates.";
 
   const text = `Hey ${params.recipientName || "there"},
 
@@ -1119,6 +1190,16 @@ ${unsubscribeUrl}
         })
         .join("");
 
+  const htmlHostingSlots = hostingSlots.length
+    ? `<div style="margin:22px 0;padding:18px;border-radius:18px;background:#eff8f0;">
+        <div style="font-weight:700;font-size:16px;margin-bottom:8px;">Hosts in 24/7 rooms:</div>
+        <ul style="padding-left:20px;margin:0;">${hostingSlots.map((slot) => {
+          const link = `${appUrl}/room-livekit/${encodeURIComponent(slot.sessionId)}`;
+          return `<li style="margin:8px 0;"><strong>${escapeHtml(formatEmailTime(slot.bookedStartTime, primaryTimeZone))}</strong><span style="color:#555;"> — </span><strong>${escapeHtml(slot.hostName)}</strong> in <a href="${link}" style="color:#111827;text-decoration:underline;">${escapeHtml(slot.sessionTitle)}</a><div style="margin-top:3px;color:#6b7280;font-size:12px;line-height:1.45;">${escapeHtml(formatRegionalEmailTimes(slot.bookedStartTime))}</div></li>`;
+        }).join("")}</ul>
+      </div>`
+    : "";
+
   const html = `
     <div style="font-family:Inter,Arial,sans-serif;line-height:1.55;color:#111827;max-width:640px;margin:0 auto;padding:24px;">
       <div style="font-size:13px;text-transform:uppercase;letter-spacing:0.12em;color:#6b7280;font-weight:700;">MySession</div>
@@ -1127,6 +1208,7 @@ ${unsubscribeUrl}
       <p style="margin:-12px 0 22px;color:#6b7280;font-size:13px;">${escapeHtml(timeZoneIntro)}</p>
 
       ${htmlGroups}
+      ${htmlHostingSlots}
 
       <div style="margin-top:26px;">
         <a href="${appUrl}/sessions" style="display:inline-block;background:#111827;color:white;text-decoration:none;border-radius:999px;padding:13px 20px;font-weight:700;">Join or book a session</a>
@@ -1558,6 +1640,13 @@ async function handleDailyScheduleEmailAction(params: {
     : [];
 
   const { startIso, endIso } = dayBounds(scheduleDate);
+  let infiniteHostingSlots: InfiniteHostingSlot[] = [];
+  try {
+    infiniteHostingSlots = await loadInfiniteHostingSlots({ sb, startIso, endIso });
+  } catch (error) {
+    // Keep daily delivery working during the first deploy before the SQL migration is applied.
+    console.warn("daily schedule: infinite hosting slots unavailable", error);
+  }
 
   const { data: sessionsData, error: sessionsError } = await sb
     .from("sessions")
@@ -1584,7 +1673,7 @@ async function handleDailyScheduleEmailAction(params: {
   }
 
   const sessions = ((sessionsData || []) as DailyScheduleSessionRow[]).filter(
-    (session) => session?.is_private !== true
+    (session) => session?.is_private !== true && !isInfiniteScheduleSession(session)
   );
   const sessionIds = sessions.map((s) => String(s.id)).filter(Boolean);
 
@@ -1595,7 +1684,10 @@ async function handleDailyScheduleEmailAction(params: {
       .in("session_id", sessionIds)
     : { data: [] as any[] };
 
-  const bookedTodaySet = new Set<string>((bookingsData || []).map((b: any) => String(b.user_id)));
+  const bookedTodaySet = new Set<string>([
+    ...(bookingsData || []).map((b: any) => String(b.user_id)),
+    ...infiniteHostingSlots.map((slot) => slot.hostUserId),
+  ]);
 
   const { data: prefsData } = await sb
     .from("daily_schedule_email_preferences")
@@ -1686,6 +1778,7 @@ async function handleDailyScheduleEmailAction(params: {
       scheduleDate,
       limit,
       sessions,
+      infiniteHostingSlots,
       candidatesCount: candidates.length,
       selectedCount: selected.length,
       selected,
@@ -1711,6 +1804,7 @@ async function handleDailyScheduleEmailAction(params: {
     const email = buildDailyScheduleEmail({
       scheduleDate,
       sessions,
+      infiniteHostingSlots,
       recipientName: recipient.name,
       recipientTimeZone: recipient.timeZone,
       unsubscribeToken: recipient.unsubscribeToken,

@@ -42,12 +42,14 @@ type SessionBookingRow = {
   created_at?: string | null;
   booked_start_time?: string | null;
   booked_end_time?: string | null;
+  booking_role?: "participant" | "host";
 };
 
 type BookSessionOptions = {
   booked_start_time?: string | null;
   booked_end_time?: string | null;
   booking_note?: string | null;
+  booking_role?: "participant" | "host";
 };
 
 type SessionWithRelations = Session & {
@@ -1388,6 +1390,7 @@ export function SessionsPage() {
               created_at: row?.created_at || null,
               booked_start_time: row?.booked_start_time || null,
               booked_end_time: row?.booked_end_time || null,
+              booking_role: row?.booking_role === "host" ? "host" : "participant",
               profiles: {
                 id: String(row?.user_id || ""),
                 full_name: row?.full_name || null,
@@ -1724,12 +1727,14 @@ export function SessionsPage() {
         booked_start_time: opts.booked_start_time || null,
         booked_end_time: opts.booked_end_time || null,
         booking_note: opts.booking_note || null,
+        booking_role: opts.booking_role || "participant",
       });
 
       if (error) throw error;
 
       captureProductEvent("session_booked", {
         booking_mode: opts.booked_start_time || opts.booked_end_time ? "timed" : "whole_session",
+        booking_role: opts.booking_role || "participant",
       });
 
       await fetchSessions();

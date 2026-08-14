@@ -38,6 +38,14 @@ type ActiveInfiniteRoom = {
   description?: string | null;
 };
 
+type InfiniteHostingSlot = {
+  sessionId: string;
+  sessionTitle: string;
+  hostName: string;
+  bookedStartTime: string;
+  bookedEndTime: string;
+};
+
 const KYIV_TIME_ZONE = "Europe/Kyiv";
 const DUE_GRACE_MINUTES = 8;
 const PRESENCE_MIN_PARTICIPANTS = 2;
@@ -469,9 +477,56 @@ async function fetchSessionsBetween(env: Env, start: Date, end: Date) {
     `&order=start_time.asc`;
 
   const rows = await supabaseFetch(env, path, { method: "GET" });
-  return Array.isArray(rows) ? (rows as SessionRow[]).filter(isDiscordEligibleSession) : [];
+  return Array.isArray(rows) ? (rows as SessionRow[]).filter((session) => {
+    const mode = `${session.session_format_type || ""} ${session.format || ""}`.toLowerCase();
+    return isDiscordEligibleSession(session) && !mode.includes("infinite");
+  }) : [];
 }
 
+async function fetchInfiniteHostingSlots(env: Env, start: Date, end: Date) {
+  try {
+    const path =
+      `session_bookings?select=session_id,user_id,booked_start_time,booked_end_time,booking_role` +
+      `&booking_role=eq.host` +
+      `&booked_start_time=lt.${encodeURIComponent(iso(end))}` +
+      `&booked_end_time=gt.${encodeURIComponent(iso(start))}` +
+      `&order=booked_start_time.asc`;
+    const bookings = await supabaseFetch(env, path, { method: "GET" });
+    if (!Array.isArray(bookings) || bookings.length === 0) return [] as InfiniteHostingSlot[];
+
+    const sessionIds = Array.from(new Set(bookings.map((row: any) => String(row.session_id || "")).filter(Boolean)));
+    const userIds = Array.from(new Set(bookings.map((row: any) => String(row.user_id || "")).filter(Boolean)));
+    const sessionRows = await supabaseFetch(env, `sessions?select=id,title,is_private,format,session_format_type,description&id=in.(${sessionIds.join(",")})`, { method: "GET" });
+    const profileRows = userIds.length
+      ? await supabaseFetch(env, `profiles?select=id,full_name&id=in.(${userIds.join(",")})`, { method: "GET" })
+      : [];
+    const sessionsById = new Map(
+      (Array.isArray(sessionRows) ? sessionRows : [])
+        .filter((session: any) => {
+          const mode = `${session.session_format_type || ""} ${session.format || ""}`.toLowerCase();
+          return isDiscordEligibleSession(session) && mode.includes("infinite");
+        })
+        .map((session: any) => [String(session.id), session]),
+    );
+    const profilesById = new Map((Array.isArray(profileRows) ? profileRows : []).map((profile: any) => [String(profile.id), profile]));
+
+    return bookings.flatMap((booking: any) => {
+      const session: any = sessionsById.get(String(booking.session_id || ""));
+      if (!session || !booking.booked_start_time || !booking.booked_end_time) return [];
+      const profile: any = profilesById.get(String(booking.user_id || ""));
+      return [{
+        sessionId: String(session.id),
+        sessionTitle: String(session.title || "24/7 Focus Room"),
+        hostName: String(profile?.full_name || "MySession host"),
+        bookedStartTime: String(booking.booked_start_time),
+        bookedEndTime: String(booking.booked_end_time),
+      } satisfies InfiniteHostingSlot];
+    });
+  } catch (error) {
+    console.warn("[discord] infinite hosting slots unavailable", error);
+    return [] as InfiniteHostingSlot[];
+  }
+}
 function buildSessionReminderMessage(env: Env, session: SessionRow, type: "session_24h" | "session_30m" | "session_started") {
   const title = String(session.title || "Focus session").trim();
   const host = getHostName(session);
@@ -516,8 +571,8 @@ ${url}`),
   };
 }
 
-function buildDailyScheduleMessage(env: Env, sessions: SessionRow[], targetDate: string) {
-  if (sessions.length === 0) {
+function buildDailyScheduleMessage(env: Env, sessions: SessionRow[], hostingSlots: InfiniteHostingSlot[], targetDate: string) {
+  if (sessions.length === 0 && hostingSlots.length === 0) {
     return {
       content: `📅 **Today on MySession — ${targetDate}**
 
@@ -551,6 +606,15 @@ ${sessionsUrl(env)}`,
     lines.push("");
   }
 
+  if (hostingSlots.length > 0) {
+    lines.push("**Hosts in 24/7 rooms:**");
+    for (const slot of hostingSlots) {
+      lines.push(`• ${formatDiscordTime(slot.bookedStartTime)} — **${slot.hostName}** in **${slot.sessionTitle}**`);
+      lines.push(`  ${appUrl(env)}/room-livekit/${encodeURIComponent(slot.sessionId)}`);
+    }
+    lines.push("");
+  }
+
   lines.push(`All sessions: ${sessionsUrl(env)}`);
   lines.push("");
   lines.push(`Click **Book Session** — it helps increase attendance and attract more people to the session.`);
@@ -576,9 +640,10 @@ async function maybeSendDailySchedule(env: Env, now: Date, dryRun = false) {
   const start = addHours(now, -12);
   const end = addHours(now, 24);
   const sessions = await fetchSessionsBetween(env, start, end);
-  const payload = buildDailyScheduleMessage(env, sessions, targetDate);
+  const hostingSlots = await fetchInfiniteHostingSlots(env, start, end);
+  const payload = buildDailyScheduleMessage(env, sessions, hostingSlots, targetDate);
 
-  if (dryRun) return { dryRun: true, key, payload, sessionsCount: sessions.length };
+  if (dryRun) return { dryRun: true, key, payload, sessionsCount: sessions.length, hostingSlotsCount: hostingSlots.length };
 
   try {
     const discord = await postDiscord(env, payload);
@@ -588,7 +653,7 @@ async function maybeSendDailySchedule(env: Env, now: Date, dryRun = false) {
       target_date: targetDate,
       discord_message_id: discord?.id || null,
     });
-    return { sent: true, key, sessionsCount: sessions.length };
+    return { sent: true, key, sessionsCount: sessions.length, hostingSlotsCount: hostingSlots.length };
   } catch (e: any) {
     await insertLog(env, {
       notification_key: key,
@@ -663,6 +728,18 @@ async function maybeSendSessionReminders(env: Env, now: Date, dryRun = false) {
 
 async function runAll(env: Env, dryRun = false) {
   const now = new Date();
+  let expiredBookingsCleaned: number | null = null;
+  if (!dryRun) {
+    try {
+      const cleanup = await supabaseFetch(env, "rpc/cleanup_expired_infinite_room_bookings", {
+        method: "POST",
+        body: "{}",
+      });
+      expiredBookingsCleaned = Number(cleanup ?? 0);
+    } catch (error) {
+      console.warn("[discord] expired infinite bookings cleanup unavailable", error);
+    }
+  }
   const daily = await maybeSendDailySchedule(env, now, dryRun);
   const reminders = await maybeSendSessionReminders(env, now, dryRun);
   let infiniteRoomPresence: any;
@@ -690,6 +767,7 @@ async function runAll(env: Env, dryRun = false) {
     now: now.toISOString(),
     kyivTime: hmInKyiv(now),
     dryRun,
+    expiredBookingsCleaned,
     daily,
     reminders,
     infiniteRoomPresence,

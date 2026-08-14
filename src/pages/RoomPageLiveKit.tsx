@@ -11290,6 +11290,7 @@ export function RoomPageLiveKit({
       });
       if (error) throw error;
       await loadActiveRoomHostLease();
+      return true;
     } catch (error: any) {
       const message = String(error?.message || error || "");
       setActiveRoomHostError(
@@ -11300,10 +11301,59 @@ export function RoomPageLiveKit({
             : "Could not step in as host. Please try again.",
       );
       await loadActiveRoomHostLease();
+      return false;
     } finally {
       setActiveRoomHostBusy(false);
     }
   }, [activeRoomHostBusy, loadActiveRoomHostLease, sessionId]);
+
+  const reservedHostAutoClaimRef = useRef("");
+  useEffect(() => {
+    if (
+      !isInfiniteRoom ||
+      !sessionId ||
+      !authUserId ||
+      sessionOwnerIsPresent ||
+      hasValidActiveRoomHostLease
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const tryReservedHostClaim = async () => {
+      const nowIso = new Date().toISOString();
+      const { data, error } = await supabase
+        .from("session_bookings")
+        .select("id")
+        .eq("session_id", sessionId)
+        .eq("user_id", authUserId)
+        .eq("booking_role", "host")
+        .lte("booked_start_time", nowIso)
+        .gt("booked_end_time", nowIso)
+        .limit(1)
+        .maybeSingle();
+
+      if (cancelled || error || !data?.id) return;
+      const claimKey = `${sessionId}:${data.id}`;
+      if (reservedHostAutoClaimRef.current === claimKey) return;
+      const claimed = await claimActiveRoomHost();
+      if (claimed) reservedHostAutoClaimRef.current = claimKey;
+    };
+
+    void tryReservedHostClaim();
+    const timer = window.setInterval(() => void tryReservedHostClaim(), 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [
+    authUserId,
+    claimActiveRoomHost,
+    hasValidActiveRoomHostLease,
+    isInfiniteRoom,
+    sessionId,
+    sessionOwnerIsPresent,
+  ]);
 
   const releaseActiveRoomHost = useCallback(async () => {
     if (!sessionId || activeRoomHostBusy) return;
