@@ -22,7 +22,9 @@ import {
   Loader2,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
+import { getUserEntitlement } from "../lib/entitlements";
+import { isEntitlementActive, isPaidPlan } from "../lib/billing";
 
 type RoomTheme = "dark" | "light";
 
@@ -672,6 +674,7 @@ export function TasksPanel({
   onToggleAccountabilityWall,
 }: TasksPanelProps) {
   const { id: idOrSlugFromUrl } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const rawSessionId = (sessionIdProp || idOrSlugFromUrl || "").trim();
 
   const panelTheme: RoomTheme = "light";
@@ -703,6 +706,8 @@ export function TasksPanel({
   const [aiSuggestion, setAiSuggestion] = useState<TaskAiSuggestion | null>(null);
   const [aiSuggestionLoading, setAiSuggestionLoading] = useState(false);
   const [aiSuggestionError, setAiSuggestionError] = useState("");
+  const [aiPaidAccess, setAiPaidAccess] = useState<boolean | null>(null);
+  const [aiPaywallOpen, setAiPaywallOpen] = useState(false);
   const aiSuggestionRequestRef = useRef<{ id: number; controller: AbortController } | null>(null);
 
   const [newTask, setNewTask] = useState("");
@@ -1148,6 +1153,33 @@ export function TasksPanel({
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user || null));
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const userId = String(user?.id || "").trim();
+    if (!userId) {
+      setAiPaidAccess(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    void getUserEntitlement(userId)
+      .then((entitlement) => {
+        if (!active) return;
+        setAiPaidAccess(
+          isPaidPlan(entitlement?.plan) && isEntitlementActive(entitlement),
+        );
+      })
+      .catch((error) => {
+        console.error("[TasksPanel] AI entitlement load failed:", error);
+        if (active) setAiPaidAccess(null);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     const t = typeof timerTextProp === "string" ? timerTextProp.trim() : "";
@@ -2402,8 +2434,16 @@ export function TasksPanel({
       });
 
       const payload = await response.json().catch(() => null);
+      if (response.status === 402 || payload?.error === "payment_required") {
+        if (aiSuggestionRequestRef.current?.id === requestId) {
+          setAiPaidAccess(false);
+          setAiSuggestionTask(null);
+          setAiPaywallOpen(true);
+        }
+        return;
+      }
       if (!response.ok || !payload?.suggestion) {
-        throw new Error(payload?.error || "AI suggestions are temporarily unavailable.");
+        throw new Error(payload?.message || payload?.error || "AI suggestions are temporarily unavailable.");
       }
 
       if (aiSuggestionRequestRef.current?.id === requestId) {
@@ -2424,6 +2464,17 @@ export function TasksPanel({
       }
     }
   }, []);
+
+  const openAiTaskSuggestions = useCallback(
+    (task: PanelTask) => {
+      if (aiPaidAccess === false) {
+        setAiPaywallOpen(true);
+        return;
+      }
+      void requestAiTaskSuggestions(task);
+    },
+    [aiPaidAccess, requestAiTaskSuggestions],
+  );
 
   const deletePanelTask = async (id: string) => {
     if (!user?.id) return;
@@ -3472,6 +3523,73 @@ export function TasksPanel({
     )
     : null;
 
+  const AiPaywallModal = aiPaywallOpen
+    ? createPortal(
+      <div
+        className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/45 px-4 font-inter backdrop-blur-[2px]"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setAiPaywallOpen(false);
+        }}
+      >
+        <div
+          className="w-full max-w-[430px] overflow-hidden rounded-[26px] bg-white text-[#2F2F2F] shadow-[0_24px_90px_rgba(0,0,0,0.22)]"
+          onMouseDown={stopRoomBubbling}
+          onPointerDown={stopRoomBubbling}
+          onClick={stopRoomBubbling}
+        >
+          <div className="px-6 pb-6 pt-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#E9F0FF] text-[#5286F6]">
+                <Sparkles size={20} />
+              </div>
+              <button
+                type="button"
+                onClick={() => setAiPaywallOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-xl bg-black/[0.05] text-black/50 transition hover:bg-black/[0.09] hover:text-black/80"
+                title="Close"
+                aria-label="Close upgrade message"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="mt-5 text-[22px] font-bold tracking-[-0.025em]">
+              Unlock AI Suggestions
+            </div>
+            <p className="mt-2 text-[14px] leading-6 text-black/60">
+              Turn any task into a clear first action, a practical step-by-step plan, and a focused work block.
+            </p>
+
+            <div className="mt-5 rounded-2xl bg-[#F4F3F3] px-4 py-3 text-[12px] leading-5 text-black/60">
+              AI Suggestions are currently included with active paid MySession plans.
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setAiPaywallOpen(false)}
+                className="flex-1 rounded-2xl bg-black/[0.055] px-4 py-3 text-[13px] font-semibold text-black/65 transition hover:bg-black/[0.09]"
+              >
+                Not now
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAiPaywallOpen(false);
+                  navigate("/pricing");
+                }}
+                className="flex-1 rounded-2xl bg-[#2F2F2F] px-4 py-3 text-[13px] font-semibold text-white transition hover:bg-[#3A3A3A]"
+              >
+                View plans
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>,
+      getPortalDocument().body,
+    )
+    : null;
+
   const AiSuggestionModal = aiSuggestionTask
     ? createPortal(
       <div
@@ -3707,6 +3825,7 @@ export function TasksPanel({
               <div className="mt-0.5 flex items-center gap-1 text-[10px] text-black/40">
                 <Sparkles size={10} className="text-[#5286F6]" />
                 <span>Click a task for AI advice</span>
+                <span className="ml-0.5 rounded-full bg-[#E9F0FF] px-1.5 py-0.5 font-bold text-[#3F6FD4]">PRO</span>
               </div>
             </div>
 
@@ -3976,7 +4095,7 @@ export function TasksPanel({
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation();
-                              void requestAiTaskSuggestions(i);
+                              openAiTaskSuggestions(i);
                             }}
                             className={
                               "block w-full max-h-[18px] overflow-hidden whitespace-normal break-words text-left text-[13px] leading-[18px] font-inter transition-[max-height,color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[max-height] group-hover:max-h-[288px] group-focus-within:max-h-[288px] hover:text-[#3F6FD4] " +
@@ -4285,6 +4404,7 @@ export function TasksPanel({
 
       {ImportModal}
       {EncouragementModal}
+      {AiPaywallModal}
       {AiSuggestionModal}
     </div>
   );

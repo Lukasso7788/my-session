@@ -49,6 +49,30 @@ function extractResponseText(payload: any) {
   );
 }
 
+async function hasPaidTaskAiAccess(userId: string, token: string) {
+  const scopedSupabase = createClient(supabaseUrl, supabaseKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
+  });
+  const { data, error } = await scopedSupabase
+    .from("user_entitlements")
+    .select("plan,status,current_period_end")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data || data.status !== "active") return false;
+
+  const paidPlan = ["pro_monthly", "pro_yearly", "lifetime"].includes(
+    String(data.plan || "").toLowerCase(),
+  );
+  if (!paidPlan) return false;
+
+  if (data.plan === "lifetime" || !data.current_period_end) return true;
+  const accessEndsAt = new Date(data.current_period_end);
+  return !Number.isNaN(accessEndsAt.getTime()) && accessEndsAt.getTime() > Date.now();
+}
+
 function makeFallback(phase: string, userName: string, debugReason?: string) {
   const base =
     phase === "checkin"
@@ -185,6 +209,22 @@ async function handleTaskAiSuggestions(req: VercelRequest, res: VercelResponse) 
   const { data: authData, error: authError } = await supabase.auth.getUser(token);
   if (authError || !authData.user) {
     return res.status(401).json({ error: "Invalid session" });
+  }
+
+  try {
+    const hasPaidAccess = await hasPaidTaskAiAccess(authData.user.id, token);
+    if (!hasPaidAccess) {
+      return res.status(402).json({
+        error: "payment_required",
+        message: "AI Suggestions are available on a paid plan.",
+      });
+    }
+  } catch (error: any) {
+    console.error("[api/templates task-ai-suggestions] entitlement check failed:", {
+      message: error?.message || String(error),
+      userId: authData.user.id,
+    });
+    return res.status(503).json({ error: "Could not verify AI feature access" });
   }
 
   const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
