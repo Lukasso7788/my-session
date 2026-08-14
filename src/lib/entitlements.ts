@@ -103,37 +103,21 @@ async function getWeeklyUsageDirect(
 }
 
 async function getLifetimeSessionsCount(userId: string): Promise<number | null> {
-  try {
-    const canonical = await supabase.rpc("get_lifetime_attendance_count", {
-      p_user_id: userId,
-    });
-
-    if (!canonical.error) {
-      const value = Number(canonical.data);
-      if (Number.isFinite(value)) return Math.max(0, value);
-    } else {
-      const code = String((canonical.error as any)?.code || "");
-      if (code !== "42883" && code !== "PGRST202") {
-        console.error("getLifetimeAttendanceCount RPC error:", canonical.error);
-      }
-    }
-  } catch (error) {
-    console.error("getLifetimeAttendanceCount RPC request failed:", error);
-  }
-
-  // Backward-compatible rollout fallback until the daily-attendance SQL is
-  // installed. This keeps entitlement loading fail-open and unchanged.
-  const fallback = await supabase
+  // Count directly from the attendance table. The previously attempted
+  // get_lifetime_attendance_count RPC has never shipped in this repository's
+  // migrations, so every entitlement load generated a guaranteed 404 before
+  // falling back to this exact query.
+  const result = await supabase
     .from("session_attendance")
     .select("session_id", { count: "exact", head: true })
     .eq("user_id", userId);
 
-  if (fallback.error) {
-    console.error("getLifetimeSessionsCount fallback error:", fallback.error);
+  if (result.error) {
+    console.error("getLifetimeSessionsCount error:", result.error);
     return null;
   }
 
-  return Math.max(0, Number(fallback.count || 0));
+  return Math.max(0, Number(result.count || 0));
 }
 
 /**
