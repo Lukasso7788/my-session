@@ -2678,6 +2678,7 @@ function EditSessionStudioModal(props: {
         host_name?: string | null;
     }) => Promise<void> | void;
     session: any;
+    resolvedStages?: SessionStage[];
     currentUserId?: string;
     hostCandidates?: HostTransferCandidate[];
     onHostTransferred?: (newHost: HostTransferCandidate) => void;
@@ -2688,6 +2689,7 @@ function EditSessionStudioModal(props: {
         onClose,
         onSave,
         session,
+        resolvedStages = [],
         currentUserId,
         hostCandidates = [],
         onHostTransferred,
@@ -2749,6 +2751,17 @@ function EditSessionStudioModal(props: {
     }, [transferResults, suggestedHostCandidates, currentHostId]);
 
     useEffect(() => {
+        if (!isOpen || !Array.isArray(resolvedStages) || resolvedStages.length === 0) return;
+
+        setStudioBlocks(
+            normalizeStudioBlocksFromSession({
+                ...session,
+                session_stages: resolvedStages,
+            })
+        );
+        setSelectedBlockId(null);
+    }, [isOpen, session?.id, resolvedStages]);
+    useEffect(() => {
         if (!isOpen) return;
 
         setEditTitle(session?.title || "");
@@ -2772,7 +2785,10 @@ function EditSessionStudioModal(props: {
         setEditMaxParticipants(
             session?.max_participants == null ? "" : String(session?.max_participants)
         );
-        setStudioBlocks(normalizeStudioBlocksFromSession(session));
+        setStudioBlocks(normalizeStudioBlocksFromSession({
+            ...session,
+            session_stages: resolvedStages.length ? resolvedStages : session?.session_stages,
+        }));
         setSelectedBlockId(null);
         setDraggingId(null);
         setDragOverId(null);
@@ -5432,6 +5448,7 @@ export default function SessionCard({
                         host_id: effectiveHostId,
                         description: resolvedDescription,
                     }}
+                    resolvedStages={stages}
                     currentUserId={userId}
                     canManageAnySession={canManageAnySession}
                     hostCandidates={uniqueHostTransferCandidates([
