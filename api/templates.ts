@@ -25,6 +25,30 @@ function getRequestBody(req: VercelRequest): any {
   return {};
 }
 
+function getBearerToken(req: VercelRequest) {
+  const authorization = String(req.headers.authorization || "").trim();
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || "";
+}
+
+function extractResponseText(payload: any) {
+  const direct = cleanText(payload?.output_text);
+  if (direct) return direct;
+
+  const parts = Array.isArray(payload?.output)
+    ? payload.output.flatMap((item: any) =>
+        Array.isArray(item?.content) ? item.content : [],
+      )
+    : [];
+
+  return cleanText(
+    parts
+      .map((part: any) => part?.text || part?.content || "")
+      .filter(Boolean)
+      .join("\n"),
+  );
+}
+
 function makeFallback(phase: string, userName: string, debugReason?: string) {
   const base =
     phase === "checkin"
@@ -154,11 +178,127 @@ User text: ${text}
   }
 }
 
+async function handleTaskAiSuggestions(req: VercelRequest, res: VercelResponse) {
+  const token = getBearerToken(req);
+  if (!token) return res.status(401).json({ error: "Authentication required" });
+
+  const { data: authData, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !authData.user) {
+    return res.status(401).json({ error: "Invalid session" });
+  }
+
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  const model = String(
+    process.env.OPENAI_TASK_SUGGESTIONS_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini",
+  ).trim();
+  const task = cleanText(getRequestBody(req).task).slice(0, 1000);
+
+  if (!task) return res.status(400).json({ error: "Task text is required" });
+  if (!apiKey) return res.status(503).json({ error: "AI suggestions are not configured" });
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25_000);
+
+  try {
+    const openAiRes = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        store: false,
+        max_output_tokens: 700,
+        instructions: [
+          "You are a concise productivity coach inside MySession.",
+          "Help the user execute the task, not merely think about it.",
+          "Give concrete, low-friction steps that can be started immediately.",
+          "Do not provide therapy, diagnosis, judgment, or generic encouragement.",
+          "Match the language used in the task.",
+        ].join(" "),
+        input: `Task: ${task}`,
+        text: {
+          format: {
+            type: "json_schema",
+            name: "task_ai_suggestions",
+            strict: true,
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                summary: { type: "string" },
+                firstAction: { type: "string" },
+                nextSteps: {
+                  type: "array",
+                  items: { type: "string" },
+                  minItems: 2,
+                  maxItems: 5,
+                },
+                likelyObstacle: { type: "string" },
+                focusMinutes: { type: "integer", minimum: 5, maximum: 120 },
+              },
+              required: [
+                "summary",
+                "firstAction",
+                "nextSteps",
+                "likelyObstacle",
+                "focusMinutes",
+              ],
+            },
+          },
+        },
+      }),
+    });
+
+    const raw = await openAiRes.text();
+    const payload = safeJsonParse(raw);
+    if (!openAiRes.ok) {
+      console.error("[api/templates task-ai-suggestions] OpenAI failed:", {
+        status: openAiRes.status,
+        model,
+        hasKey: Boolean(apiKey),
+      });
+      return res.status(502).json({ error: "AI suggestions are temporarily unavailable" });
+    }
+
+    const parsed = safeJsonParse(extractResponseText(payload));
+    const summary = cleanText(parsed?.summary).slice(0, 500);
+    const firstAction = cleanText(parsed?.firstAction).slice(0, 500);
+    const nextSteps = Array.isArray(parsed?.nextSteps)
+      ? parsed.nextSteps.map((value: unknown) => cleanText(value).slice(0, 500)).filter(Boolean).slice(0, 5)
+      : [];
+    const likelyObstacle = cleanText(parsed?.likelyObstacle).slice(0, 500);
+    const focusMinutes = Math.max(5, Math.min(120, Number(parsed?.focusMinutes) || 25));
+
+    if (!summary || !firstAction || nextSteps.length < 2) {
+      return res.status(502).json({ error: "AI returned an incomplete suggestion" });
+    }
+
+    return res.status(200).json({
+      suggestion: { summary, firstAction, nextSteps, likelyObstacle, focusMinutes },
+      source: "openai",
+    });
+  } catch (error: any) {
+    console.error("[api/templates task-ai-suggestions] exception:", {
+      message: error?.message || String(error),
+      model,
+    });
+    return res.status(502).json({ error: "AI suggestions are temporarily unavailable" });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const body = getRequestBody(req);
 
   if (req.method === "POST") {
     if (body?.action === "ai-host-respond") return handleAiHost(req, res);
+    if (body?.action === "task-ai-suggestions") {
+      return handleTaskAiSuggestions(req, res);
+    }
 
     return res.status(400).json({
       error: "Unknown POST action",

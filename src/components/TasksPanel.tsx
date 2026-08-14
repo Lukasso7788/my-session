@@ -18,6 +18,8 @@ import {
   GripVertical,
   Eye,
   EyeOff,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
@@ -67,6 +69,14 @@ type FocusPlanItem = {
   created_at: string;
   completed: boolean;
   sort_order: number;
+};
+
+type TaskAiSuggestion = {
+  summary: string;
+  firstAction: string;
+  nextSteps: string[];
+  likelyObstacle: string;
+  focusMinutes: number;
 };
 
 type TasksPanelProps = {
@@ -689,6 +699,11 @@ export function TasksPanel({
     useState<string | null>(null);
   const [deletingPublishedTaskId, setDeletingPublishedTaskId] =
     useState<string | null>(null);
+  const [aiSuggestionTask, setAiSuggestionTask] = useState<PanelTask | null>(null);
+  const [aiSuggestion, setAiSuggestion] = useState<TaskAiSuggestion | null>(null);
+  const [aiSuggestionLoading, setAiSuggestionLoading] = useState(false);
+  const [aiSuggestionError, setAiSuggestionError] = useState("");
+  const aiSuggestionRequestRef = useRef<{ id: number; controller: AbortController } | null>(null);
 
   const [newTask, setNewTask] = useState("");
   const [newTaskVisibility, setNewTaskVisibility] = useState<"public" | "private">("public");
@@ -1116,7 +1131,7 @@ export function TasksPanel({
     `;
 
   const myCardCls =
-    "group relative min-h-11 border-b border-[#D8D0D0]/70 px-1.5 py-2 bg-transparent hover:bg-black/[0.035] transition cursor-pointer";
+    "group relative min-h-11 border-b border-[#D8D0D0]/70 px-1.5 py-2 bg-transparent hover:bg-black/[0.035] transition";
 
   const teamCardCls =
     "group relative min-h-11 border-b border-[#D8D0D0]/70 px-1.5 py-2 bg-transparent hover:bg-black/[0.035] transition";
@@ -2358,6 +2373,58 @@ export function TasksPanel({
     }
   };
 
+  const requestAiTaskSuggestions = useCallback(async (task: PanelTask) => {
+    aiSuggestionRequestRef.current?.controller.abort();
+    const controller = new AbortController();
+    const requestId = (aiSuggestionRequestRef.current?.id || 0) + 1;
+    aiSuggestionRequestRef.current = { id: requestId, controller };
+
+    setAiSuggestionTask(task);
+    setAiSuggestion(null);
+    setAiSuggestionError("");
+    setAiSuggestionLoading(true);
+
+    const timeout = window.setTimeout(() => controller.abort(), 30_000);
+
+    try {
+      const { data } = await supabase.auth.getSession();
+      const accessToken = data.session?.access_token || "";
+      if (!accessToken) throw new Error("Please sign in again to use AI suggestions.");
+
+      const response = await fetch("/api/templates", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        signal: controller.signal,
+        body: JSON.stringify({ action: "task-ai-suggestions", task: task.text }),
+      });
+
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload?.suggestion) {
+        throw new Error(payload?.error || "AI suggestions are temporarily unavailable.");
+      }
+
+      if (aiSuggestionRequestRef.current?.id === requestId) {
+        setAiSuggestion(payload.suggestion as TaskAiSuggestion);
+      }
+    } catch (error: any) {
+      if (aiSuggestionRequestRef.current?.id !== requestId) return;
+      setAiSuggestionError(
+        error?.name === "AbortError"
+          ? "AI suggestions took too long. Please try again."
+          : error?.message || "AI suggestions are temporarily unavailable.",
+      );
+    } finally {
+      window.clearTimeout(timeout);
+      if (aiSuggestionRequestRef.current?.id === requestId) {
+        aiSuggestionRequestRef.current = null;
+        setAiSuggestionLoading(false);
+      }
+    }
+  }, []);
+
   const deletePanelTask = async (id: string) => {
     if (!user?.id) return;
 
@@ -3405,6 +3472,120 @@ export function TasksPanel({
     )
     : null;
 
+  const AiSuggestionModal = aiSuggestionTask
+    ? createPortal(
+      <div
+        className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 px-3 font-inter backdrop-blur-[2px]"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setAiSuggestionTask(null);
+        }}
+      >
+        <div
+          className="w-[min(430px,calc(100vw-24px))] overflow-hidden rounded-[24px] bg-[#F7F5F5] text-[#2F2F2F] shadow-2xl"
+          onMouseDown={stopRoomBubbling}
+          onPointerDown={stopRoomBubbling}
+          onClick={stopRoomBubbling}
+        >
+          <div className="flex items-start justify-between gap-4 border-b border-black/10 px-5 py-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-[15px] font-bold">
+                <Sparkles size={16} className="text-[#5286F6]" />
+                AI Suggestions
+              </div>
+              <div className="mt-1 line-clamp-2 text-[12px] leading-4 text-black/55">
+                {aiSuggestionTask.text}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-black/[0.05] text-black/55 transition hover:bg-black/[0.09] hover:text-black/80"
+              onClick={() => setAiSuggestionTask(null)}
+              title="Close"
+              aria-label="Close AI suggestions"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="max-h-[min(570px,calc(100vh-120px))] overflow-y-auto px-5 py-5 custom-scrollbar">
+            {aiSuggestionLoading ? (
+              <div className="flex min-h-52 flex-col items-center justify-center gap-3 text-center">
+                <Loader2 size={24} className="animate-spin text-[#5286F6]" />
+                <div>
+                  <div className="text-[14px] font-semibold">Turning this into a clear next move</div>
+                  <div className="mt-1 text-[12px] text-black/45">Usually takes a few seconds.</div>
+                </div>
+              </div>
+            ) : aiSuggestionError ? (
+              <div className="flex min-h-52 flex-col items-center justify-center text-center">
+                <div className="text-[14px] font-semibold">Could not generate suggestions</div>
+                <div className="mt-2 max-w-[320px] text-[12px] leading-5 text-black/50">
+                  {aiSuggestionError}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void requestAiTaskSuggestions(aiSuggestionTask)}
+                  className="mt-4 rounded-xl bg-[#2F2F2F] px-4 py-2 text-[12px] font-semibold text-white transition hover:bg-[#3A3A3A]"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : aiSuggestion ? (
+              <div className="space-y-5">
+                <div className="text-[13px] leading-5 text-black/65">{aiSuggestion.summary}</div>
+
+                <div className="rounded-2xl bg-[#E9F0FF] px-4 py-3">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#3F6FD4]">Start here</div>
+                  <div className="mt-1.5 text-[14px] font-semibold leading-5 text-[#24375F]">
+                    {aiSuggestion.firstAction}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="text-[12px] font-bold">Suggested steps</div>
+                    <div className="rounded-full bg-black/[0.055] px-2.5 py-1 text-[10px] font-semibold text-black/55">
+                      {aiSuggestion.focusMinutes} min focus block
+                    </div>
+                  </div>
+                  <ol className="space-y-2">
+                    {aiSuggestion.nextSteps.map((step, index) => (
+                      <li key={`${index}-${step}`} className="flex gap-3 rounded-xl bg-black/[0.035] px-3 py-2.5 text-[12px] leading-5 text-black/70">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#2F2F2F] text-[10px] font-bold text-white">
+                          {index + 1}
+                        </span>
+                        <span>{step}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+
+                {aiSuggestion.likelyObstacle ? (
+                  <div className="rounded-2xl bg-[#EEECEC] px-4 py-3">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-black/40">Watch for</div>
+                    <div className="mt-1 text-[12px] leading-5 text-black/65">{aiSuggestion.likelyObstacle}</div>
+                  </div>
+                ) : null}
+
+                <div className="flex items-center justify-between gap-3 border-t border-black/10 pt-4">
+                  <div className="text-[10px] leading-4 text-black/40">Only this task text is sent for this request.</div>
+                  <button
+                    type="button"
+                    onClick={() => void requestAiTaskSuggestions(aiSuggestionTask)}
+                    className="shrink-0 rounded-xl bg-black/[0.06] px-3 py-2 text-[11px] font-semibold text-black/65 transition hover:bg-black/[0.1]"
+                  >
+                    Regenerate
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>,
+      getPortalDocument().body,
+    )
+    : null;
+
   const PanelUI = (
     <div
       className={"h-full flex flex-col min-h-0 font-inter " + panelBg}
@@ -3519,8 +3700,14 @@ export function TasksPanel({
       <div className="px-4 pb-4 pt-5 min-h-0 flex-1 overflow-y-auto custom-scrollbar font-inter">
         <div className="mb-5">
           <div className="mb-5 flex items-center justify-between gap-3">
-            <div className={titleText + " font-inter font-bold text-[17px]"}>
-              {oneOnOneMode ? "Your Tasks" : "My Tasks"}
+            <div className="min-w-0">
+              <div className={titleText + " font-inter font-bold text-[17px]"}>
+                {oneOnOneMode ? "Your Tasks" : "My Tasks"}
+              </div>
+              <div className="mt-0.5 flex items-center gap-1 text-[10px] text-black/40">
+                <Sparkles size={10} className="text-[#5286F6]" />
+                <span>Click a task for AI advice</span>
+              </div>
             </div>
 
             {onToggleAccountabilityWall ? (
@@ -3744,11 +3931,7 @@ export function TasksPanel({
                       setDraggedTaskId(null);
                       setDragOverTaskId(null);
                     }}
-                    onClick={() => togglePanelCompleted(i)}
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      startEdit(i.id, i.text);
-                    }}
+
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       {!isEditing ? (
@@ -3763,13 +3946,22 @@ export function TasksPanel({
                         </div>
                       ) : null}
 
-                      <div className="flex h-[18px] w-[18px] shrink-0 self-center items-center justify-center leading-none">
+                      <button
+                        type="button"
+                        className="flex h-[18px] w-[18px] shrink-0 self-center items-center justify-center leading-none"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void togglePanelCompleted(i);
+                        }}
+                        title={i.completed ? "Mark task incomplete" : "Complete task"}
+                        aria-label={i.completed ? "Mark task incomplete" : "Complete task"}
+                      >
                         <AnimatedTodoCheck
                           completed={Boolean(i.completed)}
                           size={18}
                           className="text-black/40"
                         />
-                      </div>
+                      </button>
 
                       <div
                         className={
@@ -3780,14 +3972,20 @@ export function TasksPanel({
                         }
                       >
                         {!isEditing ? (
-                          <div
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void requestAiTaskSuggestions(i);
+                            }}
                             className={
-                              "max-h-[18px] overflow-hidden whitespace-normal break-words text-[13px] leading-[18px] font-inter transition-[max-height] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[max-height] group-hover:max-h-[288px] group-focus-within:max-h-[288px] " +
+                              "block w-full max-h-[18px] overflow-hidden whitespace-normal break-words text-left text-[13px] leading-[18px] font-inter transition-[max-height,color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[max-height] group-hover:max-h-[288px] group-focus-within:max-h-[288px] hover:text-[#3F6FD4] " +
                               (i.completed ? textDoneCls : textActiveCls)
                             }
+                            title={`Get AI suggestions for: ${i.text}`}
                           >
-                            <span title={i.text}>{i.text}</span>
-                          </div>
+                            <span>{i.text}</span>
+                          </button>
                         ) : (
                           <input
                             value={editingText}
@@ -4087,6 +4285,7 @@ export function TasksPanel({
 
       {ImportModal}
       {EncouragementModal}
+      {AiSuggestionModal}
     </div>
   );
 
