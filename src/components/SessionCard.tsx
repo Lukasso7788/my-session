@@ -3886,6 +3886,7 @@ export default function SessionCard({
         const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
         return toLocalTimeInputValue(end);
     });
+    const [bookingDraftError, setBookingDraftError] = useState("");
     const [bookingRoleDraft, setBookingRoleDraft] = useState<"participant" | "host">("participant");
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
@@ -4434,6 +4435,7 @@ export default function SessionCard({
             setBookingStartTimeDraft(toLocalTimeInputValue(start));
             setBookingEndTimeDraft(toLocalTimeInputValue(end));
             setBookingRoleDraft("participant");
+            setIsBookingTimeModalOpen(true);
             setIsHoveringBook(false);
             return;
         }
