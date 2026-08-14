@@ -61,14 +61,25 @@ async function hasPaidTaskAiAccess(userId: string, token: string) {
     .maybeSingle();
 
   if (error) throw error;
-  if (!data || data.status !== "active") return false;
+  if (!data) return false;
 
-  const paidPlan = ["pro_monthly", "pro_yearly", "lifetime"].includes(
-    String(data.plan || "").toLowerCase(),
-  );
-  if (!paidPlan) return false;
+  const status = String(data.status || "").toLowerCase();
+  if (status !== "active" && status !== "trialing") return false;
 
-  if (data.plan === "lifetime" || !data.current_period_end) return true;
+  const plan = String(data.plan || "").toLowerCase();
+  const hasProAccess = [
+    "pro_monthly",
+    "pro_yearly",
+    "lifetime",
+    "founding_free",
+  ].includes(plan);
+  if (!hasProAccess) return false;
+
+  if (status === "trialing" || plan === "lifetime" || plan === "founding_free") {
+    return true;
+  }
+  if (!data.current_period_end) return true;
+
   const accessEndsAt = new Date(data.current_period_end);
   return !Number.isNaN(accessEndsAt.getTime()) && accessEndsAt.getTime() > Date.now();
 }

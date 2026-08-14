@@ -24,7 +24,7 @@ import {
 import { supabase } from "../lib/supabase";
 import { useNavigate, useParams } from "react-router-dom";
 import { getUserEntitlement } from "../lib/entitlements";
-import { isEntitlementActive, isPaidPlan } from "../lib/billing";
+import { hasUnlimitedAccess } from "../lib/billing";
 
 type RoomTheme = "dark" | "light";
 
@@ -1168,7 +1168,7 @@ export function TasksPanel({
       .then((entitlement) => {
         if (!active) return;
         setAiPaidAccess(
-          isPaidPlan(entitlement?.plan) && isEntitlementActive(entitlement),
+          hasUnlimitedAccess(entitlement),
         );
       })
       .catch((error) => {
