@@ -63,7 +63,7 @@ async function hasPaidTaskAiAccess(userId: string) {
   });
   const { data, error } = await serviceSupabase
     .from("user_entitlements")
-    .select("plan,status,current_period_end")
+    .select("plan,status")
     .eq("user_id", userId)
     .maybeSingle();
 
@@ -82,13 +82,10 @@ async function hasPaidTaskAiAccess(userId: string) {
   ].includes(plan);
   if (!hasProAccess) return false;
 
-  if (status === "trialing" || plan === "lifetime" || plan === "founding_free") {
-    return true;
-  }
-  if (!data.current_period_end) return true;
-
-  const accessEndsAt = new Date(data.current_period_end);
-  return !Number.isNaN(accessEndsAt.getTime()) && accessEndsAt.getTime() > Date.now();
+  // `status` is the canonical access flag across MySession. Billing lifecycle
+  // code is responsible for changing it when access ends; period timestamps
+  // can remain historical between synchronization runs.
+  return true;
 }
 
 function makeFallback(phase: string, userName: string, debugReason?: string) {
