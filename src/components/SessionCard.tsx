@@ -4931,15 +4931,6 @@ export default function SessionCard({
                                     {peopleInline}
 
 
-                                    {cardRoomPolicies.publicChatDisabled ? (
-                                        <span
-                                            className="inline-flex items-center gap-1 rounded-full bg-[#F1F1F1] px-2 py-1 text-[10px] font-medium text-[#555555]"
-                                            title="Public chat is disabled; participant-to-host DMs remain available"
-                                        >
-                                            <MessageSquareOff size={13} aria-hidden="true" />
-                                            Public chat off
-                                        </span>
-                                    ) : null}
 
                                     <button
                                         type="button"
@@ -5382,6 +5373,15 @@ export default function SessionCard({
                                     >
                                         <Camera size={13} strokeWidth={1.9} aria-hidden="true" />
                                         Cameras required
+                                    </span>
+                                ) : null}
+                                {cardRoomPolicies.publicChatDisabled ? (
+                                    <span
+                                        className="inline-flex items-center gap-1.5 rounded-full bg-[#F3F4F6] px-3 py-1.5 font-medium text-[#2F2F2F]"
+                                        title="Public chat is disabled; participant-to-host DMs remain available"
+                                    >
+                                        <MessageSquareOff size={13} strokeWidth={1.9} aria-hidden="true" />
+                                        Public chat off
                                     </span>
                                 ) : null}
                             </div>
