@@ -4920,7 +4920,7 @@ export default function SessionCard({
                                         </span>
                                     </div>
                                     {isSessionFull && (
-                                        <span className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full bg-[#2F2F2F] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white">
+                                        <span className="ml-2.5 shrink-0 rounded-full bg-[#2F2F2F] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white">
                                             Full
                                         </span>
                                     )}
