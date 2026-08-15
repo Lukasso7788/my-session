@@ -11,10 +11,12 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowRight,
   CalendarClock,
+  Camera,
   Check,
   ChevronDown,
   Clock3,
   Users,
+  X,
 } from "lucide-react";
 import {
   DisconnectReason,
@@ -863,6 +865,7 @@ type FloatingReaction = {
 type RoomSystemNotice = {
   open: boolean;
   kind: "info" | "error" | "kick";
+  presentation?: "camera-reminder";
   title: string;
   body: string;
   actionLabel?: string;
@@ -12008,6 +12011,7 @@ export function RoomPageLiveKit({
     setSystemNotice({
       open: true,
       kind: next.kind,
+      presentation: next.presentation,
       title: next.title,
       body: next.body,
       actionLabel: next.actionLabel,
@@ -13626,6 +13630,7 @@ export function RoomPageLiveKit({
     const showReminder = (reminder: 1 | 2, onExpired: () => void) => {
       showSystemNotice({
         kind: "info",
+        presentation: "camera-reminder",
         title: "Please turn on your camera",
         body:
           reminder === 1
@@ -20191,47 +20196,95 @@ export function RoomPageLiveKit({
         ) : null}
 
         {systemNotice.open && (
-          <div className="fixed inset-0 z-[90] flex items-center justify-center">
+          <div className="fixed inset-0 z-[90] flex items-center justify-center px-4">
             <div
-              className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
+              className="absolute inset-0 bg-black/55 backdrop-blur-[3px]"
               onClick={
                 systemNotice.kind === "kick" ? undefined : closeSystemNotice
               }
             />
             <div
-              className={`relative w-[92%] max-w-[520px] rounded-2xl border shadow-2xl p-5 ${isLight
-                ? "bg-[#F3F3F3] border-[#CFCFCF] text-black/85"
-                : "bg-[#1B1B1B] border-[#2B2B2B] text-white/90"
+              className={`relative w-full overflow-hidden border shadow-[0_24px_80px_rgba(0,0,0,0.34)] ${systemNotice.presentation === "camera-reminder"
+                ? "max-w-[460px] rounded-[26px]"
+                : "max-w-[520px] rounded-2xl"
+                } ${isLight
+                  ? "border-black/[0.08] bg-white text-[#2F2F2F]"
+                  : "border-white/[0.09] bg-[#1D1D1D] text-white"
                 }`}
             >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-[18px] font-semibold">
-                    {systemNotice.title}
-                  </div>
-                  <div
-                    className={`mt-1 text-[13px] leading-relaxed ${isLight ? "text-black/65" : "text-white/70"}`}
-                  >
-                    {systemNotice.body}
-                  </div>
-                </div>
+              <div className={systemNotice.presentation === "camera-reminder" ? "p-6 pb-5" : "p-5"}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    {systemNotice.presentation === "camera-reminder" ? (
+                      <div className="mb-5 flex items-center gap-3">
+                        <div
+                          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] ${isLight
+                            ? "bg-[#EAF3FF] text-[#377FE8]"
+                            : "bg-[#377FE8]/15 text-[#72A9FF]"
+                            }`}
+                        >
+                          <Camera size={24} strokeWidth={1.9} aria-hidden="true" />
+                        </div>
+                        <div>
+                          <div className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${isLight ? "text-[#377FE8]" : "text-[#72A9FF]"}`}>
+                            Camera required
+                          </div>
+                          <div className={`mt-0.5 text-[12px] font-normal ${isLight ? "text-black/50" : "text-white/50"}`}>
+                            Keep your focus partner present
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
 
-                {systemNotice.kind !== "kick" && (
-                  <button
-                    type="button"
-                    onClick={closeSystemNotice}
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight
-                      ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/70"
-                      : "bg-[#242424] hover:bg-[#303030] text-white/80"
-                      }`}
-                    title="Close"
-                  >
-                    ✕
-                  </button>
-                )}
+                    <div className={`${systemNotice.presentation === "camera-reminder"
+                      ? "text-[20px] font-medium leading-[1.25]"
+                      : "text-[18px] font-semibold"
+                      }`}>
+                      {systemNotice.title}
+                    </div>
+                    <div
+                      className={`mt-2 text-[14px] font-normal leading-[1.55] ${isLight ? "text-black/60" : "text-white/62"}`}
+                    >
+                      {systemNotice.body}
+                    </div>
+                  </div>
+
+                  {systemNotice.kind !== "kick" && (
+                    <button
+                      type="button"
+                      onClick={closeSystemNotice}
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition ${isLight
+                        ? "bg-[#F2F2F2] text-black/55 hover:bg-[#E8E8E8] hover:text-black/75"
+                        : "bg-white/[0.07] text-white/60 hover:bg-white/[0.11] hover:text-white/85"
+                        }`}
+                      title="Close"
+                      aria-label="Close"
+                    >
+                      <X size={17} strokeWidth={1.8} aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
               </div>
 
-              <div className="mt-5 flex items-center justify-end gap-2">
+              <div
+                className={`flex flex-col-reverse gap-2 px-6 py-4 sm:flex-row sm:items-center sm:justify-end ${isLight ? "bg-[#F7F7F7]" : "bg-white/[0.035]"}`}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeSystemNotice();
+                    if (systemNotice.kind === "kick") {
+                      navigate("/sessions", { replace: true });
+                    }
+                  }}
+                  className={`h-11 rounded-[14px] px-5 text-[13px] font-normal transition ${isLight
+                    ? "text-black/55 hover:bg-black/[0.05] hover:text-black/75"
+                    : "text-white/55 hover:bg-white/[0.06] hover:text-white/80"
+                    }`}
+                >
+                  {systemNotice.presentation === "camera-reminder" ? "Not now" : "OK"}
+                </button>
+
                 {systemNotice.actionLabel && systemNotice.action ? (
                   <button
                     type="button"
@@ -20240,35 +20293,23 @@ export function RoomPageLiveKit({
                       closeSystemNotice();
                       action?.();
                     }}
-                    className={`px-4 h-10 rounded-xl font-semibold transition ${isLight
-                      ? "bg-[#E4E4E4] hover:bg-[#D8D8D8] text-black/80"
-                      : "bg-[#2A2A2A] hover:bg-[#343434] text-white/85"
+                    className={`inline-flex h-11 items-center justify-center gap-2 rounded-[14px] px-5 text-[13px] font-semibold transition ${systemNotice.presentation === "camera-reminder"
+                      ? "bg-[#377FE8] text-white hover:bg-[#2F72D5]"
+                      : isLight
+                        ? "bg-[#2F2F2F] text-white hover:bg-black"
+                        : "bg-white text-[#2F2F2F] hover:bg-white/90"
                       }`}
                   >
+                    {systemNotice.presentation === "camera-reminder" ? (
+                      <Camera size={17} strokeWidth={2} aria-hidden="true" />
+                    ) : null}
                     {systemNotice.actionLabel}
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={() => {
-                    closeSystemNotice();
-                    if (systemNotice.kind === "kick") {
-                      navigate("/sessions", { replace: true });
-                      return;
-                    }
-                  }}
-                  className={`px-4 h-10 rounded-xl font-semibold ${isLight
-                    ? "bg-[#1B1B1B] hover:bg-[#242424] text-white"
-                    : "bg-[#1B1B1B] hover:bg-[#242424] text-white"
-                    }`}
-                >
-                  OK
-                </button>
               </div>
             </div>
           </div>
         )}
-
         <ReportParticipantModalLiveKit
           open={reportModalOpen}
           theme={theme}
