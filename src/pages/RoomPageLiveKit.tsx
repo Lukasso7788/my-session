@@ -671,8 +671,14 @@ const VOICE_UI_MODE_STORAGE_KEY = "room_voice_ui_mode_v1";
 const VOICE_UI_HOTKEY_STORAGE_KEY = "room_voice_ui_hotkey_v1";
 type VoiceUiMode = "off" | "always" | "hotkey";
 
-function voiceUiHotkeyFromEvent(event: KeyboardEvent): string {
-  const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
+function voiceUiHotkeyFromEvent(event: KeyboardEvent, usePhysicalKey = true): string {
+  const physicalKey = /^Key[A-Z]$/.test(event.code)
+    ? event.code.slice(3)
+    : /^Digit[0-9]$/.test(event.code)
+      ? event.code.slice(5)
+      : "";
+  const logicalKey = event.key.length === 1 ? event.key.toUpperCase() : event.key;
+  const key = usePhysicalKey && physicalKey ? physicalKey : logicalKey;
   if (["Control", "Alt", "Shift", "Meta"].includes(key)) return "";
   return [event.ctrlKey ? "Ctrl" : "", event.altKey ? "Alt" : "", event.shiftKey ? "Shift" : "", event.metaKey ? "Meta" : "", key === " " ? "Space" : key]
     .filter(Boolean)
@@ -680,7 +686,9 @@ function voiceUiHotkeyFromEvent(event: KeyboardEvent): string {
 }
 
 function matchesVoiceUiHotkey(event: KeyboardEvent, hotkey: string): boolean {
-  return voiceUiHotkeyFromEvent(event).toLowerCase() === String(hotkey || "").toLowerCase();
+  const expected = String(hotkey || "").toLowerCase();
+  return voiceUiHotkeyFromEvent(event, true).toLowerCase() === expected
+    || voiceUiHotkeyFromEvent(event, false).toLowerCase() === expected;
 }
 
 type HostProfile = {

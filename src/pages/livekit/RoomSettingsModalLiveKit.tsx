@@ -1471,7 +1471,12 @@ export function RoomSettingsModalLiveKit({
                                 className={`h-10 min-w-[112px] shrink-0 rounded-xl px-3 text-[12px] font-semibold outline-none focus:ring-2 focus:ring-indigo-400 ${ghostBtn}`}
                                 title="Focus, then press a new hotkey"
                                 onKeyDown={(event) => {
-                                    const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
+                                    const physicalKey = /^Key[A-Z]$/.test(event.code)
+                                        ? event.code.slice(3)
+                                        : /^Digit[0-9]$/.test(event.code)
+                                            ? event.code.slice(5)
+                                            : "";
+                                    const key = physicalKey || (event.key.length === 1 ? event.key.toUpperCase() : event.key);
                                     if (["Control", "Alt", "Shift", "Meta"].includes(key)) return;
                                     event.preventDefault();
                                     const next = [
