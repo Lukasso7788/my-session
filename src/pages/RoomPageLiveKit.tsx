@@ -11,7 +11,6 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowRight,
   CalendarClock,
-  Camera,
   Check,
   ChevronDown,
   Clock3,
@@ -13627,30 +13626,29 @@ export function RoomPageLiveKit({
       })();
     };
 
-    const showReminder = (reminder: 1 | 2, onExpired: () => void) => {
+    const showReminder = (reminder: 1 | 2) => {
       showSystemNotice({
         kind: "info",
         presentation: "camera-reminder",
         title: "Please turn on your camera",
         body:
           reminder === 1
-            ? "This room requires cameras. This is reminder 1 of 2; turn yours on to stay in the room."
-            : "Your camera is still off. This is the final reminder; you will be disconnected if it remains off.",
+            ? "This room requires cameras. Please turn yours on within two minutes of joining to stay in the room."
+            : "Your camera is still off. This is the final reminder; turn it on within 30 seconds to stay in the room.",
         actionLabel: "Turn camera on",
         action: () => {
           void toggleCam(true);
         },
       });
-      schedule(onExpired, 20_000);
     };
 
-    schedule(
-      () =>
-        showReminder(1, () =>
-          showReminder(2, disconnectForCameraPolicy),
-        ),
-      15_000,
-    );
+    schedule(() => {
+      showReminder(1);
+      schedule(() => {
+        showReminder(2);
+        schedule(disconnectForCameraPolicy, 30_000);
+      }, 70_000);
+    }, 20_000);
 
     return () => {
       cancelled = true;
@@ -20223,7 +20221,7 @@ export function RoomPageLiveKit({
                             : "bg-[#377FE8]/15 text-[#72A9FF]"
                             }`}
                         >
-                          <Camera size={24} strokeWidth={1.9} aria-hidden="true" />
+                          <Icon name="camera-on" theme={theme} className="h-6 w-6" alt="" />
                         </div>
                         <div>
                           <div className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${isLight ? "text-[#377FE8]" : "text-[#72A9FF]"}`}>
@@ -20301,7 +20299,7 @@ export function RoomPageLiveKit({
                       }`}
                   >
                     {systemNotice.presentation === "camera-reminder" ? (
-                      <Camera size={17} strokeWidth={2} aria-hidden="true" />
+                      <Icon name="camera-on" theme="dark" className="h-[17px] w-[17px]" alt="" />
                     ) : null}
                     {systemNotice.actionLabel}
                   </button>
