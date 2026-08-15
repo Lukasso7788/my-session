@@ -88,7 +88,7 @@ type TaskAiSuggestion = {
 };
 
 type TaskAiSuggestionPreview = {
-  taskId: string;
+
   taskText: string;
   suggestion: TaskAiSuggestion;
   left: number;
@@ -2903,14 +2903,14 @@ export function TasksPanel({
     const left = preferredLeft >= 12
       ? preferredLeft
       : Math.min(viewportWidth - width - 12, rect.right + 12);
-    const estimatedHeight = 286;
+    const estimatedHeight = 420;
     const top = Math.min(
       Math.max(12, rect.top - 18),
       Math.max(12, viewportHeight - estimatedHeight - 12),
     );
 
     setAiSuggestionPreview({
-      taskId: task.id,
+
       taskText: task.text,
       suggestion,
       left,
@@ -3907,7 +3907,7 @@ export function TasksPanel({
       <div
         role="dialog"
         aria-label="Saved AI suggestion preview"
-        className="fixed z-[10020] overflow-hidden rounded-[20px] bg-white text-[#2F2F2F] shadow-[0_18px_55px_rgba(0,0,0,0.18)] ring-1 ring-black/[0.06] animate-[fadeIn_140ms_ease-out]"
+        className="fixed z-[10020] flex max-h-[min(420px,calc(100vh-24px))] flex-col overflow-hidden rounded-[20px] bg-white text-[#2F2F2F] shadow-[0_18px_55px_rgba(0,0,0,0.18)] ring-1 ring-black/[0.06] animate-[fadeIn_140ms_ease-out]"
         style={{
           left: aiSuggestionPreview.left,
           top: aiSuggestionPreview.top,
@@ -3919,7 +3919,7 @@ export function TasksPanel({
         onPointerDown={stopRoomBubbling}
         onClick={stopRoomBubbling}
       >
-        <div className="border-b border-black/[0.07] px-4 pb-3 pt-3.5">
+        <div className="shrink-0 border-b border-black/[0.07] px-4 pb-3 pt-3.5">
           <div className="flex items-center justify-between gap-3">
             <div className="inline-flex min-w-0 items-center gap-2 text-[12px] font-bold">
               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-black/[0.055]">
@@ -3936,44 +3936,39 @@ export function TasksPanel({
           </div>
         </div>
 
-        <div className="space-y-3 px-4 py-3.5">
-          <p className="line-clamp-2 text-[11px] leading-[17px] text-black/60">
+        <div className="custom-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain px-4 py-3.5">
+          <p className="text-[11px] leading-[17px] text-black/60">
             {aiSuggestionPreview.suggestion.summary}
           </p>
 
           <div className="rounded-[14px] bg-[#F3F3F3] px-3 py-2.5">
             <div className="text-[8px] font-bold uppercase tracking-[0.15em] text-black/40">Start here</div>
-            <div className="mt-1 line-clamp-2 text-[12px] font-semibold leading-[17px] text-[#2F2F2F]">
+            <div className="mt-1 text-[12px] font-semibold leading-[17px] text-[#2F2F2F]">
               {aiSuggestionPreview.suggestion.firstAction}
             </div>
           </div>
 
           {aiSuggestionPreview.suggestion.nextSteps.length ? (
             <ol className="space-y-1.5">
-              {aiSuggestionPreview.suggestion.nextSteps.slice(0, 2).map((step, index) => (
+              {aiSuggestionPreview.suggestion.nextSteps.map((step, index) => (
                 <li key={`${index}-${step}`} className="flex items-start gap-2 text-[10px] leading-[15px] text-black/55">
                   <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#2F2F2F] text-[8px] font-bold text-white">
                     {index + 1}
                   </span>
-                  <span className="line-clamp-2">{step}</span>
+                  <span>{step}</span>
                 </li>
               ))}
             </ol>
           ) : null}
 
-          <button
-            type="button"
-            className="flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-[#2F2F2F] px-3 text-[11px] font-semibold text-white transition hover:bg-black"
-            onClick={(event) => {
-              event.stopPropagation();
-              const task = panelTasks.find((item) => item.id === aiSuggestionPreview.taskId);
-              closeAiSuggestionPreview();
-              if (task) openAiTaskSuggestions(task);
-            }}
-          >
-            Open full suggestion
-            <ExternalLink size={12} aria-hidden="true" />
-          </button>
+          {aiSuggestionPreview.suggestion.likelyObstacle ? (
+            <div className="rounded-[14px] bg-black/[0.04] px-3 py-2.5">
+              <div className="text-[8px] font-bold uppercase tracking-[0.15em] text-black/40">Watch for</div>
+              <div className="mt-1 text-[10px] leading-[15px] text-black/55">
+                {aiSuggestionPreview.suggestion.likelyObstacle}
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>,
       aiSuggestionPreview.portalDocument.body,
