@@ -4876,8 +4876,8 @@ export default function SessionCard({
                             aria-label={`${liveNowCount} of ${displayedMaxParticipants} slots occupied${isSessionFull ? ", session full" : ""}`}
                         >
                             <div className="w-px h-10 bg-[#D9D9D9]" />
-                            <div className="w-[116px] text-left">
-                                <div className="flex items-baseline justify-between gap-2">
+                            <div className="w-[128px] text-center">
+                                <div className="relative flex min-h-[22px] items-baseline justify-center">
                                     <div className="text-[22px] font-bold leading-none text-brandBlack">
                                         {liveNowCount}
                                         <span className="ml-1 text-[13px] font-medium text-[#8A8A8A]">
@@ -4885,12 +4885,12 @@ export default function SessionCard({
                                         </span>
                                     </div>
                                     {isSessionFull && (
-                                        <span className="rounded-full bg-[#2F2F2F] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white">
+                                        <span className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full bg-[#2F2F2F] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white">
                                             Full
                                         </span>
                                     )}
                                 </div>
-                                <div className="mt-1 text-[10px] leading-none text-[#777777]">
+                                <div className="mt-1 w-full text-center text-[10px] leading-none text-[#777777]">
                                     {isSessionFull ? "No slots available" : hasLiveNow ? "slots occupied" : "all slots available"}
                                 </div>
                                 <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[#E7E7E7]">
