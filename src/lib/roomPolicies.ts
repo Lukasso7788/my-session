@@ -34,6 +34,30 @@ export function readRoomPolicies(schedule: unknown): RoomPolicies {
   };
 }
 
+export function readSessionRoomPolicies(
+  session:
+    | {
+        camera_required?: boolean | null;
+        public_chat_disabled?: boolean | null;
+        schedule?: unknown;
+      }
+    | null
+    | undefined,
+): RoomPolicies {
+  const legacy = readRoomPolicies(session?.schedule);
+
+  return {
+    cameraRequired:
+      typeof session?.camera_required === "boolean"
+        ? session.camera_required
+        : legacy.cameraRequired,
+    publicChatDisabled:
+      typeof session?.public_chat_disabled === "boolean"
+        ? session.public_chat_disabled
+        : legacy.publicChatDisabled,
+  };
+}
+
 export function withRoomPolicies(
   schedule: unknown,
   policies: RoomPolicies,

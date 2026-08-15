@@ -37,7 +37,7 @@ import {
 
 import { supabase } from "../lib/supabase";
 import { withTimeout } from "../lib/promiseTimeout";
-import { readRoomPolicies, withRoomPolicies, type RoomPolicies } from "../lib/roomPolicies";
+import { readSessionRoomPolicies, withRoomPolicies, type RoomPolicies } from "../lib/roomPolicies";
 import { captureProductEvent } from "../lib/analytics";
 import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
@@ -737,6 +737,8 @@ type SessionRow = {
   }> | null;
   max_participants?: number | null;
   host_id?: string | null;
+  camera_required?: boolean | null;
+  public_chat_disabled?: boolean | null;
 };
 
 type Stage = {
@@ -9194,7 +9196,14 @@ export function RoomPageLiveKit({
     shouldDisableBackgroundFx,
   ]);
 
-  const roomPolicies = useMemo(() => readRoomPolicies(session?.schedule), [session?.schedule]);
+  const roomPolicies = useMemo(
+    () => readSessionRoomPolicies(session),
+    [
+      session?.camera_required,
+      session?.public_chat_disabled,
+      session?.schedule,
+    ],
+  );
 
   const isHost = useMemo(() => {
     if (!authUserId) return false;
@@ -12014,16 +12023,40 @@ export function RoomPageLiveKit({
     if (!isHost || !session?.id) return;
 
     const previousSchedule = session.schedule;
+    const previousCameraRequired = session.camera_required;
+    const previousPublicChatDisabled = session.public_chat_disabled;
     const nextSchedule = withRoomPolicies(previousSchedule, next);
-    setSession((previous) => previous ? { ...previous, schedule: nextSchedule } : previous);
+    setSession((previous) =>
+      previous
+        ? {
+            ...previous,
+            schedule: nextSchedule,
+            camera_required: next.cameraRequired,
+            public_chat_disabled: next.publicChatDisabled,
+          }
+        : previous,
+    );
 
     const { error } = await supabase
       .from("sessions")
-      .update({ schedule: nextSchedule })
+      .update({
+        schedule: nextSchedule,
+        camera_required: next.cameraRequired,
+        public_chat_disabled: next.publicChatDisabled,
+      })
       .eq("id", session.id);
 
     if (error) {
-      setSession((previous) => previous ? { ...previous, schedule: previousSchedule } : previous);
+      setSession((previous) =>
+        previous
+          ? {
+              ...previous,
+              schedule: previousSchedule,
+              camera_required: previousCameraRequired,
+              public_chat_disabled: previousPublicChatDisabled,
+            }
+          : previous,
+      );
       showSystemNotice({
         kind: "error",
         title: "Room policy was not saved",

@@ -70,6 +70,8 @@ type SessionWithRelations = Session & {
 
   max_participants?: number | null;
   schedule?: any;
+  camera_required?: boolean | null;
+  public_chat_disabled?: boolean | null;
 
   session_bookings?: SessionBookingRow[];
 
@@ -1270,6 +1272,47 @@ export function SessionsPage() {
       if (!ids.length) return;
 
       /**
+       * OPTIONAL ENRICHMENT:
+       * room policies
+       *
+       * Kept outside the base query so deployments remain readable before the
+       * accompanying migration is applied. A missing column only skips badges;
+       * it can never blank the Sessions page.
+       */
+      const loadRoomPolicies = async () => {
+        try {
+          const { data: policyRows, error: policyError } = await withTimeout(
+            supabase
+              .from("sessions")
+              .select("id, camera_required, public_chat_disabled")
+              .in("id", ids),
+            SESSIONS_ENRICHMENT_TIMEOUT_MS,
+            "sessions_room_policies_enrichment"
+          );
+
+          if (!isCurrentRequest()) return;
+          if (policyError) throw policyError;
+
+          const policiesBySessionId = new Map<string, any>();
+          for (const row of (policyRows || []) as any[]) {
+            const sessionId = String(row?.id || "").trim();
+            if (sessionId) policiesBySessionId.set(sessionId, row);
+          }
+
+          setSessions((previousSessions) =>
+            previousSessions.map((session) => {
+              const policy = policiesBySessionId.get(String(session.id || ""));
+              return policy ? { ...session, ...policy } : session;
+            })
+          );
+        } catch (error) {
+          if (DEBUG) {
+            console.warn("[Sessions] Optional room policy enrichment failed:", error);
+          }
+        }
+      };
+
+      /**
        * OPTIONAL ENRICHMENT 1:
        * public slugs
        *
@@ -1515,6 +1558,7 @@ export function SessionsPage() {
        * IMPORTANT:
        * No await here.
        */
+      void loadRoomPolicies();
       void loadPublicSlugs();
       void loadPublicBookings();
       void loadHostProfiles();
@@ -1789,6 +1833,8 @@ export function SessionsPage() {
       schedule?: any;
       stages_json?: any;
       duration_minutes?: number | null;
+      camera_required?: boolean;
+      public_chat_disabled?: boolean;
     }
   ) => {
     if (!user) {

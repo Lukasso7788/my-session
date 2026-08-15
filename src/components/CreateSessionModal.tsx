@@ -2957,6 +2957,8 @@ export function CreateSessionModal({
           duration_minutes: durationMinutes,
           format: formatLabel,
           schedule: schedulePayload,
+          camera_required: cameraRequired,
+          public_chat_disabled: publicChatDisabled,
           daily_room_url: dailyUrls[idx],
           status: "planned",
           created_at: new Date().toISOString(),

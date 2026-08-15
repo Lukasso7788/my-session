@@ -8,7 +8,7 @@ import {
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock, Eye, EyeOff } from "lucide-react";
+import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock, Eye, EyeOff, Camera, MessageSquareOff } from "lucide-react";
 import { SessionStageBar } from "./SessionStageBar";
 import { supabase } from "../lib/supabase";
 import {
@@ -19,7 +19,7 @@ import {
 import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "./PaywallModal";
 import type { SessionStage } from "../SessionConfig";
-import { readRoomPolicies, withRoomPolicies } from "../lib/roomPolicies";
+import { readSessionRoomPolicies, withRoomPolicies } from "../lib/roomPolicies";
 
 function getSupabase(): SupabaseClient | null {
     // SessionCard must use the same client and auth storage key as the rest of
@@ -56,6 +56,8 @@ interface SessionCardProps {
             duration_minutes?: number | null;
             host_id?: string | null;
             host_name?: string | null;
+            camera_required?: boolean;
+            public_chat_disabled?: boolean;
         }
     ) => void | Promise<any>;
 
@@ -362,12 +364,14 @@ function ModalShell({
     isOpen,
     onClose,
     children,
+    footer,
     widthClass = "max-w-[560px]",
 }: {
     title: string;
     isOpen: boolean;
     onClose: () => void;
     children: any;
+    footer?: any;
     widthClass?: string;
 }) {
     if (!isOpen) return null;
@@ -390,7 +394,12 @@ function ModalShell({
                             <span className="text-[18px] leading-none">×</span>
                         </button>
                     </div>
-                    <div className="p-5 overflow-y-auto">{children}</div>
+                    <div className="p-5 overflow-y-auto flex-1">{children}</div>
+                    {footer ? (
+                        <div className="shrink-0 border-t border-[#EEEEEE] bg-white px-5 py-4">
+                            {footer}
+                        </div>
+                    ) : null}
                 </div>
             </div>
         </div>
@@ -2677,6 +2686,8 @@ function EditSessionStudioModal(props: {
         duration_minutes?: number | null;
         host_id?: string | null;
         host_name?: string | null;
+        camera_required?: boolean;
+        public_chat_disabled?: boolean;
     }) => Promise<void> | void;
     session: any;
     resolvedStages?: SessionStage[];
@@ -2706,7 +2717,7 @@ function EditSessionStudioModal(props: {
         const v = session?.max_participants;
         return v == null ? "" : String(v);
     });
-    const initialRoomPolicies = readRoomPolicies(session?.schedule);
+    const initialRoomPolicies = readSessionRoomPolicies(session);
     const [editCameraRequired, setEditCameraRequired] = useState(initialRoomPolicies.cameraRequired);
     const [editPublicChatDisabled, setEditPublicChatDisabled] = useState(initialRoomPolicies.publicChatDisabled);
 
@@ -2789,7 +2800,7 @@ function EditSessionStudioModal(props: {
         setEditMaxParticipants(
             session?.max_participants == null ? "" : String(session?.max_participants)
         );
-        const nextPolicies = readRoomPolicies(session?.schedule);
+        const nextPolicies = readSessionRoomPolicies(session);
         setEditCameraRequired(nextPolicies.cameraRequired);
         setEditPublicChatDisabled(nextPolicies.publicChatDisabled);
         setStudioBlocks(normalizeStudioBlocksFromSession({
@@ -2807,7 +2818,38 @@ function EditSessionStudioModal(props: {
         setIsTransferringHostId(null);
         setTransferError(null);
         setTransferNotice(null);
-    }, [isOpen, session?.id, session?.description, session?.title, session?.start_time, session?.max_participants, session?.schedule]);
+    }, [
+        isOpen,
+        session?.id,
+        session?.description,
+        session?.title,
+        session?.start_time,
+        session?.max_participants,
+        session?.schedule,
+        session?.camera_required,
+        session?.public_chat_disabled,
+    ]);
+
+    useEffect(() => {
+        if (!isOpen || !looksLikeUuid(session?.id)) return;
+
+        let cancelled = false;
+        void supabase
+            .from("sessions")
+            .select("camera_required, public_chat_disabled, schedule")
+            .eq("id", session.id)
+            .maybeSingle()
+            .then(({ data, error }) => {
+                if (cancelled || error || !data) return;
+                const policies = readSessionRoomPolicies(data);
+                setEditCameraRequired(policies.cameraRequired);
+                setEditPublicChatDisabled(policies.publicChatDisabled);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [isOpen, session?.id]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -3112,6 +3154,72 @@ function EditSessionStudioModal(props: {
             isOpen={isOpen}
             onClose={onClose}
             widthClass="max-w-[1200px]"
+            footer={
+                <div className="flex gap-3 justify-end">
+                    <button
+                        className="h-11 px-5 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] text-[13px] font-semibold"
+                        onClick={onClose}
+                        type="button"
+                        disabled={isSaving}
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        className="h-11 px-6 rounded-full border border-[#111827] bg-[#111827] text-white hover:opacity-90 text-[13px] font-semibold disabled:opacity-60"
+                        type="button"
+                        disabled={isSaving || !studioBlocks.length}
+                        onClick={async () => {
+                            setIsSaving(true);
+                            try {
+                                const updates: any = {};
+                                const title = String(editTitle || "").trim();
+                                if (title !== String(session?.title || "").trim()) updates.title = title;
+
+                                const description = String(editDescription || "").trim();
+                                const prevDescription = String(session?.description || "").trim();
+                                if (description !== prevDescription) {
+                                    updates.description = description || null;
+                                }
+
+                                if (editStartLocal) {
+                                    try {
+                                        const iso = new Date(editStartLocal).toISOString();
+                                        if (iso !== session?.start_time) updates.start_time = iso;
+                                    } catch { }
+                                }
+
+                                if (editMaxParticipants.trim() === "") {
+                                    if (session?.max_participants != null) updates.max_participants = null;
+                                } else {
+                                    const n = Number(editMaxParticipants);
+                                    if (Number.isFinite(n) && n > 0 && n !== session?.max_participants) {
+                                        updates.max_participants = n;
+                                    }
+                                }
+
+                                const nextSchedule = exportStudioToSchedule(
+                                    studioBlocks,
+                                    isInfinite,
+                                    session?.start_time || session?.created_at || new Date().toISOString()
+                                );
+                                updates.schedule = withRoomPolicies(nextSchedule, {
+                                    cameraRequired: editCameraRequired,
+                                    publicChatDisabled: editPublicChatDisabled,
+                                });
+                                updates.duration_minutes = studioTotal || null;
+                                updates.camera_required = editCameraRequired;
+                                updates.public_chat_disabled = editPublicChatDisabled;
+
+                                await onSave(updates);
+                            } finally {
+                                setIsSaving(false);
+                            }
+                        }}
+                    >
+                        {isSaving ? "Saving..." : "Save changes"}
+                    </button>
+                </div>
+            }
         >
             <div ref={modalScrollRef} className="space-y-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3757,68 +3865,7 @@ function EditSessionStudioModal(props: {
                     </div>
                 </div>
 
-                <div className="flex gap-3 justify-end">
-                    <button
-                        className="h-11 px-5 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] text-[13px] font-semibold"
-                        onClick={onClose}
-                        type="button"
-                        disabled={isSaving}
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        className="h-11 px-6 rounded-full border border-[#111827] bg-[#111827] text-white hover:opacity-90 text-[13px] font-semibold disabled:opacity-60"
-                        type="button"
-                        disabled={isSaving || !studioBlocks.length}
-                        onClick={async () => {
-                            setIsSaving(true);
-                            try {
-                                const updates: any = {};
-                                const title = String(editTitle || "").trim();
-                                if (title !== String(session?.title || "").trim()) updates.title = title;
 
-                                const description = String(editDescription || "").trim();
-                                const prevDescription = String(session?.description || "").trim();
-                                if (description !== prevDescription) {
-                                    updates.description = description || null;
-                                }
-
-                                if (editStartLocal) {
-                                    try {
-                                        const iso = new Date(editStartLocal).toISOString();
-                                        if (iso !== session?.start_time) updates.start_time = iso;
-                                    } catch { }
-                                }
-
-                                if (editMaxParticipants.trim() === "") {
-                                    if (session?.max_participants != null) updates.max_participants = null;
-                                } else {
-                                    const n = Number(editMaxParticipants);
-                                    if (Number.isFinite(n) && n > 0 && n !== session?.max_participants) {
-                                        updates.max_participants = n;
-                                    }
-                                }
-
-                                const nextSchedule = exportStudioToSchedule(
-                                    studioBlocks,
-                                    isInfinite,
-                                    session?.start_time || session?.created_at || new Date().toISOString()
-                                );
-                                updates.schedule = withRoomPolicies(nextSchedule, {
-                                    cameraRequired: editCameraRequired,
-                                    publicChatDisabled: editPublicChatDisabled,
-                                });
-                                updates.duration_minutes = studioTotal || null;
-
-                                await onSave(updates);
-                            } finally {
-                                setIsSaving(false);
-                            }
-                        }}
-                    >
-                        {isSaving ? "Saving..." : "Save changes"}
-                    </button>
-                </div>
             </div>
         </ModalShell>
     );
@@ -3848,6 +3895,7 @@ export default function SessionCard({
     const isHost = !!userId && effectiveHostId === userId;
     const canManageSession = isHost || canManageAnySession;
     const sessionIsInfinite = resolveSessionType(session) === "infinite";
+    const cardRoomPolicies = readSessionRoomPolicies(session);
     const hasUpcomingTimedBooking = (booking: any) => {
         const startMs = Date.parse(String(booking?.booked_start_time || ""));
         const endMs = Date.parse(String(booking?.booked_end_time || ""));
@@ -4881,6 +4929,26 @@ export default function SessionCard({
                                     </div>
 
                                     {peopleInline}
+
+                                    {cardRoomPolicies.cameraRequired ? (
+                                        <span
+                                            className="inline-flex items-center gap-1 rounded-full bg-[#EEF7FF] px-2 py-1 text-[10px] font-medium text-[#2767A8]"
+                                            title="Cameras are required in this session"
+                                        >
+                                            <Camera size={13} aria-hidden="true" />
+                                            Cameras on
+                                        </span>
+                                    ) : null}
+
+                                    {cardRoomPolicies.publicChatDisabled ? (
+                                        <span
+                                            className="inline-flex items-center gap-1 rounded-full bg-[#F1F1F1] px-2 py-1 text-[10px] font-medium text-[#555555]"
+                                            title="Public chat is disabled; participant-to-host DMs remain available"
+                                        >
+                                            <MessageSquareOff size={13} aria-hidden="true" />
+                                            Public chat off
+                                        </span>
+                                    ) : null}
 
                                     <button
                                         type="button"
