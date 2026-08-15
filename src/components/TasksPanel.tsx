@@ -51,6 +51,9 @@ type PanelTask = {
   updated_at: string;
   visibility?: "public" | "private" | string | null;
   sort_order?: number | null;
+  ai_suggestion?: TaskAiSuggestion | null;
+  ai_suggestion_for_text?: string | null;
+  ai_suggestion_updated_at?: string | null;
 };
 
 type FocusPlan = {
@@ -2447,7 +2450,27 @@ export function TasksPanel({
       }
 
       if (aiSuggestionRequestRef.current?.id === requestId) {
-        setAiSuggestion(payload.suggestion as TaskAiSuggestion);
+        const suggestion = payload.suggestion as TaskAiSuggestion;
+        setAiSuggestion(suggestion);
+        const suggestionUpdate = {
+          ai_suggestion: suggestion,
+          ai_suggestion_for_text: task.text,
+          ai_suggestion_updated_at: new Date().toISOString(),
+        };
+        setPanelTasks((current) =>
+          current.map((item) =>
+            item.id === task.id ? { ...item, ...suggestionUpdate } : item,
+          ),
+        );
+
+        const { error: saveError } = await supabase
+          .from(PANEL_TASKS_TABLE)
+          .update(suggestionUpdate)
+          .eq("id", task.id)
+          .eq("user_id", task.user_id);
+        if (saveError) {
+          console.error("[TasksPanel] AI suggestion save failed:", saveError);
+        }
       }
     } catch (error: any) {
       if (aiSuggestionRequestRef.current?.id !== requestId) return;
@@ -2469,6 +2492,17 @@ export function TasksPanel({
     (task: PanelTask) => {
       if (aiPaidAccess === false) {
         setAiPaywallOpen(true);
+        return;
+      }
+      const savedSuggestion = task.ai_suggestion;
+      if (
+        savedSuggestion &&
+        String(task.ai_suggestion_for_text || "") === String(task.text || "")
+      ) {
+        setAiSuggestionTask(task);
+        setAiSuggestion(savedSuggestion);
+        setAiSuggestionError("");
+        setAiSuggestionLoading(false);
         return;
       }
       void requestAiTaskSuggestions(task);
@@ -3539,7 +3573,7 @@ export function TasksPanel({
         >
           <div className="px-6 pb-6 pt-5">
             <div className="flex items-start justify-between gap-4">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#E9F0FF] text-[#5286F6]">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-black/[0.055] text-[#2F2F2F]">
                 <Sparkles size={20} />
               </div>
               <button
@@ -3607,7 +3641,7 @@ export function TasksPanel({
           <div className="flex items-start justify-between gap-4 border-b border-black/10 px-5 py-4">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-[15px] font-bold">
-                <Sparkles size={16} className="text-[#5286F6]" />
+                <Sparkles size={16} className="text-[#2F2F2F]" />
                 AI Suggestions
               </div>
               <div className="mt-1 line-clamp-2 text-[12px] leading-4 text-black/55">
@@ -3628,7 +3662,7 @@ export function TasksPanel({
           <div className="max-h-[min(570px,calc(100vh-120px))] overflow-y-auto px-5 py-5 custom-scrollbar">
             {aiSuggestionLoading ? (
               <div className="flex min-h-52 flex-col items-center justify-center gap-3 text-center">
-                <Loader2 size={24} className="animate-spin text-[#5286F6]" />
+                <Loader2 size={24} className="animate-spin text-[#2F2F2F]" />
                 <div>
                   <div className="text-[14px] font-semibold">Turning this into a clear next move</div>
                   <div className="mt-1 text-[12px] text-black/45">Usually takes a few seconds.</div>
@@ -3652,9 +3686,9 @@ export function TasksPanel({
               <div className="space-y-5">
                 <div className="text-[13px] leading-5 text-black/65">{aiSuggestion.summary}</div>
 
-                <div className="rounded-2xl bg-[#E9F0FF] px-4 py-3">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#3F6FD4]">Start here</div>
-                  <div className="mt-1.5 text-[14px] font-semibold leading-5 text-[#24375F]">
+                <div className="rounded-2xl bg-black/[0.055] px-4 py-3">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#2F2F2F]/60">Start here</div>
+                  <div className="mt-1.5 text-[14px] font-semibold leading-5 text-[#2F2F2F]">
                     {aiSuggestion.firstAction}
                   </div>
                 </div>
@@ -3823,9 +3857,9 @@ export function TasksPanel({
                 {oneOnOneMode ? "Your Tasks" : "My Tasks"}
               </div>
               <div className="mt-0.5 flex items-center gap-1 text-[10px] text-black/40">
-                <Sparkles size={10} className="text-[#5286F6]" />
+                <Sparkles size={10} className="text-[#2F2F2F]" />
                 <span>Click a task for AI advice</span>
-                <span className="ml-0.5 rounded-full bg-[#E9F0FF] px-1.5 py-0.5 font-bold text-[#3F6FD4]">PRO</span>
+                <span className="ml-0.5 inline-flex items-center justify-center rounded-[8px] border border-[#2F2F2F] bg-white px-[5px] py-[2px] font-bold leading-none text-[#2F2F2F] shadow-[0_2px_8px_rgba(0,0,0,0.06)]">Pro</span>
               </div>
             </div>
 
@@ -4098,7 +4132,7 @@ export function TasksPanel({
                               openAiTaskSuggestions(i);
                             }}
                             className={
-                              "block w-full max-h-[18px] overflow-hidden whitespace-normal break-words text-left text-[13px] leading-[18px] font-inter transition-[max-height,color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[max-height] group-hover:max-h-[288px] group-focus-within:max-h-[288px] hover:text-[#3F6FD4] " +
+                              "block w-full max-h-[18px] overflow-hidden whitespace-normal break-words text-left text-[13px] leading-[18px] font-inter transition-[max-height,color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[max-height] group-hover:max-h-[288px] group-focus-within:max-h-[288px] hover:text-black " +
                               (i.completed ? textDoneCls : textActiveCls)
                             }
                             title={`Get AI suggestions for: ${i.text}`}
