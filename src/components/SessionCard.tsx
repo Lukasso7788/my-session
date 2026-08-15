@@ -4932,7 +4932,7 @@ export default function SessionCard({
 
                                     {cardRoomPolicies.cameraRequired ? (
                                         <span
-                                            className="inline-flex items-center gap-1 rounded-full bg-[#EEF7FF] px-2 py-1 text-[10px] font-medium text-[#2767A8]"
+                                            className="inline-flex items-center gap-1 rounded-full bg-[#2F2F2F] px-2 py-1 text-[10px] font-medium text-white"
                                             title="Cameras are required in this session"
                                         >
                                             <Camera size={13} aria-hidden="true" />
