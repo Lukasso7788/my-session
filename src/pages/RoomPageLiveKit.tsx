@@ -37,6 +37,7 @@ import {
 
 import { supabase } from "../lib/supabase";
 import { withTimeout } from "../lib/promiseTimeout";
+import { readRoomPolicies, withRoomPolicies, type RoomPolicies } from "../lib/roomPolicies";
 import { captureProductEvent } from "../lib/analytics";
 import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
@@ -862,6 +863,8 @@ type RoomSystemNotice = {
   kind: "info" | "error" | "kick";
   title: string;
   body: string;
+  actionLabel?: string;
+  action?: () => void;
 };
 
 type RoomSoundtrackState = {
@@ -9191,6 +9194,8 @@ export function RoomPageLiveKit({
     shouldDisableBackgroundFx,
   ]);
 
+  const roomPolicies = useMemo(() => readRoomPolicies(session?.schedule), [session?.schedule]);
+
   const isHost = useMemo(() => {
     if (!authUserId) return false;
     const hostId =
@@ -9406,6 +9411,7 @@ export function RoomPageLiveKit({
   const [kickRedirecting, setKickRedirecting] = useState(false);
   const kickEventChannelRef = useRef<any>(null);
   const kickedBySignalRef = useRef(false);
+  const cameraPolicyTimerRef = useRef<number | null>(null);
   // Attendance is a TTL lease, not a realtime media signal. Thirty seconds is
   // well below the 90-second live-user window and avoids needless PostgREST
   // writes while preserving immediate heartbeats on join/background recovery.
@@ -11995,12 +12001,43 @@ export function RoomPageLiveKit({
       kind: next.kind,
       title: next.title,
       body: next.body,
+      actionLabel: next.actionLabel,
+      action: next.action,
     });
   };
 
   const closeSystemNotice = () => {
     setSystemNotice((prev) => ({ ...prev, open: false }));
   };
+
+  const updateRoomPolicies = useCallback(async (next: RoomPolicies) => {
+    if (!isHost || !session?.id) return;
+
+    const previousSchedule = session.schedule;
+    const nextSchedule = withRoomPolicies(previousSchedule, next);
+    setSession((previous) => previous ? { ...previous, schedule: nextSchedule } : previous);
+
+    const { error } = await supabase
+      .from("sessions")
+      .update({ schedule: nextSchedule })
+      .eq("id", session.id);
+
+    if (error) {
+      setSession((previous) => previous ? { ...previous, schedule: previousSchedule } : previous);
+      showSystemNotice({
+        kind: "error",
+        title: "Room policy was not saved",
+        body: error.message || "Please try again.",
+      });
+      return;
+    }
+
+    showSystemNotice({
+      kind: "info",
+      title: "Room policy updated",
+      body: "The new setting is now active for everyone in the room.",
+    });
+  }, [isHost, session?.id, session?.schedule]);
 
   const handleKickedOut = async (payload?: KickBroadcastPayload | null) => {
     if (kickRedirecting) return;
@@ -13510,6 +13547,88 @@ export function RoomPageLiveKit({
       scheduleRebuildTiles();
     }
   };
+
+  useEffect(() => {
+    if (cameraPolicyTimerRef.current !== null) {
+      window.clearTimeout(cameraPolicyTimerRef.current);
+      cameraPolicyTimerRef.current = null;
+    }
+
+    if (
+      !connected ||
+      !roomPolicies.cameraRequired ||
+      isHost ||
+      isSelfModerator ||
+      camOn ||
+      kickRedirecting
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const schedule = (callback: () => void, delayMs: number) => {
+      cameraPolicyTimerRef.current = window.setTimeout(() => {
+        cameraPolicyTimerRef.current = null;
+        if (!cancelled) callback();
+      }, delayMs);
+    };
+
+    const disconnectForCameraPolicy = () => {
+      void (async () => {
+        kickedBySignalRef.current = true;
+        setKickRedirecting(true);
+        await disconnectRoom({
+          skipNavigate: true,
+          preserveKickNotice: true,
+        });
+        setSystemNotice({
+          open: true,
+          kind: "kick",
+          title: "Camera required",
+          body: "The host enabled cameras-only mode, so you were disconnected from the room.",
+        });
+      })();
+    };
+
+    const showReminder = (reminder: 1 | 2, onExpired: () => void) => {
+      showSystemNotice({
+        kind: "info",
+        title: "Please turn on your camera",
+        body:
+          reminder === 1
+            ? "This room requires cameras. This is reminder 1 of 2; turn yours on to stay in the room."
+            : "Your camera is still off. This is the final reminder; you will be disconnected if it remains off.",
+        actionLabel: "Turn camera on",
+        action: () => {
+          void toggleCam(true);
+        },
+      });
+      schedule(onExpired, 20_000);
+    };
+
+    schedule(
+      () =>
+        showReminder(1, () =>
+          showReminder(2, disconnectForCameraPolicy),
+        ),
+      15_000,
+    );
+
+    return () => {
+      cancelled = true;
+      if (cameraPolicyTimerRef.current !== null) {
+        window.clearTimeout(cameraPolicyTimerRef.current);
+        cameraPolicyTimerRef.current = null;
+      }
+    };
+  }, [
+    camOn,
+    connected,
+    isHost,
+    isSelfModerator,
+    kickRedirecting,
+    roomPolicies.cameraRequired,
+  ]);
 
   voiceUiCommandHandlerRef.current = async (command: VoiceUiCommand) => {
     const room = roomRef.current || roomState;
@@ -17368,6 +17487,7 @@ export function RoomPageLiveKit({
           activeOperationalHostProfile || session?.host_profile || null
         }
         externalMode="general"
+        generalChatDisabled={roomPolicies.publicChatDisabled}
         renderDocument={pipChatDocument}
         renderWindow={pipChatWindow}
       />
@@ -18053,6 +18173,7 @@ export function RoomPageLiveKit({
             externalMode={chatViewMode}
             externalDirectPeerUserId={selectedHostChatPeerId}
             onDirectPeerIdsChange={setHostChatPeerIds}
+            generalChatDisabled={roomPolicies.publicChatDisabled}
           />
         </div>
       )}
@@ -19850,6 +19971,21 @@ export function RoomPageLiveKit({
           open={settingsOpen}
           theme={theme}
           hideBackgroundFx={shouldDisableBackgroundFx}
+          showHostRoomPolicies={isHost}
+          cameraRequired={roomPolicies.cameraRequired}
+          publicChatDisabled={roomPolicies.publicChatDisabled}
+          onChangeCameraRequired={(value) => {
+            void updateRoomPolicies({
+              ...roomPolicies,
+              cameraRequired: value,
+            });
+          }}
+          onChangePublicChatDisabled={(value) => {
+            void updateRoomPolicies({
+              ...roomPolicies,
+              publicChatDisabled: value,
+            });
+          }}
           mode={videoFxMode}
           blurStrength={blurStrength}
           onBlurStrengthChange={setBlurStrength}
@@ -20063,6 +20199,22 @@ export function RoomPageLiveKit({
               </div>
 
               <div className="mt-5 flex items-center justify-end gap-2">
+                {systemNotice.actionLabel && systemNotice.action ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const action = systemNotice.action;
+                      closeSystemNotice();
+                      action?.();
+                    }}
+                    className={`px-4 h-10 rounded-xl font-semibold transition ${isLight
+                      ? "bg-[#E4E4E4] hover:bg-[#D8D8D8] text-black/80"
+                      : "bg-[#2A2A2A] hover:bg-[#343434] text-white/85"
+                      }`}
+                  >
+                    {systemNotice.actionLabel}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => {

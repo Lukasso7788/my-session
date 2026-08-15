@@ -1099,6 +1099,11 @@ export function RoomSettingsModalLiveKit({
     onChangeShowMobileLayoutSwitcher,
     voiceUiHotkey = "Alt+V",
     onChangeVoiceUiHotkey,
+    showHostRoomPolicies = false,
+    cameraRequired = false,
+    publicChatDisabled = false,
+    onChangeCameraRequired,
+    onChangePublicChatDisabled,
 
     devices,
     selectedAudioInputId,
@@ -1173,6 +1178,11 @@ export function RoomSettingsModalLiveKit({
     onChangeShowMobileLayoutSwitcher?: (v: boolean) => void;
     voiceUiHotkey?: string;
     onChangeVoiceUiHotkey?: (value: string) => void;
+    showHostRoomPolicies?: boolean;
+    cameraRequired?: boolean;
+    publicChatDisabled?: boolean;
+    onChangeCameraRequired?: (value: boolean) => void;
+    onChangePublicChatDisabled?: (value: boolean) => void;
 
 
     devices: {
@@ -1395,6 +1405,28 @@ export function RoomSettingsModalLiveKit({
                 </div>
 
                 <div className="ms-room-settings-scrollbar custom-scrollbar px-5 sm:px-6 py-4 sm:py-5 flex-1 overflow-y-auto overscroll-contain">
+
+                    {showHostRoomPolicies ? (
+                        <div className={`mb-5 rounded-2xl p-4 ${sectionCls}`}>
+                            <div className="text-[13px] font-semibold mb-4">Host room policies</div>
+                            <div className="flex flex-col gap-4">
+                                <ToggleRow
+                                    label="Cameras required"
+                                    description="Participants get two reminders and are disconnected if their camera stays off. Hosts and moderators are exempt."
+                                    checked={cameraRequired}
+                                    onChange={(value) => onChangeCameraRequired?.(value)}
+                                    isLight={isLight}
+                                />
+                                <ToggleRow
+                                    label="Disable public chat"
+                                    description="Hide the general composer while keeping private participant-to-host messages available."
+                                    checked={publicChatDisabled}
+                                    onChange={(value) => onChangePublicChatDisabled?.(value)}
+                                    isLight={isLight}
+                                />
+                            </div>
+                        </div>
+                    ) : null}
 
                     <div className={`mb-5 rounded-2xl p-4 ${sectionCls}`}>
                         <div className="flex items-start justify-between gap-3 mb-4">

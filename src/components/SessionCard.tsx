@@ -19,6 +19,7 @@ import {
 import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "./PaywallModal";
 import type { SessionStage } from "../SessionConfig";
+import { readRoomPolicies, withRoomPolicies } from "../lib/roomPolicies";
 
 function getSupabase(): SupabaseClient | null {
     // SessionCard must use the same client and auth storage key as the rest of
@@ -2705,6 +2706,9 @@ function EditSessionStudioModal(props: {
         const v = session?.max_participants;
         return v == null ? "" : String(v);
     });
+    const initialRoomPolicies = readRoomPolicies(session?.schedule);
+    const [editCameraRequired, setEditCameraRequired] = useState(initialRoomPolicies.cameraRequired);
+    const [editPublicChatDisabled, setEditPublicChatDisabled] = useState(initialRoomPolicies.publicChatDisabled);
 
     const [studioBlocks, setStudioBlocks] = useState<StudioBlock[]>([]);
     const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
@@ -2785,6 +2789,9 @@ function EditSessionStudioModal(props: {
         setEditMaxParticipants(
             session?.max_participants == null ? "" : String(session?.max_participants)
         );
+        const nextPolicies = readRoomPolicies(session?.schedule);
+        setEditCameraRequired(nextPolicies.cameraRequired);
+        setEditPublicChatDisabled(nextPolicies.publicChatDisabled);
         setStudioBlocks(normalizeStudioBlocksFromSession({
             ...session,
             session_stages: resolvedStages.length ? resolvedStages : session?.session_stages,
@@ -2800,7 +2807,7 @@ function EditSessionStudioModal(props: {
         setIsTransferringHostId(null);
         setTransferError(null);
         setTransferNotice(null);
-    }, [isOpen, session?.id, session?.description, session?.title, session?.start_time, session?.max_participants]);
+    }, [isOpen, session?.id, session?.description, session?.title, session?.start_time, session?.max_participants, session?.schedule]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -3179,6 +3186,31 @@ function EditSessionStudioModal(props: {
                             />
                             <span className="font-inter text-[12px] text-gray-600">people</span>
                         </div>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <button
+                            type="button"
+                            onClick={() => setEditCameraRequired((value) => !value)}
+                            className={`rounded-[16px] px-4 py-3 text-left transition ${editCameraRequired ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EAEAEA]"}`}
+                            aria-pressed={editCameraRequired}
+                        >
+                            <div className="text-[13px] font-semibold">Cameras required</div>
+                            <div className={`mt-1 text-[11px] leading-4 ${editCameraRequired ? "text-white/70" : "text-[#667085]"}`}>
+                                Warn twice, then disconnect participants whose camera stays off.
+                            </div>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setEditPublicChatDisabled((value) => !value)}
+                            className={`rounded-[16px] px-4 py-3 text-left transition ${editPublicChatDisabled ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EAEAEA]"}`}
+                            aria-pressed={editPublicChatDisabled}
+                        >
+                            <div className="text-[13px] font-semibold">Disable public chat</div>
+                            <div className={`mt-1 text-[11px] leading-4 ${editPublicChatDisabled ? "text-white/70" : "text-[#667085]"}`}>
+                                Keep only private participant-to-host messages available.
+                            </div>
+                        </button>
                     </div>
 
                     <div className="mt-4 border border-[#DBD8D8] rounded-[18px] bg-[#FAFAFA] p-3 sm:p-4">
@@ -3772,7 +3804,10 @@ function EditSessionStudioModal(props: {
                                     isInfinite,
                                     session?.start_time || session?.created_at || new Date().toISOString()
                                 );
-                                updates.schedule = nextSchedule;
+                                updates.schedule = withRoomPolicies(nextSchedule, {
+                                    cameraRequired: editCameraRequired,
+                                    publicChatDisabled: editPublicChatDisabled,
+                                });
                                 updates.duration_minutes = studioTotal || null;
 
                                 await onSave(updates);

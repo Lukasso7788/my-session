@@ -49,6 +49,7 @@ import { assignServerForSession } from "../lib/livekitPlacement";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { resolveStageVisual } from "./SessionStageBar";
+import { withRoomPolicies } from "../lib/roomPolicies";
 
 interface CreateSessionModalProps {
   isOpen: boolean;
@@ -1331,6 +1332,8 @@ export function CreateSessionModal({
   const [selectedPresetKey, setSelectedPresetKey] = useState<PresetKey | null>(null);
   const [presetCycles, setPresetCycles] = useState<number>(3);
   const [accessMode, setAccessMode] = useState<AccessMode>("public");
+  const [cameraRequired, setCameraRequired] = useState(false);
+  const [publicChatDisabled, setPublicChatDisabled] = useState(false);
 
   // ---------- Scheduling in advance ----------
   const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("single");
@@ -1423,6 +1426,8 @@ export function CreateSessionModal({
     setSelectedPresetKey(null);
     setPresetCycles(3);
     setAccessMode("public");
+    setCameraRequired(false);
+    setPublicChatDisabled(false);
 
     setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
     setCustomSlugInput("");
@@ -2642,11 +2647,15 @@ export function CreateSessionModal({
           )
           : ((template as any)?.total_duration ?? 60);
 
-      const schedulePayload = studioEnabled
+      const baseSchedulePayload = studioEnabled
         ? exportStudioToSchedule(studioBlocks)
         : generatedPresetBlocks.length
           ? exportStudioToSchedule(generatedPresetBlocks)
           : (template as any)?.blocks || (template as any)?.schedule || [];
+      const schedulePayload = withRoomPolicies(baseSchedulePayload, {
+        cameraRequired,
+        publicChatDisabled,
+      });
 
       const formatLabel = studioEnabled
         ? template?.name
@@ -3948,6 +3957,32 @@ export function CreateSessionModal({
                           : "Visible on the sessions page and joinable through its link."}
                       </p>
                     </div>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => setCameraRequired((value) => !value)}
+                      className={`rounded-[14px] px-4 py-3 text-left transition ${cameraRequired ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EBEBEB]"}`}
+                      aria-pressed={cameraRequired}
+                    >
+                      <div className="font-inter text-[13px] font-semibold">Cameras required</div>
+                      <div className={`mt-1 font-inter text-[11px] leading-4 ${cameraRequired ? "text-white/70" : "text-[#667085]"}`}>
+                        Participants get two reminders, then are disconnected if their camera stays off.
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setPublicChatDisabled((value) => !value)}
+                      className={`rounded-[14px] px-4 py-3 text-left transition ${publicChatDisabled ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EBEBEB]"}`}
+                      aria-pressed={publicChatDisabled}
+                    >
+                      <div className="font-inter text-[13px] font-semibold">Disable public chat</div>
+                      <div className={`mt-1 font-inter text-[11px] leading-4 ${publicChatDisabled ? "text-white/70" : "text-[#667085]"}`}>
+                        Participants can only use private messages with the host.
+                      </div>
+                    </button>
                   </div>
                 </section>
 

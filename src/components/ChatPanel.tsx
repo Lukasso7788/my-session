@@ -1155,6 +1155,7 @@ export function ChatPanel({
     externalMode = "general",
     externalDirectPeerUserId = null,
     onDirectPeerIdsChange,
+    generalChatDisabled = false,
     renderDocument,
     renderWindow,
 }: {
@@ -1170,6 +1171,7 @@ export function ChatPanel({
     externalMode?: "general" | "host";
     externalDirectPeerUserId?: string | null;
     onDirectPeerIdsChange?: (peerIds: string[]) => void;
+    generalChatDisabled?: boolean;
     renderDocument?: Document | null;
     renderWindow?: Window | null;
 }) {
@@ -1450,6 +1452,7 @@ export function ChatPanel({
     const canUseDirect =
         !!hostUserId && (!!isHost || (!!userId && userId !== hostUserId));
     const activeMode: ChatMode = externalMode === "host" ? "direct" : "general";
+    const generalChatLocked = activeMode === "general" && generalChatDisabled;
 
     const activeDirectPeerId = useMemo(() => {
         if (!hostUserId || !userId) return null;
@@ -2756,6 +2759,7 @@ export function ChatPanel({
     }, [chatDocument, chatWindow, composerEmojiOpen]);
 
     const send = async () => {
+        if (generalChatLocked) return;
         const raw = text.trim();
         if (!raw || !userId || !sessionId) return;
 
@@ -3489,6 +3493,11 @@ export function ChatPanel({
             )}
 
             <div className={"p-4 border-t " + headerBorder}>
+                {generalChatLocked && (
+                    <div className={"mb-3 rounded-xl px-3 py-2 text-[12px] leading-5 " + (isLight ? "bg-[#F0F0F0] text-black/60" : "bg-white/[0.06] text-white/60")}>
+                        Public chat is disabled by the host. Use DMs to message the host privately.
+                    </div>
+                )}
                 {replyTo && (
                     <div
                         className={
@@ -3570,7 +3579,9 @@ export function ChatPanel({
                         value={text}
                         onChange={(e) => setText(e.target.value)}
                         placeholder={
-                            activeMode === "general"
+                            generalChatLocked
+                                ? "Public chat is disabled for this session"
+                                : activeMode === "general"
                                 ? "Write a message…"
                                 : isHost
                                     ? activeDirectPeerId
@@ -3588,7 +3599,7 @@ export function ChatPanel({
                         onFocus={() => {
                             if (isAtBottom()) onBecameVisible?.();
                         }}
-                        disabled={activeMode === "direct" && isHost && !activeDirectPeerId}
+                        disabled={generalChatLocked || (activeMode === "direct" && isHost && !activeDirectPeerId)}
                     />
 
                     <div className="relative" ref={composerEmojiWrapRef}>
@@ -3599,6 +3610,7 @@ export function ChatPanel({
                             className={composerEmojiBtnCls}
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => setComposerEmojiOpen((v) => !v)}
+                            disabled={generalChatLocked}
                         >
                             <Smile size={18} />
                         </button>
@@ -3609,6 +3621,7 @@ export function ChatPanel({
                         className={
                             "w-11 h-11 rounded-xl flex items-center justify-center transition border " +
                             (text.trim() &&
+                                !generalChatLocked &&
                                 !(activeMode === "direct" && isHost && !activeDirectPeerId)
                                 ? sendBtnActive + " border-[#81DB86]/50"
                                 : sendBtnDisabled + " border-transparent cursor-not-allowed")
@@ -3616,6 +3629,7 @@ export function ChatPanel({
                         type="button"
                         disabled={
                             !text.trim() ||
+                            generalChatLocked ||
                             (activeMode === "direct" && isHost && !activeDirectPeerId)
                         }
                         title="Send"
