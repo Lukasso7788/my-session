@@ -4890,14 +4890,16 @@ export default function SessionCard({
                                         </span>
                                     )}
                                 </div>
-                                <div className="mt-1 w-full text-center text-[10px] leading-none text-[#777777]">
-                                    {isSessionFull ? "No slots available" : hasLiveNow ? "slots occupied" : "all slots available"}
-                                </div>
-                                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[#E7E7E7]">
-                                    <div
-                                        className={`h-full rounded-full transition-[width,background-color] duration-300 ease-out ${isSessionFull ? "bg-[#2F2F2F]" : "bg-[#65D46C]"}`}
-                                        style={{ width: `${occupancyPercent}%` }}
-                                    />
+                                <div className="mt-1 inline-flex flex-col items-stretch">
+                                    <div className="text-center text-[10px] leading-none text-[#777777]">
+                                        {isSessionFull ? "No slots available" : hasLiveNow ? "slots occupied" : "all slots available"}
+                                    </div>
+                                    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[#E7E7E7]">
+                                        <div
+                                            className={`h-full rounded-full transition-[width,background-color] duration-300 ease-out ${isSessionFull ? "bg-[#2F2F2F]" : "bg-[#65D46C]"}`}
+                                            style={{ width: `${occupancyPercent}%` }}
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </button>
