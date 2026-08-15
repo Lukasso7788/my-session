@@ -4878,7 +4878,7 @@ export default function SessionCard({
                             <div className="w-px h-10 bg-[#D9D9D9]" />
                             <div className="w-fit min-w-[74px] text-center">
                                 <div className="relative flex min-h-[22px] items-baseline justify-center">
-                                    <div className="text-[25px] font-bold leading-none text-brandBlack">
+                                    <div className="text-[29px] font-bold leading-[0.92] text-brandBlack">
                                         {liveNowCount}
                                         <span className="ml-1 text-[13px] font-medium text-[#8A8A8A]">
                                             / {displayedMaxParticipants}
@@ -4890,7 +4890,7 @@ export default function SessionCard({
                                         </span>
                                     )}
                                 </div>
-                                <div className="mt-1 inline-flex flex-col items-stretch">
+                                <div className="inline-flex flex-col items-stretch">
                                     <div className="text-center text-[10px] leading-none text-[#777777]">
                                         {isSessionFull ? "No slots available" : hasLiveNow ? "slots occupied" : "all slots available"}
                                     </div>
