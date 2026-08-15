@@ -87,6 +87,23 @@ type TaskAiSuggestion = {
   focusMinutes: number;
 };
 
+type TaskAiSuggestionPreview = {
+  taskId: string;
+  taskText: string;
+  suggestion: TaskAiSuggestion;
+  left: number;
+  top: number;
+  width: number;
+  portalDocument: Document;
+};
+
+const getPersistedTaskAiSuggestion = (task: PanelTask): TaskAiSuggestion | null => {
+  const suggestion = task.ai_suggestion;
+  if (!suggestion || typeof suggestion !== "object") return null;
+  if (String(task.ai_suggestion_for_text || "") !== String(task.text || "")) return null;
+  return suggestion;
+};
+
 type TasksPanelProps = {
   sessionId?: string; // uuid or slug
   oneOnOneMode?: boolean;
@@ -716,6 +733,8 @@ export function TasksPanel({
   const [aiPaidAccess, setAiPaidAccess] = useState<boolean | null>(null);
   const [aiPaywallOpen, setAiPaywallOpen] = useState(false);
   const aiSuggestionRequestRef = useRef<{ id: number; controller: AbortController } | null>(null);
+  const [aiSuggestionPreview, setAiSuggestionPreview] = useState<TaskAiSuggestionPreview | null>(null);
+  const aiSuggestionPreviewCloseTimerRef = useRef<number | null>(null);
 
   const [newTask, setNewTask] = useState("");
   const [newTaskVisibility, setNewTaskVisibility] = useState<"public" | "private">("public");
@@ -2521,11 +2540,8 @@ export function TasksPanel({
         setAiPaywallOpen(true);
         return;
       }
-      const savedSuggestion = task.ai_suggestion;
-      if (
-        savedSuggestion &&
-        String(task.ai_suggestion_for_text || "") === String(task.text || "")
-      ) {
+      const savedSuggestion = getPersistedTaskAiSuggestion(task);
+      if (savedSuggestion) {
         setAiSuggestionTask(task);
         setAiSuggestion(savedSuggestion);
         setAiSuggestionError("");
@@ -2848,6 +2864,63 @@ export function TasksPanel({
     const doc = o?.win?.document;
     return doc || document;
   }, []);
+
+  const clearAiSuggestionPreviewCloseTimer = useCallback(() => {
+    if (aiSuggestionPreviewCloseTimerRef.current !== null) {
+      window.clearTimeout(aiSuggestionPreviewCloseTimerRef.current);
+      aiSuggestionPreviewCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const closeAiSuggestionPreview = useCallback((delay = 0) => {
+    clearAiSuggestionPreviewCloseTimer();
+    if (delay <= 0) {
+      setAiSuggestionPreview(null);
+      return;
+    }
+    aiSuggestionPreviewCloseTimerRef.current = window.setTimeout(() => {
+      setAiSuggestionPreview(null);
+      aiSuggestionPreviewCloseTimerRef.current = null;
+    }, delay);
+  }, [clearAiSuggestionPreviewCloseTimer]);
+
+  const showAiSuggestionPreview = useCallback((event: MouseEvent<HTMLElement>, task: PanelTask) => {
+    clearAiSuggestionPreviewCloseTimer();
+    const suggestion = aiPaidAccess === true ? getPersistedTaskAiSuggestion(task) : null;
+    if (!suggestion) {
+      setAiSuggestionPreview(null);
+      return;
+    }
+
+    const anchor = event.currentTarget;
+    const portalDocument = anchor.ownerDocument || getPortalDocument();
+    const portalWindow = portalDocument.defaultView || window;
+    const rect = anchor.getBoundingClientRect();
+    const viewportWidth = portalWindow.innerWidth;
+    const viewportHeight = portalWindow.innerHeight;
+    const width = Math.max(180, Math.min(320, viewportWidth - 24));
+    const preferredLeft = rect.left - width - 12;
+    const left = preferredLeft >= 12
+      ? preferredLeft
+      : Math.min(viewportWidth - width - 12, rect.right + 12);
+    const estimatedHeight = 286;
+    const top = Math.min(
+      Math.max(12, rect.top - 18),
+      Math.max(12, viewportHeight - estimatedHeight - 12),
+    );
+
+    setAiSuggestionPreview({
+      taskId: task.id,
+      taskText: task.text,
+      suggestion,
+      left,
+      top,
+      width,
+      portalDocument,
+    });
+  }, [aiPaidAccess, clearAiSuggestionPreviewCloseTimer, getPortalDocument]);
+
+  useEffect(() => () => clearAiSuggestionPreviewCloseTimer(), [clearAiSuggestionPreviewCloseTimer]);
 
   const openImportModal = useCallback(() => {
     setSavePanelTasksFeedback("");
@@ -3829,6 +3902,84 @@ export function TasksPanel({
     )
     : null;
 
+  const AiSuggestionHoverPreview = aiSuggestionPreview
+    ? createPortal(
+      <div
+        role="dialog"
+        aria-label="Saved AI suggestion preview"
+        className="fixed z-[10020] overflow-hidden rounded-[20px] bg-white text-[#2F2F2F] shadow-[0_18px_55px_rgba(0,0,0,0.18)] ring-1 ring-black/[0.06] animate-[fadeIn_140ms_ease-out]"
+        style={{
+          left: aiSuggestionPreview.left,
+          top: aiSuggestionPreview.top,
+          width: aiSuggestionPreview.width,
+        }}
+        onMouseEnter={clearAiSuggestionPreviewCloseTimer}
+        onMouseLeave={() => closeAiSuggestionPreview(140)}
+        onMouseDown={stopRoomBubbling}
+        onPointerDown={stopRoomBubbling}
+        onClick={stopRoomBubbling}
+      >
+        <div className="border-b border-black/[0.07] px-4 pb-3 pt-3.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="inline-flex min-w-0 items-center gap-2 text-[12px] font-bold">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-black/[0.055]">
+                <Sparkles size={14} aria-hidden="true" />
+              </span>
+              <span>AI suggestion</span>
+            </div>
+            <span className="shrink-0 rounded-full bg-black/[0.05] px-2.5 py-1 text-[9px] font-semibold text-black/50">
+              {aiSuggestionPreview.suggestion.focusMinutes} min
+            </span>
+          </div>
+          <div className="mt-2 line-clamp-2 text-[11px] leading-4 text-black/50">
+            {aiSuggestionPreview.taskText}
+          </div>
+        </div>
+
+        <div className="space-y-3 px-4 py-3.5">
+          <p className="line-clamp-2 text-[11px] leading-[17px] text-black/60">
+            {aiSuggestionPreview.suggestion.summary}
+          </p>
+
+          <div className="rounded-[14px] bg-[#F3F3F3] px-3 py-2.5">
+            <div className="text-[8px] font-bold uppercase tracking-[0.15em] text-black/40">Start here</div>
+            <div className="mt-1 line-clamp-2 text-[12px] font-semibold leading-[17px] text-[#2F2F2F]">
+              {aiSuggestionPreview.suggestion.firstAction}
+            </div>
+          </div>
+
+          {aiSuggestionPreview.suggestion.nextSteps.length ? (
+            <ol className="space-y-1.5">
+              {aiSuggestionPreview.suggestion.nextSteps.slice(0, 2).map((step, index) => (
+                <li key={`${index}-${step}`} className="flex items-start gap-2 text-[10px] leading-[15px] text-black/55">
+                  <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#2F2F2F] text-[8px] font-bold text-white">
+                    {index + 1}
+                  </span>
+                  <span className="line-clamp-2">{step}</span>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+
+          <button
+            type="button"
+            className="flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-[#2F2F2F] px-3 text-[11px] font-semibold text-white transition hover:bg-black"
+            onClick={(event) => {
+              event.stopPropagation();
+              const task = panelTasks.find((item) => item.id === aiSuggestionPreview.taskId);
+              closeAiSuggestionPreview();
+              if (task) openAiTaskSuggestions(task);
+            }}
+          >
+            Open full suggestion
+            <ExternalLink size={12} aria-hidden="true" />
+          </button>
+        </div>
+      </div>,
+      aiSuggestionPreview.portalDocument.body,
+    )
+    : null;
+
   const PanelUI = (
     <div
       className={"h-full flex flex-col min-h-0 font-inter " + panelBg}
@@ -4220,13 +4371,16 @@ export function TasksPanel({
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation();
+                              closeAiSuggestionPreview();
                               openAiTaskSuggestions(i);
                             }}
+                            onMouseEnter={(event) => showAiSuggestionPreview(event, i)}
+                            onMouseLeave={() => closeAiSuggestionPreview(140)}
                             className={
                               "block w-full max-h-[18px] overflow-hidden whitespace-normal break-words text-left text-[13px] leading-[18px] font-inter transition-[max-height,color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[max-height] group-hover:max-h-[288px] group-focus-within:max-h-[288px] hover:text-black " +
                               (i.completed ? textDoneCls : textActiveCls)
                             }
-                            title={`Get AI suggestions for: ${i.text}`}
+                            title={getPersistedTaskAiSuggestion(i) ? "Open saved AI suggestion" : `Get AI suggestions for: ${i.text}`}
                           >
                             <span className="inline-flex items-start gap-1.5">
                               {pinnedTaskIds.includes(i.id) ? (
@@ -4544,6 +4698,7 @@ export function TasksPanel({
       {EncouragementModal}
       {AiPaywallModal}
       {AiSuggestionModal}
+      {AiSuggestionHoverPreview}
     </div>
   );
 
