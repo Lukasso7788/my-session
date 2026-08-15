@@ -4382,7 +4382,7 @@ export function TasksPanel({
                         className={
                           "flex-1 min-w-0 " +
                           (!isEditing
-                            ? "transition-[padding-right] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:pr-[72px] group-focus-within:pr-[72px]"
+                            ? "transition-[padding-right] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:pr-[40px] group-focus-within:pr-[40px]"
                             : "")
                         }
                       >
@@ -4456,7 +4456,15 @@ export function TasksPanel({
                               <TaskVisibilityIcon visibility={i.visibility} size={14} />
                             </button>
 
-                            <div className="relative z-30 shrink-0">
+                            <div
+                              className={[
+                                "absolute right-[38px] top-0 z-30",
+                                "transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+                                taskMenuOpenId === i.id
+                                  ? "pointer-events-auto translate-x-0 opacity-100"
+                                  : "pointer-events-none translate-x-2 opacity-0 group-hover:pointer-events-auto group-hover:translate-x-0 group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:translate-x-0 group-focus-within:opacity-100",
+                              ].join(" ")}
+                            >
                               <button
                                 type="button"
                                 title="Task options"
@@ -4467,7 +4475,7 @@ export function TasksPanel({
                                   e.stopPropagation();
                                   setTaskMenuOpenId((current) => current === i.id ? null : i.id);
                                 }}
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-black/55 opacity-0 transition-[opacity,background-color,color] duration-200 hover:bg-black/[0.06] hover:text-black group-hover:opacity-100 focus:opacity-100"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-black/55 transition-colors duration-200 hover:bg-black/[0.06] hover:text-black"
                               >
                                 <MoreVertical size={17} />
                               </button>
