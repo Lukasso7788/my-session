@@ -4930,15 +4930,6 @@ export default function SessionCard({
 
                                     {peopleInline}
 
-                                    {cardRoomPolicies.cameraRequired ? (
-                                        <span
-                                            className="inline-flex items-center gap-1 rounded-full bg-[#2F2F2F] px-2 py-1 text-[10px] font-medium text-white"
-                                            title="Cameras are required in this session"
-                                        >
-                                            <Camera size={13} aria-hidden="true" />
-                                            Cameras on
-                                        </span>
-                                    ) : null}
 
                                     {cardRoomPolicies.publicChatDisabled ? (
                                         <span
@@ -5384,6 +5375,15 @@ export default function SessionCard({
                                 <span className="rounded-full bg-[#F3F4F6] px-3 py-1.5 font-medium text-[#111827]">
                                     {isInfinite ? "24/7 room" : `${session.duration_minutes} min`}
                                 </span>
+                                {cardRoomPolicies.cameraRequired ? (
+                                    <span
+                                        className="inline-flex items-center gap-1.5 rounded-full bg-[#F3F4F6] px-3 py-1.5 font-medium text-[#2F2F2F]"
+                                        title="Cameras are required in this session"
+                                    >
+                                        <Camera size={13} strokeWidth={1.9} aria-hidden="true" />
+                                        Cameras required
+                                    </span>
+                                ) : null}
                             </div>
 
                             <p className="mt-4 whitespace-pre-wrap text-[13px] leading-5 text-[#334155]">
