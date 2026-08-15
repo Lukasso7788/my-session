@@ -4890,7 +4890,7 @@ export default function SessionCard({
                                         </span>
                                     )}
                                 </div>
-                                <div className="-mt-1.5 inline-flex flex-col items-stretch">
+                                <div className="-mt-3 inline-flex flex-col items-stretch">
                                     <div className="text-center text-[10px] leading-none text-[#777777]">
                                         {isSessionFull ? "No slots available" : hasLiveNow ? "slots occupied" : "all slots available"}
                                     </div>
