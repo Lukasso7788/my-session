@@ -20,6 +20,9 @@ import {
   EyeOff,
   Sparkles,
   Loader2,
+  MoreVertical,
+  Pin,
+  PinOff,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useNavigate, useParams } from "react-router-dom";
@@ -450,6 +453,7 @@ type TaskTimerMap = Record<string, TaskTimerState>;
 const TASK_TIMER_EVENT = "mysession:task-timers-updated";
 const TASK_TIMER_VISIBILITY_EVENT = "mysession:task-timer-visibility-changed";
 const TASK_ORDER_STORAGE_PREFIX = "mysession_task_order_v1";
+const TASK_PINNED_STORAGE_PREFIX = "mysession_task_pinned_v1";
 const TASK_ORDER_SYNC_EVENT = "mysession:task-order-synced";
 const TASK_REORDER_LOG_PREFIX = "[TasksPanel/reorder]";
 
@@ -767,6 +771,11 @@ export function TasksPanel({
     () => `${TASK_ORDER_STORAGE_PREFIX}:${String(user?.id || "anonymous")}`,
     [user?.id],
   );
+  const taskPinnedStorageKey = useMemo(
+    () => `${TASK_PINNED_STORAGE_PREFIX}:${String(user?.id || "anonymous")}`,
+    [user?.id],
+  );
+
   const taskTimerEnabledStorageKey = useMemo(
     () => `${TASK_TIMER_ENABLED_STORAGE_PREFIX}:${String(user?.id || "anonymous")}`,
     [user?.id],
@@ -790,11 +799,29 @@ export function TasksPanel({
   const pendingPanelReloadRef = useRef(false);
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverTaskId, setDragOverTaskId] = useState<string | null>(null);
+  const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>([]);
+  const [taskMenuOpenId, setTaskMenuOpenId] = useState<string | null>(null);
   const [taskTimersEnabled, setTaskTimersEnabled] = useState<boolean>(false);
 
   useEffect(() => {
     setTaskTimers(readTaskTimers(taskTimerStorageKey));
   }, [taskTimerStorageKey]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(taskPinnedStorageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      setPinnedTaskIds(Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : []);
+    } catch {
+      setPinnedTaskIds([]);
+    }
+  }, [taskPinnedStorageKey]);
+
+  useEffect(() => {
+    const closeTaskMenu = () => setTaskMenuOpenId(null);
+    window.addEventListener("pointerdown", closeTaskMenu);
+    return () => window.removeEventListener("pointerdown", closeTaskMenu);
+  }, []);
 
   useEffect(() => {
     try {
@@ -2517,6 +2544,14 @@ export function TasksPanel({
     const target = panelTasks.find((x) => x.id === id) || null;
 
     setPanelTasks((p) => p.filter((x) => x.id !== id));
+    setTaskMenuOpenId(null);
+    setPinnedTaskIds((current) => {
+      const next = current.filter((taskId) => taskId !== id);
+      try {
+        localStorage.setItem(taskPinnedStorageKey, JSON.stringify(next));
+      } catch { }
+      return next;
+    });
 
     try {
       const { error } = await supabase
@@ -2996,9 +3031,65 @@ export function TasksPanel({
     [loadPanelTasks, panelTasks, persistPanelTaskOrder, syncFirstPublicTaskForTile],
   );
 
+  const togglePanelTaskPinned = useCallback(
+    (taskId: string) => {
+      if (!taskId || !user?.id) return;
+
+      const isPinned = pinnedTaskIds.includes(taskId);
+      const nextPinnedIds = isPinned
+        ? pinnedTaskIds.filter((id) => id !== taskId)
+        : [...pinnedTaskIds, taskId];
+      setPinnedTaskIds(nextPinnedIds);
+      setTaskMenuOpenId(null);
+      try {
+        localStorage.setItem(taskPinnedStorageKey, JSON.stringify(nextPinnedIds));
+      } catch { }
+
+      const base = orderPanelTasks(panelTasks, panelTaskOrder).map((task) => task.id);
+      const pinnedSet = new Set(nextPinnedIds);
+      const nextOrder = [
+        ...nextPinnedIds.filter((id) => base.includes(id)),
+        ...base.filter((id) => !pinnedSet.has(id)),
+      ];
+      persistPanelTaskOrder(nextOrder, isPinned ? "unpin" : "pin");
+      void syncFirstPublicTaskForTile(panelTasks, nextOrder);
+
+      reorderInFlightRef.current += 1;
+      const mutation = reorderQueueRef.current
+        .catch(() => undefined)
+        .then(async () => {
+          const { error } = await supabase.rpc("reorder_panel_intentions", {
+            p_task_ids: nextOrder,
+          });
+          if (error) throw error;
+        })
+        .catch((error: any) => {
+          logTaskReorder("pin_order_persist_failed", {
+            taskId,
+            pinned: !isPinned,
+            error: String(error?.message || error || "unknown_error"),
+          });
+        })
+        .finally(() => {
+          reorderInFlightRef.current = Math.max(0, reorderInFlightRef.current - 1);
+          if (reorderInFlightRef.current === 0 && pendingPanelReloadRef.current) {
+            pendingPanelReloadRef.current = false;
+            void loadPanelTasks();
+          }
+        });
+      reorderQueueRef.current = mutation;
+    },
+    [loadPanelTasks, panelTaskOrder, panelTasks, persistPanelTaskOrder, pinnedTaskIds, syncFirstPublicTaskForTile, taskPinnedStorageKey, user?.id],
+  );
+
   const orderedPanelTasks = useMemo(() => {
-    return orderPanelTasks(panelTasks, panelTaskOrder);
-  }, [panelTaskOrder, panelTasks]);
+    const ordered = orderPanelTasks(panelTasks, panelTaskOrder);
+    const pinnedSet = new Set(pinnedTaskIds);
+    return [
+      ...ordered.filter((task) => pinnedSet.has(task.id)),
+      ...ordered.filter((task) => !pinnedSet.has(task.id)),
+    ];
+  }, [panelTaskOrder, panelTasks, pinnedTaskIds]);
 
   const renderTaskTimerControls = useCallback(
     ({
@@ -4137,7 +4228,12 @@ export function TasksPanel({
                             }
                             title={`Get AI suggestions for: ${i.text}`}
                           >
-                            <span>{i.text}</span>
+                            <span className="inline-flex items-start gap-1.5">
+                              {pinnedTaskIds.includes(i.id) ? (
+                                <Pin size={12} className="mt-[2px] shrink-0 text-[#2F2F2F]" aria-hidden="true" />
+                              ) : null}
+                              <span>{i.text}</span>
+                            </span>
                           </button>
                         ) : (
                           <input
@@ -4176,32 +4272,40 @@ export function TasksPanel({
                               <TaskVisibilityIcon visibility={i.visibility} size={14} />
                             </button>
 
-                            <div className="absolute right-9 z-10 w-8 translate-x-9 opacity-0 pointer-events-none transition-[opacity,transform] duration-[360ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0 group-hover:opacity-100 group-hover:pointer-events-auto focus-within:translate-x-0 focus-within:opacity-100 focus-within:pointer-events-auto">
-                              <IconButton
-                                theme={panelTheme}
-                                className="!h-8 !w-8 !rounded-lg"
-                                title="Edit"
+                            <div className="relative z-30 shrink-0">
+                              <button
+                                type="button"
+                                title="Task options"
+                                aria-label="Task options"
+                                aria-expanded={taskMenuOpenId === i.id}
+                                onPointerDown={(e) => e.stopPropagation()}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  startEdit(i.id, i.text);
+                                  setTaskMenuOpenId((current) => current === i.id ? null : i.id);
                                 }}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-black/55 opacity-0 transition-[opacity,background-color,color] duration-200 hover:bg-black/[0.06] hover:text-black group-hover:opacity-100 focus:opacity-100"
                               >
-                                <Pencil size={16} />
-                              </IconButton>
-                            </div>
+                                <MoreVertical size={17} />
+                              </button>
 
-                            <div className="absolute right-[70px] z-10 w-8 translate-x-[70px] opacity-0 pointer-events-none transition-[opacity,transform] duration-[440ms] ease-[cubic-bezier(0.22,1,0.36,1)] group-hover:translate-x-0 group-hover:opacity-100 group-hover:pointer-events-auto focus-within:translate-x-0 focus-within:opacity-100 focus-within:pointer-events-auto">
-                              <IconButton
-                                theme={panelTheme}
-                                title="Delete"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void deletePanelTask(i.id);
-                                }}
-                                className="!h-8 !w-8 !rounded-lg hover:text-[#F65252]"
-                              >
-                                <Trash2 size={16} />
-                              </IconButton>
+                              {taskMenuOpenId === i.id ? (
+                                <div
+                                  className="absolute right-0 top-9 z-[80] w-36 overflow-hidden rounded-xl border border-[#D8D0D0] bg-white p-1 shadow-lg"
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <button type="button" className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] text-black/75 hover:bg-black/[0.05]" onClick={() => { setTaskMenuOpenId(null); startEdit(i.id, i.text); }}>
+                                    <Pencil size={14} /> Edit
+                                  </button>
+                                  <button type="button" className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] text-black/75 hover:bg-black/[0.05]" onClick={() => togglePanelTaskPinned(i.id)}>
+                                    {pinnedTaskIds.includes(i.id) ? <PinOff size={14} /> : <Pin size={14} />}
+                                    {pinnedTaskIds.includes(i.id) ? "Unpin task" : "Pin task"}
+                                  </button>
+                                  <button type="button" className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] text-[#D94141] hover:bg-[#F65252]/[0.08]" onClick={() => { setTaskMenuOpenId(null); void deletePanelTask(i.id); }}>
+                                    <Trash2 size={14} /> Delete
+                                  </button>
+                                </div>
+                              ) : null}
                             </div>
                           </>
                         ) : (

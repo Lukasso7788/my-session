@@ -106,7 +106,7 @@ export function LiveKitBottomBar(props: {
     micOn: boolean;
     camOn: boolean;
     screenShareOn: boolean;
-    voiceUiEnabled?: boolean;
+    voiceUiMode?: "off" | "always" | "hotkey";
     unreadChat?: number;
 
     showPiP?: boolean;
@@ -147,7 +147,7 @@ export function LiveKitBottomBar(props: {
         micOn,
         camOn,
         screenShareOn,
-        voiceUiEnabled = false,
+        voiceUiMode = "off",
         unreadChat = 0,
 
         showPiP = false,
@@ -697,21 +697,26 @@ export function LiveKitBottomBar(props: {
                                 disabled={!connected}
                                 className={
                                     "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " +
-                                    (voiceUiEnabled
+                                    (voiceUiMode === "always"
                                         ? "bg-[#5286F6] hover:bg-[#4678E4] text-white"
-                                        : ctlBtnBase)
+                                        : voiceUiMode === "hotkey"
+                                            ? "bg-[#6657D9] hover:bg-[#594BC7] text-white"
+                                            : ctlBtnBase)
                                 }
-                                title={voiceUiEnabled ? "Turn off voice controls" : "Turn on voice controls"}
-                                aria-pressed={voiceUiEnabled}
+                                title={voiceUiMode === "off" ? "Voice controls off — click for always listening" : voiceUiMode === "always" ? "Always listening — click for hotkey mode" : "Hotkey mode — click to turn off"}
+                                aria-pressed={voiceUiMode !== "off"}
                                 type="button"
                             >
                                 <AudioLines
                                     aria-hidden="true"
-                                    className={`h-5 w-5 ${voiceUiEnabled ? "text-white" : isLight ? "text-[#2F2F2F]" : "text-white"}`}
+                                    className={`h-5 w-5 ${voiceUiMode !== "off" ? "text-white" : isLight ? "text-[#2F2F2F]" : "text-white"}`}
                                     strokeWidth={2}
                                 />
+                                {voiceUiMode === "hotkey" ? (
+                                    <span className="absolute right-1 top-1 rounded bg-white/20 px-1 text-[7px] font-bold leading-3 text-white" aria-hidden="true">H</span>
+                                ) : null}
                                 <span className="sr-only">
-                                    {voiceUiEnabled ? "Voice controls on" : "Voice controls off"}
+                                    {voiceUiMode === "off" ? "Voice controls off" : voiceUiMode === "always" ? "Voice controls always listening" : "Voice controls hotkey mode"}
                                 </span>
                             </button>
                         ) : null}

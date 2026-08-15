@@ -667,6 +667,21 @@ function parseVoiceUiCommand(raw: string): VoiceUiCommand | null {
 // Versioned opt-in key: the previous setting defaulted to true and therefore
 // wrote "true" for users who never explicitly enabled voice control.
 const VOICE_UI_ENABLED_STORAGE_KEY = "room_voice_ui_enabled_opt_in_v2";
+const VOICE_UI_MODE_STORAGE_KEY = "room_voice_ui_mode_v1";
+const VOICE_UI_HOTKEY_STORAGE_KEY = "room_voice_ui_hotkey_v1";
+type VoiceUiMode = "off" | "always" | "hotkey";
+
+function voiceUiHotkeyFromEvent(event: KeyboardEvent): string {
+  const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
+  if (["Control", "Alt", "Shift", "Meta"].includes(key)) return "";
+  return [event.ctrlKey ? "Ctrl" : "", event.altKey ? "Alt" : "", event.shiftKey ? "Shift" : "", event.metaKey ? "Meta" : "", key === " " ? "Space" : key]
+    .filter(Boolean)
+    .join("+");
+}
+
+function matchesVoiceUiHotkey(event: KeyboardEvent, hotkey: string): boolean {
+  return voiceUiHotkeyFromEvent(event).toLowerCase() === String(hotkey || "").toLowerCase();
+}
 
 type HostProfile = {
   id: string;
@@ -8109,13 +8124,25 @@ export function RoomPageLiveKit({
   const [connected, setConnected] = useState(false);
   const [voiceUiStatus, setVoiceUiStatus] =
     useState<VoiceUiStatus>("idle");
-  const [voiceUiEnabled, setVoiceUiEnabled] = useState(() => {
+  const [voiceUiMode, setVoiceUiMode] = useState<VoiceUiMode>(() => {
     try {
-      return localStorage.getItem(VOICE_UI_ENABLED_STORAGE_KEY) === "true";
+      const stored = localStorage.getItem(VOICE_UI_MODE_STORAGE_KEY);
+      if (stored === "always" || stored === "hotkey" || stored === "off") return stored;
+      return localStorage.getItem(VOICE_UI_ENABLED_STORAGE_KEY) === "true" ? "always" : "off";
     } catch {
-      return false;
+      return "off";
     }
   });
+  const [voiceUiHotkey, setVoiceUiHotkey] = useState(() => {
+    try {
+      return localStorage.getItem(VOICE_UI_HOTKEY_STORAGE_KEY) || "Alt+V";
+    } catch {
+      return "Alt+V";
+    }
+  });
+  const [voiceUiHotkeyPressed, setVoiceUiHotkeyPressed] = useState(false);
+  const voiceUiEnabled = voiceUiMode !== "off";
+  const voiceUiActive = voiceUiMode === "always" || (voiceUiMode === "hotkey" && voiceUiHotkeyPressed);
   const [voiceUiLastCommand, setVoiceUiLastCommand] = useState("");
   const [voiceUiLastHeard, setVoiceUiLastHeard] = useState("");
   const [voiceUiHelpOpen, setVoiceUiHelpOpen] = useState(false);
@@ -8347,14 +8374,34 @@ export function RoomPageLiveKit({
 
   useEffect(() => {
     try {
-      localStorage.setItem(
-        VOICE_UI_ENABLED_STORAGE_KEY,
-        String(voiceUiEnabled),
-      );
+      localStorage.setItem(VOICE_UI_ENABLED_STORAGE_KEY, String(voiceUiEnabled));
+      localStorage.setItem(VOICE_UI_MODE_STORAGE_KEY, voiceUiMode);
+      localStorage.setItem(VOICE_UI_HOTKEY_STORAGE_KEY, voiceUiHotkey);
     } catch {
       // Local storage can be unavailable in strict privacy modes.
     }
-  }, [voiceUiEnabled]);
+  }, [voiceUiEnabled, voiceUiHotkey, voiceUiMode]);
+
+  useEffect(() => {
+    if (voiceUiMode !== "hotkey") {
+      setVoiceUiHotkeyPressed(false);
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat || !matchesVoiceUiHotkey(event, voiceUiHotkey)) return;
+      event.preventDefault();
+      setVoiceUiHotkeyPressed(true);
+    };
+    const release = () => setVoiceUiHotkeyPressed(false);
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", release, true);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", release, true);
+      window.removeEventListener("blur", release);
+    };
+  }, [voiceUiHotkey, voiceUiMode]);
 
   useEffect(() => {
     if (!voiceUiHelpOpen) return;
@@ -14255,14 +14302,14 @@ export function RoomPageLiveKit({
   };
 
   useEffect(() => {
-    voiceUiShouldListenRef.current = connected && voiceUiEnabled;
+    voiceUiShouldListenRef.current = connected && voiceUiActive;
 
     if (voiceUiRestartTimerRef.current != null) {
       window.clearTimeout(voiceUiRestartTimerRef.current);
       voiceUiRestartTimerRef.current = null;
     }
 
-    if (!connected || !voiceUiEnabled) {
+    if (!connected || !voiceUiActive) {
       try {
         voiceUiRecognitionRef.current?.abort();
       } catch {
@@ -14555,7 +14602,7 @@ export function RoomPageLiveKit({
       }
       voiceUiRecognitionRef.current = null;
     };
-  }, [connected, voiceUiEnabled]);
+  }, [connected, voiceUiActive]);
 
   const createRoomScreenshot = async () => {
     const root = videoWrapRef.current;
@@ -17350,6 +17397,8 @@ export function RoomPageLiveKit({
   const voiceUiStatusLabel =
     !voiceUiEnabled
       ? "Voice UI off"
+      : voiceUiMode === "hotkey" && !voiceUiHotkeyPressed
+        ? `Hold ${voiceUiHotkey} to speak`
       : voiceUiStatus === "listening"
       ? "Voice UI listening"
       : voiceUiStatus === "starting"
@@ -17362,6 +17411,8 @@ export function RoomPageLiveKit({
   const voiceUiStatusDot =
     !voiceUiEnabled
       ? "bg-zinc-500"
+      : voiceUiMode === "hotkey" && !voiceUiHotkeyPressed
+        ? "bg-indigo-400"
       : voiceUiStatus === "listening"
       ? "bg-emerald-400"
       : voiceUiStatus === "starting"
@@ -19260,7 +19311,7 @@ export function RoomPageLiveKit({
                     <div>
                       <div className="text-[14px] font-bold">Voice commands</div>
                       <div className={`mt-1 text-[11px] ${isLight ? "text-black/55" : "text-white/55"}`}>
-                        Say a short English command, then pause.
+                        {voiceUiMode === "hotkey" ? `Hold ${voiceUiHotkey}, say a command, then release.` : "Say a short English command, then pause."}
                       </div>
                     </div>
                     <button
@@ -19289,7 +19340,7 @@ export function RoomPageLiveKit({
                       type="button"
                       onClick={() => {
                         if (!voiceUiEnabled) {
-                          setVoiceUiEnabled(true);
+                          setVoiceUiMode("always");
                         } else {
                           window.dispatchEvent(new Event("mysession:voice-ui-restart"));
                         }
@@ -19713,7 +19764,7 @@ export function RoomPageLiveKit({
           micOn={micOn}
           camOn={camOn}
           screenShareOn={screenShareOn}
-          voiceUiEnabled={voiceUiEnabled}
+          voiceUiMode={voiceUiMode}
           unreadChat={unreadChat}
           showPiP={connected && pipSupported}
           pipActive={pictureInPictureOpen}
@@ -19727,8 +19778,8 @@ export function RoomPageLiveKit({
           onToggleCam={() => toggleCam().catch(() => { })}
           onToggleScreenShare={() => toggleScreenShare().catch(() => { })}
           onToggleVoiceUi={() => {
-            const nextEnabled = !voiceUiEnabled;
-            setVoiceUiEnabled(nextEnabled);
+            setVoiceUiMode((current) => current === "off" ? "always" : current === "always" ? "hotkey" : "off");
+            setVoiceUiHotkeyPressed(false);
             setVoiceUiHelpOpen(false);
             setVoiceUiLastCommand("");
             setVoiceUiLastHeard("");
@@ -19926,6 +19977,8 @@ export function RoomPageLiveKit({
           }}
           showMobileLayoutSwitcher={showMobileLayoutSwitcher}
           onChangeShowMobileLayoutSwitcher={updateShowMobileLayoutSwitcher}
+          voiceUiHotkey={voiceUiHotkey}
+          onChangeVoiceUiHotkey={setVoiceUiHotkey}
         />
 
         {settingsOpen && deviceError ? (

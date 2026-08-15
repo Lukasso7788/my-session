@@ -4876,9 +4876,9 @@ export default function SessionCard({
                             aria-label={`${liveNowCount} of ${displayedMaxParticipants} slots occupied${isSessionFull ? ", session full" : ""}`}
                         >
                             <div className="w-px h-10 bg-[#D9D9D9]" />
-                            <div className="w-[128px] text-center">
+                            <div className="w-fit min-w-[74px] text-center">
                                 <div className="relative flex min-h-[22px] items-baseline justify-center">
-                                    <div className="text-[22px] font-bold leading-none text-brandBlack">
+                                    <div className="text-[25px] font-bold leading-none text-brandBlack">
                                         {liveNowCount}
                                         <span className="ml-1 text-[13px] font-medium text-[#8A8A8A]">
                                             / {displayedMaxParticipants}

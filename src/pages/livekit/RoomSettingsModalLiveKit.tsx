@@ -1097,6 +1097,8 @@ export function RoomSettingsModalLiveKit({
     onChangeVideoTileLayoutRows,
     showMobileLayoutSwitcher = true,
     onChangeShowMobileLayoutSwitcher,
+    voiceUiHotkey = "Alt+V",
+    onChangeVoiceUiHotkey,
 
     devices,
     selectedAudioInputId,
@@ -1169,6 +1171,8 @@ export function RoomSettingsModalLiveKit({
     onChangeVideoTileLayoutRows?: (v: number) => void;
     showMobileLayoutSwitcher?: boolean;
     onChangeShowMobileLayoutSwitcher?: (v: boolean) => void;
+    voiceUiHotkey?: string;
+    onChangeVoiceUiHotkey?: (value: string) => void;
 
 
     devices: {
@@ -1451,6 +1455,37 @@ export function RoomSettingsModalLiveKit({
                                 onChange={(v) => onChangeShowMobileLayoutSwitcher?.(v)}
                                 isLight={isLight}
                             />
+                        </div>
+                    </div>
+
+                    <div className={`mb-5 rounded-2xl p-4 ${sectionCls}`}>
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="min-w-0">
+                                <div className="text-[13px] font-semibold">Voice control hotkey</div>
+                                <div className={`mt-1 text-[12px] leading-5 ${subtleText}`}>
+                                    Used when the bottom-bar voice button is in indigo hotkey mode. Focus the button and press your preferred key combination.
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                className={`h-10 min-w-[112px] shrink-0 rounded-xl px-3 text-[12px] font-semibold outline-none focus:ring-2 focus:ring-indigo-400 ${ghostBtn}`}
+                                title="Focus, then press a new hotkey"
+                                onKeyDown={(event) => {
+                                    const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
+                                    if (["Control", "Alt", "Shift", "Meta"].includes(key)) return;
+                                    event.preventDefault();
+                                    const next = [
+                                        event.ctrlKey ? "Ctrl" : "",
+                                        event.altKey ? "Alt" : "",
+                                        event.shiftKey ? "Shift" : "",
+                                        event.metaKey ? "Meta" : "",
+                                        key === " " ? "Space" : key,
+                                    ].filter(Boolean).join("+");
+                                    if (next) onChangeVoiceUiHotkey?.(next);
+                                }}
+                            >
+                                {voiceUiHotkey}
+                            </button>
                         </div>
                     </div>
 
