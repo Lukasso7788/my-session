@@ -4126,6 +4126,11 @@ export default function SessionCard({
             : null;
     const displayedMaxParticipants = maxParticipants ?? 16;
 
+    const occupiedSlots = Math.min(liveNowCount, displayedMaxParticipants);
+    const occupancyPercent = displayedMaxParticipants > 0
+        ? Math.min(100, Math.max(0, (occupiedSlots / displayedMaxParticipants) * 100))
+        : 0;
+
     const isSessionFull =
         maxParticipants != null &&
         liveNowCount >= maxParticipants;
@@ -4866,27 +4871,33 @@ export default function SessionCard({
                         <button
                             type="button"
                             onClick={() => setIsLiveUsersModalOpen(true)}
-                            className="hidden xl:flex items-center gap-6 xl:mr-3 transition-opacity hover:opacity-70"
+                            className="hidden xl:flex items-center gap-5 xl:mr-3 transition-opacity hover:opacity-70"
                             title="People in the session now"
-                            aria-label={`In session: ${liveNowCount}`}
+                            aria-label={`${liveNowCount} of ${displayedMaxParticipants} slots occupied${isSessionFull ? ", session full" : ""}`}
                         >
                             <div className="w-px h-10 bg-[#D9D9D9]" />
-                            <div className="text-center">
-                                <div className="text-[32px] font-bold text-brandBlack">
-                                    {liveNowCount}
-                                </div>
-                                <div className="min-w-[68px] text-[10px] leading-[1.15] text-[#606060] font-light">
-                                    {hasLiveNow ? (
-                                        <>
-                                            <span className="block whitespace-nowrap">in the session</span>
-                                            <span className="block">now</span>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <span className="block">live count</span>
-                                            <span className="block">soon</span>
-                                        </>
+                            <div className="w-[116px] text-left">
+                                <div className="flex items-baseline justify-between gap-2">
+                                    <div className="text-[22px] font-bold leading-none text-brandBlack">
+                                        {liveNowCount}
+                                        <span className="ml-1 text-[13px] font-medium text-[#8A8A8A]">
+                                            / {displayedMaxParticipants}
+                                        </span>
+                                    </div>
+                                    {isSessionFull && (
+                                        <span className="rounded-full bg-[#2F2F2F] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-white">
+                                            Full
+                                        </span>
                                     )}
+                                </div>
+                                <div className="mt-1 text-[10px] leading-none text-[#777777]">
+                                    {isSessionFull ? "No slots available" : hasLiveNow ? "slots occupied" : "all slots available"}
+                                </div>
+                                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[#E7E7E7]">
+                                    <div
+                                        className={`h-full rounded-full transition-[width,background-color] duration-300 ease-out ${isSessionFull ? "bg-[#2F2F2F]" : "bg-[#65D46C]"}`}
+                                        style={{ width: `${occupancyPercent}%` }}
+                                    />
                                 </div>
                             </div>
                         </button>
@@ -4905,10 +4916,16 @@ export default function SessionCard({
                                 text-white
                             "
                             style={{
-                                backgroundColor: isHoveringJoinIframe ? joinHoverBg : "#2f2f2f",
+                                backgroundColor: !canManageSession && isSessionFull
+                                    ? "#8A8A8A"
+                                    : isHoveringJoinIframe
+                                        ? joinHoverBg
+                                        : "#2f2f2f",
+                                cursor: !canManageSession && isSessionFull ? "not-allowed" : "pointer",
                             }}
+                            aria-label={!canManageSession && isSessionFull ? "Session full" : "Join session"}
                         >
-                            Join session
+                            {!canManageSession && isSessionFull ? "Full" : "Join session"}
                         </button>
 
                         <div ref={optionsRef} className={`relative w-12 ${isOptionsOpen ? "z-[230]" : "z-0"}`}>
