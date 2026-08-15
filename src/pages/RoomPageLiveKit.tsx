@@ -8387,19 +8387,40 @@ export function RoomPageLiveKit({
       setVoiceUiHotkeyPressed(false);
       return;
     }
+
+    let releaseTimerId: number | null = null;
+    const clearReleaseTimer = () => {
+      if (releaseTimerId == null) return;
+      window.clearTimeout(releaseTimerId);
+      releaseTimerId = null;
+    };
+    const scheduleRelease = () => {
+      clearReleaseTimer();
+      // SpeechRecognition often needs a moment to start after the keyboard
+      // gesture. Keep a short capture window so tapping the hotkey works too.
+      releaseTimerId = window.setTimeout(() => {
+        releaseTimerId = null;
+        setVoiceUiHotkeyPressed(false);
+      }, 3_200);
+    };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat || !matchesVoiceUiHotkey(event, voiceUiHotkey)) return;
+      if (!matchesVoiceUiHotkey(event, voiceUiHotkey)) return;
       event.preventDefault();
+      event.stopPropagation();
+      clearReleaseTimer();
       setVoiceUiHotkeyPressed(true);
     };
-    const release = () => setVoiceUiHotkeyPressed(false);
+    const onKeyUp = () => scheduleRelease();
+    const onWindowBlur = () => scheduleRelease();
+
     window.addEventListener("keydown", onKeyDown, true);
-    window.addEventListener("keyup", release, true);
-    window.addEventListener("blur", release);
+    window.addEventListener("keyup", onKeyUp, true);
+    window.addEventListener("blur", onWindowBlur);
     return () => {
+      clearReleaseTimer();
       window.removeEventListener("keydown", onKeyDown, true);
-      window.removeEventListener("keyup", release, true);
-      window.removeEventListener("blur", release);
+      window.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("blur", onWindowBlur);
     };
   }, [voiceUiHotkey, voiceUiMode]);
 
@@ -17398,7 +17419,7 @@ export function RoomPageLiveKit({
     !voiceUiEnabled
       ? "Voice UI off"
       : voiceUiMode === "hotkey" && !voiceUiHotkeyPressed
-        ? `Hold ${voiceUiHotkey} to speak`
+        ? `Press ${voiceUiHotkey}, then speak`
       : voiceUiStatus === "listening"
       ? "Voice UI listening"
       : voiceUiStatus === "starting"
@@ -19311,7 +19332,7 @@ export function RoomPageLiveKit({
                     <div>
                       <div className="text-[14px] font-bold">Voice commands</div>
                       <div className={`mt-1 text-[11px] ${isLight ? "text-black/55" : "text-white/55"}`}>
-                        {voiceUiMode === "hotkey" ? `Hold ${voiceUiHotkey}, say a command, then release.` : "Say a short English command, then pause."}
+                        {voiceUiMode === "hotkey" ? `Press ${voiceUiHotkey}, then say a command.` : "Say a short English command, then pause."}
                       </div>
                     </div>
                     <button
