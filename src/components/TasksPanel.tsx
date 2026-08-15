@@ -88,7 +88,7 @@ type TaskAiSuggestion = {
 };
 
 type TaskAiSuggestionPreview = {
-
+  taskId: string;
   taskText: string;
   suggestion: TaskAiSuggestion;
   left: number;
@@ -2910,7 +2910,7 @@ export function TasksPanel({
     );
 
     setAiSuggestionPreview({
-
+      taskId: task.id,
       taskText: task.text,
       suggestion,
       left,
@@ -3927,9 +3927,22 @@ export function TasksPanel({
               </span>
               <span>AI suggestion</span>
             </div>
-            <span className="shrink-0 rounded-full bg-black/[0.05] px-2.5 py-1 text-[9px] font-semibold text-black/50">
-              {aiSuggestionPreview.suggestion.focusMinutes} min
-            </span>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <span className="rounded-full bg-black/[0.05] px-2.5 py-1 text-[9px] font-semibold text-black/50">
+                {aiSuggestionPreview.suggestion.focusMinutes} min
+              </span>
+              <button
+                type="button"
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/[0.05] text-black/50 transition hover:bg-black/[0.09] hover:text-black md:hidden"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeAiSuggestionPreview();
+                }}
+                aria-label="Close AI suggestion preview"
+              >
+                <X size={13} />
+              </button>
+            </div>
           </div>
           <div className="mt-2 line-clamp-2 text-[11px] leading-4 text-black/50">
             {aiSuggestionPreview.taskText}
@@ -3969,6 +3982,18 @@ export function TasksPanel({
               </div>
             </div>
           ) : null}
+          <button
+            type="button"
+            className="sticky bottom-0 flex h-10 w-full items-center justify-center rounded-xl bg-[#2F2F2F] px-3 text-[11px] font-semibold text-white shadow-[0_-8px_18px_rgba(255,255,255,0.92)] transition hover:bg-black md:hidden"
+            onClick={(event) => {
+              event.stopPropagation();
+              const task = panelTasks.find((item) => item.id === aiSuggestionPreview.taskId);
+              closeAiSuggestionPreview();
+              if (task) openAiTaskSuggestions(task);
+            }}
+          >
+            Open as pop-up
+          </button>
         </div>
       </div>,
       aiSuggestionPreview.portalDocument.body,
@@ -4366,6 +4391,16 @@ export function TasksPanel({
                             type="button"
                             onClick={(event) => {
                               event.stopPropagation();
+                              const view = event.currentTarget.ownerDocument.defaultView;
+                              const useTouchPreview = Boolean(
+                                view?.matchMedia?.("(hover: none), (pointer: coarse)").matches &&
+                                aiPaidAccess === true &&
+                                getPersistedTaskAiSuggestion(i),
+                              );
+                              if (useTouchPreview) {
+                                showAiSuggestionPreview(event, i);
+                                return;
+                              }
                               closeAiSuggestionPreview();
                               openAiTaskSuggestions(i);
                             }}
