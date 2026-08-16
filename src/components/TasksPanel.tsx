@@ -775,6 +775,9 @@ export function TasksPanel({
   const [lastPlansLoadedAt, setLastPlansLoadedAt] = useState<string>("");
   const [savingPanelTasks, setSavingPanelTasks] = useState(false);
   const [savePanelTasksFeedback, setSavePanelTasksFeedback] = useState("");
+  const [saveTaskToPlanTask, setSaveTaskToPlanTask] = useState<PanelTask | null>(null);
+  const [savingTaskToPlan, setSavingTaskToPlan] = useState(false);
+  const [saveTaskToPlanFeedback, setSaveTaskToPlanFeedback] = useState("");
 
 
   const taskTimerStorageKey = useMemo(
@@ -2032,10 +2035,10 @@ export function TasksPanel({
   );
 
   useEffect(() => {
-    if (!importModalOpen) return;
+    if (!importModalOpen && !saveTaskToPlanTask) return;
     if (!user?.id) return;
     void loadPlans();
-  }, [importModalOpen, user?.id, loadPlans]);
+  }, [importModalOpen, saveTaskToPlanTask, user?.id, loadPlans]);
 
   useEffect(() => {
     if (!importModalOpen) return;
@@ -2135,6 +2138,98 @@ export function TasksPanel({
     [user?.id, panelTasks, loadPanelTasks, upsertOwnSessionTask],
   );
 
+  const savePanelTaskToPlan = useCallback(async () => {
+    const task = saveTaskToPlanTask;
+    const planId = selectedPlanId;
+    if (!user?.id || !task || savingTaskToPlan) return;
+    if (!planId) {
+      setSaveTaskToPlanFeedback("Choose a task list first.");
+      return;
+    }
+    if (!UUID_RE.test(String(task.id || ""))) {
+      setSaveTaskToPlanFeedback("Please wait until this task finishes saving, then try again.");
+      return;
+    }
+
+    setSavingTaskToPlan(true);
+    setSaveTaskToPlanFeedback("");
+
+    try {
+      const { data: existingRows, error: existingRowsError } = await supabase
+        .from("focus_plan_items")
+        .select("id,plan_id,user_id,text,target_date,session_id,created_at,completed,sort_order")
+        .eq("user_id", user.id)
+        .eq("plan_id", planId)
+        .order("sort_order", { ascending: true })
+        .limit(FOCUS_PLAN_ITEMS_FETCH_LIMIT);
+      if (existingRowsError) throw existingRowsError;
+
+      const existingItems = (Array.isArray(existingRows) ? existingRows : []) as FocusPlanItem[];
+      const normalizedText = normalizeTextForMatch(task.text);
+      let savedItem = existingItems.find(
+        (item) => normalizeTextForMatch(item.text) === normalizedText,
+      ) || null;
+
+      if (!savedItem) {
+        const nextSortOrder = existingItems.reduce(
+          (maximum, item) => Math.max(maximum, Number(item.sort_order) || 0),
+          -1,
+        ) + 1;
+        const { data: insertedItem, error: insertError } = await supabase
+          .from("focus_plan_items")
+          .insert({
+            user_id: user.id,
+            plan_id: planId,
+            text: safeTrim(task.text),
+            target_date: null,
+            session_id: null,
+            completed: Boolean(task.completed),
+            sort_order: nextSortOrder,
+          })
+          .select("id,plan_id,user_id,text,target_date,session_id,created_at,completed,sort_order")
+          .single();
+        if (insertError || !insertedItem) {
+          throw insertError || new Error("Task was not saved");
+        }
+        savedItem = insertedItem as FocusPlanItem;
+      }
+
+      const { error: linkError } = await supabase
+        .from(PANEL_TASKS_TABLE)
+        .update({ focus_plan_item_id: savedItem.id })
+        .eq("id", task.id)
+        .eq("user_id", user.id);
+      if (linkError) throw linkError;
+
+      await supabase
+        .from("focus_plans")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", planId)
+        .eq("user_id", user.id);
+
+      setPanelTasks((current) => current.map((item) =>
+        item.id === task.id ? { ...item, focus_plan_item_id: savedItem?.id || null } : item,
+      ));
+      await Promise.all([loadPlans(), loadPlanItems(planId)]);
+      emitTasksSync({ action: "save-panel-task", userId: user.id, planId, taskId: task.id });
+
+      const planTitle = plans.find((plan) => plan.id === planId)?.title || "Tasks";
+      setSaveTaskToPlanFeedback(`Saved to ${planTitle}.`);
+    } catch (error) {
+      console.error("[TasksPanel] Failed to save task to Tasks", error);
+      setSaveTaskToPlanFeedback("Could not save this task. Please try again.");
+    } finally {
+      setSavingTaskToPlan(false);
+    }
+  }, [
+    loadPlanItems,
+    loadPlans,
+    plans,
+    saveTaskToPlanTask,
+    savingTaskToPlan,
+    selectedPlanId,
+    user?.id,
+  ]);
   const savePanelTasksToTasks = useCallback(async () => {
     if (!user?.id || savingPanelTasks) return;
 
@@ -3304,6 +3399,124 @@ export function TasksPanel({
   const timerTextCls =
     `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
 
+  const SaveTaskToTasksModal = saveTaskToPlanTask
+    ? createPortal(
+      <div
+        className="fixed inset-0 z-[10030] flex items-center justify-center bg-black/40 px-3 font-inter backdrop-blur-[2px]"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !savingTaskToPlan) {
+            setSaveTaskToPlanTask(null);
+            setSaveTaskToPlanFeedback("");
+          }
+        }}
+      >
+        <div
+          className="w-[min(400px,calc(100vw-24px))] overflow-hidden rounded-[24px] bg-[#F7F5F5] text-[#2F2F2F] shadow-[0_24px_80px_rgba(0,0,0,0.22)]"
+          onMouseDown={stopRoomBubbling}
+          onPointerDown={stopRoomBubbling}
+          onClick={stopRoomBubbling}
+        >
+          <div className="flex items-start justify-between gap-4 border-b border-black/[0.08] px-5 py-4">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-black/[0.055]">
+                <ListPlus size={18} aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <div className="text-[16px] font-bold">Save to Tasks</div>
+                <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-black/50">
+                  {saveTaskToPlanTask.text}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-black/[0.05] text-black/50 transition hover:bg-black/[0.09] hover:text-black"
+              onClick={() => {
+                if (savingTaskToPlan) return;
+                setSaveTaskToPlanTask(null);
+                setSaveTaskToPlanFeedback("");
+              }}
+              aria-label="Close Save to Tasks"
+            >
+              <X size={15} />
+            </button>
+          </div>
+
+          <div className="px-5 py-5">
+            <label className="text-[10px] font-bold uppercase tracking-[0.14em] text-black/45">
+              Task list
+            </label>
+            {plansLoading ? (
+              <div className="mt-2 flex h-12 items-center gap-2 rounded-2xl bg-black/[0.045] px-4 text-[12px] text-black/50">
+                <RefreshCw size={14} className="animate-spin" /> Loading lists…
+              </div>
+            ) : plans.length ? (
+              <select
+                value={selectedPlanId}
+                onChange={(event) => {
+                  setSelectedPlanId(event.target.value);
+                  setSaveTaskToPlanFeedback("");
+                }}
+                className="mt-2 h-12 w-full rounded-2xl border border-black/[0.1] bg-white px-4 text-[13px] font-semibold text-[#2F2F2F] outline-none transition focus:border-[#81DB86] focus:ring-1 focus:ring-[#81DB86]"
+              >
+                {plans.map((plan) => (
+                  <option key={plan.id} value={plan.id}>{plan.title}</option>
+                ))}
+              </select>
+            ) : (
+              <div className="mt-2 rounded-2xl bg-black/[0.045] px-4 py-3 text-[12px] leading-5 text-black/55">
+                No task lists yet. Create one in the Tasks section first.
+                <button
+                  type="button"
+                  className="mt-2 block font-semibold text-[#2F2F2F] underline underline-offset-2"
+                  onClick={() => window.open("/tasks", "_blank", "noopener,noreferrer")}
+                >
+                  Open Tasks
+                </button>
+              </div>
+            )}
+
+            {saveTaskToPlanFeedback ? (
+              <div className={[
+                "mt-3 rounded-xl px-3 py-2 text-[11px] leading-4",
+                saveTaskToPlanFeedback.startsWith("Could not") ||
+                  saveTaskToPlanFeedback.startsWith("Please") ||
+                  saveTaskToPlanFeedback.startsWith("Choose")
+                  ? "bg-[#F65252]/[0.08] text-[#B83D3D]"
+                  : "bg-[#81DB86]/15 text-[#2F7E38]",
+              ].join(" ")}>
+                {saveTaskToPlanFeedback}
+              </div>
+            ) : null}
+
+            <div className="mt-5 flex gap-2.5">
+              <button
+                type="button"
+                className="h-11 flex-1 rounded-2xl bg-black/[0.055] px-4 text-[12px] font-semibold text-black/60 transition hover:bg-black/[0.09]"
+                onClick={() => {
+                  if (savingTaskToPlan) return;
+                  setSaveTaskToPlanTask(null);
+                  setSaveTaskToPlanFeedback("");
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={savingTaskToPlan || plansLoading || !selectedPlanId || plans.length === 0}
+                className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl bg-[#2F2F2F] px-4 text-[12px] font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+                onClick={() => void savePanelTaskToPlan()}
+              >
+                {savingTaskToPlan ? <RefreshCw size={14} className="animate-spin" /> : <ListPlus size={14} />}
+                {savingTaskToPlan ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>,
+      getPortalDocument().body,
+    )
+    : null;
   const ImportModal = importModalOpen
     ? (() => {
       const modalDoc = getPortalDocument();
@@ -4486,6 +4699,13 @@ export function TasksPanel({
                                   onPointerDown={(e) => e.stopPropagation()}
                                   onClick={(e) => e.stopPropagation()}
                                 >
+                                  <button type="button" className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] text-black/75 hover:bg-black/[0.05]" onClick={() => {
+                                    setTaskMenuOpenId(null);
+                                    setSaveTaskToPlanFeedback("");
+                                    setSaveTaskToPlanTask(i);
+                                  }}>
+                                    <ListPlus size={14} /> Save to Tasks
+                                  </button>
                                   <button type="button" className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] text-black/75 hover:bg-black/[0.05]" onClick={() => { setTaskMenuOpenId(null); startEdit(i.id, i.text); }}>
                                     <Pencil size={14} /> Edit
                                   </button>
@@ -4733,6 +4953,7 @@ export function TasksPanel({
       </div>
 
       {ImportModal}
+      {SaveTaskToTasksModal}
       {EncouragementModal}
       {AiPaywallModal}
       {AiSuggestionModal}
