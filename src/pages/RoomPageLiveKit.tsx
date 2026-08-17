@@ -5787,6 +5787,7 @@ export function RoomPageLiveKit({
     viewportWidth: number;
     viewportHeight: number;
     portalDocument: Document | null;
+    tileElement: HTMLElement | null;
   } | null>(null);
   const [openTileAdminMenuId, setOpenTileAdminMenuId] = useState<string | null>(
     null,
@@ -6221,21 +6222,29 @@ export function RoomPageLiveKit({
   };
 
   const openTileMenuAt = useCallback(
-    (tileId: string, anchorEl: HTMLElement | null) => {
+    (
+      tileId: string,
+      anchorEl: HTMLElement | null,
+      point?: { x: number; y: number },
+    ) => {
       if (!anchorEl) return;
 
       const r = anchorEl.getBoundingClientRect();
       const ownerDoc = anchorEl.ownerDocument || document;
       const ownerWin = ownerDoc.defaultView || window;
+      const tileElement =
+        anchorEl.closest<HTMLElement>('[data-mobile-pip-tile="true"]') ||
+        anchorEl;
 
       setOpenTileAdminMenuId(tileId);
       setTileMenuAnchor({
         tileId,
-        x: r.right,
-        y: r.bottom,
+        x: point?.x ?? r.right,
+        y: point?.y ?? r.bottom,
         viewportWidth: ownerWin.innerWidth,
         viewportHeight: ownerWin.innerHeight,
         portalDocument: ownerDoc,
+        tileElement,
       });
     },
     [],
@@ -16749,6 +16758,16 @@ export function RoomPageLiveKit({
     [closeTileMenu, openTileAdminMenuId, openTileMenuAt],
   );
 
+  const handleOpenTileContextMenu = useCallback(
+    (
+      tileId: string,
+      tileElement: HTMLElement,
+      point: { x: number; y: number },
+    ) => {
+      openTileMenuAt(tileId, tileElement, point);
+    },
+    [openTileMenuAt],
+  );
   const handleOpenTileProfile = useCallback(
     (tileId: string) => {
       const tile = tilesForRender.find((candidate) => candidate.id === tileId);
@@ -16874,7 +16893,7 @@ export function RoomPageLiveKit({
               !!(t.isLocal || t.kind === "screen" || !!t.participantIdentity)
             }
             onOpenProfile={handleOpenTileProfile}
-            onRequestPictureInPicture={openParticipantPictureInPicture}
+            onOpenContextMenu={handleOpenTileContextMenu}
           />
         </div>
 
@@ -16953,7 +16972,7 @@ export function RoomPageLiveKit({
             !!(t.isLocal || t.kind === "screen" || !!t.participantIdentity)
           }
           onOpenProfile={handleOpenTileProfile}
-          onRequestPictureInPicture={openParticipantPictureInPicture}
+          onOpenContextMenu={handleOpenTileContextMenu}
         />
       </div>
     );
@@ -20695,6 +20714,31 @@ export function RoomPageLiveKit({
                             Participant actions
                           </div>
 
+                          <button
+                            type="button"
+                            disabled={!targetTile.videoTrack}
+                            onClick={() => {
+                              const tileElement = tileMenuAnchor.tileElement;
+                              if (!tileElement || !targetTile.videoTrack) return;
+                              closeTileMenu();
+                              void openParticipantPictureInPicture(
+                                targetTile.id,
+                                tileElement,
+                              );
+                            }}
+                            className={
+                              targetTile.videoTrack
+                                ? participantActionButtonCls
+                                : participantActionButtonDisabledCls
+                            }
+                            title={
+                              targetTile.videoTrack
+                                ? "Open only this participant in Picture-in-Picture"
+                                : "Participant camera is off"
+                            }
+                          >
+                            Open in Picture-in-Picture
+                          </button>
                           {canSeeMuteMicAction && (
                             <button
                               type="button"
