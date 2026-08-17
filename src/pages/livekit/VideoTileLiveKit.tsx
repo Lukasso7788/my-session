@@ -200,6 +200,7 @@ type VideoTileProps = {
     showMenuButton?: boolean;
     onToggleMenu?: (tileId: string, anchorEl: HTMLElement | null) => void;
     onOpenProfile?: (tileId: string) => void;
+    onRequestPictureInPicture?: (tileId: string, tileEl: HTMLElement) => void;
     onEditName?: () => void;
     density?: "normal" | "compact";
     currentIntention?: string | null;
@@ -350,6 +351,7 @@ function VideoTileInner({
     cameraFramingMode = "full",
     onToggleMenu,
     onOpenProfile,
+    onRequestPictureInPicture,
     onEditName,
 }: VideoTileProps) {
     const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -619,6 +621,12 @@ function VideoTileInner({
             data-mobile-pip-tile="true"
             data-mobile-pip-label={label || "Participant"}
             data-mobile-pip-avatar-url={normalizedAvatarUrl || undefined}
+            onContextMenu={(event) => {
+                if (!onRequestPictureInPicture) return;
+                event.preventDefault();
+                event.stopPropagation();
+                onRequestPictureInPicture(tileId, event.currentTarget);
+            }}
             className={
                 "group relative h-full w-full min-h-0 min-w-0 overflow-hidden border transition-[border-color,box-shadow] duration-300 ease-out " +
                 (isCompact ? "rounded-xl " : "rounded-2xl ") +
@@ -875,6 +883,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.cameraFramingMode === next.cameraFramingMode &&
         prev.onToggleMenu === next.onToggleMenu &&
         prev.onOpenProfile === next.onOpenProfile &&
+        prev.onRequestPictureInPicture === next.onRequestPictureInPicture &&
         prev.onEditName === next.onEditName &&
         prev.hostActions?.canMuteMic === next.hostActions?.canMuteMic &&
         prev.hostActions?.canMuteCam === next.hostActions?.canMuteCam &&

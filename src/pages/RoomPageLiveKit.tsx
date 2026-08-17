@@ -15015,6 +15015,65 @@ export function RoomPageLiveKit({
     openMobilePictureInPicture,
   ]);
 
+  const openParticipantPictureInPicture = useCallback(
+    async (_tileId: string, tileElement: HTMLElement) => {
+      const video = tileElement.querySelector<HTMLVideoElement>("video") as
+        | MobilePiPVideoElement
+        | null;
+
+      if (!video) {
+        showSystemNotice({
+          kind: "info",
+          title: "Picture-in-Picture unavailable",
+          body: "Turn this participant's camera on before opening their video in Picture-in-Picture.",
+        });
+        return;
+      }
+
+      video.disablePictureInPicture = false;
+      video.removeAttribute("disablepictureinpicture");
+
+      try {
+        // Close the custom gallery PiP first. The selected participant then
+        // opens in the browser's native single-video Picture-in-Picture.
+        if (pipWindowRef.current && !pipWindowRef.current.closed) {
+          void closeDesktopPictureInPicture();
+        }
+
+        if (supportsWebKitVideoPiP(video)) {
+          video.webkitSetPresentationMode?.("picture-in-picture");
+          return;
+        }
+
+        const pipDocument = document as MobileVideoPiPDocument;
+        const currentVideo = pipDocument.pictureInPictureElement;
+
+        if (currentVideo === video) return;
+
+        if (currentVideo && typeof pipDocument.exitPictureInPicture === "function") {
+          await pipDocument.exitPictureInPicture();
+        }
+
+        if (
+          pipDocument.pictureInPictureEnabled !== false &&
+          typeof video.requestPictureInPicture === "function"
+        ) {
+          await video.requestPictureInPicture();
+          return;
+        }
+
+        throw new Error("Native video Picture-in-Picture is not supported");
+      } catch (error) {
+        console.warn("[participant-pip] Unable to open selected video", error);
+        showSystemNotice({
+          kind: "info",
+          title: "Picture-in-Picture unavailable",
+          body: "This browser could not open the selected participant video in Picture-in-Picture.",
+        });
+      }
+    },
+    [closeDesktopPictureInPicture],
+  );
   const togglePictureInPicture = useCallback(async () => {
     if (pictureInPictureOpen) {
       await closePictureInPicture();
@@ -16815,6 +16874,7 @@ export function RoomPageLiveKit({
               !!(t.isLocal || t.kind === "screen" || !!t.participantIdentity)
             }
             onOpenProfile={handleOpenTileProfile}
+            onRequestPictureInPicture={openParticipantPictureInPicture}
           />
         </div>
 
@@ -16893,6 +16953,7 @@ export function RoomPageLiveKit({
             !!(t.isLocal || t.kind === "screen" || !!t.participantIdentity)
           }
           onOpenProfile={handleOpenTileProfile}
+          onRequestPictureInPicture={openParticipantPictureInPicture}
         />
       </div>
     );
