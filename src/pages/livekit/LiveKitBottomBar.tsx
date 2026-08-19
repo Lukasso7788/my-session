@@ -97,7 +97,7 @@ function SoundscapeIcon({
 
 function ControlLabel({ children }: { children: React.ReactNode }) {
     return (
-        <span className="hidden max-w-full truncate text-[8px] font-medium leading-none tracking-[-0.01em] opacity-80 lg:block">
+        <span className="pointer-events-none absolute left-1/2 top-full mt-1 hidden max-w-[64px] -translate-x-1/2 truncate whitespace-nowrap text-center text-[8px] font-medium leading-none tracking-[-0.01em] opacity-80 lg:block">
             {children}
         </span>
     );
@@ -248,7 +248,7 @@ export function LiveKitBottomBar(props: {
         : theme;
 
     const aiHostBtnClass =
-        "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition " +
+        "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
         (aiHostOpen
             ? isLight
                 ? "bg-[#242424] hover:bg-[#2E2E2E] text-white"
@@ -258,7 +258,7 @@ export function LiveKitBottomBar(props: {
     const bugReportDesktopBtn = onOpenBugReport ? (
         <button
             onClick={onOpenBugReport}
-            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition ${ctlBtnBase}`}
+            className={`relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
             title="Report a problem"
             type="button"
         >
@@ -272,7 +272,7 @@ export function LiveKitBottomBar(props: {
         showLayoutControls && onOpenLayoutControls ? (
             <button
                 onClick={onOpenLayoutControls}
-                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition ${ctlBtnBase}`}
+                className={`relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                 title="Video layout"
                 type="button"
             >
@@ -285,7 +285,7 @@ export function LiveKitBottomBar(props: {
     const chatBtn = (
         <button
             onClick={onOpenChat}
-            className={`relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition ${ctlBtnBase}`}
+            className={`relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
             title="Chat"
             type="button"
         >
@@ -307,7 +307,7 @@ export function LiveKitBottomBar(props: {
     const participantsBtn = (
         <button
             onClick={onOpenParticipants}
-            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition ${ctlBtnBase}`}
+            className={`relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
             title="Participants"
             type="button"
         >
@@ -320,7 +320,7 @@ export function LiveKitBottomBar(props: {
     const tasksBtn = (
         <button
             onClick={onOpenTasks}
-            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition ${ctlBtnBase}`}
+            className={`relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
             title="Tasks"
             type="button"
         >
@@ -334,7 +334,7 @@ export function LiveKitBottomBar(props: {
         <button
             onClick={onOpenSoundscapes}
             className={
-                "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition " +
+                "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
                 (soundscapeActive
                     ? "bg-[#242424] hover:bg-[#2E2E2E] text-white"
                     : ctlBtnBase)
@@ -370,7 +370,7 @@ export function LiveKitBottomBar(props: {
             <button
                 onClick={onTogglePiP}
                 className={
-                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition " +
+                    "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
                     (pipActive
                         ? isLight
                             ? "bg-[#242424] hover:bg-[#2E2E2E] text-white"
@@ -400,7 +400,7 @@ export function LiveKitBottomBar(props: {
                         <div className="md:hidden relative">
                             <button
                                 onClick={() => setShowMoreMenu((v) => !v)}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition ${ctlBtnBase}`}
+                                className={`relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                                 title="Menu"
                                 type="button"
                             >
@@ -639,7 +639,7 @@ export function LiveKitBottomBar(props: {
 
                             <button
                                 onClick={onOpenSettings}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition ${ctlBtnBase}`}
+                                className={`relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                                 title="Settings"
                                 type="button"
                             >
@@ -654,7 +654,7 @@ export function LiveKitBottomBar(props: {
                             onClick={onToggleMic}
                             disabled={!connected}
                             className={
-                                "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition disabled:opacity-50 " +
+                                "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " +
                                 (!micOn
                                     ? "bg-[#F65252] hover:bg-[#E64545] text-white"
                                     : ctlBtnBase)
@@ -674,7 +674,7 @@ export function LiveKitBottomBar(props: {
                             onClick={onToggleCam}
                             disabled={!connected}
                             className={
-                                "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition disabled:opacity-50 " +
+                                "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " +
                                 (!camOn
                                     ? "bg-[#F65252] hover:bg-[#E64545] text-white"
                                     : ctlBtnBase)
@@ -694,7 +694,7 @@ export function LiveKitBottomBar(props: {
                             onClick={onToggleScreenShare}
                             disabled={!connected}
                             className={
-                                "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition disabled:opacity-50 " +
+                                "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " +
                                 (screenShareOn
                                     ? "bg-[#5286F6] hover:bg-[#4678E4] text-white"
                                     : ctlBtnBase)
@@ -715,7 +715,7 @@ export function LiveKitBottomBar(props: {
                                 onClick={onToggleVoiceUi}
                                 disabled={!connected}
                                 className={
-                                    "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition disabled:opacity-50 " +
+                                    "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " +
                                     (voiceUiMode === "always"
                                         ? "bg-[#5286F6] hover:bg-[#4678E4] text-white"
                                         : voiceUiMode === "hotkey"
@@ -744,7 +744,7 @@ export function LiveKitBottomBar(props: {
                         <div className="relative" ref={reactionsMenuRef}>
                             <button
                                 onClick={() => setShowReactionsMenu((v) => !v)}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex flex-col items-center justify-center gap-[3px] transition ${ctlBtnBase}`}
+                                className={`relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
                                 title="Reactions"
                                 type="button"
                             >
