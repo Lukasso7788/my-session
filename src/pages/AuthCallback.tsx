@@ -3,12 +3,9 @@ import { useNavigate } from "react-router-dom";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { attachReferralToNewUser } from "../lib/referrals";
-import { withTimeout } from "../lib/promiseTimeout";
 import { notifyAuthProfileReady } from "../lib/authProfileEvents";
 
-const SESSION_TIMEOUT_MS = 8_000;
-const SESSION_RECOVERY_WINDOW_MS = 45_000;
-const SESSION_RETRY_INTERVAL_MS = 1_500;
+const SESSION_RECOVERY_WINDOW_MS = 90_000;
 
 function getRedirectPath() {
     if (typeof window === "undefined") return "/sessions";
@@ -139,47 +136,43 @@ export const AuthCallback = () => {
             if (session) void finishAuth(session);
         });
 
-        const handleAuthRedirect = async () => {
-            const recoveryStartedAt = Date.now();
-
-            while (
-                mounted &&
-                Date.now() - recoveryStartedAt < SESSION_RECOVERY_WINDOW_MS
-            ) {
-                try {
-                    const result = await withTimeout(
-                        supabase.auth.getSession(),
-                        SESSION_TIMEOUT_MS,
-                        "Timed out while restoring the authenticated session."
-                    );
-                    if (result.error) throw result.error;
-
-                    if (result.data.session) {
-                        await finishAuth(result.data.session);
-                        return;
-                    }
-                } catch (error) {
-                    console.warn("[auth callback] session restore attempt failed:", error);
-                }
-
-                if (!mounted) return;
-
-                await new Promise<void>((resolve) => {
-                    window.setTimeout(resolve, SESSION_RETRY_INTERVAL_MS);
-                });
-            }
-
+        let recoveryTimer: number | null = window.setTimeout(() => {
             if (mounted && !handledUserIdRef.current) {
                 setCallbackError(
-                    "We couldn't finish signing you in. Please retry the connection."
+                    "We couldn't finish signing you in. Check the connection and try once more."
                 );
             }
-        };
+        }, SESSION_RECOVERY_WINDOW_MS);
 
+        const handleAuthRedirect = async () => {
+            try {
+                // Do not wrap this in repeated timeouts. Supabase initialization
+                // and the PKCE exchange share one browser lock; abandoned calls
+                // keep running and retries only create a lock queue.
+                const result = await supabase.auth.getSession();
+                if (result.error) throw result.error;
+
+                if (result.data.session) {
+                    if (recoveryTimer) {
+                        window.clearTimeout(recoveryTimer);
+                        recoveryTimer = null;
+                    }
+                    await finishAuth(result.data.session);
+                }
+            } catch (error) {
+                console.warn("[auth callback] session restore failed:", error);
+                if (mounted && !handledUserIdRef.current) {
+                    setCallbackError(
+                        "We couldn't finish signing you in. Check the connection and try once more."
+                    );
+                }
+            }
+        };
         void handleAuthRedirect();
 
         return () => {
             mounted = false;
+            if (recoveryTimer) window.clearTimeout(recoveryTimer);
             subscription.unsubscribe();
         };
     }, [navigate]);
@@ -194,17 +187,17 @@ export const AuthCallback = () => {
                         <div className="flex gap-2">
                             <button
                                 type="button"
-                                onClick={() => window.location.reload()}
+                                onClick={() => navigate(`/login?redirect=${encodeURIComponent(getRedirectPath())}`, { replace: true })}
                                 className="flex-1 rounded-full bg-[#2f2f2f] px-4 py-3 text-sm font-semibold text-white hover:bg-black"
                             >
-                                Try again
+                                Try sign in again
                             </button>
                             <button
                                 type="button"
-                                onClick={() => navigate("/login", { replace: true })}
+                                onClick={() => navigate("/sessions", { replace: true })}
                                 className="flex-1 rounded-full bg-gray-100 px-4 py-3 text-sm font-semibold hover:bg-gray-200"
                             >
-                                Back to login
+                                Continue without login
                             </button>
                         </div>
                     </div>

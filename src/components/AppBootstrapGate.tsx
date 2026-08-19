@@ -30,6 +30,9 @@ export default function AppBootstrapGate({ children }: { children: ReactNode }) 
   const generationRef = useRef(0);
   const stateRef = useRef<BootstrapState>("checking");
   const isRoomRoute = /^\/room-(?:livekit(?:-clean)?|iframe)\//.test(pathname);
+  const isAuthFlowRoute = /^\/(?:auth\/callback|login|register|update-password)\/?$/.test(
+    pathname,
+  );
 
   useEffect(() => {
     stateRef.current = state;
@@ -61,6 +64,15 @@ export default function AppBootstrapGate({ children }: { children: ReactNode }) 
   }, [isRoomRoute]);
 
   useEffect(() => {
+    // Supabase owns session restoration while the browser is completing an
+    // OAuth/PKCE redirect. A second getSession() here competes for the same
+    // browser auth lock and can leave slower devices stuck on the callback.
+    if (isAuthFlowRoute) {
+      generationRef.current += 1;
+      setState("ready");
+      return;
+    }
+
     void refresh(true);
 
     let authTimer: number | null = null;
@@ -88,7 +100,7 @@ export default function AppBootstrapGate({ children }: { children: ReactNode }) 
       window.removeEventListener("mysession-ban-refresh", refreshQuietly);
       authListener.subscription.unsubscribe();
     };
-  }, [isRoomRoute, refresh]);
+  }, [isAuthFlowRoute, isRoomRoute, refresh]);
 
   if (state !== "ready") {
     return (

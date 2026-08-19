@@ -5,6 +5,7 @@ import { Eye, EyeOff, ExternalLink } from "lucide-react";
 import HeaderLite from "../components/HeaderLite";
 import { startOAuthRedirect } from "../lib/oauthRedirect";
 import { withTimeout } from "../lib/promiseTimeout";
+import { useAuth } from "../context/AuthContext";
 
 function isInAppBrowser() {
   if (typeof navigator === "undefined") return false;
@@ -39,6 +40,7 @@ function getOauthRedirectUrl(redirectPath?: string) {
 export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { user, loading: authLoading } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -63,17 +65,10 @@ export default function LoginPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await supabase.auth.getUser();
-        if (data.user) {
-          navigate(redirectAfterLogin, { replace: true });
-        }
-      } catch {
-        // ignore
-      }
-    })();
-  }, [navigate, redirectAfterLogin]);
+    if (!authLoading && user) {
+      navigate(redirectAfterLogin, { replace: true });
+    }
+  }, [authLoading, navigate, redirectAfterLogin, user]);
 
   const handleLogin = async () => {
     const cleanEmail = email.trim();
