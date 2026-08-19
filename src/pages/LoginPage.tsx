@@ -51,7 +51,9 @@ export default function LoginPage() {
   const inApp = useMemo(() => isInAppBrowser(), []);
 
   const redirectAfterLogin = useMemo(() => {
-    const raw = String(searchParams.get("redirect") || "").trim();
+    const raw = String(
+      searchParams.get("redirect") || searchParams.get("next") || ""
+    ).trim();
 
     if (!raw) return "/sessions";
     if (!raw.startsWith("/")) return "/sessions";
@@ -84,7 +86,7 @@ export default function LoginPage() {
     try {
       setLoading(true);
 
-      const { error } = await withTimeout(
+      const { data, error } = await withTimeout(
         supabase.auth.signInWithPassword({
           email: cleanEmail,
           password,
@@ -95,6 +97,11 @@ export default function LoginPage() {
 
       if (error) {
         alert(error.message);
+        return;
+      }
+
+      if (!data.session) {
+        alert("Login succeeded, but the session was not stored. Please try again.");
         return;
       }
 

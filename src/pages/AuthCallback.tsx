@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
@@ -6,7 +6,9 @@ import { attachReferralToNewUser } from "../lib/referrals";
 import { withTimeout } from "../lib/promiseTimeout";
 import { notifyAuthProfileReady } from "../lib/authProfileEvents";
 
-const SESSION_TIMEOUT_MS = 10_000;
+const SESSION_TIMEOUT_MS = 8_000;
+const SESSION_RECOVERY_WINDOW_MS = 45_000;
+const SESSION_RETRY_INTERVAL_MS = 1_500;
 
 function getRedirectPath() {
     if (typeof window === "undefined") return "/sessions";
@@ -96,6 +98,7 @@ async function ensureProfileWithoutOverwriting(user: User) {
 export const AuthCallback = () => {
     const navigate = useNavigate();
     const handledUserIdRef = useRef<string>("");
+    const [callbackError, setCallbackError] = useState("");
 
     useEffect(() => {
         let mounted = true;
@@ -137,51 +140,40 @@ export const AuthCallback = () => {
         });
 
         const handleAuthRedirect = async () => {
-            let session: Session | null = null;
+            const recoveryStartedAt = Date.now();
 
-            try {
-                const result = await withTimeout(
-                    supabase.auth.getSession(),
-                    SESSION_TIMEOUT_MS,
-                    "Timed out while restoring the authenticated session."
-                );
-                if (result.error) throw result.error;
-                session = result.data.session;
-            } catch (error) {
-                console.warn("[auth callback] initial session restore failed:", error);
-            }
-
-            if (!mounted) return;
-
-            if (session) {
-                await finishAuth(session);
-                return;
-            }
-
-            window.setTimeout(async () => {
-                if (!mounted) return;
-
-                let retrySession: Session | null = null;
+            while (
+                mounted &&
+                Date.now() - recoveryStartedAt < SESSION_RECOVERY_WINDOW_MS
+            ) {
                 try {
                     const result = await withTimeout(
                         supabase.auth.getSession(),
                         SESSION_TIMEOUT_MS,
-                        "Timed out while retrying the authenticated session."
+                        "Timed out while restoring the authenticated session."
                     );
                     if (result.error) throw result.error;
-                    retrySession = result.data.session;
+
+                    if (result.data.session) {
+                        await finishAuth(result.data.session);
+                        return;
+                    }
                 } catch (error) {
-                    console.warn("[auth callback] retry session restore failed:", error);
+                    console.warn("[auth callback] session restore attempt failed:", error);
                 }
 
                 if (!mounted) return;
 
-                if (retrySession) {
-                    await finishAuth(retrySession);
-                } else {
-                    navigate("/login", { replace: true });
-                }
-            }, 2500);
+                await new Promise<void>((resolve) => {
+                    window.setTimeout(resolve, SESSION_RETRY_INTERVAL_MS);
+                });
+            }
+
+            if (mounted && !handledUserIdRef.current) {
+                setCallbackError(
+                    "We couldn't finish signing you in. Please retry the connection."
+                );
+            }
         };
 
         void handleAuthRedirect();
@@ -193,13 +185,38 @@ export const AuthCallback = () => {
     }, [navigate]);
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-gray-50 text-gray-900">
-            <div className="text-center">
-                <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" />
-                <h2 className="mb-2 text-xl font-semibold">Finishing sign in...</h2>
-                <p className="text-gray-500">
-                    Please wait, we’re redirecting you to the app.
-                </p>
+        <div className="flex min-h-screen items-center justify-center bg-white px-4 text-[#2f2f2f]">
+            <div className="w-full max-w-sm text-center">
+                {callbackError ? (
+                    <div className="rounded-3xl border border-gray-200 p-6">
+                        <h2 className="mb-2 text-xl font-semibold">Sign-in needs another try</h2>
+                        <p className="mb-5 text-sm leading-6 text-gray-500">{callbackError}</p>
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={() => window.location.reload()}
+                                className="flex-1 rounded-full bg-[#2f2f2f] px-4 py-3 text-sm font-semibold text-white hover:bg-black"
+                            >
+                                Try again
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => navigate("/login", { replace: true })}
+                                className="flex-1 rounded-full bg-gray-100 px-4 py-3 text-sm font-semibold hover:bg-gray-200"
+                            >
+                                Back to login
+                            </button>
+                        </div>
+                    </div>
+                ) : (
+                    <>
+                        <div className="mx-auto mb-4 h-11 w-11 animate-spin rounded-full border-2 border-gray-200 border-t-[#2f2f2f]" />
+                        <h2 className="mb-2 text-xl font-semibold">Finishing sign in...</h2>
+                        <p className="text-sm text-gray-500">
+                            Please wait while MySession restores your session.
+                        </p>
+                    </>
+                )}
             </div>
         </div>
     );

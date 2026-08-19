@@ -46,6 +46,7 @@ function profileFromAuthMetadata(user: User): Profile {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+    const authEventGenerationRef = useRef(0);
     const [user, setUser] = useState<User | null>(null);
     const [session, setSession] = useState<Session | null>(null);
     const [profile, setProfile] = useState<Profile | null>(null);
@@ -102,6 +103,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             window.location.pathname.replace(/\/$/, "") === "/auth/callback";
 
         const restoreSession = async () => {
+            const restoreGeneration = authEventGenerationRef.current;
+
             try {
                 const {
                     data: { session },
@@ -111,7 +114,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     "Timed out while restoring the auth session."
                 );
 
-                if (!active) return;
+                // onAuthStateChange may deliver a fresh SIGNED_IN session while
+                // this slower restore is still pending. Never let the stale
+                // restore overwrite that newer auth state with null.
+                if (
+                    !active ||
+                    authEventGenerationRef.current !== restoreGeneration
+                ) {
+                    return;
+                }
 
                 setSession(session);
                 setUser(session?.user ?? null);
@@ -137,6 +148,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } = supabase.auth.onAuthStateChange(
             async (event, currentSession) => {
                 if (!active) return;
+                authEventGenerationRef.current += 1;
+
 
                 const currentUser = currentSession?.user ?? null;
 
