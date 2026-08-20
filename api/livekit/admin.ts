@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { randomBytes, randomUUID } from "crypto";
+import { createHash, randomBytes, randomUUID } from "crypto";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
@@ -38,6 +38,8 @@ type RoomMediaAdminAction =
   | "prepare_room_soundtrack_upload"
   | "upload_room_soundtrack";
 
+type GrowthAction = "send_friend_invite";
+
 type AccessControlAction =
   | "session_bootstrap"
   | "moderation_restriction_create"
@@ -49,7 +51,8 @@ type AdminAction =
   | EmailAdminAction
   | SenderAdminAction
   | RoomMediaAdminAction
-  | AccessControlAction;
+  | AccessControlAction
+  | GrowthAction;
 
 type TrackKind = "camera" | "microphone" | "";
 
@@ -81,6 +84,10 @@ type Body = {
   senderEventId?: string;
   senderTestEmail?: string;
   senderTestConfirmation?: string;
+
+  // User-initiated friend invitation
+  recipientEmail?: string;
+  inviteMessage?: string;
 
   // Shared room soundtrack upload. New clients request a signed direct-upload
   // token so the audio body never passes through the Vercel function.
@@ -392,6 +399,12 @@ function normalizeRoomMediaAdminAction(raw: unknown): RoomMediaAdminAction | "" 
     return "prepare_room_soundtrack_upload";
   }
   return action === "upload_room_soundtrack" ? "upload_room_soundtrack" : "";
+}
+
+function normalizeGrowthAction(raw: unknown): GrowthAction | "" {
+  return String(raw || "").trim().toLowerCase() === "send_friend_invite"
+    ? "send_friend_invite"
+    : "";
 }
 
 const ROOM_SOUNDTRACK_BUCKET = "room-soundtracks";
@@ -961,6 +974,130 @@ function escapeHtml(input: any) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+async function ensureReferralCodeForInvite(sb: SupabaseClient, userId: string) {
+  const { data: existing } = await sb
+    .from("referral_codes")
+    .select("code")
+    .eq("owner_user_id", userId)
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle();
+
+  const existingCode = String(existing?.code || "").trim();
+  if (existingCode) return existingCode;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const code = `invite-${userId.slice(0, 8)}-${randomBytes(3).toString("hex")}`;
+    const { data, error } = await sb
+      .from("referral_codes")
+      .insert({
+        owner_user_id: userId,
+        code,
+        type: "user",
+        is_active: true,
+      })
+      .select("code")
+      .single();
+
+    if (!error && data?.code) return String(data.code);
+  }
+
+  throw new Error("referral_code_create_failed");
+}
+
+async function handleFriendInviteAction(params: {
+  res: VercelResponse;
+  sb: SupabaseClient;
+  accessToken: string;
+  body: Body;
+}) {
+  const { res, sb, accessToken, body } = params;
+  const { data: authData, error: authError } = await sb.auth.getUser(accessToken);
+  const user = authData?.user;
+  if (authError || !user?.id) return res.status(401).json({ error: "unauthorized" });
+
+  const recipientEmail = String(body.recipientEmail || "").trim().toLowerCase();
+  const senderEmail = String(user.email || "").trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(recipientEmail) || recipientEmail.length > 254) {
+    return res.status(400).json({ error: "valid_recipient_email_required" });
+  }
+  if (senderEmail && recipientEmail === senderEmail) {
+    return res.status(400).json({ error: "invite_your_friend_not_yourself" });
+  }
+
+  const inviteMessage = String(body.inviteMessage || "").trim().slice(0, 500);
+  const { data: profile } = await sb
+    .from("profiles")
+    .select("full_name")
+    .eq("id", user.id)
+    .maybeSingle();
+  const senderName = String(
+    profile?.full_name ||
+    user.user_metadata?.full_name ||
+    user.user_metadata?.name ||
+    senderEmail.split("@")[0] ||
+    "A friend"
+  ).trim().slice(0, 80);
+
+  const referralCode = await ensureReferralCodeForInvite(sb, user.id);
+  const inviteUrl = `https://mysession.club/?ref=${encodeURIComponent(referralCode)}`;
+  const resendKey = env("RESEND_API_KEY");
+  const fromEmail =
+    env("RESEND_INVITES_FROM") ||
+    env("RESEND_FROM_EMAIL") ||
+    env("RESEND_DAILY_SCHEDULE_FROM");
+  const replyTo = env("RESEND_REPLY_TO") || "support@mysession.club";
+  if (!resendKey || !fromEmail) {
+    return res.status(500).json({
+      error: "missing_resend_env",
+      required: ["RESEND_API_KEY", "RESEND_FROM_EMAIL or RESEND_INVITES_FROM"],
+    });
+  }
+
+  const safeSenderName = escapeHtml(senderName);
+  const safeMessage = escapeHtml(
+    inviteMessage ||
+    "Come work with me for one session. We’ll set our tasks and focus alongside other people."
+  );
+  const safeInviteUrl = escapeHtml(inviteUrl);
+  const resend = new Resend(resendKey);
+  const dayKey = new Date().toISOString().slice(0, 10);
+  const idempotencyKey = `friend-invite-${createHash("sha256")
+    .update(`${user.id}:${recipientEmail}:${dayKey}`)
+    .digest("hex")}`;
+
+  const { data, error } = await resend.emails.send(
+    {
+      from: fromEmail,
+      to: [recipientEmail],
+      replyTo,
+      subject: `${senderName} invited you to focus together on MySession`,
+      html: `
+        <div style="background:#f5f5f3;padding:36px 16px;font-family:Inter,Arial,sans-serif;color:#2f2f2f;">
+          <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:24px;padding:32px;border:1px solid #e7e7e4;">
+            <div style="font-size:24px;font-weight:800;letter-spacing:-0.04em;margin-bottom:28px;">MySession</div>
+            <div style="display:inline-block;border-radius:999px;background:#eef8ef;color:#277d37;padding:7px 11px;font-size:12px;font-weight:700;margin-bottom:18px;">A personal invitation</div>
+            <h1 style="font-size:26px;line-height:1.2;margin:0 0 12px;letter-spacing:-0.025em;">${safeSenderName} wants to focus with you</h1>
+            <p style="font-size:15px;line-height:1.65;color:#606060;margin:0 0 20px;">MySession is a live body-doubling space where people set a task and work alongside others.</p>
+            <div style="background:#f4f4f2;border-radius:16px;padding:16px 18px;font-size:15px;line-height:1.6;margin-bottom:24px;">“${safeMessage}”</div>
+            <a href="${safeInviteUrl}" style="display:block;text-align:center;background:#2f2f2f;color:#ffffff;text-decoration:none;border-radius:14px;padding:14px 18px;font-size:15px;font-weight:700;">Join ${safeSenderName} on MySession</a>
+            <p style="font-size:12px;line-height:1.55;color:#8a8a8a;margin:22px 0 0;">This one-time invitation was sent by ${safeSenderName} through MySession. You were not added to a marketing list.</p>
+          </div>
+        </div>`,
+      text: `${senderName} invited you to focus together on MySession.\n\n${inviteMessage || "Come work with me for one session. We’ll set our tasks and focus alongside other people."}\n\nJoin here: ${inviteUrl}\n\nThis one-time invitation does not subscribe you to marketing emails.`,
+      tags: [{ name: "type", value: "friend_invite" }],
+    },
+    { idempotencyKey },
+  );
+
+  if (error) throw error;
+  return res.status(200).json({
+    ok: true,
+    inviteUrl,
+    resendId: data?.id || null,
+  });
 }
 
 function makeUnsubscribeToken() {
@@ -2450,6 +2587,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const rawSenderAdminAction = normalizeSenderAdminAction(body.action);
     const rawRoomMediaAction = normalizeRoomMediaAdminAction(body.action);
     const rawAccessControlAction = normalizeAccessControlAction(body.action);
+    const rawGrowthAction = normalizeGrowthAction(body.action);
 
     const supabaseUrl = String(
       process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ""
@@ -2487,6 +2625,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({
         error: "auth_required",
         hint: "Send Authorization: Bearer <supabase_access_token>",
+      });
+    }
+
+    if (rawGrowthAction === "send_friend_invite") {
+      return await handleFriendInviteAction({
+        res,
+        sb,
+        accessToken,
+        body,
       });
     }
 

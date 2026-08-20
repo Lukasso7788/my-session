@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type InviteFriendsModalProps = {
   open: boolean;
   onClose: () => void;
   referralLink: string;
+  onSendEmail: (recipientEmail: string, message: string) => Promise<void>;
 };
 
 const DEFAULT_INVITE_MESSAGE =
@@ -17,9 +18,14 @@ export default function InviteFriendsModal({
   open,
   onClose,
   referralLink,
+  onSendEmail,
 }: InviteFriendsModalProps) {
   const [copied, setCopied] = useState(false);
   const [shareError, setShareError] = useState("");
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [inviteMessage, setInviteMessage] = useState(DEFAULT_INVITE_MESSAGE);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
 
   const safeReferralLink = String(referralLink || "").trim();
 
@@ -43,6 +49,8 @@ export default function InviteFriendsModal({
     if (!open) {
       setCopied(false);
       setShareError("");
+      setSending(false);
+      setSent(false);
       return;
     }
 
@@ -64,6 +72,31 @@ export default function InviteFriendsModal({
   }, [open, onClose]);
 
   if (!open) return null;
+
+  const sendEmail = async (event: FormEvent) => {
+    event.preventDefault();
+    const email = recipientEmail.trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      setShareError("Enter a valid email address.");
+      return;
+    }
+
+    setSending(true);
+    setSent(false);
+    setShareError("");
+    try {
+      await onSendEmail(email, inviteMessage.trim());
+      setRecipientEmail("");
+      setSent(true);
+    } catch (error) {
+      console.error("[invite-friends] email failed:", error);
+      setShareError(
+        error instanceof Error ? error.message : "Could not send the invitation."
+      );
+    } finally {
+      setSending(false);
+    }
+  };
 
   const copyLink = async () => {
     setShareError("");
@@ -196,6 +229,56 @@ export default function InviteFriendsModal({
               </button>
             </div>
           </div>
+
+          <form
+            onSubmit={sendEmail}
+            className="mt-5 rounded-[20px] bg-[#F5F5F3] p-4"
+          >
+            <label
+              htmlFor="friend-invite-email"
+              className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#777777]"
+            >
+              Send by email
+            </label>
+            <input
+              id="friend-invite-email"
+              type="email"
+              autoComplete="email"
+              value={recipientEmail}
+              onChange={(event) => {
+                setRecipientEmail(event.target.value);
+                setSent(false);
+              }}
+              placeholder="friend@example.com"
+              className="mt-3 h-12 w-full rounded-[14px] border border-[#DDDDDD] bg-white px-4 text-[14px] outline-none transition focus:border-[#2F2F2F]"
+            />
+            <textarea
+              value={inviteMessage}
+              onChange={(event) => setInviteMessage(event.target.value)}
+              maxLength={500}
+              rows={3}
+              aria-label="Personal invitation message"
+              className="mt-2 w-full resize-none rounded-[14px] border border-[#DDDDDD] bg-white px-4 py-3 text-[13px] leading-relaxed outline-none transition focus:border-[#2F2F2F]"
+            />
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <span className="text-[11px] text-[#858585]">
+                One personal invite. No marketing subscription.
+              </span>
+              <button
+                type="submit"
+                disabled={sending}
+                className="shrink-0 rounded-full bg-[#2F2F2F] px-5 py-2.5 text-[13px] font-semibold text-white transition hover:bg-black disabled:cursor-wait disabled:opacity-50"
+              >
+                {sending ? "Sending..." : sent ? "Sent" : "Send invite"}
+              </button>
+            </div>
+          </form>
+
+          {sent ? (
+            <div className="mt-4 rounded-[14px] bg-[#EDF8EE] px-4 py-3 text-[13px] font-medium text-[#247A35]">
+              Invitation sent successfully.
+            </div>
+          ) : null}
 
           <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <button

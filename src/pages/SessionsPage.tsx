@@ -8,6 +8,7 @@ import ActiveBanModal from "../components/ActiveBanModal";
 import SupportMySessionModal from "../components/SupportMySessionModal";
 import HostSessionPromptModal, { type HostPromptKind } from "../components/HostSessionPromptModal";
 import CommunityPromptModal from "../components/CommunityPromptModal";
+import InviteFriendsModal from "../components/InviteFriendsModal";
 import { SessionsDateFilter } from "../components/SessionsDateFilter";
 import OneOnOnePage from "./OneOnOnePage";
 import { supabase } from "../lib/supabase";
@@ -22,7 +23,7 @@ import { PAYWALL_ENABLED } from "../lib/flags";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
-import { ListChecks } from "lucide-react";
+import { ListChecks, UserPlus } from "lucide-react";
 import SessionsTasksSidebar from "../components/SessionsTasksSidebar";
 import { captureProductEvent } from "../lib/analytics";
 
@@ -527,6 +528,8 @@ export function SessionsPage() {
   const [communityPromptOpen, setCommunityPromptOpen] = useState(false);
   const [tasksSidebarOpen, setTasksSidebarOpen] = useState(false);
   const [unfinishedTaskCount, setUnfinishedTaskCount] = useState(0);
+  const [inviteFriendsOpen, setInviteFriendsOpen] = useState(false);
+  const [inviteFriendsLink, setInviteFriendsLink] = useState("");
 
   const [postSessionPrompt, setPostSessionPrompt] =
     useState<PostSessionPromptState>({
@@ -556,6 +559,74 @@ export function SessionsPage() {
     PostSessionSessionOption[]
   >([]);
   const [postSessionBookingBusyId, setPostSessionBookingBusyId] = useState("");
+
+  const openInviteFriends = useCallback(async () => {
+    if (!user?.id) {
+      navigate("/login");
+      return;
+    }
+
+    const origin =
+      typeof window === "undefined" ? "https://mysession.club" : window.location.origin;
+    setInviteFriendsLink(`${origin}/sessions`);
+    setInviteFriendsOpen(true);
+    captureProductEvent("invite_friends_opened", { source: "sessions_page" });
+
+    const { data, error } = await supabase.rpc("get_or_create_referral_code");
+    if (error) {
+      console.warn("[invite-friends] referral link unavailable:", error);
+      return;
+    }
+
+    const code = String((data as { code?: string } | null)?.code || "").trim();
+    if (code) {
+      setInviteFriendsLink(`${origin}/?ref=${encodeURIComponent(code)}`);
+    }
+  }, [navigate, user?.id]);
+
+  const sendFriendInvite = useCallback(
+    async (recipientEmail: string, inviteMessage: string) => {
+      const { data } = await supabase.auth.getSession();
+      const accessToken = data.session?.access_token;
+      if (!accessToken) {
+        navigate("/login");
+        throw new Error("Please sign in again before sending an invitation.");
+      }
+
+      const response = await fetch("/api/livekit/admin", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          action: "send_friend_invite",
+          recipientEmail,
+          inviteMessage,
+        }),
+      });
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; inviteUrl?: string }
+        | null;
+
+      if (!response.ok) {
+        const message =
+          payload?.error === "invite_your_friend_not_yourself"
+            ? "Use a friend’s email rather than your own."
+            : payload?.error === "valid_recipient_email_required"
+              ? "Enter a valid email address."
+              : "The invitation could not be sent. Please try again.";
+        throw new Error(message);
+      }
+
+      if (payload?.inviteUrl) setInviteFriendsLink(payload.inviteUrl);
+      captureProductEvent("friend_invite_sent", {
+        source: "sessions_page",
+        channel: "email",
+      });
+    },
+    [navigate],
+  );
 
   const checkSessionsPageBan = useCallback(async () => {
     if (!user?.id) {
@@ -2166,8 +2237,18 @@ export function SessionsPage() {
             {user?.id ? (
               <button
                 type="button"
+                onClick={() => void openInviteFriends()}
+                className="absolute left-0 top-1/2 hidden h-11 -translate-y-1/2 items-center gap-2 rounded-full bg-[#2F2F2F] px-4 text-[13px] font-medium text-white transition hover:bg-black xl:flex"
+              >
+                <UserPlus size={17} />
+                Invite friends
+              </button>
+            ) : null}
+            {user?.id ? (
+              <button
+                type="button"
                 onClick={() => setTasksSidebarOpen(true)}
-                className="absolute right-0 top-1/2 hidden h-11 -translate-y-1/2 items-center gap-2 rounded-full bg-[#F1F1F1] px-4 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8] md:flex"
+                className="absolute right-0 top-1/2 hidden h-11 -translate-y-1/2 items-center gap-2 rounded-full bg-[#F1F1F1] px-4 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8] xl:flex"
               >
                 <ListChecks size={17} />
                 Tasks
@@ -2185,11 +2266,20 @@ export function SessionsPage() {
           </div>
 
           {user?.id ? (
-            <button
-              type="button"
-              onClick={() => setTasksSidebarOpen(true)}
-              className="mb-5 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#F1F1F1] text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8] md:hidden"
-            >
+            <div className="mb-5 grid grid-cols-2 gap-2 xl:hidden">
+              <button
+                type="button"
+                onClick={() => void openInviteFriends()}
+                className="flex h-11 items-center justify-center gap-2 rounded-full bg-[#2F2F2F] text-[13px] font-medium text-white transition hover:bg-black"
+              >
+                <UserPlus size={17} />
+                Invite friends
+              </button>
+              <button
+                type="button"
+                onClick={() => setTasksSidebarOpen(true)}
+                className="flex h-11 items-center justify-center gap-2 rounded-full bg-[#F1F1F1] text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8]"
+              >
               <ListChecks size={17} />
               Tasks
               {unfinishedTaskCount > 0 ? (
@@ -2201,7 +2291,8 @@ export function SessionsPage() {
                   {unfinishedTaskCount} unfinished
                 </span>
               ) : null}
-            </button>
+              </button>
+            </div>
           ) : null}
 
           {sessionTypeTab === "one-on-one" ? (
@@ -2300,6 +2391,13 @@ export function SessionsPage() {
           )}
         </div>
       </main>
+
+      <InviteFriendsModal
+        open={inviteFriendsOpen}
+        onClose={() => setInviteFriendsOpen(false)}
+        referralLink={inviteFriendsLink}
+        onSendEmail={sendFriendInvite}
+      />
 
       <SessionsTasksSidebar
         open={tasksSidebarOpen}
