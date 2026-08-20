@@ -150,6 +150,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 if (!active) return;
                 authEventGenerationRef.current += 1;
 
+                // Supabase can emit a late INITIAL_SESSION with `null` while an
+                // OAuth/PKCE SIGNED_IN event has already restored the user on a
+                // slower browser. Treating every null payload as a logout made
+                // the avatar flash briefly and then returned the header to the
+                // signed-out state. Only an explicit SIGNED_OUT event is allowed
+                // to clear an already authenticated client session.
+                if (!currentSession && event !== "SIGNED_OUT") {
+                    if (!currentUserRef.current) setLoading(false);
+                    return;
+                }
 
                 const currentUser = currentSession?.user ?? null;
 
