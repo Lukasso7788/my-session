@@ -2237,18 +2237,8 @@ export function SessionsPage() {
             {user?.id ? (
               <button
                 type="button"
-                onClick={() => void openInviteFriends()}
-                className="absolute left-0 top-1/2 hidden h-11 -translate-y-1/2 items-center gap-2 rounded-full bg-[#2F2F2F] px-4 text-[13px] font-medium text-white transition hover:bg-black xl:flex"
-              >
-                <UserPlus size={17} />
-                Invite friends
-              </button>
-            ) : null}
-            {user?.id ? (
-              <button
-                type="button"
                 onClick={() => setTasksSidebarOpen(true)}
-                className="absolute right-0 top-1/2 hidden h-11 -translate-y-1/2 items-center gap-2 rounded-full bg-[#F1F1F1] px-4 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8] xl:flex"
+                className="absolute right-0 top-1/2 hidden h-11 -translate-y-1/2 items-center gap-2 rounded-full bg-[#F1F1F1] px-4 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8] md:flex"
               >
                 <ListChecks size={17} />
                 Tasks
@@ -2266,20 +2256,11 @@ export function SessionsPage() {
           </div>
 
           {user?.id ? (
-            <div className="mb-5 grid grid-cols-2 gap-2 xl:hidden">
-              <button
-                type="button"
-                onClick={() => void openInviteFriends()}
-                className="flex h-11 items-center justify-center gap-2 rounded-full bg-[#2F2F2F] text-[13px] font-medium text-white transition hover:bg-black"
-              >
-                <UserPlus size={17} />
-                Invite friends
-              </button>
-              <button
-                type="button"
-                onClick={() => setTasksSidebarOpen(true)}
-                className="flex h-11 items-center justify-center gap-2 rounded-full bg-[#F1F1F1] text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8]"
-              >
+            <button
+              type="button"
+              onClick={() => setTasksSidebarOpen(true)}
+              className="mb-5 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#F1F1F1] text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8] md:hidden"
+            >
               <ListChecks size={17} />
               Tasks
               {unfinishedTaskCount > 0 ? (
@@ -2291,8 +2272,7 @@ export function SessionsPage() {
                   {unfinishedTaskCount} unfinished
                 </span>
               ) : null}
-              </button>
-            </div>
+            </button>
           ) : null}
 
           {sessionTypeTab === "one-on-one" ? (
@@ -2391,6 +2371,18 @@ export function SessionsPage() {
           )}
         </div>
       </main>
+
+      {user?.id ? (
+        <button
+          type="button"
+          onClick={() => void openInviteFriends()}
+          className="fixed bottom-[max(20px,env(safe-area-inset-bottom))] right-5 z-40 inline-flex h-11 items-center gap-2 rounded-full border border-[#2F2F2F] bg-white/95 px-4 text-[13px] font-semibold text-[#2F2F2F] shadow-[0_8px_28px_rgba(0,0,0,0.10)] backdrop-blur transition hover:bg-[#2F2F2F] hover:text-white"
+          aria-label="Invite friends"
+        >
+          <UserPlus size={16} />
+          Invite
+        </button>
+      ) : null}
 
       <InviteFriendsModal
         open={inviteFriendsOpen}

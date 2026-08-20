@@ -26,6 +26,7 @@ export default function InviteFriendsModal({
   const [inviteMessage, setInviteMessage] = useState(DEFAULT_INVITE_MESSAGE);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [discordCopied, setDiscordCopied] = useState(false);
 
   const safeReferralLink = String(referralLink || "").trim();
 
@@ -45,12 +46,29 @@ export default function InviteFriendsModal({
     return `mailto:?subject=${subject}&body=${body}`;
   }, [shareText]);
 
+  const telegramUrl = useMemo(
+    () =>
+      `https://t.me/share/url?url=${encodeURIComponent(
+        safeReferralLink
+      )}&text=${encodeURIComponent(DEFAULT_INVITE_MESSAGE)}`,
+    [safeReferralLink]
+  );
+
+  const messengerUrl = useMemo(
+    () =>
+      `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(
+        safeReferralLink
+      )}&quote=${encodeURIComponent(DEFAULT_INVITE_MESSAGE)}`,
+    [safeReferralLink]
+  );
+
   useEffect(() => {
     if (!open) {
       setCopied(false);
       setShareError("");
       setSending(false);
       setSent(false);
+      setDiscordCopied(false);
       return;
     }
 
@@ -115,6 +133,19 @@ export default function InviteFriendsModal({
     } catch (error) {
       console.error("[invite-friends] copy failed:", error);
       setShareError("Could not copy the link. Please try again.");
+    }
+  };
+
+  const copyDiscordInvite = async () => {
+    setShareError("");
+    try {
+      if (!safeReferralLink) throw new Error("Referral link is not ready yet.");
+      await navigator.clipboard.writeText(shareText);
+      setDiscordCopied(true);
+      window.setTimeout(() => setDiscordCopied(false), 2200);
+    } catch (error) {
+      console.error("[invite-friends] Discord copy failed:", error);
+      setShareError("Could not copy the Discord message.");
     }
   };
 
@@ -337,6 +368,33 @@ export default function InviteFriendsModal({
             >
               <span aria-hidden="true">✉️</span>
               Email
+            </a>
+          </div>
+
+          <div className="mt-3 grid grid-cols-3 gap-3">
+            <button
+              type="button"
+              onClick={() => void copyDiscordInvite()}
+              disabled={!safeReferralLink}
+              className="rounded-[16px] border border-[#D8D8D8] bg-white px-3 py-3.5 text-[13px] font-semibold transition hover:border-[#2F2F2F] hover:bg-[#F7F7F7] disabled:opacity-40"
+            >
+              {discordCopied ? "Copied" : "Discord"}
+            </button>
+            <a
+              href={safeReferralLink ? telegramUrl : undefined}
+              target="_blank"
+              rel="noreferrer"
+              className={`rounded-[16px] border border-[#D8D8D8] bg-white px-3 py-3.5 text-center text-[13px] font-semibold transition hover:border-[#2F2F2F] hover:bg-[#F7F7F7] ${safeReferralLink ? "" : "pointer-events-none opacity-40"}`}
+            >
+              Telegram
+            </a>
+            <a
+              href={safeReferralLink ? messengerUrl : undefined}
+              target="_blank"
+              rel="noreferrer"
+              className={`rounded-[16px] border border-[#D8D8D8] bg-white px-3 py-3.5 text-center text-[13px] font-semibold transition hover:border-[#2F2F2F] hover:bg-[#F7F7F7] ${safeReferralLink ? "" : "pointer-events-none opacity-40"}`}
+            >
+              Messenger
             </a>
           </div>
 
