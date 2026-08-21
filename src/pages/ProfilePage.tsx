@@ -652,19 +652,6 @@ export default function ProfilePage() {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => navigate("/settings")}
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-[#2F2F2F] text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white"
-            aria-label="Profile settings"
-            title="Settings"
-          >
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 15.25A3.25 3.25 0 1 0 12 8.75a3.25 3.25 0 0 0 0 6.5Z" stroke="currentColor" strokeWidth="1.8" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06-2.91 2.91-.06-.06A1.65 1.65 0 0 0 15 19.4a1.65 1.65 0 0 0-1 .6 1.65 1.65 0 0 0-.35 1.03V21h-4.1v-.08A1.65 1.65 0 0 0 8.6 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06-2.91-2.91.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.6-1H3V9.9h.08A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06 2.91-2.91.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-.6A1.65 1.65 0 0 0 10.35 3H14v.08A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06 2.91 2.91-.06.06A1.65 1.65 0 0 0 19.4 9c.14.5.52.9 1 1.08.2.08.4.11.6.11V14h-.08A1.65 1.65 0 0 0 19.4 15Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-
-          <button
-            type="button"
             onClick={() => navigate(`/profile/${user.id}`)}
             className="h-10 w-10 rounded-full border border-[#2F2F2F] flex items-center justify-center text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition"
             aria-label="Profile preview"

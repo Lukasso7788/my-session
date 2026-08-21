@@ -482,6 +482,16 @@ export default function Header() {
 
                                                 <button
                                                     onClick={() => {
+                                                        navigate("/settings");
+                                                        setShowUserMenu(false);
+                                                    }}
+                                                    className="w-full text-left px-4 py-2 text-sm font-light hover:bg-slate-50"
+                                                >
+                                                    Settings
+                                                </button>
+
+                                                <button
+                                                    onClick={() => {
                                                         navigate("/focus-shield");
                                                         setShowUserMenu(false);
                                                     }}
@@ -615,6 +625,16 @@ export default function Header() {
                                             className="text-left"
                                         >
                                             Profile
+                                        </button>
+
+                                        <button
+                                            onClick={() => {
+                                                navigate("/settings");
+                                                setMobileMenu(false);
+                                            }}
+                                            className="text-left"
+                                        >
+                                            Settings
                                         </button>
 
                                         <button
