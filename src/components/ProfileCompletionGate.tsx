@@ -181,7 +181,7 @@ export default function ProfileCompletionGate() {
 
     try {
       const now = new Date().toISOString();
-      const { error: profileError } = await supabase
+      let profileUpdate = await supabase
         .from("profiles")
         .update({
           full_name: cleanName,
@@ -191,7 +191,20 @@ export default function ProfileCompletionGate() {
           updated_at: now,
         })
         .eq("id", user.id);
-      if (profileError) throw profileError;
+
+      // Keep name confirmation working during the short deployment window
+      // before the accompanying migration is applied.
+      if (
+        profileUpdate.error &&
+        (profileUpdate.error.code === "PGRST204" ||
+          profileUpdate.error.message.includes("real_name_required"))
+      ) {
+        profileUpdate = await supabase
+          .from("profiles")
+          .update({ full_name: cleanName, updated_at: now })
+          .eq("id", user.id);
+      }
+      if (profileUpdate.error) throw profileUpdate.error;
 
       const { error: authError } = await supabase.auth.updateUser({
         data: {
