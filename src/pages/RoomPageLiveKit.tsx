@@ -1372,6 +1372,7 @@ function inferDeviceTypeFromRuntime(args: {
   const platform = String(
     (navigator as any).userAgentData?.platform || navigator.platform || "",
   ).toLowerCase();
+  const isWindowsRuntime = /windows/i.test(ua) || platform.includes("win");
   const maxTouchPoints = Number((navigator as any).maxTouchPoints || 0);
   const minSide = Math.min(
     window.screen?.width || window.innerWidth || 0,
@@ -1387,7 +1388,16 @@ function inferDeviceTypeFromRuntime(args: {
   if (platform.includes("mac") && maxTouchPoints > 1 && minSide >= 700)
     return "tablet";
   if (/mobi|iphone|ipod|android.*mobile/i.test(ua)) return "mobile";
-  if (maxTouchPoints > 1 && minSide >= 700 && maxSide >= 900) return "tablet";
+  // Touch-enabled Windows laptops report multiple touch points and large screen
+  // dimensions too. They still need the desktop side-panel layout; otherwise
+  // chat/tasks/music incorrectly cover the entire room like on a tablet.
+  if (
+    !isWindowsRuntime &&
+    maxTouchPoints > 1 &&
+    minSide >= 700 &&
+    maxSide >= 900
+  )
+    return "tablet";
 
   return "desktop";
 }
