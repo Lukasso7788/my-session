@@ -8,6 +8,7 @@ import "./index.css";
 
 import { AuthProvider } from "./context/AuthContext";
 import AnalyticsProvider from "./components/AnalyticsProvider";
+import ProfileCompletionGate from "./components/ProfileCompletionGate";
 import { initializeAnalytics } from "./lib/analytics";
 
 const isStandaloneVectorizer = window.location.pathname.replace(/\/$/, "") === "/vectorizer";
@@ -22,6 +23,7 @@ createRoot(document.getElementById("root")!).render(
       <BrowserRouter basename="/">
         <AuthProvider>
           <AnalyticsProvider>
+            <ProfileCompletionGate />
             <App />
           </AnalyticsProvider>
         </AuthProvider>

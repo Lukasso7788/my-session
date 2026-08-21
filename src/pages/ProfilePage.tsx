@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
+import {
+  formatTimeZoneLabel,
+  getDetectedTimeZone,
+  getSupportedTimeZones,
+  isValidTimeZone,
+} from "../lib/timezones";
 
 type HostSupportPaymentRow = {
   id: string;
@@ -138,6 +144,7 @@ export default function ProfilePage() {
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string>("—");
+  const [timeZone, setTimeZone] = useState(getDetectedTimeZone);
 
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -162,6 +169,11 @@ export default function ProfilePage() {
   const avatarFallback = useMemo(() => {
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`;
   }, [displayName]);
+
+  const timeZoneOptions = useMemo(
+    () => getSupportedTimeZones(timeZone),
+    [timeZone],
+  );
 
   const hasHostedSessions = sessions.length > 0;
 
@@ -354,6 +366,23 @@ export default function ProfilePage() {
   }, [loading, user, navigate]);
 
   useEffect(() => {
+    if (!user?.id) return;
+
+    const metadata = user.user_metadata || {};
+    const savedTimeZone = String(
+      metadata.timezone ||
+      metadata.time_zone ||
+      metadata.timeZone ||
+      metadata.tz ||
+      "",
+    ).trim();
+
+    setTimeZone(
+      isValidTimeZone(savedTimeZone) ? savedTimeZone : getDetectedTimeZone(),
+    );
+  }, [user?.id, user?.user_metadata]);
+
+  useEffect(() => {
     if (!profile) return;
 
     setFullName(profile.full_name || "");
@@ -542,20 +571,44 @@ export default function ProfilePage() {
     setSaving(true);
 
     try {
-      await supabase
+      const now = new Date().toISOString();
+      const { error: profileError } = await supabase
         .from("profiles")
         .update({
           full_name: fullName,
           bio,
           avatar_url: avatarUrl,
-          updated_at: new Date().toISOString(),
+          updated_at: now,
         })
         .eq("id", user.id);
+      if (profileError) throw profileError;
 
-      await supabase.auth.updateUser({
-        data: { full_name: fullName, avatar_url: avatarUrl },
+      const { error: authError } = await supabase.auth.updateUser({
+        data: {
+          full_name: fullName,
+          avatar_url: avatarUrl,
+          timezone: timeZone,
+          timezone_confirmed_at:
+            user.user_metadata?.timezone_confirmed_at || now,
+        },
       });
+      if (authError) throw authError;
 
+      const { error: timezoneSyncError } = await supabase
+        .from("email_automation_preferences")
+        .upsert(
+          {
+            user_id: user.id,
+            timezone: timeZone,
+            updated_at: now,
+          },
+          { onConflict: "user_id" },
+        );
+      if (timezoneSyncError) {
+        console.warn("Profile timezone preference sync failed:", timezoneSyncError);
+      }
+
+      localStorage.setItem("mysession-timezone:" + user.id, timeZone);
       setEditMode(false);
       await reloadProfile();
     } catch (error) {
@@ -670,10 +723,29 @@ export default function ProfilePage() {
             <p className="text-xs text-gray-500 mt-2">
               This name will be saved when you click “Save changes”.
             </p>
+
+            <label className="mt-5 block text-sm font-medium text-[#2F2F2F]">
+              Timezone
+              <select
+                value={timeZone}
+                onChange={(event) => setTimeZone(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 outline-none transition focus:ring-2 focus:ring-black"
+                disabled={saving}
+              >
+                {timeZoneOptions.map((zone) => (
+                  <option key={zone} value={zone}>
+                    {formatTimeZoneLabel(zone)}
+                  </option>
+                ))}
+              </select>
+              <span className="mt-2 block text-xs font-normal text-gray-500">
+                Used for session times, reminders, and daily attendance.
+              </span>
+            </label>
           </div>
         )}
 
-        <div className="flex items-center gap-6 mt-2 text-sm">
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm">
           <span className="flex items-center gap-2">
             <img src="/icons/date_profile.svg" alt="Account creation date" className="w-[24px] h-[24px]" />
             <span className="text-[14px] font-light text-[#2F2F2F]">Since: {createdAt}</span>
@@ -687,6 +759,16 @@ export default function ProfilePage() {
           <span className="flex items-center gap-2">
             <img src="/icons/followers_profile.svg" alt="Followers" className="w-[24px] h-[24px]" />
             <span className="text-[14px] font-medium text-[#2F2F2F]">{followersCount} followers</span>
+          </span>
+
+          <span className="flex items-center gap-2" title={timeZone}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="#2F2F2F" strokeWidth="1.6" />
+              <path d="M3 12h18M12 3c2.2 2.45 3.3 5.45 3.3 9S14.2 18.55 12 21c-2.2-2.45-3.3-5.45-3.3-9S9.8 5.45 12 3Z" stroke="#2F2F2F" strokeWidth="1.4" strokeLinecap="round" />
+            </svg>
+            <span className="text-[14px] font-medium text-[#2F2F2F]">
+              {formatTimeZoneLabel(timeZone)}
+            </span>
           </span>
         </div>
       </div>
