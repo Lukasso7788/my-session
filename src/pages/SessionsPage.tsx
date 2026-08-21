@@ -669,15 +669,10 @@ export function SessionsPage() {
       try {
         const [
           stateResult,
-          lifetimeCountResult,
           hostedTotalResult,
           upcomingHostedResult,
         ] = await Promise.allSettled([
           loadEntitlementState(),
-          supabase
-            .from("session_attendance")
-            .select("session_id", { count: "exact", head: true })
-            .eq("user_id", user.id),
           supabase
             .from("sessions")
             .select("id", { count: "exact", head: true })
@@ -693,6 +688,7 @@ export function SessionsPage() {
 
         if (stateResult.status === "fulfilled") {
           setEntitlementState(stateResult.value);
+          setLifetimeSessionsCount(stateResult.value.lifetimeSessionsCount);
         } else {
           if (DEBUG) {
             console.warn(
@@ -701,29 +697,6 @@ export function SessionsPage() {
             );
           }
           setEntitlementState(null);
-        }
-
-        if (lifetimeCountResult.status === "fulfilled") {
-          const { count, error } = lifetimeCountResult.value;
-
-          if (error) {
-            if (DEBUG) {
-              console.warn(
-                "[sessions-support] lifetime session count failed:",
-                error
-              );
-            }
-            setLifetimeSessionsCount(null);
-          } else {
-            setLifetimeSessionsCount(Number(count || 0));
-          }
-        } else {
-          if (DEBUG) {
-            console.warn(
-              "[sessions-support] lifetime session count crashed:",
-              lifetimeCountResult.reason
-            );
-          }
           setLifetimeSessionsCount(null);
         }
 

@@ -103,21 +103,31 @@ async function getWeeklyUsageDirect(
 }
 
 async function getLifetimeSessionsCount(userId: string): Promise<number | null> {
-  // Count directly from the attendance table. The previously attempted
-  // get_lifetime_attendance_count RPC has never shipped in this repository's
-  // migrations, so every entitlement load generated a guaranteed 404 before
-  // falling back to this exact query.
-  const result = await supabase
+  // Infinite rooms reuse one session id forever, so their attendance is counted
+  // by unique room + local calendar day in the database RPC. Keep the direct
+  // query as a rollout fallback while the migration reaches every environment.
+  const rpcResult = await supabase.rpc("get_lifetime_attendance_count");
+
+  if (!rpcResult.error) {
+    return Math.max(0, Number(rpcResult.data || 0));
+  }
+
+  const code = String(rpcResult.error?.code || "");
+  if (code !== "42883" && code !== "PGRST202") {
+    console.error("getLifetimeSessionsCount RPC error:", rpcResult.error);
+  }
+
+  const fallbackResult = await supabase
     .from("session_attendance")
     .select("session_id", { count: "exact", head: true })
     .eq("user_id", userId);
 
-  if (result.error) {
-    console.error("getLifetimeSessionsCount error:", result.error);
+  if (fallbackResult.error) {
+    console.error("getLifetimeSessionsCount fallback error:", fallbackResult.error);
     return null;
   }
 
-  return Math.max(0, Number(result.count || 0));
+  return Math.max(0, Number(fallbackResult.count || 0));
 }
 
 /**
