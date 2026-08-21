@@ -1998,7 +1998,7 @@ export default function AdminPage() {
       if (requirementError) throw requirementError;
 
       setModerationMessage(
-        `${display} will be required to enter a real first and last name.`,
+        `${display} will be required to enter a real first name.`,
       );
     } catch (e: unknown) {
       console.error("[admin] require real name failed:", e);

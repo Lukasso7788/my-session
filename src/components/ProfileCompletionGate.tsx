@@ -19,15 +19,14 @@ function metadataString(value: unknown): string {
 
 function validateRealName(value: string): string {
   const clean = value.trim().replace(/\s+/g, " ");
-  if (clean.length < 3) return "Enter your first and last name.";
+  if (clean.length < 2) return "Enter your real first name.";
   if (clean.length > 80) return "Keep your name under 80 characters.";
   if (clean.includes("@") || /^https?:/i.test(clean)) {
     return "Use your real name, not an email address or link.";
   }
 
-  const parts = clean.split(" ");
-  if (parts.length < 2 || parts.some((part) => !/[\p{L}]/u.test(part))) {
-    return "Enter at least your first and last name.";
+  if (!/[\p{L}]/u.test(clean)) {
+    return "Enter your real first name.";
   }
 
   return "";
@@ -262,7 +261,7 @@ export default function ProfileCompletionGate() {
         <p className="mt-2 text-[14px] leading-6 text-black/58">
           {showingTimeZone
             ? "We detected this from your device. MySession uses it for session times, reminders, and daily attendance."
-            : "MySession works through trust and accountability. After five sessions, everyone continues with their real first and last name."}
+            : "MySession works through trust and accountability. After five sessions, everyone continues using their real first name."}
         </p>
 
         {showingTimeZone ? (
@@ -290,7 +289,7 @@ export default function ProfileCompletionGate() {
         ) : (
           <label className="mt-6 block">
             <span className="text-[12px] font-semibold text-black/60">
-              First and last name
+              Real first name
             </span>
             <input
               value={realName}
@@ -302,8 +301,8 @@ export default function ProfileCompletionGate() {
                 if (event.key === "Enter") void confirmRealName();
               }}
               className="mt-2 h-12 w-full rounded-2xl border border-black/10 bg-[#F6F6F6] px-4 text-[15px] outline-none transition placeholder:text-black/30 focus:border-[#2F2F2F]"
-              placeholder="Your real name"
-              autoComplete="name"
+              placeholder="Your real first name"
+              autoComplete="given-name"
               autoFocus
               maxLength={80}
             />
