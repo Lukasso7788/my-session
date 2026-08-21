@@ -45,6 +45,7 @@ import { CreateSessionModalProvider } from "./context/CreateSessionModalContext"
 import { storeReferralCodeFromUrl } from "./lib/referrals";
 import { supabase } from "./lib/supabase";
 import AppBootstrapGate from "./components/AppBootstrapGate";
+import InAppBrowserMediaGate from "./components/InAppBrowserMediaGate";
 
 import GroupFocusSessionsPage from "./pages/seo/GroupFocusSessionsPage";
 import SilentCoworkingPage from "./pages/seo/SilentCoworkingPage";
@@ -123,6 +124,7 @@ export default function App() {
 
   return (
     <CreateSessionModalProvider>
+      <InAppBrowserMediaGate />
       <AppBootstrapGate>
         <Routes>
         <Route element={<AppLayout />}>
