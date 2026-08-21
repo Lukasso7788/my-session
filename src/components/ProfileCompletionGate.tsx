@@ -72,11 +72,22 @@ export default function ProfileCompletionGate() {
     setNeedsTimeZone(!timeZoneConfirmed);
     setMessage("");
 
-    void loadEntitlementState()
-      .then((state) => {
+    void Promise.all([
+      loadEntitlementState(),
+      supabase
+        .from("profiles")
+        .select("real_name_required")
+        .eq("id", user.id)
+        .maybeSingle(),
+    ])
+      .then(([state, requirementResult]) => {
         if (cancelled) return;
         const lifetimeCount = Number(state.lifetimeSessionsCount || 0);
-        setNeedsRealName(lifetimeCount >= 5 && !realNameConfirmed);
+        const adminRequiresRealName =
+          requirementResult.data?.real_name_required === true;
+        setNeedsRealName(
+          adminRequiresRealName || (lifetimeCount >= 5 && !realNameConfirmed),
+        );
       })
       .catch(() => {
         if (!cancelled) setNeedsRealName(false);
@@ -174,6 +185,9 @@ export default function ProfileCompletionGate() {
         .from("profiles")
         .update({
           full_name: cleanName,
+          real_name_required: false,
+          real_name_required_at: null,
+          real_name_required_by: null,
           updated_at: now,
         })
         .eq("id", user.id);

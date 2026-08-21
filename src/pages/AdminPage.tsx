@@ -1398,6 +1398,8 @@ export default function AdminPage() {
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [selectedUser, setSelectedUser] = useState<AdminUserRow | null>(null);
   const [banModalOpen, setBanModalOpen] = useState(false);
+  const [requiringRealNameUserId, setRequiringRealNameUserId] = useState("");
+  const [moderationMessage, setModerationMessage] = useState("");
 
   const [activeBans, setActiveBans] = useState<ActiveBan[]>([]);
   const [bansLoading, setBansLoading] = useState(false);
@@ -1972,6 +1974,43 @@ export default function AdminPage() {
     }
   };
 
+  const requireRealName = async (userRow: AdminUserRow) => {
+    const display = String(
+      userRow.full_name || userRow.email || userRow.id || "this user",
+    );
+    if (
+      !window.confirm(
+        `Require ${display} to replace their current name before continuing?`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setRequiringRealNameUserId(userRow.id);
+      setModerationMessage("");
+      setError("");
+
+      const { error: requirementError } = await supabase.rpc(
+        "admin_require_real_name",
+        { p_user_id: userRow.id },
+      );
+      if (requirementError) throw requirementError;
+
+      setModerationMessage(
+        `${display} will be required to enter a real first and last name.`,
+      );
+    } catch (e: unknown) {
+      console.error("[admin] require real name failed:", e);
+      setError(
+        e instanceof Error
+          ? e.message
+          : String(e || "Failed to require a real name."),
+      );
+    } finally {
+      setRequiringRealNameUserId("");
+    }
+  };
   const revoke = async (ban: ActiveBan) => {
     try {
       setRevokingBanId(ban.id);
@@ -2579,6 +2618,11 @@ export default function AdminPage() {
               </div>
 
               <div className="mt-5 space-y-3">
+                {moderationMessage ? (
+                  <div className="rounded-2xl bg-[#EAF8EC] px-4 py-3 text-[13px] font-medium text-[#217A2D]">
+                    {moderationMessage}
+                  </div>
+                ) : null}
                 {users.length === 0 ? (
                   <div className="rounded-2xl border border-black/10 bg-white px-4 py-4 text-[14px] text-[#666]">
                     No users selected yet. Search by full name, email, or UUID.
@@ -2606,16 +2650,28 @@ export default function AdminPage() {
                           </div>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedUser(u);
-                            setBanModalOpen(true);
-                          }}
-                          className="rounded-full bg-red-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-red-700"
-                        >
-                          Ban user
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={requiringRealNameUserId === u.id}
+                            onClick={() => void requireRealName(u)}
+                            className="rounded-full border border-black/15 bg-white px-4 py-2 text-[13px] font-semibold text-[#2F2F2F] transition hover:border-black/30 hover:bg-[#F3F3F3] disabled:cursor-wait disabled:opacity-55"
+                          >
+                            {requiringRealNameUserId === u.id
+                              ? "Applying…"
+                              : "Require real name"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedUser(u);
+                              setBanModalOpen(true);
+                            }}
+                            className="rounded-full bg-red-600 px-4 py-2 text-[13px] font-semibold text-white hover:bg-red-700"
+                          >
+                            Ban user
+                          </button>
+                        </div>
                       </div>
                     );
                   })
