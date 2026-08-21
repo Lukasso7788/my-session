@@ -364,6 +364,58 @@ function VideoTileInner({
     const cameraFramingModeRef = useRef(cameraFramingMode);
     cameraFramingModeRef.current = cameraFramingMode;
 
+    // Keep the outgoing LiveKit element mounted just long enough to crossfade
+    // into the avatar instead of cutting to the camera-off state in one frame.
+    const cameraFadeDurationMs = 360;
+    const [renderedVideoTrack, setRenderedVideoTrack] = useState<Track | undefined>(videoTrack);
+    const [cameraLayerVisible, setCameraLayerVisible] = useState(!!videoTrack);
+    const renderedVideoTrackRef = useRef<Track | undefined>(videoTrack);
+    const cameraFadeTimerRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (cameraFadeTimerRef.current !== null) {
+            window.clearTimeout(cameraFadeTimerRef.current);
+            cameraFadeTimerRef.current = null;
+        }
+
+        if (videoTrack) {
+            const isEntering = !renderedVideoTrackRef.current;
+            renderedVideoTrackRef.current = videoTrack;
+            setRenderedVideoTrack(videoTrack);
+
+            if (isEntering) {
+                setCameraLayerVisible(false);
+                cameraFadeTimerRef.current = window.setTimeout(() => {
+                    setCameraLayerVisible(true);
+                    cameraFadeTimerRef.current = null;
+                }, 24);
+                return () => {
+                    if (cameraFadeTimerRef.current !== null) {
+                        window.clearTimeout(cameraFadeTimerRef.current);
+                        cameraFadeTimerRef.current = null;
+                    }
+                };
+            }
+
+            setCameraLayerVisible(true);
+            return;
+        }
+
+        setCameraLayerVisible(false);
+        cameraFadeTimerRef.current = window.setTimeout(() => {
+            renderedVideoTrackRef.current = undefined;
+            setRenderedVideoTrack(undefined);
+            cameraFadeTimerRef.current = null;
+        }, cameraFadeDurationMs);
+
+        return () => {
+            if (cameraFadeTimerRef.current !== null) {
+                window.clearTimeout(cameraFadeTimerRef.current);
+                cameraFadeTimerRef.current = null;
+            }
+        };
+    }, [videoTrack]);
+
     const isLight = theme === "light";
     const isCompact = density === "compact";
 
@@ -457,11 +509,11 @@ function VideoTileInner({
 
             try {
                 if (
-                    videoTrack &&
+                    renderedVideoTrack &&
                     current &&
-                    typeof (videoTrack as any)?.detach === "function"
+                    typeof (renderedVideoTrack as any)?.detach === "function"
                 ) {
-                    (videoTrack as any).detach(current as any);
+                    (renderedVideoTrack as any).detach(current as any);
                 }
             } catch { }
 
@@ -495,15 +547,15 @@ function VideoTileInner({
 
         cleanup();
 
-        if (!videoTrack) return cleanup;
+        if (!renderedVideoTrack) return cleanup;
 
         let el: HTMLElement | null = null;
 
         try {
-            if (typeof (videoTrack as any)?.attach === "function") {
-                el = (videoTrack as any).attach() as HTMLElement;
+            if (typeof (renderedVideoTrack as any)?.attach === "function") {
+                el = (renderedVideoTrack as any).attach() as HTMLElement;
             } else {
-                console.warn("videoTrack.attach is not a function", videoTrack);
+                console.warn("videoTrack.attach is not a function", renderedVideoTrack);
                 return cleanup;
             }
         } catch (e) {
@@ -566,7 +618,7 @@ function VideoTileInner({
             playbackTimers.push(window.setTimeout(tryPlay, 500));
         }
         return cleanup;
-    }, [videoTrack]);
+    }, [renderedVideoTrack]);
 
     // Change framing without detaching and recreating the LiveKit media element.
     // `contain` preserves the complete portrait feed from phones; `cover` keeps
@@ -643,43 +695,56 @@ function VideoTileInner({
             }
         >
             <div className="absolute inset-0">
-                {videoTrack ? (
+                <div
+                    className={`absolute inset-0 flex flex-col items-center justify-center motion-reduce:!transition-none ${offStateClass}`}
+                    aria-hidden={cameraLayerVisible}
+                    style={{
+                        opacity: cameraLayerVisible ? 0 : 1,
+                        transform: cameraLayerVisible ? "scale(0.985)" : "scale(1)",
+                        transition: `opacity ${cameraFadeDurationMs}ms cubic-bezier(0.22, 1, 0.36, 1), transform ${cameraFadeDurationMs}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+                    }}
+                >
+                    {shouldShowAvatar ? (
+                        <img
+                            src={normalizedAvatarUrl}
+                            alt={label || "User"}
+                            data-mobile-pip-avatar="true"
+                            className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)]"} rounded-full object-cover border shadow-2xl ${isLight ? "border-[#D8D0D0]" : "border-[#2B2B2B]"
+                                }`}
+                            referrerPolicy="no-referrer"
+                            onError={() => setAvatarBroken(true)}
+                            draggable={false}
+                        />
+                    ) : (
+                        <div
+                            data-mobile-pip-initials="true"
+                            className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)] text-[clamp(0.8rem,5vmin,1.05rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)] text-[clamp(1.1rem,3vw,1.45rem)]"} rounded-full border flex items-center justify-center font-bold shadow-2xl ${initialsBgClass}`}
+                        >
+                            {initials}
+                        </div>
+                    )}
+
+                    <div className="mt-2 text-[11px] opacity-75">Camera off</div>
+
+                    {debugSizing && sizeText ? (
+                        <div className="text-[10px] opacity-70 mt-1">{sizeText}</div>
+                    ) : null}
+                </div>
+
+                {renderedVideoTrack ? (
                     <div
                         ref={mediaHostRef}
-                        className="absolute inset-0 w-full h-full"
-                        style={{ backgroundColor: mediaBgColor }}
+                        className="absolute inset-0 w-full h-full motion-reduce:!transition-none"
+                        aria-hidden={!cameraLayerVisible}
+                        style={{
+                            backgroundColor: mediaBgColor,
+                            opacity: cameraLayerVisible ? 1 : 0,
+                            transform: cameraLayerVisible ? "scale(1)" : "scale(1.012)",
+                            filter: cameraLayerVisible ? "blur(0px)" : "blur(1.5px)",
+                            transition: `opacity ${cameraFadeDurationMs}ms cubic-bezier(0.22, 1, 0.36, 1), transform ${cameraFadeDurationMs}ms cubic-bezier(0.22, 1, 0.36, 1), filter ${cameraFadeDurationMs}ms ease-out`,
+                        }}
                     />
-                ) : (
-                    <div
-                        className={`absolute inset-0 flex flex-col items-center justify-center ${offStateClass}`}
-                    >
-                        {shouldShowAvatar ? (
-                            <img
-                                src={normalizedAvatarUrl}
-                                alt={label || "User"}
-                                data-mobile-pip-avatar="true"
-                                className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)]"} rounded-full object-cover border shadow-2xl ${isLight ? "border-[#D8D0D0]" : "border-[#2B2B2B]"
-                                    }`}
-                                referrerPolicy="no-referrer"
-                                onError={() => setAvatarBroken(true)}
-                                draggable={false}
-                            />
-                        ) : (
-                            <div
-                                data-mobile-pip-initials="true"
-                                className={`${isCompact ? "h-[clamp(2.3rem,16vmin,3.4rem)] w-[clamp(2.3rem,16vmin,3.4rem)] text-[clamp(0.8rem,5vmin,1.05rem)]" : "h-[clamp(4.4rem,12vw,5.8rem)] w-[clamp(4.4rem,12vw,5.8rem)] text-[clamp(1.1rem,3vw,1.45rem)]"} rounded-full border flex items-center justify-center font-bold shadow-2xl ${initialsBgClass}`}
-                            >
-                                {initials}
-                            </div>
-                        )}
-
-                        <div className="mt-2 text-[11px] opacity-75">Camera off</div>
-
-                        {debugSizing && sizeText ? (
-                            <div className="text-[10px] opacity-70 mt-1">{sizeText}</div>
-                        ) : null}
-                    </div>
-                )}
+                ) : null}
 
                 {debugSizing && videoTrack && sizeText ? (
                     <div
