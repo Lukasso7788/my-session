@@ -36,8 +36,14 @@ export class VoiceController {
       action.element.scrollIntoView({ behavior: "smooth", block: "center" });
       action.element.focus({ preventScroll: true });
       if (action.kind === "input" && value != null) {
-        const editable = action.element as HTMLInputElement;
-        editable.value = value; editable.dispatchEvent(new Event("input", { bubbles: true })); editable.dispatchEvent(new Event("change", { bubbles: true }));
+        const editable = action.element as HTMLInputElement | HTMLTextAreaElement;
+        if (editable.isContentEditable) editable.textContent = value;
+        else {
+          const prototype = editable instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(prototype, "value")?.set?.call(editable, value);
+        }
+        editable.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: value }));
+        editable.dispatchEvent(new Event("change", { bubbles: true }));
       } else if (action.kind === "select" && value != null) {
         const select = action.element as HTMLSelectElement;
         const option = Array.from(select.options).find(item => item.text.toLocaleLowerCase().includes(value.toLocaleLowerCase()));
@@ -46,6 +52,11 @@ export class VoiceController {
     }
     this.options.onMatch?.(match); return true;
   }
-  async handle(transcript: string) { const match = this.resolve(transcript); if (match) await this.execute(match); return match; }
+  async handle(transcript: string) {
+    const match = this.resolve(transcript);
+    if (match) await this.execute(match);
+    else this.options.onNoMatch?.(transcript);
+    return match;
+  }
   destroy() { this.observer?.disconnect(); this.manual.clear(); this.discovered = []; }
 }

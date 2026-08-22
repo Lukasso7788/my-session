@@ -46,6 +46,7 @@ import { storeReferralCodeFromUrl } from "./lib/referrals";
 import { supabase } from "./lib/supabase";
 import AppBootstrapGate from "./components/AppBootstrapGate";
 import InAppBrowserMediaGate from "./components/InAppBrowserMediaGate";
+import VoiceControlHud from "./components/VoiceControlHud";
 
 import GroupFocusSessionsPage from "./pages/seo/GroupFocusSessionsPage";
 import SilentCoworkingPage from "./pages/seo/SilentCoworkingPage";
@@ -129,6 +130,7 @@ export default function App() {
   return (
     <CreateSessionModalProvider>
       <InAppBrowserMediaGate />
+      <VoiceControlHud />
       <AppBootstrapGate>
         <Routes>
         <Route element={<AppLayout />}>
