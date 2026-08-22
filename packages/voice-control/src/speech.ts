@@ -9,52 +9,84 @@ export class WebSpeechAdapter {
   private recognition?: RecognitionLike;
   private continuousRequested = false;
   private restartTimer?: number;
+  private watchdogTimer?: number;
 
   constructor(private controller: VoiceController, private transcriptHandler?: (text: string) => void | Promise<void>) {}
   supported() { return Boolean(this.ctor()); }
+
   private ctor(): RecognitionCtor | undefined {
     const scope = window as typeof window & { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor };
     return scope.SpeechRecognition || scope.webkitSpeechRecognition;
   }
+
+  private clearTimers() {
+    if (this.restartTimer) window.clearTimeout(this.restartTimer);
+    if (this.watchdogTimer) window.clearTimeout(this.watchdogTimer);
+    this.restartTimer = undefined;
+    this.watchdogTimer = undefined;
+  }
+
+  private restart(recognition: RecognitionLike, delay = 180) {
+    if (!this.continuousRequested || this.recognition !== recognition) return;
+    this.clearTimers();
+    this.recognition = undefined;
+    try { recognition.abort(); } catch { /* already finalized */ }
+    this.restartTimer = window.setTimeout(() => {
+      this.restartTimer = undefined;
+      if (this.continuousRequested && !this.recognition) this.start({ continuous: true });
+    }, delay);
+  }
+
   start({ continuous = false } = {}) {
     const Ctor = this.ctor();
     if (!Ctor) throw new Error("speech_recognition_not_supported");
     this.continuousRequested = continuous;
-    if (this.restartTimer) window.clearTimeout(this.restartTimer);
-    this.recognition?.abort();
+    this.clearTimers();
+    try { this.recognition?.abort(); } catch { /* already finalized */ }
+
     const recognition = this.recognition = new Ctor();
     recognition.lang = this.controller.options.locale;
-    recognition.continuous = continuous;
+    // Short sessions are more reliable than the browser's nominal continuous
+    // mode, especially while another WebRTC surface owns the microphone.
+    recognition.continuous = false;
     recognition.interimResults = false;
+
     recognition.addEventListener("result", event => {
       const results = (event as RecognitionResultEvent).results;
       const result = results[results.length - 1];
-      if (result?.isFinal) {
-        const handler = this.transcriptHandler || ((text: string) => this.controller.handle(text));
-        void Promise.resolve(handler(result[0].transcript)).catch(error => this.controller.options.onError?.(error));
-      }
+      if (!result?.isFinal) return;
+      const handler = this.transcriptHandler || ((text: string) => this.controller.handle(text));
+      void Promise.resolve(handler(result[0].transcript))
+        .catch(error => this.controller.options.onError?.(error))
+        .finally(() => {
+          if (this.continuousRequested) this.restart(recognition);
+        });
     });
+
     recognition.addEventListener("error", event => {
       const detail = event as RecognitionErrorEvent;
-      this.controller.options.onError?.(new Error(detail.message || detail.error));
+      const code = detail.message || detail.error;
+      if (!/aborted|no-speech/i.test(code)) this.controller.options.onError?.(new Error(code));
     });
+
     recognition.addEventListener("end", () => {
-      if (!this.continuousRequested || this.recognition !== recognition) return;
-      this.restartTimer = window.setTimeout(() => {
-        if (this.continuousRequested && this.recognition === recognition) this.start({ continuous: true });
-      }, 250);
+      if (this.continuousRequested) this.restart(recognition);
+      else if (this.recognition === recognition) this.recognition = undefined;
     });
+
     recognition.start();
+    if (continuous) {
+      this.watchdogTimer = window.setTimeout(() => this.restart(recognition, 220), 12_000);
+    }
   }
+
   stop() {
     this.continuousRequested = false;
-    if (this.restartTimer) window.clearTimeout(this.restartTimer);
-    this.recognition?.stop();
-  }
-  destroy() {
-    this.continuousRequested = false;
-    if (this.restartTimer) window.clearTimeout(this.restartTimer);
-    this.recognition?.abort();
+    this.clearTimers();
+    const recognition = this.recognition;
     this.recognition = undefined;
+    try { recognition?.abort(); } catch { /* already finalized */ }
   }
+
+  destroy() { this.stop(); }
 }

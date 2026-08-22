@@ -41,6 +41,25 @@ function spokenCommand(action: VoiceAction) {
   return action.label;
 }
 
+const ORDINAL_WORDS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"];
+
+function ordinalNumber(value: number) {
+  const remainder = value % 100;
+  if (remainder >= 11 && remainder <= 13) return value + "th";
+  if (value % 10 === 1) return value + "st";
+  if (value % 10 === 2) return value + "nd";
+  if (value % 10 === 3) return value + "rd";
+  return value + "th";
+}
+
+function sessionPositionAliases(verb: "join" | "edit", index: number) {
+  const position = index + 1;
+  return [
+    verb + " " + (ORDINAL_WORDS[index] || ordinalNumber(position)) + " session",
+    verb + " " + ordinalNumber(position) + " session",
+    verb + " session " + position,
+  ];
+}
 function matchesHotkey(event: KeyboardEvent, hotkey: string) {
   const parts = hotkey.toLowerCase().split("+").map(part => part.trim());
   const key = parts.at(-1) || "v";
@@ -89,11 +108,58 @@ export default function VoiceControlHud() {
     controller.register({ id: "scroll-top", label: "Scroll to top", aliases: ["scroll to top", "top of page", "в начало"], execute: () => window.scrollTo({ top: 0, behavior: "smooth" }) });
     controller.register({ id: "scroll-bottom", label: "Scroll to bottom", aliases: ["scroll to bottom", "bottom of page", "в конец"], execute: () => window.scrollTo({ top: document.documentElement.scrollHeight, behavior: "smooth" }) });
 
+    const dynamicUnregisters = new Map<string, () => void>();
+    const refreshSessionActions = () => {
+      dynamicUnregisters.forEach(unregister => unregister());
+      dynamicUnregisters.clear();
+      const cards = Array.from(document.querySelectorAll<HTMLElement>("[data-voice-session-card]"));
+      cards.forEach((card, index) => {
+        const sessionId = card.dataset.voiceSessionId || String(index);
+        const sessionName = String(card.dataset.voiceSessionName || "Session").trim();
+        const findCard = () => Array.from(document.querySelectorAll<HTMLElement>("[data-voice-session-card]"))
+          .find(candidate => candidate.dataset.voiceSessionId === sessionId);
+
+        const joinId = "session-join-" + sessionId;
+        dynamicUnregisters.set(joinId, controller.register({
+          id: joinId,
+          label: "Join " + sessionName,
+          aliases: ["join " + sessionName, "open " + sessionName, ...sessionPositionAliases("join", index)],
+          execute: () => findCard()?.querySelector<HTMLButtonElement>("[data-voice-session-action='join']")?.click(),
+        }));
+
+        if (card.dataset.voiceSessionEditable === "true") {
+          const editId = "session-edit-" + sessionId;
+          dynamicUnregisters.set(editId, controller.register({
+            id: editId,
+            label: "Edit " + sessionName,
+            aliases: ["edit " + sessionName, "change " + sessionName, ...sessionPositionAliases("edit", index)],
+            execute: () => {
+              const currentCard = findCard();
+              if (!currentCard) return;
+              const clickEdit = () => {
+                const editButton = Array.from(currentCard.querySelectorAll<HTMLButtonElement>("button"))
+                  .find(button => /^edit/i.test(String(button.textContent || "").trim()));
+                editButton?.click();
+                return Boolean(editButton);
+              };
+              if (clickEdit()) return;
+              currentCard.querySelector<HTMLButtonElement>("[data-voice-session-action='options']")?.click();
+              window.setTimeout(clickEdit, 100);
+            },
+          }));
+        }
+      });
+    };
+
+    refreshSessionActions();
     const speech = new WebSpeechAdapter(controller);
     speechRef.current = speech;
     setActions(controller.actions());
-    const timer = window.setInterval(() => setActions(controller.actions()), 2000);
-    return () => { window.clearInterval(timer); speech.destroy(); controller.destroy(); speechRef.current = null; };
+    const timer = window.setInterval(() => {
+      refreshSessionActions();
+      setActions(controller.actions());
+    }, 2000);
+    return () => { window.clearInterval(timer); dynamicUnregisters.forEach(unregister => unregister()); speech.destroy(); controller.destroy(); speechRef.current = null; };
   }, [isRoom, locale, navigate, location.pathname]);
 
   const startListening = useCallback((continuous: boolean) => {
