@@ -16706,7 +16706,7 @@ export function RoomPageLiveKit({
         (isTemporaryRoomHost && !sessionOwnerIsPresent)
       )
         return "Host";
-      if (isSuperAdmin) return "Super admin";
+      if (isSuperAdmin) return "Admin";
       if (isSelfModerator) return "Moderator";
       return null;
     }
@@ -17848,7 +17848,7 @@ export function RoomPageLiveKit({
                       ? isActiveOperationalHost
                         ? "Host"
                         : isSuperAdmin
-                          ? "Super admin"
+                          ? "Admin"
                           : isMod
                           ? "Moderator"
                           : "You"
@@ -20803,7 +20803,7 @@ export function RoomPageLiveKit({
                               }
                               title={
                                 !canModerateTarget
-                                  ? "Only host, moderator, or super admin can mute participants"
+                                  ? "Only host, moderator, or admin can mute participants"
                                   : "Mute Mic"
                               }
                             >
@@ -20834,7 +20834,7 @@ export function RoomPageLiveKit({
                               }
                               title={
                                 !canModerateTarget
-                                  ? "Only host, moderator, or super admin can control participant camera"
+                                  ? "Only host, moderator, or admin can control participant camera"
                                   : "Turn camera off"
                               }
                             >
