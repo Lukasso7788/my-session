@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
+import ProfileProgressDashboard from "../components/ProfileProgressDashboard";
 import {
   formatTimeZoneLabel,
   getDetectedTimeZone,
@@ -215,8 +216,6 @@ export default function ProfilePage() {
     });
   }, [payoutRequests]);
 
-  const recentSupportPayments = useMemo(() => hostSupportPayments.slice(0, 5), [hostSupportPayments]);
-  const recentPayoutRequests = useMemo(() => payoutRequests.slice(0, 5), [payoutRequests]);
 
   const upcomingSessions = useMemo(() => {
     const now = Date.now();
@@ -265,27 +264,6 @@ export default function ProfilePage() {
       default:
         return "";
     }
-  };
-
-  const getPaymentBadgeClass = (status: string | null) => {
-    const normalized = String(status || "").toLowerCase();
-
-    if (normalized === "available") return "bg-[#DCFCE7] text-[#15803D]";
-    if (normalized === "pending") return "bg-[#FEF3C7] text-[#92400E]";
-    if (normalized === "paid_out") return "bg-[#DBEAFE] text-[#1D4ED8]";
-
-    return "bg-[#E5E7EB] text-[#374151]";
-  };
-
-  const getPayoutBadgeClass = (status: string | null) => {
-    const normalized = String(status || "").toLowerCase();
-
-    if (normalized === "requested") return "bg-[#FEF3C7] text-[#92400E]";
-    if (normalized === "processing") return "bg-[#DBEAFE] text-[#1D4ED8]";
-    if (normalized === "paid" || normalized === "completed") return "bg-[#DCFCE7] text-[#15803D]";
-    if (normalized === "rejected") return "bg-red-100 text-red-700";
-
-    return "bg-[#E5E7EB] text-[#374151]";
   };
 
   const formatSince = (iso: string) => {
@@ -641,13 +619,18 @@ export default function ProfilePage() {
 
   return (
     <main className="w-full px-8 pt-10 pb-24 font-inter text-gray-900">
-      <div className="flex items-center justify-between mb-10">
+      <div className="relative flex items-center justify-between mb-10">
         <button
           onClick={() => navigate(-1)}
           className="text-[16px] text-[#2F2F2F] hover:text-black flex items-center gap-2"
         >
           ← Back
         </button>
+
+        <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center rounded-full bg-[#F1F1EF] p-1 sm:flex" aria-label="Profile sections">
+          <a href="#profile-overview" className="rounded-full px-4 py-2 text-[12px] font-semibold text-[#666] transition hover:bg-white hover:text-[#2F2F2F]">Profile</a>
+          <a href="#profile-progress" className="rounded-full px-4 py-2 text-[12px] font-semibold text-[#666] transition hover:bg-white hover:text-[#2F2F2F]">Progress</a>
+        </nav>
 
         <div className="flex items-center gap-3">
           <button
@@ -676,7 +659,7 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      <div className="flex flex-col items-center">
+      <div id="profile-overview" className="scroll-mt-24 flex flex-col items-center">
         <div className="relative">
           <img
             src={avatarUrl || avatarFallback}
@@ -780,6 +763,8 @@ export default function ProfilePage() {
         )}
       </section>
 
+      <ProfileProgressDashboard userId={user.id} timeZone={timeZone} />
+
       <div className="mt-16 border-t border-gray-200" />
 
       <section className="mt-10">
@@ -816,156 +801,36 @@ export default function ProfilePage() {
       </section>
 
       {hostSupportApproved && (
-        <section className="mt-8">
-          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-            <div className="flex flex-col gap-3 border-b border-gray-200 bg-gray-50 px-6 py-5 md:flex-row md:items-center md:justify-between">
+        <section className="mt-8 flex justify-end">
+          <div className="w-full overflow-hidden rounded-[22px] bg-[#F7F7F5] ring-1 ring-black/[0.07] lg:max-w-[430px]">
+            <div className="flex items-center justify-between gap-4 px-5 py-4">
               <div>
-                <h2 className="text-xl font-bold text-[#2F2F2F]">Host balance</h2>
-                <p className="mt-1 text-sm text-gray-600">
-                  Support received through your public host profile.
-                </p>
+                <div className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[#858585]">Host balance</div>
+                <div className="mt-1 text-[26px] font-bold leading-none text-[#2F2F2F]">{formatMoney(hostBalance.availableUsd)}</div>
+                <div className="mt-1 text-[11px] text-[#858585]">Available to request</div>{hostSupportLoading ? <div className="mt-1 text-[10px] text-[#999]">Refreshing…</div> : null}
               </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                {hostSupportLoading && <span className="text-sm text-gray-500">Loading balance…</span>}
-
-                <button
-                  type="button"
-                  onClick={handleAskPayout}
-                  disabled={payoutBusy || hostBalance.availableUsd <= 0 || hasOpenPayoutRequest}
-                  className="rounded-full bg-[#2F2F2F] px-5 py-2.5 text-[13px] font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                  title={hasOpenPayoutRequest ? "You already have an open payout request" : "Ask admin to process payout"}
-                >
-                  {payoutBusy ? "Requesting..." : "Ask payout"}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={handleAskPayout}
+                disabled={payoutBusy || hostBalance.availableUsd <= 0 || hasOpenPayoutRequest}
+                className="rounded-full bg-[#2F2F2F] px-4 py-2.5 text-[12px] font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {payoutBusy ? "Requesting…" : hasOpenPayoutRequest ? "Request pending" : "Ask payout"}
+              </button>
             </div>
-
-            {(payoutMessage || payoutError) && (
-              <div className="px-6 pt-5">
-                <div
-                  className={`rounded-2xl border px-4 py-3 text-[13px] ${payoutError
-                      ? "border-red-200 bg-red-50 text-red-700"
-                      : "border-green-200 bg-green-50 text-green-700"
-                    }`}
-                >
-                  {payoutError || payoutMessage}
-                </div>
+            {(payoutMessage || payoutError) ? (
+              <div className={`mx-4 mb-3 rounded-xl px-3 py-2 text-[11px] ${payoutError ? "bg-red-50 text-red-700" : "bg-[#E7F8EA] text-[#267237]"}`}>
+                {payoutError || payoutMessage}
               </div>
-            )}
-
-            <div className="grid grid-cols-1 gap-3 px-6 py-5 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">Available</div>
-                <div className="mt-2 text-2xl font-bold text-[#15803D]">{formatMoney(hostBalance.availableUsd)}</div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">Pending</div>
-                <div className="mt-2 text-2xl font-bold text-[#92400E]">{formatMoney(hostBalance.pendingUsd)}</div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">Paid out</div>
-                <div className="mt-2 text-2xl font-bold text-[#1D4ED8]">{formatMoney(hostBalance.paidOutUsd)}</div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">Total received</div>
-                <div className="mt-2 text-2xl font-bold text-[#2F2F2F]">{formatMoney(hostBalance.totalReceivedUsd)}</div>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-200 px-6 py-5">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="text-[15px] font-bold text-[#2F2F2F]">Payout requests</h3>
-                <span className="text-[12px] text-gray-500">Showing latest {recentPayoutRequests.length}</span>
-              </div>
-
-              {recentPayoutRequests.length === 0 ? (
-                <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-5 text-sm text-slate-500">
-                  No payout requests yet.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {recentPayoutRequests.map((request) => {
-                    const status = String(request.status || "requested");
-                    return (
-                      <div
-                        key={request.id}
-                        className="flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3"
-                      >
-                        <div>
-                          <div className="text-[14px] font-semibold text-[#2F2F2F]">
-                            {formatMoney(Number(request.amount_usd || 0))}
-                          </div>
-                          <div className="mt-0.5 text-[12px] text-gray-500">
-                            Requested {formatSessionDateTime(request.requested_at || request.created_at)}
-                          </div>
-                        </div>
-
-                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${getPayoutBadgeClass(status)}`}>
-                          {status}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="border-t border-gray-200 px-6 py-5">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="text-[15px] font-bold text-[#2F2F2F]">Recent support</h3>
-                <span className="text-[12px] text-gray-500">Showing latest {recentSupportPayments.length}</span>
-              </div>
-
-              {recentSupportPayments.length === 0 ? (
-                <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-5 text-sm text-slate-500">
-                  No support payments yet.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {recentSupportPayments.map((payment) => {
-                    const status = String(payment.status || "unknown");
-                    return (
-                      <div
-                        key={payment.id}
-                        className="flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3"
-                      >
-                        <div>
-                          <div className="text-[14px] font-semibold text-[#2F2F2F]">
-                            {formatMoney(Number(payment.host_amount_usd || 0))}
-                          </div>
-                          <div className="mt-0.5 text-[12px] text-gray-500">
-                            Gross {formatMoney(Number(payment.gross_amount_usd || 0))} · Fee{" "}
-                            {formatMoney(Number(payment.platform_fee_usd || 0))}
-                          </div>
-                        </div>
-
-                        <div className="flex shrink-0 items-center gap-3">
-                          <span className="text-right text-[12px] text-gray-500">
-                            {formatSessionDateTime(payment.created_at)}
-                          </span>
-
-                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${getPaymentBadgeClass(status)}`}>
-                            {status}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <p className="mt-4 text-[12px] leading-5 text-gray-500">
-                Payouts are currently handled manually. Available balance means the payment succeeded and is recorded for host payout.
-              </p>
+            ) : null}
+            <div className="grid grid-cols-3 border-t border-black/[0.06] bg-white/70">
+              <div className="px-4 py-3"><div className="text-[10px] text-[#999]">Pending</div><div className="mt-1 text-[13px] font-semibold text-[#2F2F2F]">{formatMoney(hostBalance.pendingUsd)}</div></div>
+              <div className="border-x border-black/[0.06] px-4 py-3"><div className="text-[10px] text-[#999]">Paid out</div><div className="mt-1 text-[13px] font-semibold text-[#2F2F2F]">{formatMoney(hostBalance.paidOutUsd)}</div></div>
+              <div className="px-4 py-3"><div className="text-[10px] text-[#999]">Received</div><div className="mt-1 text-[13px] font-semibold text-[#2F2F2F]">{formatMoney(hostBalance.totalReceivedUsd)}</div></div>
             </div>
           </div>
         </section>
       )}
-
       <section className="mt-10">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <div>
