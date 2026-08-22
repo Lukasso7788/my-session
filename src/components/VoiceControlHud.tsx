@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Keyboard, Mic, MicOff, X } from "lucide-react";
+import { ChevronDown, Keyboard, X } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { VoiceController, WebSpeechAdapter } from "../../packages/voice-control/src";
 import type { ManualAction, VoiceAction } from "../../packages/voice-control/src";
+import VoiceCommandIcon from "./VoiceCommandIcon";
 import "./VoiceControlHud.css";
 
 type Mode = "off" | "always" | "hotkey";
@@ -214,9 +215,9 @@ export default function VoiceControlHud() {
     {open && <section className="vc-hud__panel" aria-label="Voice control settings">
       <header><div><strong>Voice controls</strong><span>{actionCount} controls available here</span></div><button type="button" onClick={() => setOpen(false)} aria-label="Close voice controls"><X size={16}/></button></header>
       <div className="vc-hud__modes">
-        <button type="button" className={mode === "always" ? "active" : ""} onClick={() => selectMode("always")}><Mic size={17}/><span><b>Always</b><small>Continuous listening</small></span></button>
+        <button type="button" className={mode === "always" ? "active" : ""} onClick={() => selectMode("always")}><VoiceCommandIcon active size={17}/><span><b>Always</b><small>Continuous listening</small></span></button>
         <button type="button" className={mode === "hotkey" ? "active" : ""} onClick={() => selectMode("hotkey")}><Keyboard size={17}/><span><b>Hotkey</b><small>{hotkey}</small></span></button>
-        <button type="button" className={mode === "off" ? "active" : ""} onClick={() => selectMode("off")}><MicOff size={17}/><span><b>Off</b><small>No listening</small></span></button>
+        <button type="button" className={mode === "off" ? "active" : ""} onClick={() => selectMode("off")}><VoiceCommandIcon active={false} size={17}/><span><b>Off</b><small>No listening</small></span></button>
       </div>
       <div className="vc-hud__preferences">
         <label>Language<select value={locale} onChange={event => updateLocale(event.target.value as Locale)}><option value="en-US">English</option><option value="ru-RU">Русский</option></select></label>
@@ -237,7 +238,7 @@ export default function VoiceControlHud() {
       <p className="vc-hud__status">{status}</p>
     </section>}
     <button type="button" className="vc-hud__launcher" onClick={() => setOpen(value => !value)} aria-expanded={open} aria-label="Open voice controls">
-      <span className="vc-hud__icon">{mode === "off" ? <MicOff size={18}/> : mode === "hotkey" ? <Keyboard size={18}/> : <Mic size={18}/>}</span>
+      <span className="vc-hud__icon"><VoiceCommandIcon active={mode !== "off"} size={18}/></span>
       <span><b>{mode === "off" ? "Voice off" : listening ? "Listening…" : mode === "hotkey" ? hotkey : "Voice on"}</b><small>{mode === "off" ? "Click to configure" : status}</small></span>
       <ChevronDown size={15} className={open ? "rotate" : ""}/>
     </button>
