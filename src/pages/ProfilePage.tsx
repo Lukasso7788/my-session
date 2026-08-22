@@ -763,43 +763,42 @@ export default function ProfilePage() {
         )}
       </section>
 
-      <ProfileProgressDashboard userId={user.id} timeZone={timeZone} />
+      <div className="mt-8 grid items-stretch gap-4 lg:grid-cols-2">
+        <ProfileProgressDashboard userId={user.id} timeZone={timeZone} />
 
-      <div className="mt-16 border-t border-gray-200" />
-
-      <section className="mt-10">
-        <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <section className="h-full rounded-[22px] bg-[#F7F7F5] p-5 ring-1 ring-black/[0.07]">
+          <div className="flex h-full flex-col">
             <div>
-              <h2 className="text-xl font-bold text-[#2F2F2F]">Host profile</h2>
-              <p className="mt-1 text-sm text-gray-600">
+              <h2 className="text-[17px] font-bold text-[#2F2F2F]">Host profile</h2>
+              <p className="mt-1.5 text-[12px] leading-5 text-gray-600">
                 {hasHostedSessions
-                  ? `You already have a public host profile with ${followersCount} follower${followersCount === 1 ? "" : "s"}. Visitors can follow you, view your sessions, and support you there.`
-                  : "Once you host sessions, your public profile becomes your host surface for follows, support, and upcoming sessions."}
+                  ? `Your public host profile has ${followersCount} follower${followersCount === 1 ? "" : "s"}. People can follow, support, and find your sessions there.`
+                  : "Once you host a session, this becomes your public surface for follows, support, and upcoming sessions."}
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="mt-auto flex flex-wrap gap-2 pt-5">
               <button
                 type="button"
                 onClick={() => navigate(`/profile/${user.id}`)}
-                className="inline-flex items-center justify-center rounded-full border border-[#2F2F2F] px-5 py-2.5 text-[14px] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition"
+                className="inline-flex items-center justify-center rounded-full border border-[#2F2F2F] px-4 py-2 text-[12px] font-medium text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white"
               >
-                Open public profile · {followersCount} follower{followersCount === 1 ? "" : "s"}
+                Open public profile · {followersCount}
               </button>
 
               <button
                 type="button"
                 onClick={() => navigate("/sessions")}
-                className="inline-flex items-center justify-center rounded-full bg-[#2F2F2F] px-5 py-2.5 text-[14px] text-white hover:opacity-90 transition"
+                className="inline-flex items-center justify-center rounded-full bg-[#2F2F2F] px-4 py-2 text-[12px] font-medium text-white transition hover:bg-black"
               >
-                Back to sessions
+                Sessions
               </button>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
 
+      <div className="mt-12 border-t border-gray-200" />
       {hostSupportApproved && (
         <section className="mt-8 flex justify-end">
           <div className="w-full overflow-hidden rounded-[22px] bg-[#F7F7F5] ring-1 ring-black/[0.07] lg:max-w-[430px]">
