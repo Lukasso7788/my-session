@@ -26,7 +26,6 @@ export interface VoiceControlOptions {
   confirmation?: (match: VoiceMatch) => boolean | Promise<boolean>;
   onTranscript?: (text: string) => void;
   onMatch?: (match: VoiceMatch) => void;
-  onNoMatch?: (transcript: string) => void;
   onError?: (error: Error) => void;
 }
 

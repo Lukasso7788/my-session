@@ -4226,8 +4226,8 @@ export function TasksPanel({
             "rounded-[22px] border px-4 py-3 " + headerBorder + " " + headerBg
           }
         >
-          <div className="flex items-center justify-between gap-3 max-[1600px]:flex-col max-[1600px]:items-stretch">
-            <div className="min-w-0 max-[1600px]:w-full">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
               <div
                 className={"font-inter font-bold text-[16px] leading-5 " + headerTitle}
               >
@@ -4238,7 +4238,7 @@ export function TasksPanel({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0 font-inter max-[1600px]:w-full max-[1600px]:justify-end">
+            <div className="flex items-center gap-2 shrink-0 font-inter">
               <div
                 className={
                   "inline-flex items-center gap-2 px-3 py-2 rounded-xl " +

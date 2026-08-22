@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import VoiceCommandIcon from "../../components/VoiceCommandIcon";
+import { AudioLines } from "lucide-react";
 import {
     Icon,
     reactionEmoji,
@@ -707,10 +707,10 @@ export function LiveKitBottomBar(props: {
                                 aria-pressed={voiceUiMode !== "off"}
                                 type="button"
                             >
-                                <VoiceCommandIcon
-                                    active={voiceUiMode !== "off"}
-                                    className={voiceUiMode !== "off" ? "text-white" : isLight ? "text-[#2F2F2F]" : "text-white"}
-                                    size={20}
+                                <AudioLines
+                                    aria-hidden="true"
+                                    className={`h-5 w-5 ${voiceUiMode !== "off" ? "text-white" : isLight ? "text-[#2F2F2F]" : "text-white"}`}
+                                    strokeWidth={2}
                                 />
                                 {voiceUiMode === "hotkey" ? (
                                     <span className="absolute right-1 top-1 rounded bg-white/20 px-1 text-[7px] font-bold leading-3 text-white" aria-hidden="true">H</span>

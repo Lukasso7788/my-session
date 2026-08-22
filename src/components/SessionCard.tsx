@@ -4830,10 +4830,6 @@ export default function SessionCard({
     return (
         <>
             <div
-                data-voice-session-card=""
-                data-voice-session-id={String(session.id)}
-                data-voice-session-name={String(session.title || "Session")}
-                data-voice-session-editable={canEdit ? "true" : "false"}
                 onMouseEnter={() => setIsHoveringCard(true)}
                 onMouseLeave={() => setIsHoveringCard(false)}
                 onClick={(event) => {
@@ -4996,7 +4992,6 @@ export default function SessionCard({
                         {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 
                         <button
-                            data-voice-session-action="join"
                             onClick={handleJoinRoom}
                             onMouseEnter={() => setIsHoveringJoinIframe(true)}
                             onMouseLeave={() => setIsHoveringJoinIframe(false)}
@@ -5023,7 +5018,6 @@ export default function SessionCard({
                         <div ref={optionsRef} className={`relative w-12 ${isOptionsOpen ? "z-[230]" : "z-0"}`}>
                             <button
                                 type="button"
-                                data-voice-session-action="options"
                                 onClick={() => setIsOptionsOpen((v) => !v)}
                                 onMouseEnter={() => setIsHoveringOptions(true)}
                                 onMouseLeave={() => setIsHoveringOptions(false)}

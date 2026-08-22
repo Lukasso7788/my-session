@@ -42,7 +42,7 @@ export function discoverActions(root: ParentNode = document): VoiceAction[] {
   const seen = new Set<HTMLElement>();
   return elements.flatMap((element, index) => {
     if (seen.has(element) || element.hasAttribute("disabled") || element.getAttribute("aria-disabled") === "true" ||
-        element.closest("[data-voice-ignore]") != null || element.closest("[aria-hidden='true'], [inert]") != null || !visible(element)) return [];
+        element.dataset.voiceIgnore != null || !visible(element)) return [];
     seen.add(element);
     const label = labelOf(element);
     if (!label) return [];
