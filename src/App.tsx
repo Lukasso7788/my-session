@@ -82,6 +82,10 @@ export default function App() {
     const syncUserTimeZone = async (user: User | null | undefined) => {
       if (!user?.id) return;
 
+      // The first timezone write belongs to ProfileCompletionGate. Avoid a
+      // second updateUser call racing the OAuth callback and confirmation on
+      // slower devices.
+      if (!user.user_metadata?.timezone_confirmed_at) return;
       const metadataTimeZone = String(
         user.user_metadata?.timezone ||
         user.user_metadata?.time_zone ||

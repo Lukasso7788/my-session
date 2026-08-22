@@ -4,6 +4,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "../lib/supabase";
 import { attachReferralToNewUser } from "../lib/referrals";
 import { notifyAuthProfileReady } from "../lib/authProfileEvents";
+import { useAuth } from "../context/AuthContext";
 
 const SESSION_RECOVERY_WINDOW_MS = 90_000;
 
@@ -94,6 +95,7 @@ async function ensureProfileWithoutOverwriting(user: User) {
 
 export const AuthCallback = () => {
     const navigate = useNavigate();
+    const { adoptSession } = useAuth();
     const handledUserIdRef = useRef<string>("");
     const [callbackError, setCallbackError] = useState("");
 
@@ -111,6 +113,12 @@ export const AuthCallback = () => {
             }
 
             handledUserIdRef.current = userId;
+
+            // getSession() proves that Supabase completed and persisted the PKCE
+            // exchange. Put that exact session into React state before leaving
+            // the callback route; otherwise slower browsers can miss the single
+            // SIGNED_IN event and render /sessions as a guest.
+            adoptSession(session);
 
             // The authenticated session is sufficient to enter the app. Profile
             // hydration is best-effort and must not add PostgREST latency to OAuth.
@@ -175,7 +183,7 @@ export const AuthCallback = () => {
             if (recoveryTimer) window.clearTimeout(recoveryTimer);
             subscription.unsubscribe();
         };
-    }, [navigate]);
+    }, [adoptSession, navigate]);
 
     return (
         <div className="flex min-h-screen items-center justify-center bg-white px-4 text-[#2f2f2f]">

@@ -24,6 +24,7 @@ type AuthContextValue = {
     profile: Profile | null;
     loading: boolean;
     reloadProfile: () => Promise<void>;
+    adoptSession: (session: Session) => void;
     signOut: () => Promise<void>;
 };
 
@@ -95,6 +96,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await loadProfile(user);
     }, [user, loadProfile]);
 
+    const adoptSession = useCallback((nextSession: Session) => {
+        const nextUser = nextSession?.user ?? null;
+        if (!nextUser?.id) return;
+
+        authEventGenerationRef.current += 1;
+        setSession(nextSession);
+        setUser(nextUser);
+        currentUserRef.current = nextUser;
+        setLoading(false);
+        void loadProfile(nextUser);
+    }, [loadProfile]);
+
     // 🌟 ВОССТАНОВЛЕНИЕ СЕССИИ + LISTENER
     useEffect(() => {
         let active = true;
@@ -124,12 +137,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     return;
                 }
 
-                setSession(session);
-                setUser(session?.user ?? null);
-                currentUserRef.current = session?.user ?? null;
-
-                if (session?.user) {
-                    void loadProfile(session.user);
+                if (session) {
+                    adoptSession(session);
+                } else {
+                    setSession(null);
+                    setUser(null);
+                    currentUserRef.current = null;
                 }
             } catch (error) {
                 console.warn("[Auth] Session restore warning:", error);
@@ -161,19 +174,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     return;
                 }
 
-                const currentUser = currentSession?.user ?? null;
-
-                setSession(currentSession);
-                setUser(currentUser);
-                currentUserRef.current = currentUser;
-
-                if (currentUser) {
-                    void loadProfile(currentUser);
+                if (currentSession) {
+                    adoptSession(currentSession);
                 } else {
+                    setSession(null);
+                    setUser(null);
+                    currentUserRef.current = null;
                     setProfile(null);
+                    setLoading(false);
                 }
-
-                setLoading(false);
             }
         );
 
@@ -192,7 +201,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             window.removeEventListener(AUTH_PROFILE_READY_EVENT, handleProfileReady);
             subscription.unsubscribe();
         };
-    }, [loadProfile]);
+    }, [adoptSession, loadProfile]);
 
     const signOut = useCallback(async () => {
         await supabase.auth.signOut();
@@ -205,7 +214,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return (
         <AuthContext.Provider
-            value={{ user, session, profile, loading, reloadProfile, signOut }}
+            value={{ user, session, profile, loading, reloadProfile, adoptSession, signOut }}
         >
             {children}
         </AuthContext.Provider>

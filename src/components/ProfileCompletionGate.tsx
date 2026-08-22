@@ -34,7 +34,7 @@ function validateRealName(value: string): string {
 
 export default function ProfileCompletionGate() {
   const { pathname, key: locationKey } = useLocation();
-  const { user, profile, loading, reloadProfile } = useAuth();
+  const { user, profile, loading, reloadProfile, adoptSession } = useAuth();
   const [needsTimeZone, setNeedsTimeZone] = useState(false);
   const [needsRealName, setNeedsRealName] = useState(false);
   const [timeZone, setTimeZone] = useState(getDetectedTimeZone);
@@ -133,6 +133,16 @@ export default function ProfileCompletionGate() {
         },
       });
       if (authError) throw authError;
+
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
+      if (sessionError) throw sessionError;
+      if (sessionData.session?.user?.id !== user.id) {
+        throw new Error(
+          "Your sign-in session was not saved. Please sign in once more.",
+        );
+      }
+      adoptSession(sessionData.session);
 
       const { error: preferencesError } = await supabase
         .from("email_automation_preferences")
