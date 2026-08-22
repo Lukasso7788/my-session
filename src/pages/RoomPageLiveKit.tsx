@@ -48,7 +48,11 @@ import {
   type EntitlementState,
 } from "../lib/entitlements";
 import { getPaywallDecision } from "../lib/paywall";
-import { getCurrentUserActiveBan, type ActiveBan } from "../lib/bans";
+import {
+  getCurrentUserActiveBan,
+  isCurrentUserAdmin,
+  type ActiveBan,
+} from "../lib/bans";
 import {
   ROOM_SOUNDSCAPE_OPTIONS,
   RoomSoundscapeEngine,
@@ -6080,6 +6084,7 @@ export function RoomPageLiveKit({
 
   // roles
   const [moderatorUserIds, setModeratorUserIds] = useState<string[]>([]);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [activeRoomHostLease, setActiveRoomHostLease] =
     useState<InfiniteRoomHostLease | null>(null);
   const [activeRoomHostBusy, setActiveRoomHostBusy] = useState(false);
@@ -6092,6 +6097,23 @@ export function RoomPageLiveKit({
   const lastModeratorsLoadAtRef = useRef(0);
   const lastModeratorsLoadSessionIdRef = useRef("");
   const participantControlSenderIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!authUserId) {
+      setIsSuperAdmin(false);
+      return;
+    }
+
+    void isCurrentUserAdmin().then((allowed) => {
+      if (!cancelled) setIsSuperAdmin(allowed);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authUserId]);
 
   // right panel
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(() => {
@@ -9249,9 +9271,15 @@ export function RoomPageLiveKit({
 
   const isSelfModerator = useMemo(() => {
     if (!authUserId) return false;
-    if (isHost || isTemporaryRoomHost) return true;
+    if (isHost || isTemporaryRoomHost || isSuperAdmin) return true;
     return moderatorUserIds.includes(String(authUserId).toLowerCase());
-  }, [authUserId, isHost, isTemporaryRoomHost, moderatorUserIds]);
+  }, [
+    authUserId,
+    isHost,
+    isSuperAdmin,
+    isTemporaryRoomHost,
+    moderatorUserIds,
+  ]);
 
   const loadModerators = useCallback(
     async (sessionId: string, opts?: { force?: boolean }) => {
@@ -16678,6 +16706,7 @@ export function RoomPageLiveKit({
         (isTemporaryRoomHost && !sessionOwnerIsPresent)
       )
         return "Host";
+      if (isSuperAdmin) return "Super admin";
       if (isSelfModerator) return "Moderator";
       return null;
     }
@@ -17818,7 +17847,9 @@ export function RoomPageLiveKit({
                     : p.isLocal
                       ? isActiveOperationalHost
                         ? "Host"
-                        : isMod
+                        : isSuperAdmin
+                          ? "Super admin"
+                          : isMod
                           ? "Moderator"
                           : "You"
                       : isActiveOperationalHost
@@ -20772,7 +20803,7 @@ export function RoomPageLiveKit({
                               }
                               title={
                                 !canModerateTarget
-                                  ? "Only host or moderator can mute participants"
+                                  ? "Only host, moderator, or super admin can mute participants"
                                   : "Mute Mic"
                               }
                             >
@@ -20803,7 +20834,7 @@ export function RoomPageLiveKit({
                               }
                               title={
                                 !canModerateTarget
-                                  ? "Only host or moderator can control participant camera"
+                                  ? "Only host, moderator, or super admin can control participant camera"
                                   : "Turn camera off"
                               }
                             >

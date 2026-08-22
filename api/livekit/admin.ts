@@ -117,6 +117,7 @@ type ActorRole = {
   hostId: string;
   isHost: boolean;
   isModerator: boolean;
+  isSuperAdmin: boolean;
 };
 
 type SessionContext = {
@@ -775,8 +776,20 @@ async function getActorRole(params: {
 
   const isHost = !!hostId && hostId === userId;
 
+  const { data: adminRow, error: adminError } = await sb
+    .from("admin_users")
+    .select("user_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (adminError) {
+    console.error("[livekit-admin] super-admin role check failed:", adminError);
+  }
+
+  const isSuperAdmin = !adminError && !!adminRow?.user_id;
+
   let isModerator = false;
-  if (!isHost) {
+  if (!isHost && !isSuperAdmin) {
     const { data: rData, error: rErr } = await sb
       .from("session_role_assignments")
       .select("id")
@@ -790,7 +803,7 @@ async function getActorRole(params: {
     }
   }
 
-  if (!isHost && !isModerator) {
+  if (!isHost && !isModerator && !isSuperAdmin) {
     const { data: lease, error: leaseErr } = await sb
       .from("infinite_room_host_leases")
       .select("user_id,expires_at")
@@ -827,6 +840,7 @@ async function getActorRole(params: {
     hostId,
     isHost,
     isModerator,
+    isSuperAdmin,
   };
 
   writeActorRoleCache(accessToken, sessionId, result);
@@ -2228,7 +2242,7 @@ async function handleRoomSoundtrackUpload(params: {
 
   const sessionContext = await resolveSessionContext({ sb, sessionId });
   const actor = await getActorRole({ sb, accessToken, sessionContext });
-  if (!actor.isHost && !actor.isModerator) {
+  if (!actor.isHost && !actor.isModerator && !actor.isSuperAdmin) {
     return res.status(403).json({ error: "host_or_moderator_required" });
   }
 
@@ -2304,7 +2318,7 @@ async function handleRoomSoundtrackUploadPrepare(params: {
 
   const sessionContext = await resolveSessionContext({ sb, sessionId });
   const actor = await getActorRole({ sb, accessToken, sessionContext });
-  if (!actor.isHost && !actor.isModerator) {
+  if (!actor.isHost && !actor.isModerator && !actor.isSuperAdmin) {
     return res.status(403).json({ error: "host_or_moderator_required" });
   }
 
@@ -2763,7 +2777,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
     authMs = elapsedMs(authStartedAt);
 
-    if (!actor.isHost && !actor.isModerator) {
+    if (!actor.isHost && !actor.isModerator && !actor.isSuperAdmin) {
       writeTimingHeaders(res, {
         totalMs: elapsedMs(totalStartedAt),
         authMs,
@@ -2775,7 +2789,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const targetId = participantIdentity.toLowerCase();
-    if (!actor.isHost && looksLikeUuid(targetId) && actor.hostId && targetId === actor.hostId) {
+    if (!actor.isHost && !actor.isSuperAdmin && looksLikeUuid(targetId) && actor.hostId && targetId === actor.hostId) {
       writeTimingHeaders(res, {
         totalMs: elapsedMs(totalStartedAt),
         authMs,
@@ -2810,6 +2824,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           userId: actor.userId,
           isHost: actor.isHost,
           isModerator: actor.isModerator,
+          isSuperAdmin: actor.isSuperAdmin,
         },
         routing: {
           sessionId,
@@ -2906,6 +2921,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         userId: actor.userId,
         isHost: actor.isHost,
         isModerator: actor.isModerator,
+        isSuperAdmin: actor.isSuperAdmin,
       },
       routing: {
         sessionId,
