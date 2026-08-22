@@ -108,17 +108,28 @@ export const AuthCallback = () => {
             const userId = String(session.user.id);
 
             if (handledUserIdRef.current === userId) {
-                navigate(getRedirectPath(), { replace: true });
+                // A repeated SIGNED_IN event is expected when persistence is
+                // confirmed below. The first invocation owns navigation; a
+                // duplicate must not unmount the callback while it is awaiting.
                 return;
             }
 
             handledUserIdRef.current = userId;
 
-            // getSession() proves that Supabase completed and persisted the PKCE
-            // exchange. Put that exact session into React state before leaving
-            // the callback route; otherwise slower browsers can miss the single
-            // SIGNED_IN event and render /sessions as a guest.
-            adoptSession(session);
+            // Discord has already returned a valid session at this point.
+            // Re-apply that exact session before routing so persistence is
+            // completed even when the browser's initial URL detection was slow.
+            const { data: persistedData, error: persistError } =
+                await supabase.auth.setSession({
+                    access_token: session.access_token,
+                    refresh_token: session.refresh_token,
+                });
+            if (persistError) throw persistError;
+            if (persistedData.session?.user?.id !== userId) {
+                throw new Error("The browser did not persist the signed-in session.");
+            }
+            if (!mounted) return;
+            adoptSession(persistedData.session);
 
             // The authenticated session is sufficient to enter the app. Profile
             // hydration is best-effort and must not add PostgREST latency to OAuth.
@@ -136,13 +147,6 @@ export const AuthCallback = () => {
                 notifyAuthProfileReady(userId);
             });
         };
-
-        const {
-            data: { subscription },
-        } = supabase.auth.onAuthStateChange((_event, session) => {
-            if (!mounted) return;
-            if (session) void finishAuth(session);
-        });
 
         let recoveryTimer: number | null = window.setTimeout(() => {
             if (mounted && !handledUserIdRef.current) {
@@ -181,7 +185,6 @@ export const AuthCallback = () => {
         return () => {
             mounted = false;
             if (recoveryTimer) window.clearTimeout(recoveryTimer);
-            subscription.unsubscribe();
         };
     }, [adoptSession, navigate]);
 

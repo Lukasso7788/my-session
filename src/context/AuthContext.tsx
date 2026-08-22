@@ -177,11 +177,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 if (currentSession) {
                     adoptSession(currentSession);
                 } else {
-                    setSession(null);
-                    setUser(null);
-                    currentUserRef.current = null;
-                    setProfile(null);
-                    setLoading(false);
+                    // Never call another auth method while Supabase is still
+                    // dispatching onAuthStateChange; it shares the auth lock.
+                    // Verify storage just after the callback returns so a stale
+                    // cross-tab event cannot erase a freshly persisted login.
+                    window.setTimeout(() => {
+                        void supabase.auth.getSession().then(({ data }) => {
+                            if (!active) return;
+                            if (data.session) {
+                                adoptSession(data.session);
+                                return;
+                            }
+
+                            setSession(null);
+                            setUser(null);
+                            currentUserRef.current = null;
+                            setProfile(null);
+                            setLoading(false);
+                        });
+                    }, 150);
                 }
             }
         );
