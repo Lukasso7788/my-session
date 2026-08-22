@@ -164,6 +164,28 @@ async function render() {
     renderActiveList(policy);
 }
 
+document.getElementById("quickBlockCurrent").onclick = async () => {
+    const button = document.getElementById("quickBlockCurrent");
+    button.disabled = true;
+    const response = await sendMessage({ type: "QUICK_BLOCK" });
+    if (!response?.ok) {
+        const message = response?.error === "unsupported_page"
+            ? "This browser page cannot be blocked."
+            : "Could not block the current site.";
+        showError(message);
+        button.disabled = false;
+        return;
+    }
+    manualStatusUntil = Date.now() + 3500;
+    const status = document.getElementById("status");
+    status.classList.remove("danger");
+    status.textContent = `${response.hostname} is blocked.`;
+    button.textContent = "Blocked ✓";
+    setTimeout(() => { button.textContent = "Block current site"; }, 1800);
+    button.disabled = false;
+    await render();
+};
+
 document.getElementById("applyList").onclick = () => {
     const id = document.getElementById("savedListSelect").value;
     const list = (cachedPolicy?.savedLists || []).find((item) => item.id === id);

@@ -43,6 +43,41 @@ function readBody(request) {
 }
 
 function createExtensionBridge({ getPolicy, updatePolicy, connectAccount }) {
+  const commands = [];
+  const commandResults = new Map();
+  const commandWaiters = new Set();
+
+  function takeCommand() {
+    return commands.find((command) => !command.delivered) || null;
+  }
+
+  function wakeCommandWaiters() {
+    for (const wake of commandWaiters) wake();
+    commandWaiters.clear();
+  }
+
+  function enqueueCommand(type, payload = {}, timeoutMs = 8_000) {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const command = { id, type, payload, createdAt: Date.now(), delivered: false };
+    commands.push(command);
+    wakeCommandWaiters();
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        commandResults.delete(id);
+        const index = commands.findIndex((item) => item.id === id);
+        if (index >= 0) commands.splice(index, 1);
+        resolve({ ok: false, error: "extension_unavailable" });
+      }, timeoutMs);
+      commandResults.set(id, (result) => {
+        clearTimeout(timer);
+        commandResults.delete(id);
+        const index = commands.findIndex((item) => item.id === id);
+        if (index >= 0) commands.splice(index, 1);
+        resolve(result || { ok: false, error: "empty_extension_result" });
+      });
+    });
+  }
   const server = http.createServer(async (request, response) => {
     const origin = String(request.headers.origin || "");
     if (request.method === "OPTIONS") {
@@ -61,6 +96,58 @@ function createExtensionBridge({ getPolicy, updatePolicy, connectAccount }) {
         sendJson(response, result.ok ? 200 : 401, result, origin);
       } catch (error) {
         sendJson(response, 400, { ok: false, error: String(error?.message || "invalid_request") }, origin);
+      }
+      return;
+    }
+
+    if (request.url === "/v1/commands/next" && request.method === "GET") {
+      let command = takeCommand();
+      if (!command) {
+        await new Promise((resolve) => {
+          let timer = null;
+          const wake = () => {
+            if (timer) clearTimeout(timer);
+            commandWaiters.delete(wake);
+            resolve();
+          };
+          timer = setTimeout(wake, 20_000);
+          commandWaiters.add(wake);
+        });
+        command = takeCommand();
+      }
+      if (!command) {
+        response.writeHead(204, {
+          "Access-Control-Allow-Origin": origin || "*",
+          "Access-Control-Allow-Private-Network": "true",
+          "Cache-Control": "no-store",
+        });
+        response.end();
+        return;
+      }
+      command.delivered = true;
+      sendJson(response, 200, {
+        ok: true,
+        command: {
+          id: command.id,
+          type: command.type,
+          payload: command.payload,
+        },
+      }, origin || "*");
+      return;
+    }
+
+    if (request.url === "/v1/commands/result" && request.method === "POST") {
+      try {
+        const body = await readBody(request);
+        const resolveResult = commandResults.get(String(body.id || ""));
+        if (!resolveResult) {
+          sendJson(response, 404, { ok: false, error: "command_not_found" }, origin || "*");
+          return;
+        }
+        resolveResult(body.result || { ok: false, error: "empty_extension_result" });
+        sendJson(response, 200, { ok: true }, origin || "*");
+      } catch {
+        sendJson(response, 400, { ok: false, error: "invalid_json" }, origin || "*");
       }
       return;
     }
@@ -97,6 +184,7 @@ function createExtensionBridge({ getPolicy, updatePolicy, connectAccount }) {
     console.warn("FocusShield extension bridge unavailable", error.message);
   });
   server.listen(BRIDGE_PORT, "127.0.0.1");
+  server.enqueueCommand = enqueueCommand;
   return server;
 }
 
