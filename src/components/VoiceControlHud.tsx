@@ -161,7 +161,7 @@ export default function VoiceControlHud() {
       setActions(controller.actions());
     }, 2000);
     return () => { window.clearInterval(timer); dynamicUnregisters.forEach(unregister => unregister()); speech.destroy(); controller.destroy(); speechRef.current = null; };
-  }, [isRoom, locale, navigate, location.pathname]);
+  }, [isRoom, locale, navigate]);
 
   const startListening = useCallback((continuous: boolean) => {
     if (!speechRef.current?.supported()) { setStatus("Voice recognition is not supported in this browser"); return; }
