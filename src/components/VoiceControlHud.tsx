@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Keyboard, Mic, MicOff, X } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { VoiceController, WebSpeechAdapter } from "../../packages/voice-control/src";
-import type { ManualAction } from "../../packages/voice-control/src";
+import type { ManualAction, VoiceAction } from "../../packages/voice-control/src";
 import "./VoiceControlHud.css";
 
 type Mode = "off" | "always" | "hotkey";
@@ -34,6 +34,13 @@ function hintsFor(path: string) {
   return ["Open sessions", "Open tasks", "Open profile", "Scroll down"];
 }
 
+function spokenCommand(action: VoiceAction) {
+  if (action.kind === "input") return "Type [text] in " + action.label;
+  if (action.kind === "select") return "Select [option] in " + action.label;
+  if (action.kind === "activate") return "Click " + action.label;
+  return action.label;
+}
+
 function matchesHotkey(event: KeyboardEvent, hotkey: string) {
   const parts = hotkey.toLowerCase().split("+").map(part => part.trim());
   const key = parts.at(-1) || "v";
@@ -55,7 +62,8 @@ export default function VoiceControlHud() {
   const [hotkey, setHotkey] = useState(() => localStorage.getItem(HOTKEY_KEY) || DEFAULT_HOTKEY);
   const [listening, setListening] = useState(false);
   const [status, setStatus] = useState("Voice controls ready");
-  const [actionCount, setActionCount] = useState(0);
+  const [actions, setActions] = useState<VoiceAction[]>([]);
+  const actionCount = actions.length;
   const hints = useMemo(() => hintsFor(location.pathname), [location.pathname]);
   const isRoom = location.pathname.startsWith("/room");
 
@@ -83,8 +91,8 @@ export default function VoiceControlHud() {
 
     const speech = new WebSpeechAdapter(controller);
     speechRef.current = speech;
-    setActionCount(controller.actions().length);
-    const timer = window.setInterval(() => setActionCount(controller.actions().length), 2000);
+    setActions(controller.actions());
+    const timer = window.setInterval(() => setActions(controller.actions()), 2000);
     return () => { window.clearInterval(timer); speech.destroy(); controller.destroy(); speechRef.current = null; };
   }, [isRoom, locale, navigate, location.pathname]);
 
@@ -148,7 +156,18 @@ export default function VoiceControlHud() {
         <label>Language<select value={locale} onChange={event => updateLocale(event.target.value as Locale)}><option value="en-US">English</option><option value="ru-RU">Русский</option></select></label>
         <label>Hotkey<input value={hotkey} onChange={event => { setHotkey(event.target.value); localStorage.setItem(HOTKEY_KEY, event.target.value); }}/></label>
       </div>
-      <div className="vc-hud__hints"><b>Try saying</b>{hints.map(hint => <span key={hint}>“{hint}”</span>)}</div>
+      <div className="vc-hud__hints"><b>Recommended on this page</b>{hints.map(hint => <span key={hint}>“{hint}”</span>)}</div>
+      <div className="vc-hud__catalog">
+        <div className="vc-hud__catalog-title"><b>All available commands</b><span>{actionCount}</span></div>
+        <div className="vc-hud__command-list">
+          {actions.map(action => (
+            <div className="vc-hud__command" key={action.id}>
+              <b>{spokenCommand(action)}</b>
+              {action.aliases.length > 1 && <small>{action.aliases.join(" · ")}</small>}
+            </div>
+          ))}
+        </div>
+      </div>
       <p className="vc-hud__status">{status}</p>
     </section>}
     <button type="button" className="vc-hud__launcher" onClick={() => setOpen(value => !value)} aria-expanded={open} aria-label="Open voice controls">
