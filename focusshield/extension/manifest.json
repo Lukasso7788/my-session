@@ -1,55 +1,34 @@
 {
-  "manifest_version": 3,
-  "name": "FocusShield by MySession",
-  "version": "0.2.4",
-  "description": "Block distracting websites and sync with FocusShield Desktop during focus sessions.",
-  "permissions": [
-    "storage",
-    "alarms",
-    "tabs",
-    "declarativeNetRequest",
-    "declarativeNetRequestWithHostAccess"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
-  "background": {
-    "service_worker": "service_worker.js"
-  },
-  "action": {
-    "default_title": "FocusShield",
-    "default_popup": "popup.html"
-  },
-  "commands": {
-    "quick-block-current-site": {
-      "suggested_key": {
-        "default": "Alt+Shift+B"
-      },
-      "description": "Block the current website with FocusShield"
-    }
-  },
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "blocked.html",
-        "blocked.js"
-      ],
-      "matches": [
+    "manifest_version": 3,
+    "name": "FocusShield by MySession",
+    "version": "0.2.0",
+    "description": "Block distracting websites and sync with FocusShield Desktop during focus sessions.",
+    "permissions": [
+        "storage",
+        "alarms",
+        "tabs",
+        "declarativeNetRequest",
+        "declarativeNetRequestWithHostAccess"
+    ],
+    "host_permissions": [
         "<all_urls>"
-      ]
-    }
-  ],
-  "content_scripts": [
-    {
-      "matches": [
-        "http://*/*",
-        "https://*/*"
-      ],
-      "js": [
-        "quick-block-overlay.js"
-      ],
-      "run_at": "document_idle",
-      "all_frames": false
-    }
-  ]
+    ],
+    "background": {
+        "service_worker": "service_worker.js"
+    },
+    "action": {
+        "default_title": "FocusShield",
+        "default_popup": "popup.html"
+    },
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "blocked.html",
+                "blocked.js"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
+        }
+    ]
 }

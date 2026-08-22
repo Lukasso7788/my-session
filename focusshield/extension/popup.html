@@ -158,32 +158,6 @@
             background: #f3f4f6;
         }
 
-        .quick-block-card {
-            display: grid;
-            grid-template-columns: 1fr auto;
-            gap: 8px;
-            align-items: center;
-            margin: 10px 0 12px;
-            padding: 10px;
-            border-radius: 14px;
-            background: #edf8ef;
-        }
-
-        #quickBlockCurrent {
-            margin: 0;
-            border: 0;
-            background: #81db86;
-            color: #102013;
-        }
-
-        #quickBlockCurrent:hover { background: #70cf78; }
-
-        .shortcut {
-            color: #47634d;
-            font-size: 11px;
-            white-space: nowrap;
-        }
-
         .status {
             margin: 10px 0;
             font-size: 13px;
@@ -292,10 +266,6 @@
     <h1>🛡 FocusShield</h1>
 
     <div id="status" class="status">Loading...</div>
-    <div class="quick-block-card">
-        <button id="quickBlockCurrent" type="button">Block current site</button>
-        <span class="shortcut">Alt + Shift + B</span>
-    </div>
     <section class="saved-lists" aria-labelledby="savedListsLabel">
         <div class="saved-lists-head">
             <strong id="savedListsLabel">Saved block lists</strong>

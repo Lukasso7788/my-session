@@ -36,56 +36,6 @@
         <small id="statusHint">Choose what to block, then start.</small>
       </div>
     </section>
-    <section id="activeSessionsPanel" class="active-sessions-panel hidden" aria-labelledby="activeSessionsTitle">
-      <div class="active-sessions-heading">
-        <div><span class="section-label">RUNNING NOW</span><h3 id="activeSessionsTitle">Active blocking sessions</h3></div>
-        <span id="activeSessionsCount" class="active-sessions-count">0 active</span>
-      </div>
-      <div id="activeSessionsList" class="active-sessions-list"></div>
-    </section>
-    <section class="focus-mode-panel" aria-labelledby="focusModeTitle">
-      <div class="focus-mode-tabs" role="tablist" aria-label="Focus mode">
-        <button id="standardMode" class="focus-mode-tab selected" type="button" role="tab" aria-selected="true">
-          <b>FocusShield</b><small>Block selected distractions</small>
-        </button>
-        <button id="hyperFocusMode" class="focus-mode-tab" type="button" role="tab" aria-selected="false">
-          <b>Hyper Focus</b><small>Allow only what this task needs</small>
-        </button>
-      </div>
-      <div id="hyperFocusConfig" class="hyper-focus-config hidden">
-        <div class="hyper-focus-heading">
-          <div>
-            <span class="section-label">ONE TASK · ONE WORKSPACE</span>
-            <h3 id="focusModeTitle">What are you working on?</h3>
-          </div>
-          <span class="hyper-badge">Everything else is blocked</span>
-        </div>
-        <input id="hyperFocusTask" maxlength="240" placeholder="e.g. Publish three Instagram posts" autocomplete="off" />
-        <label class="field-label">Allow the service you need</label>
-        <div id="hyperServicePresets" class="hyper-service-presets"></div>
-        <label class="field-label" for="hyperCustomSites">Other allowed domains</label>
-        <textarea id="hyperCustomSites" rows="3" placeholder="canva.com&#10;drive.google.com"></textarea>
-        <section class="hyper-app-blocker" aria-labelledby="hyperAppsTitle">
-          <div class="hyper-app-heading">
-            <div><label class="field-label" id="hyperAppsTitle">Desktop apps to block</label><small>Optional · only the apps you choose are closed.</small></div>
-            <div class="heading-actions">
-              <button id="hyperScanProcesses" class="quiet-button" type="button">Running apps</button>
-              <button id="hyperChooseApps" class="secondary-button" type="button">Choose apps</button>
-            </div>
-          </div>
-          <div class="inline-field">
-            <input id="hyperCustomAppsInput" placeholder="telegram.exe, game.exe" autocomplete="off" />
-            <button id="hyperAddCustomApps" class="secondary-button" type="button">Add</button>
-          </div>
-          <div id="hyperCustomAppChips" class="chips"></div>
-          <div id="hyperRunningApps" class="running-apps hidden"></div>
-        </section>
-        <div class="hyper-focus-note">
-          <span>MySession is always allowed.</span>
-          <label class="toggle-row compact-toggle danger-toggle"><input id="hyperBlockApps" type="checkbox" /><span class="toggle"></span><span><b>Block all other user apps</b><small>Advanced · selected apps above are safer</small></span></label>
-        </div>
-      </div>
-    </section>
 
     <section class="layout">
       <div class="panel apps-panel">
@@ -132,10 +82,6 @@
     </section>
 
     <section class="control-bar">
-      <div class="session-name-field">
-        <label for="sessionName">Session name</label>
-        <input id="sessionName" maxlength="64" placeholder="e.g. Social media block" autocomplete="off" />
-      </div>
       <div class="duration-field">
         <label for="duration">Duration</label>
         <div class="duration-input">

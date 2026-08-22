@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, nativeImage, Notification, safeStorage, screen, shell, Tray } = require("electron");
+const { app, BrowserWindow, ipcMain, Menu, nativeImage, Notification, safeStorage, shell, Tray } = require("electron");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -7,17 +7,16 @@ const { createExtensionBridge } = require("./bridge.cjs");
 const { CloudSync } = require("./cloud-sync.cjs");
 const { listInstalledApps } = require("./installed-apps.cjs");
 const { ProcessBlocker } = require("./process-blocker.cjs");
-const { inactivePolicy, isExpired, isSafeForBulkBlocking, sanitizePolicy, sanitizeSavedLists } = require("./policy.cjs");
+const { inactivePolicy, isExpired, sanitizePolicy, sanitizeSavedLists } = require("./policy.cjs");
 
 let mainWindow = null;
-let quickBlockWindow = null;
 let tray = null;
 let quitting = false;
 let bridge = null;
 let cloudSync = null;
 let expiryTimer = null;
 let policy = { ...inactivePolicy(), updatedAt: null };
-let settings = { launchAtLogin: true, quickBlockVisible: true, deviceId: crypto.randomUUID() };
+let settings = { launchAtLogin: true, deviceId: crypto.randomUUID() };
 let pairingNonce = crypto.randomBytes(24).toString("hex");
 let updateCheckTimer = null;
 let updateState = {
@@ -176,10 +175,6 @@ function updateTray() {
     { type: "separator" },
     { label: "Open FocusShield", click: () => showWindow() },
     {
-      label: settings.quickBlockVisible ? "Hide quick block" : "Show quick block",
-      click: () => setQuickBlockVisible(!settings.quickBlockVisible),
-    },
-    {
       label: "Stop shield",
       enabled: policy.active && !(policy.locked && !isExpired(policy)),
       click: () => deactivatePolicy("tray"),
@@ -193,37 +188,17 @@ function updateTray() {
   ]));
 }
 
-function deactivatePolicy(source = "desktop", target = null) {
-  const sessions = (policy.sessions || []).filter((session) => {
-    if (!target) return false;
-    if (target === "blocklist" || target === "hyperfocus") return session.mode !== target;
-    return session.id !== target;
-  });
-  return updatePolicy({ ...policy, sessions }, source);
+function deactivatePolicy(source = "desktop") {
+  return updatePolicy({
+    ...policy,
+    active: false,
+    locked: false,
+    startedAt: null,
+    endAt: null,
+  }, source);
 }
 
 function updatePolicy(nextInput, source = "desktop", options = {}) {
-  if (
-    source === "extension" &&
-    !Array.isArray(nextInput?.sessions) &&
-    "active" in (nextInput || {})
-  ) {
-    const sessionId = "extension-primary";
-    const sessions = (policy.sessions || []).filter((session) => session.id !== sessionId);
-    if (nextInput.active) {
-      sessions.push({
-        ...nextInput,
-        id: sessionId,
-        name: String(nextInput.name || "Browser block session"),
-        mode: nextInput.mode === "hyperfocus" ? "hyperfocus" : "blocklist",
-      });
-    }
-    nextInput = {
-      ...policy,
-      sessions,
-      savedLists: nextInput.savedLists || policy.savedLists,
-    };
-  }
   const next = sanitizePolicy({
     ...nextInput,
     source,
@@ -231,20 +206,13 @@ function updatePolicy(nextInput, source = "desktop", options = {}) {
       ? Number(nextInput?.updatedAt) || Date.now()
       : Date.now(),
   });
-  const lockedSession = (policy.sessions || []).find((currentSession) => {
-    if (!currentSession.active || !currentSession.locked || Number(currentSession.endAt) <= Date.now()) return false;
-    const nextSession = (next.sessions || []).find((session) => session.id === currentSession.id);
-    return !nextSession?.active || Number(nextSession.endAt) < Number(currentSession.endAt);
-  });
-  if (lockedSession) {
-    return {
-      ok: false,
-      status: 423,
-      error: "locked",
-      sessionId: lockedSession.id,
-      mode: lockedSession.mode,
-      endAt: lockedSession.endAt,
-    };
+  if (
+    policy.active &&
+    policy.locked &&
+    !isExpired(policy) &&
+    (!next.active || Number(next.endAt) < Number(policy.endAt))
+  ) {
+    return { ok: false, status: 423, error: "locked", endAt: policy.endAt };
   }
   policy = next;
   writeJson("policy.json", policy);
@@ -256,7 +224,7 @@ function updatePolicy(nextInput, source = "desktop", options = {}) {
   return { ok: true, policy };
 }
 
-async function saveBlockList(input = {}) {
+function saveBlockList(input = {}) {
   const now = Date.now();
   const id = String(input.id || crypto.randomUUID()).slice(0, 80);
   const existing = (policy.savedLists || []).find((item) => item.id === id);
@@ -270,34 +238,14 @@ async function saveBlockList(input = {}) {
     nextList,
     ...(policy.savedLists || []).filter((item) => item.id !== id),
   ]);
-  const result = updatePolicy(
-    { ...policy, savedLists },
-    "desktop",
-    { skipCloud: true },
-  );
-  if (result.ok && cloudSync?.getAccount().connected) {
-    const cloud = await cloudSync.upsertSavedList(savedLists[0])
-      .catch((error) => ({ ok: false, error: String(error?.message || error) }));
-    return { ...result, cloud };
-  }
-  return result;
+  return updatePolicy({ ...policy, savedLists }, "desktop");
 }
 
-async function deleteBlockList(id) {
+function deleteBlockList(id) {
   const savedLists = (policy.savedLists || []).filter(
     (item) => item.id !== String(id || ""),
   );
-  const result = updatePolicy(
-    { ...policy, savedLists },
-    "desktop",
-    { skipCloud: true },
-  );
-  if (result.ok && cloudSync?.getAccount().connected) {
-    const cloud = await cloudSync.deleteSavedList(id)
-      .catch((error) => ({ ok: false, error: String(error?.message || error) }));
-    return { ...result, cloud };
-  }
-  return result;
+  return updatePolicy({ ...policy, savedLists }, "desktop");
 }
 
 async function connectCloudAccount(body) {
@@ -340,34 +288,6 @@ function showWindow() {
   mainWindow.focus();
 }
 
-function positionQuickBlockWindow() {
-  if (!quickBlockWindow || quickBlockWindow.isDestroyed()) return;
-  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const { x, y, width, height } = display.workArea;
-  const [windowWidth, windowHeight] = quickBlockWindow.getSize();
-  quickBlockWindow.setPosition(
-    Math.round(x + width - windowWidth - 18),
-    Math.round(y + height - windowHeight - 18),
-    false,
-  );
-}
-
-function setQuickBlockVisible(visible) {
-  settings.quickBlockVisible = Boolean(visible);
-  writeJson("settings.json", settings);
-  if (quickBlockWindow && !quickBlockWindow.isDestroyed()) {
-    if (settings.quickBlockVisible) {
-      positionQuickBlockWindow();
-      quickBlockWindow.showInactive();
-    } else {
-      quickBlockWindow.hide();
-    }
-  }
-  updateTray();
-  notifyRenderers("focusshield:policy-changed", publicState());
-  return publicState();
-}
-
 function trayIcon() {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect width="32" height="32" rx="9" fill="#1f2521"/><path d="M16 5l9 4v6c0 6-3.8 10.2-9 12-5.2-1.8-9-6-9-12V9l9-4z" fill="#81DB86"/><path d="M12 16l2.6 2.7L20.5 13" fill="none" stroke="#102013" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
   return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
@@ -386,38 +306,6 @@ const blocker = new ProcessBlocker({
     }
   },
 });
-
-function createQuickBlockWindow() {
-  quickBlockWindow = new BrowserWindow({
-    width: 202,
-    height: 58,
-    resizable: false,
-    maximizable: false,
-    minimizable: false,
-    fullscreenable: false,
-    frame: false,
-    transparent: true,
-    backgroundColor: "#00000000",
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    show: false,
-    hasShadow: false,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      preload: path.join(__dirname, "preload.cjs"),
-    },
-  });
-  quickBlockWindow.setAlwaysOnTop(true, "floating");
-  quickBlockWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  quickBlockWindow.loadFile(path.join(__dirname, "../renderer/quick-block.html"));
-  quickBlockWindow.once("ready-to-show", () => {
-    positionQuickBlockWindow();
-    if (settings.quickBlockVisible) quickBlockWindow.showInactive();
-  });
-  quickBlockWindow.on("closed", () => { quickBlockWindow = null; });
-}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -453,29 +341,18 @@ if (!app.requestSingleInstanceLock()) {
   app.on("second-instance", () => showWindow());
   app.whenReady().then(() => {
     policy = sanitizePolicy(readJson("policy.json", { ...inactivePolicy(), updatedAt: null }));
-    if (isExpired(policy)) policy = sanitizePolicy(policy);
+    if (isExpired(policy)) policy = inactivePolicy("expired");
     settings = { ...settings, ...readJson("settings.json", {}) };
-    if (!settings.extensionQuickBlockMigrated) {
-      settings.quickBlockVisible = false;
-      settings.extensionQuickBlockMigrated = true;
-    }
     if (!settings.deviceId) settings.deviceId = crypto.randomUUID();
     writeJson("settings.json", settings);
     cloudSync = new CloudSync({
       deviceId: settings.deviceId,
       getPolicy: () => policy,
       applyRemotePolicy: (remotePolicy) =>
-        updatePolicy({ ...remotePolicy, savedLists: policy.savedLists }, "cloud", {
+        updatePolicy(remotePolicy, "cloud", {
           preserveUpdatedAt: true,
           skipCloud: true,
         }),
-      getSavedLists: () => policy.savedLists || [],
-      applyRemoteSavedLists: (savedLists) =>
-        updatePolicy(
-          { ...policy, savedLists },
-          "cloud-lists",
-          { preserveUpdatedAt: true, skipCloud: true },
-        ),
       onSessionChanged: (session) => {
         if (session) saveCloudSession(session);
         notifyRenderers("focusshield:policy-changed", publicState());
@@ -484,7 +361,6 @@ if (!app.requestSingleInstanceLock()) {
     const savedCloudSession = loadCloudSession();
     if (savedCloudSession) cloudSync.configure(savedCloudSession);
     createWindow();
-    createQuickBlockWindow();
     tray = new Tray(trayIcon());
     tray.on("double-click", showWindow);
     updateTray();
@@ -496,7 +372,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     configureAutoUpdates();
     expiryTimer = setInterval(() => {
-      if (isExpired(policy)) updatePolicy(policy, "expired");
+      if (isExpired(policy)) deactivatePolicy("expired");
     }, 1000);
     app.setLoginItemSettings({ openAtLogin: Boolean(settings.launchAtLogin), openAsHidden: true });
   });
@@ -507,54 +383,21 @@ ipcMain.handle("focusshield:list-processes", async () => blocker.listProcesses()
 ipcMain.handle("focusshield:list-installed-apps", async (_event, force) =>
   listInstalledApps({ force: Boolean(force) }),
 );
-ipcMain.handle("focusshield:start", async (_event, input) => {
+ipcMain.handle("focusshield:start", (_event, input) => {
   const minutes = Math.max(1, Math.min(1440, Number(input?.minutes) || 25));
-  const hyperFocus = input?.mode === "hyperfocus";
-  let applications = input?.desktop?.applications || [];
-
-  if (hyperFocus && input?.desktop?.blockOtherApplications) {
-    const browsers = new Set([
-      "brave.exe", "chrome.exe", "firefox.exe", "msedge.exe",
-      "opera.exe", "opera_gx.exe", "vivaldi.exe",
-    ]);
-    const installed = await listInstalledApps().catch(() => []);
-    applications = [
-      ...applications,
-      ...installed
-        .filter(isSafeForBulkBlocking)
-        .map((item) => item.executable)
-        .filter((name) => name && !browsers.has(name)),
-    ];
-  }
-
-  const mode = hyperFocus ? "hyperfocus" : "blocklist";
-  const now = Date.now();
-  const session = {
-    id: crypto.randomUUID(),
-    name: String(input?.name || (hyperFocus ? input?.task : "") ||
-      `FocusShield session ${(policy.sessions || []).length + 1}`).trim().slice(0, 64),
-    mode,
+  return updatePolicy({
     active: true,
     locked: Boolean(input?.locked),
-    task: hyperFocus ? input?.task : "",
-    startedAt: now,
-    endAt: now + minutes * 60_000,
+    startedAt: Date.now(),
+    endAt: Date.now() + minutes * 60_000,
     web: input?.web,
-    desktop: {
-      applications,
-      blockOtherApplications: Boolean(input?.desktop?.blockOtherApplications),
-    },
-  };
-  const result = updatePolicy({
-    ...policy,
-    sessions: [...(policy.sessions || []), session],
+    desktop: input?.desktop,
     savedLists: policy.savedLists,
   });
-  return result.ok ? { ...result, sessionId: session.id } : result;
 });
 ipcMain.handle("focusshield:save-block-list", (_event, input) => saveBlockList(input));
 ipcMain.handle("focusshield:delete-block-list", (_event, id) => deleteBlockList(id));
-ipcMain.handle("focusshield:stop", (_event, mode) => deactivatePolicy("desktop", mode));
+ipcMain.handle("focusshield:stop", () => deactivatePolicy("desktop"));
 ipcMain.handle("focusshield:set-launch-at-login", (_event, enabled) => {
   settings.launchAtLogin = Boolean(enabled);
   writeJson("settings.json", settings);
@@ -562,23 +405,6 @@ ipcMain.handle("focusshield:set-launch-at-login", (_event, enabled) => {
   return publicState();
 });
 ipcMain.handle("focusshield:show-window", () => showWindow());
-ipcMain.handle("focusshield:set-quick-block-visible", (_event, visible) =>
-  setQuickBlockVisible(visible),
-);
-ipcMain.handle("focusshield:quick-block-active-tab", async () => {
-  if (!bridge?.enqueueCommand) {
-    return { ok: false, error: "extension_unavailable" };
-  }
-  const result = await bridge.enqueueCommand("block_active_tab");
-  if (result?.ok && Notification.isSupported()) {
-    new Notification({
-      title: "Site blocked",
-      body: `${result.hostname || "The active site"} was added to FocusShield.`,
-      silent: true,
-    }).show();
-  }
-  return result;
-});
 ipcMain.handle("focusshield:connect-account", async () => {
   pairingNonce = crypto.randomBytes(24).toString("hex");
   const target = `https://mysession.club/focus-shield?desktopConnect=${encodeURIComponent(pairingNonce)}`;
@@ -592,7 +418,7 @@ ipcMain.handle("focusshield:disconnect-account", () => {
   return publicState();
 });
 ipcMain.handle("focusshield:sync-now", async () => {
-  const result = await cloudSync?.syncAll();
+  const result = await cloudSync?.syncNow();
   return { ...result, state: publicState() };
 });
 ipcMain.handle("focusshield:check-for-updates", async () => {
