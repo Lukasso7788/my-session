@@ -11761,6 +11761,8 @@ export function RoomPageLiveKit({
   const [volumePctByParticipantKey, setVolumePctByParticipantKey] = useState<
     Record<string, number>
   >({});
+  const volumePctByParticipantKeyRef = useRef<Record<string, number>>({});
+
   const [defaultRemoteVolumePct, setDefaultRemoteVolumePct] = useState<number>(
     () => {
       try {
@@ -12040,13 +12042,18 @@ export function RoomPageLiveKit({
       const raw = localStorage.getItem(volumeStorageKey);
       if (!raw) {
         setVolumePctByParticipantKey({});
+        volumePctByParticipantKeyRef.current = {};
         return;
       }
       const parsed = JSON.parse(raw);
-      setVolumePctByParticipantKey(
-        parsed && typeof parsed === "object" ? parsed : {},
-      );
+      const nextVolumes =
+        parsed && typeof parsed === "object"
+          ? (parsed as Record<string, number>)
+          : {};
+      volumePctByParticipantKeyRef.current = nextVolumes;
+      setVolumePctByParticipantKey(nextVolumes);
     } catch {
+      volumePctByParticipantKeyRef.current = {};
       setVolumePctByParticipantKey({});
     }
   }, [volumeStorageKey]);
@@ -12062,6 +12069,7 @@ export function RoomPageLiveKit({
   }, [volumeStorageKey, volumePctByParticipantKey]);
 
   const resetAllParticipantVolumesToDefault = useCallback(() => {
+    volumePctByParticipantKeyRef.current = {};
     setVolumePctByParticipantKey({});
   }, []);
 
@@ -12289,21 +12297,17 @@ export function RoomPageLiveKit({
   const applyVolumeToRemoteParticipant = (tileId: string, pct: number) => {
     const r = roomRef.current;
     if (!r) return;
-    const p = Array.from(r.remoteParticipants.values()).find(
+    const participant = Array.from(r.remoteParticipants.values()).find(
       (rp) => rp.sid === tileId,
     );
-    if (!p) return;
+    if (!participant) return;
 
     try {
-      const micPub = Array.from(p.audioTrackPublications.values()).find(
-        (x: any) => x.source === Track.Source.Microphone,
-      ) as any;
-      const tr = micPub?.track as any;
       // Tile refreshes must not restore audio while local deafen is active.
       const vol = selfDeafenedRef.current ? 0 : clamp(pct, 0, 300) / 100;
-      if (tr?.setVolume) tr.setVolume(vol);
-      else if (typeof (tr as any)?.volume === "number")
-        (tr as any).volume = vol;
+      // LiveKit remembers this value for current and future audio tracks.
+      participant.setVolume(vol, Track.Source.Microphone);
+      participant.setVolume(vol, Track.Source.ScreenShareAudio);
     } catch { }
   };
 
@@ -12311,7 +12315,10 @@ export function RoomPageLiveKit({
     const v = clamp(Math.round(pct), 0, 300);
     const key = getParticipantVolumeKey(tile);
 
-    setVolumePctByParticipantKey((prev) => ({ ...prev, [key]: v }));
+    const nextVolumes = { ...volumePctByParticipantKeyRef.current, [key]: v };
+    // Long-lived LiveKit callbacks must see this value before React rerenders.
+    volumePctByParticipantKeyRef.current = nextVolumes;
+    setVolumePctByParticipantKey(nextVolumes);
     applyVolumeToRemoteParticipant(tile.id, v);
   };
 
@@ -12505,7 +12512,7 @@ export function RoomPageLiveKit({
       });
 
       const pct = Number(
-        volumePctByParticipantKey[volumeKey] ?? 100,
+        volumePctByParticipantKeyRef.current[volumeKey] ?? 100,
       );
       if (Number.isFinite(pct)) {
         applyVolumeToRemoteParticipant(tileId, pct);
