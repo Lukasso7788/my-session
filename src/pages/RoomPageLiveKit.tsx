@@ -5692,23 +5692,16 @@ export function RoomPageLiveKit({
       "skip_deafened";
     const shouldSelfDeafen = status === "skip_deafened";
 
-    // Local playback must react immediately. Waiting for the metadata round-trip
-    // leaves already-playing remote audio audible for noticeable seconds.
-    if (shouldSelfDeafen) {
-      for (const participant of room.remoteParticipants.values()) {
-        for (const publication of participant.audioTrackPublications.values()) {
-          const track = publication.track;
-          if (track instanceof RemoteAudioTrack) {
-            track.setVolume(0);
-          }
-        }
-      }
-    }
+    // Apply locally before the metadata round-trip. Disabling the remote
+    // publications is persistent, unlike a one-off setVolume(0), which can be
+    // overwritten by the participant-volume refresh path.
+    applySelfDeafenToRoom(room, shouldSelfDeafen);
     setSelfDeafened(shouldSelfDeafen);
 
     try {
       await me.setMetadata(JSON.stringify(nextMeta));
     } catch (e) {
+      applySelfDeafenToRoom(room, wasSelfDeafened);
       setSelfDeafened(wasSelfDeafened);
       console.error("setMetadata failed", e);
     }
@@ -6406,6 +6399,31 @@ export function RoomPageLiveKit({
   );
   const stageSoundsEnabledRef = useRef(stageSoundsEnabled);
   const [selfDeafened, setSelfDeafened] = useState(false);
+  const selfDeafenedRef = useRef(false);
+
+  const applySelfDeafenToRoom = useCallback(
+    (room: Room | null | undefined, deafened: boolean) => {
+      selfDeafenedRef.current = deafened;
+      if (!room) return;
+
+      for (const participant of room.remoteParticipants.values()) {
+        for (const publication of participant.audioTrackPublications.values()) {
+          try {
+            // This only affects playback for the local listener. While
+            // deafened it also prevents a newly published track from becoming
+            // audible during the next tile refresh.
+            publication.setEnabled(!deafened);
+            if (deafened && publication.track instanceof RemoteAudioTrack) {
+              publication.track.setVolume(0);
+            }
+          } catch (error) {
+            console.warn("skip-me deafen audio update failed", error);
+          }
+        }
+      }
+    },
+    [],
+  );
 
   const [roomSoundsVolume, setRoomSoundsVolume] = useState<number>(() => {
     try {
@@ -8517,8 +8535,11 @@ export function RoomPageLiveKit({
     const syncSkipMeDeafen = () => {
       try {
         const metadata = JSON.parse(room.localParticipant.metadata || "{}");
-        setSelfDeafened(metadata?.status === "skip_deafened");
+        const nextSelfDeafened = metadata?.status === "skip_deafened";
+        applySelfDeafenToRoom(room, nextSelfDeafened);
+        setSelfDeafened(nextSelfDeafened);
       } catch {
+        applySelfDeafenToRoom(room, false);
         setSelfDeafened(false);
       }
     };
@@ -8544,7 +8565,7 @@ export function RoomPageLiveKit({
         onParticipantMetadataChanged,
       );
     };
-  }, [connected]);
+  }, [applySelfDeafenToRoom, connected]);
 
   const trackWeeklyUsageOnLeave = useCallback(async () => {
     if (!USAGE_TRACKING_ENABLED) return;
@@ -12278,7 +12299,8 @@ export function RoomPageLiveKit({
         (x: any) => x.source === Track.Source.Microphone,
       ) as any;
       const tr = micPub?.track as any;
-      const vol = clamp(pct, 0, 300) / 100;
+      // Tile refreshes must not restore audio while local deafen is active.
+      const vol = selfDeafenedRef.current ? 0 : clamp(pct, 0, 300) / 100;
       if (tr?.setVolume) tr.setVolume(vol);
       else if (typeof (tr as any)?.volume === "number")
         (tr as any).volume = vol;
@@ -12961,11 +12983,17 @@ export function RoomPageLiveKit({
         }
         refresh();
       });
-      r.on(RoomEvent.TrackSubscribed, refresh);
-      r.on(RoomEvent.TrackUnsubscribed, refresh);
-      r.on(RoomEvent.TrackMuted as any, refresh as any);
-      r.on(RoomEvent.TrackUnmuted as any, refresh as any);
-      r.on(RoomEvent.TrackPublished as any, refresh as any);
+      const refreshRemoteAudioState = () => {
+        if (selfDeafenedRef.current) {
+          applySelfDeafenToRoom(r, true);
+        }
+        refresh();
+      };
+      r.on(RoomEvent.TrackSubscribed, refreshRemoteAudioState);
+      r.on(RoomEvent.TrackUnsubscribed, refreshRemoteAudioState);
+      r.on(RoomEvent.TrackMuted as any, refreshRemoteAudioState as any);
+      r.on(RoomEvent.TrackUnmuted as any, refreshRemoteAudioState as any);
+      r.on(RoomEvent.TrackPublished as any, refreshRemoteAudioState as any);
       r.on(RoomEvent.TrackUnpublished as any, refresh as any);
       r.on(RoomEvent.TrackSubscriptionFailed as any, refresh as any);
       r.on(RoomEvent.ActiveSpeakersChanged, refresh);
@@ -19918,7 +19946,7 @@ export function RoomPageLiveKit({
           <>
             <RoomAudioRenderer
               room={roomState}
-              volume={selfDeafened ? 0 : 1}
+              muted={selfDeafened}
             />
             <div className="fixed bottom-[5.25rem] left-1/2 z-[80] -translate-x-1/2">
               <StartAudio
