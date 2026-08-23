@@ -14,7 +14,7 @@ const supabaseAdmin = createClient(
 
 const APP_URL = process.env.APP_URL || "http://localhost:5173";
 
-type CheckoutKind = "subscription" | "host_support";
+type CheckoutKind = "subscription" | "host_support" | "customer_portal";
 
 type SupportedPlan = "pro_monthly" | "pro_yearly" | "lifetime" | "india_upi_monthly";
 type EntitlementPlan = "pro_monthly" | "pro_yearly" | "lifetime";
@@ -25,6 +25,28 @@ const SUPPORTED_PLANS: SupportedPlan[] = [
   "lifetime",
   "india_upi_monthly",
 ];
+async function createCustomerPortalSession(user: any) {
+  const { data: entitlement, error } = await supabaseAdmin
+    .from("user_entitlements")
+    .select("stripe_customer_id")
+    .eq("user_id", String(user.id || ""))
+    .maybeSingle();
+
+  if (error) {
+    console.error("Customer portal entitlement lookup failed:", error);
+    throw new Error("billing_profile_lookup_failed");
+  }
+
+  const customerId = String(entitlement?.stripe_customer_id || "").trim();
+  if (!customerId) throw new Error("billing_profile_not_found");
+
+  const session = await stripe.billingPortal.sessions.create({
+    customer: customerId,
+    return_url: `${APP_URL.replace(/\/$/, "")}/settings`,
+  });
+
+  return { url: session.url };
+}
 
 function looksLikeUuid(v: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -366,6 +388,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json(result);
     }
 
+    if (checkoutKind === "customer_portal") {
+      const result = await createCustomerPortalSession(user);
+      return res.status(200).json(result);
+    }
+
     const result = await createSubscriptionCheckout({
       user,
       plan: body.plan as SupportedPlan,
@@ -383,6 +410,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       message === "invalid_sessionId" ||
       message === "invalid_amount_min_2" ||
       message === "cannot_support_yourself" ||
+      message === "billing_profile_not_found" ||
       message === "Invalid plan"
         ? 400
         : message === "host_not_found"

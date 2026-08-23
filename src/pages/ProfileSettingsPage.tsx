@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, Bell, ChevronRight, Mail, UserRound } from "lucide-react";
+import { ArrowLeft, Bell, ChevronRight, CreditCard, Mail, UserRound } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -10,6 +10,8 @@ import {
   showPushEnabledTestNotification,
 } from "../lib/pushNotifications";
 import { supabase } from "../lib/supabase";
+import type { UserEntitlement } from "../lib/billing";
+import { getUserEntitlement } from "../lib/entitlements";
 
 function errorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : String(error || fallback);
@@ -24,6 +26,10 @@ export default function ProfileSettingsPage() {
   const [pushPreferenceBusy, setPushPreferenceBusy] = useState(false);
   const [pushTestBusy, setPushTestBusy] = useState(false);
   const [pushPreferenceMessage, setPushPreferenceMessage] = useState("");
+  const [entitlement, setEntitlement] = useState<UserEntitlement | null>(null);
+  const [billingLoading, setBillingLoading] = useState(true);
+  const [billingBusy, setBillingBusy] = useState(false);
+  const [billingMessage, setBillingMessage] = useState("");
 
   useEffect(() => {
     if (!loading && !user) navigate("/login", { replace: true });
@@ -62,6 +68,64 @@ export default function ProfileSettingsPage() {
     };
   }, [user?.id]);
 
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+
+    setBillingLoading(true);
+    void getUserEntitlement(user.id)
+      .then((nextEntitlement) => {
+        if (!cancelled) setEntitlement(nextEntitlement);
+      })
+      .catch((error) => {
+        console.warn("Failed to load billing details:", error);
+        if (!cancelled) setBillingMessage("Could not load subscription details.");
+      })
+      .finally(() => {
+        if (!cancelled) setBillingLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  const handleManageSubscription = async () => {
+    if (billingBusy) return;
+    setBillingBusy(true);
+    setBillingMessage("");
+
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      const token = data.session?.access_token;
+      if (!token) throw new Error("Please sign in again to manage your subscription.");
+
+      const response = await fetch("/api/billing/create-checkout-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ checkoutKind: "customer_portal" }),
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok || !payload?.url) {
+        throw new Error(
+          payload?.error === "billing_profile_not_found"
+            ? "This plan is not connected to a recurring Stripe subscription."
+            : payload?.details || payload?.error || "Could not open subscription settings.",
+        );
+      }
+
+      window.location.assign(String(payload.url));
+    } catch (error) {
+      setBillingMessage(errorMessage(error, "Could not open subscription settings."));
+      setBillingBusy(false);
+    }
+  };
   const enableOnThisDevice = async () => {
     await ensurePushSubscription();
     setPushPermission(getPushPermission());
@@ -184,6 +248,21 @@ export default function ProfileSettingsPage() {
             ? "Browser access is allowed. Finish setting up this device."
             : "Allow notifications once on this device to start receiving them.";
 
+  const planLabel =
+    entitlement?.plan === "pro_monthly"
+      ? "MySession Pro · Monthly"
+      : entitlement?.plan === "pro_yearly"
+        ? "MySession Pro · Yearly"
+        : entitlement?.plan === "lifetime"
+          ? "MySession Lifetime"
+          : entitlement?.plan === "founding_free"
+            ? "Founding member"
+            : "MySession Free";
+  const recurringSubscription =
+    entitlement?.plan === "pro_monthly" || entitlement?.plan === "pro_yearly";
+  const subscriptionStatus = entitlement?.status
+    ? entitlement.status.charAt(0).toUpperCase() + entitlement.status.slice(1)
+    : "Free";
   return (
     <main className="min-h-screen bg-[#F7F8FA] px-4 py-8 text-[#2F2F2F] sm:px-6 sm:py-12">
       <div className="mx-auto max-w-4xl">
@@ -283,6 +362,54 @@ export default function ProfileSettingsPage() {
           </div>
         </section>
 
+
+        <section className="mt-5 overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-sm">
+          <div className="flex items-start gap-4 border-b border-black/10 px-5 py-5 sm:px-7">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-black/[0.06] text-[#2F2F2F]">
+              <CreditCard className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold">Subscription</h2>
+              <p className="mt-1 text-sm leading-6 text-black/55">
+                View your plan, pause billing when available, or cancel your subscription.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-5 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-7 sm:py-6">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-[16px] font-semibold">
+                  {billingLoading ? "Loading your plan…" : planLabel}
+                </h3>
+                {!billingLoading ? (
+                  <span className="rounded-full bg-black/[0.06] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#2F2F2F]">
+                    {subscriptionStatus}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 text-[13px] leading-5 text-black/55">
+                {recurringSubscription
+                  ? "Stripe securely handles billing changes. Your access remains active through any paid period."
+                  : "This plan does not have a recurring subscription to manage."}
+              </p>
+              {billingMessage ? (
+                <p className="mt-2 text-[12px] font-medium text-[#2F2F2F]">{billingMessage}</p>
+              ) : null}
+            </div>
+
+            {recurringSubscription ? (
+              <button
+                type="button"
+                onClick={handleManageSubscription}
+                disabled={billingBusy || billingLoading}
+                className="shrink-0 rounded-full bg-[#2F2F2F] px-5 py-2.5 text-[13px] font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {billingBusy ? "Opening…" : "Manage subscription"}
+              </button>
+            ) : null}
+          </div>
+        </section>
         <section className="mt-5 grid gap-4 sm:grid-cols-2">
           <button
             type="button"

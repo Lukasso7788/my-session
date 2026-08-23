@@ -30,6 +30,9 @@ export type UserEntitlement = {
   source: string | null;
   notes: string | null;
 
+  stripe_customer_id?: string | null;
+  stripe_subscription_id?: string | null;
+
   created_at: string;
   updated_at: string;
 };
