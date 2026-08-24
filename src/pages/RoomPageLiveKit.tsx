@@ -1929,7 +1929,6 @@ async function resolveAvatarUrlFromProfilesField(
 }
 
 // reports / kick events / sounds
-const REPORTS_TABLE = "session_reports";
 const KICK_EVENTS_CHANNEL_PREFIX = "mysession_lk_kick_events";
 
 const ROOM_SOUNDS_PREF_KEY = "mysession_lk_room_sounds";
@@ -16626,21 +16625,27 @@ export function RoomPageLiveKit({
           "",
         ).trim() || null;
 
-      const payload = {
-        session_id: session?.id || null,
-        reporter_user_id: authUserId || null,
-        reported_participant_id: reportedParticipantId,
-        reason,
-        created_at: new Date().toISOString(),
-        status: "open",
-        resolved_at: null,
-        resolved_by: null,
-      };
+      const accessToken = await getFreshAccessToken();
+      if (!accessToken) throw new Error("Please sign in before submitting a report.");
 
-      const { error } = await supabase
-        .from(REPORTS_TABLE)
-        .insert(payload as any);
-      if (error) throw error;
+      const response = await fetch("/api/push/send-host-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          action: "participant_report",
+          sessionId: session?.id || "",
+          reportedParticipantId,
+          reason,
+        }),
+      });
+
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(String(result?.details || result?.error || "report_failed"));
+      }
 
       setReportModalOpen(false);
       setReportTarget(null);

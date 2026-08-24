@@ -11,6 +11,11 @@ import {
   type ActiveBan,
 } from "../lib/bans";
 import BanUserModal from "../components/BanUserModal";
+import {
+  ensurePushSubscription,
+  getPushPermission,
+  hasPushSubscription,
+} from "../lib/pushNotifications";
 
 type AnyRow = Record<string, any>;
 
@@ -1406,6 +1411,9 @@ export default function AdminPage() {
   const [revokingBanId, setRevokingBanId] = useState<string>("");
 
   const [notifications, setNotifications] = useState<AdminNotificationRow[]>([]);
+  const [reportPushState, setReportPushState] = useState<
+    "checking" | "unsupported" | "blocked" | "off" | "enabling" | "enabled"
+  >("checking");
   const [payoutRequests, setPayoutRequests] = useState<PayoutRequestRow[]>([]);
   const [dashboardLoading, setDashboardLoading] = useState(false);
   const [processingPayoutId, setProcessingPayoutId] = useState("");
@@ -1954,6 +1962,70 @@ export default function AdminPage() {
       cancelled = true;
     };
   }, [navigate]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    let cancelled = false;
+    const syncReportPushState = async () => {
+      const permission = getPushPermission();
+      if (permission === "unsupported") {
+        if (!cancelled) setReportPushState("unsupported");
+        return;
+      }
+      if (permission === "denied") {
+        if (!cancelled) setReportPushState("blocked");
+        return;
+      }
+
+      const subscribed = permission === "granted" && await hasPushSubscription();
+      if (!cancelled) setReportPushState(subscribed ? "enabled" : "off");
+    };
+
+    void syncReportPushState();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    const channel = supabase
+      .channel(`admin-notifications-${Date.now()}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "admin_notifications" },
+        (event) => {
+          const incoming = event.new as AdminNotificationRow;
+          if (!incoming?.id) return;
+          setNotifications((current) => [
+            incoming,
+            ...current.filter((notification) => notification.id !== incoming.id),
+          ].slice(0, 30));
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [isAdmin]);
+
+  const enableReportPushAlerts = async () => {
+    try {
+      setReportPushState("enabling");
+      await ensurePushSubscription();
+      setReportPushState("enabled");
+    } catch (pushError) {
+      console.warn("[admin] enable report push failed", pushError);
+      const permission = getPushPermission();
+      setReportPushState(
+        permission === "unsupported" ? "unsupported" : permission === "denied" ? "blocked" : "off"
+      );
+      setError(pushError instanceof Error ? pushError.message : "Could not enable report alerts.");
+    }
+  };
 
   const runSearch = async () => {
     if (!cleanQuery) {
@@ -2550,11 +2622,38 @@ export default function AdminPage() {
             </section>
 
             <section className="mt-8 rounded-[28px] border border-black/10 bg-white p-5">
-              <div className="flex items-center justify-between gap-3">
-                <h2 className="text-[20px] font-bold">Admin notifications</h2>
-                <span className="rounded-full bg-black/[0.04] px-3 py-1 text-[12px] font-bold">
-                  {unreadNotifications} unread
-                </span>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-[20px] font-bold">Admin notifications</h2>
+                  <p className="mt-1 text-[13px] text-[#666]">
+                    Participant reports can also appear as system notifications over other windows.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {reportPushState === "enabled" ? (
+                    <span className="rounded-full bg-[#EAF8EC] px-3 py-1.5 text-[12px] font-bold text-[#217A2D]">
+                      Report alerts enabled
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={reportPushState === "checking" || reportPushState === "enabling" || reportPushState === "unsupported" || reportPushState === "blocked"}
+                      onClick={() => void enableReportPushAlerts()}
+                      className="rounded-full border border-[#2F2F2F] px-4 py-2 text-[12px] font-bold hover:bg-[#2F2F2F] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {reportPushState === "enabling"
+                        ? "Enabling…"
+                        : reportPushState === "blocked"
+                          ? "Alerts blocked in browser"
+                          : reportPushState === "unsupported"
+                            ? "Push not supported"
+                            : "Enable report alerts"}
+                    </button>
+                  )}
+                  <span className="rounded-full bg-black/[0.04] px-3 py-1 text-[12px] font-bold">
+                    {unreadNotifications} unread
+                  </span>
+                </div>
               </div>
 
               <div className="mt-5 space-y-3">

@@ -150,6 +150,132 @@ async function sendRoomPresencePush(req: VercelRequest, res: VercelResponse) {
   });
 }
 
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function submitParticipantReport(
+  req: VercelRequest,
+  res: VercelResponse,
+  reporterUserId: string
+) {
+  const sessionId = String(req.body?.sessionId || "").trim();
+  const reportedParticipantId = String(req.body?.reportedParticipantId || "").trim();
+  const reason = String(req.body?.reason || "").trim();
+
+  if (!sessionId || !reportedParticipantId || !reason) {
+    return res.status(400).json({ error: "invalid_participant_report" });
+  }
+
+  if (reason.length > 2000 || reportedParticipantId.length > 300) {
+    return res.status(400).json({ error: "participant_report_too_long" });
+  }
+
+  const { data: session, error: sessionErr } = await supabaseAdmin
+    .from("sessions")
+    .select("id, title")
+    .eq("id", sessionId)
+    .single();
+
+  if (sessionErr || !session) {
+    return res.status(404).json({ error: "session_not_found" });
+  }
+
+  const { data: report, error: reportErr } = await supabaseAdmin
+    .from("session_reports")
+    .insert({
+      session_id: sessionId,
+      reporter_user_id: reporterUserId,
+      reported_participant_id: reportedParticipantId,
+      reason,
+      status: "open",
+      resolved_at: null,
+      resolved_by: null,
+    })
+    .select("id, created_at")
+    .single();
+
+  if (reportErr || !report) {
+    return res.status(500).json({
+      error: "participant_report_create_failed",
+      details: reportErr?.message || "Report was not returned.",
+    });
+  }
+
+  const reportId = String((report as any).id || "");
+  const sessionTitle = String((session as any).title || "a session").trim() || "a session";
+  const notificationBody = `A participant was reported in ${sessionTitle}. Tap to review it.`;
+
+  const { error: notificationErr } = await supabaseAdmin.from("admin_notifications").insert({
+    type: "participant_report",
+    title: "New participant report",
+    body: notificationBody,
+    actor_user_id: reporterUserId,
+    target_user_id: isUuid(reportedParticipantId) ? reportedParticipantId : null,
+    payout_request_id: null,
+    read_at: null,
+  });
+
+  if (notificationErr) {
+    console.warn("[push] admin report notification row failed", notificationErr.message);
+  }
+
+  const { data: adminRows, error: adminErr } = await supabaseAdmin
+    .from("admin_users")
+    .select("user_id");
+
+  if (adminErr) {
+    console.warn("[push] admin users query failed", adminErr.message);
+    return res.status(201).json({ ok: true, reportId, sent: 0, reason: "admin_query_failed" });
+  }
+
+  const adminUserIds = Array.from(
+    new Set((adminRows || []).map((row: any) => String(row.user_id || "")).filter(Boolean))
+  );
+
+  if (!adminUserIds.length) {
+    return res.status(201).json({ ok: true, reportId, sent: 0, reason: "no_admin_users" });
+  }
+
+  const { data: subscriptions, error: subscriptionsErr } = await supabaseAdmin
+    .from("push_subscriptions")
+    .select("id, user_id, endpoint, p256dh, auth")
+    .in("user_id", adminUserIds);
+
+  if (subscriptionsErr) {
+    console.warn("[push] admin subscriptions query failed", subscriptionsErr.message);
+    return res.status(201).json({ ok: true, reportId, sent: 0, reason: "subscriptions_query_failed" });
+  }
+
+  if (!subscriptions?.length) {
+    return res.status(201).json({ ok: true, reportId, sent: 0, reason: "no_admin_subscriptions" });
+  }
+
+  const payload = JSON.stringify({
+    title: "New participant report",
+    body: notificationBody,
+    icon: "/icons/followers_profile.svg",
+    badge: "/icons/followers_profile.svg",
+    tag: `participant-report-${reportId}`,
+    renotify: true,
+    data: {
+      url: `/admin?report=${encodeURIComponent(reportId)}`,
+      reportId,
+      sessionId,
+      type: "participant_report",
+    },
+  });
+
+  const result = await sendPushBatch(subscriptions as any[], payload);
+  return res.status(201).json({
+    ok: true,
+    reportId,
+    admins: adminUserIds.length,
+    subscriptions: subscriptions.length,
+    ...result,
+  });
+}
+
 function formatSessionTime(startTime: string | null) {
   if (!startTime) return "";
 
@@ -192,6 +318,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const actorUserId = userData.user.id;
+
+    if (req.body?.action === "participant_report") {
+      return await submitParticipantReport(req, res, actorUserId);
+    }
 
     if (req.body?.action === "user_test") {
       const { data: testSubscriptions, error: testSubsErr } = await supabaseAdmin
