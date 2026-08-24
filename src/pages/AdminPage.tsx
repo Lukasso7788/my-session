@@ -39,6 +39,24 @@ type AdminNotificationRow = {
   created_at: string;
 };
 
+type SessionReportRow = {
+  id: string;
+  session_id: string | null;
+  reporter_user_id: string | null;
+  reported_participant_id: string | null;
+  reason: string | null;
+  status: string | null;
+  resolved_at: string | null;
+  resolved_by: string | null;
+  created_at: string;
+};
+
+type SessionReportView = SessionReportRow & {
+  sessionTitle: string;
+  reporter: ProfileSummary;
+  reportedParticipant: ProfileSummary;
+};
+
 type PayoutRequestRow = {
   id: string;
   host_user_id: string;
@@ -918,6 +936,20 @@ function ProfileChip({ profile }: { profile: ProfileSummary }) {
   );
 }
 
+function ReportPerson({ profile, fallback }: { profile: ProfileSummary; fallback: string }) {
+  const hasProfile = Boolean(profile.id && (profile.email || !profile.fullName.startsWith("User ")));
+  return hasProfile ? (
+    <ProfileChip profile={profile} />
+  ) : (
+    <div className="min-w-0">
+      <div className="truncate text-[13px] font-semibold">Unknown participant</div>
+      <div className="truncate text-[11px] text-[#777]" title={fallback}>
+        {fallback || "No identity"}
+      </div>
+    </div>
+  );
+}
+
 function PeopleCountButton({
   count,
   people,
@@ -1396,7 +1428,7 @@ export default function AdminPage() {
 
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [tab, setTab] = useState<"dashboard" | "moderation">("dashboard");
+  const [tab, setTab] = useState<"dashboard" | "reports" | "moderation">("dashboard");
 
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
@@ -1411,6 +1443,11 @@ export default function AdminPage() {
   const [revokingBanId, setRevokingBanId] = useState<string>("");
 
   const [notifications, setNotifications] = useState<AdminNotificationRow[]>([]);
+  const [sessionReports, setSessionReports] = useState<SessionReportView[]>([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsTotal, setReportsTotal] = useState(0);
+  const [reportsPage, setReportsPage] = useState(0);
+  const [reportsStatus, setReportsStatus] = useState("all");
   const [reportPushState, setReportPushState] = useState<
     "checking" | "unsupported" | "blocked" | "off" | "enabling" | "enabled"
   >("checking");
@@ -1459,6 +1496,121 @@ export default function AdminPage() {
   const unreadNotifications = useMemo(() => {
     return notifications.filter((n) => !n.read_at).length;
   }, [notifications]);
+
+  const reportsPageSize = 50;
+
+  const loadSessionReports = async () => {
+    try {
+      setReportsLoading(true);
+      setError("");
+
+      let reportsQuery = supabase
+        .from("session_reports")
+        .select(
+          "id, session_id, reporter_user_id, reported_participant_id, reason, status, resolved_at, resolved_by, created_at",
+          { count: "exact" },
+        )
+        .order("created_at", { ascending: false })
+        .range(
+          reportsPage * reportsPageSize,
+          (reportsPage + 1) * reportsPageSize - 1,
+        );
+
+      if (reportsStatus !== "all") {
+        reportsQuery = reportsQuery.eq("status", reportsStatus);
+      }
+
+      const { data, error: reportsError, count } = await reportsQuery;
+      if (reportsError) throw reportsError;
+
+      const rows = (data || []) as SessionReportRow[];
+      const profileIds = Array.from(
+        new Set(
+          rows
+            .flatMap((row) => [
+              row.reporter_user_id,
+              row.reported_participant_id,
+              row.resolved_by,
+            ])
+            .filter(
+              (id): id is string =>
+                Boolean(
+                  id &&
+                    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+                      id,
+                    ),
+                ),
+            ),
+        ),
+      );
+      const sessionIds = Array.from(
+        new Set(
+          rows
+            .map((row) => row.session_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      );
+
+      const profilesById = new Map<string, ProfileSummary>();
+      if (profileIds.length) {
+        const { data: profileRows, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id, full_name, email, avatar_url")
+          .in("id", profileIds);
+        if (profilesError) throw profilesError;
+
+        ((profileRows || []) as AnyRow[]).forEach((profile) => {
+          const id = String(profile.id || "");
+          profilesById.set(id, {
+            id,
+            fullName: String(
+              profile.full_name || profile.email || `User ${id.slice(0, 8)}`,
+            ),
+            email: String(profile.email || ""),
+            avatarUrl: String(profile.avatar_url || ""),
+          });
+        });
+      }
+
+      const sessionsById = new Map<string, string>();
+      if (sessionIds.length) {
+        const { data: sessionRows, error: sessionsError } = await supabase
+          .from("sessions")
+          .select("id, title")
+          .in("id", sessionIds);
+        if (sessionsError) throw sessionsError;
+
+        ((sessionRows || []) as AnyRow[]).forEach((session) => {
+          sessionsById.set(
+            String(session.id || ""),
+            String(session.title || "Untitled session"),
+          );
+        });
+      }
+
+      setSessionReports(
+        rows.map((row) => ({
+          ...row,
+          sessionTitle:
+            sessionsById.get(String(row.session_id || "")) ||
+            "Deleted or unavailable session",
+          reporter:
+            profilesById.get(String(row.reporter_user_id || "")) ||
+            emptyProfile(String(row.reporter_user_id || "")),
+          reportedParticipant:
+            profilesById.get(String(row.reported_participant_id || "")) ||
+            emptyProfile(String(row.reported_participant_id || "")),
+        })),
+      );
+      setReportsTotal(count ?? 0);
+    } catch (e: any) {
+      console.error("[admin] reports load failed:", e);
+      setError(String(e?.message || e || "Failed to load session reports."));
+      setSessionReports([]);
+    } finally {
+      setReportsLoading(false);
+    }
+  };
 
   const loadBans = async () => {
     try {
@@ -1989,6 +2141,11 @@ export default function AdminPage() {
   }, [isAdmin]);
 
   useEffect(() => {
+    if (!isAdmin || tab !== "reports") return;
+    void loadSessionReports();
+  }, [isAdmin, tab, reportsPage, reportsStatus]);
+
+  useEffect(() => {
     if (!isAdmin) return;
 
     const channel = supabase
@@ -2441,7 +2598,7 @@ export default function AdminPage() {
             </div>
 
             <h1 className="mt-2 text-[34px] font-bold">
-              {tab === "dashboard" ? "Admin dashboard" : "Moderation"}
+              {tab === "dashboard" ? "Admin dashboard" : tab === "reports" ? "Session reports" : "Moderation"}
             </h1>
 
             <p className="mt-2 max-w-3xl text-[14px] leading-6 text-[#666]">
@@ -2459,6 +2616,17 @@ export default function AdminPage() {
                 }`}
             >
               Dashboard
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTab("reports")}
+              className={`rounded-full border px-5 py-2.5 text-[14px] font-semibold ${tab === "reports"
+                  ? "border-[#2F2F2F] bg-[#2F2F2F] text-white"
+                  : "border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white"
+                }`}
+            >
+              Reports
             </button>
 
             <button
@@ -2835,6 +3003,165 @@ export default function AdminPage() {
               </div>
             </section>
           </>
+        )}
+
+        {tab === "reports" && (
+          <section className="mt-8 overflow-hidden rounded-[28px] border border-black/10 bg-white">
+            <header className="flex flex-col gap-4 border-b border-black/[0.07] p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-[20px] font-bold">All session reports</h2>
+                  <span className="rounded-full bg-[#F0F1F2] px-2.5 py-1 text-[11px] font-bold text-[#555]">
+                    {reportsTotal}
+                  </span>
+                </div>
+                <p className="mt-1 text-[13px] text-[#666]">
+                  Participant reports received from rooms, newest first.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={reportsStatus}
+                  onChange={(event) => {
+                    setReportsPage(0);
+                    setReportsStatus(event.target.value);
+                  }}
+                  className="rounded-full border border-black/10 bg-white px-4 py-2 text-[13px] font-semibold outline-none focus:ring-2 focus:ring-black/10"
+                  aria-label="Filter reports by status"
+                >
+                  <option value="all">All statuses</option>
+                  <option value="open">Open</option>
+                  <option value="resolved">Resolved</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => void loadSessionReports()}
+                  disabled={reportsLoading}
+                  className="rounded-full border border-black/10 px-4 py-2 text-[13px] font-semibold transition-colors hover:bg-black/[0.04] disabled:opacity-50"
+                >
+                  {reportsLoading ? "Refreshing..." : "Refresh"}
+                </button>
+              </div>
+            </header>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1050px] border-collapse text-left">
+                <thead className="bg-[#F7F7F7] text-[11px] font-bold uppercase tracking-[0.08em] text-[#777]">
+                  <tr>
+                    <th className="px-5 py-3">Received</th>
+                    <th className="px-5 py-3">Session</th>
+                    <th className="px-5 py-3">Reporter</th>
+                    <th className="px-5 py-3">Reported participant</th>
+                    <th className="px-5 py-3">Reason</th>
+                    <th className="px-5 py-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-black/[0.06]">
+                  {sessionReports.map((report) => {
+                    const normalizedStatus = String(report.status || "open").toLowerCase();
+                    const isResolved = normalizedStatus === "resolved" || Boolean(report.resolved_at);
+
+                    return (
+                      <tr key={report.id} className="align-top transition-colors hover:bg-[#FAFAFA]">
+                        <td className="whitespace-nowrap px-5 py-4 text-[12px] text-[#666]">
+                          {formatDateTime(report.created_at)}
+                          <div className="mt-1 font-mono text-[10px] text-[#999]">
+                            {report.id.slice(0, 8)}
+                          </div>
+                        </td>
+                        <td className="max-w-[210px] px-5 py-4">
+                          <div className="truncate text-[13px] font-semibold" title={report.sessionTitle}>
+                            {report.sessionTitle}
+                          </div>
+                          <div
+                            className="mt-1 truncate font-mono text-[10px] text-[#999]"
+                            title={report.session_id || ""}
+                          >
+                            {report.session_id || "No session id"}
+                          </div>
+                        </td>
+                        <td className="max-w-[210px] px-5 py-4">
+                          <ReportPerson
+                            profile={report.reporter}
+                            fallback={report.reporter_user_id || ""}
+                          />
+                        </td>
+                        <td className="max-w-[220px] px-5 py-4">
+                          <ReportPerson
+                            profile={report.reportedParticipant}
+                            fallback={report.reported_participant_id || ""}
+                          />
+                        </td>
+                        <td className="min-w-[260px] max-w-[420px] px-5 py-4">
+                          <p className="whitespace-pre-wrap break-words text-[13px] leading-5 text-[#444]">
+                            {report.reason || "No reason provided."}
+                          </p>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                              isResolved
+                                ? "bg-[#E8F6EA] text-[#247A31]"
+                                : "bg-[#FFF1DD] text-[#9A5B00]"
+                            }`}
+                          >
+                            {isResolved ? "Resolved" : normalizedStatus || "Open"}
+                          </span>
+                          {report.resolved_at ? (
+                            <div className="mt-2 whitespace-nowrap text-[10px] text-[#888]">
+                              {formatDateTime(report.resolved_at)}
+                            </div>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {!reportsLoading && sessionReports.length === 0 ? (
+              <div className="px-5 py-16 text-center text-[14px] text-[#777]">
+                No session reports found.
+              </div>
+            ) : null}
+
+            <footer className="flex flex-col items-center justify-between gap-3 border-t border-black/[0.07] px-5 py-4 text-[12px] text-[#666] sm:flex-row">
+              <span>
+                {reportsTotal
+                  ? `${reportsPage * reportsPageSize + 1}-${Math.min(
+                      reportsTotal,
+                      (reportsPage + 1) * reportsPageSize,
+                    )} of ${reportsTotal}`
+                  : "0 reports"}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={reportsPage === 0 || reportsLoading}
+                  onClick={() => setReportsPage((page) => Math.max(0, page - 1))}
+                  className="rounded-full border border-black/10 px-4 py-2 font-semibold disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <span className="min-w-[88px] text-center">
+                  Page {reportsPage + 1} of {Math.max(1, Math.ceil(reportsTotal / reportsPageSize))}
+                </span>
+                <button
+                  type="button"
+                  disabled={
+                    reportsLoading ||
+                    reportsPage + 1 >= Math.max(1, Math.ceil(reportsTotal / reportsPageSize))
+                  }
+                  onClick={() => setReportsPage((page) => page + 1)}
+                  className="rounded-full border border-black/10 px-4 py-2 font-semibold disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </footer>
+          </section>
         )}
       </div>
 
