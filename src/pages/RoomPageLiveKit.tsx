@@ -3063,6 +3063,8 @@ type MobileCaptureStreamCanvas = HTMLCanvasElement & {
   captureStream?: (frameRate?: number) => MediaStream;
 };
 
+type MobilePiPMediaRecorderConstructor = typeof MediaRecorder;
+
 type MobileCachedVideoFrame = {
   canvas: HTMLCanvasElement;
   updatedAt: number;
@@ -3078,6 +3080,7 @@ const MOBILE_PIP_CANVAS_WIDTH = 960;
 const MOBILE_PIP_CANVAS_HEIGHT = 540;
 const MOBILE_PIP_COLLAGE_FPS = 8;
 const MOBILE_PIP_SNAPSHOT_REFRESH_MS = 500;
+const MOBILE_PIP_APPLE_LOOP_DURATION_MS = 900;
 const MOBILE_PIP_HINT_DISMISSED_KEY = "mysession_mobile_pip_hint_dismissed_v1";
 
 const mobilePiPVideoFrameCache = new WeakMap<
@@ -3102,6 +3105,17 @@ function isTabletOrMobilePiPRuntime(): boolean {
   );
 }
 
+function isAppleMobilePiPRuntime(): boolean {
+  if (typeof navigator === "undefined") return false;
+
+  const userAgent = navigator.userAgent.toLowerCase();
+  const touchPoints = navigator.maxTouchPoints || 0;
+
+  return (
+    /iphone|ipad|ipod/.test(userAgent) ||
+    (/macintosh/.test(userAgent) && touchPoints > 1)
+  );
+}
 function getMobilePiPRoomVideos(
   root: HTMLElement | null,
 ): MobilePiPVideoElement[] {
@@ -3495,14 +3509,18 @@ function isMobilePiPStageReady(
     video.dataset.mobilePipStage !== "true" ||
     video.dataset.pipReady === "true";
 
+  const fileBackedStage =
+    video.dataset.mobilePipFileStage === "true" &&
+    Boolean(video.currentSrc || video.src);
+
   return (
     readinessFlag &&
     !video.paused &&
     video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
     video.videoWidth > 0 &&
     video.videoHeight > 0 &&
-    track?.readyState === "live" &&
-    track.muted === false
+    (fileBackedStage ||
+      (track?.readyState === "live" && track.muted === false))
   );
 }
 
@@ -3720,6 +3738,127 @@ function useMobilePiPCollage(
   ]);
 
   return ensureCollageStream;
+}
+
+function getApplePiPRecorderMimeType(): string {
+  if (typeof MediaRecorder === "undefined") return "";
+  const candidates = [
+    "video/mp4;codecs=avc1.42E01E",
+    "video/mp4",
+    "video/webm;codecs=vp8",
+    "video/webm",
+  ];
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
+}
+
+function useAppleMobilePiPPosterLoop(
+  roomRootRef: React.RefObject<HTMLElement | null>,
+  canvasRef: React.RefObject<HTMLCanvasElement | null>,
+  stageRef: React.RefObject<MobilePiPVideoElement | null>,
+  enabled: boolean,
+): () => Promise<MobilePiPVideoElement | null> {
+  const objectUrlRef = useRef<string>("");
+  const preparedForSignatureRef = useRef<string>("");
+  const preparationRef = useRef<Promise<MobilePiPVideoElement | null> | null>(null);
+
+  const preparePosterLoop = useCallback(async () => {
+    if (!enabled || !isAppleMobilePiPRuntime()) return null;
+    const root = roomRootRef.current;
+    const canvas = canvasRef.current as MobileCaptureStreamCanvas | null;
+    const stage = stageRef.current;
+    const mimeType = getApplePiPRecorderMimeType();
+    if (!root || !canvas || !stage || !mimeType || !canvas.captureStream) return null;
+
+    const signature = getMobilePiPRoomTiles(root)
+      .map((tile) => `${tile.label}|${tile.avatarUrl}|${Boolean(tile.video)}`)
+      .join("::");
+    if (
+      signature &&
+      signature === preparedForSignatureRef.current &&
+      isMobilePiPStageReady(stage)
+    ) return stage;
+    if (preparationRef.current) return preparationRef.current;
+
+    preparationRef.current = (async () => {
+      drawMobilePiPCollage(canvas, root);
+      const stream = canvas.captureStream(MOBILE_PIP_COLLAGE_FPS);
+      const chunks: BlobPart[] = [];
+      try {
+        const Recorder = MediaRecorder as MobilePiPMediaRecorderConstructor;
+        const recorder = new Recorder(stream, {
+          mimeType,
+          videoBitsPerSecond: 900_000,
+        });
+        const recorded = new Promise<Blob | null>((resolve) => {
+          recorder.addEventListener("dataavailable", (event) => {
+            if (event.data?.size) chunks.push(event.data);
+          });
+          recorder.addEventListener("stop", () => {
+            resolve(chunks.length ? new Blob(chunks, { type: mimeType }) : null);
+          });
+          recorder.addEventListener("error", () => resolve(null));
+        });
+
+        recorder.start(120);
+        const startedAt = performance.now();
+        while (performance.now() - startedAt < MOBILE_PIP_APPLE_LOOP_DURATION_MS) {
+          drawMobilePiPCollage(canvas, root);
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 100));
+        }
+        recorder.stop();
+        const blob = await recorded;
+        if (!blob?.size) return null;
+
+        if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = URL.createObjectURL(blob);
+        stage.pause();
+        stage.srcObject = null;
+        stage.dataset.mobilePipFileStage = "true";
+        stage.dataset.pipReady = "false";
+        stage.src = objectUrlRef.current;
+        stage.loop = true;
+        configureMobilePiPVideo(stage);
+        await stage.play();
+        const decoded = await waitForMobilePiPDecodedFrame(stage, 2400);
+        stage.dataset.pipReady = decoded ? "true" : "false";
+        if (!decoded) return null;
+        preparedForSignatureRef.current = signature;
+        return stage;
+      } catch (error) {
+        console.debug("[room-mobile-pip] Apple poster loop unavailable", error);
+        return null;
+      } finally {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    })();
+
+    try {
+      return await preparationRef.current;
+    } finally {
+      preparationRef.current = null;
+    }
+  }, [canvasRef, enabled, roomRootRef, stageRef]);
+
+  useEffect(() => {
+    if (!enabled || !isAppleMobilePiPRuntime()) return;
+    void preparePosterLoop();
+    return () => {
+      const stage = stageRef.current;
+      if (stage?.dataset.mobilePipFileStage === "true") {
+        stage.pause();
+        stage.removeAttribute("src");
+        stage.load();
+        delete stage.dataset.mobilePipFileStage;
+        stage.dataset.pipReady = "false";
+      }
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = "";
+      }
+    };
+  }, [enabled, preparePosterLoop, stageRef]);
+
+  return preparePosterLoop;
 }
 
 function useMobileBrowserInitiatedPiP(
@@ -11829,6 +11968,7 @@ export function RoomPageLiveKit({
   const videoWrapRef = useRef<HTMLDivElement | null>(null);
   const mobilePiPCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const mobilePiPStageRef = useRef<MobilePiPVideoElement | null>(null);
+  const mobilePiPAppleStageRef = useRef<MobilePiPVideoElement | null>(null);
   const [mobilePipOpen, setMobilePipOpen] = useState(false);
   const [mobilePiPHintVisible, setMobilePiPHintVisible] = useState(false);
   const [mobilePiPVideoElement, setMobilePiPVideoElement] =
@@ -11844,6 +11984,13 @@ export function RoomPageLiveKit({
     mobilePiPStageRef,
     connected && mobilePiPRuntime,
   );
+  const prepareAppleMobilePiPPosterLoop = useAppleMobilePiPPosterLoop(
+    videoWrapRef,
+    mobilePiPCanvasRef,
+    mobilePiPAppleStageRef,
+    connected && mobilePiPRuntime,
+  );
+
 
   const preparePreferredMobilePiPVideo = useCallback(async () => {
     const root = videoWrapRef.current;
@@ -11853,7 +12000,28 @@ export function RoomPageLiveKit({
       (tile) => !tile.video || !isMobilePiPCameraTrackActive(tile.video),
     );
 
+    // iOS/iPadOS suspends canvas painting and JS timers after the tab becomes
+    // hidden. A canvas.captureStream() gallery therefore remains "live" but
+    // produces black PiP frames. Native LiveKit video tracks keep decoding in
+    // Safari's media pipeline, so always prefer one of them on Apple mobile
+    // devices. Other mobile browsers can continue using the collage.
+    if (
+      isAppleMobilePiPRuntime() &&
+      !needsAvatarFallback &&
+      nativeVideo &&
+      supportsWebKitVideoPiP(nativeVideo)
+    ) {
+      configureMobilePiPVideo(nativeVideo);
+      return nativeVideo;
+    }
     // When any camera is off, prefer the generated stage so the iPad PiP can
+    if (isAppleMobilePiPRuntime()) {
+      const posterLoop = await prepareAppleMobilePiPPosterLoop();
+      if (posterLoop && isMobilePiPStageReady(posterLoop)) {
+        return posterLoop;
+      }
+    }
+
     // keep every participant visible as video or avatar. If Safari rejects a
     // canvas MediaStream, fall back to its native playing LiveKit video.
     if (needsAvatarFallback) {
@@ -11875,7 +12043,7 @@ export function RoomPageLiveKit({
 
     if (nativeVideo) configureMobilePiPVideo(nativeVideo);
     return nativeVideo;
-  }, [prepareMobilePiPCollage]);
+  }, [prepareAppleMobilePiPPosterLoop, prepareMobilePiPCollage]);
 
   const persistMobilePiPRetention = useCallback(
     (active: boolean): void => {
@@ -21261,6 +21429,21 @@ export function RoomPageLiveKit({
             data-mobile-pip-stage="true"
             data-pip-ready="false"
             muted
+            autoPlay
+            playsInline
+            aria-hidden="true"
+            className="fixed left-[-10000px] top-0 h-[180px] w-[320px] object-contain pointer-events-none"
+          />
+          <video
+            ref={(node) => {
+              mobilePiPAppleStageRef.current =
+                node as MobilePiPVideoElement | null;
+            }}
+            data-mobile-pip-stage="true"
+            data-mobile-pip-file-stage="true"
+            data-pip-ready="false"
+            muted
+            loop
             autoPlay
             playsInline
             aria-hidden="true"
