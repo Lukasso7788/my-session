@@ -227,21 +227,18 @@ function CheckboxPill({
             type="button"
             onClick={onClick}
             className={[
-                "rounded-2xl border px-3 py-2 text-left text-[13px] font-medium transition",
+                "rounded-xl px-3 py-2.5 text-left text-[13px] font-medium transition",
                 checked
-                    ? isLight
-                        ? "border-black bg-black text-white"
-                        : "border-white bg-white text-black"
+                    ? "bg-[#2F2F2F] text-white"
                     : isLight
-                        ? "border-black/10 bg-white text-black/75 hover:bg-black/[0.03]"
-                        : "border-white/10 bg-[#242424] text-white/80 hover:bg-white/[0.06]",
+                        ? "bg-[#E9E7E7] text-[#2F2F2F] hover:bg-[#DFDDDD]"
+                        : "bg-[#2A2A2A] text-white/80 hover:bg-[#333333]",
             ].join(" ")}
         >
             {label}
         </button>
     );
 }
-
 export default function BugReportModal({
     open,
     theme,
@@ -284,14 +281,14 @@ export default function BugReportModal({
     if (!open) return null;
 
     const cardClass = isLight
-        ? "border-[#CFCFCF] bg-[#F3F3F3] text-black shadow-[0_24px_80px_rgba(15,23,42,0.22)]"
-        : "border-[#2B2B2B] bg-[#242424] text-white shadow-[0_24px_80px_rgba(0,0,0,0.55)]";
+        ? "bg-[#F7F6F6] text-[#2F2F2F] shadow-[0_20px_60px_rgba(0,0,0,0.16)]"
+        : "bg-[#1B1B1B] text-white shadow-[0_20px_60px_rgba(0,0,0,0.42)]";
 
     const inputClass = [
-        "w-full rounded-2xl border px-4 py-3 text-[14px] outline-none transition",
+        "w-full rounded-xl border-0 px-4 py-3 text-[14px] outline-none transition",
         isLight
-            ? "border-[#CFCFCF] bg-white text-black placeholder:text-black/35 focus:ring-2 focus:ring-black/15"
-            : "border-[#2B2B2B] bg-[#1B1B1B] text-white placeholder:text-white/35 focus:ring-2 focus:ring-white/20",
+            ? "bg-[#E9E7E7] text-[#2F2F2F] placeholder:text-black/35 focus:ring-2 focus:ring-[#2F2F2F]/15"
+            : "bg-[#292929] text-white placeholder:text-white/35 focus:ring-2 focus:ring-white/15",
     ].join(" ");
 
     const subtleText = isLight ? "text-black/55" : "text-white/55";
@@ -373,40 +370,35 @@ export default function BugReportModal({
     return (
         <div className="fixed inset-0 z-[160] flex items-center justify-center px-3 py-4">
             <div
-                className="absolute inset-0 bg-black/45 backdrop-blur-[3px]"
+                className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
                 onClick={onClose}
             />
 
             <div
-                className={`relative max-h-[92vh] w-full max-w-[760px] overflow-y-auto rounded-[28px] border p-5 sm:p-6 ${cardClass}`}
+                className={`relative max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-[24px] ${cardClass}`}
                 data-theme={theme}
             >
-                <div className="flex items-start justify-between gap-4">
+                <div className={`sticky top-0 z-10 flex items-start justify-between gap-4 px-5 py-4 sm:px-6 ${isLight ? "bg-[#F7F6F6]/95" : "bg-[#1B1B1B]/95"} backdrop-blur-md`}>
                     <div>
-                        <div className={`text-[12px] font-semibold uppercase tracking-[0.16em] ${subtleText}`}>
-                            Bug report
-                        </div>
-                        <h2 className="mt-2 text-[24px] font-bold leading-tight">
+                        <h2 className="text-[20px] font-semibold leading-tight">
                             Report a problem
                         </h2>
-                        <p className={`mt-2 text-[14px] leading-6 ${subtleText}`}>
-                            Send this right after something breaks. We’ll include your device,
-                            browser, room, and recent connection diagnostics automatically.
+                        <p className={`mt-1 text-[12px] leading-5 ${subtleText}`}>
+                            Room and connection details are attached automatically.
                         </p>
                     </div>
 
                     <button
                         type="button"
                         onClick={onClose}
-                        className={`rounded-2xl px-3 py-2 text-[14px] font-bold transition ${isLight ? "hover:bg-black/5" : "hover:bg-white/10"
-                            }`}
+                        className={`flex h-9 w-9 items-center justify-center rounded-xl text-[14px] font-medium transition ${isLight ? "bg-[#E9E7E7] hover:bg-[#DFDDDD]" : "bg-[#292929] hover:bg-[#333333]"}`}
+                        aria-label="Close report modal"
                     >
                         ✕
                     </button>
                 </div>
-
                 {sent ? (
-                    <div className="mt-6 rounded-3xl border border-emerald-500/20 bg-emerald-500/10 p-5">
+                    <div className="mx-5 mb-5 rounded-2xl bg-emerald-500/10 p-5 sm:mx-6">
                         <div className="text-[18px] font-bold">Thanks — report sent.</div>
                         <p className={`mt-2 text-[14px] leading-6 ${subtleText}`}>
                             If this happened during a live session, try Rejoin or refresh once.
@@ -414,13 +406,13 @@ export default function BugReportModal({
                         <button
                             type="button"
                             onClick={onClose}
-                            className="mt-4 rounded-2xl bg-[#81DB86] px-5 py-3 text-[14px] font-bold text-black hover:brightness-95"
+                            className="mt-4 rounded-xl bg-[#2F2F2F] px-5 py-3 text-[14px] font-semibold text-white hover:bg-black"
                         >
                             Close
                         </button>
                     </div>
                 ) : (
-                    <div className="mt-6 space-y-6">
+                    <div className="space-y-6 px-5 pb-5 sm:px-6 sm:pb-6">
                         <section>
                             <FieldTitle>1. What happened?</FieldTitle>
                             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -571,10 +563,10 @@ export default function BugReportModal({
                                 <FieldTitle>Detected device info</FieldTitle>
                                 <div
                                     className={[
-                                        "rounded-2xl border px-4 py-3 text-[13px] leading-6",
+                                        "rounded-xl px-4 py-3 text-[13px] leading-6",
                                         isLight
-                                            ? "border-black/10 bg-white text-black/70"
-                                            : "border-white/10 bg-[#1B1B1B] text-white/70",
+                                            ? "bg-[#E9E7E7] text-black/70"
+                                            : "bg-[#292929] text-white/70",
                                     ].join(" ")}
                                 >
                                     <div>Device: {detected.deviceType}</div>
@@ -599,10 +591,10 @@ export default function BugReportModal({
                         <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <label
                                 className={[
-                                    "flex cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 text-[13px] font-medium",
+                                    "flex cursor-pointer items-center gap-3 rounded-xl px-4 py-3 text-[13px] font-medium",
                                     isLight
-                                        ? "border-black/10 bg-white text-black/75"
-                                        : "border-white/10 bg-[#1B1B1B] text-white/80",
+                                        ? "bg-[#E9E7E7] text-black/75"
+                                        : "bg-[#292929] text-white/80",
                                 ].join(" ")}
                             >
                                 <input
@@ -622,7 +614,7 @@ export default function BugReportModal({
                         </section>
 
                         {error ? (
-                            <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-[13px] text-red-300">
+                            <div className="rounded-xl bg-red-500/10 px-4 py-3 text-[13px] text-red-400">
                                 {error}
                             </div>
                         ) : null}
@@ -632,8 +624,8 @@ export default function BugReportModal({
                                 type="button"
                                 onClick={onClose}
                                 className={[
-                                    "rounded-2xl px-5 py-3 text-[14px] font-bold transition",
-                                    isLight ? "bg-black/5 hover:bg-black/10" : "bg-white/10 hover:bg-white/15",
+                                    "rounded-xl px-5 py-3 text-[14px] font-semibold transition",
+                                    isLight ? "bg-[#E9E7E7] hover:bg-[#DFDDDD]" : "bg-[#292929] hover:bg-[#333333]",
                                 ].join(" ")}
                             >
                                 Cancel
@@ -643,7 +635,7 @@ export default function BugReportModal({
                                 type="button"
                                 disabled={submitting}
                                 onClick={() => void handleSubmit()}
-                                className="rounded-2xl bg-[#81DB86] px-5 py-3 text-[14px] font-bold text-black transition hover:brightness-95 disabled:opacity-60"
+                                className="rounded-xl bg-[#2F2F2F] px-5 py-3 text-[14px] font-semibold text-white transition hover:bg-black disabled:opacity-60"
                             >
                                 {submitting ? "Sending..." : "Send report"}
                             </button>

@@ -678,12 +678,12 @@ export function LiveKitBottomBar(props: {
 
                     <div className="flex items-center justify-center gap-2 sm:gap-3">
                         <div className="relative" ref={mediaMenu === "mic" ? mediaMenuRef : undefined}>
-                            <div className={"relative flex h-10 w-[50px] items-stretch overflow-hidden rounded-2xl transition sm:h-11 sm:w-[54px] " + (!micOn ? "bg-[#F65252] text-white hover:bg-[#E64545]" : ctlBtnBase)}>
-                                <button onClick={onToggleMic} disabled={!connected} className="flex min-w-0 flex-1 items-center justify-center disabled:opacity-50" title="Toggle microphone" type="button">
+                            <div className="relative">
+                                <button onClick={onToggleMic} disabled={!connected} className={"flex h-10 w-10 items-center justify-center rounded-2xl transition disabled:opacity-50 sm:h-11 sm:w-11 " + (!micOn ? "bg-[#F65252] text-white hover:bg-[#E64545]" : ctlBtnBase)} title="Toggle microphone" type="button">
                                     <Icon name={!micOn ? "mic-off" : "mic-on"} theme={!micOn ? "dark" : theme} className="h-5 w-5" />
                                 </button>
-                                <button onClick={() => setMediaMenu((current) => current === "mic" ? null : "mic")} disabled={!connected} className="flex w-[17px] items-start justify-center pt-1.5 opacity-65 transition hover:opacity-100 disabled:opacity-30" title="Choose microphone" aria-label="Choose microphone" aria-expanded={mediaMenu === "mic"} type="button">
-                                    <ChevronUp className="h-3 w-3" strokeWidth={2.2} />
+                                <button onClick={() => setMediaMenu((current) => current === "mic" ? null : "mic")} disabled={!connected} className={`absolute -right-1.5 -top-1.5 z-10 flex h-[19px] w-[19px] items-center justify-center rounded-full shadow-sm ring-2 transition hover:scale-105 disabled:opacity-30 ${mediaMenu === "mic" ? "bg-[#5286F6] text-white ring-[#5286F6]" : isLight ? "bg-[#2F2F2F] text-white ring-[#F3F1F1]" : "bg-[#F1F1F1] text-[#2F2F2F] ring-[#191919]"}`} title="Choose microphone" aria-label="Choose microphone" aria-expanded={mediaMenu === "mic"} type="button">
+                                    <ChevronUp className="h-2.5 w-2.5" strokeWidth={2.4} />
                                 </button>
                             </div>
                             {mediaMenu === "mic" ? (
@@ -706,12 +706,12 @@ export function LiveKitBottomBar(props: {
                         </div>
 
                         <div className="relative" ref={mediaMenu === "camera" ? mediaMenuRef : undefined}>
-                            <div className={"relative flex h-10 w-[50px] items-stretch overflow-hidden rounded-2xl transition sm:h-11 sm:w-[54px] " + (!camOn ? "bg-[#F65252] text-white hover:bg-[#E64545]" : ctlBtnBase)}>
-                                <button onClick={onToggleCam} disabled={!connected} className="flex min-w-0 flex-1 items-center justify-center disabled:opacity-50" title="Toggle camera" type="button">
+                            <div className="relative">
+                                <button onClick={onToggleCam} disabled={!connected} className={"flex h-10 w-10 items-center justify-center rounded-2xl transition disabled:opacity-50 sm:h-11 sm:w-11 " + (!camOn ? "bg-[#F65252] text-white hover:bg-[#E64545]" : ctlBtnBase)} title="Toggle camera" type="button">
                                     <Icon name={!camOn ? "camera-off" : "camera-on"} theme={!camOn ? "dark" : theme} className="h-5 w-5" />
                                 </button>
-                                <button onClick={() => setMediaMenu((current) => current === "camera" ? null : "camera")} disabled={!connected} className="flex w-[17px] items-start justify-center pt-1.5 opacity-65 transition hover:opacity-100 disabled:opacity-30" title="Camera and background" aria-label="Choose camera and background" aria-expanded={mediaMenu === "camera"} type="button">
-                                    <ChevronUp className="h-3 w-3" strokeWidth={2.2} />
+                                <button onClick={() => setMediaMenu((current) => current === "camera" ? null : "camera")} disabled={!connected} className={`absolute -right-1.5 -top-1.5 z-10 flex h-[19px] w-[19px] items-center justify-center rounded-full shadow-sm ring-2 transition hover:scale-105 disabled:opacity-30 ${mediaMenu === "camera" ? "bg-[#5286F6] text-white ring-[#5286F6]" : isLight ? "bg-[#2F2F2F] text-white ring-[#F3F1F1]" : "bg-[#F1F1F1] text-[#2F2F2F] ring-[#191919]"}`} title="Camera and background" aria-label="Choose camera and background" aria-expanded={mediaMenu === "camera"} type="button">
+                                    <ChevronUp className="h-2.5 w-2.5" strokeWidth={2.4} />
                                 </button>
                             </div>
                             {mediaMenu === "camera" ? (
