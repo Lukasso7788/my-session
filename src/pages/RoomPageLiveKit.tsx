@@ -14,6 +14,8 @@ import {
   Check,
   ChevronDown,
   Clock3,
+  Pin,
+  PinOff,
   Users,
   X,
 } from "lucide-react";
@@ -18154,10 +18156,7 @@ export function RoomPageLiveKit({
                                 );
                                 setScreenSharePinned(!isThisPinnedScreen);
                               }}
-                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${true
-                                ? "border-[#CFCFCF] bg-[#F3F3F3] hover:bg-[#E8E8E8] text-black/80"
-                                : "border-[#CFCFCF] bg-[#F3F3F3] hover:bg-[#E8E8E8] text-black/80"
-                                }`}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#2F2F2F] transition-colors hover:bg-black/[0.06]"
                               title={
                                 screenSharePinned &&
                                   activeScreenShareTile?.id === p.id
@@ -18171,10 +18170,11 @@ export function RoomPageLiveKit({
                                   : "Pin shared screen"
                               }
                             >
-                              {screenSharePinned &&
-                                activeScreenShareTile?.id === p.id
-                                ? "⇱"
-                                : "📌"}
+                              {screenSharePinned && activeScreenShareTile?.id === p.id ? (
+                                <PinOff className="h-[17px] w-[17px]" strokeWidth={1.8} />
+                              ) : (
+                                <Pin className="h-[17px] w-[17px]" strokeWidth={1.8} />
+                              )}
                             </button>
                           </>
                         )}
@@ -18183,24 +18183,31 @@ export function RoomPageLiveKit({
                           <>
                             <button
                               onClick={() => togglePin(p.id)}
-                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${true
-                                ? "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
-                                : "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
-                                }`}
+                              className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/[0.06] ${isPinned ? "text-[#2F2F2F]" : "text-black/55 hover:text-[#2F2F2F]"}`}
                               title={isPinned ? "Unpin" : "Pin"}
+                              aria-label={isPinned ? `Unpin ${p.label}` : `Pin ${p.label}`}
+                              type="button"
                             >
-                              📌
+                              {isPinned ? (
+                                <PinOff className="h-[17px] w-[17px]" strokeWidth={1.8} />
+                              ) : (
+                                <Pin className="h-[17px] w-[17px]" strokeWidth={1.8} />
+                              )}
                             </button>
 
                             <button
                               onClick={() => toggleHide(p.id)}
-                              className={`w-9 h-9 rounded-xl flex items-center justify-center border transition ${true
-                                ? "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
-                                : "border-[#1B1B1B] bg-[#1B1B1B] hover:bg-[#242424] text-white"
-                                }`}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/[0.06]"
                               title={isHidden ? "Unhide" : "Hide"}
+                              aria-label={isHidden ? `Show ${p.label}` : `Hide ${p.label}`}
+                              type="button"
                             >
-                              🙈
+                              <img
+                                src={isHidden ? "/icons/participant-show.svg" : "/icons/participant-hide.svg"}
+                                alt=""
+                                aria-hidden="true"
+                                className="h-[17px] w-[17px]"
+                              />
                             </button>
                           </>
                         )}
