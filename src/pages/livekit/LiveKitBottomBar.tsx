@@ -283,8 +283,11 @@ export function LiveKitBottomBar(props: {
             : "light"
         : theme;
 
+    const labeledControlClass = "h-10 min-w-10 px-1.5 sm:h-11 sm:min-w-11 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition";
+    const controlLabelClass = "hidden md:block text-[11px] font-semibold leading-none";
+
     const aiHostBtnClass =
-        "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
+        labeledControlClass + " " +
         (aiHostOpen
             ? isLight
                 ? "bg-[#242424] hover:bg-[#2E2E2E] text-white"
@@ -294,12 +297,12 @@ export function LiveKitBottomBar(props: {
     const bugReportDesktopBtn = onOpenBugReport ? (
         <button
             onClick={onOpenBugReport}
-            className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+            className={`${labeledControlClass} ${ctlBtnBase}`}
             title="Report a problem"
             type="button"
         >
-            <BugReportIcon isLight={isLight} />
-            <span className="sr-only">Report a problem</span>
+            <BugReportIcon isLight={isLight} className="w-[15px] h-[15px]" />
+            <span className={controlLabelClass}>Report</span>
         </button>
     ) : null;
 
@@ -307,19 +310,19 @@ export function LiveKitBottomBar(props: {
         showLayoutControls && onOpenLayoutControls ? (
             <button
                 onClick={onOpenLayoutControls}
-                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                className={`${labeledControlClass} ${ctlBtnBase}`}
                 title="Video layout"
                 type="button"
             >
-                <LayoutIcon isLight={isLight} />
-                <span className="sr-only">Video layout</span>
+                <LayoutIcon isLight={isLight} className="w-[15px] h-[15px]" />
+                <span className={controlLabelClass}>Layout</span>
             </button>
         ) : null;
 
     const chatBtn = (
-        <button onClick={onOpenChat} className={`relative h-11 rounded-2xl px-3 flex items-center justify-center gap-1.5 transition ${ctlBtnBase}`} title="Chat" type="button">
+        <button onClick={onOpenChat} className={`relative ${labeledControlClass} ${ctlBtnBase}`} title="Chat" type="button">
             <Icon name="chat" theme={theme} className="w-[15px] h-[15px]" />
-            <span className="text-[11px] font-semibold">Chat</span>
+            <span className={controlLabelClass}>Chat</span>
             {unreadChat > 0 && (
                 <span className={["absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center", isLight ? "bg-[#1B1B1B] text-white" : "bg-[#1B1B1B] text-white"].join(" ")}>
                     {unreadChat > 99 ? "99+" : unreadChat}
@@ -329,31 +332,31 @@ export function LiveKitBottomBar(props: {
     );
 
     const participantsBtn = (
-        <button onClick={onOpenParticipants} className={`h-11 rounded-2xl px-3 flex items-center justify-center gap-1.5 transition ${ctlBtnBase}`} title="Participants" type="button">
+        <button onClick={onOpenParticipants} className={`${labeledControlClass} ${ctlBtnBase}`} title="Participants" type="button">
             <Icon name="participants" theme={theme} className="w-[15px] h-[15px]" />
-            <span className="text-[11px] font-semibold">People</span>
+            <span className={controlLabelClass}>People</span>
         </button>
     );
 
     const tasksBtn = (
-        <button onClick={onOpenTasks} className={`h-11 rounded-2xl px-3 flex items-center justify-center gap-1.5 transition ${ctlBtnBase}`} title="Tasks" type="button">
+        <button onClick={onOpenTasks} className={`${labeledControlClass} ${ctlBtnBase}`} title="Tasks" type="button">
             <Icon name="tasks" theme={theme} className="w-[15px] h-[15px]" />
-            <span className="text-[11px] font-semibold">Tasks</span>
+            <span className={controlLabelClass}>Tasks</span>
         </button>
     );
 
     const soundscapesBtn = onOpenSoundscapes ? (
-        <button onClick={onOpenSoundscapes} className={"relative h-11 rounded-2xl px-3 flex items-center justify-center gap-1.5 transition " + (soundscapeActive ? "bg-[#242424] hover:bg-[#2E2E2E] text-white" : ctlBtnBase)} title={soundscapeActive ? "Background sounds playing" : "Background sounds"} type="button">
+        <button onClick={onOpenSoundscapes} className={"relative " + labeledControlClass + " " + (soundscapeActive ? "bg-[#242424] hover:bg-[#2E2E2E] text-white" : ctlBtnBase)} title={soundscapeActive ? "Background sounds playing" : "Background sounds"} type="button">
             <SoundscapeIcon isLight={isLight} active={soundscapeActive} className="w-[15px] h-[15px]" />
-            <span className="text-[11px] font-semibold">Music</span>
+            <span className={controlLabelClass}>Music</span>
             {soundscapeActive ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#7EE787]" /> : null}
         </button>
     ) : null;
 
     const settingsBtn = (
-        <button onClick={onOpenSettings} className={`h-11 rounded-2xl px-3 flex items-center justify-center gap-1.5 transition ${ctlBtnBase}`} title="Settings" type="button">
+        <button onClick={onOpenSettings} className={`${labeledControlClass} ${ctlBtnBase}`} title="Settings" type="button">
             <Icon name="settings" theme={theme} className="w-[15px] h-[15px]" />
-            <span className="text-[11px] font-semibold">Settings</span>
+            <span className={controlLabelClass}>Settings</span>
         </button>
     );
     const aiHostDesktopBtn =
@@ -364,8 +367,8 @@ export function LiveKitBottomBar(props: {
                 title={aiHostOpen ? "AI Host is open" : "Open AI Host"}
                 type="button"
             >
-                <AIHostIcon isLight={aiHostOpen ? false : isLight} />
-                <span className="sr-only">Open AI Host</span>
+                <AIHostIcon isLight={aiHostOpen ? false : isLight} className="w-[15px] h-[15px]" />
+                <span className={controlLabelClass}>AI Host</span>
             </button>
         ) : null;
 
@@ -374,7 +377,7 @@ export function LiveKitBottomBar(props: {
             <button
                 onClick={onTogglePiP}
                 className={
-                    "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition " +
+                    labeledControlClass + " " +
                     (pipActive
                         ? isLight
                             ? "bg-[#242424] hover:bg-[#2E2E2E] text-white"
@@ -386,10 +389,8 @@ export function LiveKitBottomBar(props: {
                 }
                 type="button"
             >
-                <Icon name="pip" theme={pipIconTheme} className="w-5 h-5" />
-                <span className="sr-only">
-                    {pipActive ? "Close picture-in-picture" : "Open picture-in-picture"}
-                </span>
+                <Icon name="pip" theme={pipIconTheme} className="w-[15px] h-[15px]" />
+                <span className={controlLabelClass}>PiP</span>
             </button>
         ) : null;
 
@@ -403,7 +404,7 @@ export function LiveKitBottomBar(props: {
                         <div className="md:hidden relative">
                             <button
                                 onClick={() => setShowMoreMenu((v) => !v)}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                className={`${labeledControlClass} ${ctlBtnBase}`}
                                 title="Menu"
                                 type="button"
                             >
@@ -639,16 +640,16 @@ export function LiveKitBottomBar(props: {
                             {bugReportDesktopBtn}
                             {aiHostDesktopBtn}
                             {layoutDesktopBtn}
-
-
+                            {settingsBtn}
                         </div>
                     </div>
 
                     <div className="flex items-center justify-center gap-2 sm:gap-3">
                         <div className="relative" ref={mediaMenu === "mic" ? mediaMenuRef : undefined}>
                             <div className="relative">
-                                <button onClick={onToggleMic} disabled={!connected} className={"flex h-10 w-10 items-center justify-center rounded-2xl transition disabled:opacity-50 sm:h-11 sm:w-11 " + (!micOn ? "bg-[#F65252] text-white hover:bg-[#E64545]" : ctlBtnBase)} title="Toggle microphone" type="button">
-                                    <Icon name={!micOn ? "mic-off" : "mic-on"} theme={!micOn ? "dark" : theme} className="h-5 w-5" />
+                                <button onClick={onToggleMic} disabled={!connected} className={labeledControlClass + " disabled:opacity-50 " + (!micOn ? "bg-[#F65252] text-white hover:bg-[#E64545]" : ctlBtnBase)} title="Toggle microphone" type="button">
+                                    <Icon name={!micOn ? "mic-off" : "mic-on"} theme={!micOn ? "dark" : theme} className="h-[15px] w-[15px]" />
+                                    <span className={controlLabelClass}>{micOn ? "Mic on" : "Mic off"}</span>
                                 </button>
                                 <button onClick={() => setMediaMenu((current) => current === "mic" ? null : "mic")} disabled={!connected} className={`absolute -right-1.5 -top-1.5 z-10 flex h-[19px] w-[19px] items-center justify-center rounded-full shadow-sm ring-2 transition hover:scale-105 disabled:opacity-30 bg-[#2F2F2F] text-white hover:bg-[#383838] ${isLight ? "ring-[#F3F1F1]" : "ring-[#191919]"}`} title="Choose microphone" aria-label="Choose microphone" aria-expanded={mediaMenu === "mic"} type="button">
                                     <ChevronUp className="h-2.5 w-2.5" strokeWidth={2.4} />
@@ -675,8 +676,9 @@ export function LiveKitBottomBar(props: {
 
                         <div className="relative" ref={mediaMenu === "camera" ? mediaMenuRef : undefined}>
                             <div className="relative">
-                                <button onClick={onToggleCam} disabled={!connected} className={"flex h-10 w-10 items-center justify-center rounded-2xl transition disabled:opacity-50 sm:h-11 sm:w-11 " + (!camOn ? "bg-[#F65252] text-white hover:bg-[#E64545]" : ctlBtnBase)} title="Toggle camera" type="button">
-                                    <Icon name={!camOn ? "camera-off" : "camera-on"} theme={!camOn ? "dark" : theme} className="h-5 w-5" />
+                                <button onClick={onToggleCam} disabled={!connected} className={labeledControlClass + " disabled:opacity-50 " + (!camOn ? "bg-[#F65252] text-white hover:bg-[#E64545]" : ctlBtnBase)} title="Toggle camera" type="button">
+                                    <Icon name={!camOn ? "camera-off" : "camera-on"} theme={!camOn ? "dark" : theme} className="h-[15px] w-[15px]" />
+                                    <span className={controlLabelClass}>{camOn ? "Camera" : "Cam off"}</span>
                                 </button>
                                 <button onClick={() => setMediaMenu((current) => current === "camera" ? null : "camera")} disabled={!connected} className={`absolute -right-1.5 -top-1.5 z-10 flex h-[19px] w-[19px] items-center justify-center rounded-full shadow-sm ring-2 transition hover:scale-105 disabled:opacity-30 bg-[#2F2F2F] text-white hover:bg-[#383838] ${isLight ? "ring-[#F3F1F1]" : "ring-[#191919]"}`} title="Camera and background" aria-label="Choose camera and background" aria-expanded={mediaMenu === "camera"} type="button">
                                     <ChevronUp className="h-2.5 w-2.5" strokeWidth={2.4} />
@@ -730,7 +732,7 @@ export function LiveKitBottomBar(props: {
                             onClick={onToggleScreenShare}
                             disabled={!connected}
                             className={
-                                "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " +
+                                labeledControlClass + " disabled:opacity-50 " +
                                 (screenShareOn
                                     ? "bg-[#5286F6] hover:bg-[#4678E4] text-white"
                                     : ctlBtnBase)
@@ -741,8 +743,9 @@ export function LiveKitBottomBar(props: {
                             <Icon
                                 name="screen-share"
                                 theme={screenShareOn ? "dark" : theme}
-                                className="w-5 h-5"
+                                className="w-[15px] h-[15px]"
                             />
+                            <span className={controlLabelClass}>Share</span>
                         </button>
 
                         {onToggleVoiceUi ? (
@@ -750,7 +753,7 @@ export function LiveKitBottomBar(props: {
                                 onClick={onToggleVoiceUi}
                                 disabled={!connected}
                                 className={
-                                    "relative w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " +
+                                    "relative " + labeledControlClass + " disabled:opacity-50 " +
                                     (voiceUiMode === "always"
                                         ? "bg-[#5286F6] hover:bg-[#4678E4] text-white"
                                         : voiceUiMode === "hotkey"
@@ -763,26 +766,25 @@ export function LiveKitBottomBar(props: {
                             >
                                 <AudioLines
                                     aria-hidden="true"
-                                    className={`h-5 w-5 ${voiceUiMode !== "off" ? "text-white" : isLight ? "text-[#2F2F2F]" : "text-white"}`}
+                                    className={`h-[15px] w-[15px] ${voiceUiMode !== "off" ? "text-white" : isLight ? "text-[#2F2F2F]" : "text-white"}`}
                                     strokeWidth={2}
                                 />
                                 {voiceUiMode === "hotkey" ? (
                                     <span className="absolute right-1 top-1 rounded bg-white/20 px-1 text-[7px] font-bold leading-3 text-white" aria-hidden="true">H</span>
                                 ) : null}
-                                <span className="sr-only">
-                                    {voiceUiMode === "off" ? "Voice controls off" : voiceUiMode === "always" ? "Voice controls always listening" : "Voice controls hotkey mode"}
-                                </span>
+                                <span className={controlLabelClass}>Voice</span>
                             </button>
                         ) : null}
 
                         <div className="relative" ref={reactionsMenuRef}>
                             <button
                                 onClick={() => setShowReactionsMenu((v) => !v)}
-                                className={`w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition ${ctlBtnBase}`}
+                                className={`${labeledControlClass} ${ctlBtnBase}`}
                                 title="Reactions"
                                 type="button"
                             >
-                                <Icon name="reaction" theme={theme} className="w-5 h-5" />
+                                <Icon name="reaction" theme={theme} className="w-[15px] h-[15px]" />
+                                <span className={controlLabelClass}>React</span>
                             </button>
 
                             {showReactionsMenu && (
@@ -820,7 +822,6 @@ export function LiveKitBottomBar(props: {
                             {chatBtn}
                             {tasksBtn}
                             {soundscapesBtn}
-                            {settingsBtn}
                         </div>
 
                         <button
