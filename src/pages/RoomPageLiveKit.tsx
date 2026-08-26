@@ -2473,22 +2473,22 @@ const FX_BG_PRESETS = [
   {
     id: "ocean",
     label: "Ocean",
-    url: makeBgPresetDataUrl("#1F1F1F", "#123a76", "#031019", "#38bdf8"),
+    url: makeBgPresetDataUrl("#DCEBFF", "#83B8F4", "#EAF4FF", "#FFFFFF"),
   },
   {
     id: "forest",
     label: "Forest",
-    url: makeBgPresetDataUrl("#07160f", "#124b2c", "#040d08", "#22c55e"),
+    url: makeBgPresetDataUrl("#E0F5E8", "#87CCA1", "#F1FAF4", "#FFFFFF"),
   },
   {
     id: "violet",
     label: "Violet",
-    url: makeBgPresetDataUrl("#120a22", "#3b2378", "#090512", "#a78bfa"),
+    url: makeBgPresetDataUrl("#EEE8FF", "#B7A4ED", "#F8F5FF", "#FFFFFF"),
   },
   {
     id: "sunset",
     label: "Sunset",
-    url: makeBgPresetDataUrl("#1c0d10", "#7c2d12", "#11070a", "#fb7185"),
+    url: makeBgPresetDataUrl("#FFF0E5", "#F4AAA4", "#FFF8F3", "#FFFFFF"),
   },
 ];
 
@@ -20281,7 +20281,7 @@ export function RoomPageLiveKit({
           screenShareOn={screenShareOn}
           voiceUiMode={voiceUiMode}
           unreadChat={unreadChat}
-          showPiP={connected && pipSupported}
+          showPiP={pipSupported}
           pipActive={pictureInPictureOpen}
           onTogglePiP={() => {
             togglePictureInPicture().catch((e) => {
@@ -20291,6 +20291,46 @@ export function RoomPageLiveKit({
           }}
           onToggleMic={() => toggleMic().catch(() => { })}
           onToggleCam={() => toggleCam().catch(() => { })}
+          audioInputs={devices.audioInputs}
+          videoInputs={devices.videoInputs}
+          selectedAudioInputId={selectedAudioInputId}
+          selectedVideoInputId={selectedVideoInputId}
+          onChangeAudioInput={async (deviceId) => {
+            setSelectedAudioInputId(deviceId);
+            setPrejoin((prev) => ({ ...prev, audioInputId: deviceId }));
+            prejoinRef.current = { ...prejoinRef.current, audioInputId: deviceId };
+            await syncLiveAudioInput(deviceId);
+          }}
+          onChangeVideoInput={async (deviceId) => {
+            setSelectedVideoInputId(deviceId);
+            setPrejoin((prev) => ({ ...prev, videoInputId: deviceId }));
+            prejoinRef.current = { ...prejoinRef.current, videoInputId: deviceId };
+            await syncLiveVideoInput(deviceId);
+          }}
+          videoFxMode={videoFxMode}
+          backgroundPresets={FX_BG_PRESETS}
+          selectedBackgroundUrl={bgImageUrl}
+          backgroundFxDisabled={shouldDisableBackgroundFx}
+          onApplyVideoFx={async (mode, backgroundUrl) => {
+            if (backgroundUrl) setBgImageUrl(backgroundUrl);
+            await applyVideoFx(mode, backgroundUrl);
+          }}
+          onUploadBackground={async (file) => {
+            if (file.size > CUSTOM_BACKGROUND_MAX_FILE_BYTES) {
+              setFxError("Custom backgrounds must be 8 MB or smaller");
+              return;
+            }
+            try {
+              if (uploadedBgUrlRef.current) URL.revokeObjectURL(uploadedBgUrlRef.current);
+              const url = URL.createObjectURL(file);
+              uploadedBgUrlRef.current = url;
+              setBgImageUrl(url);
+              await applyVideoFx("bg", url);
+            } catch (error) {
+              console.error("bottom bar background upload failed", error);
+              setFxError("Failed to load selected image");
+            }
+          }}
           onToggleScreenShare={() => toggleScreenShare().catch(() => { })}
           onToggleVoiceUi={() => {
             setVoiceUiMode((current) => current === "off" ? "always" : current === "always" ? "hotkey" : "off");

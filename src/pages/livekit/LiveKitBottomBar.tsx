@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { AudioLines } from "lucide-react";
+import { AudioLines, ChevronUp, ImagePlus, Sparkles } from "lucide-react";
 import {
     Icon,
     reactionEmoji,
@@ -125,6 +125,18 @@ export function LiveKitBottomBar(props: {
 
     onToggleMic: () => void;
     onToggleCam: () => void;
+    audioInputs?: MediaDeviceInfo[];
+    videoInputs?: MediaDeviceInfo[];
+    selectedAudioInputId?: string;
+    selectedVideoInputId?: string;
+    onChangeAudioInput?: (deviceId: string) => void | Promise<void>;
+    onChangeVideoInput?: (deviceId: string) => void | Promise<void>;
+    videoFxMode?: "off" | "blur" | "bg";
+    backgroundPresets?: Array<{ id: string; label: string; url: string }>;
+    selectedBackgroundUrl?: string;
+    backgroundFxDisabled?: boolean;
+    onApplyVideoFx?: (mode: "off" | "blur" | "bg", backgroundUrl?: string) => void | Promise<void>;
+    onUploadBackground?: (file: File) => void | Promise<void>;
     onToggleScreenShare: () => void;
     onToggleVoiceUi?: () => void;
     onLeave: () => void;
@@ -166,6 +178,18 @@ export function LiveKitBottomBar(props: {
 
         onToggleMic,
         onToggleCam,
+        audioInputs = [],
+        videoInputs = [],
+        selectedAudioInputId = "",
+        selectedVideoInputId = "",
+        onChangeAudioInput,
+        onChangeVideoInput,
+        videoFxMode = "off",
+        backgroundPresets = [],
+        selectedBackgroundUrl = "",
+        backgroundFxDisabled = false,
+        onApplyVideoFx,
+        onUploadBackground,
         onToggleScreenShare,
         onToggleVoiceUi,
         onLeave,
@@ -182,6 +206,9 @@ export function LiveKitBottomBar(props: {
 
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
     const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
+    const [mediaMenu, setMediaMenu] = useState<"mic" | "camera" | null>(null);
+    const mediaMenuRef = useRef<HTMLDivElement | null>(null);
+    const backgroundUploadRef = useRef<HTMLInputElement | null>(null);
 
     const emitReaction = (type: ReactionType) => {
         onSendReaction(type);
@@ -213,6 +240,22 @@ export function LiveKitBottomBar(props: {
         return () => document.removeEventListener("mousedown", onDown);
     }, [showReactionsMenu]);
 
+    useEffect(() => {
+        if (!mediaMenu) return;
+        const onDown = (event: MouseEvent) => {
+            const target = event.target as Node | null;
+            if (target && !mediaMenuRef.current?.contains(target)) setMediaMenu(null);
+        };
+        document.addEventListener("mousedown", onDown);
+        return () => document.removeEventListener("mousedown", onDown);
+    }, [mediaMenu]);
+
+    const menuSurface = isLight
+        ? "border border-black/10 bg-[#F7F7F7] text-[#2F2F2F]"
+        : "border border-white/10 bg-[#222222] text-white";
+    const menuItem = isLight
+        ? "hover:bg-black/[0.055]"
+        : "hover:bg-white/[0.07]";
     useEffect(() => {
         if (typeof window === "undefined" || !window.matchMedia) return;
 
@@ -634,44 +677,87 @@ export function LiveKitBottomBar(props: {
                     </div>
 
                     <div className="flex items-center justify-center gap-2 sm:gap-3">
-                        <button
-                            onClick={onToggleMic}
-                            disabled={!connected}
-                            className={
-                                "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " +
-                                (!micOn
-                                    ? "bg-[#F65252] hover:bg-[#E64545] text-white"
-                                    : ctlBtnBase)
-                            }
-                            title="Toggle mic"
-                            type="button"
-                        >
-                            <Icon
-                                name={!micOn ? "mic-off" : "mic-on"}
-                                theme={!micOn ? "dark" : theme}
-                                className="w-5 h-5"
-                            />
-                        </button>
+                        <div className="relative" ref={mediaMenu === "mic" ? mediaMenuRef : undefined}>
+                            <div className={"relative flex h-10 w-[50px] items-stretch overflow-hidden rounded-2xl transition sm:h-11 sm:w-[54px] " + (!micOn ? "bg-[#F65252] text-white hover:bg-[#E64545]" : ctlBtnBase)}>
+                                <button onClick={onToggleMic} disabled={!connected} className="flex min-w-0 flex-1 items-center justify-center disabled:opacity-50" title="Toggle microphone" type="button">
+                                    <Icon name={!micOn ? "mic-off" : "mic-on"} theme={!micOn ? "dark" : theme} className="h-5 w-5" />
+                                </button>
+                                <button onClick={() => setMediaMenu((current) => current === "mic" ? null : "mic")} disabled={!connected} className="flex w-[17px] items-start justify-center pt-1.5 opacity-65 transition hover:opacity-100 disabled:opacity-30" title="Choose microphone" aria-label="Choose microphone" aria-expanded={mediaMenu === "mic"} type="button">
+                                    <ChevronUp className="h-3 w-3" strokeWidth={2.2} />
+                                </button>
+                            </div>
+                            {mediaMenu === "mic" ? (
+                                <div className={`absolute bottom-[54px] left-1/2 z-[80] w-[280px] -translate-x-1/2 overflow-hidden rounded-2xl p-2 shadow-2xl ${menuSurface}`}>
+                                    <div className="px-2 pb-2 pt-1 text-[11px] font-semibold opacity-55">Microphone</div>
+                                    <div className="max-h-[230px] overflow-y-auto">
+                                        {(audioInputs.length ? audioInputs : [{ deviceId: "", label: "Default microphone" } as MediaDeviceInfo]).map((device, index) => {
+                                            const deviceId = device.deviceId || "";
+                                            const selected = deviceId === selectedAudioInputId || (!selectedAudioInputId && index === 0);
+                                            return (
+                                                <button key={deviceId || `mic-${index}`} type="button" onClick={() => { void onChangeAudioInput?.(deviceId); setMediaMenu(null); }} className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[12px] transition ${selected ? "bg-[#2F2F2F] text-white" : menuItem}`}>
+                                                    <span className="min-w-0 flex-1 truncate">{device.label || `Microphone ${index + 1}`}</span>
+                                                    {selected ? <span className="text-[11px]">✓</span> : null}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            ) : null}
+                        </div>
 
-                        <button
-                            onClick={onToggleCam}
-                            disabled={!connected}
-                            className={
-                                "w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center transition disabled:opacity-50 " +
-                                (!camOn
-                                    ? "bg-[#F65252] hover:bg-[#E64545] text-white"
-                                    : ctlBtnBase)
-                            }
-                            title="Toggle camera"
-                            type="button"
-                        >
-                            <Icon
-                                name={!camOn ? "camera-off" : "camera-on"}
-                                theme={!camOn ? "dark" : theme}
-                                className="w-5 h-5"
-                            />
-                        </button>
-
+                        <div className="relative" ref={mediaMenu === "camera" ? mediaMenuRef : undefined}>
+                            <div className={"relative flex h-10 w-[50px] items-stretch overflow-hidden rounded-2xl transition sm:h-11 sm:w-[54px] " + (!camOn ? "bg-[#F65252] text-white hover:bg-[#E64545]" : ctlBtnBase)}>
+                                <button onClick={onToggleCam} disabled={!connected} className="flex min-w-0 flex-1 items-center justify-center disabled:opacity-50" title="Toggle camera" type="button">
+                                    <Icon name={!camOn ? "camera-off" : "camera-on"} theme={!camOn ? "dark" : theme} className="h-5 w-5" />
+                                </button>
+                                <button onClick={() => setMediaMenu((current) => current === "camera" ? null : "camera")} disabled={!connected} className="flex w-[17px] items-start justify-center pt-1.5 opacity-65 transition hover:opacity-100 disabled:opacity-30" title="Camera and background" aria-label="Choose camera and background" aria-expanded={mediaMenu === "camera"} type="button">
+                                    <ChevronUp className="h-3 w-3" strokeWidth={2.2} />
+                                </button>
+                            </div>
+                            {mediaMenu === "camera" ? (
+                                <div className={`absolute bottom-[54px] left-1/2 z-[80] max-h-[min(560px,calc(100dvh-90px))] w-[320px] -translate-x-1/2 overflow-y-auto rounded-2xl p-2 shadow-2xl ${menuSurface}`}>
+                                    <div className="px-2 pb-2 pt-1 text-[11px] font-semibold opacity-55">Camera</div>
+                                    <div className="max-h-[160px] overflow-y-auto">
+                                        {(videoInputs.length ? videoInputs : [{ deviceId: "", label: "Default camera" } as MediaDeviceInfo]).map((device, index) => {
+                                            const deviceId = device.deviceId || "";
+                                            const selected = deviceId === selectedVideoInputId || (!selectedVideoInputId && index === 0);
+                                            return (
+                                                <button key={deviceId || `camera-${index}`} type="button" onClick={() => void onChangeVideoInput?.(deviceId)} className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[12px] transition ${selected ? "bg-[#2F2F2F] text-white" : menuItem}`}>
+                                                    <span className="min-w-0 flex-1 truncate">{device.label || `Camera ${index + 1}`}</span>
+                                                    {selected ? <span className="text-[11px]">✓</span> : null}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    {!backgroundFxDisabled && onApplyVideoFx ? (
+                                        <>
+                                            <div className={`mx-2 my-2 h-px ${isLight ? "bg-black/10" : "bg-white/10"}`} />
+                                            <div className="flex items-center justify-between px-2 pb-2 pt-1">
+                                                <span className="text-[11px] font-semibold opacity-55">Background</span>
+                                                <Sparkles className="h-3.5 w-3.5 opacity-45" />
+                                            </div>
+                                            <div className="grid grid-cols-3 gap-1.5">
+                                                <button type="button" onClick={() => void onApplyVideoFx("off")} className={`rounded-xl px-2 py-2 text-[10px] font-semibold transition ${videoFxMode === "off" ? "bg-[#2F2F2F] text-white" : menuItem}`}>None</button>
+                                                <button type="button" onClick={() => void onApplyVideoFx("blur")} className={`rounded-xl px-2 py-2 text-[10px] font-semibold transition ${videoFxMode === "blur" ? "bg-[#2F2F2F] text-white" : menuItem}`}>Blur</button>
+                                                <button type="button" onClick={() => backgroundUploadRef.current?.click()} className={`flex items-center justify-center gap-1 rounded-xl px-2 py-2 text-[10px] font-semibold transition ${menuItem}`}><ImagePlus className="h-3.5 w-3.5" />Custom</button>
+                                            </div>
+                                            <input ref={backgroundUploadRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void onUploadBackground?.(file); }} />
+                                            <div className="mt-2 grid grid-cols-2 gap-1.5">
+                                                {backgroundPresets.map((preset) => {
+                                                    const selected = videoFxMode === "bg" && selectedBackgroundUrl === preset.url;
+                                                    return (
+                                                        <button key={preset.id} type="button" onClick={() => void onApplyVideoFx("bg", preset.url)} className={`group overflow-hidden rounded-xl text-left transition ${selected ? "ring-2 ring-[#5286F6]" : "ring-1 ring-black/10"}`}>
+                                                            <img src={preset.url} alt="" className="aspect-[16/7] w-full object-cover transition group-hover:scale-[1.03]" />
+                                                            <span className="block truncate px-2 py-1.5 text-[10px] font-semibold">{preset.label}</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </>
+                                    ) : null}
+                                </div>
+                            ) : null}
+                        </div>
                         <button
                             onClick={onToggleScreenShare}
                             disabled={!connected}
