@@ -291,8 +291,8 @@ export function LiveKitBottomBar(props: {
         : theme;
 
     const centerControlClass = "h-10 w-10 rounded-2xl flex items-center justify-center transition md:h-11 md:w-11";
-    const sideControlClass = "h-10 min-w-10 rounded-2xl flex items-center justify-center gap-2 px-2 transition md:h-11 md:px-3";
-    const sideControlLabelClass = "hidden md:block text-[11px] font-normal leading-none whitespace-nowrap";
+    const sideControlClass = "h-10 min-w-10 rounded-2xl flex items-center justify-center gap-2 px-2 transition md:h-11 lg:px-3";
+    const sideControlLabelClass = "hidden lg:block text-[11px] font-normal leading-none whitespace-nowrap";
 
     const aiHostBtnClass =
         centerControlClass + " " +
