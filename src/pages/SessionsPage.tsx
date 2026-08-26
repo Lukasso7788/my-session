@@ -530,6 +530,8 @@ export function SessionsPage() {
   const [unfinishedTaskCount, setUnfinishedTaskCount] = useState(0);
   const [inviteFriendsOpen, setInviteFriendsOpen] = useState(false);
   const [inviteFriendsLink, setInviteFriendsLink] = useState("");
+  const [overflowCreatingKey, setOverflowCreatingKey] = useState("");
+  const [overflowCreateError, setOverflowCreateError] = useState("");
 
   const [postSessionPrompt, setPostSessionPrompt] =
     useState<PostSessionPromptState>({
@@ -1252,7 +1254,8 @@ export function SessionsPage() {
             is_private,
             is_hidden,
             max_participants,
-            description
+            description,
+            schedule
           `
           )
           .or(
@@ -1765,6 +1768,112 @@ export function SessionsPage() {
     });
   }, [typeFilteredSessions, dateFilter, sessionTypeTab]);
 
+  const fullStandardInfiniteRooms = useMemo(() => {
+    if (sessionTypeTab !== "infinite") return [] as SessionWithRelations[];
+    const seen = new Set<string>();
+    return visibleSessions.filter((session) => {
+      const match = String(session.title || "").match(/\b(15\/3|25\/5|50\/10|100\/20)\b/i);
+      if (!match) return false;
+      const capacity = Math.max(1, Number(session.max_participants || 16));
+      const full = Number(session.live_count || 0) >= capacity;
+      const key = match[1].toLowerCase();
+      if (!full || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [sessionTypeTab, visibleSessions]);
+
+  const canCreateFreeFlow =
+    Boolean(user?.id) &&
+    fullStandardInfiniteRooms.length > 0 &&
+    Number(lifetimeSessionsCount || 0) >= 40 &&
+    Number(hostPromptStats?.hostedTotal || 0) >= 5;
+
+  const createInfiniteOverflow = useCallback(
+    async (source: SessionWithRelations, freeFlow = false) => {
+      if (!user?.id) {
+        navigate(`/login?next=${encodeURIComponent("/sessions?tab=infinite")}`);
+        return;
+      }
+      if (freeFlow && !canCreateFreeFlow) return;
+
+      const key = freeFlow ? "free-flow" : String(source.id);
+      setOverflowCreatingKey(key);
+      setOverflowCreateError("");
+
+      const suggestedBlocks = [
+        { type: "focus", title: "Focus", minutes: 10 },
+        { type: "checkin", title: "Check-in", minutes: 2 },
+        { type: "focus", title: "Focus", minutes: 15 },
+        { type: "checkin", title: "Check-in", minutes: 2 },
+        { type: "focus", title: "Focus", minutes: 20 },
+        { type: "checkin", title: "Check-in", minutes: 2 },
+        { type: "focus", title: "Focus", minutes: 25 },
+        { type: "break", title: "Break", minutes: 10 },
+      ];
+
+      const schedule = freeFlow
+        ? {
+            kind: "infinite_room",
+            variant: "free_flow",
+            free_flow: true,
+            requires_host_timeline: true,
+            max_timeline_blocks: 9,
+            host_configured: false,
+            blocks: suggestedBlocks,
+          }
+        : {
+            ...(safeParseSchedule(source.schedule) || {}),
+            kind: "infinite_room",
+            overflow_of: source.id,
+          };
+
+      const payload = {
+        title: freeFlow ? "Free Flow - 24/7" : `${source.title} · Extra`,
+        host_id: user.id,
+        host_name: currentProfile?.full_name || "Host",
+        duration_minutes: freeFlow ? 86 : source.duration_minutes,
+        format: "infinite",
+        session_format_type: "infinite",
+        start_time: new Date().toISOString(),
+        status: "active",
+        is_silent: false,
+        is_private: false,
+        is_hidden: false,
+        max_participants: source.max_participants || 8,
+        description: freeFlow
+          ? "Host-built Free Flow room with a custom timeline of up to 9 blocks."
+          : source.description,
+        schedule,
+      };
+
+      try {
+        const { data, error } = await supabase
+          .from("sessions")
+          .insert(payload)
+          .select("id")
+          .single();
+        if (error) throw error;
+        await fetchSessions();
+        if (data?.id) navigate(`/room-livekit/${data.id}`);
+      } catch (error: any) {
+        console.error("[Sessions] overflow room creation failed:", error);
+        setOverflowCreateError(
+          String(error?.message || "Could not create another room. Please try again."),
+        );
+      } finally {
+        setOverflowCreatingKey("");
+      }
+    },
+    [
+      canCreateFreeFlow,
+      currentProfile?.full_name,
+      fetchSessions,
+      navigate,
+      user?.id,
+    ],
+  );
+
   const groupedVisibleSessions = useMemo(() => {
     if (!isAllDatesMode) return [];
 
@@ -2261,6 +2370,56 @@ export function SessionsPage() {
                   />
                 </div>
               )}
+
+              {sessionTypeTab === "infinite" && fullStandardInfiniteRooms.length > 0 ? (
+                <section className="mb-5 rounded-[22px] border border-[#DCDCDC] bg-[#FAFAFA] p-4 md:p-5">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                    <div>
+                      <h2 className="text-[16px] font-semibold text-[#2F2F2F]">
+                        Need more room?
+                      </h2>
+                      <p className="mt-1 text-[12px] leading-5 text-[#6B6B6B]">
+                        A standard room is full. Open another room with the same format, or host a custom Free Flow when eligible.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {fullStandardInfiniteRooms.map((room) => {
+                        const format = String(room.title || "").match(/\b(15\/3|25\/5|50\/10|100\/20)\b/i)?.[1] || "same format";
+                        const busy = overflowCreatingKey === String(room.id);
+                        return (
+                          <button
+                            key={room.id}
+                            type="button"
+                            disabled={Boolean(overflowCreatingKey)}
+                            onClick={() => void createInfiniteOverflow(room, false)}
+                            className="h-10 rounded-full border border-[#2F2F2F] bg-white px-4 text-[12px] font-medium text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white disabled:cursor-wait disabled:opacity-50"
+                          >
+                            {busy ? "Creating..." : `Add one more session · ${format}`}
+                          </button>
+                        );
+                      })}
+                      {canCreateFreeFlow ? (
+                        <button
+                          type="button"
+                          disabled={Boolean(overflowCreatingKey)}
+                          onClick={() => void createInfiniteOverflow(fullStandardInfiniteRooms[0], true)}
+                          className="h-10 rounded-full bg-[#2F2F2F] px-4 text-[12px] font-semibold text-white transition hover:bg-black disabled:cursor-wait disabled:opacity-50"
+                        >
+                          {overflowCreatingKey === "free-flow" ? "Creating..." : "Host Free Flow"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  {!canCreateFreeFlow && user?.id ? (
+                    <p className="mt-3 text-[11px] text-[#888]">
+                      Free Flow unlocks after 40 attended and 5 hosted sessions.
+                    </p>
+                  ) : null}
+                  {overflowCreateError ? (
+                    <p className="mt-3 text-[12px] font-medium text-red-600">{overflowCreateError}</p>
+                  ) : null}
+                </section>
+              ) : null}
 
               <div className="rounded-[24px] px-3 py-3 md:border md:border-[#DBD8D8] md:p-8">
                 {isLoading ? (

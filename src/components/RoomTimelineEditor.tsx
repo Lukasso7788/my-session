@@ -49,6 +49,7 @@ interface Props {
     onSave: () => void | Promise<void>;
     saving?: boolean;
     preserveInfinite?: boolean;
+    maxBlocks?: number;
 }
 
 const END_DROP_ID = "__end__";
@@ -1092,6 +1093,7 @@ export default function RoomTimelineEditor({
     onSave,
     saving = false,
     preserveInfinite = false,
+    maxBlocks,
 }: Props) {
     const isLight = theme === "light";
 
@@ -1255,6 +1257,7 @@ export default function RoomTimelineEditor({
 
     const addFromLibrary = useCallback(
         (b: RoomTimelineBlock) => {
+            if (maxBlocks && blocks.length >= maxBlocks) return;
             const nextBlock: RoomTimelineBlock = {
                 id: uid(),
                 kind: b.kind,
@@ -1267,7 +1270,7 @@ export default function RoomTimelineEditor({
             onChange([...blocks, nextBlock]);
             setSelectedBlockId(nextBlock.id);
         },
-        [blocks, onChange]
+        [blocks, maxBlocks, onChange]
     );
 
     const updateBlock = useCallback(
@@ -1433,6 +1436,7 @@ export default function RoomTimelineEditor({
                             <div className="font-inter font-semibold text-[14px]">Block library</div>
                             <div className={`mt-1 font-inter text-[12px] ${mutedText}`}>
                                 Add blocks to the current in-room timeline.
+                                {maxBlocks ? ` ${blocks.length} / ${maxBlocks} blocks.` : ""}
                             </div>
 
                             <div className="mt-4 grid grid-cols-2 gap-3">
@@ -1441,7 +1445,8 @@ export default function RoomTimelineEditor({
                                         key={b.id}
                                         type="button"
                                         onClick={() => addFromLibrary(b)}
-                                        className={`text-left border rounded-[16px] p-3 transition hover:-translate-y-0.5 hover:shadow-sm ${subtleBorder} ${softBg}`}
+                                        disabled={Boolean(maxBlocks && blocks.length >= maxBlocks)}
+                                        className={`text-left border rounded-[16px] p-3 transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 disabled:hover:shadow-none ${subtleBorder} ${softBg}`}
                                     >
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="min-w-0">
@@ -1895,4 +1900,25 @@ export default function RoomTimelineEditor({
             </div>
         </div>
     );
+}
+
+export function makeFreeFlowTimelineBlocks(): RoomTimelineBlock[] {
+    const block = (kind: RoomTimelineBlockKind, title: string, minutes: number, note: string): RoomTimelineBlock => ({
+        id: uid(),
+        kind,
+        title,
+        minutes,
+        note,
+    });
+
+    return [
+        block("focus", "Focus", 10, "Start with a quick focused win"),
+        block("checkin", "Check-in", 2, "Share progress and reset"),
+        block("focus", "Focus", 15, "Continue with the next clear step"),
+        block("checkin", "Check-in", 2, "Short progress check"),
+        block("focus", "Focus", 20, "Settle into deeper work"),
+        block("checkin", "Check-in", 2, "Share progress and adjust"),
+        block("focus", "Focus", 25, "Finish with the longest focus block"),
+        block("break", "Break", 10, "Recharge and wrap up"),
+    ];
 }

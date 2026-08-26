@@ -78,6 +78,7 @@ import RoomTimelineEditor, {
   timelineBlocksToSchedulePayload,
   getTimelineTotalMinutes,
   makeDefaultTimelineBlocks,
+  makeFreeFlowTimelineBlocks,
 } from "../components/RoomTimelineEditor";
 import { LiveKitBottomBar } from "./livekit/LiveKitBottomBar";
 import RoomSoundscapePanel from "./livekit/RoomSoundscapePanel";
@@ -5948,6 +5949,7 @@ export function RoomPageLiveKit({
     RoomTimelineBlock[]
   >([]);
   const [timelineSaving, setTimelineSaving] = useState(false);
+  const [freeFlowIntroOpen, setFreeFlowIntroOpen] = useState(false);
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [reportTarget, setReportTarget] = useState<TileModel | null>(null);
   const [reportReason, setReportReason] = useState("");
@@ -6875,6 +6877,15 @@ export function RoomPageLiveKit({
 
     return false;
   }, [session]);
+
+  const isFreeFlowRoom = useMemo(() => {
+    const parsed = safeParseJson(session?.schedule);
+    return (
+      isRecord(parsed) &&
+      (str((parsed as any).variant).toLowerCase() === "free_flow" ||
+        (parsed as any).free_flow === true)
+    );
+  }, [session?.schedule]);
 
   // Timeline/stage bar must be driven only by the actual schedule/stages.
   // Do not auto-hide or stop it based on session title/format/template text like "silent".
@@ -8068,11 +8079,15 @@ export function RoomPageLiveKit({
   }, [authUserId]);
 
   const openTimelineEditor = () => {
-    if (!isHost) return;
+    if (!canEditRoomTimeline) return;
 
     const parsedBlocks = timelineBlocksFromSchedule(session?.schedule);
     setTimelineDraftBlocks(
-      parsedBlocks.length ? parsedBlocks : makeDefaultTimelineBlocks(),
+      parsedBlocks.length
+        ? parsedBlocks
+        : isFreeFlowRoom
+          ? makeFreeFlowTimelineBlocks()
+          : makeDefaultTimelineBlocks(),
     );
     setTimelineEditorOpen(true);
   };
@@ -8083,7 +8098,7 @@ export function RoomPageLiveKit({
   };
 
   const saveTimelineEditor = async () => {
-    if (!isHost) return;
+    if (!canEditRoomTimeline) return;
     if (!sessionId) return;
 
     if (!timelineDraftBlocks.length) {
@@ -8094,7 +8109,7 @@ export function RoomPageLiveKit({
     setTimelineSaving(true);
 
     try {
-      const nextSchedule = timelineBlocksToSchedulePayload(
+      const generatedSchedule = timelineBlocksToSchedulePayload(
         timelineDraftBlocks,
         {
           preserveInfinite: isInfiniteRoom,
@@ -8105,6 +8120,16 @@ export function RoomPageLiveKit({
             new Date().toISOString(),
         },
       );
+      const nextSchedule = isFreeFlowRoom
+        ? {
+            ...generatedSchedule,
+            kind: "infinite_room",
+            variant: "free_flow",
+            free_flow: true,
+            max_timeline_blocks: 9,
+            host_configured: true,
+          }
+        : generatedSchedule;
 
       const nextDurationMinutes = getTimelineTotalMinutes(timelineDraftBlocks);
 
@@ -9429,6 +9454,15 @@ export function RoomPageLiveKit({
       String(authUserId).toLowerCase()
     );
   }, [activeRoomHostLease?.user_id, authUserId, hasValidActiveRoomHostLease]);
+
+  const canEditRoomTimeline = isHost || isTemporaryRoomHost;
+
+  useEffect(() => {
+    if (!isFreeFlowRoom || !canEditRoomTimeline || !sessionId) return;
+    const key = `mysession:free-flow-intro:${sessionId}:${authUserId || "host"}`;
+    if (window.localStorage.getItem(key) === "seen") return;
+    setFreeFlowIntroOpen(true);
+  }, [authUserId, canEditRoomTimeline, isFreeFlowRoom, sessionId]);
 
   const isSelfModerator = useMemo(() => {
     if (!authUserId) return false;
@@ -19906,8 +19940,8 @@ export function RoomPageLiveKit({
           <RoomTopBar
             theme={theme}
             sessionTitle={String(session?.title || "Session")}
-            canEditTimeline={isHost}
-            onEditTimeline={isHost ? openTimelineEditor : undefined}
+            canEditTimeline={canEditRoomTimeline}
+            onEditTimeline={canEditRoomTimeline ? openTimelineEditor : undefined}
             participantsCount={participantsCount}
             maxParticipants={maxParticipants}
             isSilentRoom={isSilentRoom}
@@ -20774,7 +20808,48 @@ export function RoomPageLiveKit({
             onSave={saveTimelineEditor}
             saving={timelineSaving}
             preserveInfinite={isInfiniteRoom}
+            maxBlocks={isFreeFlowRoom ? 9 : undefined}
           />
+        )}
+
+        {freeFlowIntroOpen && (
+          <div className="fixed inset-0 z-[235] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+            <div className={`w-full max-w-[520px] rounded-[24px] border p-6 shadow-2xl ${isLight ? "border-[#D8D8D8] bg-white text-[#2F2F2F]" : "border-[#343434] bg-[#1B1B1B] text-white"}`}>
+              <div className="text-[20px] font-semibold">Host your Free Flow</div>
+              <p className={`mt-2 text-[14px] leading-6 ${isLight ? "text-black/60" : "text-white/60"}`}>
+                Free Flow has no fixed Pomodoro. Build the room timeline before you begin. You can use up to 9 blocks and adjust every block in the editor.
+              </p>
+              <div className={`mt-4 rounded-2xl p-4 text-[13px] leading-6 ${isLight ? "bg-[#F3F3F3]" : "bg-[#242424]"}`}>
+                Suggested: 10 focus · 2 check-in · 15 focus · 2 check-in · 20 focus · 2 check-in · 25 focus · 10 break
+              </div>
+              <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  className={`h-11 rounded-full px-5 text-[13px] font-medium ${isLight ? "bg-[#EFEFEF] hover:bg-[#E5E5E5]" : "bg-[#2A2A2A] hover:bg-[#333]"}`}
+                  onClick={() => {
+                    window.localStorage.setItem(`mysession:free-flow-intro:${sessionId}:${authUserId || "host"}`, "seen");
+                    setFreeFlowIntroOpen(false);
+                    setTimelineDraftBlocks([]);
+                    setTimelineEditorOpen(true);
+                  }}
+                >
+                  Build my own
+                </button>
+                <button
+                  type="button"
+                  className="h-11 rounded-full bg-[#2F2F2F] px-5 text-[13px] font-semibold text-white hover:bg-black"
+                  onClick={() => {
+                    window.localStorage.setItem(`mysession:free-flow-intro:${sessionId}:${authUserId || "host"}`, "seen");
+                    setFreeFlowIntroOpen(false);
+                    setTimelineDraftBlocks(makeFreeFlowTimelineBlocks());
+                    setTimelineEditorOpen(true);
+                  }}
+                >
+                  Use suggested structure
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {selectedUser && (
