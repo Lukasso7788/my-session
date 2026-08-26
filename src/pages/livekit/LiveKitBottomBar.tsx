@@ -290,7 +290,7 @@ export function LiveKitBottomBar(props: {
             : "light"
         : theme;
 
-    const labeledControlClass = "h-10 min-w-10 px-1.5 rounded-2xl flex flex-col items-center justify-center gap-[5px] transition md:h-11 md:min-w-11 md:px-2 md:py-1";
+    const labeledControlClass = "h-10 min-w-10 px-1.5 rounded-2xl flex flex-col items-center justify-center gap-[5px] transition md:h-12 md:min-w-12 md:px-2.5 md:py-1.5";
     const controlLabelClass = "hidden md:block text-[10px] font-normal leading-none";
 
     const aiHostBtnClass =
