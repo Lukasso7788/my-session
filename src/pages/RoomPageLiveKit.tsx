@@ -19593,7 +19593,6 @@ export function RoomPageLiveKit({
                         setBgImageUrl(preset.url);
                         await applyVideoFx("bg", preset.url);
                         setVoiceUiLastCommand(`${preset.label} background applied`);
-                        closeVoiceFxPopup();
                       }}
                       className={`overflow-hidden rounded-2xl border text-left transition hover:-translate-y-0.5 disabled:opacity-50 ${selected ? "border-[#81DB86] ring-2 ring-[#81DB86]/30" : isLight ? "border-black/10 bg-white" : "border-white/10 bg-white/[0.04]"}`}
                     >
