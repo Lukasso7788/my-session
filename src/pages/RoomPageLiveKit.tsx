@@ -14,8 +14,6 @@ import {
   Check,
   ChevronDown,
   Clock3,
-  Pin,
-  PinOff,
   Users,
   X,
 } from "lucide-react";
@@ -18204,11 +18202,16 @@ export function RoomPageLiveKit({
                                   : "Pin shared screen"
                               }
                             >
-                              {screenSharePinned && activeScreenShareTile?.id === p.id ? (
-                                <PinOff className="h-[17px] w-[17px]" strokeWidth={1.8} />
-                              ) : (
-                                <Pin className="h-[17px] w-[17px]" strokeWidth={1.8} />
-                              )}
+                              <img
+                                src={
+                                  screenSharePinned && activeScreenShareTile?.id === p.id
+                                    ? "/icons/participant-unpin.svg"
+                                    : "/icons/participant-pin.svg"
+                                }
+                                alt=""
+                                aria-hidden="true"
+                                className="h-4 w-4"
+                              />
                             </button>
                           </>
                         )}
@@ -18222,11 +18225,16 @@ export function RoomPageLiveKit({
                               aria-label={isPinned ? `Unpin ${p.label}` : `Pin ${p.label}`}
                               type="button"
                             >
-                              {isPinned ? (
-                                <PinOff className="h-[17px] w-[17px]" strokeWidth={1.8} />
-                              ) : (
-                                <Pin className="h-[17px] w-[17px]" strokeWidth={1.8} />
-                              )}
+                              <img
+                                src={
+                                  isPinned
+                                    ? "/icons/participant-unpin.svg"
+                                    : "/icons/participant-pin.svg"
+                                }
+                                alt=""
+                                aria-hidden="true"
+                                className="h-4 w-4"
+                              />
                             </button>
 
                             <button
