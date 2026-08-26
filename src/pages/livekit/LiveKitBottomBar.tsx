@@ -132,10 +132,12 @@ export function LiveKitBottomBar(props: {
     onChangeAudioInput?: (deviceId: string) => void | Promise<void>;
     onChangeVideoInput?: (deviceId: string) => void | Promise<void>;
     videoFxMode?: "off" | "blur" | "bg";
+    blurStrength?: number;
+    onBlurStrengthChange?: (strength: number) => void;
     backgroundPresets?: Array<{ id: string; label: string; url: string }>;
     selectedBackgroundUrl?: string;
     backgroundFxDisabled?: boolean;
-    onApplyVideoFx?: (mode: "off" | "blur" | "bg", backgroundUrl?: string) => void | Promise<void>;
+    onApplyVideoFx?: (mode: "off" | "blur" | "bg", backgroundUrl?: string, blurStrength?: number) => void | Promise<void>;
     onUploadBackground?: (file: File) => void | Promise<void>;
     onToggleScreenShare: () => void;
     onToggleVoiceUi?: () => void;
@@ -185,6 +187,8 @@ export function LiveKitBottomBar(props: {
         onChangeAudioInput,
         onChangeVideoInput,
         videoFxMode = "off",
+        blurStrength = 12,
+        onBlurStrengthChange,
         backgroundPresets = [],
         selectedBackgroundUrl = "",
         backgroundFxDisabled = false,
@@ -202,7 +206,10 @@ export function LiveKitBottomBar(props: {
     } = props;
 
     const [showMoreMenu, setShowMoreMenu] = useState(false);
+    const [blurDraft, setBlurDraft] = useState(blurStrength);
     const moreMenuRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => setBlurDraft(blurStrength), [blurStrength]);
 
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
     const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
@@ -283,8 +290,8 @@ export function LiveKitBottomBar(props: {
             : "light"
         : theme;
 
-    const labeledControlClass = "h-10 min-w-10 px-1.5 sm:h-11 sm:min-w-11 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition";
-    const controlLabelClass = "hidden md:block text-[11px] font-semibold leading-none";
+    const labeledControlClass = "h-10 min-w-10 px-1.5 sm:h-11 sm:min-w-11 rounded-2xl flex flex-col items-center justify-center gap-[4px] transition";
+    const controlLabelClass = "hidden md:block text-[10px] font-semibold leading-none";
 
     const aiHostBtnClass =
         labeledControlClass + " " +
@@ -301,7 +308,7 @@ export function LiveKitBottomBar(props: {
             title="Report a problem"
             type="button"
         >
-            <BugReportIcon isLight={isLight} className="w-[15px] h-[15px]" />
+            <BugReportIcon isLight={isLight} className="w-[17px] h-[17px]" />
             <span className={controlLabelClass}>Report</span>
         </button>
     ) : null;
@@ -314,14 +321,14 @@ export function LiveKitBottomBar(props: {
                 title="Video layout"
                 type="button"
             >
-                <LayoutIcon isLight={isLight} className="w-[15px] h-[15px]" />
+                <LayoutIcon isLight={isLight} className="w-[17px] h-[17px]" />
                 <span className={controlLabelClass}>Layout</span>
             </button>
         ) : null;
 
     const chatBtn = (
         <button onClick={onOpenChat} className={`relative ${labeledControlClass} ${ctlBtnBase}`} title="Chat" type="button">
-            <Icon name="chat" theme={theme} className="w-[15px] h-[15px]" />
+            <Icon name="chat" theme={theme} className="w-[17px] h-[17px]" />
             <span className={controlLabelClass}>Chat</span>
             {unreadChat > 0 && (
                 <span className={["absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center", isLight ? "bg-[#1B1B1B] text-white" : "bg-[#1B1B1B] text-white"].join(" ")}>
@@ -333,21 +340,21 @@ export function LiveKitBottomBar(props: {
 
     const participantsBtn = (
         <button onClick={onOpenParticipants} className={`${labeledControlClass} ${ctlBtnBase}`} title="Participants" type="button">
-            <Icon name="participants" theme={theme} className="w-[15px] h-[15px]" />
+            <Icon name="participants" theme={theme} className="w-[17px] h-[17px]" />
             <span className={controlLabelClass}>People</span>
         </button>
     );
 
     const tasksBtn = (
         <button onClick={onOpenTasks} className={`${labeledControlClass} ${ctlBtnBase}`} title="Tasks" type="button">
-            <Icon name="tasks" theme={theme} className="w-[15px] h-[15px]" />
+            <Icon name="tasks" theme={theme} className="w-[17px] h-[17px]" />
             <span className={controlLabelClass}>Tasks</span>
         </button>
     );
 
     const soundscapesBtn = onOpenSoundscapes ? (
         <button onClick={onOpenSoundscapes} className={"relative " + labeledControlClass + " " + (soundscapeActive ? "bg-[#242424] hover:bg-[#2E2E2E] text-white" : ctlBtnBase)} title={soundscapeActive ? "Background sounds playing" : "Background sounds"} type="button">
-            <SoundscapeIcon isLight={isLight} active={soundscapeActive} className="w-[15px] h-[15px]" />
+            <SoundscapeIcon isLight={isLight} active={soundscapeActive} className="w-[17px] h-[17px]" />
             <span className={controlLabelClass}>Music</span>
             {soundscapeActive ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#7EE787]" /> : null}
         </button>
@@ -355,7 +362,7 @@ export function LiveKitBottomBar(props: {
 
     const settingsBtn = (
         <button onClick={onOpenSettings} className={`${labeledControlClass} ${ctlBtnBase}`} title="Settings" type="button">
-            <Icon name="settings" theme={theme} className="w-[15px] h-[15px]" />
+            <Icon name="settings" theme={theme} className="w-[17px] h-[17px]" />
             <span className={controlLabelClass}>Settings</span>
         </button>
     );
@@ -367,7 +374,7 @@ export function LiveKitBottomBar(props: {
                 title={aiHostOpen ? "AI Host is open" : "Open AI Host"}
                 type="button"
             >
-                <AIHostIcon isLight={aiHostOpen ? false : isLight} className="w-[15px] h-[15px]" />
+                <AIHostIcon isLight={aiHostOpen ? false : isLight} className="w-[17px] h-[17px]" />
                 <span className={controlLabelClass}>AI Host</span>
             </button>
         ) : null;
@@ -389,7 +396,7 @@ export function LiveKitBottomBar(props: {
                 }
                 type="button"
             >
-                <Icon name="pip" theme={pipIconTheme} className="w-[15px] h-[15px]" />
+                <Icon name="pip" theme={pipIconTheme} className="w-[17px] h-[17px]" />
                 <span className={controlLabelClass}>PiP</span>
             </button>
         ) : null;
@@ -648,7 +655,7 @@ export function LiveKitBottomBar(props: {
                         <div className="relative" ref={mediaMenu === "mic" ? mediaMenuRef : undefined}>
                             <div className="relative">
                                 <button onClick={onToggleMic} disabled={!connected} className={labeledControlClass + " disabled:opacity-50 " + (!micOn ? "bg-[#F65252] text-white hover:bg-[#E64545]" : ctlBtnBase)} title="Toggle microphone" type="button">
-                                    <Icon name={!micOn ? "mic-off" : "mic-on"} theme={!micOn ? "dark" : theme} className="h-[15px] w-[15px]" />
+                                    <Icon name={!micOn ? "mic-off" : "mic-on"} theme={!micOn ? "dark" : theme} className="h-[17px] w-[17px]" />
                                     <span className={controlLabelClass}>{micOn ? "Mic on" : "Mic off"}</span>
                                 </button>
                                 <button onClick={() => setMediaMenu((current) => current === "mic" ? null : "mic")} disabled={!connected} className={`absolute -right-1.5 -top-1.5 z-10 flex h-[19px] w-[19px] items-center justify-center rounded-full shadow-sm ring-2 transition hover:scale-105 disabled:opacity-30 bg-[#2F2F2F] text-white hover:bg-[#383838] ${isLight ? "ring-[#F3F1F1]" : "ring-[#191919]"}`} title="Choose microphone" aria-label="Choose microphone" aria-expanded={mediaMenu === "mic"} type="button">
@@ -677,7 +684,7 @@ export function LiveKitBottomBar(props: {
                         <div className="relative" ref={mediaMenu === "camera" ? mediaMenuRef : undefined}>
                             <div className="relative">
                                 <button onClick={onToggleCam} disabled={!connected} className={labeledControlClass + " disabled:opacity-50 " + (!camOn ? "bg-[#F65252] text-white hover:bg-[#E64545]" : ctlBtnBase)} title="Toggle camera" type="button">
-                                    <Icon name={!camOn ? "camera-off" : "camera-on"} theme={!camOn ? "dark" : theme} className="h-[15px] w-[15px]" />
+                                    <Icon name={!camOn ? "camera-off" : "camera-on"} theme={!camOn ? "dark" : theme} className="h-[17px] w-[17px]" />
                                     <span className={controlLabelClass}>{camOn ? "Camera" : "Cam off"}</span>
                                 </button>
                                 <button onClick={() => setMediaMenu((current) => current === "camera" ? null : "camera")} disabled={!connected} className={`absolute -right-1.5 -top-1.5 z-10 flex h-[19px] w-[19px] items-center justify-center rounded-full shadow-sm ring-2 transition hover:scale-105 disabled:opacity-30 bg-[#2F2F2F] text-white hover:bg-[#383838] ${isLight ? "ring-[#F3F1F1]" : "ring-[#191919]"}`} title="Camera and background" aria-label="Choose camera and background" aria-expanded={mediaMenu === "camera"} type="button">
@@ -708,9 +715,37 @@ export function LiveKitBottomBar(props: {
                                             </div>
                                             <div className="grid grid-cols-3 gap-1.5">
                                                 <button type="button" onClick={() => void onApplyVideoFx("off")} className={`rounded-xl px-2 py-2 text-[10px] font-semibold transition ${videoFxMode === "off" ? "bg-[#2F2F2F] text-white" : menuItem}`}>None</button>
-                                                <button type="button" onClick={() => void onApplyVideoFx("blur")} className={`rounded-xl px-2 py-2 text-[10px] font-semibold transition ${videoFxMode === "blur" ? "bg-[#2F2F2F] text-white" : menuItem}`}>Blur</button>
+                                                <button type="button" onClick={() => void onApplyVideoFx("blur", undefined, blurDraft)} className={`rounded-xl px-2 py-2 text-[10px] font-semibold transition ${videoFxMode === "blur" ? "bg-[#2F2F2F] text-white" : menuItem}`}>Blur</button>
                                                 <button type="button" onClick={() => backgroundUploadRef.current?.click()} className={`flex items-center justify-center gap-1 rounded-xl px-2 py-2 text-[10px] font-semibold transition ${menuItem}`}><ImagePlus className="h-3.5 w-3.5" />Custom</button>
                                             </div>
+                                            {videoFxMode === "blur" ? (
+                                                <div className={`mt-2 rounded-xl px-2.5 py-2 ${isLight ? "bg-black/[0.04]" : "bg-white/[0.06]"}`}>
+                                                    <div className="flex items-center justify-between gap-3 text-[10px]">
+                                                        <span className="font-medium opacity-60">Blur strength</span>
+                                                        <span className="font-semibold">{blurDraft}</span>
+                                                    </div>
+                                                    <input
+                                                        type="range"
+                                                        min={4}
+                                                        max={30}
+                                                        step={1}
+                                                        value={blurDraft}
+                                                        aria-label="Blur strength"
+                                                        className="mt-2 w-full accent-[#5286F6]"
+                                                        onChange={(event) => {
+                                                            const value = Number(event.currentTarget.value);
+                                                            setBlurDraft(value);
+                                                            onBlurStrengthChange?.(value);
+                                                        }}
+                                                        onPointerUp={(event) => void onApplyVideoFx("blur", undefined, Number(event.currentTarget.value))}
+                                                        onKeyUp={(event) => void onApplyVideoFx("blur", undefined, Number(event.currentTarget.value))}
+                                                    />
+                                                    <div className="mt-0.5 flex justify-between text-[9px] opacity-40">
+                                                        <span>Soft</span>
+                                                        <span>Strong</span>
+                                                    </div>
+                                                </div>
+                                            ) : null}
                                             <input ref={backgroundUploadRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void onUploadBackground?.(file); }} />
                                             <div className="mt-2 grid grid-cols-2 gap-1.5">
                                                 {backgroundPresets.map((preset) => {
@@ -743,7 +778,7 @@ export function LiveKitBottomBar(props: {
                             <Icon
                                 name="screen-share"
                                 theme={screenShareOn ? "dark" : theme}
-                                className="w-[15px] h-[15px]"
+                                className="w-[17px] h-[17px]"
                             />
                             <span className={controlLabelClass}>Share</span>
                         </button>
@@ -766,7 +801,7 @@ export function LiveKitBottomBar(props: {
                             >
                                 <AudioLines
                                     aria-hidden="true"
-                                    className={`h-[15px] w-[15px] ${voiceUiMode !== "off" ? "text-white" : isLight ? "text-[#2F2F2F]" : "text-white"}`}
+                                    className={`h-[17px] w-[17px] ${voiceUiMode !== "off" ? "text-white" : isLight ? "text-[#2F2F2F]" : "text-white"}`}
                                     strokeWidth={2}
                                 />
                                 {voiceUiMode === "hotkey" ? (
@@ -783,7 +818,7 @@ export function LiveKitBottomBar(props: {
                                 title="Reactions"
                                 type="button"
                             >
-                                <Icon name="reaction" theme={theme} className="w-[15px] h-[15px]" />
+                                <Icon name="reaction" theme={theme} className="w-[17px] h-[17px]" />
                                 <span className={controlLabelClass}>React</span>
                             </button>
 

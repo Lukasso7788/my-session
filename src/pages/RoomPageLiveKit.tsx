@@ -20307,12 +20307,14 @@ export function RoomPageLiveKit({
             await syncLiveVideoInput(deviceId);
           }}
           videoFxMode={videoFxMode}
+          blurStrength={blurStrength}
+          onBlurStrengthChange={setBlurStrength}
           backgroundPresets={FX_BG_PRESETS}
           selectedBackgroundUrl={bgImageUrl}
           backgroundFxDisabled={shouldDisableBackgroundFx}
-          onApplyVideoFx={async (mode, backgroundUrl) => {
+          onApplyVideoFx={async (mode, backgroundUrl, nextBlurStrength) => {
             if (backgroundUrl) setBgImageUrl(backgroundUrl);
-            await applyVideoFx(mode, backgroundUrl);
+            await applyVideoFx(mode, backgroundUrl, nextBlurStrength);
           }}
           onUploadBackground={async (file) => {
             if (file.size > CUSTOM_BACKGROUND_MAX_FILE_BYTES) {
