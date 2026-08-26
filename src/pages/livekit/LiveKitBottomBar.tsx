@@ -108,6 +108,7 @@ export function LiveKitBottomBar(props: {
     screenShareOn: boolean;
     voiceUiMode?: "off" | "always" | "hotkey";
     unreadChat?: number;
+    activePanel?: "participants" | "chat" | "tasks" | "music" | null;
 
     showPiP?: boolean;
     pipActive?: boolean;
@@ -163,6 +164,7 @@ export function LiveKitBottomBar(props: {
         screenShareOn,
         voiceUiMode = "off",
         unreadChat = 0,
+        activePanel = null,
 
         showPiP = false,
         pipActive = false,
@@ -293,6 +295,13 @@ export function LiveKitBottomBar(props: {
     const centerControlClass = "h-10 w-10 rounded-2xl flex items-center justify-center transition md:h-11 md:w-11";
     const sideControlClass = "h-10 min-w-10 rounded-2xl flex items-center justify-center gap-2 px-2 transition md:h-11 lg:px-3";
     const sideControlLabelClass = "hidden lg:block text-[11px] font-normal leading-none whitespace-nowrap";
+    const activeSideControlClass = isLight
+        ? "bg-[#2F2F2F] text-white hover:bg-[#111111]"
+        : "bg-white text-[#2F2F2F] hover:bg-white/90";
+    const sideButtonClass = (panel: "participants" | "chat" | "tasks" | "music") =>
+        `${sideControlClass} ${activePanel === panel ? activeSideControlClass : ctlBtnBase}`;
+    const sideIconTheme = (panel: "participants" | "chat" | "tasks" | "music"): RoomTheme =>
+        activePanel === panel ? (isLight ? "dark" : "light") : theme;
 
     const aiHostBtnClass =
         centerControlClass + " " +
@@ -328,8 +337,8 @@ export function LiveKitBottomBar(props: {
         ) : null;
 
     const chatBtn = (
-        <button onClick={onOpenChat} className={`relative ${sideControlClass} ${ctlBtnBase}`} title="Chat" type="button">
-            <Icon name="chat" theme={theme} className="w-[20px] h-[20px]" />
+        <button onClick={onOpenChat} className={`relative ${sideButtonClass("chat")}`} title="Chat" type="button">
+            <Icon name="chat" theme={sideIconTheme("chat")} className="w-[20px] h-[20px]" />
             <span className={sideControlLabelClass}>Chat</span>
             {unreadChat > 0 && (
                 <span className={["absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center", isLight ? "bg-[#1B1B1B] text-white" : "bg-[#1B1B1B] text-white"].join(" ")}>
@@ -340,22 +349,22 @@ export function LiveKitBottomBar(props: {
     );
 
     const participantsBtn = (
-        <button onClick={onOpenParticipants} className={`${sideControlClass} ${ctlBtnBase}`} title="Participants" type="button">
-            <Icon name="participants" theme={theme} className="w-[20px] h-[20px]" />
+        <button onClick={onOpenParticipants} className={sideButtonClass("participants")} title="Participants" type="button">
+            <Icon name="participants" theme={sideIconTheme("participants")} className="w-[20px] h-[20px]" />
             <span className={sideControlLabelClass}>People</span>
         </button>
     );
 
     const tasksBtn = (
-        <button onClick={onOpenTasks} className={`${sideControlClass} ${ctlBtnBase}`} title="Tasks" type="button">
-            <Icon name="tasks" theme={theme} className="w-[20px] h-[20px]" />
+        <button onClick={onOpenTasks} className={sideButtonClass("tasks")} title="Tasks" type="button">
+            <Icon name="tasks" theme={sideIconTheme("tasks")} className="w-[20px] h-[20px]" />
             <span className={sideControlLabelClass}>Tasks</span>
         </button>
     );
 
     const soundscapesBtn = onOpenSoundscapes ? (
-        <button onClick={onOpenSoundscapes} className={"relative " + sideControlClass + " " + (soundscapeActive ? "bg-[#242424] hover:bg-[#2E2E2E] text-white" : ctlBtnBase)} title={soundscapeActive ? "Background sounds playing" : "Background sounds"} type="button">
-            <SoundscapeIcon isLight={isLight} active={soundscapeActive} className="w-[20px] h-[20px]" />
+        <button onClick={onOpenSoundscapes} className={"relative " + (activePanel === "music" ? sideButtonClass("music") : sideControlClass + " " + (soundscapeActive ? "bg-[#242424] hover:bg-[#2E2E2E] text-white" : ctlBtnBase))} title={soundscapeActive ? "Background sounds playing" : "Background sounds"} type="button">
+            <SoundscapeIcon isLight={activePanel === "music" ? !isLight : isLight} active={activePanel === "music" ? false : soundscapeActive} className="w-[20px] h-[20px]" />
             <span className={sideControlLabelClass}>Music</span>
             {soundscapeActive ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#7EE787]" /> : null}
         </button>

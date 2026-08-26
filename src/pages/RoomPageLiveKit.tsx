@@ -20280,6 +20280,7 @@ export function RoomPageLiveKit({
           screenShareOn={screenShareOn}
           voiceUiMode={voiceUiMode}
           unreadChat={unreadChat}
+          activePanel={rightPanelOpen ? rightTab : null}
           showPiP={pipSupported}
           pipActive={pictureInPictureOpen}
           onTogglePiP={() => {
