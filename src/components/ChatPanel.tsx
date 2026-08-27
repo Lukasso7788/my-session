@@ -3447,7 +3447,18 @@ export function ChatPanel({
                             <MessageCard
                                 msg={m}
                                 mine={mine}
-                                onReply={(msg) => setReplyTo(msg)}
+                                onReply={(msg) => {
+                                    setReplyTo(msg);
+                                    chatWindow.requestAnimationFrame(() => {
+                                        const composer = composerRef.current;
+                                        if (!composer || composer.disabled) return;
+                                        composer.focus();
+                                        const end = composer.value.length;
+                                        try {
+                                            composer.setSelectionRange(end, end);
+                                        } catch { }
+                                    });
+                                }}
                                 reactionsCounts={reactions[m.id]}
                                 myReactions={myReactions[m.id]}
                                 onToggleReaction={toggleReaction}
