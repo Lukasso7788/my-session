@@ -109,6 +109,12 @@ type HostPromptStats = {
   upcomingHosted: number;
 };
 
+type InfiniteCreatorEligibility = {
+  attendedCount: number;
+  hostedCount: number;
+  eligible: boolean;
+};
+
 const COMMUNITY_WHATSAPP_URL = "https://chat.whatsapp.com/JjoQhL64NOMITOi7mrG6EC";
 const COMMUNITY_DISCORD_URL = "https://discord.gg/j42NkFmmEj";
 
@@ -533,6 +539,8 @@ export function SessionsPage() {
   const [overflowCreatingKey, setOverflowCreatingKey] = useState("");
   const [overflowCreateError, setOverflowCreateError] = useState("");
   const [infiniteRoomCreatorOpen, setInfiniteRoomCreatorOpen] = useState(false);
+  const [infiniteCreatorEligibility, setInfiniteCreatorEligibility] =
+    useState<InfiniteCreatorEligibility | null>(null);
 
   const [postSessionPrompt, setPostSessionPrompt] =
     useState<PostSessionPromptState>({
@@ -1714,6 +1722,35 @@ export function SessionsPage() {
     };
   }, [navigate, sessionTypeTab, user?.id]);
 
+  useEffect(() => {
+    if (!user?.id) {
+      setInfiniteCreatorEligibility(null);
+      return;
+    }
+
+    let cancelled = false;
+    void supabase
+      .rpc("get_infinite_room_creator_eligibility")
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.warn("[Infinite creator] eligibility lookup failed:", error);
+          setInfiniteCreatorEligibility(null);
+          return;
+        }
+        const row = Array.isArray(data) ? data[0] : data;
+        setInfiniteCreatorEligibility({
+          attendedCount: Number(row?.attended_count || 0),
+          hostedCount: Number(row?.hosted_count || 0),
+          eligible: Boolean(row?.eligible),
+        });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
   const sessionIds = useMemo(
     () =>
       sessions
@@ -1822,15 +1859,17 @@ export function SessionsPage() {
     [visibleSessions],
   );
 
-  const freeFlowRoomAvailable = freeFlowInfiniteRooms.some((session) => {
+  const availableFreeFlowRoom = freeFlowInfiniteRooms.find((session) => {
     const capacity = Math.max(1, Number(session.max_participants || 8));
     return Number(session.live_count || 0) < capacity;
   });
+  const freeFlowRoomAvailable = Boolean(availableFreeFlowRoom);
 
   // The database trigger is the source of truth for eligibility. RLS can hide
   // historical host rows from this lightweight page query and previously
   // blocked qualified creators before the request even reached Supabase.
-  const hasInfiniteCreatorAccess = Boolean(user?.id);
+  const hasInfiniteCreatorAccess =
+    Boolean(user?.id) && (infiniteCreatorEligibility?.eligible ?? true);
   const canCreateFreeFlow = hasInfiniteCreatorAccess && !freeFlowRoomAvailable;
 
   const createInfiniteOverflow = useCallback(
@@ -2637,8 +2676,29 @@ export function SessionsPage() {
                 </button>
               ) : null}
 
+              {hasInfiniteCreatorAccess && availableFreeFlowRoom ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInfiniteRoomCreatorOpen(false);
+                    navigate(`/room-livekit/${availableFreeFlowRoom.id}`);
+                  }}
+                  className="flex min-h-14 items-center justify-between rounded-[16px] bg-[#2F2F2F] px-4 text-left text-white transition hover:bg-black"
+                >
+                  <span>
+                    <span className="block text-[14px] font-semibold">Free Flow</span>
+                    <span className="mt-0.5 block text-[11px] text-white/65">
+                      An available Free Flow room already exists
+                    </span>
+                  </span>
+                  <span className="text-[12px] font-medium">Open room</span>
+                </button>
+              ) : null}
+
               {(!hasInfiniteCreatorAccess ||
-                (fullStandardInfiniteRooms.length === 0 && !canCreateFreeFlow)) ? (
+                (fullStandardInfiniteRooms.length === 0 &&
+                  !canCreateFreeFlow &&
+                  !availableFreeFlowRoom)) ? (
                 <div className="rounded-[16px] bg-[#F4F4F4] px-4 py-5 text-center text-[13px] text-[#666]">
                   No additional infinite room is available right now.
                 </div>
