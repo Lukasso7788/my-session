@@ -2157,20 +2157,6 @@ function getStatusLabel(status: unknown): string {
   return STATUS_LABELS[key] || "";
 }
 
-function getStatusTone(status: unknown): string {
-  const key = String(status || "")
-    .trim()
-    .toLowerCase();
-
-  if (key === "afk") return "neutral";
-  if (key === "break") return "yellow";
-  if (key === "skip" || key === "skip_deafened") return "purple";
-  if (key === "call") return "blue";
-  if (key === "eating") return "orange";
-  if (key === "private") return "neutral";
-  return "neutral";
-}
-
 // tab presence
 const LK_TAB_PREFIX = "mysession_lk_tabs";
 const LK_TAB_TTL_MS = 18_000;
@@ -18066,9 +18052,6 @@ export function RoomPageLiveKit({
 
                 const avatar = getAvatarForTile(p);
                 const initials = getInitials(p.label);
-                const statusLabel = getStatusLabel(p.status);
-                const statusTone = getStatusTone(p.status);
-
                 const pidBase = String(p.participantUserId || "").toLowerCase();
                 const isActiveOperationalHost = p.isLocal
                   ? isHost ||
@@ -18140,33 +18123,19 @@ export function RoomPageLiveKit({
                             <div className="min-w-0 flex items-center gap-2">
                               <span className="truncate">{p.label}</span>
 
-                              {statusLabel ? (
-                                <span
-                                  className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${statusTone === "yellow"
-                                    ? "border-yellow-300/60 bg-yellow-100 text-yellow-800"
-                                    : statusTone === "purple"
-                                      ? "border-purple-300/60 bg-purple-100 text-purple-800"
-                                      : statusTone === "blue"
-                                        ? "border-blue-300/60 bg-blue-100 text-blue-800"
-                                        : statusTone === "orange"
-                                          ? "border-orange-300/60 bg-orange-100 text-orange-800"
-                                          : "border-neutral-300/60 bg-neutral-100 text-neutral-700"
-                                    }`}
-                                  title={p.isLocal && p.status === "skip_deafened" ? "Skip me (room audio muted for you)" : statusLabel}
-                                >
-                                  <span>{statusLabel}</span>
-                                  {p.isLocal && p.status === "skip_deafened" ? (
-                                    <SkipMeMutedStatusIcon theme={theme} className="h-2.5 w-2.5" />
-                                  ) : null}
+                              {isPinned ? (
+                                <span className="inline-flex shrink-0 items-center rounded-full bg-[#2F2F2F] px-1.5 py-[2px] text-[9px] font-medium leading-none text-white">
+                                  Pinned
                                 </span>
                               ) : null}
+
+                              {isHidden ? (
+                                <span className="inline-flex shrink-0 items-center rounded-full border border-black/15 bg-black/[0.04] px-1.5 py-[2px] text-[9px] font-medium leading-none text-[#2F2F2F]">
+                                  Hidden
+                                </span>
+                              ) : null}
+
                             </div>
-                            {isPinned ? (
-                              <span className="ml-2 opacity-70">📌</span>
-                            ) : null}
-                            {isHidden ? (
-                              <span className="ml-2 opacity-70">🙈</span>
-                            ) : null}
                           </div>
                           <div className="truncate text-[11px] text-black/55">
                             {roleText}
