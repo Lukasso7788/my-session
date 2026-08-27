@@ -40,7 +40,7 @@ interface SessionCardProps {
     session: any;
     userId?: string;
 
-    onBook: (sessionId: string, opts?: BookSessionOptions) => void;
+    onBook: (sessionId: string, opts?: BookSessionOptions) => boolean | Promise<boolean>;
     onCancelBooking: (sessionId: string) => void;
     onJoin: (sessionId: string) => void;
     onDelete: (sessionId: string) => void;
@@ -4506,7 +4506,7 @@ export default function SessionCard({
         setBookers((prev) => prev.filter((u) => u.id !== userId));
     };
 
-    const handleBookSession = () => {
+    const handleBookSession = async () => {
         if (!userId) {
             navigate(buildLoginNext("/sessions"));
             return;
@@ -4528,7 +4528,8 @@ export default function SessionCard({
             return;
         }
 
-        onBook(session.id);
+        const saved = await Promise.resolve(onBook(session.id));
+        if (!saved) return;
         setIsBookingConfirmed(true);
         ensureCurrentUserAsBooked();
         setIsHoveringBook(false);
@@ -4558,21 +4559,16 @@ export default function SessionCard({
 
         setBookingDraftError("");
 
-        await Promise.resolve(onBook(session.id, {
+        const saved = await Promise.resolve(onBook(session.id, {
             booked_start_time: startIso,
             booked_end_time: endIso,
             booking_note: null,
             booking_role: bookingRoleDraft,
         }));
-
-        await persistInfiniteBookingTimeRangeFallback({
-            sessionId: session.id,
-            userId,
-            bookedStartTime: startIso,
-            bookedEndTime: endIso,
-            bookingNote: null,
-            bookingRole: bookingRoleDraft,
-        });
+        if (!saved) {
+            setBookingDraftError("Could not save this booking. Please try again.");
+            return;
+        }
 
         setIsBookingConfirmed(true);
         ensureCurrentUserAsBooked({

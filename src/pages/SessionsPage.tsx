@@ -1827,11 +1827,10 @@ export function SessionsPage() {
     return Number(session.live_count || 0) < capacity;
   });
 
-  const hasInfiniteCreatorAccess =
-    Boolean(user?.id) &&
-    Number(lifetimeSessionsCount || 0) >= 50 &&
-    Number(hostPromptStats?.hostedTotal || 0) >= 5;
-
+  // The database trigger is the source of truth for eligibility. RLS can hide
+  // historical host rows from this lightweight page query and previously
+  // blocked qualified creators before the request even reached Supabase.
+  const hasInfiniteCreatorAccess = Boolean(user?.id);
   const canCreateFreeFlow = hasInfiniteCreatorAccess && !freeFlowRoomAvailable;
 
   const createInfiniteOverflow = useCallback(
@@ -1958,22 +1957,37 @@ export function SessionsPage() {
     navigate(next);
   };
 
-  const book = async (id: string, opts: BookSessionOptions = {}) => {
-    if (showBanModal()) return;
+  const book = async (id: string, opts: BookSessionOptions = {}): Promise<boolean> => {
+    if (showBanModal()) return false;
 
     if (!user) {
-      return navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+      navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+      return false;
     }
 
     try {
-      const { error } = await supabase.from("session_bookings").insert({
+      const payload = {
         session_id: id,
         user_id: user.id,
         booked_start_time: opts.booked_start_time || null,
         booked_end_time: opts.booked_end_time || null,
         booking_note: opts.booking_note || null,
         booking_role: opts.booking_role || "participant",
-      });
+      };
+
+      const { data: existing, error: lookupError } = await supabase
+        .from("session_bookings")
+        .select("id")
+        .eq("session_id", id)
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (lookupError) throw lookupError;
+
+      const existingId = Array.isArray(existing) ? existing[0]?.id : null;
+      const { error } = existingId
+        ? await supabase.from("session_bookings").update(payload).eq("id", existingId)
+        : await supabase.from("session_bookings").insert(payload);
 
       if (error) throw error;
 
@@ -1983,8 +1997,10 @@ export function SessionsPage() {
       });
 
       await fetchSessions();
+      return true;
     } catch (err) {
       console.error("[DEBUG Sessions] Booking error:", err);
+      return false;
     }
   };
 
