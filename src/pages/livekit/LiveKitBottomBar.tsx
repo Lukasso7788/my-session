@@ -84,7 +84,9 @@ function SoundscapeIcon({
     active?: boolean;
     className?: string;
 }) {
-    const iconIsLight = active ? false : isLight;
+    // Active music uses the inverse surface (dark in light rooms, white in
+    // dark rooms), so its icon must invert with that actual background too.
+    const iconIsLight = active ? !isLight : isLight;
     return (
         <img
             src={iconIsLight ? "/icons/soundscape-light.svg" : "/icons/soundscape-dark.svg"}
