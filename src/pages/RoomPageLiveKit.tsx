@@ -13533,6 +13533,31 @@ export function RoomPageLiveKit({
             }
           }
 
+          // On lease-based refresh/rejoin the room connects before the fallback
+          // camera track is necessarily published. Re-apply the persisted FX to
+          // the confirmed live publication so blur/background cannot disappear.
+          if (fxAllowed) {
+            const liveCamera = await waitForLocalCameraTrackLive(
+              r.localParticipant,
+              4200,
+            );
+            const publishedTrack = liveCamera?.publication?.track as
+              | LocalVideoTrack
+              | undefined;
+            if (publishedTrack) {
+              try {
+                await safeApplyProcessor(
+                  publishedTrack,
+                  videoFxMode,
+                  blurStrength,
+                  bgImageUrl,
+                );
+              } catch (fxRestoreError) {
+                console.warn("[join] persisted video fx restore failed:", fxRestoreError);
+              }
+            }
+          }
+
           setCamOn(true);
 
           setDeviceError("");
