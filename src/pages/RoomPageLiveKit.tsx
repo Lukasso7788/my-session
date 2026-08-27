@@ -12179,14 +12179,14 @@ export function RoomPageLiveKit({
     // devices. Other mobile browsers can continue using the collage.
     if (
       isAppleMobilePiPRuntime() &&
-      !needsAvatarFallback &&
       nativeVideo &&
       supportsWebKitVideoPiP(nativeVideo)
     ) {
       configureMobilePiPVideo(nativeVideo);
       return nativeVideo;
     }
-    // When any camera is off, prefer the generated stage so the iPad PiP can
+    // Only use the generated Apple stage when the room has no live camera
+    // track at all. It is an avatar fallback, not a replacement for live video.
     if (isAppleMobilePiPRuntime()) {
       const posterLoop = await prepareAppleMobilePiPPosterLoop();
       if (posterLoop && isMobilePiPStageReady(posterLoop)) {
