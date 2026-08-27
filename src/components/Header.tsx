@@ -125,7 +125,7 @@ export default function Header() {
         if (location.pathname === "/one-on-one") return "one-on-one";
 
         const params = new URLSearchParams(location.search);
-        const tab = (params.get("tab") || "group").toLowerCase();
+        const tab = (params.get("tab") || (location.pathname === "/sessions" ? "infinite" : "group")).toLowerCase();
 
         if (tab === "infinite" || tab === "one-on-one" || tab === "group") return tab as SessionTabId;
         return "group";
@@ -285,6 +285,11 @@ export default function Header() {
     const handleCreateSessionClick = () => {
         if (paywallBlocked) {
             setPaywallOpen(true);
+            return;
+        }
+
+        if (activeSessionsTab === "infinite" && location.pathname === "/sessions") {
+            window.dispatchEvent(new Event("mysession:open-infinite-room-creator"));
             return;
         }
 
@@ -457,7 +462,11 @@ export default function Header() {
                                                 className="w-5 h-5"
                                                 alt=""
                                             />
-                                            <span>Create a session</span>
+                                            <span>
+                                                {activeSessionsTab === "infinite" && location.pathname === "/sessions"
+                                                    ? "Create infinite room"
+                                                    : "Create a session"}
+                                            </span>
                                         </button>
 
                                         <button onClick={() => setShowUserMenu((v) => !v)} className="hidden sm:flex items-center">
