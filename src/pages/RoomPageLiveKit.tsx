@@ -20371,7 +20371,23 @@ export function RoomPageLiveKit({
             setSettingsOpen(true);
             setSettingsPreviewVersion((v) => v + 1);
           }}
-          soundscapeActive={activeSoundscapeId !== null && soundscapePlaying}
+          soundscapeActive={
+            soundscapeListeningMode === "room"
+              ? activeSoundscapeId !== null && soundscapePlaying
+              : personalSoundscapeId !== null && personalSoundscapePlaying
+          }
+          soundscapeMuted={
+            soundscapeListeningMode === "room"
+              ? soundscapeMuted
+              : personalSoundscapeMuted
+          }
+          onToggleSoundscapeMute={() => {
+            if (soundscapeListeningMode === "personal") {
+              setPersonalSoundscapeMuted((current) => !current);
+              return;
+            }
+            setSoundscapeMuted((current) => !current);
+          }}
           onOpenSoundscapes={
             connected ? () => openRightTab("music") : undefined
           }

@@ -122,7 +122,9 @@ export function LiveKitBottomBar(props: {
     onOpenLayoutControls?: () => void;
 
     soundscapeActive?: boolean;
+    soundscapeMuted?: boolean;
     onOpenSoundscapes?: () => void;
+    onToggleSoundscapeMute?: () => void;
 
     onToggleMic: () => void;
     onToggleCam: () => void;
@@ -178,7 +180,9 @@ export function LiveKitBottomBar(props: {
         onOpenLayoutControls,
 
         soundscapeActive = false,
+        soundscapeMuted = false,
         onOpenSoundscapes,
+        onToggleSoundscapeMute,
 
         onToggleMic,
         onToggleCam,
@@ -362,12 +366,71 @@ export function LiveKitBottomBar(props: {
         </button>
     );
 
+    const soundscapePlayingIndicator = soundscapeActive ? (
+        <span
+            className="flex h-3 items-end gap-[2px]"
+            aria-label={soundscapeMuted ? "Music is playing muted" : "Music is playing"}
+            role="status"
+        >
+            {[0, 1, 2].map((index) => (
+                <span
+                    key={index}
+                    className={`w-[2px] rounded-full bg-[#7EE787] ${soundscapeMuted ? "h-1 opacity-55" : "animate-pulse"}`}
+                    style={{
+                        height: soundscapeMuted ? 4 : 6 + index * 2,
+                        animationDuration: `${0.7 + index * 0.14}s`,
+                        animationDelay: `${index * 0.12}s`,
+                    }}
+                />
+            ))}
+        </span>
+    ) : null;
+
     const soundscapesBtn = onOpenSoundscapes ? (
-        <button onClick={onOpenSoundscapes} className={"relative " + (activePanel === "music" ? sideButtonClass("music") : sideControlClass + " " + (soundscapeActive ? "bg-[#242424] hover:bg-[#2E2E2E] text-white" : ctlBtnBase))} title={soundscapeActive ? "Background sounds playing" : "Background sounds"} type="button">
-            <SoundscapeIcon isLight={activePanel === "music" ? !isLight : isLight} active={activePanel === "music" ? false : soundscapeActive} className="w-[20px] h-[20px]" />
-            <span className={sideControlLabelClass}>Music</span>
-            {soundscapeActive ? <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-[#7EE787]" /> : null}
-        </button>
+        <div
+            className={`flex items-center overflow-hidden rounded-2xl ${soundscapeActive
+                ? isLight
+                    ? "bg-[#242424] text-white"
+                    : "bg-white text-[#2F2F2F]"
+                : ""
+            }`}
+        >
+            <button
+                onClick={onOpenSoundscapes}
+                className={
+                    "relative " +
+                    (activePanel === "music"
+                        ? sideButtonClass("music")
+                        : sideControlClass + " " + (soundscapeActive ? "hover:bg-white/10" : ctlBtnBase))
+                }
+                title={soundscapeActive ? "Background sounds playing" : "Background sounds"}
+                type="button"
+            >
+                <SoundscapeIcon
+                    isLight={activePanel === "music" ? !isLight : isLight}
+                    active={activePanel === "music" ? false : soundscapeActive}
+                    className="h-[20px] w-[20px]"
+                />
+                <span className={sideControlLabelClass}>Music</span>
+                {soundscapePlayingIndicator}
+            </button>
+
+            {soundscapeActive && onToggleSoundscapeMute ? (
+                <button
+                    type="button"
+                    onClick={onToggleSoundscapeMute}
+                    className={`mr-1 flex h-8 items-center rounded-xl px-2 text-[9px] font-medium uppercase tracking-[0.04em] transition ${isLight
+                        ? "bg-white/10 text-white hover:bg-white/20"
+                        : "bg-black/[0.07] text-[#2F2F2F] hover:bg-black/[0.12]"
+                    }`}
+                    title={soundscapeMuted ? "Unmute music" : "Mute music"}
+                    aria-label={soundscapeMuted ? "Unmute music" : "Mute music"}
+                    aria-pressed={soundscapeMuted}
+                >
+                    {soundscapeMuted ? "Unmute" : "Mute"}
+                </button>
+            ) : null}
+        </div>
     ) : null;
 
     const settingsBtn = (
