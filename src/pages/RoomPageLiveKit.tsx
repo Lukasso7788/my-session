@@ -2491,6 +2491,81 @@ const CUSTOM_BACKGROUND_DB_NAME = "mysession-room-backgrounds";
 const CUSTOM_BACKGROUND_STORE_NAME = "settings";
 const CUSTOM_BACKGROUND_STORE_KEY = "custom-background-slots-v1";
 const CUSTOM_BACKGROUND_MAX_FILE_BYTES = 8 * 1024 * 1024;
+const VIDEO_FX_PREFERENCE_KEY = "mysession-room-video-fx-v1";
+
+type StoredVideoFxBackground =
+  | { kind: "default" }
+  | { kind: "preset"; id: string }
+  | { kind: "custom"; id: CustomBackgroundSlotId };
+
+type StoredVideoFxPreference = {
+  mode: FxMode;
+  blurStrength: number;
+  background: StoredVideoFxBackground;
+};
+
+function normalizeStoredBlurStrength(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(4, Math.min(30, parsed)) : 12;
+}
+
+function readStoredVideoFxPreference(): StoredVideoFxPreference {
+  const fallback: StoredVideoFxPreference = {
+    mode: "off",
+    blurStrength: 12,
+    background: { kind: "default" },
+  };
+
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem(VIDEO_FX_PREFERENCE_KEY) || "null",
+    ) as Partial<StoredVideoFxPreference> | null;
+    if (!parsed) return fallback;
+
+    const mode: FxMode =
+      parsed.mode === "blur" || parsed.mode === "bg" ? parsed.mode : "off";
+    const background = parsed.background;
+    if (
+      background?.kind === "preset" &&
+      typeof background.id === "string" &&
+      FX_BG_PRESETS.some((preset) => preset.id === background.id)
+    ) {
+      return {
+        mode,
+        blurStrength: normalizeStoredBlurStrength(parsed.blurStrength),
+        background: { kind: "preset", id: background.id },
+      };
+    }
+    if (
+      background?.kind === "custom" &&
+      (background.id === "one" ||
+        background.id === "two" ||
+        background.id === "three")
+    ) {
+      return {
+        mode,
+        blurStrength: normalizeStoredBlurStrength(parsed.blurStrength),
+        background: { kind: "custom", id: background.id },
+      };
+    }
+
+    return {
+      mode,
+      blurStrength: normalizeStoredBlurStrength(parsed.blurStrength),
+      background: { kind: "default" },
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredVideoFxPreference(preference: StoredVideoFxPreference) {
+  try {
+    localStorage.setItem(VIDEO_FX_PREFERENCE_KEY, JSON.stringify(preference));
+  } catch {
+    // Storage can be unavailable in private/restricted browser contexts.
+  }
+}
 const DEFAULT_CUSTOM_BACKGROUND_SLOTS: CustomBackgroundSlot[] = [
   { id: "one", label: "Custom 1", command: "1", dataUrl: "" },
   { id: "two", label: "Custom 2", command: "2", dataUrl: "" },
@@ -8281,8 +8356,26 @@ export function RoomPageLiveKit({
   }, [loadBrowserDevices]);
 
   // FX
-  const [videoFxMode, setVideoFxMode] = useState<FxMode>("off");
-  const [bgImageUrl, setBgImageUrl] = useState<string>(DEFAULT_BG_DATA_URL);
+  const restoredVideoFxPreference = useMemo(
+    () => readStoredVideoFxPreference(),
+    [],
+  );
+  const [videoFxMode, setVideoFxMode] = useState<FxMode>(() =>
+    restoredVideoFxPreference.mode === "bg" &&
+      restoredVideoFxPreference.background.kind === "custom"
+      ? "off"
+      : restoredVideoFxPreference.mode,
+  );
+  const [bgImageUrl, setBgImageUrl] = useState<string>(() => {
+    if (restoredVideoFxPreference.background.kind === "preset") {
+      return (
+        FX_BG_PRESETS.find(
+          (preset) => preset.id === restoredVideoFxPreference.background.id,
+        )?.url || DEFAULT_BG_DATA_URL
+      );
+    }
+    return DEFAULT_BG_DATA_URL;
+  });
   const [customBackgroundSlots, setCustomBackgroundSlots] = useState<CustomBackgroundSlot[]>(
     DEFAULT_CUSTOM_BACKGROUND_SLOTS,
   );
@@ -8342,7 +8435,9 @@ export function RoomPageLiveKit({
   const [mainViewMode, setMainViewMode] =
     useState<RoomMainViewMode>("video");
   const [settingsPreviewVersion, setSettingsPreviewVersion] = useState(0);
-  const [blurStrength, setBlurStrength] = useState<number>(12);
+  const [blurStrength, setBlurStrength] = useState<number>(
+    restoredVideoFxPreference.blurStrength,
+  );
   const firefoxSafeFx = useMemo(() => isFirefoxLike(), []);
   const [connected, setConnected] = useState(false);
   const [voiceUiStatus, setVoiceUiStatus] =
@@ -8391,11 +8486,30 @@ export function RoomPageLiveKit({
       customBackgroundSlotsRef.current = slots;
       setCustomBackgroundSlots(slots);
       setCustomBackgroundSlotsLoaded(true);
+
+      if (
+        restoredVideoFxPreference.mode === "bg" &&
+        restoredVideoFxPreference.background.kind === "custom"
+      ) {
+        const restoredSlot = slots.find(
+          (slot) => slot.id === restoredVideoFxPreference.background.id,
+        );
+        if (restoredSlot?.dataUrl) {
+          setBgImageUrl(restoredSlot.dataUrl);
+          setVideoFxMode("bg");
+        } else {
+          writeStoredVideoFxPreference({
+            ...restoredVideoFxPreference,
+            mode: "off",
+            background: { kind: "default" },
+          });
+        }
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [restoredVideoFxPreference]);
 
   useEffect(() => {
     customBackgroundSlotsRef.current = customBackgroundSlots;
@@ -8405,6 +8519,44 @@ export function RoomPageLiveKit({
       setFxError("Custom background could not be saved on this device");
     });
   }, [customBackgroundSlots, customBackgroundSlotsLoaded]);
+
+  useEffect(() => {
+    if (
+      !customBackgroundSlotsLoaded &&
+      restoredVideoFxPreference.mode === "bg" &&
+      restoredVideoFxPreference.background.kind === "custom"
+    ) {
+      return;
+    }
+
+    let background: StoredVideoFxBackground = { kind: "default" };
+    const preset = FX_BG_PRESETS.find((item) => item.url === bgImageUrl);
+    const custom = customBackgroundSlots.find(
+      (item) => !!item.dataUrl && item.dataUrl === bgImageUrl,
+    );
+
+    if (preset) background = { kind: "preset", id: preset.id };
+    else if (custom) background = { kind: "custom", id: custom.id };
+    else if (bgImageUrl !== DEFAULT_BG_DATA_URL) {
+      // A temporary blob URL cannot survive a page reload. Keep the live effect,
+      // but restore to camera-only next time instead of persisting a broken URL.
+      writeStoredVideoFxPreference({
+        mode: "off",
+        blurStrength,
+        background: { kind: "default" },
+      });
+      return;
+    }
+
+    writeStoredVideoFxPreference({ mode: videoFxMode, blurStrength, background });
+  }, [
+    bgImageUrl,
+    blurStrength,
+    customBackgroundSlots,
+    customBackgroundSlotsLoaded,
+    restoredVideoFxPreference,
+    videoFxMode,
+  ]);
 
   const matchCustomBackgroundVoiceCommand = (raw: string): VoiceUiCommand | null => {
     const normalized = normalizeVoiceUiTranscript(raw);
