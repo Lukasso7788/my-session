@@ -1865,11 +1865,9 @@ export function SessionsPage() {
   });
   const freeFlowRoomAvailable = Boolean(availableFreeFlowRoom);
 
-  // The database trigger is the source of truth for eligibility. RLS can hide
-  // historical host rows from this lightweight page query and previously
-  // blocked qualified creators before the request even reached Supabase.
-  const hasInfiniteCreatorAccess =
-    Boolean(user?.id) && (infiniteCreatorEligibility?.eligible ?? true);
+  // Keep the action visible for signed-in users. The database trigger is the
+  // source of truth and counts hosted sessions across every session format.
+  const hasInfiniteCreatorAccess = Boolean(user?.id);
   const canCreateFreeFlow = hasInfiniteCreatorAccess && !freeFlowRoomAvailable;
 
   const createInfiniteOverflow = useCallback(
