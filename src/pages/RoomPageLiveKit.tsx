@@ -3629,18 +3629,28 @@ async function enterMobileVideoPictureInPicture(
       return true;
     }
 
-    if (!options.skipPlay) {
+    if (!options.skipPlay && video.paused) {
       await video.play();
-    } else if (video.paused) {
+    } else if (options.skipPlay && video.paused) {
       return false;
     }
 
     const pipDocument = document as MobileVideoPiPDocument;
+    const currentPiPElement = pipDocument.pictureInPictureElement;
+    if (currentPiPElement === video) return true;
+
     if (
-      pipDocument.pictureInPictureEnabled === true &&
-      !pipDocument.pictureInPictureElement &&
-      typeof video.requestPictureInPicture === "function"
+      currentPiPElement &&
+      typeof pipDocument.exitPictureInPicture === "function"
     ) {
+      await pipDocument.exitPictureInPicture();
+    }
+
+    // Brave on Android exposes requestPictureInPicture() but may leave
+    // document.pictureInPictureEnabled undefined. The method is the reliable
+    // capability check, and calling it while the original tap is still active
+    // preserves Brave's stricter user-gesture requirement.
+    if (typeof video.requestPictureInPicture === "function") {
       await video.requestPictureInPicture();
       return true;
     }
@@ -15426,7 +15436,13 @@ export function RoomPageLiveKit({
       return;
     }
 
-    const stage = await preparePreferredMobilePiPVideo();
+    // The collage is pre-warmed while the room is connected. Prefer that
+    // already-playing element so Chromium/Brave receive the PiP request in
+    // the same user gesture instead of after an asynchronous preparation.
+    const readyStage = isMobilePiPStageReady(mobilePiPStageRef.current)
+      ? mobilePiPStageRef.current
+      : null;
+    const stage = readyStage ?? await preparePreferredMobilePiPVideo();
     if (!stage || !isMobilePiPStageReady(stage)) {
       throw new Error(
         "Picture-in-Picture is waiting for a playing participant video. Try again after video appears.",
@@ -15434,6 +15450,7 @@ export function RoomPageLiveKit({
     }
 
     const opened = await enterMobileVideoPictureInPicture(stage, {
+      skipPlay: !stage.paused,
       requireReady: true,
     });
 
