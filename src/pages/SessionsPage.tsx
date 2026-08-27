@@ -1885,6 +1885,7 @@ export function SessionsPage() {
       setOverflowCreateError("");
 
       const suggestedBlocks = [
+        { type: "checkin", title: "Goal setting", minutes: 2 },
         { type: "focus", title: "Focus", minutes: 10 },
         { type: "checkin", title: "Check-in", minutes: 2 },
         { type: "focus", title: "Focus", minutes: 15 },

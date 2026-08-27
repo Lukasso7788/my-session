@@ -84,7 +84,7 @@ function getDefaultBlockColor(kind: RoomTimelineBlockKind) {
         case "focus":
             return "#4CA0FF";
         case "break":
-            return "#F9ADA2";
+            return "#FDA4AF";
         case "checkin":
             return "#ADD3FF";
         case "recap":
@@ -1902,7 +1902,84 @@ export default function RoomTimelineEditor({
     );
 }
 
-export function makeFreeFlowTimelineBlocks(): RoomTimelineBlock[] {
+export type FreeFlowTimelinePreset = {
+    id: string;
+    name: string;
+    description: string;
+    blocks: Omit<RoomTimelineBlock, "id">[];
+};
+
+const FREE_FLOW_GOAL_SETTING: Omit<RoomTimelineBlock, "id"> = {
+    kind: "checkin",
+    title: "Goal setting",
+    minutes: 2,
+    note: "Set a clear goal before the first focus block",
+};
+
+export const FREE_FLOW_TIMELINE_PRESETS: FreeFlowTimelinePreset[] = [
+    {
+        id: "ladder",
+        name: "Ladder",
+        description: "Focus blocks gradually grow from 10 to 25 minutes.",
+        blocks: [
+            FREE_FLOW_GOAL_SETTING,
+            { kind: "focus", title: "Focus", minutes: 10, note: "Start with a quick focused win" },
+            { kind: "checkin", title: "Check-in", minutes: 2, note: "Share progress and reset" },
+            { kind: "focus", title: "Focus", minutes: 15, note: "Continue with the next clear step" },
+            { kind: "checkin", title: "Check-in", minutes: 2, note: "Short progress check" },
+            { kind: "focus", title: "Focus", minutes: 20, note: "Settle into deeper work" },
+            { kind: "checkin", title: "Check-in", minutes: 2, note: "Share progress and adjust" },
+            { kind: "focus", title: "Focus", minutes: 25, note: "Finish with the longest focus block" },
+            { kind: "break", title: "Break", minutes: 10, note: "Recharge and wrap up" },
+        ],
+    },
+    {
+        id: "30-10",
+        name: "30/10",
+        description: "A balanced focus block with a proper reset.",
+        blocks: [
+            FREE_FLOW_GOAL_SETTING,
+            { kind: "focus", title: "Focus", minutes: 30, note: "One clear focused outcome" },
+            { kind: "break", title: "Break", minutes: 10, note: "Step away and recharge" },
+        ],
+    },
+    {
+        id: "75-15",
+        name: "75/15",
+        description: "A long deep-work block followed by recovery.",
+        blocks: [
+            FREE_FLOW_GOAL_SETTING,
+            { kind: "focus", title: "Deep focus", minutes: 75, note: "Protect one substantial work block" },
+            { kind: "break", title: "Break", minutes: 15, note: "Recover after deep work" },
+        ],
+    },
+    {
+        id: "sprint-stack",
+        name: "Sprint stack",
+        description: "Two short sprints with a quick accountability reset.",
+        blocks: [
+            FREE_FLOW_GOAL_SETTING,
+            { kind: "focus", title: "Focus", minutes: 25, note: "Complete the first sprint" },
+            { kind: "checkin", title: "Check-in", minutes: 2, note: "Reset the next target" },
+            { kind: "focus", title: "Focus", minutes: 25, note: "Complete the second sprint" },
+            { kind: "break", title: "Break", minutes: 8, note: "Recharge and wrap up" },
+        ],
+    },
+    {
+        id: "deep-arc",
+        name: "Deep arc",
+        description: "Build into a longer uninterrupted deep-work finish.",
+        blocks: [
+            FREE_FLOW_GOAL_SETTING,
+            { kind: "focus", title: "Focus", minutes: 45, note: "Build momentum" },
+            { kind: "checkin", title: "Check-in", minutes: 3, note: "Review and choose the finish" },
+            { kind: "focus", title: "Deep focus", minutes: 60, note: "Finish with uninterrupted deep work" },
+            { kind: "break", title: "Break", minutes: 15, note: "Recover and close" },
+        ],
+    },
+];
+
+export function makeFreeFlowTimelineBlocks(presetId = "ladder"): RoomTimelineBlock[] {
     const block = (kind: RoomTimelineBlockKind, title: string, minutes: number, note: string): RoomTimelineBlock => ({
         id: uid(),
         kind,
@@ -1911,14 +1988,9 @@ export function makeFreeFlowTimelineBlocks(): RoomTimelineBlock[] {
         note,
     });
 
-    return [
-        block("focus", "Focus", 10, "Start with a quick focused win"),
-        block("checkin", "Check-in", 2, "Share progress and reset"),
-        block("focus", "Focus", 15, "Continue with the next clear step"),
-        block("checkin", "Check-in", 2, "Short progress check"),
-        block("focus", "Focus", 20, "Settle into deeper work"),
-        block("checkin", "Check-in", 2, "Share progress and adjust"),
-        block("focus", "Focus", 25, "Finish with the longest focus block"),
-        block("break", "Break", 10, "Recharge and wrap up"),
-    ];
+    const preset = FREE_FLOW_TIMELINE_PRESETS.find((item) => item.id === presetId)
+        || FREE_FLOW_TIMELINE_PRESETS[0];
+    return preset.blocks.map((item) =>
+        block(item.kind, item.title, item.minutes, item.note || "")
+    );
 }
