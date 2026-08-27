@@ -3814,7 +3814,7 @@ function useMobilePiPCollage(
   return ensureCollageStream;
 }
 
-function getApplePiPRecorderMimeType(): string {
+function getMobilePiPRecorderMimeType(): string {
   if (typeof MediaRecorder === "undefined") return "";
   const candidates = [
     "video/mp4;codecs=avc1.42E01E",
@@ -3825,7 +3825,7 @@ function getApplePiPRecorderMimeType(): string {
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || "";
 }
 
-function useAppleMobilePiPPosterLoop(
+function useMobilePiPPosterLoop(
   roomRootRef: React.RefObject<HTMLElement | null>,
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   stageRef: React.RefObject<MobilePiPVideoElement | null>,
@@ -3836,11 +3836,11 @@ function useAppleMobilePiPPosterLoop(
   const preparationRef = useRef<Promise<MobilePiPVideoElement | null> | null>(null);
 
   const preparePosterLoop = useCallback(async () => {
-    if (!enabled || !isAppleMobilePiPRuntime()) return null;
+    if (!enabled) return null;
     const root = roomRootRef.current;
     const canvas = canvasRef.current as MobileCaptureStreamCanvas | null;
     const stage = stageRef.current;
-    const mimeType = getApplePiPRecorderMimeType();
+    const mimeType = getMobilePiPRecorderMimeType();
     if (!root || !canvas || !stage || !mimeType || !canvas.captureStream) return null;
 
     const signature = getMobilePiPRoomTiles(root)
@@ -3899,7 +3899,7 @@ function useAppleMobilePiPPosterLoop(
         preparedForSignatureRef.current = signature;
         return stage;
       } catch (error) {
-        console.debug("[room-mobile-pip] Apple poster loop unavailable", error);
+        console.debug("[room-mobile-pip] Poster loop unavailable", error);
         return null;
       } finally {
         stream.getTracks().forEach((track) => track.stop());
@@ -3914,7 +3914,7 @@ function useAppleMobilePiPPosterLoop(
   }, [canvasRef, enabled, roomRootRef, stageRef]);
 
   useEffect(() => {
-    if (!enabled || !isAppleMobilePiPRuntime()) return;
+    if (!enabled) return;
     void preparePosterLoop();
     return () => {
       const stage = stageRef.current;
@@ -12168,7 +12168,7 @@ export function RoomPageLiveKit({
     mobilePiPStageRef,
     connected && mobilePiPRuntime,
   );
-  const prepareAppleMobilePiPPosterLoop = useAppleMobilePiPPosterLoop(
+  const prepareMobilePiPPosterLoop = useMobilePiPPosterLoop(
     videoWrapRef,
     mobilePiPCanvasRef,
     mobilePiPAppleStageRef,
@@ -12197,10 +12197,11 @@ export function RoomPageLiveKit({
       configureMobilePiPVideo(nativeVideo);
       return nativeVideo;
     }
-    // Only use the generated Apple stage when the room has no live camera
-    // track at all. It is an avatar fallback, not a replacement for live video.
-    if (isAppleMobilePiPRuntime()) {
-      const posterLoop = await prepareAppleMobilePiPPosterLoop();
+    // Canvas capture streams can be suspended when Brave or another mobile
+    // browser backgrounds the tab. With no live camera track, prefer a short
+    // looping video file of the avatar collage so PiP remains alive.
+    if (!nativeVideo) {
+      const posterLoop = await prepareMobilePiPPosterLoop();
       if (posterLoop && isMobilePiPStageReady(posterLoop)) {
         return posterLoop;
       }
@@ -12227,7 +12228,7 @@ export function RoomPageLiveKit({
 
     if (nativeVideo) configureMobilePiPVideo(nativeVideo);
     return nativeVideo;
-  }, [prepareAppleMobilePiPPosterLoop, prepareMobilePiPCollage]);
+  }, [prepareMobilePiPPosterLoop, prepareMobilePiPCollage]);
 
   const persistMobilePiPRetention = useCallback(
     (active: boolean): void => {
