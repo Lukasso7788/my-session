@@ -17529,6 +17529,11 @@ export function RoomPageLiveKit({
     [tileTasksByUserId],
   );
 
+  const getCurrentIntentionForTile = useCallback(
+    (tile: TileModel) => getTasksForTile(tile)[0] || "",
+    [getTasksForTile],
+  );
+
   const pinnedParticipantTile = useMemo(() => {
     if (!pinnedTileId) return null;
     return layoutTilesForRender.find((t) => t.id === pinnedTileId) || null;
@@ -17538,11 +17543,6 @@ export function RoomPageLiveKit({
     if (activeScreenShareTile && screenSharePinned) {
       return activeScreenShareTile;
     }
-  const getCurrentIntentionForTile = useCallback(
-    (tile: TileModel) => getTasksForTile(tile)[0] || "",
-    [getTasksForTile],
-  );
-
 
     if (pinnedParticipantTile) {
       return pinnedParticipantTile;
@@ -17655,6 +17655,7 @@ export function RoomPageLiveKit({
       sessionId={session?.id || null}
       tiles={layoutTilesForRender}
       profilesById={profilesById}
+      taskListsByUserId={tileTasksByUserId}
       authUserId={authUserId || null}
       theme={theme}
       isLight={isLight}
@@ -17664,7 +17665,6 @@ export function RoomPageLiveKit({
   ) : useFeaturedLayout ? (
     <div
       className="h-full w-full min-w-0 min-h-0 grid gap-2 sm:gap-3 p-2 sm:p-3 overflow-hidden"
-      taskListsByUserId={tileTasksByUserId}
       style={{
         gridTemplateColumns:
           !useOverlayRightPanel && rightPanelOpen
