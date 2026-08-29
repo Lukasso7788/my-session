@@ -461,18 +461,6 @@ function VideoTileInner({
             ? "border-[#D8D0D0] shadow-none"
             : "border-[#2B2B2B] shadow-none";
 
-    const namePillClass = hasCameraOn
-        ? "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm"
-        : isLight
-            ? "bg-[#F5F5F5] border-[#D8D0D0] text-neutral-900 shadow-sm"
-            : "bg-[#1B1B1B] border-[#2B2B2B] text-white shadow-sm";
-
-    const nameTextClass = hasCameraOn
-        ? "!text-white"
-        : isLight
-            ? "text-neutral-900"
-            : "text-white";
-
     const menuBtnClass = isLight
         ? "bg-[#F5F5F5] border-[#D8D0D0] text-black/85 hover:bg-[#F2F3F5]"
         : "bg-[#1B1B1B] border-[#2B2B2B] text-white hover:bg-[#1B1B1B]";
@@ -917,36 +905,45 @@ function VideoTileInner({
                 />
             </div>
 
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[11] h-[62%] bg-gradient-to-t from-black/80 via-black/38 to-transparent" />
+
             {safeTaskList.length ? (
                 <div
                     className={[
-                        "pointer-events-none absolute z-[13] rounded-2xl border px-3 py-2 shadow-lg backdrop-blur-xl transition duration-200",
-                        isCompact ? "left-[0.28rem] right-[0.28rem] bottom-[2.15rem]" : "left-[0.4rem] right-[0.4rem] bottom-[2.55rem]",
-                        showAllTasks ? "max-h-[70%] opacity-100" : "max-h-[2.25rem] opacity-100 group-hover:max-h-[70%]",
-                        hasCameraOn
-                            ? "border-white/15 bg-[#1B1B1B]/75 text-white"
-                            : isLight
-                                ? "border-[#D8D0D0] bg-[#F7F5F5]/95 text-black/80"
-                                : "border-[#2B2B2B] bg-[#1B1B1B]/95 text-white/85",
+                        "pointer-events-none absolute inset-0 z-[13] flex min-h-0 w-full flex-col justify-end overflow-hidden px-3 transition-all duration-300 ease-out",
+                        isCompact ? "pb-[3.1rem]" : "pb-[3.7rem]",
+                        showAllTasks
+                            ? "bg-gradient-to-t from-black/90 via-black/72 to-black/20 opacity-100"
+                            : "group-hover:bg-gradient-to-t group-hover:from-black/90 group-hover:via-black/72 group-hover:to-black/20",
                     ].join(" ")}
                     title={safeTaskList.join("\n")}
                 >
-                    <div className="overflow-hidden group-hover:overflow-y-auto">
-                        <div className="flex min-w-0 items-center gap-1 font-inter text-[12px] leading-4">
-                            <span className="shrink-0 font-semibold opacity-75">Task:</span>
-                            <span className="min-w-0 truncate font-normal group-hover:whitespace-normal group-hover:overflow-visible">
+                    <div
+                        className={[
+                            "min-h-0 w-full overflow-hidden font-inter text-white transition-all duration-300 ease-out",
+                            showAllTasks ? "max-h-full" : "max-h-[1.4rem] group-hover:max-h-full",
+                        ].join(" ")}
+                    >
+                        <div className={`flex min-w-0 items-start gap-2 ${isCompact ? "text-[11px] leading-4" : "text-[12px] leading-[1.15rem]"}`}>
+                            <span className="mt-[0.42rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#81DB86] shadow-[0_0_0_2px_rgba(129,219,134,0.16)]" />
+                            <span className={`min-w-0 font-medium ${showAllTasks ? "whitespace-normal" : "truncate group-hover:whitespace-normal group-hover:overflow-visible"}`}>
                                 {safeTaskList[0]}
                             </span>
                         </div>
-                        {(showAllTasks || safeTaskList.length > 1) ? (
-                            <div className={[
-                                "mt-2 space-y-1.5 border-t pt-2 font-inter text-[11px] leading-4 transition",
-                                hasCameraOn ? "border-white/15" : isLight ? "border-black/10" : "border-white/10",
-                                showAllTasks ? "opacity-100" : "max-h-0 overflow-hidden pt-0 opacity-0 group-hover:max-h-48 group-hover:pt-2 group-hover:opacity-100",
-                            ].join(" ")}>
+
+                        {safeTaskList.length > 1 ? (
+                            <div
+                                className={[
+                                    "mt-2 space-y-1.5 border-t border-white/20 pt-2 text-white/90 transition-all duration-300 ease-out",
+                                    isCompact ? "text-[10px] leading-4" : "text-[11px] leading-4",
+                                    showAllTasks
+                                        ? "opacity-100"
+                                        : "translate-y-1 opacity-0 group-hover:translate-y-0 group-hover:opacity-100",
+                                ].join(" ")}
+                            >
                                 {safeTaskList.slice(1).map((task, index) => (
                                     <div key={`${task}-${index}`} className="flex gap-2">
-                                        <span className="mt-[0.34rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#81DB86]" />
+                                        <span className="mt-[0.34rem] h-1.5 w-1.5 shrink-0 rounded-full bg-white/55" />
                                         <span className="min-w-0 break-words font-normal">{task}</span>
                                     </div>
                                 ))}
@@ -957,35 +954,32 @@ function VideoTileInner({
             ) : null}
 
             <div
-                className={`pointer-events-none absolute z-[12] flex min-w-0 items-end justify-between gap-[0.35rem] ${isCompact ? "inset-x-[0.28rem] bottom-[0.28rem]" : "inset-x-[0.4rem] bottom-[0.4rem]"}`}
+                className={`pointer-events-none absolute z-[14] flex min-w-0 items-end justify-between gap-[0.5rem] text-white ${isCompact ? "inset-x-[0.55rem] bottom-[0.45rem]" : "inset-x-[0.75rem] bottom-[0.65rem]"}`}
             >
-                <div
-                    className={`pointer-events-auto min-w-0 max-w-full rounded-[12px] border backdrop-blur-md ${isCompact ? "px-1.5 py-0.5" : "px-2 py-1"} ${namePillClass}`}
-                >
-                    <div className="flex min-w-0 items-center gap-[0.35rem]">
-                        <>
-                            <span
-                                className={`min-w-0 truncate ${isCompact ? "text-[10px]" : "text-[12px]"} font-medium leading-none ${nameTextClass}`}
-                            >
-                                {label || "User"}
-                            </span>
+                <div className="min-w-0 max-w-[calc(100%_-_2.5rem)]">
+                    <div className="flex min-w-0 items-center gap-[0.4rem]">
+                        <span
+                            className={`min-w-0 truncate font-inter ${isCompact ? "text-[10px]" : "text-[12px]"} font-semibold leading-none text-white drop-shadow-md`}
+                        >
+                            {label || "User"}
+                        </span>
 
-                            {status ? (
-                                <span
-                                    className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${getStatusClass(status, isLight)}`}
-                                    title={isLocal && status === "skip_deafened" ? "Skip me (room audio muted for you)" : getStatusLabel(status)}
-                                >
-                                    <span>{getStatusLabel(status)}</span>
-                                    {isLocal && status === "skip_deafened" ? (
-                                        <SkipMeMutedStatusIcon theme={theme} className="h-2.5 w-2.5" />
-                                    ) : null}
-                                </span>
-                            ) : null}
-                        </>
+                        {status ? (
+                            <span
+                                className={`pointer-events-auto inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${getStatusClass(status, false)}`}
+                                title={isLocal && status === "skip_deafened" ? "Skip me (room audio muted for you)" : getStatusLabel(status)}
+                            >
+                                <span>{getStatusLabel(status)}</span>
+                                {isLocal && status === "skip_deafened" ? (
+                                    <SkipMeMutedStatusIcon theme={theme} className="h-2.5 w-2.5" />
+                                ) : null}
+                            </span>
+                        ) : null}
                     </div>
+
                     {participantTime ? (
                         <div
-                            className={`mt-1 truncate font-inter ${isCompact ? "text-[9px]" : "text-[10px]"} font-normal leading-none opacity-65`}
+                            className={`mt-1 truncate font-inter ${isCompact ? "text-[9px]" : "text-[10px]"} font-normal leading-none text-white/70 drop-shadow-md`}
                             title={String(participantTimeZone || "")}
                         >
                             {participantTime}
