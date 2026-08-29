@@ -804,6 +804,7 @@ type TileModel = {
 
   participantIdentity?: string;
   participantUserId?: string;
+  participantTimeZone?: string;
 
   micTrackSid?: string;
   camTrackSid?: string;
@@ -836,6 +837,7 @@ function areTileListsEqual(prev: TileModel[], next: TileModel[]) {
       a.isSpeaking === b.isSpeaking &&
       a.participantIdentity === b.participantIdentity &&
       a.participantUserId === b.participantUserId &&
+      a.participantTimeZone === b.participantTimeZone &&
       a.micTrackSid === b.micTrackSid &&
       a.camTrackSid === b.camTrackSid &&
       a.micMuted === b.micMuted &&
@@ -2122,6 +2124,21 @@ function getStatusFromMetadata(raw: unknown): string | null {
 
   const status = String(meta.status || "").trim();
   return status || null;
+}
+
+function getTimeZoneFromParticipantMetadata(raw: unknown): string {
+  const meta = parseParticipantMetadata(raw);
+  if (!meta) return "";
+
+  const value = String(meta.timeZone || meta.timezone || meta.time_zone || "").trim();
+  if (!value) return "";
+
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+    return value;
+  } catch {
+    return "";
+  }
 }
 
 function getDisplayNameFromParticipantMetadata(raw: unknown): string {
@@ -4757,6 +4774,7 @@ function AccountabilityWall({
   profilesById,
   authUserId,
   theme,
+  taskListsByUserId,
   isLight,
   onOpenTasks,
   onSwitchBackToVideo,
@@ -4766,6 +4784,7 @@ function AccountabilityWall({
   profilesById: Record<string, HostProfile>;
   authUserId?: string | null;
   theme: RoomTheme;
+  taskListsByUserId: Record<string, string[]>;
   isLight: boolean;
   onOpenTasks: () => void;
   onSwitchBackToVideo: () => void;
@@ -5327,224 +5346,45 @@ function AccountabilityWall({
               String(tile.metadataDisplayName || profile?.full_name || tile.label || "Participant").trim() ||
               "Participant";
             const avatarUrl = String(profile?.avatar_url || "").trim();
-            const userTasks = (tasksByUserId.get(userId) || []).slice(0, 4);
+            const userTasks = (tasksByUserId.get(userId) || []).slice(0, 12);
             const activeCount = userTasks.filter((x) => !x.completed).length;
             const completedCount = userTasks.filter((x) => !!x.completed).length;
             const isLocalCard = String(userId).toLowerCase() === String(authUserId || "").toLowerCase();
 
             return (
               <div
+            const panelTasks = taskListsByUserId[userId] || [];
+            const visibleTasks = panelTasks.length
+              ? panelTasks
+              : userTasks
+                  .filter((item) => !item.completed)
+                  .map((item) => String(item.text || "").trim())
+                  .filter(Boolean);
+
                 key={`accountability-${tile.id}`}
                 className={[
                   "min-h-[220px] rounded-[28px] border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg",
                   cardBg,
                 ].join(" ")}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    {avatarUrl ? (
-                      <img
-                        src={avatarUrl}
-                        alt=""
-                        className="h-12 w-12 shrink-0 rounded-2xl object-cover"
-                      />
-                    ) : (
-                      <div
-                        className={[
-                          "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-[16px] font-black",
-                          isLight ? "bg-black/5 text-black/75" : "bg-white/10 text-white/85",
-                        ].join(" ")}
-                      >
-                        {getInitials(name)}
-                      </div>
-                    )}
-
-                    <div className="min-w-0">
-                      <div className="truncate font-inter text-[15px] font-bold leading-tight">
-                        {name}
-                      </div>
-                      <div className={`mt-1 flex items-center gap-1 text-[12px] ${mutedText}`}>
-                        <span>
-                          {tile.status ? getStatusLabel(tile.status) || tile.status : tile.isLocal ? "You" : "In room"}
-                        </span>
-                        {tile.isLocal && tile.status === "skip_deafened" ? (
-                          <SkipMeMutedStatusIcon theme={theme} className="h-3 w-3 shrink-0" />
-                        ) : null}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div
-                    className={[
-                      "shrink-0 rounded-2xl border px-2.5 py-1 font-inter text-[11px] font-medium",
-                      activeCount > 0
-                        ? "border-[#81DB86]/55 bg-[#81DB86]/10 text-[#2FA84F]"
-                        : isLight
-                          ? "border-black/10 bg-black/5 text-black/45"
-                          : "border-white/10 bg-white/10 text-white/45",
-                    ].join(" ")}
-                  >
-                    {activeCount > 0 ? `${activeCount} active` : completedCount > 0 ? "Done" : "No task"}
-                  </div>
-                </div>
-
-                <div className="mt-5 space-y-2">
-                  {isLocalCard ? (
-                    <div className="mb-3 flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={newWallTask}
-                        onChange={(e) => setNewWallTask(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") void addOwnWallTask();
-                        }}
-                        placeholder="Add a task"
-                        className={[
-                          "h-11 min-w-0 flex-1 rounded-2xl border px-3 font-inter text-[13px] outline-none transition",
-                          isLight
-                            ? "border-[#CFC6C6] bg-[#F7F5F5] text-black/85 placeholder:text-black/35 focus:border-[#81DB86] focus:ring-1 focus:ring-[#81DB86]"
-                            : "border-white/10 bg-white/[0.05] text-white/90 placeholder:text-white/35 focus:border-[#81DB86]/70 focus:ring-1 focus:ring-[#81DB86]/50",
-                        ].join(" ")}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => void addOwnWallTask()}
-                        disabled={!newWallTask.trim() || !!wallTaskBusy}
-                        className="h-11 rounded-2xl bg-[#81DB86] px-4 font-inter text-[13px] font-bold text-black transition hover:brightness-95 disabled:opacity-50"
-                      >
-                        Add
-                      </button>
-                    </div>
-                  ) : null}
-
-                  {loading && !userTasks.length ? (
-                    <div className={`rounded-2xl border border-dashed px-4 py-3 font-inter text-[13px] ${mutedText}`}>
-                      Loading tasks…
-                    </div>
-                  ) : userTasks.length ? (
-                    userTasks.map((item) => {
-                      const timerId = makeTaskTimerId(item.user_id, item.text, item.id);
-                      const timer = taskTimers[timerId] || null;
-                      const elapsedMs = getTaskTimerDisplayMs(timer, taskTimerTickMs);
-                      const timerRunning = isTaskTimerRunning(timer);
-                      const shouldShowTimer =
-                        taskTimersEnabled && (isLocalCard || elapsedMs > 0);
-
-                      return (
-                        <div
-                          key={item.id}
-                          className={[
-                            "flex items-start gap-2 rounded-2xl border px-3 py-3 font-inter text-[14px] font-normal leading-5",
-                            item.completed
-                              ? isLight
-                                ? "border-black/10 bg-black/[0.02] text-black/35"
-                                : "border-white/10 bg-white/[0.04] text-white/35"
-                              : isLight
-                                ? "border-[#CFC6C6] bg-white text-black/85"
-                                : "border-white/10 bg-white/[0.06] text-white/90",
-                          ].join(" ")}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => void toggleOwnWallTask(item)}
-                            disabled={!isLocalCard || !!wallTaskBusy}
-                            className={[
-                              "mt-[1px] flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border transition",
-                              isLocalCard ? "pointer-events-auto" : "pointer-events-none",
-                              item.completed
-                                ? "border-[#81DB86]/70 bg-[#81DB86]/15"
-                                : isLight
-                                  ? "border-black/15 bg-black/[0.02]"
-                                  : "border-white/15 bg-white/[0.04]",
-                            ].join(" ")}
-                            title={isLocalCard ? "Toggle task" : "Task"}
-                          >
-                            {item.completed ? (
-                              <span className="text-[11px] leading-none text-[#2FA84F]">✓</span>
-                            ) : (
-                              <img src={taskIconSrc} alt="" className="h-3.5 w-3.5 opacity-55" draggable={false} />
-                            )}
-                          </button>
-
-                          <div className="min-w-0 flex-1">
-                            <div className={item.completed ? "line-through" : ""}>{item.text}</div>
-
-                            {shouldShowTimer ? (
-                              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                                <div
-                                  className={[
-                                    "inline-flex h-7 items-center rounded-full border px-2.5 text-[11px] font-bold tabular-nums",
-                                    timerRunning
-                                      ? "border-[#81DB86] bg-[#81DB86]/15 text-[#248A3D]"
-                                      : isLight
-                                        ? "border-[#CFC6C6] bg-[#F7F5F5] text-black/60"
-                                        : "border-white/10 bg-white/[0.05] text-white/65",
-                                  ].join(" ")}
-                                  title="Time spent on this task"
-                                >
-                                  {formatTaskTimer(elapsedMs)}
-                                </div>
-
-                                {isLocalCard ? (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        toggleTaskTimer(item);
-                                      }}
-                                      className={[
-                                        "h-7 rounded-full border px-2 text-[11px] font-bold transition",
-                                        timerRunning
-                                          ? "border-[#F65252]/50 bg-[#F65252]/10 text-[#C73535] hover:bg-[#F65252]/15"
-                                          : "border-[#81DB86] bg-[#81DB86]/15 text-[#248A3D] hover:bg-[#81DB86]/25",
-                                      ].join(" ")}
-                                      title={timerRunning ? "Pause timer" : "Start timer"}
-                                    >
-                                      {timerRunning ? "Pause" : "Start"}
-                                    </button>
-
-                                    {elapsedMs > 0 ? (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          resetTaskTimer(item);
-                                        }}
-                                        className={[
-                                          "h-7 rounded-full border px-2 text-[11px] font-bold transition",
-                                          isLight
-                                            ? "border-[#CFC6C6] bg-[#F7F5F5] text-black/55 hover:bg-[#ECEAEA]"
-                                            : "border-white/10 bg-white/[0.04] text-white/55 hover:bg-white/[0.08]",
-                                        ].join(" ")}
-                                        title="Reset timer"
-                                      >
-                                        Reset
-                                      </button>
-                                    ) : null}
-                                  </>
-                                ) : null}
-                              </div>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={isLocalCard ? undefined : onOpenTasks}
-                      className={[
-                        "w-full rounded-2xl border border-dashed px-4 py-4 text-left font-inter text-[14px] font-normal transition",
-                        isLight
-                          ? "border-black/15 text-black/45 hover:bg-black/[0.03]"
-                          : "border-white/15 text-white/45 hover:bg-white/[0.05]",
-                      ].join(" ")}
-                    >
-                      No task yet{isLocalCard ? " — add yours above" : ""}
-                    </button>
-                  )}
-                </div>
+                <VideoTile
+                  tileId={`accountability-${tile.id}`}
+                  label={name}
+                  status={tile.status || null}
+                  videoTrack={tile.videoTrack}
+                  audioTrack={tile.audioTrack}
+                  isLocal={tile.isLocal}
+                  theme={theme}
+                  avatarUrl={avatarUrl}
+                  micMuted={!!tile.micMuted}
+                  mirrorVideo={tile.isLocal}
+                  isSpeaking={!!tile.isSpeaking}
+                  currentIntention={visibleTasks[0] || null}
+                  taskList={visibleTasks}
+                  showAllTasks
+                  participantTimeZone={tile.participantTimeZone || null}
+                  density="compact"
+                />
               </div>
             );
           })}
@@ -12773,6 +12613,10 @@ export function RoomPageLiveKit({
         userName ||
         "You",
       ).trim() || "You";
+    const localParticipantTimeZone =
+      getTimeZoneFromParticipantMetadata((lp as any)?.metadata) ||
+      Intl.DateTimeFormat().resolvedOptions().timeZone ||
+      "UTC";
 
     next.push({
       id: "local",
@@ -12796,6 +12640,7 @@ export function RoomPageLiveKit({
         rp.videoTrackPublications.values(),
       ) as RemoteTrackPublication[];
       const allAudioPubs = Array.from(
+      participantTimeZone: localParticipantTimeZone,
         rp.audioTrackPublications.values(),
       ) as RemoteTrackPublication[];
 
@@ -12847,6 +12692,7 @@ export function RoomPageLiveKit({
       next.push({
         id: tileId,
         kind: "camera",
+      const participantTimeZone = getTimeZoneFromParticipantMetadata((rp as any)?.metadata);
         label: effectiveRemoteLabel,
         metadataDisplayName: participantMetadataDisplayName || undefined,
         status: participantStatus,
@@ -12866,6 +12712,7 @@ export function RoomPageLiveKit({
       });
 
       const volumeKey = getParticipantVolumeKey({
+        participantTimeZone: participantTimeZone || undefined,
         id: tileId,
         participantUserId: baseUserId || undefined,
         participantIdentity: exactIdentity || undefined,
@@ -13431,6 +13278,18 @@ export function RoomPageLiveKit({
         })
           .then(() => {
             console.log("[usage] weekly session counted:", {
+      try {
+        const localTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+        const currentMetadata = parseParticipantMetadata(r.localParticipant.metadata) || {};
+        if (getTimeZoneFromParticipantMetadata(r.localParticipant.metadata) !== localTimeZone) {
+          await r.localParticipant.setMetadata(
+            JSON.stringify({ ...currentMetadata, timeZone: localTimeZone }),
+          );
+        }
+      } catch (error) {
+        console.warn("[room] participant timezone metadata was not published", error);
+      }
+
               userId: authUserId,
               sessionId: session?.id,
             });
@@ -17370,6 +17229,8 @@ export function RoomPageLiveKit({
         </div>
 
         {showLocalEditButton && (
+            taskList={getTasksForTile(t)}
+            participantTimeZone={t.participantTimeZone || null}
           <div className="absolute top-2 left-2 z-30">
             <button
               type="button"
@@ -17448,6 +17309,8 @@ export function RoomPageLiveKit({
         />
       </div>
     );
+          taskList={getTasksForTile(t)}
+          participantTimeZone={t.participantTimeZone || null}
   };
 
   const screenShareTilesForRender = useMemo(() => {
@@ -17505,7 +17368,7 @@ export function RoomPageLiveKit({
     return allTilesForRender;
   }, [allTilesForRender, activeScreenShareTile, screenSharePinned]);
 
-  const [tileTasksByUserId, setTileTasksByUserId] = useState<Record<string, string>>({});
+  const [tileTasksByUserId, setTileTasksByUserId] = useState<Record<string, string[]>>({});
 
   const tileTaskUserIds = useMemo(() => {
     const ids = new Set<string>();
@@ -17542,12 +17405,18 @@ export function RoomPageLiveKit({
       // Legacy/session tasks remain a fallback for tasks created directly on
       // the accountability wall. Panel tasks below are authoritative because
       // their sort_order is the order the user actually sees in Tasks.
-      const next: Record<string, string> = {};
+      const next: Record<string, string[]> = {};
+      const appendTask = (userId: string, taskText: string) => {
+        if (!userId || !taskText) return;
+        const current = next[userId] || [];
+        if (current.some((value) => value.toLowerCase() === taskText.toLowerCase())) return;
+        next[userId] = [...current, taskText].slice(0, 12);
+      };
+
       for (const row of data as any[]) {
         const userId = String(row?.user_id || "").trim().toLowerCase();
         const text = String(row?.text || "").trim();
-        if (!userId || !text || next[userId]) continue;
-        next[userId] = text;
+        appendTask(userId, text);
       }
 
       const participantUserIds = tileTaskUserIdsKey
@@ -17604,7 +17473,7 @@ export function RoomPageLiveKit({
             ) {
               continue;
             }
-            next[userId] = text;
+            appendTask(userId, text);
           }
         }
       }
@@ -17653,10 +17522,10 @@ export function RoomPageLiveKit({
     };
   }, [session?.id, loadTileTasks]);
 
-  const getCurrentIntentionForTile = useCallback(
+  const getTasksForTile = useCallback(
     (tile: TileModel) => {
       const userId = getTilePersonKey(tile);
-      return tileTasksByUserId[userId] || "";
+      return tileTasksByUserId[userId] || [];
     },
     [tileTasksByUserId],
   );
@@ -17670,6 +17539,11 @@ export function RoomPageLiveKit({
     if (activeScreenShareTile && screenSharePinned) {
       return activeScreenShareTile;
     }
+  const getCurrentIntentionForTile = useCallback(
+    (tile: TileModel) => getTasksForTile(tile)[0] || "",
+    [getTasksForTile],
+  );
+
 
     if (pinnedParticipantTile) {
       return pinnedParticipantTile;
@@ -17791,6 +17665,7 @@ export function RoomPageLiveKit({
   ) : useFeaturedLayout ? (
     <div
       className="h-full w-full min-w-0 min-h-0 grid gap-2 sm:gap-3 p-2 sm:p-3 overflow-hidden"
+      taskListsByUserId={tileTasksByUserId}
       style={{
         gridTemplateColumns:
           !useOverlayRightPanel && rightPanelOpen

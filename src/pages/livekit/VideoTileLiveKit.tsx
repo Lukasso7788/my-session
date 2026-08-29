@@ -208,8 +208,28 @@ type VideoTileProps = {
     onEditName?: () => void;
     density?: "normal" | "compact";
     currentIntention?: string | null;
+    taskList?: string[];
+    showAllTasks?: boolean;
+    participantTimeZone?: string | null;
     cameraFramingMode?: CameraFramingMode;
 };
+
+function formatParticipantTime(timeZone: string, at = new Date()) {
+    const safeTimeZone = String(timeZone || "").trim();
+    if (!safeTimeZone) return "";
+
+    try {
+        const city = safeTimeZone.split("/").pop()?.replace(/_/g, " ") || safeTimeZone;
+        const time = new Intl.DateTimeFormat(undefined, {
+            timeZone: safeTimeZone,
+            hour: "numeric",
+            minute: "2-digit",
+        }).format(at);
+        return `${city} · ${time}`;
+    } catch {
+        return "";
+    }
+}
 
 function useHeldSpeaking(active: boolean, holdMs = 650) {
     const [held, setHeld] = useState(active);
@@ -352,6 +372,9 @@ function VideoTileInner({
     showMenuButton = false,
     density = "normal",
     currentIntention,
+    taskList = [],
+    showAllTasks = false,
+    participantTimeZone,
     cameraFramingMode = "full",
     onToggleMenu,
     onOpenProfile,
@@ -460,7 +483,30 @@ function VideoTileInner({
 
     const debugSizing = useMemo(() => getQueryBool("devTileDebug", false), []);
     const safeCurrentIntention = String(currentIntention || "").trim();
+    const safeTaskList = useMemo(() => {
+        const seen = new Set<string>();
+        return [safeCurrentIntention, ...(Array.isArray(taskList) ? taskList : [])]
+            .map((value) => String(value || "").replace(/\s+/g, " ").trim())
+            .filter((value) => {
+                const key = value.toLowerCase();
+                if (!value || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
+            .slice(0, 12);
+    }, [safeCurrentIntention, taskList]);
+    const [participantClock, setParticipantClock] = useState(() => Date.now());
+    const participantTime = formatParticipantTime(
+        String(participantTimeZone || ""),
+        new Date(participantClock),
+    );
     const [sizeText, setSizeText] = useState<string>("");
+
+    useEffect(() => {
+        if (!participantTimeZone) return;
+        const timer = window.setInterval(() => setParticipantClock(Date.now()), 30_000);
+        return () => window.clearInterval(timer);
+    }, [participantTimeZone]);
 
     useEffect(() => {
         if (!debugSizing) return;
@@ -871,24 +917,41 @@ function VideoTileInner({
                 />
             </div>
 
-            {safeCurrentIntention ? (
+            {safeTaskList.length ? (
                 <div
                     className={[
-                        "pointer-events-none absolute z-[13] translate-y-1 rounded-2xl border px-3 py-2 opacity-0 shadow-lg backdrop-blur-xl transition duration-150 group-hover:translate-y-0 group-hover:opacity-100",
-                        isCompact ? "inset-x-[0.28rem] top-[0.28rem]" : "inset-x-[0.4rem] top-[0.4rem]",
+                        "pointer-events-none absolute z-[13] rounded-2xl border px-3 py-2 shadow-lg backdrop-blur-xl transition duration-200",
+                        isCompact ? "left-[0.28rem] right-[0.28rem] bottom-[2.15rem]" : "left-[0.4rem] right-[0.4rem] bottom-[2.55rem]",
+                        showAllTasks ? "max-h-[70%] opacity-100" : "max-h-[2.25rem] opacity-100 group-hover:max-h-[70%]",
                         hasCameraOn
                             ? "border-white/15 bg-[#1B1B1B]/75 text-white"
                             : isLight
                                 ? "border-[#D8D0D0] bg-[#F7F5F5]/95 text-black/80"
                                 : "border-[#2B2B2B] bg-[#1B1B1B]/95 text-white/85",
                     ].join(" ")}
-                    title={`Task: ${safeCurrentIntention}`}
+                    title={safeTaskList.join("\n")}
                 >
-                    <div className="flex min-w-0 items-center gap-1 font-inter text-[12px] leading-4">
-                        <span className="shrink-0 font-bold opacity-75">Task:</span>
-                        <span className="min-w-0 truncate font-normal">
-                            {safeCurrentIntention}
-                        </span>
+                    <div className="overflow-hidden group-hover:overflow-y-auto">
+                        <div className="flex min-w-0 items-center gap-1 font-inter text-[12px] leading-4">
+                            <span className="shrink-0 font-semibold opacity-75">Task:</span>
+                            <span className="min-w-0 truncate font-normal group-hover:whitespace-normal group-hover:overflow-visible">
+                                {safeTaskList[0]}
+                            </span>
+                        </div>
+                        {(showAllTasks || safeTaskList.length > 1) ? (
+                            <div className={[
+                                "mt-2 space-y-1.5 border-t pt-2 font-inter text-[11px] leading-4 transition",
+                                hasCameraOn ? "border-white/15" : isLight ? "border-black/10" : "border-white/10",
+                                showAllTasks ? "opacity-100" : "max-h-0 overflow-hidden pt-0 opacity-0 group-hover:max-h-48 group-hover:pt-2 group-hover:opacity-100",
+                            ].join(" ")}>
+                                {safeTaskList.slice(1).map((task, index) => (
+                                    <div key={`${task}-${index}`} className="flex gap-2">
+                                        <span className="mt-[0.34rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#81DB86]" />
+                                        <span className="min-w-0 break-words font-normal">{task}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : null}
                     </div>
                 </div>
             ) : null}
@@ -920,6 +983,14 @@ function VideoTileInner({
                             ) : null}
                         </>
                     </div>
+                    {participantTime ? (
+                        <div
+                            className={`mt-1 truncate font-inter ${isCompact ? "text-[9px]" : "text-[10px]"} font-normal leading-none opacity-65`}
+                            title={String(participantTimeZone || "")}
+                        >
+                            {participantTime}
+                        </div>
+                    ) : null}
                 </div>
 
                 <MicBadgeWithBarVisualizer
@@ -952,6 +1023,9 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.showMenuButton === next.showMenuButton &&
         prev.density === next.density &&
         prev.currentIntention === next.currentIntention &&
+        prev.taskList === next.taskList &&
+        prev.showAllTasks === next.showAllTasks &&
+        prev.participantTimeZone === next.participantTimeZone &&
         prev.cameraFramingMode === next.cameraFramingMode &&
         prev.onToggleMenu === next.onToggleMenu &&
         prev.onOpenProfile === next.onOpenProfile &&
