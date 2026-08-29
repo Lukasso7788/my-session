@@ -2004,30 +2004,54 @@ export function SessionsPage() {
     }
 
     try {
-      const payload = {
-        session_id: id,
-        user_id: user.id,
-        booked_start_time: opts.booked_start_time || null,
-        booked_end_time: opts.booked_end_time || null,
-        booking_note: opts.booking_note || null,
-        booking_role: opts.booking_role || "participant",
-      };
+      const bookingRole = opts.booking_role || "participant";
+      const bookedStartTime = opts.booked_start_time || null;
+      const bookedEndTime = opts.booked_end_time || null;
+      const bookingNote = opts.booking_note || null;
 
-      const { data: existing, error: lookupError } = await supabase
-        .from("session_bookings")
-        .select("id")
-        .eq("session_id", id)
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(1);
-      if (lookupError) throw lookupError;
+      const { error: rpcError } = await supabase.rpc("save_session_booking", {
+        p_session_id: id,
+        p_booked_start_time: bookedStartTime,
+        p_booked_end_time: bookedEndTime,
+        p_booking_note: bookingNote,
+        p_booking_role: bookingRole,
+      });
 
-      const existingId = Array.isArray(existing) ? existing[0]?.id : null;
-      const { error } = existingId
-        ? await supabase.from("session_bookings").update(payload).eq("id", existingId)
-        : await supabase.from("session_bookings").insert(payload);
+      if (rpcError) {
+        const rpcUnavailable =
+          rpcError.code === "PGRST202" ||
+          rpcError.code === "42883" ||
+          /save_session_booking|schema cache|could not find the function/i.test(rpcError.message || "");
 
-      if (error) throw error;
+        if (!rpcUnavailable) throw rpcError;
+
+        // Keep the current production database working until the companion
+        // migration is applied. Once available, the RPC is authoritative.
+        const payload = {
+          session_id: id,
+          user_id: user.id,
+          booked_start_time: bookedStartTime,
+          booked_end_time: bookedEndTime,
+          booking_note: bookingNote,
+          booking_role: bookingRole,
+        };
+
+        const { data: existing, error: lookupError } = await supabase
+          .from("session_bookings")
+          .select("id")
+          .eq("session_id", id)
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (lookupError) throw lookupError;
+
+        const existingId = Array.isArray(existing) ? existing[0]?.id : null;
+        const { error: fallbackError } = existingId
+          ? await supabase.from("session_bookings").update(payload).eq("id", existingId)
+          : await supabase.from("session_bookings").insert(payload);
+
+        if (fallbackError) throw fallbackError;
+      }
 
       captureProductEvent("session_booked", {
         booking_mode: opts.booked_start_time || opts.booked_end_time ? "timed" : "whole_session",
