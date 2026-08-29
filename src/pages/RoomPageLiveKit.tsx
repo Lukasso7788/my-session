@@ -5351,8 +5351,6 @@ function AccountabilityWall({
             const completedCount = userTasks.filter((x) => !!x.completed).length;
             const isLocalCard = String(userId).toLowerCase() === String(authUserId || "").toLowerCase();
 
-            return (
-              <div
             const panelTasks = taskListsByUserId[userId] || [];
             const visibleTasks = panelTasks.length
               ? panelTasks
@@ -5361,11 +5359,11 @@ function AccountabilityWall({
                   .map((item) => String(item.text || "").trim())
                   .filter(Boolean);
 
+            return (
+              <div
                 key={`accountability-${tile.id}`}
-                className={[
-                  "min-h-[220px] rounded-[28px] border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg",
-                  cardBg,
-                ].join(" ")}
+                className="relative min-h-0 min-w-0 overflow-hidden rounded-[24px]"
+                style={{ aspectRatio: "16 / 9" }}
               >
                 <VideoTile
                   tileId={`accountability-${tile.id}`}
@@ -12630,6 +12628,7 @@ export function RoomPageLiveKit({
       isSpeaking: !localMicMuted && !!lp.isSpeaking,
       participantIdentity: localIdentity || undefined,
       participantUserId: localUserId || undefined,
+      participantTimeZone: localParticipantTimeZone,
       micMuted: localMicMuted,
       camPubExists: localCamPubExists,
       camPubHasTrack: localCamPubHasTrack,
@@ -12640,7 +12639,6 @@ export function RoomPageLiveKit({
         rp.videoTrackPublications.values(),
       ) as RemoteTrackPublication[];
       const allAudioPubs = Array.from(
-      participantTimeZone: localParticipantTimeZone,
         rp.audioTrackPublications.values(),
       ) as RemoteTrackPublication[];
 
@@ -12682,6 +12680,7 @@ export function RoomPageLiveKit({
         getDisplayNameFromParticipantMetadata((rp as any)?.metadata);
 
       const participantStatus = getStatusFromMetadata((rp as any)?.metadata);
+      const participantTimeZone = getTimeZoneFromParticipantMetadata((rp as any)?.metadata);
 
       const effectiveRemoteLabel =
         participantMetadataDisplayName ||
@@ -12692,7 +12691,6 @@ export function RoomPageLiveKit({
       next.push({
         id: tileId,
         kind: "camera",
-      const participantTimeZone = getTimeZoneFromParticipantMetadata((rp as any)?.metadata);
         label: effectiveRemoteLabel,
         metadataDisplayName: participantMetadataDisplayName || undefined,
         status: participantStatus,
@@ -13268,16 +13266,6 @@ export function RoomPageLiveKit({
       }
       connectedToRoom = true;
 
-      if (USAGE_TRACKING_ENABLED && !opts.preserveAttendance) {
-        sessionJoinStartedAtRef.current = Date.now();
-        usageTrackedRef.current = false;
-
-        void incrementWeeklyUsage({
-          userId: String(authUserId || "").trim(),
-          addSessions: 1,
-        })
-          .then(() => {
-            console.log("[usage] weekly session counted:", {
       try {
         const localTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
         const currentMetadata = parseParticipantMetadata(r.localParticipant.metadata) || {};
@@ -13289,6 +13277,17 @@ export function RoomPageLiveKit({
       } catch (error) {
         console.warn("[room] participant timezone metadata was not published", error);
       }
+
+      if (USAGE_TRACKING_ENABLED && !opts.preserveAttendance) {
+        sessionJoinStartedAtRef.current = Date.now();
+        usageTrackedRef.current = false;
+
+        void incrementWeeklyUsage({
+          userId: String(authUserId || "").trim(),
+          addSessions: 1,
+        })
+          .then(() => {
+            console.log("[usage] weekly session counted:", {
 
               userId: authUserId,
               sessionId: session?.id,
@@ -17219,6 +17218,8 @@ export function RoomPageLiveKit({
             cameraFramingMode={cameraFramingMode}
             isSpeaking={!!t.isSpeaking}
             currentIntention={getCurrentIntentionForTile(t)}
+            taskList={getTasksForTile(t)}
+            participantTimeZone={t.participantTimeZone || null}
             onToggleMenu={handleToggleTileMenu}
             showMenuButton={
               !!(t.isLocal || t.kind === "screen" || !!t.participantIdentity)
@@ -17229,8 +17230,6 @@ export function RoomPageLiveKit({
         </div>
 
         {showLocalEditButton && (
-            taskList={getTasksForTile(t)}
-            participantTimeZone={t.participantTimeZone || null}
           <div className="absolute top-2 left-2 z-30">
             <button
               type="button"
@@ -17299,6 +17298,8 @@ export function RoomPageLiveKit({
           cameraFramingMode={cameraFramingMode}
           isSpeaking={!!t.isSpeaking}
           currentIntention={getCurrentIntentionForTile(t)}
+          taskList={getTasksForTile(t)}
+          participantTimeZone={t.participantTimeZone || null}
           density="compact"
           onToggleMenu={handleToggleTileMenu}
           showMenuButton={
@@ -17309,8 +17310,6 @@ export function RoomPageLiveKit({
         />
       </div>
     );
-          taskList={getTasksForTile(t)}
-          participantTimeZone={t.participantTimeZone || null}
   };
 
   const screenShareTilesForRender = useMemo(() => {
