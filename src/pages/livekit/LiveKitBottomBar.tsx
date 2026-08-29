@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { AudioLines, ChevronUp, ImagePlus, Sparkles } from "lucide-react";
+import { AudioLines, ChevronUp, ImagePlus } from "lucide-react";
 import {
     Icon,
     reactionEmoji,
@@ -140,10 +140,13 @@ export function LiveKitBottomBar(props: {
     blurStrength?: number;
     onBlurStrengthChange?: (strength: number) => void;
     backgroundPresets?: Array<{ id: string; label: string; url: string }>;
+    customBackgroundSlots?: Array<{ id: string; label: string; dataUrl: string }>;
     selectedBackgroundUrl?: string;
     backgroundFxDisabled?: boolean;
     onApplyVideoFx?: (mode: "off" | "blur" | "bg", backgroundUrl?: string, blurStrength?: number) => void | Promise<void>;
-    onUploadBackground?: (file: File) => void | Promise<void>;
+    onSelectCustomBackground?: (slotId: string) => void | Promise<void>;
+    onUploadCustomBackground?: (slotId: string, file: File) => void | Promise<void>;
+    onClearCustomBackground?: (slotId: string) => void | Promise<void>;
     onToggleScreenShare: () => void;
     onToggleVoiceUi?: () => void;
     onLeave: () => void;
@@ -215,6 +218,8 @@ export function LiveKitBottomBar(props: {
 
     const [showMoreMenu, setShowMoreMenu] = useState(false);
     const [blurDraft, setBlurDraft] = useState(blurStrength);
+    const [backgroundTab, setBackgroundTab] = useState<"presets" | "custom">("presets");
+    const customBackgroundUploadSlotRef = useRef<string | null>(null);
     const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => setBlurDraft(blurStrength), [blurStrength]);
@@ -784,55 +789,57 @@ export function LiveKitBottomBar(props: {
                                     {!backgroundFxDisabled && onApplyVideoFx ? (
                                         <>
                                             <div className={`mx-2 my-2 h-px ${isLight ? "bg-black/10" : "bg-white/10"}`} />
-                                            <div className="flex items-center justify-between px-2 pb-2 pt-1">
-                                                <span className="text-[11px] font-semibold opacity-55">Background</span>
-                                                <Sparkles className="h-3.5 w-3.5 opacity-45" />
+                                            <div className={`grid grid-cols-2 rounded-xl p-1 ${isLight ? "bg-black/[0.04]" : "bg-white/[0.06]"}`}>
+                                                <button type="button" onClick={() => setBackgroundTab("presets")} className={`rounded-lg px-2 py-1.5 text-[10px] font-semibold transition ${backgroundTab === "presets" ? "bg-[#2F2F2F] text-white shadow-sm" : menuItem}`}>Backgrounds</button>
+                                                <button type="button" onClick={() => setBackgroundTab("custom")} className={`rounded-lg px-2 py-1.5 text-[10px] font-semibold transition ${backgroundTab === "custom" ? "bg-[#2F2F2F] text-white shadow-sm" : menuItem}`}>Custom</button>
                                             </div>
-                                            <div className="grid grid-cols-3 gap-1.5">
-                                                <button type="button" onClick={() => void onApplyVideoFx("off")} className={`rounded-xl px-2 py-2 text-[10px] font-semibold transition ${videoFxMode === "off" ? "bg-[#2F2F2F] text-white" : menuItem}`}>None</button>
-                                                <button type="button" onClick={() => void onApplyVideoFx("blur", undefined, blurDraft)} className={`rounded-xl px-2 py-2 text-[10px] font-semibold transition ${videoFxMode === "blur" ? "bg-[#2F2F2F] text-white" : menuItem}`}>Blur</button>
-                                                <button type="button" onClick={() => backgroundUploadRef.current?.click()} className={`flex items-center justify-center gap-1 rounded-xl px-2 py-2 text-[10px] font-semibold transition ${menuItem}`}><ImagePlus className="h-3.5 w-3.5" />Custom</button>
-                                            </div>
-                                            {videoFxMode === "blur" ? (
-                                                <div className={`mt-2 rounded-xl px-2.5 py-2 ${isLight ? "bg-black/[0.04]" : "bg-white/[0.06]"}`}>
-                                                    <div className="flex items-center justify-between gap-3 text-[10px]">
-                                                        <span className="font-medium opacity-60">Blur strength</span>
-                                                        <span className="font-semibold">{blurDraft}</span>
+                                            {backgroundTab === "presets" ? (
+                                                <>
+                                                    <div className="mt-2 grid grid-cols-2 gap-1.5">
+                                                        <button type="button" onClick={() => void onApplyVideoFx("off")} className={`rounded-xl px-2 py-2 text-[10px] font-semibold transition ${videoFxMode === "off" ? "bg-[#2F2F2F] text-white" : menuItem}`}>None</button>
+                                                        <button type="button" onClick={() => void onApplyVideoFx("blur", undefined, blurDraft)} className={`rounded-xl px-2 py-2 text-[10px] font-semibold transition ${videoFxMode === "blur" ? "bg-[#2F2F2F] text-white" : menuItem}`}>Blur</button>
                                                     </div>
-                                                    <input
-                                                        type="range"
-                                                        min={4}
-                                                        max={30}
-                                                        step={1}
-                                                        value={blurDraft}
-                                                        aria-label="Blur strength"
-                                                        className="mt-2 w-full accent-[#5286F6]"
-                                                        onChange={(event) => {
-                                                            const value = Number(event.currentTarget.value);
-                                                            setBlurDraft(value);
-                                                            onBlurStrengthChange?.(value);
-                                                        }}
-                                                        onPointerUp={(event) => void onApplyVideoFx("blur", undefined, Number(event.currentTarget.value))}
-                                                        onKeyUp={(event) => void onApplyVideoFx("blur", undefined, Number(event.currentTarget.value))}
-                                                    />
-                                                    <div className="mt-0.5 flex justify-between text-[9px] opacity-40">
-                                                        <span>Soft</span>
-                                                        <span>Strong</span>
+                                                    {videoFxMode === "blur" ? (
+                                                        <div className={`mt-2 rounded-xl px-2.5 py-2 ${isLight ? "bg-black/[0.04]" : "bg-white/[0.06]"}`}>
+                                                            <div className="flex items-center justify-between gap-3 text-[10px]"><span className="font-medium opacity-60">Blur strength</span><span className="font-semibold">{blurDraft}</span></div>
+                                                            <input type="range" min={4} max={30} step={1} value={blurDraft} aria-label="Blur strength" className="mt-2 w-full accent-[#5286F6]" onChange={(event) => { const value = Number(event.currentTarget.value); setBlurDraft(value); onBlurStrengthChange?.(value); }} onPointerUp={(event) => void onApplyVideoFx("blur", undefined, Number(event.currentTarget.value))} onKeyUp={(event) => void onApplyVideoFx("blur", undefined, Number(event.currentTarget.value))} />
+                                                            <div className="mt-0.5 flex justify-between text-[9px] opacity-40"><span>Soft</span><span>Strong</span></div>
+                                                        </div>
+                                                    ) : null}
+                                                    <div className="mt-2 grid grid-cols-2 gap-1.5">
+                                                        {backgroundPresets.map((preset) => {
+                                                            const selected = videoFxMode === "bg" && selectedBackgroundUrl === preset.url;
+                                                            return (
+                                                                <button key={preset.id} type="button" onClick={() => void onApplyVideoFx("bg", preset.url)} className={`group overflow-hidden rounded-xl text-left transition ${selected ? "ring-2 ring-[#5286F6]" : "ring-1 ring-black/10"}`}>
+                                                                    <img src={preset.url} alt="" className="aspect-[16/7] w-full object-cover transition group-hover:scale-[1.03]" />
+                                                                    <span className="block truncate px-2 py-1.5 text-[10px] font-semibold">{preset.label}</span>
+                                                                </button>
+                                                            );
+                                                        })}
                                                     </div>
-                                                </div>
-                                            ) : null}
-                                            <input ref={backgroundUploadRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; if (file) void onUploadBackground?.(file); }} />
-                                            <div className="mt-2 grid grid-cols-2 gap-1.5">
-                                                {backgroundPresets.map((preset) => {
-                                                    const selected = videoFxMode === "bg" && selectedBackgroundUrl === preset.url;
-                                                    return (
-                                                        <button key={preset.id} type="button" onClick={() => void onApplyVideoFx("bg", preset.url)} className={`group overflow-hidden rounded-xl text-left transition ${selected ? "ring-2 ring-[#5286F6]" : "ring-1 ring-black/10"}`}>
-                                                            <img src={preset.url} alt="" className="aspect-[16/7] w-full object-cover transition group-hover:scale-[1.03]" />
-                                                            <span className="block truncate px-2 py-1.5 text-[10px] font-semibold">{preset.label}</span>
-                                                        </button>
-                                                    );
-                                                })}
-                                            </div>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div className="mt-2 grid grid-cols-3 gap-1.5">
+                                                        {customBackgroundSlots.map((slot) => {
+                                                            const selected = Boolean(slot.dataUrl) && videoFxMode === "bg" && selectedBackgroundUrl === slot.dataUrl;
+                                                            return (
+                                                                <div key={slot.id} className={`group relative overflow-hidden rounded-xl transition ${selected ? "ring-2 ring-[#5286F6]" : "ring-1 ring-black/10"}`}>
+                                                                    <button type="button" onClick={() => { if (slot.dataUrl) { void onSelectCustomBackground?.(slot.id); } else { customBackgroundUploadSlotRef.current = slot.id; backgroundUploadRef.current?.click(); } }} className={`flex aspect-[4/3] w-full flex-col items-center justify-center gap-1 overflow-hidden text-[9px] font-medium ${isLight ? "bg-black/[0.035]" : "bg-white/[0.05]"}`}>
+                                                                        {slot.dataUrl ? <img src={slot.dataUrl} alt="" className="h-full w-full object-cover" /> : <><ImagePlus className="h-4 w-4 opacity-55" /><span className="opacity-60">Upload</span></>}
+                                                                    </button>
+                                                                    <div className={`flex items-center justify-between gap-1 px-1.5 py-1 ${isLight ? "bg-white" : "bg-[#252525]"}`}>
+                                                                        <span className="truncate text-[9px] font-semibold">{slot.label}</span>
+                                                                        {slot.dataUrl ? <div className="flex items-center gap-1"><button type="button" onClick={() => { customBackgroundUploadSlotRef.current = slot.id; backgroundUploadRef.current?.click(); }} className="text-[8px] opacity-55 transition hover:opacity-100" aria-label={`Replace ${slot.label}`}>Replace</button><button type="button" onClick={() => void onClearCustomBackground?.(slot.id)} className="text-[12px] leading-none opacity-45 transition hover:opacity-100" aria-label={`Clear ${slot.label}`}>×</button></div> : null}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                    <p className="px-1 pt-2 text-[9px] leading-4 opacity-45">Choose a slot to upload. Saved backgrounds stay available on this device.</p>
+                                                </>
+                                            )}
+                                            <input ref={backgroundUploadRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ""; const slotId = customBackgroundUploadSlotRef.current; customBackgroundUploadSlotRef.current = null; if (file && slotId) void onUploadCustomBackground?.(slotId, file); }} />
                                         </>
                                     ) : null}
                                 </div>

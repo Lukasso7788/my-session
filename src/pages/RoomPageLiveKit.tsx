@@ -469,9 +469,9 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "background_forest", group: "panels", phrase: "Forest background", aliases: ["Forest", "Choose Forest", "Apply Forest"] },
   { command: "background_violet", group: "panels", phrase: "Violet background", aliases: ["Violet", "Choose Violet", "Apply Violet"] },
   { command: "background_sunset", group: "panels", phrase: "Sunset background", aliases: ["Sunset", "Choose Sunset", "Apply Sunset"] },
-  { command: "custom_background_one", group: "panels", phrase: "1", aliases: ["One", "BG 1", "BG one", "Background 1", "Background one"], hint: "1 / bg 1" },
-  { command: "custom_background_two", group: "panels", phrase: "2", aliases: ["Two", "BG 2", "BG two", "Background 2", "Background two"], hint: "2 / bg 2" },
-  { command: "custom_background_three", group: "panels", phrase: "3", aliases: ["Three", "BG 3", "BG three", "Background 3", "Background three"], hint: "3 / bg 3" },
+  { command: "custom_background_one", group: "panels", phrase: "Custom background 1", aliases: ["1", "One", "Custom 1", "Custom one", "Custom BG 1", "BG 1", "BG one", "Background 1", "Background one", "Use custom background 1", "Apply custom background 1"], hint: "Custom 1 / bg 1" },
+  { command: "custom_background_two", group: "panels", phrase: "Custom background 2", aliases: ["2", "Two", "Custom 2", "Custom two", "Custom BG 2", "BG 2", "BG two", "Background 2", "Background two", "Use custom background 2", "Apply custom background 2"], hint: "Custom 2 / bg 2" },
+  { command: "custom_background_three", group: "panels", phrase: "Custom background 3", aliases: ["3", "Three", "Custom 3", "Custom three", "Custom BG 3", "BG 3", "BG three", "Background 3", "Background three", "Use custom background 3", "Apply custom background 3"], hint: "Custom 3 / bg 3" },
   { command: "effects_off", group: "panels", phrase: "Turn off effects", aliases: ["Remove background", "Effects off", "Disable background"] },
   { command: "background_reset", group: "panels", phrase: "Reset background", aliases: ["Default background"] },
   { command: "mirror_on", group: "panels", phrase: "Mirror camera", aliases: ["Mirror my camera"] },
@@ -8582,7 +8582,15 @@ export function RoomPageLiveKit({
         normalized === slotWord ||
         normalized === `bg${slotNumber}` ||
         normalized === `bg ${slotNumber}` ||
-        normalized === `bg ${slotWord}`
+        normalized === `bg ${slotWord}` ||
+        normalized === `custom${slotNumber}` ||
+        normalized === `custom ${slotNumber}` ||
+        normalized === `custom ${slotWord}` ||
+        normalized === `custom bg ${slotNumber}` ||
+        normalized === `custom background ${slotNumber}` ||
+        normalized === `custom background ${slotWord}` ||
+        normalized === `use custom background ${slotNumber}` ||
+        normalized === `apply custom background ${slotNumber}`
       );
     });
     return slot ? (`custom_background_${slot.id}` as VoiceUiCommand) : null;
@@ -20526,26 +20534,45 @@ export function RoomPageLiveKit({
           blurStrength={blurStrength}
           onBlurStrengthChange={setBlurStrength}
           backgroundPresets={FX_BG_PRESETS}
+          customBackgroundSlots={customBackgroundSlots}
           selectedBackgroundUrl={bgImageUrl}
           backgroundFxDisabled={shouldDisableBackgroundFx}
           onApplyVideoFx={async (mode, backgroundUrl, nextBlurStrength) => {
             if (backgroundUrl) setBgImageUrl(backgroundUrl);
             await applyVideoFx(mode, backgroundUrl, nextBlurStrength);
           }}
-          onUploadBackground={async (file) => {
+          onSelectCustomBackground={async (slotId) => {
+            const slot = customBackgroundSlotsRef.current.find((item) => item.id === slotId);
+            if (!slot?.dataUrl) return;
+            setBgImageUrl(slot.dataUrl);
+            await applyVideoFx("bg", slot.dataUrl);
+          }}
+          onUploadCustomBackground={async (slotId, file) => {
             if (file.size > CUSTOM_BACKGROUND_MAX_FILE_BYTES) {
               setFxError("Custom backgrounds must be 8 MB or smaller");
               return;
             }
             try {
-              if (uploadedBgUrlRef.current) URL.revokeObjectURL(uploadedBgUrlRef.current);
-              const url = URL.createObjectURL(file);
-              uploadedBgUrlRef.current = url;
-              setBgImageUrl(url);
-              await applyVideoFx("bg", url);
+              const dataUrl = await readImageFileAsDataUrl(file);
+              const typedSlotId = slotId as CustomBackgroundSlotId;
+              setCustomBackgroundSlots((current) =>
+                current.map((slot) => slot.id === typedSlotId ? { ...slot, dataUrl } : slot),
+              );
+              setBgImageUrl(dataUrl);
+              await applyVideoFx("bg", dataUrl);
             } catch (error) {
-              console.error("bottom bar background upload failed", error);
-              setFxError("Failed to load selected image");
+              console.error("bottom bar custom background upload failed", error);
+              setFxError("Failed to save selected background");
+            }
+          }}
+          onClearCustomBackground={async (slotId) => {
+            const slot = customBackgroundSlotsRef.current.find((item) => item.id === slotId);
+            setCustomBackgroundSlots((current) =>
+              current.map((item) => item.id === slotId ? { ...item, dataUrl: "" } : item),
+            );
+            if (slot?.dataUrl && bgImageUrl === slot.dataUrl) {
+              setBgImageUrl(DEFAULT_BG_DATA_URL);
+              await applyVideoFx("off");
             }
           }}
           onToggleScreenShare={() => toggleScreenShare().catch(() => { })}
