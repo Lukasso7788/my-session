@@ -5404,8 +5404,8 @@ function AccountabilityWall({
                   className={[
                     "pointer-events-auto absolute inset-0 z-[20] flex min-h-0 flex-col overflow-hidden rounded-[24px] border px-4 py-3 backdrop-blur-[1px]",
                     isLight
-                      ? "border-black/10 bg-[#F7F5F5]/80 text-[#202020] shadow-[inset_0_0_0_1px_rgba(47,47,47,0.06)]"
-                      : "border-white/10 bg-[#2F2F2F]/80 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]",
+                      ? "border-black/10 bg-[#F7F5F5]/90 text-[#202020] shadow-[inset_0_0_0_1px_rgba(47,47,47,0.06)]"
+                      : "border-white/10 bg-[#2F2F2F]/90 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]",
                   ].join(" ")}
                 >
                   <div className="flex min-w-0 shrink-0 items-center gap-1.5 font-inter text-[12px] leading-none">

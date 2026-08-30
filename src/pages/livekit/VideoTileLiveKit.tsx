@@ -917,10 +917,10 @@ function VideoTileInner({
                 >
                     <div
                         className={[
-                            "min-h-0 w-full overflow-hidden font-inter text-white drop-shadow-[0_2px_5px_rgba(0,0,0,0.95)] transition-all duration-300 ease-out",
+                            "-mx-2 min-h-0 w-[calc(100%_+_1rem)] overflow-hidden rounded-xl px-2 py-1.5 font-inter text-white transition-all duration-300 ease-out",
                             showAllTasks
-                                ? "max-h-full"
-                                : "max-h-[1.4rem] group-hover:max-h-full",
+                                ? "max-h-full bg-black/60 shadow-[0_10px_30px_rgba(0,0,0,0.34)] backdrop-blur-[2px]"
+                                : "max-h-[2rem] group-hover:max-h-full group-hover:bg-black/60 group-hover:shadow-[0_10px_30px_rgba(0,0,0,0.34)] group-hover:backdrop-blur-[2px]",
                         ].join(" ")}
                     >
                         <div className={`flex min-w-0 items-start gap-2 ${isCompact ? "text-[11px] leading-4" : "text-[12px] leading-[1.15rem]"}`}>
