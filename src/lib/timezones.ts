@@ -68,7 +68,7 @@ export function formatTimeZoneCityLabel(value: string): string {
 
   const normalized = timeZone.toLowerCase();
   if (normalized === "europe/kiev" || normalized === "europe/kyiv") {
-    return "Київ";
+    return "Kyiv";
   }
 
   return timeZone.split("/").pop()?.replace(/_/g, " ") || timeZone;
