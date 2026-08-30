@@ -61,3 +61,15 @@ export function isValidTimeZone(value: string): boolean {
 export function formatTimeZoneLabel(value: string): string {
   return value.replace(/_/g, " ");
 }
+
+export function formatTimeZoneCityLabel(value: string): string {
+  const timeZone = String(value || "").trim();
+  if (!timeZone) return "";
+
+  const normalized = timeZone.toLowerCase();
+  if (normalized === "europe/kiev" || normalized === "europe/kyiv") {
+    return "Київ";
+  }
+
+  return timeZone.split("/").pop()?.replace(/_/g, " ") || timeZone;
+}

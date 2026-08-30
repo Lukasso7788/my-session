@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Track, LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
 import { BarVisualizer } from "@livekit/components-react";
 import { Pencil } from "lucide-react";
+import { formatTimeZoneCityLabel } from "../../lib/timezones";
 
 type RoomTheme = "dark" | "light";
 export type CameraFramingMode = "full" | "fill";
@@ -219,7 +220,7 @@ function formatParticipantTime(timeZone: string, at = new Date()) {
     if (!safeTimeZone) return "";
 
     try {
-        const city = safeTimeZone.split("/").pop()?.replace(/_/g, " ") || safeTimeZone;
+        const city = formatTimeZoneCityLabel(safeTimeZone);
         const time = new Intl.DateTimeFormat(undefined, {
             timeZone: safeTimeZone,
             hour: "numeric",

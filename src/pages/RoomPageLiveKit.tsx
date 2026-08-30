@@ -42,6 +42,7 @@ import { readSessionRoomPolicies, withRoomPolicies, type RoomPolicies } from "..
 import { captureProductEvent } from "../lib/analytics";
 import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
+import { formatTimeZoneCityLabel } from "../lib/timezones";
 import {
   loadEntitlementState,
   isPersonalPaywallForced,
@@ -5363,8 +5364,7 @@ function AccountabilityWall({
               if (!timeZone) return "";
 
               try {
-                const city =
-                  timeZone.split("/").pop()?.replace(/_/g, " ") || timeZone;
+                const city = formatTimeZoneCityLabel(timeZone);
                 const time = new Intl.DateTimeFormat(undefined, {
                   timeZone,
                   hour: "numeric",
