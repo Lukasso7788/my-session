@@ -115,6 +115,7 @@ type TasksPanelProps = {
   onOpenPictureInPicture?: () => void;
   accountabilityWallOpen?: boolean;
   onToggleAccountabilityWall?: () => void;
+  onPublicTasksChange?: (tasks: string[]) => void;
 };
 
 type ProfileMini = {
@@ -696,6 +697,7 @@ export function TasksPanel({
   onOpenPictureInPicture,
   accountabilityWallOpen = false,
   onToggleAccountabilityWall,
+  onPublicTasksChange,
 }: TasksPanelProps) {
   const { id: idOrSlugFromUrl } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -752,6 +754,9 @@ export function TasksPanel({
   const loadSeqRef = useRef(0);
   const panelSeqRef = useRef(0);
   const sessionReloadTimerRef = useRef<number | null>(null);
+  const panelTasksHydratedRef = useRef(false);
+  const publicTasksReconcileTimerRef = useRef<number | null>(null);
+  const publicTasksReconcileVersionRef = useRef(0);
 
   const [timerText, setTimerText] = useState<string>("--:--");
 
@@ -824,6 +829,33 @@ export function TasksPanel({
   const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>([]);
   const [taskMenuOpenId, setTaskMenuOpenId] = useState<string | null>(null);
   const [taskTimersEnabled, setTaskTimersEnabled] = useState<boolean>(false);
+
+  const publicPanelTaskTexts = useMemo(
+    () =>
+      orderPanelTasks(panelTasks, panelTaskOrder)
+        .filter(
+          (task) =>
+            isPanelTaskPublic(task) &&
+            !Boolean(task.completed) &&
+            safeTrim(task.text).length > 0,
+        )
+        .map((task) => safeTrim(task.text))
+        .filter(
+          (text, index, values) =>
+            values.findIndex(
+              (candidate) =>
+                normalizeTextForMatch(candidate) === normalizeTextForMatch(text),
+            ) === index,
+        )
+        .slice(0, 12),
+    [panelTaskOrder, panelTasks],
+  );
+  const publicPanelTaskTextsKey = JSON.stringify(publicPanelTaskTexts);
+
+  useEffect(() => {
+    if (!panelTasksHydratedRef.current) return;
+    onPublicTasksChange?.(publicPanelTaskTexts);
+  }, [onPublicTasksChange, publicPanelTaskTextsKey]);
 
   useEffect(() => {
     setTaskTimers(readTaskTimers(taskTimerStorageKey));
@@ -1358,6 +1390,8 @@ export function TasksPanel({
         return;
       }
 
+      panelTasksHydratedRef.current = true;
+
       const databaseOrder = data
         .map((task: any) => String(task.id || ""))
         .filter(Boolean);
@@ -1560,6 +1594,131 @@ export function TasksPanel({
     },
     [sessionId, loadSessionTasks],
   );
+
+  const reconcilePublicPanelTasks = useCallback(
+    async (tasks: PanelTask[], order: string[], version: number) => {
+      const uid = String(user?.id || "").trim();
+      const sid = String(sessionId || "").trim();
+      if (!uid || !sid || !panelTasksHydratedRef.current) return;
+
+      const desiredTasks = orderPanelTasks(tasks, order)
+        .filter(
+          (task) =>
+            isPanelTaskPublic(task) &&
+            !Boolean(task.completed) &&
+            safeTrim(task.text).length > 0,
+        )
+        .slice(0, PANEL_TASKS_FETCH_LIMIT);
+
+      const desiredByText = new Map<string, PanelTask>();
+      for (const task of desiredTasks) {
+        const key = normalizeTextForMatch(task.text);
+        if (key && !desiredByText.has(key)) desiredByText.set(key, task);
+      }
+
+      try {
+        const { data: existingRows, error: existingError } = await supabase
+          .from(SESSION_TASKS_TABLE)
+          .select("id,text,user_id,session_id,created_at,completed")
+          .eq("session_id", sid)
+          .eq("user_id", uid)
+          .limit(SESSION_TASKS_FETCH_LIMIT);
+
+        if (existingError || !Array.isArray(existingRows)) {
+          throw existingError || new Error("Could not load published tasks");
+        }
+
+        const retainedKeys = new Set<string>();
+        const staleIds: string[] = [];
+        const rowsToRestore: string[] = [];
+
+        for (const row of existingRows as SessionTask[]) {
+          const key = normalizeTextForMatch(row.text);
+          if (!key || !desiredByText.has(key) || retainedKeys.has(key)) {
+            if (row.id) staleIds.push(String(row.id));
+            continue;
+          }
+
+          retainedKeys.add(key);
+          if (Boolean(row.completed) && row.id) rowsToRestore.push(String(row.id));
+        }
+
+        const rowsToInsert = Array.from(desiredByText.entries())
+          .filter(([key]) => !retainedKeys.has(key))
+          .map(([, task]) => ({
+            user_id: uid,
+            session_id: sid,
+            text: safeTrim(task.text),
+            completed: false,
+          }));
+
+        const mutations: PromiseLike<unknown>[] = [];
+        if (staleIds.length > 0) {
+          mutations.push(
+            supabase
+              .from(SESSION_TASKS_TABLE)
+              .delete()
+              .eq("session_id", sid)
+              .eq("user_id", uid)
+              .in("id", staleIds),
+          );
+        }
+        if (rowsToRestore.length > 0) {
+          mutations.push(
+            supabase
+              .from(SESSION_TASKS_TABLE)
+              .update({ completed: false })
+              .eq("session_id", sid)
+              .eq("user_id", uid)
+              .in("id", rowsToRestore),
+          );
+        }
+        if (rowsToInsert.length > 0) {
+          mutations.push(supabase.from(SESSION_TASKS_TABLE).insert(rowsToInsert));
+        }
+
+        if (mutations.length > 0) {
+          const results = await Promise.all(mutations);
+          const failed = results.find((result: any) => result?.error);
+          if ((failed as any)?.error) throw (failed as any).error;
+        }
+
+        if (version !== publicTasksReconcileVersionRef.current) return;
+
+        emitTasksSync({
+          action: "reconcile-public-tasks",
+          sessionId: sid,
+          userId: uid,
+          taskCount: desiredByText.size,
+        });
+        await loadSessionTasks(sid);
+      } catch (error) {
+        console.error("[TasksPanel] Failed to reconcile public room tasks", error);
+      }
+    },
+    [loadSessionTasks, sessionId, user?.id],
+  );
+
+  useEffect(() => {
+    if (!panelTasksHydratedRef.current || !user?.id || !sessionId) return;
+
+    if (publicTasksReconcileTimerRef.current !== null) {
+      window.clearTimeout(publicTasksReconcileTimerRef.current);
+    }
+
+    const version = ++publicTasksReconcileVersionRef.current;
+    publicTasksReconcileTimerRef.current = window.setTimeout(() => {
+      publicTasksReconcileTimerRef.current = null;
+      void reconcilePublicPanelTasks(panelTasks, panelTaskOrderRef.current, version);
+    }, 120);
+
+    return () => {
+      if (publicTasksReconcileTimerRef.current !== null) {
+        window.clearTimeout(publicTasksReconcileTimerRef.current);
+        publicTasksReconcileTimerRef.current = null;
+      }
+    };
+  }, [panelTasks, reconcilePublicPanelTasks, sessionId, user?.id]);
 
   useEffect(() => {
     if (!sessionId) return;

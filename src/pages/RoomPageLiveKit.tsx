@@ -17368,6 +17368,111 @@ export function RoomPageLiveKit({
   }, [allTilesForRender, activeScreenShareTile, screenSharePinned]);
 
   const [tileTasksByUserId, setTileTasksByUserId] = useState<Record<string, string[]>>({});
+  const [participantPublicTasksByUserId, setParticipantPublicTasksByUserId] =
+    useState<Record<string, string[]>>({});
+  const localPublicTasksOverrideRef = useRef<string[] | null>(null);
+
+  const normalizePublicTaskTexts = useCallback((values: unknown): string[] => {
+    if (!Array.isArray(values)) return [];
+
+    const result: string[] = [];
+    for (const value of values) {
+      const text = String(value || "").trim().slice(0, 240);
+      if (!text) continue;
+      if (result.some((current) => current.toLowerCase() === text.toLowerCase())) {
+        continue;
+      }
+      result.push(text);
+      if (result.length >= 12) break;
+    }
+    return result;
+  }, []);
+
+  const syncLocalPublicTasksMetadata = useCallback(
+    async (values: unknown) => {
+      const tasks = normalizePublicTaskTexts(values);
+      const localUserId = String(authUserId || "").trim().toLowerCase();
+
+      if (localUserId) {
+        setTileTasksByUserId((current) => {
+          if (JSON.stringify(current[localUserId] || []) === JSON.stringify(tasks)) {
+            return current;
+          }
+          return { ...current, [localUserId]: tasks };
+        });
+      }
+
+      const participant = roomRef.current?.localParticipant;
+      if (!participant || typeof participant.setMetadata !== "function") return;
+
+      const currentMetadata = parseParticipantMetadata(participant.metadata) || {};
+      const currentTasks = normalizePublicTaskTexts(currentMetadata.publicPanelTasks);
+      if (JSON.stringify(currentTasks) === JSON.stringify(tasks)) return;
+
+      try {
+        await participant.setMetadata(
+          JSON.stringify({ ...currentMetadata, publicPanelTasks: tasks }),
+        );
+      } catch (error) {
+        console.warn("Failed to publish public panel tasks", error);
+      }
+    },
+    [authUserId, normalizePublicTaskTexts],
+  );
+
+  const handlePublicPanelTasksChange = useCallback(
+    (values: string[]) => {
+      const tasks = normalizePublicTaskTexts(values);
+      localPublicTasksOverrideRef.current = tasks;
+      void syncLocalPublicTasksMetadata(tasks);
+    },
+    [normalizePublicTaskTexts, syncLocalPublicTasksMetadata],
+  );
+
+  useEffect(() => {
+    const room = roomRef.current;
+    if (!connected || !room) {
+      setParticipantPublicTasksByUserId({});
+      return;
+    }
+
+    const refreshPublicTasks = () => {
+      const next: Record<string, string[]> = {};
+      const collect = (participant: any, fallbackUserId = "") => {
+        const metadata = parseParticipantMetadata(participant?.metadata);
+        if (!metadata || !Array.isArray(metadata.publicPanelTasks)) return;
+
+        const userId = String(
+          fallbackUserId ||
+          extractBaseUserIdFromIdentity(String(participant?.identity || "")),
+        )
+          .trim()
+          .toLowerCase();
+        if (!userId) return;
+        next[userId] = normalizePublicTaskTexts(metadata.publicPanelTasks);
+      };
+
+      collect(room.localParticipant, String(authUserId || ""));
+      for (const participant of room.remoteParticipants.values()) {
+        collect(participant);
+      }
+
+      setParticipantPublicTasksByUserId((current) =>
+        JSON.stringify(current) === JSON.stringify(next) ? current : next,
+      );
+    };
+
+    refreshPublicTasks();
+    room.on(RoomEvent.ParticipantMetadataChanged, refreshPublicTasks);
+    room.on(RoomEvent.ParticipantConnected, refreshPublicTasks);
+    room.on(RoomEvent.ParticipantDisconnected, refreshPublicTasks);
+
+    return () => {
+      room.off(RoomEvent.ParticipantMetadataChanged, refreshPublicTasks);
+      room.off(RoomEvent.ParticipantConnected, refreshPublicTasks);
+      room.off(RoomEvent.ParticipantDisconnected, refreshPublicTasks);
+    };
+  }, [authUserId, connected, normalizePublicTaskTexts]);
 
   const tileTaskUserIds = useMemo(() => {
     const ids = new Set<string>();
@@ -17443,11 +17548,20 @@ export function RoomPageLiveKit({
         appendTask(userId, text);
       }
 
+      const localUserId = String(authUserId || "").trim().toLowerCase();
+      const localOverride = localPublicTasksOverrideRef.current;
+      if (localUserId && localOverride !== null) {
+        next[localUserId] = localOverride;
+      }
+
       setTileTasksByUserId(next);
+      if (localUserId) {
+        void syncLocalPublicTasksMetadata(next[localUserId] || []);
+      }
     } catch {
       setTileTasksByUserId({});
     }
-  }, [tileTaskUserIdsKey]);
+  }, [authUserId, syncLocalPublicTasksMetadata, tileTaskUserIdsKey]);
 
   useEffect(() => {
     void loadTileTasks();
@@ -17478,12 +17592,17 @@ export function RoomPageLiveKit({
       window.removeEventListener("mysession:tasks-updated", refreshFromTaskOrder);
     };
   }, [session?.id, tileTaskUserIdsKey, loadTileTasks]);
+  const effectiveTileTasksByUserId = useMemo(
+    () => ({ ...tileTasksByUserId, ...participantPublicTasksByUserId }),
+    [participantPublicTasksByUserId, tileTasksByUserId],
+  );
+
   const getTasksForTile = useCallback(
     (tile: TileModel) => {
       const userId = getTilePersonKey(tile);
-      return tileTasksByUserId[userId] || [];
+      return effectiveTileTasksByUserId[userId] || [];
     },
-    [tileTasksByUserId],
+    [effectiveTileTasksByUserId],
   );
 
   const getCurrentIntentionForTile = useCallback(
@@ -17612,7 +17731,7 @@ export function RoomPageLiveKit({
       sessionId={session?.id || null}
       tiles={layoutTilesForRender}
       profilesById={profilesById}
-      taskListsByUserId={tileTasksByUserId}
+      taskListsByUserId={effectiveTileTasksByUserId}
       authUserId={authUserId || null}
       theme={theme}
       isLight={isLight}
@@ -18757,6 +18876,7 @@ export function RoomPageLiveKit({
                         });
                       }}
                       accountabilityWallOpen={mainViewMode === "accountability"}
+                      onPublicTasksChange={handlePublicPanelTasksChange}
                       onToggleAccountabilityWall={() => {
                         setMainViewMode((v) =>
                           v === "accountability" ? "video" : "accountability",
