@@ -5397,35 +5397,49 @@ function AccountabilityWall({
                   density="compact"
                 />
 
-                <div className="pointer-events-auto absolute inset-0 z-[20] flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/35 bg-[#F7F5F5]/80 px-4 py-3 text-[#202020] shadow-[inset_0_0_0_1px_rgba(47,47,47,0.06)] backdrop-blur-[1px]">
+                <div
+                  className={[
+                    "pointer-events-auto absolute inset-0 z-[20] flex min-h-0 flex-col overflow-hidden rounded-[24px] border px-4 py-3 backdrop-blur-[1px]",
+                    isLight
+                      ? "border-black/10 bg-[#F7F5F5]/80 text-[#202020] shadow-[inset_0_0_0_1px_rgba(47,47,47,0.06)]"
+                      : "border-white/10 bg-[#2F2F2F]/80 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]",
+                  ].join(" ")}
+                >
                   <div className="flex min-w-0 shrink-0 items-center gap-1.5 font-inter text-[12px] leading-none">
                     <span className="min-w-0 truncate font-medium">{name}</span>
                     {participantTime ? (
-                      <span className="shrink-0 font-normal text-black/55">
+                      <span className={`shrink-0 font-normal ${isLight ? "text-black/55" : "text-white/60"}`}>
                         {participantTime}
                       </span>
                     ) : null}
                   </div>
 
-                  <div className="mt-3 shrink-0 font-inter text-[9px] font-medium uppercase tracking-[0.12em] text-black/55">
+                  <div className={`mt-3 shrink-0 font-inter text-[9px] font-medium uppercase tracking-[0.12em] ${isLight ? "text-black/55" : "text-white/55"}`}>
                     Tasks
                   </div>
 
-                  <div className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 [scrollbar-color:rgba(47,47,47,0.32)_transparent] [scrollbar-width:thin]">
+                  <div
+                    className={[
+                      "mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]",
+                      isLight
+                        ? "[scrollbar-color:rgba(47,47,47,0.32)_transparent]"
+                        : "[scrollbar-color:rgba(255,255,255,0.3)_transparent]",
+                    ].join(" ")}
+                  >
                     {visibleTasks.length ? (
                       <div className="space-y-1.5 pb-1">
                         {visibleTasks.map((task, index) => (
                           <div
                             key={`${userId}-wall-task-${index}-${task}`}
-                            className="flex min-w-0 items-start gap-2 font-inter text-[11px] font-normal leading-4 text-black/85"
+                            className={`flex min-w-0 items-start gap-2 font-inter text-[11px] font-normal leading-4 ${isLight ? "text-black/85" : "text-white/90"}`}
                           >
-                            <span className="mt-[3px] h-2.5 w-2.5 shrink-0 rounded-[2px] border border-black/55 bg-white/20" />
+                            <span className={`mt-[3px] h-2.5 w-2.5 shrink-0 rounded-[2px] border ${isLight ? "border-black/55 bg-white/20" : "border-white/60 bg-black/10"}`} />
                             <span className="min-w-0 break-words">{task}</span>
                           </div>
                         ))}
                       </div>
                     ) : (
-                      <div className="font-inter text-[11px] font-normal text-black/45">
+                      <div className={`font-inter text-[11px] font-normal ${isLight ? "text-black/45" : "text-white/45"}`}>
                         No public tasks yet
                       </div>
                     )}
