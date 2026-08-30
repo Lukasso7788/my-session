@@ -5379,7 +5379,10 @@ function AccountabilityWall({
             return (
               <div
                 key={`accountability-${tile.id}`}
-                className="relative min-h-0 min-w-0 overflow-hidden rounded-[24px]"
+                className={[
+                  "relative min-h-0 min-w-0 overflow-hidden rounded-[24px]",
+                  isLight ? "bg-[#F7F5F5]" : "bg-[#2F2F2F]",
+                ].join(" ")}
                 style={{ aspectRatio: "16 / 9" }}
               >
                 <VideoTile
@@ -5402,10 +5405,10 @@ function AccountabilityWall({
 
                 <div
                   className={[
-                    "pointer-events-auto absolute inset-0 z-[20] flex min-h-0 flex-col overflow-hidden rounded-[24px] border-2 px-4 py-3 backdrop-blur-[1px]",
+                    "pointer-events-auto absolute inset-0 z-[20] flex min-h-0 flex-col overflow-hidden px-4 py-3 backdrop-blur-[1px]",
                     isLight
-                      ? "border-[#F7F5F5] bg-[#F7F5F5]/90 text-[#202020] shadow-[inset_0_0_0_1px_rgba(47,47,47,0.06)]"
-                      : "border-[#2F2F2F] bg-[#2F2F2F]/90 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]",
+                      ? "bg-[#F7F5F5]/90 text-[#202020]"
+                      : "bg-[#2F2F2F]/90 text-white",
                   ].join(" ")}
                 >
                   <div className="flex min-w-0 shrink-0 items-center gap-1.5 font-inter text-[12px] leading-none">
