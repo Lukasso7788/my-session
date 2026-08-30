@@ -5277,11 +5277,11 @@ function AccountabilityWall({
   return (
     <div className="h-full w-full min-h-0 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className={`font-inter text-[15px] font-bold ${isLight ? "text-black/85" : "text-white/90"}`}>
+        <div className="flex flex-col gap-0.5">
+          <div className={`font-inter text-[15px] font-semibold leading-tight ${isLight ? "text-black/85" : "text-white/90"}`}>
             Accountability Wall
           </div>
-          <div className={`mt-1 font-inter text-[14px] font-normal ${mutedText}`}>
+          <div className={`font-inter text-[12px] font-normal leading-tight ${mutedText}`}>
             Everyone’s current tasks, visible while you work.
           </div>
         </div>
@@ -5402,10 +5402,10 @@ function AccountabilityWall({
 
                 <div
                   className={[
-                    "pointer-events-auto absolute inset-0 z-[20] flex min-h-0 flex-col overflow-hidden rounded-[24px] border px-4 py-3 backdrop-blur-[1px]",
+                    "pointer-events-auto absolute inset-0 z-[20] flex min-h-0 flex-col overflow-hidden rounded-[24px] border-2 px-4 py-3 backdrop-blur-[1px]",
                     isLight
-                      ? "border-black/10 bg-[#F7F5F5]/90 text-[#202020] shadow-[inset_0_0_0_1px_rgba(47,47,47,0.06)]"
-                      : "border-white/10 bg-[#2F2F2F]/90 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]",
+                      ? "border-[#F7F5F5] bg-[#F7F5F5]/90 text-[#202020] shadow-[inset_0_0_0_1px_rgba(47,47,47,0.06)]"
+                      : "border-[#2F2F2F] bg-[#2F2F2F]/90 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]",
                   ].join(" ")}
                 >
                   <div className="flex min-w-0 shrink-0 items-center gap-1.5 font-inter text-[12px] leading-none">
