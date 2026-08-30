@@ -905,23 +905,22 @@ function VideoTileInner({
                 />
             </div>
 
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[11] h-[62%] bg-gradient-to-t from-black/80 via-black/38 to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[11] h-[36%] bg-gradient-to-t from-black/80 via-black/35 to-transparent" />
 
             {safeTaskList.length ? (
                 <div
                     className={[
-                        "pointer-events-none absolute inset-0 z-[13] flex min-h-0 w-full flex-col justify-end overflow-hidden px-3 transition-all duration-300 ease-out",
+                        "pointer-events-none absolute inset-0 z-[13] flex min-h-0 w-full flex-col justify-end overflow-hidden px-3",
                         isCompact ? "pb-[2rem]" : "pb-[2.5rem]",
-                        showAllTasks
-                            ? "bg-gradient-to-t from-black/90 via-black/72 to-black/20 opacity-100"
-                            : "group-hover:bg-gradient-to-t group-hover:from-black/90 group-hover:via-black/72 group-hover:to-black/20",
                     ].join(" ")}
                     title={safeTaskList.join("\n")}
                 >
                     <div
                         className={[
-                            "min-h-0 w-full overflow-hidden font-inter text-white transition-all duration-300 ease-out",
-                            showAllTasks ? "max-h-full" : "max-h-[1.4rem] group-hover:max-h-full",
+                            "-mx-2 min-h-0 w-[calc(100%_+_1rem)] overflow-hidden rounded-xl px-2 py-1.5 font-inter text-white transition-all duration-300 ease-out",
+                            showAllTasks
+                                ? "max-h-full bg-black/60 shadow-[0_10px_30px_rgba(0,0,0,0.34)] backdrop-blur-[2px]"
+                                : "max-h-[2rem] group-hover:max-h-full group-hover:bg-black/60 group-hover:shadow-[0_10px_30px_rgba(0,0,0,0.34)] group-hover:backdrop-blur-[2px]",
                         ].join(" ")}
                     >
                         <div className={`flex min-w-0 items-start gap-2 ${isCompact ? "text-[11px] leading-4" : "text-[12px] leading-[1.15rem]"}`}>
