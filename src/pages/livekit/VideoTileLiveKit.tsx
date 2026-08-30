@@ -905,13 +905,13 @@ function VideoTileInner({
                 />
             </div>
 
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[11] h-[62%] bg-gradient-to-t from-black/80 via-black/38 to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[11] h-[30%] bg-gradient-to-t from-black/80 via-black/38 to-transparent" />
 
             {safeTaskList.length ? (
                 <div
                     className={[
                         "pointer-events-none absolute inset-0 z-[13] flex min-h-0 w-full flex-col justify-end overflow-hidden px-3 transition-all duration-300 ease-out",
-                        isCompact ? "pb-[2rem]" : "pb-[2.5rem]",
+                        isCompact ? "pb-[2.5rem]" : "pb-[3rem]",
                         showAllTasks
                             ? "bg-gradient-to-t from-black/90 via-black/72 to-black/20 opacity-100"
                             : "group-hover:bg-gradient-to-t group-hover:from-black/90 group-hover:via-black/72 group-hover:to-black/20",
