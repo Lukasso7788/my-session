@@ -211,6 +211,7 @@ type VideoTileProps = {
     currentIntention?: string | null;
     taskList?: string[];
     showAllTasks?: boolean;
+    showTaskOverlay?: boolean;
     participantTimeZone?: string | null;
     cameraFramingMode?: CameraFramingMode;
 };
@@ -375,6 +376,7 @@ function VideoTileInner({
     currentIntention,
     taskList = [],
     showAllTasks = false,
+    showTaskOverlay = true,
     participantTimeZone,
     cameraFramingMode = "full",
     onToggleMenu,
@@ -712,6 +714,7 @@ function VideoTileInner({
             data-mobile-pip-tile="true"
             data-mobile-pip-label={label || "Participant"}
             data-mobile-pip-avatar-url={normalizedAvatarUrl || undefined}
+            data-mobile-pip-status={status || undefined}
             onContextMenu={(event) => {
                 if (!onOpenContextMenu) return;
                 event.preventDefault();
@@ -908,7 +911,7 @@ function VideoTileInner({
 
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[11] h-[30%] bg-gradient-to-t from-black/80 via-black/38 to-transparent" />
 
-            {safeTaskList.length ? (
+            {showTaskOverlay && safeTaskList.length ? (
                 <div
                     className={[
                         "pointer-events-none absolute inset-0 z-[13] flex min-h-0 w-full flex-col justify-end overflow-hidden px-3 transition-all duration-300 ease-out",
@@ -1020,6 +1023,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.currentIntention === next.currentIntention &&
         prev.taskList === next.taskList &&
         prev.showAllTasks === next.showAllTasks &&
+        prev.showTaskOverlay === next.showTaskOverlay &&
         prev.participantTimeZone === next.participantTimeZone &&
         prev.cameraFramingMode === next.cameraFramingMode &&
         prev.onToggleMenu === next.onToggleMenu &&

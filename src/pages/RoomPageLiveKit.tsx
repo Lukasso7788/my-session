@@ -3156,6 +3156,7 @@ type MobilePiPRoomTile = {
   video: MobilePiPVideoElement | null;
   label: string;
   avatarUrl: string;
+  status: string;
 };
 
 const MOBILE_PIP_CANVAS_WIDTH = 960;
@@ -3217,6 +3218,7 @@ function getMobilePiPRoomTiles(root: HTMLElement | null): MobilePiPRoomTile[] {
     video: element.querySelector<HTMLVideoElement>("video") as MobilePiPVideoElement | null,
     label: String(element.dataset.mobilePipLabel || "Participant").trim(),
     avatarUrl: String(element.dataset.mobilePipAvatarUrl || "").trim(),
+    status: String(element.dataset.mobilePipStatus || "").trim(),
   }));
 }
 
@@ -3407,6 +3409,94 @@ function drawMobilePiPAvatarFallback(
   context.fillText(safeLabel, centerX, centerY + radius + 27);
 }
 
+function drawMobilePiPStatusBadge(
+  context: CanvasRenderingContext2D,
+  tile: MobilePiPRoomTile,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): void {
+  const label = getStatusLabel(tile.status);
+  if (!label) return;
+
+  const key = tile.status.trim().toLowerCase();
+  const fontSize = Math.max(
+    13,
+    Math.min(19, Math.round(Math.min(width, height) * 0.085)),
+  );
+  const paddingX = Math.max(9, Math.round(fontSize * 0.7));
+  const badgeHeight = fontSize + Math.max(10, Math.round(fontSize * 0.55));
+  const badgeX = x + 12;
+  const badgeY = y + 12;
+
+  context.save();
+  context.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+  const badgeWidth = Math.min(
+    width - 24,
+    Math.ceil(context.measureText(label).width) + paddingX * 2,
+  );
+  const radius = badgeHeight / 2;
+
+  context.beginPath();
+  context.moveTo(badgeX + radius, badgeY);
+  context.lineTo(badgeX + badgeWidth - radius, badgeY);
+  context.arcTo(
+    badgeX + badgeWidth,
+    badgeY,
+    badgeX + badgeWidth,
+    badgeY + radius,
+    radius,
+  );
+  context.lineTo(badgeX + badgeWidth, badgeY + badgeHeight - radius);
+  context.arcTo(
+    badgeX + badgeWidth,
+    badgeY + badgeHeight,
+    badgeX + badgeWidth - radius,
+    badgeY + badgeHeight,
+    radius,
+  );
+  context.lineTo(badgeX + radius, badgeY + badgeHeight);
+  context.arcTo(
+    badgeX,
+    badgeY + badgeHeight,
+    badgeX,
+    badgeY + badgeHeight - radius,
+    radius,
+  );
+  context.lineTo(badgeX, badgeY + radius);
+  context.arcTo(badgeX, badgeY, badgeX + radius, badgeY, radius);
+  context.closePath();
+
+  if (key === "skip" || key === "skip_deafened") {
+    context.fillStyle = "rgba(126, 75, 170, 0.9)";
+    context.strokeStyle = "rgba(233, 213, 255, 0.72)";
+  } else if (key === "break") {
+    context.fillStyle = "rgba(133, 91, 20, 0.92)";
+    context.strokeStyle = "rgba(253, 224, 71, 0.72)";
+  } else if (key === "eating") {
+    context.fillStyle = "rgba(154, 74, 18, 0.92)";
+    context.strokeStyle = "rgba(253, 186, 116, 0.72)";
+  } else {
+    context.fillStyle = "rgba(23, 23, 23, 0.9)";
+    context.strokeStyle = "rgba(255, 255, 255, 0.32)";
+  }
+  context.lineWidth = 1.5;
+  context.fill();
+  context.stroke();
+
+  context.fillStyle = "rgba(255, 255, 255, 0.96)";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(
+    label,
+    badgeX + badgeWidth / 2,
+    badgeY + badgeHeight / 2 + 0.5,
+    badgeWidth - paddingX,
+  );
+  context.restore();
+}
+
 function drawMobilePiPCollage(
   canvas: HTMLCanvasElement,
   roomRoot: HTMLElement | null,
@@ -3512,6 +3602,15 @@ function drawMobilePiPCollage(
         );
       }
     }
+
+    drawMobilePiPStatusBadge(
+      context,
+      tile,
+      x,
+      y,
+      cellWidth,
+      cellHeight,
+    );
 
     context.strokeStyle = "rgba(255,255,255,0.16)";
     context.lineWidth = 2;
@@ -17354,6 +17453,7 @@ export function RoomPageLiveKit({
         <VideoTile
           tileId={t.id}
           label={nameText}
+          status={t.status || null}
           videoTrack={t.videoTrack}
           audioTrack={t.audioTrack}
           isLocal={t.isLocal}
@@ -17365,8 +17465,9 @@ export function RoomPageLiveKit({
           mirrorVideo={t.isLocal ? previewMirrored : false}
           cameraFramingMode={cameraFramingMode}
           isSpeaking={!!t.isSpeaking}
-          currentIntention={getCurrentIntentionForTile(t)}
-          taskList={getTasksForTile(t)}
+          currentIntention={null}
+          taskList={[]}
+          showTaskOverlay={false}
           participantTimeZone={t.participantTimeZone || null}
           density="compact"
           onToggleMenu={handleToggleTileMenu}
