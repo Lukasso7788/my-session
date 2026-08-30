@@ -5358,6 +5358,20 @@ function AccountabilityWall({
                   .filter((item) => !item.completed)
                   .map((item) => String(item.text || "").trim())
                   .filter(Boolean);
+            const participantTime = (() => {
+              const timeZone = String(tile.participantTimeZone || "").trim();
+              if (!timeZone) return "";
+
+              try {
+                return new Intl.DateTimeFormat(undefined, {
+                  timeZone,
+                  hour: "numeric",
+                  minute: "2-digit",
+                }).format(new Date(taskTimerTickMs));
+              } catch {
+                return "";
+              }
+            })();
 
             return (
               <div
@@ -5377,12 +5391,46 @@ function AccountabilityWall({
                   micMuted={!!tile.micMuted}
                   mirrorVideo={tile.isLocal}
                   isSpeaking={!!tile.isSpeaking}
-                  currentIntention={visibleTasks[0] || null}
-                  taskList={visibleTasks}
-                  showAllTasks
+                  currentIntention={null}
+                  taskList={[]}
                   participantTimeZone={tile.participantTimeZone || null}
                   density="compact"
                 />
+
+                <div className="pointer-events-auto absolute inset-0 z-[20] flex min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/35 bg-[#F7F5F5]/80 px-4 py-3 text-[#202020] shadow-[inset_0_0_0_1px_rgba(47,47,47,0.06)] backdrop-blur-[1px]">
+                  <div className="flex min-w-0 shrink-0 items-center gap-1.5 font-inter text-[12px] leading-none">
+                    <span className="min-w-0 truncate font-medium">{name}</span>
+                    {participantTime ? (
+                      <span className="shrink-0 font-normal text-black/55">
+                        {participantTime}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 shrink-0 font-inter text-[9px] font-medium uppercase tracking-[0.12em] text-black/55">
+                    Tasks
+                  </div>
+
+                  <div className="mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 [scrollbar-color:rgba(47,47,47,0.32)_transparent] [scrollbar-width:thin]">
+                    {visibleTasks.length ? (
+                      <div className="space-y-1.5 pb-1">
+                        {visibleTasks.map((task, index) => (
+                          <div
+                            key={`${userId}-wall-task-${index}-${task}`}
+                            className="flex min-w-0 items-start gap-2 font-inter text-[11px] font-normal leading-4 text-black/85"
+                          >
+                            <span className="mt-[3px] h-2.5 w-2.5 shrink-0 rounded-[2px] border border-black/55 bg-white/20" />
+                            <span className="min-w-0 break-words">{task}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="font-inter text-[11px] font-normal text-black/45">
+                        No public tasks yet
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             );
           })}
