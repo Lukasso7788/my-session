@@ -17381,29 +17381,45 @@ export function RoomPageLiveKit({
   const tileTaskUserIdsKey = tileTaskUserIds.join("|");
 
   const loadTileTasks = useCallback(async () => {
-    const sid = String(session?.id || "").trim();
-    if (!sid) {
+    const participantUserIds = tileTaskUserIdsKey
+      ? tileTaskUserIdsKey.split("|").filter(Boolean)
+      : [];
+
+    if (!participantUserIds.length) {
       setTileTasksByUserId({});
       return;
     }
 
     try {
-      const { data, error } = await supabase
-        .from("intentions")
-        .select("id,text,user_id,session_id,created_at,completed")
-        .eq("session_id", sid)
+      let panelResult: any = await supabase
+        .from("panel_intentions")
+        .select("id,text,user_id,created_at,completed,visibility,sort_order")
+        .in("user_id", participantUserIds)
         .eq("completed", false)
+        .eq("visibility", "public")
+        .order("sort_order", { ascending: true, nullsFirst: false })
         .order("created_at", { ascending: false })
-        .limit(160);
+        .limit(500);
 
-      if (error || !Array.isArray(data)) {
+      if (
+        panelResult.error &&
+        /sort_order|column/i.test(String(panelResult.error.message || ""))
+      ) {
+        panelResult = await supabase
+          .from("panel_intentions")
+          .select("id,text,user_id,created_at,completed,visibility")
+          .in("user_id", participantUserIds)
+          .eq("completed", false)
+          .eq("visibility", "public")
+          .order("created_at", { ascending: false })
+          .limit(500);
+      }
+
+      if (panelResult.error || !Array.isArray(panelResult.data)) {
         setTileTasksByUserId({});
         return;
       }
 
-      // Legacy/session tasks remain a fallback for tasks created directly on
-      // the accountability wall. Panel tasks below are authoritative because
-      // their sort_order is the order the user actually sees in Tasks.
       const next: Record<string, string[]> = {};
       const appendTask = (userId: string, taskText: string) => {
         if (!userId || !taskText) return;
@@ -17412,94 +17428,35 @@ export function RoomPageLiveKit({
         next[userId] = [...current, taskText].slice(0, 12);
       };
 
-      for (const row of data as any[]) {
+      for (const row of panelResult.data as any[]) {
         const userId = String(row?.user_id || "").trim().toLowerCase();
         const text = String(row?.text || "").trim();
-        appendTask(userId, text);
-      }
-
-      const participantUserIds = tileTaskUserIdsKey
-        ? tileTaskUserIdsKey.split("|").filter(Boolean)
-        : [];
-
-      if (participantUserIds.length) {
-        let panelResult: any = await supabase
-          .from("panel_intentions")
-          .select("id,text,user_id,created_at,completed,visibility,sort_order")
-          .in("user_id", participantUserIds)
-          .or("visibility.eq.public,visibility.is.null")
-          .order("sort_order", { ascending: true, nullsFirst: false })
-          .order("created_at", { ascending: false })
-          .limit(500);
-
+        const visibility = String(row?.visibility || "").trim().toLowerCase();
         if (
-          panelResult.error &&
-          /sort_order|column/i.test(String(panelResult.error.message || ""))
+          !userId ||
+          !text ||
+          Boolean(row?.completed) ||
+          visibility !== "public"
         ) {
-          panelResult = await supabase
-            .from("panel_intentions")
-            .select("id,text,user_id,created_at,completed,visibility")
-            .in("user_id", participantUserIds)
-            .or("visibility.eq.public,visibility.is.null")
-            .order("created_at", { ascending: false })
-            .limit(500);
+          continue;
         }
-
-        if (!panelResult.error && Array.isArray(panelResult.data)) {
-          const panelUsers = new Set<string>();
-
-          for (const row of panelResult.data as any[]) {
-            const userId = String(row?.user_id || "").trim().toLowerCase();
-            if (userId) panelUsers.add(userId);
-          }
-
-          // If public panel rows exist for a participant, never let an older
-          // session intention override their current ordered panel state.
-          for (const userId of panelUsers) delete next[userId];
-
-          for (const row of panelResult.data as any[]) {
-            const userId = String(row?.user_id || "").trim().toLowerCase();
-            const text = String(row?.text || "").trim();
-            const visibility = String(row?.visibility || "public").toLowerCase();
-            if (
-              !userId ||
-              !text ||
-              next[userId] ||
-              Boolean(row?.completed) ||
-              visibility === "private" ||
-              visibility === "self" ||
-              visibility === "hidden"
-            ) {
-              continue;
-            }
-            appendTask(userId, text);
-          }
-        }
+        appendTask(userId, text);
       }
 
       setTileTasksByUserId(next);
     } catch {
       setTileTasksByUserId({});
     }
-  }, [session?.id, tileTaskUserIdsKey]);
+  }, [tileTaskUserIdsKey]);
 
   useEffect(() => {
     void loadTileTasks();
   }, [loadTileTasks]);
 
   useEffect(() => {
-    const sid = String(session?.id || "").trim();
-    if (!sid) return;
+    if (!tileTaskUserIdsKey) return;
 
-    const ch = supabase
-      .channel(`tile-intentions:${sid}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "intentions", filter: `session_id=eq.${sid}` },
-        () => void loadTileTasks(),
-      )
-      .subscribe();
-
+    const sid = String(session?.id || "room").trim() || "room";
     const panelChannel = supabase
       .channel(`tile-panel-intentions:${sid}`)
       .on(
@@ -17512,15 +17469,15 @@ export function RoomPageLiveKit({
     const refreshFromTaskOrder = () => void loadTileTasks();
     window.addEventListener("mysession:task-order-synced", refreshFromTaskOrder);
     window.addEventListener(TASKS_SYNC_EVENT, refreshFromTaskOrder);
+    window.addEventListener("mysession:tasks-updated", refreshFromTaskOrder);
 
     return () => {
-      safeRemoveRealtimeChannel(ch);
       safeRemoveRealtimeChannel(panelChannel);
       window.removeEventListener("mysession:task-order-synced", refreshFromTaskOrder);
       window.removeEventListener(TASKS_SYNC_EVENT, refreshFromTaskOrder);
+      window.removeEventListener("mysession:tasks-updated", refreshFromTaskOrder);
     };
-  }, [session?.id, loadTileTasks]);
-
+  }, [session?.id, tileTaskUserIdsKey, loadTileTasks]);
   const getTasksForTile = useCallback(
     (tile: TileModel) => {
       const userId = getTilePersonKey(tile);

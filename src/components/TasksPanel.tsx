@@ -1515,6 +1515,7 @@ export function TasksPanel({
           .from(SESSION_TASKS_TABLE)
           .select("id, text, user_id, session_id, created_at, completed")
           .eq("session_id", s)
+          .eq("completed", false)
           .order("created_at", { ascending: false })
           .limit(SESSION_TASKS_FETCH_LIMIT);
 
