@@ -963,6 +963,15 @@ function VideoTileInner({
                             {label || "User"}
                         </span>
 
+                        {participantTime ? (
+                            <span
+                                className={`max-w-[55%] shrink-0 truncate font-inter ${isCompact ? "text-[9px]" : "text-[10px]"} font-normal leading-none text-white/70 drop-shadow-md`}
+                                title={String(participantTimeZone || "")}
+                            >
+                                {participantTime}
+                            </span>
+                        ) : null}
+
                         {status ? (
                             <span
                                 className={`pointer-events-auto inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${getStatusClass(status, false)}`}
@@ -975,15 +984,6 @@ function VideoTileInner({
                             </span>
                         ) : null}
                     </div>
-
-                    {participantTime ? (
-                        <div
-                            className={`mt-1 truncate font-inter ${isCompact ? "text-[9px]" : "text-[10px]"} font-normal leading-none text-white/70 drop-shadow-md`}
-                            title={String(participantTimeZone || "")}
-                        >
-                            {participantTime}
-                        </div>
-                    ) : null}
                 </div>
 
                 <MicBadgeWithBarVisualizer

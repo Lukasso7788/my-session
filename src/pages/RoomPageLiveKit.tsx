@@ -5363,11 +5363,14 @@ function AccountabilityWall({
               if (!timeZone) return "";
 
               try {
-                return new Intl.DateTimeFormat(undefined, {
+                const city =
+                  timeZone.split("/").pop()?.replace(/_/g, " ") || timeZone;
+                const time = new Intl.DateTimeFormat(undefined, {
                   timeZone,
                   hour: "numeric",
                   minute: "2-digit",
                 }).format(new Date(taskTimerTickMs));
+                return `${city} · ${time}`;
               } catch {
                 return "";
               }
@@ -5408,7 +5411,7 @@ function AccountabilityWall({
                   <div className="flex min-w-0 shrink-0 items-center gap-1.5 font-inter text-[12px] leading-none">
                     <span className="min-w-0 truncate font-medium">{name}</span>
                     {participantTime ? (
-                      <span className={`shrink-0 font-normal ${isLight ? "text-black/55" : "text-white/60"}`}>
+                      <span className={`max-w-[55%] shrink-0 truncate font-normal ${isLight ? "text-black/55" : "text-white/60"}`}>
                         {participantTime}
                       </span>
                     ) : null}
@@ -12762,6 +12765,7 @@ export function RoomPageLiveKit({
         isSpeaking: !remoteMicMuted && !!rp.isSpeaking,
         participantIdentity: exactIdentity || undefined,
         participantUserId: baseUserId || undefined,
+        participantTimeZone: participantTimeZone || undefined,
         micTrackSid: micPub?.trackSid,
         camTrackSid: camPub?.trackSid,
         micMuted: remoteMicMuted,
@@ -12772,7 +12776,6 @@ export function RoomPageLiveKit({
       });
 
       const volumeKey = getParticipantVolumeKey({
-        participantTimeZone: participantTimeZone || undefined,
         id: tileId,
         participantUserId: baseUserId || undefined,
         participantIdentity: exactIdentity || undefined,
