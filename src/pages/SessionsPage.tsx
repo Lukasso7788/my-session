@@ -2046,9 +2046,34 @@ export function SessionsPage() {
         if (lookupError) throw lookupError;
 
         const existingId = Array.isArray(existing) ? existing[0]?.id : null;
-        const { error: fallbackError } = existingId
+        let { error: fallbackError } = existingId
           ? await supabase.from("session_bookings").update(payload).eq("id", existingId)
           : await supabase.from("session_bookings").insert(payload);
+
+        const bookingRoleColumnUnavailable =
+          fallbackError &&
+          (
+            fallbackError.code === "PGRST204" ||
+            /booking_role.*(?:column|schema cache)|(?:column|schema cache).*booking_role/i.test(
+              fallbackError.message || ""
+            )
+          );
+
+        if (bookingRoleColumnUnavailable) {
+          const legacyPayload = {
+            session_id: id,
+            user_id: user.id,
+            booked_start_time: bookedStartTime,
+            booked_end_time: bookedEndTime,
+            booking_note: bookingNote,
+          };
+
+          const legacyResult = existingId
+            ? await supabase.from("session_bookings").update(legacyPayload).eq("id", existingId)
+            : await supabase.from("session_bookings").insert(legacyPayload);
+
+          fallbackError = legacyResult.error;
+        }
 
         if (fallbackError) throw fallbackError;
       }

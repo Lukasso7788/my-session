@@ -306,10 +306,9 @@ function resolveSessionType(session: any): "group" | "infinite" | "body" {
 
     if (sch && typeof sch === "object" && !Array.isArray(sch)) {
         if ((sch as any).kind === "infinite_room") return "infinite";
-        if ((sch as any)?.timer?.phases) return "infinite";
-        if ((sch as any)?.phases) return "infinite";
     }
 
+    if (safeLower(session?.format) === "infinite") return "infinite";
     if (safeLower(session?.format) === "body") return "body";
     return "group";
 }

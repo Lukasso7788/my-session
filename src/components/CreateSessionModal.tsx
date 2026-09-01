@@ -3044,12 +3044,33 @@ export function CreateSessionModal({
         .map((s: any) => ({
           session_id: s.id,
           user_id: s.host_id || profile.id,
+          booking_role: "host",
         }));
 
       if (bookingRows.length > 0) {
-        const { error: bookingError } = await supabase
+        let { error: bookingError } = await supabase
           .from("session_bookings")
           .upsert(bookingRows, { onConflict: "session_id,user_id" });
+
+        const bookingRoleColumnUnavailable =
+          bookingError &&
+          (
+            bookingError.code === "PGRST204" ||
+            /booking_role.*(?:column|schema cache)|(?:column|schema cache).*booking_role/i.test(
+              bookingError.message || ""
+            )
+          );
+
+        if (bookingRoleColumnUnavailable) {
+          const legacyBookingRows = bookingRows.map(
+            ({ booking_role: _bookingRole, ...row }) => row,
+          );
+          const legacyResult = await supabase
+            .from("session_bookings")
+            .upsert(legacyBookingRows, { onConflict: "session_id,user_id" });
+
+          bookingError = legacyResult.error;
+        }
 
         if (bookingError) {
           console.error("❌ Host auto-booking failed:", bookingError);
