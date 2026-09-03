@@ -1,7 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { Check, Trash2, Plus, ExternalLink, RefreshCw, TimerReset, ListChecks, BarChart3 } from "lucide-react";
+import {
+    BarChart3,
+    CalendarDays,
+    Check,
+    CheckCircle2,
+    ClipboardList,
+    ListPlus,
+    Pencil,
+    Plus,
+    RefreshCw,
+    Search,
+    SlidersHorizontal,
+    TimerReset,
+    Trash2,
+    X,
+} from "lucide-react";
 import {
     loadEligibleTaskSessions,
     type TaskSessionOption,
@@ -28,19 +44,6 @@ type FocusPlanItem = {
 };
 
 type SessionLite = TaskSessionOption;
-
-type IntentionRow = {
-    id: string;
-    text: string;
-    user_id: string;
-    session_id: string;
-    created_at?: string;
-    completed?: boolean;
-    profiles?: {
-        full_name?: string;
-        avatar_url?: string;
-    };
-};
 
 type TaskTimeMeasurement = {
     id: string;
@@ -132,19 +135,90 @@ function fmtWhen(iso?: string | null) {
     }
 }
 
-function fmtDueDate(yyyyMmDd?: string | null) {
-    if (!yyyyMmDd) return "";
-    const ms = Date.parse(`${yyyyMmDd}T00:00:00.000Z`);
-    if (!Number.isFinite(ms)) return "";
+function fmtTaskRowDate(targetDate?: string | null, createdAt?: string | null) {
     try {
-        return new Date(ms).toLocaleDateString("en-US", {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-        });
+        if (targetDate) {
+            const dueMs = Date.parse(`${targetDate}T00:00:00`);
+            if (Number.isFinite(dueMs)) {
+                return new Date(dueMs).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                });
+            }
+        }
+
+        if (createdAt) {
+            const createdMs = Date.parse(createdAt);
+            if (Number.isFinite(createdMs)) {
+                return new Date(createdMs).toLocaleString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                });
+            }
+        }
     } catch {
-        return "";
+        // fall through
     }
+    return "—";
+}
+
+function TasksPageMaskIcon({
+    src,
+    fallback,
+    size = 14,
+    className = "",
+}: {
+    src: string;
+    fallback: ReactNode;
+    size?: number;
+    className?: string;
+}) {
+    const [available, setAvailable] = useState(false);
+
+    useEffect(() => {
+        let active = true;
+        const image = new Image();
+        image.onload = () => active && setAvailable(true);
+        image.onerror = () => active && setAvailable(false);
+        image.src = src;
+        return () => {
+            active = false;
+        };
+    }, [src]);
+
+    if (!available) return <>{fallback}</>;
+
+    return (
+        <span
+            aria-hidden="true"
+            className={`inline-block shrink-0 bg-current ${className}`}
+            style={{
+                width: size,
+                height: size,
+                WebkitMaskImage: `url(${src})`,
+                maskImage: `url(${src})`,
+                WebkitMaskPosition: "center",
+                maskPosition: "center",
+                WebkitMaskRepeat: "no-repeat",
+                maskRepeat: "no-repeat",
+                WebkitMaskSize: "contain",
+                maskSize: "contain",
+            }}
+        />
+    );
+}
+
+function planEmoji(title: string, index: number) {
+    const lower = safeLower(title);
+    if (lower.includes("plan")) return "📋";
+    if (lower.includes("pool")) return "📚";
+    if (lower.includes("market")) return "🌐";
+    if (lower.includes("essential")) return "🟡";
+    const fallbacks = ["🗂️", "🎯", "📌", "🧩", "📝"];
+    return fallbacks[index % fallbacks.length];
 }
 
 function buildLoginNext(urlPath: string) {
@@ -170,13 +244,9 @@ export default function FocusPlanPage() {
     );
 
     // default session for "new item" (raw may be uuid or slug)
-    const [rawDefaultSession, setRawDefaultSession] = useState<string>(initialParam);
+    const [rawDefaultSession] = useState<string>(initialParam);
     const [defaultSessionId, setDefaultSessionId] = useState<string | null>(null);
 
-    // library (recent unique intentions)
-    const [library, setLibrary] = useState<IntentionRow[]>([]);
-    const [loadingLibrary, setLoadingLibrary] = useState(false);
-    const [deletingLibraryText, setDeletingLibraryText] = useState<string | null>(null);
     const [taskMeasurements, setTaskMeasurements] = useState<TaskTimeMeasurement[]>([]);
     const [activeTab, setActiveTab] = useState<"plan" | "measurements">("plan");
     const [measurementsLoading, setMeasurementsLoading] = useState(false);
@@ -187,6 +257,15 @@ export default function FocusPlanPage() {
     const [plans, setPlans] = useState<FocusPlan[]>([]);
     const [plansLoading, setPlansLoading] = useState(false);
     const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+
+    // redesigned Tasks page view state
+    const [activeListId, setActiveListId] = useState<string>("all");
+    const [taskSearch, setTaskSearch] = useState("");
+    const [dueSortDescending, setDueSortDescending] = useState(false);
+    const [showNewListInput, setShowNewListInput] = useState(false);
+    const [sessionPickerItemId, setSessionPickerItemId] = useState<string | null>(null);
+    const [sessionPickerValue, setSessionPickerValue] = useState("");
+    const quickAddInputRef = useRef<HTMLInputElement | null>(null);
 
     const [items, setItems] = useState<FocusPlanItem[]>([]);
     const [itemsLoading, setItemsLoading] = useState(false);
@@ -211,9 +290,6 @@ export default function FocusPlanPage() {
     const [attachingItemId, setAttachingItemId] = useState<string | null>(null);
     const [attachedItemIds, setAttachedItemIds] = useState<Record<string, boolean>>({});
 
-    // seq guards
-    const libSeqRef = useRef(0);
-
     // ===== auth =====
     useEffect(() => {
         supabase.auth.getUser().then(({ data }) => setUser(data.user || null));
@@ -226,7 +302,6 @@ export default function FocusPlanPage() {
             sub.subscription.unsubscribe();
         };
     }, []);
-
 
     useEffect(() => {
         if (!user?.id) {
@@ -376,11 +451,6 @@ export default function FocusPlanPage() {
         setNewItemSessionId(defaultSessionId);
     }, [defaultSessionId, newItemSessionId]);
 
-    const defaultSession = useMemo(() => {
-        if (!defaultSessionId) return null;
-        return sessions.find((s) => String(s.id) === String(defaultSessionId)) || null;
-    }, [sessions, defaultSessionId]);
-
     // ===== auth guard =====
     const requireAuth = () => {
         if (user?.id) return true;
@@ -431,7 +501,7 @@ export default function FocusPlanPage() {
     }, [plans, selectedPlanId]);
 
     // items load for selected plan
-    const reloadItems = async (planId: string) => {
+    const reloadItems = async (_planId: string) => {
         if (!user?.id) return;
 
         setItemsLoading(true);
@@ -440,7 +510,6 @@ export default function FocusPlanPage() {
                 .from("focus_plan_items")
                 .select("*")
                 .eq("user_id", user.id)
-                .eq("plan_id", planId)
                 .order("sort_order", { ascending: true })
                 .order("created_at", { ascending: false });
 
@@ -470,53 +539,6 @@ export default function FocusPlanPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id, selectedPlanId]);
 
-    // ===== library (recent unique intentions) =====
-    const loadLibrary = async () => {
-        if (!user?.id) return;
-
-        const seq = ++libSeqRef.current;
-        setLoadingLibrary(true);
-
-        try {
-            const { data, error } = await supabase
-                .from("intentions")
-                .select("id, text, user_id, session_id, created_at, completed")
-                .eq("user_id", user.id)
-                .order("created_at", { ascending: false })
-                .limit(120);
-
-            if (seq !== libSeqRef.current) return;
-
-            if (error || !Array.isArray(data)) {
-                setLibrary([]);
-                return;
-            }
-
-            const seen = new Set<string>();
-            const out: IntentionRow[] = [];
-            for (const row of data as any[]) {
-                const t = String(row?.text || "").trim();
-                if (!t) continue;
-                const k = t.toLowerCase();
-                if (seen.has(k)) continue;
-                seen.add(k);
-                out.push(row as any);
-                if (out.length >= 24) break;
-            }
-            setLibrary(out);
-        } catch {
-            if (seq === libSeqRef.current) setLibrary([]);
-        } finally {
-            if (seq === libSeqRef.current) setLoadingLibrary(false);
-        }
-    };
-
-    useEffect(() => {
-        if (!user?.id) return;
-        loadLibrary();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [user?.id]);
-
     // ===== plan actions =====
     const createPlan = async () => {
         if (!requireAuth()) return;
@@ -538,6 +560,8 @@ export default function FocusPlanPage() {
 
             await reloadPlans();
             setSelectedPlanId((data as FocusPlan).id);
+            setActiveListId((data as FocusPlan).id);
+            setShowNewListInput(false);
         } catch {
             // silent MVP
         }
@@ -619,7 +643,6 @@ export default function FocusPlanPage() {
 
             if (error || !data) return;
 
-            // optimistic: prepend
             setItems((prev) => [data as FocusPlanItem, ...prev]);
             setNewItemText("");
             setNewItemDueDate("");
@@ -632,7 +655,6 @@ export default function FocusPlanPage() {
         if (!requireAuth()) return;
         if (!selectedPlan) return;
 
-        // optimistic remove
         const prev = items;
         setItems((x) => x.filter((it) => it.id !== itemId));
 
@@ -646,7 +668,6 @@ export default function FocusPlanPage() {
         if (editingItemId === itemId) cancelEditItem();
     };
 
-    // ✅ sync intentions.completed when focus_plan_items.completed changes
     const syncIntentionsCompletedFromItem = async (item: FocusPlanItem, nextCompleted: boolean) => {
         try {
             const sid = safeTrim(item.session_id);
@@ -671,8 +692,6 @@ export default function FocusPlanPage() {
         if (!cur) return;
 
         const nextVal = !Boolean(cur.completed);
-
-        // optimistic
         setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, completed: nextVal } : it)));
 
         try {
@@ -687,7 +706,6 @@ export default function FocusPlanPage() {
                 return;
             }
 
-            // ✅ sync to intentions
             void syncIntentionsCompletedFromItem(cur, nextVal);
         } catch {
             setItems((prev) => prev.map((it) => (it.id === itemId ? { ...it, completed: !nextVal } : it)));
@@ -723,7 +741,6 @@ export default function FocusPlanPage() {
         const before = items.find((x) => x.id === editingItemId);
         const oldText = safeTrim(before?.text);
 
-        // optimistic
         setItems((x) =>
             x.map((it) =>
                 it.id === editingItemId ? { ...it, text, target_date: due, session_id: sid } : it
@@ -744,7 +761,6 @@ export default function FocusPlanPage() {
 
             cancelEditItem();
 
-            // ✅ best-effort sync rename into intentions if item is linked to a session
             try {
                 if (sid && UUID_RE.test(String(sid)) && oldText && oldText !== text) {
                     await supabase
@@ -762,119 +778,69 @@ export default function FocusPlanPage() {
         }
     };
 
-    const addLibraryTextToPlan = (text: string) => {
-        if (!requireAuth()) return;
-        const t = String(text || "").trim();
-        if (!t) return;
-        setNewItemText(t);
-    };
-
-    const deleteLibraryText = async (text: string) => {
+    const assignItemToSession = async (item: FocusPlanItem, sessionId: string) => {
         if (!requireAuth()) return;
 
-        const normalized = safeTrim(text);
-        if (!normalized) return;
+        const sid = safeTrim(sessionId);
+        if (!sid || !UUID_RE.test(sid) || !eligibleSessionIds.has(sid)) return;
 
-        const key = normalized.toLowerCase();
-        const prev = library;
-
-        setDeletingLibraryText(key);
-
-        // optimistic remove from visible unique library
-        setLibrary((cur) => cur.filter((row) => safeTrim(row.text).toLowerCase() !== key));
+        const previous = items;
+        setAttachingItemId(item.id);
+        setItems((current) =>
+            current.map((candidate) =>
+                candidate.id === item.id ? { ...candidate, session_id: sid } : candidate,
+            ),
+        );
 
         try {
-            const { data, error } = await supabase
-                .from("intentions")
-                .select("id, text")
-                .eq("user_id", user.id)
-                .limit(300);
-
-            if (error) {
-                setLibrary(prev);
-                return;
-            }
-
-            const idsToDelete = (data || [])
-                .filter((row: any) => safeTrim(row?.text).toLowerCase() === key)
-                .map((row: any) => row.id)
-                .filter(Boolean);
-
-            if (idsToDelete.length === 0) {
-                return;
-            }
-
-            const { error: deleteError } = await supabase
-                .from("intentions")
-                .delete()
-                .in("id", idsToDelete)
+            const { error } = await supabase
+                .from("focus_plan_items")
+                .update({ session_id: sid })
+                .eq("id", item.id)
                 .eq("user_id", user.id);
 
-            if (deleteError) {
-                setLibrary(prev);
+            if (error) {
+                setItems(previous);
                 return;
             }
 
-            void loadLibrary();
-        } catch {
-            setLibrary(prev);
-        } finally {
-            setDeletingLibraryText(null);
-        }
-    };
-
-    // attach = create real intention row (so it appears in room panel)
-    const attachItemToSession = async (item: FocusPlanItem) => {
-        if (!requireAuth()) return;
-
-        const sid = String(item.session_id || "").trim();
-        const text = String(item.text || "").trim();
-        if (!sid || !UUID_RE.test(sid) || !eligibleSessionIds.has(sid) || !text) return;
-
-        setAttachingItemId(item.id);
-
-        try {
-            // avoid obvious duplicates for this user/session/text
-            const { data: existing } = await supabase
-                .from("intentions")
-                .select("id")
-                .eq("user_id", user.id)
-                .eq("session_id", sid)
-                .eq("text", text)
-                .limit(1);
-
-            if (!existing || existing.length === 0) {
-                const { error } = await supabase
+            const taskText = safeTrim(item.text);
+            if (taskText) {
+                const { data: existing } = await supabase
                     .from("intentions")
-                    .insert([{ user_id: user.id, session_id: sid, text, completed: Boolean(item.completed) }]);
+                    .select("id")
+                    .eq("user_id", user.id)
+                    .eq("session_id", sid)
+                    .eq("text", taskText)
+                    .limit(1);
 
-                if (error) return;
+                if (!existing || existing.length === 0) {
+                    await supabase.from("intentions").insert([{
+                        user_id: user.id,
+                        session_id: sid,
+                        text: taskText,
+                        completed: Boolean(item.completed),
+                    }]);
+                }
             }
 
-            setAttachedItemIds((m) => ({ ...m, [item.id]: true }));
-            loadLibrary();
+            setAttachedItemIds((current) => ({ ...current, [item.id]: true }));
+            setSessionPickerItemId(null);
+            setSessionPickerValue("");
+        } catch {
+            setItems(previous);
         } finally {
             setAttachingItemId(null);
         }
     };
 
-    const openRoom = (sessionId?: string | null) => {
-        const sid = String(sessionId || "").trim();
-        if (!sid) return;
-        navigate(`/room-iframe/${sid}`);
-    };
-
     const pageWrap = "w-full max-w-[1200px] mx-auto px-4 md:px-6 py-8";
     const card = "border border-borderGray rounded-[42px] bg-white p-6 md:p-7 transition-all duration-200";
-    const softCard = "border border-[#E5E7EB] rounded-[24px] bg-white p-4 md:p-5";
 
     const btnPrimary =
         "h-11 rounded-full px-5 text-[13px] font-semibold border border-[#111827] bg-[#111827] text-white hover:opacity-90 transition";
     const btnGhost =
         "h-11 rounded-full px-5 text-[13px] font-semibold border border-[#E5E7EB] hover:bg-[#F3F4F6] transition";
-
-    const inputPill =
-        "h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] text-[#111827] outline-none focus:border-[#111827] bg-white";
 
     const allMeasurements = useMemo(
         () =>
@@ -884,11 +850,19 @@ export default function FocusPlanPage() {
         [taskMeasurements],
     );
 
+    const selectedPlanItems = useMemo(
+        () =>
+            selectedPlanId
+                ? items.filter((item) => String(item.plan_id) === String(selectedPlanId))
+                : [],
+        [items, selectedPlanId],
+    );
+
     const planMeasurements = useMemo(() => {
-        const itemIds = new Set(items.map((item) => String(item.id || "")).filter(Boolean));
-        const itemTexts = new Set(items.map((item) => normalizeTaskText(item.text)).filter(Boolean));
+        const itemIds = new Set(selectedPlanItems.map((item) => String(item.id || "")).filter(Boolean));
+        const itemTexts = new Set(selectedPlanItems.map((item) => normalizeTaskText(item.text)).filter(Boolean));
         const itemSessionIds = new Set(
-            items.map((item) => String(item.session_id || "")).filter(Boolean),
+            selectedPlanItems.map((item) => String(item.session_id || "")).filter(Boolean),
         );
 
         return allMeasurements.filter((measurement) => {
@@ -898,29 +872,18 @@ export default function FocusPlanPage() {
 
             if (focusItemId && itemIds.has(focusItemId)) return true;
             if (measurementText && itemTexts.has(measurementText)) return true;
-
-            // Older measurements were often saved without focus_plan_item_id.
-            // If they belong to a session used by this plan, keep them visible
-            // instead of silently hiding valid data.
             if (measurementSessionId && itemSessionIds.has(measurementSessionId)) return true;
 
             return false;
         });
-    }, [allMeasurements, items]);
+    }, [allMeasurements, selectedPlanItems]);
 
     const visibleMeasurements = useMemo(() => {
+        if (activeListId === "all" || activeListId === "completed") return allMeasurements;
         if (!selectedPlan) return allMeasurements;
         if (planMeasurements.length > 0) return planMeasurements;
-
-        // Do not show an empty Measurements tab when Supabase already contains
-        // valid measurements that simply were not linked to a plan item.
         return allMeasurements;
-    }, [allMeasurements, planMeasurements, selectedPlan]);
-
-    const usingAllMeasurementsFallback =
-        Boolean(selectedPlan) &&
-        planMeasurements.length === 0 &&
-        allMeasurements.length > 0;
+    }, [activeListId, allMeasurements, planMeasurements, selectedPlan]);
 
     const visibleMeasuredMs = useMemo(
         () =>
@@ -932,95 +895,67 @@ export default function FocusPlanPage() {
         [visibleMeasurements],
     );
 
-    const measurementsByTask = useMemo(() => {
-        const groups = new Map<
-            string,
-            {
-                key: string;
-                taskText: string;
-                focusPlanItemId: string | null;
-                sessionId: string | null;
-                measurements: TaskTimeMeasurement[];
-                totalMs: number;
-            }
-        >();
-
-        visibleMeasurements.forEach((measurement) => {
-            const normalizedText = normalizeTaskText(measurement.task_text);
-            const focusPlanItemId = String(measurement.focus_plan_item_id || "") || null;
-            const sessionId = String(measurement.session_id || "") || null;
-            const key =
-                focusPlanItemId ||
-                `${normalizedText || "untitled"}::${sessionId || "no-session"}`;
-
-            const current = groups.get(key) || {
-                key,
-                taskText: measurement.task_text || "Untitled task",
-                focusPlanItemId,
-                sessionId,
-                measurements: [],
-                totalMs: 0,
-            };
-
-            current.measurements.push(measurement);
-            current.totalMs += Math.max(0, Number(measurement.elapsed_ms || 0));
-            groups.set(key, current);
-        });
-
-        return Array.from(groups.values())
-            .map((group) => ({
-                ...group,
-                measurements: [...group.measurements].sort(
-                    (a, b) =>
-                        Date.parse(b.saved_at || "") - Date.parse(a.saved_at || ""),
-                ),
-            }))
-            .sort((a, b) => {
-                const aLatest = Date.parse(a.measurements[0]?.saved_at || "");
-                const bLatest = Date.parse(b.measurements[0]?.saved_at || "");
-                return bLatest - aLatest;
-            });
-    }, [visibleMeasurements]);
-
-    const planMeasuredMs = useMemo(
-        () =>
-            planMeasurements.reduce(
-                (sum, measurement) =>
-                    sum + Math.max(0, Number(measurement.elapsed_ms || 0)),
-                0,
-            ),
-        [planMeasurements],
+    const completedItemsCount = useMemo(
+        () => items.filter((item) => Boolean(item.completed)).length,
+        [items],
     );
 
-    const getMeasurementsForItem = (item: FocusPlanItem) => {
-        const itemId = String(item.id || "");
-        const itemText = normalizeTaskText(item.text);
-        const itemSessionId = String(item.session_id || "");
-
-        return allMeasurements.filter((measurement) => {
-            if (
-                measurement.focus_plan_item_id &&
-                String(measurement.focus_plan_item_id) === itemId
-            ) {
-                return true;
-            }
-
-            if (
-                itemText &&
-                normalizeTaskText(measurement.task_text) === itemText
-            ) {
-                return true;
-            }
-
-            if (
-                itemSessionId &&
-                String(measurement.session_id || "") === itemSessionId
-            ) {
-                return true;
-            }
-
-            return false;
+    const planTaskCounts = useMemo(() => {
+        const counts: Record<string, number> = {};
+        items.forEach((item) => {
+            const key = String(item.plan_id || "");
+            if (!key) return;
+            counts[key] = (counts[key] || 0) + 1;
         });
+        return counts;
+    }, [items]);
+
+    const visibleTaskItems = useMemo(() => {
+        let next = [...items];
+
+        if (activeListId === "completed") {
+            next = next.filter((item) => Boolean(item.completed));
+        } else if (activeListId !== "all") {
+            next = next.filter((item) => String(item.plan_id) === String(activeListId));
+        }
+
+        const query = normalizeTaskText(taskSearch);
+        if (query) {
+            next = next.filter((item) => normalizeTaskText(item.text).includes(query));
+        }
+
+        next.sort((a, b) => {
+            const aDue = a.target_date ? Date.parse(`${a.target_date}T00:00:00`) : Number.POSITIVE_INFINITY;
+            const bDue = b.target_date ? Date.parse(`${b.target_date}T00:00:00`) : Number.POSITIVE_INFINITY;
+
+            if (aDue !== bDue) {
+                return dueSortDescending ? bDue - aDue : aDue - bDue;
+            }
+
+            const aCreated = Date.parse(a.created_at || "") || 0;
+            const bCreated = Date.parse(b.created_at || "") || 0;
+            return bCreated - aCreated;
+        });
+
+        return next;
+    }, [activeListId, dueSortDescending, items, taskSearch]);
+
+    const currentListTitle = useMemo(() => {
+        if (activeListId === "completed") return "Completed Tasks";
+        if (activeListId === "all") return "All Tasks";
+        return plans.find((plan) => String(plan.id) === String(activeListId))?.title || "All Tasks";
+    }, [activeListId, plans]);
+
+    useEffect(() => {
+        if (activeListId === "all" || activeListId === "completed") return;
+        if (plans.some((plan) => String(plan.id) === String(activeListId))) return;
+        setActiveListId("all");
+    }, [activeListId, plans]);
+
+    const focusQuickAdd = () => {
+        setActiveTab("plan");
+        if (activeListId === "completed") setActiveListId("all");
+        window.setTimeout(() => quickAddInputRef.current?.focus(), 0);
     };
 
     if (!user?.id) {
@@ -1043,817 +978,558 @@ export default function FocusPlanPage() {
         );
     }
 
-    const planItemsCount = items.length;
+    const taskListEmpty = !itemsLoading && visibleTaskItems.length === 0;
 
     return (
-        <div className={pageWrap}>
-            <div className={card}>
-                {/* header */}
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div>
-                        <div className="text-[28px] md:text-[34px] font-bold text-[#111827] leading-tight">Tasks</div>
-                        <div className="mt-2 text-[13px] text-[#606060]">Organize tasks, set due dates, and attach them to eligible sessions.</div>
+        <div className="min-h-[calc(100vh-72px)] bg-white text-[#2F2F2F]">
+            <div className="flex min-h-[calc(100vh-72px)] w-full">
+                <main className="min-w-0 flex-1 px-5 pb-12 pt-6 md:px-7 lg:px-8">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                        <div className="flex min-w-0 items-baseline gap-2 whitespace-nowrap">
+                            <h1 className="truncate text-[24px] font-bold leading-none tracking-[-0.02em] text-[#303030]">
+                                {activeTab === "measurements" ? "Measurements" : currentListTitle}
+                            </h1>
+                            <span className="text-[18px] font-medium text-[#4D4D4D]">/</span>
+                            <button
+                                type="button"
+                                className="text-[16px] font-medium text-[#4D4D4D] transition hover:text-[#2F2F2F]"
+                                title="Recurring tasks will use the same task-list layout"
+                            >
+                                Recurring Tasks
+                            </button>
+                        </div>
 
-                        {defaultSession ? (
-                            <div className="mt-2 text-[12px] text-[#606060]">
-                                Default session for new items:{" "}
-                                <span className="font-semibold text-[#111827]">{defaultSession.title || "Session"}</span>
-                                {safeLower(defaultSession.session_format_type) === "infinite"
-                                    ? " · ∞"
-                                    : defaultSession.start_time
-                                        ? ` · ${fmtWhen(defaultSession.start_time)}`
-                                        : ""}
-                            </div>
-                        ) : rawDefaultSession ? (
-                            <div className="mt-2 text-[12px] text-[#606060]">Default session: resolving…</div>
-                        ) : null}
+                        <div className="flex min-w-0 flex-wrap items-center gap-2 md:flex-nowrap">
+                            <label className="flex h-8 w-[170px] items-center gap-2 rounded-[9px] border border-[#DCDCDC] bg-white px-3 text-[#8C8C8C] shadow-[0_1px_1px_rgba(0,0,0,0.02)]">
+                                <Search size={13} strokeWidth={1.8} />
+                                <input
+                                    value={taskSearch}
+                                    onChange={(event) => setTaskSearch(event.target.value)}
+                                    placeholder="Search tasks..."
+                                    className="min-w-0 flex-1 bg-transparent text-[11px] text-[#3D3D3D] outline-none placeholder:text-[#9A9A9A]"
+                                />
+                            </label>
+
+                            <button
+                                type="button"
+                                onClick={() => setDueSortDescending((value) => !value)}
+                                className="inline-flex h-8 items-center gap-2 rounded-[9px] border border-[#DCDCDC] bg-white px-3 text-[11px] font-medium text-[#4A4A4A] transition hover:bg-[#F8F8F8]"
+                                title={dueSortDescending ? "Due date: latest first" : "Due date: earliest first"}
+                            >
+                                Sort by: Due Date
+                                <SlidersHorizontal size={13} strokeWidth={1.8} />
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab((tab) => (tab === "measurements" ? "plan" : "measurements"))}
+                                className={[
+                                    "inline-flex h-8 w-10 items-center justify-center rounded-[9px] border transition",
+                                    activeTab === "measurements"
+                                        ? "border-[#2F2F2F] bg-[#2F2F2F] text-white"
+                                        : "border-[#DCDCDC] bg-white text-[#545454] hover:bg-[#F8F8F8]",
+                                ].join(" ")}
+                                title={activeTab === "measurements" ? "Back to tasks" : "Measurements"}
+                            >
+                                <TasksPageMaskIcon
+                                    src="/icons/tasks-page-measurements.svg"
+                                    size={15}
+                                    fallback={<BarChart3 size={15} strokeWidth={1.8} />}
+                                />
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={focusQuickAdd}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-full bg-[#303030] px-4 text-[11px] font-medium text-white transition hover:bg-[#1F1F1F] disabled:cursor-not-allowed disabled:opacity-45"
+                                disabled={plans.length === 0 && activeTab === "plan"}
+                                title={plans.length === 0 ? "Create a task list first" : "Add task"}
+                            >
+                                <Plus size={12} strokeWidth={2} />
+                                Add Task
+                            </button>
+                        </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
-                        <Link to="/sessions" className={btnGhost + " inline-flex items-center justify-center"}>
-                            Sessions
-                        </Link>
-
-                        <button className={btnGhost} onClick={() => loadLibrary()} type="button" title="Refresh library">
-                            <span className="inline-flex items-center gap-2">
-                                <RefreshCw size={16} />
-                                Refresh
-                            </span>
-                        </button>
-                    </div>
-                </div>
-
-                <div className="mt-6 inline-flex rounded-[18px] border border-[#E5E7EB] bg-[#F8F8F8] p-1">
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab("plan")}
-                        className={[
-                            "inline-flex h-10 items-center gap-2 rounded-[14px] px-4 text-[13px] font-semibold transition",
-                            activeTab === "plan"
-                                ? "bg-[#2F2F2F] text-white shadow-sm"
-                                : "text-[#606060] hover:bg-white",
-                        ].join(" ")}
-                    >
-                        <ListChecks size={16} />
-                        Plan
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setActiveTab("measurements")}
-                        className={[
-                            "inline-flex h-10 items-center gap-2 rounded-[14px] px-4 text-[13px] font-semibold transition",
-                            activeTab === "measurements"
-                                ? "bg-[#2F2F2F] text-white shadow-sm"
-                                : "text-[#606060] hover:bg-white",
-                        ].join(" ")}
-                    >
-                        <BarChart3 size={16} />
-                        Measurements
-                    </button>
-                </div>
-
-                {activeTab === "plan" ? (
-                    <>
-
-                        {/* default session picker (optional) */}
-                        <div className="mt-6">
-                            <div className={softCard}>
-                                <div className="text-[12px] font-semibold text-[#111827] mb-2">Default session (optional)</div>
-
-                                <div className="flex flex-col md:flex-row gap-3 md:items-center">
-                                    <div className="flex-1">
-                                        <select
-                                            value={rawDefaultSession}
-                                            onChange={(e) => setRawDefaultSession(e.target.value)}
-                                            className="w-full h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] font-semibold text-[#111827] bg-white outline-none focus:border-[#111827]"
-                                        >
-                                            <option value="">— none —</option>
-                                            {sessionsLoading ? (
-                                                <option value="" disabled>
-                                                    Loading sessions…
-                                                </option>
-                                            ) : sessions.length === 0 ? (
-                                                <option value="" disabled>
-                                                    No sessions found
-                                                </option>
-                                            ) : (
-                                                sessions.map((s) => {
-                                                    const when = fmtWhen(s.start_time);
-                                                    const isInf = safeLower(s.session_format_type) === "infinite";
-                                                    const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""}`;
-                                                    return (
-                                                        <option key={s.id} value={s.id}>
-                                                            {label}
-                                                        </option>
-                                                    );
-                                                })
-                                            )}
-                                        </select>
-
-                                        <div className="mt-2 text-[12px] text-[#606060]">If you open this page from the room later, we can auto-set this.</div>
+                    {activeTab === "measurements" ? (
+                        <section className="mt-7">
+                            <div className="flex flex-col gap-4 rounded-[12px] border border-[#E2E2E2] bg-white p-4 md:p-5">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                    <div>
+                                        <div className="text-[14px] font-semibold text-[#333333]">Focus measurements</div>
+                                        <div className="mt-1 text-[11px] text-[#8A8A8A]">
+                                            Saved task-timer intervals. No separate Measurements tab anymore — this button is the entry point.
+                                        </div>
                                     </div>
-
                                     <div className="flex items-center gap-2">
                                         <button
-                                            className={btnGhost}
-                                            onClick={() => {
-                                                sp.delete("sessionId");
-                                                setSp(sp, { replace: true });
-                                                setRawDefaultSession("");
-                                                setDefaultSessionId(null);
-                                                setNewItemSessionId("");
-                                            }}
                                             type="button"
+                                            onClick={() => setMeasurementsRefreshNonce((value) => value + 1)}
+                                            className="inline-flex h-8 items-center gap-1.5 rounded-[8px] border border-[#DEDEDE] px-3 text-[11px] text-[#5A5A5A] hover:bg-[#F8F8F8]"
+                                            disabled={measurementsLoading}
                                         >
-                                            Clear
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* main grid */}
-                        <div className="mt-6 grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">
-                            {/* left: plans */}
-                            <div className={softCard}>
-                                <div className="flex items-start justify-between gap-3">
-                                    <div>
-                                        <div className="text-[16px] font-bold text-[#111827]">Plans</div>
-                                        <div className="mt-1 text-[13px] text-[#606060]">Create a plan, then add items.</div>
-                                    </div>
-
-                                    <button className={btnGhost} onClick={() => reloadPlans()} type="button" title="Refresh plans">
-                                        <span className="inline-flex items-center gap-2">
-                                            <RefreshCw size={16} />
+                                            <RefreshCw size={12} className={measurementsLoading ? "animate-spin" : ""} />
                                             Refresh
-                                        </span>
-                                    </button>
+                                        </button>
+                                        <div className="rounded-[8px] bg-[#303030] px-3 py-2 text-right text-white">
+                                            <div className="text-[9px] uppercase tracking-[0.08em] text-white/60">Total</div>
+                                            <div className="text-[13px] font-semibold">{fmtDuration(visibleMeasuredMs)}</div>
+                                        </div>
+                                    </div>
                                 </div>
 
-                                {/* create plan */}
-                                <div className="mt-4 flex items-center gap-2">
-                                    <input
-                                        value={newPlanTitle}
-                                        onChange={(e) => setNewPlanTitle(e.target.value)}
-                                        onKeyDown={(e) => e.key === "Enter" && createPlan()}
-                                        placeholder="New plan title…"
-                                        className={"flex-1 " + inputPill}
-                                    />
-                                    <button className={btnPrimary} onClick={createPlan} type="button" title="Create plan">
-                                        <span className="inline-flex items-center gap-2">
-                                            <Plus size={16} />
-                                            Create
-                                        </span>
-                                    </button>
-                                </div>
+                                {measurementsError ? (
+                                    <div className="rounded-[8px] border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                                        {measurementsError}
+                                    </div>
+                                ) : null}
 
-                                {/* plan list */}
-                                <div className="mt-4 flex flex-col gap-2">
-                                    {plansLoading ? (
-                                        <div className="text-[13px] text-[#606060] italic">Loading plans…</div>
-                                    ) : plans.length === 0 ? (
-                                        <div className="text-[13px] text-[#606060] italic">No plans yet. Create your first one above.</div>
-                                    ) : (
-                                        plans.map((p) => {
-                                            const active = p.id === selectedPlanId;
-                                            const count = active ? planItemsCount : undefined;
-
-                                            return (
-                                                <button
-                                                    key={p.id}
-                                                    onClick={() => {
-                                                        setSelectedPlanId(p.id);
-                                                        setEditingPlanTitle(false);
-                                                    }}
-                                                    className={[
-                                                        "w-full text-left rounded-[18px] px-4 py-3 border transition",
-                                                        active
-                                                            ? "border-[#111827] bg-[#111827] text-white"
-                                                            : "border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] text-[#111827]",
-                                                    ].join(" ")}
-                                                    type="button"
-                                                >
-                                                    <div className="flex items-center justify-between gap-3">
-                                                        <div className="min-w-0">
-                                                            <div className={["text-[13px] font-semibold truncate", active ? "text-white" : "text-[#111827]"].join(" ")}>
-                                                                {p.title}
-                                                            </div>
-                                                            <div className={["text-[11px] mt-1", active ? "text-white/70" : "text-[#606060]"].join(" ")}>
-                                                                {typeof count === "number" ? `${count} items` : "—"}
-                                                            </div>
-                                                        </div>
-
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                deletePlan(p.id);
-                                                            }}
-                                                            className={[
-                                                                "h-10 w-10 rounded-full border flex items-center justify-center transition",
-                                                                active ? "border-white/25 hover:bg-white/10" : "border-[#E5E7EB] hover:bg-[#F3F4F6]",
-                                                            ].join(" ")}
-                                                            type="button"
-                                                            title="Delete plan"
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </div>
-                                                </button>
-                                            );
-                                        })
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* right: plan builder */}
-                            <div className={softCard}>
-                                {!selectedPlan ? (
-                                    <div className="text-[13px] text-[#606060] italic">Select or create a plan.</div>
+                                {measurementsLoading ? (
+                                    <div className="py-10 text-center text-[12px] text-[#8A8A8A]">Loading measurements…</div>
+                                ) : visibleMeasurements.length === 0 ? (
+                                    <div className="py-14 text-center">
+                                        <TimerReset size={24} className="mx-auto text-[#A0A0A0]" />
+                                        <div className="mt-3 text-[13px] font-semibold">No saved time yet</div>
+                                        <div className="mt-1 text-[11px] text-[#8A8A8A]">Start a task timer in a room and press Save.</div>
+                                    </div>
                                 ) : (
-                                    <>
-                                        {/* plan title row */}
-                                        <div className="flex items-start justify-between gap-3">
-                                            <div className="min-w-0 flex-1">
-                                                {!editingPlanTitle ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="text-[18px] font-bold text-[#111827] truncate">{selectedPlan.title}</div>
-                                                        <button
-                                                            onClick={beginRenamePlan}
-                                                            className="h-10 px-4 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition text-[12px] font-semibold"
-                                                            type="button"
-                                                        >
-                                                            Rename
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
-                                                        <input
-                                                            value={planTitleDraft}
-                                                            onChange={(e) => setPlanTitleDraft(e.target.value)}
-                                                            onKeyDown={(e) => e.key === "Enter" && saveRenamePlan()}
-                                                            className={"flex-1 " + inputPill}
-                                                            placeholder="Plan title…"
-                                                        />
-                                                        <div className="flex items-center gap-2">
-                                                            <button className={btnPrimary} onClick={saveRenamePlan} type="button">
-                                                                Save
-                                                            </button>
-                                                            <button className={btnGhost} onClick={cancelRenamePlan} type="button">
-                                                                Cancel
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                <div className="mt-1 text-[12px] text-[#606060]">Updated: {fmtWhen(selectedPlan.updated_at)}</div>
-                                            </div>
-
-                                            <button className={btnGhost} onClick={() => selectedPlanId && reloadItems(selectedPlanId)} type="button" title="Refresh items">
-                                                <span className="inline-flex items-center gap-2">
-                                                    <RefreshCw size={16} />
-                                                    Refresh
-                                                </span>
-                                            </button>
+                                    <div className="overflow-hidden rounded-[10px] border border-[#E4E4E4]">
+                                        <div className="grid grid-cols-[minmax(220px,1fr)_120px_160px] border-b border-[#E4E4E4] bg-[#FAFAFA] px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-[#888888]">
+                                            <span>Task</span>
+                                            <span>Duration</span>
+                                            <span>Saved</span>
                                         </div>
-
-                                        {/* time measurements */}
-                                        <div className="mt-5 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5 bg-[#FAFAFA]">
-                                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                                <div>
-                                                    <div className="text-[14px] font-bold text-[#111827] inline-flex items-center gap-2">
-                                                        <TimerReset size={16} />
-                                                        Task time measurements
-                                                    </div>
-                                                    <div className="mt-1 text-[12px] text-[#606060]">
-                                                        Saved from the Tasks panel timer via Save.
-                                                    </div>
-                                                </div>
-
-                                                <div className="rounded-full border border-[#E5E7EB] bg-white px-4 py-2 text-[12px] font-bold text-[#111827]">
-                                                    {fmtDuration(planMeasuredMs)} total
-                                                </div>
+                                        {visibleMeasurements.map((measurement) => (
+                                            <div
+                                                key={measurement.id}
+                                                className="grid grid-cols-[minmax(220px,1fr)_120px_160px] items-center border-b border-[#EEEEEE] px-4 py-2.5 text-[11px] last:border-b-0 hover:bg-[#FCFCFC]"
+                                            >
+                                                <span className="truncate pr-4 text-[#3D3D3D]">{measurement.task_text || "Untitled task"}</span>
+                                                <span className="font-medium text-[#4A4A4A]">{fmtDuration(measurement.elapsed_ms)}</span>
+                                                <span className="text-[#858585]">{fmtWhen(measurement.saved_at) || "—"}</span>
                                             </div>
-
-                                            {planMeasurements.length === 0 ? (
-                                                <div className="mt-3 text-[12px] text-[#606060] italic">
-                                                    No saved time yet. Start a task timer in a room, then press Save.
-                                                </div>
-                                            ) : (
-                                                <div className="mt-3 flex flex-col gap-2">
-                                                    {planMeasurements.slice(0, 8).map((measurement) => (
-                                                        <div
-                                                            key={measurement.id}
-                                                            className="flex items-center justify-between gap-3 rounded-[16px] border border-[#F0F0F0] bg-white px-4 py-3"
-                                                        >
-                                                            <div className="min-w-0">
-                                                                <div className="truncate text-[13px] font-semibold text-[#111827]">
-                                                                    {measurement.task_text}
-                                                                </div>
-                                                                <div className="mt-1 text-[11px] text-[#606060]">
-                                                                    {measurement.saved_at ? `Saved: ${fmtWhen(measurement.saved_at)}` : "Saved time"}
-                                                                </div>
-                                                            </div>
-                                                            <div className="shrink-0 rounded-full bg-[#111827] px-3 py-1.5 text-[12px] font-bold text-white">
-                                                                {fmtDuration(measurement.elapsed_ms)}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* add item */}
-                                        <div className="mt-5 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5">
-                                            <div className="text-[14px] font-bold text-[#111827]">Add task</div>
-                                            <div className="mt-1 text-[12px] text-[#606060]">Each item = intention + due date + session link.</div>
-
-                                            <div className="mt-4 flex flex-col gap-3">
-                                                <input
-                                                    value={newItemText}
-                                                    onChange={(e) => setNewItemText(e.target.value)}
-                                                    onKeyDown={(e) => e.key === "Enter" && addItemToPlan()}
-                                                    placeholder="What will you work on? (intention)…"
-                                                    className={inputPill}
-                                                />
-
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                    <div>
-                                                        <div className="text-[11px] font-semibold text-[#606060] mb-2">Due date (optional)</div>
-                                                        <input type="date" value={newItemDueDate} onChange={(e) => setNewItemDueDate(e.target.value)} className={inputPill} />
-                                                    </div>
-
-                                                    <div>
-                                                        <div className="text-[11px] font-semibold text-[#606060] mb-2">Session (optional)</div>
-                                                        <select
-                                                            value={newItemSessionId}
-                                                            onChange={(e) => setNewItemSessionId(e.target.value)}
-                                                            className="w-full h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] font-semibold text-[#111827] bg-white outline-none focus:border-[#111827]"
-                                                        >
-                                                            <option value="">— none —</option>
-                                                            {sessionsLoading ? (
-                                                                <option value="" disabled>
-                                                                    Loading sessions…
-                                                                </option>
-                                                            ) : sessions.length === 0 ? (
-                                                                <option value="" disabled>
-                                                                    No sessions found
-                                                                </option>
-                                                            ) : (
-                                                                sessions.map((s) => {
-                                                                    const when = fmtWhen(s.start_time);
-                                                                    const isInf = safeLower(s.session_format_type) === "infinite";
-                                                                    const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""}`;
-                                                                    return (
-                                                                        <option key={s.id} value={s.id}>
-                                                                            {label}
-                                                                        </option>
-                                                                    );
-                                                                })
-                                                            )}
-                                                        </select>
-                                                    </div>
-                                                </div>
-
-                                                <div className="flex items-center gap-2">
-                                                    <button className={btnPrimary} onClick={addItemToPlan} type="button">
-                                                        <span className="inline-flex items-center gap-2">
-                                                            <Plus size={16} />
-                                                            Add to plan
-                                                        </span>
-                                                    </button>
-                                                    <button
-                                                        className={btnGhost}
-                                                        onClick={() => {
-                                                            setNewItemText("");
-                                                            setNewItemDueDate("");
-                                                        }}
-                                                        type="button"
-                                                    >
-                                                        Clear
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* items list */}
-                                        <div className="mt-5">
-                                            <div className="flex items-center justify-between gap-3">
-                                                <div className="text-[16px] font-bold text-[#111827]">Tasks</div>
-                                                <div className="text-[12px] text-[#606060]">{items.length} total</div>
-                                            </div>
-
-                                            <div className="mt-3 flex flex-col gap-2">
-                                                {itemsLoading ? (
-                                                    <div className="text-[13px] text-[#606060] italic">Loading items…</div>
-                                                ) : items.length === 0 ? (
-                                                    <div className="text-[13px] text-[#606060] italic">Add your first item above.</div>
-                                                ) : (
-                                                    items.map((it) => {
-                                                        const isEditing = editingItemId === it.id;
-                                                        const done = Boolean(it.completed);
-
-                                                        const session = it.session_id ? sessions.find((s) => String(s.id) === String(it.session_id)) : null;
-
-                                                        const canAttach = Boolean(it.session_id) && UUID_RE.test(String(it.session_id)) && eligibleSessionIds.has(String(it.session_id)) && String(it.text || "").trim().length > 0;
-                                                        const attached = Boolean(attachedItemIds[it.id]);
-
-                                                        return (
-                                                            <div key={it.id} className="rounded-[18px] border border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] transition px-4 py-3">
-                                                                {!isEditing ? (
-                                                                    <div className="flex items-start gap-3">
-                                                                        <button
-                                                                            className="mt-[2px] h-6 w-6 rounded-full border border-[#D1D5DB] flex items-center justify-center hover:bg-white transition"
-                                                                            onClick={() => toggleItemDone(it.id)}
-                                                                            type="button"
-                                                                            title={done ? "Mark as not done" : "Mark as done"}
-                                                                            style={{
-                                                                                borderColor: done ? "#65D46C" : "#D1D5DB",
-                                                                                background: done ? "rgba(101,212,108,0.15)" : "transparent",
-                                                                            }}
-                                                                        >
-                                                                            {done ? <Check size={14} color="#2F2F2F" /> : null}
-                                                                        </button>
-
-                                                                        <div className="flex-1 min-w-0">
-                                                                            <div className={["text-[13px] leading-5 break-words", done ? "text-[#606060] line-through" : "text-[#111827]"].join(" ")}>
-                                                                                {it.text}
-                                                                            </div>
-
-                                                                            <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-[#606060]">
-                                                                                {it.target_date ? (
-                                                                                    <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
-                                                                                        Due: <span className="font-semibold text-[#111827]">{fmtDueDate(it.target_date)}</span>
-                                                                                    </span>
-                                                                                ) : null}
-
-                                                                                {session ? (
-                                                                                    <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
-                                                                                        Session: <span className="font-semibold text-[#111827]">{session.title || "Session"}</span>
-                                                                                        {safeLower(session.session_format_type) === "infinite"
-                                                                                            ? " · ∞"
-                                                                                            : session.start_time
-                                                                                                ? ` · ${fmtWhen(session.start_time)}`
-                                                                                                : ""}
-                                                                                    </span>
-                                                                                ) : it.session_id ? (
-                                                                                    <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
-                                                                                        Session: <span className="font-semibold text-[#111827]">resolving…</span>
-                                                                                    </span>
-                                                                                ) : (
-                                                                                    <span className="px-3 py-1 rounded-full border border-[#E5E7EB] bg-white">
-                                                                                        Session: <span className="font-semibold text-[#111827]">—</span>
-                                                                                    </span>
-                                                                                )}
-
-                                                                                {attached ? (
-                                                                                    <span className="px-3 py-1 rounded-full border border-[#65D46C] bg-[#65D46C]/10 text-[#2F2F2F] font-semibold">
-                                                                                        Attached to room
-                                                                                    </span>
-                                                                                ) : null}
-                                                                            </div>
-                                                                        </div>
-
-                                                                        {/* actions */}
-                                                                        <div className="flex items-center gap-2 shrink-0">
-                                                                            <button className="h-10 px-4 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition text-[12px] font-semibold" onClick={() => startEditItem(it)} type="button">
-                                                                                Edit
-                                                                            </button>
-
-                                                                            <button className="h-10 w-10 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition flex items-center justify-center" onClick={() => deleteItem(it.id)} type="button" title="Delete item">
-                                                                                <Trash2 size={16} />
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="flex flex-col gap-3">
-                                                                        <div className="text-[12px] font-semibold text-[#606060]">Edit item</div>
-
-                                                                        <input
-                                                                            value={editingItemText}
-                                                                            onChange={(e) => setEditingItemText(e.target.value)}
-                                                                            onKeyDown={(e) => {
-                                                                                if (e.key === "Enter") saveEditItem();
-                                                                                if (e.key === "Escape") cancelEditItem();
-                                                                            }}
-                                                                            className={inputPill}
-                                                                            placeholder="Intention…"
-                                                                            autoFocus
-                                                                        />
-
-                                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                                            <div>
-                                                                                <div className="text-[11px] font-semibold text-[#606060] mb-2">Due date (optional)</div>
-                                                                                <input type="date" value={editingItemDueDate} onChange={(e) => setEditingItemDueDate(e.target.value)} className={inputPill} />
-                                                                            </div>
-
-                                                                            <div>
-                                                                                <div className="text-[11px] font-semibold text-[#606060] mb-2">Session (optional)</div>
-                                                                                <select
-                                                                                    value={editingItemSessionId}
-                                                                                    onChange={(e) => setEditingItemSessionId(e.target.value)}
-                                                                                    className="w-full h-11 px-4 rounded-full border border-[#E5E7EB] text-[13px] font-semibold text-[#111827] bg-white outline-none focus:border-[#111827]"
-                                                                                >
-                                                                                    <option value="">— none —</option>
-                                                                                    {sessions.map((s) => {
-                                                                                        const when = fmtWhen(s.start_time);
-                                                                                        const isInf = safeLower(s.session_format_type) === "infinite";
-                                                                                        const label = `${s.title || "Session"}${isInf ? " · ∞" : when ? ` · ${when}` : ""}`;
-                                                                                        return (
-                                                                                            <option key={s.id} value={s.id}>
-                                                                                                {label}
-                                                                                            </option>
-                                                                                        );
-                                                                                    })}
-                                                                                </select>
-                                                                            </div>
-                                                                        </div>
-
-                                                                        <div className="flex flex-wrap items-center gap-2">
-                                                                            <button className={btnPrimary} onClick={saveEditItem} type="button">
-                                                                                Save
-                                                                            </button>
-                                                                            <button className={btnGhost} onClick={cancelEditItem} type="button">
-                                                                                Cancel
-                                                                            </button>
-                                                                            <button
-                                                                                className="h-11 rounded-full px-5 text-[13px] font-semibold border border-[#F65252] bg-[#F65252]/5 text-[#F65252] hover:bg-[#F65252]/10 transition"
-                                                                                onClick={() => deleteItem(it.id)}
-                                                                                type="button"
-                                                                            >
-                                                                                Delete
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-
-                                                                {!isEditing && (() => {
-                                                                    const measurements = getMeasurementsForItem(it);
-                                                                    const totalMs = measurements.reduce((sum, measurement) => sum + Math.max(0, Number(measurement.elapsed_ms || 0)), 0);
-
-                                                                    if (!measurements.length) return null;
-
-                                                                    return (
-                                                                        <div className="mt-3 rounded-[16px] border border-[#E5E7EB] bg-[#FAFAFA] px-4 py-3">
-                                                                            <div className="flex items-center justify-between gap-3">
-                                                                                <div className="inline-flex items-center gap-2 text-[12px] font-bold text-[#111827]">
-                                                                                    <TimerReset size={15} />
-                                                                                    Time saved
-                                                                                </div>
-                                                                                <div className="rounded-full bg-[#111827] px-3 py-1 text-[11px] font-bold text-white">
-                                                                                    {fmtDuration(totalMs)}
-                                                                                </div>
-                                                                            </div>
-                                                                            <div className="mt-2 flex flex-wrap gap-1.5">
-                                                                                {measurements.slice(0, 5).map((measurement) => (
-                                                                                    <span
-                                                                                        key={measurement.id}
-                                                                                        className="rounded-full border border-[#E5E7EB] bg-white px-2 py-1 text-[11px] text-[#606060]"
-                                                                                        title={measurement.saved_at ? fmtWhen(measurement.saved_at) : "Saved time"}
-                                                                                    >
-                                                                                        {fmtDuration(measurement.elapsed_ms)}
-                                                                                    </span>
-                                                                                ))}
-                                                                            </div>
-                                                                        </div>
-                                                                    );
-                                                                })()}
-
-                                                                {/* secondary actions row */}
-                                                                {!isEditing ? (
-                                                                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                                                                        <button
-                                                                            className={btnGhost}
-                                                                            onClick={() => {
-                                                                                if (!it.session_id) return;
-                                                                                openRoom(it.session_id);
-                                                                            }}
-                                                                            type="button"
-                                                                            disabled={!it.session_id}
-                                                                            style={{ opacity: it.session_id ? 1 : 0.5 }}
-                                                                            title={!it.session_id ? "Select a session first" : "Open room"}
-                                                                        >
-                                                                            <span className="inline-flex items-center gap-2">
-                                                                                <ExternalLink size={16} />
-                                                                                Open room
-                                                                            </span>
-                                                                        </button>
-
-                                                                        <button
-                                                                            className={btnPrimary}
-                                                                            onClick={() => attachItemToSession(it)}
-                                                                            type="button"
-                                                                            disabled={!canAttach || attachingItemId === it.id}
-                                                                            style={{ opacity: canAttach ? 1 : 0.5 }}
-                                                                            title={
-                                                                                !canAttach
-                                                                                    ? "Set session + intention text first"
-                                                                                    : attached
-                                                                                        ? "Already attached (will still be safe)"
-                                                                                        : "Attach intention to the session (shows in room)"
-                                                                            }
-                                                                        >
-                                                                            {attachingItemId === it.id ? "Attaching…" : attached ? "Attached" : "Attach to session"}
-                                                                        </button>
-
-                                                                        <div className="text-[11px] text-[#606060]">Attach = create real intention row for that session.</div>
-                                                                    </div>
-                                                                ) : null}
-                                                            </div>
-                                                        );
-                                                    })
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {/* library */}
-                                        <div className="mt-6 border border-[#F0F0F0] rounded-[22px] p-4 md:p-5">
-                                            <div className="flex items-center justify-between gap-3">
-                                                <div>
-                                                    <div className="text-[14px] font-bold text-[#111827]">My library</div>
-                                                    <div className="mt-1 text-[12px] text-[#606060]">Your recent room tasks (unique by text). Click one to add it.</div>
-                                                </div>
-
-                                                <button className={btnGhost} onClick={() => loadLibrary()} type="button" title="Refresh library">
-                                                    <span className="inline-flex items-center gap-2">
-                                                        <RefreshCw size={16} />
-                                                        Refresh
-                                                    </span>
-                                                </button>
-                                            </div>
-
-                                            <div className="mt-4">
-                                                {loadingLibrary ? (
-                                                    <div className="text-[13px] text-[#606060] italic">Loading…</div>
-                                                ) : library.length === 0 ? (
-                                                    <div className="text-[13px] text-[#606060] italic">No recent intentions yet. Attach some intentions in rooms first, or create items above.</div>
-                                                ) : (
-                                                    <div className="flex flex-col gap-2">
-                                                        {library.map((it) => {
-                                                            const text = String(it.text || "").trim();
-                                                            const deleting = deletingLibraryText === text.toLowerCase();
-
-                                                            return (
-                                                                <div key={it.id} className="rounded-[18px] border border-[#F0F0F0] hover:bg-[#F6F6F6] hover:border-[#E5E7EB] transition px-4 py-3 flex items-center gap-3">
-                                                                    <div className="flex-1 min-w-0">
-                                                                        <div className="text-[13px] text-[#111827] break-words leading-5">{text}</div>
-                                                                        <div className="mt-1 text-[11px] text-[#606060]">{it.created_at ? `Last used: ${fmtWhen(it.created_at)}` : ""}</div>
-                                                                    </div>
-
-                                                                    <div className="flex items-center gap-2 shrink-0">
-                                                                        <button
-                                                                            className="h-10 px-4 rounded-full border border-[#111827] text-[#111827] hover:bg-[#111827] hover:text-white transition text-[12px] font-semibold whitespace-nowrap"
-                                                                            onClick={() => addLibraryTextToPlan(text)}
-                                                                            type="button"
-                                                                        >
-                                                                            Use
-                                                                        </button>
-
-                                                                        <button
-                                                                            className="h-10 w-10 rounded-full border border-[#E5E7EB] hover:bg-[#F3F4F6] transition flex items-center justify-center"
-                                                                            onClick={() => deleteLibraryText(text)}
-                                                                            type="button"
-                                                                            disabled={deleting}
-                                                                            title="Delete this intention from library"
-                                                                            style={{ opacity: deleting ? 0.6 : 1 }}
-                                                                        >
-                                                                            <Trash2 size={16} />
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </>
+                                        ))}
+                                    </div>
                                 )}
                             </div>
+                        </section>
+                    ) : itemsLoading ? (
+                        <div className="flex min-h-[420px] items-center justify-center text-[12px] text-[#8E8E8E]">
+                            Loading tasks…
                         </div>
-                    </>
-                ) : (
-                    <div className="mt-6">
-                        <div className={softCard}>
-                            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                                <div>
-                                    <div className="text-[18px] font-bold text-[#111827]">
-                                        Focus measurements
-                                    </div>
-                                    <div className="mt-1 text-[13px] text-[#606060]">
-                                        Every saved measurement is shown as a separate row.
-                                    </div>
+                    ) : taskListEmpty ? (
+                        <section className="flex min-h-[510px] items-start justify-center pt-[118px]">
+                            <div className="w-full max-w-[390px] text-center">
+                                <div className="mx-auto flex h-[92px] w-[92px] items-center justify-center rounded-full border border-[#E5E5E5] bg-[#FAFAFA] text-[#323232]">
+                                    <ClipboardList size={34} strokeWidth={1.55} />
                                 </div>
+                                <h2 className="mt-6 text-[20px] font-semibold tracking-[-0.02em] text-[#303030]">
+                                    {taskSearch ? "No tasks found" : activeListId === "completed" ? "No completed tasks yet" : "No tasks set yet"}
+                                </h2>
+                                <p className="mx-auto mt-2 max-w-[340px] text-[12px] leading-[1.35] text-[#8A8A8A]">
+                                    {taskSearch
+                                        ? "Try another search or switch task lists."
+                                        : activeListId === "completed"
+                                            ? "Tasks you complete will appear here."
+                                            : "Add your first one in the list. Focus on your deep work sessions with visual goals."}
+                                </p>
 
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            setMeasurementsRefreshNonce((value) => value + 1)
-                                        }
-                                        className={btnGhost}
-                                        disabled={measurementsLoading}
-                                        title="Reload measurements from Supabase"
-                                    >
-                                        <span className="inline-flex items-center gap-2">
-                                            <RefreshCw
-                                                size={16}
-                                                className={
-                                                    measurementsLoading ? "animate-spin" : ""
-                                                }
+                                {!taskSearch && activeListId !== "completed" ? (
+                                    <>
+                                        <div className="mx-auto mt-6 flex h-10 max-w-[360px] items-center overflow-hidden rounded-full border border-[#E0E0E0] bg-white">
+                                            <input
+                                                ref={quickAddInputRef}
+                                                value={newItemText}
+                                                onChange={(event) => setNewItemText(event.target.value)}
+                                                onKeyDown={(event) => event.key === "Enter" && addItemToPlan()}
+                                                disabled={plans.length === 0}
+                                                placeholder="e.g. Prepare presentation slides..."
+                                                className="h-full min-w-0 flex-1 bg-transparent px-4 text-[11px] text-[#3C3C3C] outline-none placeholder:text-[#B0B0B0] disabled:bg-[#FAFAFA]"
                                             />
-                                            Refresh
-                                        </span>
-                                    </button>
-
-                                    <div className="rounded-[16px] bg-[#2F2F2F] px-4 py-3 text-white">
-                                        <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/60">
-                                            Total measured
+                                            <button
+                                                type="button"
+                                                onClick={addItemToPlan}
+                                                disabled={plans.length === 0 || !newItemText.trim()}
+                                                className="mr-[-1px] inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-[#3B3B3B] bg-white px-4 text-[12px] font-medium text-[#3B3B3B] transition hover:bg-[#F7F7F7] disabled:cursor-not-allowed disabled:opacity-40"
+                                            >
+                                                <span className="flex h-4 w-4 items-center justify-center rounded-full border border-current">
+                                                    <Plus size={10} />
+                                                </span>
+                                                Add First Task
+                                            </button>
                                         </div>
-                                        <div className="mt-1 text-[20px] font-bold">
-                                            {fmtDuration(visibleMeasuredMs)}
-                                        </div>
-                                    </div>
-                                </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowNewListInput(true)}
+                                            className="mt-3 text-[11px] font-medium text-[#5E8ED6] underline underline-offset-2"
+                                        >
+                                            or create a task list first
+                                        </button>
+                                    </>
+                                ) : null}
                             </div>
+                        </section>
+                    ) : (
+                        <section className="mt-7 overflow-visible rounded-[11px] border border-[#DEDEDE] bg-white">
+                            <div className="divide-y divide-[#E7E7E7]">
+                                {visibleTaskItems.map((item) => {
+                                    const done = Boolean(item.completed);
+                                    const list = plans.find((plan) => String(plan.id) === String(item.plan_id));
+                                    const session = item.session_id
+                                        ? sessions.find((candidate) => String(candidate.id) === String(item.session_id))
+                                        : null;
+                                    const editing = editingItemId === item.id;
+                                    const assigning = sessionPickerItemId === item.id;
+                                    const attached = Boolean(attachedItemIds[item.id]);
 
-                            {measurementsError ? (
-                                <div className="mt-4 rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">
-                                    {measurementsError}
-                                </div>
-                            ) : null}
+                                    return (
+                                        <div key={item.id} className="group relative">
+                                            <div className="flex min-h-[41px] items-center gap-3 px-3 py-2.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => toggleItemDone(item.id)}
+                                                    className={[
+                                                        "flex h-[17px] w-[17px] shrink-0 items-center justify-center rounded-full border transition",
+                                                        done
+                                                            ? "border-[#79D783] bg-[#79D783] text-white"
+                                                            : "border-[#CFCFCF] bg-white hover:border-[#9D9D9D]",
+                                                    ].join(" ")}
+                                                    title={done ? "Mark as not completed" : "Mark as completed"}
+                                                >
+                                                    {done ? <Check size={11} strokeWidth={2.4} /> : null}
+                                                </button>
 
-                            {measurementsLoading ? (
-                                <div className="mt-6 text-[13px] italic text-[#606060]">
-                                    Loading measurements…
-                                </div>
-                            ) : visibleMeasurements.length === 0 ? (
-                                <div className="mt-6 rounded-[18px] border border-dashed border-[#D8DCE3] bg-[#FAFAFA] px-5 py-8 text-center">
-                                    <TimerReset
-                                        className="mx-auto text-[#98A2B3]"
-                                        size={24}
-                                    />
-                                    <div className="mt-3 text-[14px] font-semibold text-[#344054]">
-                                        No saved time yet
-                                    </div>
-                                    <div className="mt-1 text-[12px] text-[#667085]">
-                                        Start a task timer in the room and press Save.
-                                        Each saved interval will appear here as a separate row.
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="mt-6 overflow-hidden rounded-[18px] border border-[#E5E7EB] bg-white">
-                                    <div className="overflow-x-auto">
-                                        <div className="min-w-[680px]">
-                                            <div className="grid grid-cols-[minmax(280px,1fr)_150px_210px] items-center border-b border-[#E5E7EB] bg-[#F8F8F8] px-4 py-3">
-                                                <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#667085]">
-                                                    Task
+                                                <div className="min-w-0 flex-1">
+                                                    <div
+                                                        className={[
+                                                            "truncate text-[11px] leading-4",
+                                                            done ? "text-[#8A8A8A] line-through" : "text-[#3C3C3C]",
+                                                        ].join(" ")}
+                                                        title={item.text}
+                                                    >
+                                                        {item.text}
+                                                    </div>
                                                 </div>
-                                                <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#667085]">
-                                                    Duration
+
+                                                <div className="hidden shrink-0 items-center gap-2 text-[9px] text-[#8C8C8C] md:flex">
+                                                    <span className="inline-flex items-center gap-1.5">
+                                                        <span className="h-1.5 w-1.5 rounded-full bg-[#6B9CF7]" />
+                                                        {list?.title || "Task list"}
+                                                    </span>
+                                                    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                                                        <CalendarDays size={12} strokeWidth={1.6} />
+                                                        {fmtTaskRowDate(item.target_date, item.created_at)}
+                                                    </span>
+                                                    {session ? (
+                                                        <span className="max-w-[120px] truncate text-[#6B6B6B]" title={session.title || "Session"}>
+                                                            {session.title || "Session"}
+                                                        </span>
+                                                    ) : null}
                                                 </div>
-                                                <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[#667085]">
-                                                    Saved
+
+                                                <div className="flex shrink-0 items-center gap-1 text-[#909090]">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => startEditItem(item)}
+                                                        className="flex h-6 w-6 items-center justify-center rounded-[5px] transition hover:bg-[#F2F2F2] hover:text-[#4A4A4A]"
+                                                        title="Edit task"
+                                                    >
+                                                        <TasksPageMaskIcon
+                                                            src="/icons/tasks-page-edit.svg"
+                                                            size={12}
+                                                            fallback={<Pencil size={12} strokeWidth={1.8} />}
+                                                        />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSessionPickerItemId((current) => (current === item.id ? null : item.id));
+                                                            setSessionPickerValue(item.session_id || defaultSessionId || "");
+                                                        }}
+                                                        className={[
+                                                            "flex h-6 w-6 items-center justify-center rounded-[5px] transition hover:bg-[#F2F2F2] hover:text-[#4A4A4A]",
+                                                            attached ? "text-[#5FBE69]" : "",
+                                                        ].join(" ")}
+                                                        title={attached ? "Assigned to session" : "Assign to session"}
+                                                    >
+                                                        <ListPlus size={12} strokeWidth={1.8} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => deleteItem(item.id)}
+                                                        className="flex h-6 w-6 items-center justify-center rounded-[5px] text-[#E48686] transition hover:bg-[#FFF1F1] hover:text-[#D85F5F]"
+                                                        title="Delete task"
+                                                    >
+                                                        <TasksPageMaskIcon
+                                                            src="/icons/tasks-page-delete.svg"
+                                                            size={12}
+                                                            fallback={<Trash2 size={12} strokeWidth={1.8} />}
+                                                        />
+                                                    </button>
                                                 </div>
                                             </div>
 
-                                            <div className="divide-y divide-[#E5E7EB]">
-                                                {visibleMeasurements.map((measurement) => (
-                                                    <div
-                                                        key={measurement.id}
-                                                        className="grid grid-cols-[minmax(280px,1fr)_150px_210px] items-center px-4 py-3 transition hover:bg-[#FAFAFA]"
-                                                    >
-                                                        <div
-                                                            className="min-w-0 truncate pr-5 text-[13px] font-semibold text-[#111827]"
-                                                            title={
-                                                                measurement.task_text ||
-                                                                "Untitled task"
-                                                            }
+                                            {editing ? (
+                                                <div className="border-t border-[#EEEEEE] bg-[#FBFBFB] px-4 py-3">
+                                                    <div className="grid gap-2 md:grid-cols-[minmax(180px,1fr)_145px_minmax(180px,260px)_auto]">
+                                                        <input
+                                                            value={editingItemText}
+                                                            onChange={(event) => setEditingItemText(event.target.value)}
+                                                            onKeyDown={(event) => {
+                                                                if (event.key === "Enter") void saveEditItem();
+                                                                if (event.key === "Escape") cancelEditItem();
+                                                            }}
+                                                            className="h-8 rounded-[8px] border border-[#DCDCDC] bg-white px-3 text-[11px] outline-none focus:border-[#AFAFAF]"
+                                                            placeholder="Task name"
+                                                        />
+                                                        <input
+                                                            type="date"
+                                                            value={editingItemDueDate}
+                                                            onChange={(event) => setEditingItemDueDate(event.target.value)}
+                                                            className="h-8 rounded-[8px] border border-[#DCDCDC] bg-white px-2 text-[10px] text-[#555555] outline-none focus:border-[#AFAFAF]"
+                                                        />
+                                                        <select
+                                                            value={editingItemSessionId}
+                                                            onChange={(event) => setEditingItemSessionId(event.target.value)}
+                                                            className="h-8 rounded-[8px] border border-[#DCDCDC] bg-white px-2 text-[10px] text-[#555555] outline-none focus:border-[#AFAFAF]"
                                                         >
-                                                            {measurement.task_text ||
-                                                                "Untitled task"}
-                                                        </div>
-
-                                                        <div className="text-[13px] font-semibold text-[#344054]">
-                                                            {fmtDuration(
-                                                                measurement.elapsed_ms,
-                                                            )}
-                                                        </div>
-
-                                                        <div className="whitespace-nowrap text-[12px] text-[#667085]">
-                                                            {fmtWhen(
-                                                                measurement.saved_at,
-                                                            ) || "—"}
+                                                            <option value="">No session</option>
+                                                            {sessions.map((candidate) => (
+                                                                <option key={candidate.id} value={candidate.id}>
+                                                                    {candidate.title || "Session"}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => void saveEditItem()}
+                                                                className="h-8 rounded-[8px] bg-[#303030] px-3 text-[10px] font-medium text-white hover:bg-[#1F1F1F]"
+                                                            >
+                                                                Save
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={cancelEditItem}
+                                                                className="flex h-8 w-8 items-center justify-center rounded-[8px] border border-[#DCDCDC] bg-white text-[#777777] hover:bg-[#F4F4F4]"
+                                                                title="Cancel"
+                                                            >
+                                                                <X size={13} />
+                                                            </button>
                                                         </div>
                                                     </div>
-                                                ))}
-                                            </div>
+                                                </div>
+                                            ) : null}
+
+                                            {assigning ? (
+                                                <div className="border-t border-[#EEEEEE] bg-[#FBFBFB] px-4 py-3">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <select
+                                                            value={sessionPickerValue}
+                                                            onChange={(event) => setSessionPickerValue(event.target.value)}
+                                                            className="h-8 min-w-[220px] flex-1 rounded-[8px] border border-[#DCDCDC] bg-white px-2 text-[10px] text-[#555555] outline-none focus:border-[#AFAFAF]"
+                                                        >
+                                                            <option value="">Choose a session…</option>
+                                                            {sessionsLoading ? (
+                                                                <option value="" disabled>Loading sessions…</option>
+                                                            ) : (
+                                                                sessions.map((candidate) => (
+                                                                    <option key={candidate.id} value={candidate.id}>
+                                                                        {candidate.title || "Session"}
+                                                                        {safeLower(candidate.session_format_type) === "infinite"
+                                                                            ? " · ∞"
+                                                                            : candidate.start_time
+                                                                                ? ` · ${fmtWhen(candidate.start_time)}`
+                                                                                : ""}
+                                                                    </option>
+                                                                ))
+                                                            )}
+                                                        </select>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => void assignItemToSession(item, sessionPickerValue)}
+                                                            disabled={!sessionPickerValue || attachingItemId === item.id}
+                                                            className="h-8 rounded-[8px] bg-[#303030] px-3 text-[10px] font-medium text-white disabled:opacity-40"
+                                                        >
+                                                            {attachingItemId === item.id ? "Assigning…" : "Assign"}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setSessionPickerItemId(null)}
+                                                            className="flex h-8 w-8 items-center justify-center rounded-[8px] border border-[#DCDCDC] bg-white text-[#777777] hover:bg-[#F4F4F4]"
+                                                            title="Close"
+                                                        >
+                                                            <X size={13} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : null}
                                         </div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            <div className="border-t border-[#E7E7E7] px-3 py-2.5">
+                                <input
+                                    ref={quickAddInputRef}
+                                    value={newItemText}
+                                    onChange={(event) => setNewItemText(event.target.value)}
+                                    onKeyDown={(event) => event.key === "Enter" && addItemToPlan()}
+                                    placeholder="Type a task name..."
+                                    className="h-7 w-full bg-transparent px-6 text-[11px] text-[#3C3C3C] outline-none placeholder:text-[#A9A9A9]"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={addItemToPlan}
+                                    disabled={!newItemText.trim() || plans.length === 0}
+                                    className="mt-1 inline-flex h-6 items-center gap-1 rounded-full bg-[#303030] px-2.5 text-[9px] font-medium text-white transition hover:bg-[#1F1F1F] disabled:opacity-40"
+                                >
+                                    <Plus size={9} />
+                                    Add Task
+                                </button>
+                            </div>
+                        </section>
+                    )}
+                </main>
+
+                <aside className="hidden w-[210px] shrink-0 border-l border-[#E7E7E7] bg-white px-4 pb-8 pt-6 min-[900px]:block">
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="text-[9px] font-semibold uppercase tracking-[0.02em] text-[#767676]">Task Lists</div>
+                        <button
+                            type="button"
+                            onClick={() => setShowNewListInput((value) => !value)}
+                            className="inline-flex h-6 items-center gap-1 rounded-full border border-[#DCDCDC] px-2 text-[9px] text-[#8B8B8B] transition hover:bg-[#F8F8F8]"
+                        >
+                            <Plus size={9} />
+                            Add list
+                        </button>
                     </div>
-                )}
+
+                    {showNewListInput ? (
+                        <div className="mt-3 rounded-[8px] border border-[#E1E1E1] bg-[#FAFAFA] p-2">
+                            <input
+                                autoFocus
+                                value={newPlanTitle}
+                                onChange={(event) => setNewPlanTitle(event.target.value)}
+                                onKeyDown={(event) => {
+                                    if (event.key === "Enter") void createPlan();
+                                    if (event.key === "Escape") setShowNewListInput(false);
+                                }}
+                                placeholder="List name..."
+                                className="h-7 w-full rounded-[6px] border border-[#DCDCDC] bg-white px-2 text-[10px] outline-none focus:border-[#AFAFAF]"
+                            />
+                            <div className="mt-2 flex items-center gap-1.5">
+                                <button
+                                    type="button"
+                                    onClick={() => void createPlan()}
+                                    disabled={!newPlanTitle.trim()}
+                                    className="h-6 rounded-[6px] bg-[#303030] px-2 text-[9px] text-white disabled:opacity-40"
+                                >
+                                    Create
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowNewListInput(false);
+                                        setNewPlanTitle("");
+                                    }}
+                                    className="h-6 rounded-[6px] px-2 text-[9px] text-[#777777] hover:bg-[#EEEEEE]"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    ) : null}
+
+                    <div className="mt-3 flex flex-col gap-1.5">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setActiveListId((current) => (current === "completed" ? "all" : "completed"));
+                                setActiveTab("plan");
+                            }}
+                            className={[
+                                "flex h-8 w-full items-center gap-2 rounded-[7px] px-2.5 text-left text-[10px] transition",
+                                activeListId === "completed"
+                                    ? "bg-[#DBF7DD] text-[#61C86B] ring-1 ring-inset ring-[#BDEFC1]"
+                                    : "bg-[#E8F9E9] text-[#6CCF75] hover:bg-[#DFF6E1]",
+                            ].join(" ")}
+                        >
+                            <CheckCircle2 size={12} strokeWidth={1.8} />
+                            <span className="min-w-0 flex-1 truncate">Completed Tasks</span>
+                            <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#68D273] px-1 text-[8px] font-semibold text-white">
+                                {completedItemsCount}
+                            </span>
+                        </button>
+
+                        {plansLoading ? (
+                            <div className="px-2 py-3 text-[9px] text-[#9A9A9A]">Loading lists…</div>
+                        ) : plans.length === 0 ? (
+                            <div className="px-2 py-3 text-[9px] leading-4 text-[#9A9A9A]">No task lists yet.</div>
+                        ) : (
+                            plans.map((plan, index) => {
+                                const active = activeListId === plan.id;
+                                return (
+                                    <button
+                                        key={plan.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setActiveListId((current) => (current === plan.id ? "all" : plan.id));
+                                            setSelectedPlanId(plan.id);
+                                            setActiveTab("plan");
+                                        }}
+                                        className={[
+                                            "flex h-8 w-full items-center gap-2 rounded-[7px] px-2.5 text-left text-[10px] text-[#555555] transition hover:bg-[#F4F4F4]",
+                                            active ? "bg-[#F2F2F2] font-medium" : "",
+                                        ].join(" ")}
+                                    >
+                                        <span className="text-[10px] leading-none">{planEmoji(plan.title, index)}</span>
+                                        <span className="min-w-0 flex-1 truncate">{plan.title}</span>
+                                        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#EFEFEF] px-1 text-[8px] text-[#9A9A9A]">
+                                            {planTaskCounts[plan.id] || 0}
+                                        </span>
+                                    </button>
+                                );
+                            })
+                        )}
+                    </div>
+
+                    {selectedPlan && activeListId !== "all" && activeListId !== "completed" ? (
+                        <div className="mt-5 border-t border-[#F0F0F0] pt-3">
+                            <div className="flex items-center gap-1.5 opacity-0 transition hover:opacity-100 focus-within:opacity-100">
+                                <button
+                                    type="button"
+                                    onClick={beginRenamePlan}
+                                    className="text-[9px] text-[#8A8A8A] hover:text-[#4A4A4A]"
+                                >
+                                    Rename
+                                </button>
+                                <span className="text-[#D0D0D0]">·</span>
+                                <button
+                                    type="button"
+                                    onClick={() => void deletePlan(selectedPlan.id)}
+                                    className="text-[9px] text-[#D98484] hover:text-[#C85C5C]"
+                                >
+                                    Delete list
+                                </button>
+                            </div>
+                            {editingPlanTitle ? (
+                                <div className="mt-2 flex gap-1.5">
+                                    <input
+                                        value={planTitleDraft}
+                                        onChange={(event) => setPlanTitleDraft(event.target.value)}
+                                        onKeyDown={(event) => {
+                                            if (event.key === "Enter") void saveRenamePlan();
+                                            if (event.key === "Escape") cancelRenamePlan();
+                                        }}
+                                        className="h-7 min-w-0 flex-1 rounded-[6px] border border-[#DCDCDC] px-2 text-[9px] outline-none"
+                                    />
+                                    <button type="button" onClick={() => void saveRenamePlan()} className="h-7 rounded-[6px] bg-[#303030] px-2 text-[9px] text-white">Save</button>
+                                </div>
+                            ) : null}
+                        </div>
+                    ) : null}
+                </aside>
             </div>
         </div>
     );
