@@ -42,18 +42,6 @@ button[title="Delete task list"] > svg {
   }
 }
 
-@keyframes taskActionNudge {
-  0% {
-    transform: translateY(0) scale(1);
-  }
-  55% {
-    transform: translateY(-2px) scale(1.05);
-  }
-  100% {
-    transform: translateY(-1px) scale(1.02);
-  }
-}
-
 @media (hover: hover) and (pointer: fine) {
   /* Task cards stay full-strength at rest. Hover is a background/state change only. */
   #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]) {
@@ -70,14 +58,26 @@ button[title="Delete task list"] > svg {
     box-shadow: inset 3px 0 0 rgba(47, 47, 47, 0.09);
   }
 
-  /* Never dim task metadata or action controls in the idle state. */
-  #root:has(aside[class*="w-[350px]"]) main div:has(> button[title="Edit task"]),
+  /* Metadata stays full-strength. Only the task action icons use the old reveal animation. */
   #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]) > div[class*="gap-3"] {
     opacity: 1 !important;
-    transform: none;
   }
 
-  /* Action buttons keep their normal color and animate only when the row becomes active. */
+  #root:has(aside[class*="w-[350px]"]) main div:has(> button[title="Edit task"]) {
+    opacity: 0.42;
+    transform: translateX(4px);
+    transition:
+      opacity 160ms ease,
+      transform 180ms ease;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover > div:has(> button[title="Edit task"]),
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):focus-within > div:has(> button[title="Edit task"]) {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  /* Action buttons keep their normal color and retain individual hover feedback. */
   button[title="Edit task"],
   button[title="Assign to session"],
   button[title="Delete task"],
@@ -90,20 +90,6 @@ button[title="Delete task list"] > svg {
       color 150ms ease,
       transform 150ms ease,
       box-shadow 150ms ease !important;
-  }
-
-  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover button[title="Edit task"],
-  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover button[title="Assign to session"],
-  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover button[title="Delete task"] {
-    animation: taskActionNudge 190ms ease both;
-  }
-
-  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover button[title="Assign to session"] {
-    animation-delay: 25ms;
-  }
-
-  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover button[title="Delete task"] {
-    animation-delay: 50ms;
   }
 
   button[title="Edit task"]:hover,
@@ -245,6 +231,11 @@ button[title="Delete task list"] > svg {
   button[title="Edit recurring task"],
   button[title="Delete recurring task"] {
     opacity: 1 !important;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main div:has(> button[title="Edit task"]) {
+    opacity: 1 !important;
+    transform: none !important;
   }
 }
 
