@@ -27,36 +27,57 @@ button[title="Delete task list"] > svg {
   height: 20px !important;
 }
 
+@keyframes taskSearchFocus {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(47, 47, 47, 0);
+  }
+  55% {
+    transform: scale(1.012);
+    box-shadow: 0 0 0 4px rgba(47, 47, 47, 0.055);
+  }
+  100% {
+    transform: scale(1.006);
+    box-shadow: 0 5px 18px rgba(47, 47, 47, 0.07);
+  }
+}
+
+@keyframes taskActionNudge {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  55% {
+    transform: translateY(-2px) scale(1.05);
+  }
+  100% {
+    transform: translateY(-1px) scale(1.02);
+  }
+}
+
 @media (hover: hover) and (pointer: fine) {
-  /* Whole task rows should feel interactive before the user reaches an icon. */
+  /* Task cards stay full-strength at rest. Hover is a background/state change only. */
   #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]) {
+    background-color: #ffffff;
     transition:
-      background-color 180ms ease,
-      box-shadow 180ms ease,
-      transform 180ms ease;
+      background-color 170ms ease,
+      box-shadow 170ms ease,
+      transform 170ms ease;
   }
 
-  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover {
-    background-color: #fafafa;
-    box-shadow: inset 3px 0 0 rgba(47, 47, 47, 0.08);
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover,
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):focus-within {
+    background-color: #f5f5f5;
+    box-shadow: inset 3px 0 0 rgba(47, 47, 47, 0.09);
   }
 
-  /* Action cluster fades away when the row is idle and comes back on row hover/focus. */
-  #root:has(aside[class*="w-[350px]"]) main div:has(> button[title="Edit task"]) {
-    opacity: 0.42;
-    transform: translateX(4px);
-    transition:
-      opacity 160ms ease,
-      transform 180ms ease;
+  /* Never dim task metadata or action controls in the idle state. */
+  #root:has(aside[class*="w-[350px]"]) main div:has(> button[title="Edit task"]),
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]) > div[class*="gap-3"] {
+    opacity: 1 !important;
+    transform: none;
   }
 
-  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover > div:has(> button[title="Edit task"]),
-  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):focus-within > div:has(> button[title="Edit task"]) {
-    opacity: 1;
-    transform: translateX(0);
-  }
-
-  /* Task action buttons: subtle lift instead of a hard background snap. */
+  /* Action buttons keep their normal color and animate only when the row becomes active. */
   button[title="Edit task"],
   button[title="Assign to session"],
   button[title="Delete task"],
@@ -65,29 +86,43 @@ button[title="Delete task list"] > svg {
   button[title="Rename task list"],
   button[title="Delete task list"] {
     transition:
-      opacity 150ms ease,
       background-color 150ms ease,
       color 150ms ease,
       transform 150ms ease,
       box-shadow 150ms ease !important;
   }
 
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover button[title="Edit task"],
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover button[title="Assign to session"],
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover button[title="Delete task"] {
+    animation: taskActionNudge 190ms ease both;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover button[title="Assign to session"] {
+    animation-delay: 25ms;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover button[title="Delete task"] {
+    animation-delay: 50ms;
+  }
+
   button[title="Edit task"]:hover,
   button[title="Assign to session"]:hover,
   button[title="Edit recurring task"]:hover,
   button[title="Rename task list"]:hover {
-    transform: translateY(-1px) scale(1.04);
+    background-color: #eaeaea !important;
+    transform: translateY(-1px) scale(1.05);
     box-shadow: 0 3px 10px rgba(47, 47, 47, 0.08);
   }
 
   button[title="Delete task"]:hover,
   button[title="Delete recurring task"]:hover,
   button[title="Delete task list"]:hover {
-    transform: translateY(-1px) scale(1.04);
+    transform: translateY(-1px) scale(1.05);
     box-shadow: 0 3px 10px rgba(224, 122, 122, 0.12);
   }
 
-  /* Completion control gets immediate visual feedback. */
+  /* Completion control gets immediate visual feedback without changing the rest of the row. */
   #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]) > button:first-child {
     transition:
       transform 150ms ease,
@@ -98,20 +133,10 @@ button[title="Delete task list"] > svg {
 
   #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]) > button:first-child:hover {
     transform: scale(1.09);
-    box-shadow: 0 0 0 4px rgba(101, 212, 108, 0.09);
+    box-shadow: 0 0 0 4px rgba(101, 212, 108, 0.1);
   }
 
-  /* Metadata is intentionally quieter until the task itself is hovered. */
-  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]) > div[class*="gap-3"] {
-    opacity: 0.72;
-    transition: opacity 170ms ease;
-  }
-
-  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover > div[class*="gap-3"] {
-    opacity: 1;
-  }
-
-  /* Recurring cards get the same depth/fade language as normal task rows. */
+  /* Recurring cards keep full visual strength too; hover only adds depth/background. */
   #root:has(aside[class*="w-[350px]"]) main div:has(button[title="Edit recurring task"]) {
     transition:
       border-color 180ms ease,
@@ -122,19 +147,14 @@ button[title="Delete task list"] > svg {
 
   #root:has(aside[class*="w-[350px]"]) main div:has(button[title="Edit recurring task"]):hover {
     border-color: #d6d6d6;
-    background-color: #fdfdfd;
+    background-color: #f5f5f5;
     box-shadow: 0 8px 24px rgba(47, 47, 47, 0.05);
     transform: translateY(-1px);
   }
 
   #root:has(aside[class*="w-[350px]"]) main div:has(> button[title="Edit recurring task"]) > button[title="Edit recurring task"],
   #root:has(aside[class*="w-[350px]"]) main div:has(> button[title="Edit recurring task"]) > button[title="Delete recurring task"] {
-    opacity: 0.55;
-  }
-
-  #root:has(aside[class*="w-[350px]"]) main div:has(> button[title="Edit recurring task"]):hover > button[title="Edit recurring task"],
-  #root:has(aside[class*="w-[350px]"]) main div:has(> button[title="Edit recurring task"]):hover > button[title="Delete recurring task"] {
-    opacity: 1;
+    opacity: 1 !important;
   }
 
   /* Sidebar list rows and their counters react as one control. */
@@ -175,19 +195,31 @@ button[title="Delete task list"] > svg {
     transform: translateX(0);
   }
 
-  /* Top toolbar interactions. */
+  /* Search gets a distinct click/focus response instead of just changing border color. */
   #root:has(aside[class*="w-[350px]"]) main label:has(input[placeholder="Search tasks..."]) {
+    transform-origin: center;
     transition:
       border-color 160ms ease,
       box-shadow 160ms ease,
-      background-color 160ms ease;
+      background-color 160ms ease,
+      transform 160ms ease;
   }
 
-  #root:has(aside[class*="w-[350px]"]) main label:has(input[placeholder="Search tasks..."]):hover,
-  #root:has(aside[class*="w-[350px]"]) main label:has(input[placeholder="Search tasks..."]):focus-within {
+  #root:has(aside[class*="w-[350px]"]) main label:has(input[placeholder="Search tasks..."]):hover {
     border-color: #bfc1c3;
-    box-shadow: 0 4px 14px rgba(47, 47, 47, 0.05);
-    background-color: #fdfdfd;
+    background-color: #fafafa;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main label:has(input[placeholder="Search tasks..."]):focus-within {
+    border-color: #9fa2a5;
+    background-color: #ffffff;
+    animation: taskSearchFocus 230ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main label:has(input[placeholder="Search tasks..."]):focus-within > svg {
+    transform: scale(1.12) rotate(-6deg);
+    color: #2f2f2f;
+    transition: transform 180ms ease, color 180ms ease;
   }
 
   #root:has(aside[class*="w-[350px]"]) main button[title="Measurements"],
@@ -205,7 +237,7 @@ button[title="Delete task list"] > svg {
   }
 }
 
-/* Do not force hover-only opacity on coarse/touch pointers. */
+/* Do not force hover-only treatment on coarse/touch pointers. */
 @media (hover: none), (pointer: coarse) {
   button[title="Edit task"],
   button[title="Assign to session"],
