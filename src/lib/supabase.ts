@@ -70,6 +70,14 @@ if (typeof window !== "undefined") {
   window.addEventListener("focus", materializeWhenActive);
   document.addEventListener("visibilitychange", materializeWhenActive);
 
+  // A room can stay open across midnight. Re-check hourly so a new daily task
+  // appears without requiring a reload or a tab switch.
+  window.setInterval(() => {
+    if (document.visibilityState === "visible") {
+      void materializeRecurringTasksForCurrentUser();
+    }
+  }, 60 * 60 * 1000);
+
   supabase.auth.onAuthStateChange((_event, session) => {
     if (!session?.user?.id) return;
     window.setTimeout(() => void materializeRecurringTasksForCurrentUser(), 0);
