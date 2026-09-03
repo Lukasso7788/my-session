@@ -1,4 +1,5 @@
-/* Tasks page visual overrides shared by the redesigned Tasks route. */
+/* Tasks page interaction polish. The title selectors deliberately scope these rules to
+   controls that only exist on the redesigned Tasks route. */
 
 /* Keep task action controls visually at 20px while preserving the larger hit target. */
 button[title="Edit task"] img,
@@ -9,10 +10,218 @@ button[title="Delete task"] > svg {
   height: 20px !important;
 }
 
+/* Assign-to-session is a primary neutral action, not secondary gray metadata. */
+button[title="Assign to session"] {
+  color: #2f2f2f !important;
+}
+button[title="Assign to session"] svg {
+  color: #2f2f2f !important;
+  stroke: currentColor;
+}
+
 /* Task-list hover actions use the same 20px visual size. */
 button[title="Rename task list"] img,
 button[title="Delete task list"] > span,
 button[title="Delete task list"] > svg {
   width: 20px !important;
   height: 20px !important;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  /* Whole task rows should feel interactive before the user reaches an icon. */
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]) {
+    transition:
+      background-color 180ms ease,
+      box-shadow 180ms ease,
+      transform 180ms ease;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover {
+    background-color: #fafafa;
+    box-shadow: inset 3px 0 0 rgba(47, 47, 47, 0.08);
+  }
+
+  /* Action cluster fades away when the row is idle and comes back on row hover/focus. */
+  #root:has(aside[class*="w-[350px]"]) main div:has(> button[title="Edit task"]) {
+    opacity: 0.42;
+    transform: translateX(4px);
+    transition:
+      opacity 160ms ease,
+      transform 180ms ease;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover > div:has(> button[title="Edit task"]),
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):focus-within > div:has(> button[title="Edit task"]) {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  /* Task action buttons: subtle lift instead of a hard background snap. */
+  button[title="Edit task"],
+  button[title="Assign to session"],
+  button[title="Delete task"],
+  button[title="Edit recurring task"],
+  button[title="Delete recurring task"],
+  button[title="Rename task list"],
+  button[title="Delete task list"] {
+    transition:
+      opacity 150ms ease,
+      background-color 150ms ease,
+      color 150ms ease,
+      transform 150ms ease,
+      box-shadow 150ms ease !important;
+  }
+
+  button[title="Edit task"]:hover,
+  button[title="Assign to session"]:hover,
+  button[title="Edit recurring task"]:hover,
+  button[title="Rename task list"]:hover {
+    transform: translateY(-1px) scale(1.04);
+    box-shadow: 0 3px 10px rgba(47, 47, 47, 0.08);
+  }
+
+  button[title="Delete task"]:hover,
+  button[title="Delete recurring task"]:hover,
+  button[title="Delete task list"]:hover {
+    transform: translateY(-1px) scale(1.04);
+    box-shadow: 0 3px 10px rgba(224, 122, 122, 0.12);
+  }
+
+  /* Completion control gets immediate visual feedback. */
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]) > button:first-child {
+    transition:
+      transform 150ms ease,
+      border-color 150ms ease,
+      background-color 150ms ease,
+      box-shadow 150ms ease;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]) > button:first-child:hover {
+    transform: scale(1.09);
+    box-shadow: 0 0 0 4px rgba(101, 212, 108, 0.09);
+  }
+
+  /* Metadata is intentionally quieter until the task itself is hovered. */
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]) > div[class*="gap-3"] {
+    opacity: 0.72;
+    transition: opacity 170ms ease;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main div:has(> div > button[title="Edit task"]):hover > div[class*="gap-3"] {
+    opacity: 1;
+  }
+
+  /* Recurring cards get the same depth/fade language as normal task rows. */
+  #root:has(aside[class*="w-[350px]"]) main div:has(button[title="Edit recurring task"]) {
+    transition:
+      border-color 180ms ease,
+      background-color 180ms ease,
+      box-shadow 180ms ease,
+      transform 180ms ease;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main div:has(button[title="Edit recurring task"]):hover {
+    border-color: #d6d6d6;
+    background-color: #fdfdfd;
+    box-shadow: 0 8px 24px rgba(47, 47, 47, 0.05);
+    transform: translateY(-1px);
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main div:has(> button[title="Edit recurring task"]) > button[title="Edit recurring task"],
+  #root:has(aside[class*="w-[350px]"]) main div:has(> button[title="Edit recurring task"]) > button[title="Delete recurring task"] {
+    opacity: 0.55;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main div:has(> button[title="Edit recurring task"]):hover > button[title="Edit recurring task"],
+  #root:has(aside[class*="w-[350px]"]) main div:has(> button[title="Edit recurring task"]):hover > button[title="Delete recurring task"] {
+    opacity: 1;
+  }
+
+  /* Sidebar list rows and their counters react as one control. */
+  #root:has(aside[class*="w-[350px]"]) aside div[class*="min-h-11"] {
+    transition:
+      background-color 160ms ease,
+      transform 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) aside div[class*="min-h-11"]:hover {
+    transform: translateX(-2px);
+    box-shadow: 0 4px 14px rgba(47, 47, 47, 0.04);
+  }
+
+  #root:has(aside[class*="w-[350px]"]) aside div[class*="min-h-11"] > span:last-child {
+    transition:
+      background-color 160ms ease,
+      color 160ms ease,
+      transform 160ms ease,
+      opacity 160ms ease;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) aside div[class*="min-h-11"]:hover > span:last-child {
+    transform: scale(1.07);
+  }
+
+  /* Hover-only list actions fade/slide in instead of suddenly appearing. */
+  #root:has(aside[class*="w-[350px]"]) aside div:has(> button[title="Rename task list"]) {
+    transform: translateX(5px);
+    transition:
+      opacity 160ms ease,
+      transform 180ms ease;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) aside .group:hover div:has(> button[title="Rename task list"]),
+  #root:has(aside[class*="w-[350px]"]) aside .group:focus-within div:has(> button[title="Rename task list"]) {
+    transform: translateX(0);
+  }
+
+  /* Top toolbar interactions. */
+  #root:has(aside[class*="w-[350px]"]) main label:has(input[placeholder="Search tasks..."]) {
+    transition:
+      border-color 160ms ease,
+      box-shadow 160ms ease,
+      background-color 160ms ease;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main label:has(input[placeholder="Search tasks..."]):hover,
+  #root:has(aside[class*="w-[350px]"]) main label:has(input[placeholder="Search tasks..."]):focus-within {
+    border-color: #bfc1c3;
+    box-shadow: 0 4px 14px rgba(47, 47, 47, 0.05);
+    background-color: #fdfdfd;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main button[title="Measurements"],
+  #root:has(aside[class*="w-[350px]"]) aside button:has(> svg:first-child) {
+    transition:
+      background-color 160ms ease,
+      border-color 160ms ease,
+      transform 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  #root:has(aside[class*="w-[350px]"]) main button[title="Measurements"]:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(47, 47, 47, 0.07);
+  }
+}
+
+/* Do not force hover-only opacity on coarse/touch pointers. */
+@media (hover: none), (pointer: coarse) {
+  button[title="Edit task"],
+  button[title="Assign to session"],
+  button[title="Delete task"],
+  button[title="Edit recurring task"],
+  button[title="Delete recurring task"] {
+    opacity: 1 !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #root:has(aside[class*="w-[350px]"]) *,
+  #root:has(aside[class*="w-[350px]"]) *::before,
+  #root:has(aside[class*="w-[350px]"]) *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }
