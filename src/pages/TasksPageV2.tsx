@@ -7,6 +7,7 @@ import {
   Check,
   CheckCircle2,
   ClipboardList,
+  ListChecks,
   ListPlus,
   Plus,
   RefreshCw,
@@ -75,7 +76,6 @@ type SessionLite = TaskSessionOption;
 type EditTaskDraft = {
   id: string;
   text: string;
-  target_date: string;
   session_id: string;
 };
 
@@ -137,8 +137,7 @@ function fmtShortDate(value?: string | null) {
   });
 }
 
-function fmtTaskRowDate(targetDate?: string | null, createdAt?: string | null) {
-  if (targetDate) return fmtShortDate(targetDate);
+function fmtTaskCreatedAt(createdAt?: string | null) {
   if (!createdAt) return "—";
   const ms = Date.parse(createdAt);
   if (!Number.isFinite(ms)) return "—";
@@ -293,10 +292,9 @@ export default function TasksPageV2() {
   const [activeListId, setActiveListId] = useState("all");
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [taskSearch, setTaskSearch] = useState("");
-  const [dueSortDescending, setDueSortDescending] = useState(false);
+  const [dateSortDescending, setDateSortDescending] = useState(false);
 
   const [newTaskText, setNewTaskText] = useState("");
-  const [newTaskDue, setNewTaskDue] = useState("");
   const [newTaskSessionId, setNewTaskSessionId] = useState("");
   const [editTask, setEditTask] = useState<EditTaskDraft | null>(null);
   const [sessionPickerItemId, setSessionPickerItemId] = useState<string | null>(null);
@@ -511,6 +509,11 @@ export default function TasksPageV2() {
     [items],
   );
 
+  const allTasksCount = useMemo(
+    () => items.filter((item) => !item.completed).length,
+    [items],
+  );
+
   const planTaskCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     items.forEach((item) => {
@@ -536,28 +539,22 @@ export default function TasksPageV2() {
     if (query) next = next.filter((item) => normalizeTaskText(item.text).includes(query));
 
     next.sort((a, b) => {
-      const aHasDue = Boolean(a.target_date);
-      const bHasDue = Boolean(b.target_date);
-      if (aHasDue && bHasDue && a.target_date !== b.target_date) {
-        const diff = Date.parse(`${a.target_date}T00:00:00`) - Date.parse(`${b.target_date}T00:00:00`);
-        return dueSortDescending ? -diff : diff;
-      }
-      if (aHasDue !== bHasDue) return aHasDue ? -1 : 1;
+      const createdDiff = Date.parse(a.created_at || "") - Date.parse(b.created_at || "");
+      if (createdDiff !== 0) return dateSortDescending ? -createdDiff : createdDiff;
       const orderDiff = Number(a.sort_order || 0) - Number(b.sort_order || 0);
-      if (orderDiff !== 0) return orderDiff;
-      return Date.parse(a.created_at || "") - Date.parse(b.created_at || "");
+      return dateSortDescending ? -orderDiff : orderDiff;
     });
     return next;
-  }, [activeListId, dueSortDescending, items, taskSearch]);
+  }, [activeListId, dateSortDescending, items, taskSearch]);
 
   const visibleRecurring = useMemo(() => {
     const query = normalizeTaskText(taskSearch);
     const next = recurringTasks.filter((task) => !query || normalizeTaskText(task.text).includes(query));
     return [...next].sort((a, b) => {
       const diff = Date.parse(`${a.next_run_on}T00:00:00`) - Date.parse(`${b.next_run_on}T00:00:00`);
-      return dueSortDescending ? -diff : diff;
+      return dateSortDescending ? -diff : diff;
     });
-  }, [dueSortDescending, recurringTasks, taskSearch]);
+  }, [dateSortDescending, recurringTasks, taskSearch]);
 
   const currentListTitle = useMemo(() => {
     if (activeListId === "completed") return "Completed Tasks";
@@ -664,7 +661,7 @@ export default function TasksPageV2() {
         user_id: user.id,
         plan_id: planId,
         text,
-        target_date: newTaskDue || null,
+        target_date: null,
         session_id: sessionId || null,
         sort_order: maxSort + 1,
         completed: false,
@@ -676,7 +673,6 @@ export default function TasksPageV2() {
     const item = data as FocusPlanItem;
     setItems((current) => [...current, item]);
     setNewTaskText("");
-    setNewTaskDue("");
 
     try {
       await supabase.from("panel_intentions").insert({
@@ -745,7 +741,6 @@ export default function TasksPageV2() {
 
     const patch = {
       text,
-      target_date: editTask.target_date || null,
       session_id: sessionId || null,
     };
     const { error } = await supabase
@@ -945,10 +940,11 @@ export default function TasksPageV2() {
               </label>
               <button
                 type="button"
-                onClick={() => setDueSortDescending((value) => !value)}
+                onClick={() => setDateSortDescending((value) => !value)}
                 className="inline-flex h-9 items-center gap-2 rounded-[10px] border border-[#D9D9D9] bg-white px-4 text-[12px] font-medium text-[#4A4A4A] transition hover:bg-[#F8F8F8]"
+                title={dateSortDescending ? "Newest first" : "Oldest first"}
               >
-                Sort by: Due Date
+                Sort by: Created
                 <SlidersHorizontal size={14} strokeWidth={1.8} />
               </button>
               <button
@@ -1158,20 +1154,19 @@ export default function TasksPageV2() {
                         <div className="min-w-0 flex-1 truncate text-[12px] text-[#3B3B3B]">{item.text}</div>
                         <div className="hidden shrink-0 items-center gap-2 text-[10px] text-[#888] md:flex">
                           <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-[#6B9CF7]" />{list?.title || "Task list"}</span>
-                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><CalendarDays size={13} strokeWidth={1.6} />{fmtTaskRowDate(item.target_date, item.created_at)}</span>
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap" title="Created"><CalendarDays size={13} strokeWidth={1.6} />{fmtTaskCreatedAt(item.created_at)}</span>
                           {session ? <span className="max-w-[130px] truncate">{session.title || "Session"}</span> : null}
                         </div>
                         <div className="flex shrink-0 items-center gap-1 text-[#8D8D8D]">
-                          <button type="button" onClick={() => setEditTask({ id: item.id, text: item.text, target_date: item.target_date || "", session_id: item.session_id || "" })} className="flex h-7 w-7 items-center justify-center rounded-[6px] hover:bg-[#F2F2F2]" title="Edit task"><img src="/icons/edit_profile.svg" alt="" aria-hidden="true" className="h-3.5 w-3.5" /></button>
+                          <button type="button" onClick={() => setEditTask({ id: item.id, text: item.text, session_id: item.session_id || "" })} className="flex h-7 w-7 items-center justify-center rounded-[6px] hover:bg-[#F2F2F2]" title="Edit task"><img src="/icons/edit_profile.svg" alt="" aria-hidden="true" className="h-3.5 w-3.5" /></button>
                           <button type="button" onClick={() => { setSessionPickerItemId((current) => current === item.id ? null : item.id); setSessionPickerValue(item.session_id || newTaskSessionId || ""); }} className="flex h-7 w-7 items-center justify-center rounded-[6px] hover:bg-[#F2F2F2]" title="Assign to session"><ListPlus size={14} strokeWidth={1.8} /></button>
                           <button type="button" onClick={() => void deleteTask(item)} className="flex h-7 w-7 items-center justify-center rounded-[6px] text-[#E07A7A] hover:bg-[#FFF1F1]" title="Delete task"><IconMask src="/icons/tasks-page-delete.svg" fallback={<Trash2 size={14} />} size={14} /></button>
                         </div>
                       </div>
                       {editing && editTask ? (
                         <div className="border-t border-[#ECECEC] bg-[#FBFBFB] px-4 py-3">
-                          <div className="grid gap-2 md:grid-cols-[minmax(200px,1fr)_155px_minmax(190px,260px)_auto]">
+                          <div className="grid gap-2 md:grid-cols-[minmax(240px,1fr)_minmax(190px,280px)_auto]">
                             <input value={editTask.text} onChange={(event) => setEditTask({ ...editTask, text: event.target.value })} className="h-9 rounded-[8px] border border-[#D8D8D8] bg-white px-3 text-[12px] outline-none" />
-                            <input type="date" value={editTask.target_date} onChange={(event) => setEditTask({ ...editTask, target_date: event.target.value })} className="h-9 rounded-[8px] border border-[#D8D8D8] bg-white px-2 text-[11px] outline-none" />
                             <select value={editTask.session_id} onChange={(event) => setEditTask({ ...editTask, session_id: event.target.value })} className="h-9 rounded-[8px] border border-[#D8D8D8] bg-white px-2 text-[11px] outline-none"><option value="">No session</option>{sessions.map((row) => <option key={row.id} value={row.id}>{row.title || "Session"}</option>)}</select>
                             <div className="flex gap-2"><button type="button" onClick={() => void saveTaskEdit()} className="h-9 rounded-[8px] bg-[#303030] px-4 text-[11px] text-white">Save</button><button type="button" onClick={() => setEditTask(null)} className="flex h-9 w-9 items-center justify-center rounded-[8px] border border-[#D8D8D8] bg-white"><X size={14} /></button></div>
                           </div>
@@ -1189,10 +1184,7 @@ export default function TasksPageV2() {
               {activeListId !== "completed" ? (
                 <div className="border-t border-[#E5E5E5] px-4 py-3">
                   <input ref={quickAddRef} value={newTaskText} onChange={(event) => setNewTaskText(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void addTask()} placeholder="Type a task name..." className="h-8 w-full bg-transparent px-6 text-[12px] outline-none placeholder:text-[#A9A9A9]" />
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <button type="button" onClick={() => void addTask()} disabled={!newTaskText.trim() || plans.length === 0} className="inline-flex h-7 items-center gap-1 rounded-full bg-[#303030] px-3 text-[10px] font-medium text-white disabled:opacity-40"><Plus size={10} /> Add Task</button>
-                    <input type="date" value={newTaskDue} onChange={(event) => setNewTaskDue(event.target.value)} className="h-7 rounded-[7px] border border-[#E0E0E0] px-2 text-[10px] text-[#777]" title="Due date" />
-                  </div>
+                  <button type="button" onClick={() => void addTask()} disabled={!newTaskText.trim() || plans.length === 0} className="mt-1 inline-flex h-7 items-center gap-1 rounded-full bg-[#303030] px-3 text-[10px] font-medium text-white disabled:opacity-40"><Plus size={10} /> Add Task</button>
                 </div>
               ) : null}
             </section>
@@ -1213,6 +1205,11 @@ export default function TasksPageV2() {
           ) : null}
 
           <div className="mt-4 flex flex-col gap-2">
+            <button type="button" onClick={() => { setActiveListId("all"); setPageMode("tasks"); setUtilityMode("none"); }} className={[
+              "flex h-10 w-full items-center gap-2 rounded-[8px] px-3 text-left text-[12px] text-[#555] transition hover:bg-[#F3F3F3]",
+              activeListId === "all" ? "bg-[#F1F1F1] font-medium" : "",
+            ].join(" ")}><ListChecks size={14} /><span className="min-w-0 flex-1 truncate">All Tasks</span><span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#EFEFEF] px-1.5 text-[9px] text-[#999]">{allTasksCount}</span></button>
+
             <button type="button" onClick={() => { setActiveListId("completed"); setPageMode("tasks"); setUtilityMode("none"); }} className={[
               "flex h-10 w-full items-center gap-2 rounded-[8px] px-3 text-left text-[12px] transition",
               activeListId === "completed" ? "bg-[#DDF7DF] text-[#60C86A] ring-1 ring-inset ring-[#BCEEBF]" : "bg-[#E9F9EA] text-[#6BCF74] hover:bg-[#E0F6E2]",
