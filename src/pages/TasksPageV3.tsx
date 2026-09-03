@@ -43,6 +43,8 @@ type FocusPlanItem = {
 };
 
 type RecurrenceUnit = "day" | "week" | "month" | "year";
+type TaskStatusFilter = "all" | "active" | "completed";
+type RecurringStatusFilter = "all" | "active" | "paused";
 
 type RecurringTask = {
   id: string;
@@ -120,6 +122,10 @@ function safeText(value: unknown) {
 
 function normalizeTaskText(value: unknown) {
   return safeText(value).replace(/\s+/g, " ").toLowerCase();
+}
+
+function compareAlphabetically(a: string, b: string) {
+  return a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
 }
 
 function loginNext(path: string) {
@@ -335,7 +341,9 @@ export default function TasksPageV3() {
   const [activeListId, setActiveListId] = useState("all");
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [taskSearch, setTaskSearch] = useState("");
-  const [dateSortDescending, setDateSortDescending] = useState(false);
+  const [alphabeticalDescending, setAlphabeticalDescending] = useState(false);
+  const [taskStatusFilter, setTaskStatusFilter] = useState<TaskStatusFilter>("all");
+  const [recurringStatusFilter, setRecurringStatusFilter] = useState<RecurringStatusFilter>("all");
 
   const [newTaskText, setNewTaskText] = useState("");
   const [newTaskSessionId, setNewTaskSessionId] = useState("");
@@ -558,10 +566,7 @@ export default function TasksPageV3() {
     [items],
   );
 
-  const allOpenCount = useMemo(
-    () => items.filter((item) => !item.completed).length,
-    [items],
-  );
+  const allTaskCount = items.length;
 
   const planTaskCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -572,36 +577,43 @@ export default function TasksPageV3() {
     return counts;
   }, [items]);
 
+  const sortedPlans = useMemo(
+    () => [...plans].sort((a, b) => compareAlphabetically(a.title, b.title)),
+    [plans],
+  );
+
   const visibleItems = useMemo(() => {
     let next = [...items];
 
     if (activeListId === "completed") {
       next = next.filter((item) => item.completed);
+    } else if (activeListId === "all") {
+      if (taskStatusFilter === "active") next = next.filter((item) => !item.completed);
+      if (taskStatusFilter === "completed") next = next.filter((item) => item.completed);
     } else {
-      next = next.filter((item) => !item.completed);
-      if (activeListId !== "all") {
-        next = next.filter((item) => item.plan_id === activeListId);
-      }
+      next = next.filter((item) => !item.completed && item.plan_id === activeListId);
     }
 
     const query = normalizeTaskText(taskSearch);
     if (query) next = next.filter((item) => normalizeTaskText(item.text).includes(query));
 
     next.sort((a, b) => {
-      const createdDiff = Date.parse(a.created_at || "") - Date.parse(b.created_at || "");
-      return dateSortDescending ? -createdDiff : createdDiff;
+      const diff = compareAlphabetically(a.text, b.text);
+      return alphabeticalDescending ? -diff : diff;
     });
     return next;
-  }, [activeListId, dateSortDescending, items, taskSearch]);
+  }, [activeListId, alphabeticalDescending, items, taskSearch, taskStatusFilter]);
 
   const visibleRecurring = useMemo(() => {
     const query = normalizeTaskText(taskSearch);
-    const next = recurringTasks.filter((task) => !query || normalizeTaskText(task.text).includes(query));
+    let next = recurringTasks.filter((task) => !query || normalizeTaskText(task.text).includes(query));
+    if (recurringStatusFilter === "active") next = next.filter((task) => task.active);
+    if (recurringStatusFilter === "paused") next = next.filter((task) => !task.active);
     return [...next].sort((a, b) => {
-      const diff = Date.parse(`${a.next_run_on}T00:00:00`) - Date.parse(`${b.next_run_on}T00:00:00`);
-      return dateSortDescending ? -diff : diff;
+      const diff = compareAlphabetically(a.text, b.text);
+      return alphabeticalDescending ? -diff : diff;
     });
-  }, [dateSortDescending, recurringTasks, taskSearch]);
+  }, [alphabeticalDescending, recurringStatusFilter, recurringTasks, taskSearch]);
 
   const currentListTitle = useMemo(() => {
     if (activeListId === "completed") return "Completed Tasks";
@@ -635,8 +647,8 @@ export default function TasksPageV3() {
   useEffect(() => {
     if (newRecurringPlanId) return;
     if (selectedPlanId) setNewRecurringPlanId(selectedPlanId);
-    else if (plans[0]?.id) setNewRecurringPlanId(plans[0].id);
-  }, [newRecurringPlanId, plans, selectedPlanId]);
+    else if (sortedPlans[0]?.id) setNewRecurringPlanId(sortedPlans[0].id);
+  }, [newRecurringPlanId, selectedPlanId, sortedPlans]);
 
   const createPlan = async () => {
     if (!requireAuth()) return;
@@ -713,7 +725,7 @@ export default function TasksPageV3() {
   const targetPlanIdForNewTask = () => {
     if (activeListId !== "all" && activeListId !== "completed") return activeListId;
     if (selectedPlanId) return selectedPlanId;
-    return plans[0]?.id || null;
+    return sortedPlans[0]?.id || null;
   };
 
   const addTask = async () => {
@@ -856,7 +868,7 @@ export default function TasksPageV3() {
   const createRecurringTask = async () => {
     if (!requireAuth()) return;
     const text = safeText(newRecurringText);
-    const planId = newRecurringPlanId || plans[0]?.id || "";
+    const planId = newRecurringPlanId || sortedPlans[0]?.id || "";
     if (!text || !planId || !recurringDbReady) return;
     const intervalValue = clampInterval(newRecurringValue, newRecurringUnit);
     const startsOn = newRecurringStartsOn || new Date().toISOString().slice(0, 10);
@@ -961,6 +973,9 @@ export default function TasksPageV3() {
     );
   }
 
+  const tasksTabActive = pageMode === "tasks" && utilityMode === "none";
+  const recurringTabActive = pageMode === "recurring" && utilityMode === "none";
+
   return (
     <div className="min-h-[calc(100vh-72px)] bg-white font-[Inter] text-[#2F2F2F]">
       <div className="flex min-h-[calc(100vh-72px)] w-full">
@@ -973,7 +988,12 @@ export default function TasksPageV3() {
                   setPageMode("tasks");
                   setUtilityMode("none");
                 }}
-                className="text-[28px] font-bold leading-none tracking-[-0.02em] text-[#2F2F2F] transition"
+                className={[
+                  "leading-none text-[#2F2F2F] transition-all duration-200",
+                  tasksTabActive
+                    ? "text-[28px] font-bold tracking-[-0.02em]"
+                    : "text-[20px] font-normal hover:opacity-70",
+                ].join(" ")}
               >
                 {currentListTitle}
               </button>
@@ -985,7 +1005,12 @@ export default function TasksPageV3() {
                   setUtilityMode("none");
                   void materializeRecurring().then(() => Promise.all([reloadRecurring(), reloadItems()]));
                 }}
-                className="text-[20px] font-normal leading-none text-[#2F2F2F] transition hover:opacity-70"
+                className={[
+                  "leading-none text-[#2F2F2F] transition-all duration-200",
+                  recurringTabActive
+                    ? "text-[28px] font-bold tracking-[-0.02em]"
+                    : "text-[20px] font-normal hover:opacity-70",
+                ].join(" ")}
               >
                 Recurring Tasks
               </button>
@@ -1001,12 +1026,37 @@ export default function TasksPageV3() {
                   className="min-w-0 flex-1 bg-transparent text-[14px] font-normal text-[#717680] outline-none placeholder:text-[#717680]"
                 />
               </label>
+
+              {pageMode === "recurring" ? (
+                <select
+                  value={recurringStatusFilter}
+                  onChange={(event) => setRecurringStatusFilter(event.target.value as RecurringStatusFilter)}
+                  className="h-10 rounded-[10px] border border-[#D8D8D8] bg-white px-3 text-[14px] font-medium text-[#2F2F2F] outline-none transition hover:bg-[#F8F8F8]"
+                  aria-label="Filter recurring tasks"
+                >
+                  <option value="all">Filter: All</option>
+                  <option value="active">Filter: Active</option>
+                  <option value="paused">Filter: Paused</option>
+                </select>
+              ) : activeListId === "all" ? (
+                <select
+                  value={taskStatusFilter}
+                  onChange={(event) => setTaskStatusFilter(event.target.value as TaskStatusFilter)}
+                  className="h-10 rounded-[10px] border border-[#D8D8D8] bg-white px-3 text-[14px] font-medium text-[#2F2F2F] outline-none transition hover:bg-[#F8F8F8]"
+                  aria-label="Filter tasks"
+                >
+                  <option value="all">Filter: All</option>
+                  <option value="active">Filter: Active</option>
+                  <option value="completed">Filter: Completed</option>
+                </select>
+              ) : null}
+
               <button
                 type="button"
-                onClick={() => setDateSortDescending((value) => !value)}
+                onClick={() => setAlphabeticalDescending((value) => !value)}
                 className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-[#D8D8D8] bg-white px-4 text-[14px] font-medium text-[#2F2F2F] transition hover:bg-[#F8F8F8]"
               >
-                {pageMode === "recurring" ? "Sort by: Next Run" : "Sort by: Created"}
+                {alphabeticalDescending ? "Sort: Z–A" : "Sort: A–Z"}
                 <SlidersHorizontal size={15} strokeWidth={1.8} />
               </button>
               <button
@@ -1032,7 +1082,7 @@ export default function TasksPageV3() {
                     focusAddTask();
                   }
                 }}
-                disabled={plans.length === 0}
+                disabled={sortedPlans.length === 0}
                 className="inline-flex h-10 items-center gap-1.5 rounded-full bg-[#2F2F2F] px-5 text-[13px] font-normal text-white transition hover:bg-[#1F1F1F] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Plus size={13} /> Add Task
@@ -1090,7 +1140,7 @@ export default function TasksPageV3() {
                   <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_190px_110px_130px_150px_auto]">
                     <input value={newRecurringText} onChange={(event) => setNewRecurringText(event.target.value)} placeholder="Recurring task name..." className="h-10 rounded-[9px] border border-[#D8D8D8] bg-white px-3 text-[12px] outline-none" />
                     <select value={newRecurringPlanId} onChange={(event) => setNewRecurringPlanId(event.target.value)} className="h-10 rounded-[9px] border border-[#D8D8D8] bg-white px-2 text-[12px] outline-none">
-                      {plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.title}</option>)}
+                      {sortedPlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.title}</option>)}
                     </select>
                     <input type="number" min={1} max={intervalMax(newRecurringUnit)} value={newRecurringValue} onChange={(event) => setNewRecurringValue(clampInterval(Number(event.target.value), newRecurringUnit))} className="h-10 rounded-[9px] border border-[#D8D8D8] bg-white px-3 text-[12px] outline-none" title="Interval" />
                     <select value={newRecurringUnit} onChange={(event) => {
@@ -1139,7 +1189,7 @@ export default function TasksPageV3() {
                           <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_190px_110px_130px_150px_auto]">
                             <input value={editRecurring.text} onChange={(event) => setEditRecurring({ ...editRecurring, text: event.target.value })} className="h-10 rounded-[9px] border border-[#D8D8D8] bg-white px-3 text-[12px] outline-none" />
                             <select value={editRecurring.plan_id} onChange={(event) => setEditRecurring({ ...editRecurring, plan_id: event.target.value })} className="h-10 rounded-[9px] border border-[#D8D8D8] bg-white px-2 text-[12px] outline-none">
-                              {plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.title}</option>)}
+                              {sortedPlans.map((plan) => <option key={plan.id} value={plan.id}>{plan.title}</option>)}
                             </select>
                             <input type="number" min={1} max={intervalMax(editRecurring.interval_unit)} value={editRecurring.interval_value} onChange={(event) => setEditRecurring({ ...editRecurring, interval_value: clampInterval(Number(event.target.value), editRecurring.interval_unit) })} className="h-10 rounded-[9px] border border-[#D8D8D8] bg-white px-3 text-[12px] outline-none" />
                             <select value={editRecurring.interval_unit} onChange={(event) => {
@@ -1160,7 +1210,7 @@ export default function TasksPageV3() {
                             ].join(" ")}>{task.text}</div>
                             <div className="hidden shrink-0 rounded-full border border-[#E3E3E3] bg-[#FAFAFA] px-3 py-1 text-[11px] font-medium text-[#2F2F2F] md:block">{recurrenceLabel(task)}</div>
                             <div className="hidden shrink-0 text-[11px] text-[#717680] lg:block">{task.active ? `Next: ${fmtShortDate(task.next_run_on)}` : "Paused"}</div>
-                            <button type="button" onClick={() => setEditRecurring({ id: task.id, text: task.text, plan_id: task.plan_id || plans[0]?.id || "", interval_value: task.interval_value, interval_unit: task.interval_unit, starts_on: task.starts_on })} className="flex h-8 w-8 items-center justify-center rounded-[7px] hover:bg-[#F2F2F2]" title="Edit recurring task"><img src="/icons/edit_profile.svg" alt="" aria-hidden="true" className="h-3.5 w-3.5" /></button>
+                            <button type="button" onClick={() => setEditRecurring({ id: task.id, text: task.text, plan_id: task.plan_id || sortedPlans[0]?.id || "", interval_value: task.interval_value, interval_unit: task.interval_unit, starts_on: task.starts_on })} className="flex h-8 w-8 items-center justify-center rounded-[7px] hover:bg-[#F2F2F2]" title="Edit recurring task"><img src="/icons/edit_profile.svg" alt="" aria-hidden="true" className="h-3.5 w-3.5" /></button>
                             <button type="button" onClick={() => void deleteRecurring(task)} className="flex h-8 w-8 items-center justify-center rounded-[7px] text-[#E07A7A] hover:bg-[#FFF1F1]" title="Delete recurring task"><IconMask src="/icons/tasks-page-delete.svg" fallback={<Trash2 size={14} />} size={14} /></button>
                             <button type="button" onClick={() => void toggleRecurring(task)} className={[
                               "relative h-[24px] w-[42px] shrink-0 rounded-full transition",
@@ -1190,8 +1240,8 @@ export default function TasksPageV3() {
                 {!taskSearch && activeListId !== "completed" ? (
                   <>
                     <div className="mx-auto mt-7 flex h-11 max-w-[410px] items-center overflow-hidden rounded-full border border-[#DEDEDE] bg-white">
-                      <input ref={quickAddRef} value={newTaskText} onChange={(event) => setNewTaskText(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void addTask()} disabled={plans.length === 0} placeholder="e.g. Prepare presentation slides..." className="h-full min-w-0 flex-1 bg-transparent px-4 text-[12px] outline-none placeholder:text-[#B0B0B0]" />
-                      <button type="button" onClick={() => void addTask()} disabled={!newTaskText.trim() || plans.length === 0} className="mr-[-1px] inline-flex h-11 items-center gap-2 rounded-full border border-[#3A3A3A] bg-white px-5 text-[13px] font-medium text-[#2F2F2F] disabled:opacity-40"><span className="flex h-4 w-4 items-center justify-center rounded-full border border-current"><Plus size={10} /></span>Add First Task</button>
+                      <input ref={quickAddRef} value={newTaskText} onChange={(event) => setNewTaskText(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void addTask()} disabled={sortedPlans.length === 0} placeholder="e.g. Prepare presentation slides..." className="h-full min-w-0 flex-1 bg-transparent px-4 text-[12px] outline-none placeholder:text-[#B0B0B0]" />
+                      <button type="button" onClick={() => void addTask()} disabled={!newTaskText.trim() || sortedPlans.length === 0} className="mr-[-1px] inline-flex h-11 items-center gap-2 rounded-full border border-[#3A3A3A] bg-white px-5 text-[13px] font-medium text-[#2F2F2F] disabled:opacity-40"><span className="flex h-4 w-4 items-center justify-center rounded-full border border-current"><Plus size={10} /></span>Add First Task</button>
                     </div>
                     <button type="button" onClick={() => setShowNewListInput(true)} className="mt-3 text-[12px] font-medium text-[#5E8ED6] underline underline-offset-2">or create a task list first</button>
                   </>
@@ -1213,7 +1263,10 @@ export default function TasksPageV3() {
                           "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition",
                           item.completed ? "border-[#65D46C] bg-[#65D46C] text-white" : "border-[#C9C9C9] bg-white hover:border-[#999]",
                         ].join(" ")}>{item.completed ? <Check size={12} strokeWidth={2.4} /> : null}</button>
-                        <div className="min-w-0 flex-1 truncate text-[15px] font-normal text-[#2F2F2F]">{item.text}</div>
+                        <div className={[
+                          "min-w-0 flex-1 truncate text-[15px] font-normal text-[#2F2F2F]",
+                          item.completed ? "line-through opacity-55" : "",
+                        ].join(" ")}>{item.text}</div>
                         <div className="hidden shrink-0 items-center gap-3 md:flex">
                           <span className="inline-flex items-center gap-1.5 text-[12px] font-normal text-[#717680]"><span className="h-1.5 w-1.5 rounded-full bg-[#6B9CF7]" />{list?.title || "Task list"}</span>
                           <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[13px] font-normal text-[#717680]"><CalendarDays size={24} strokeWidth={1.45} />{fmtTaskCreatedAt(item.created_at)}</span>
@@ -1221,7 +1274,7 @@ export default function TasksPageV3() {
                         </div>
                         <div className="flex shrink-0 items-center gap-1 text-[#717680]">
                           <button type="button" onClick={() => setEditTask({ id: item.id, text: item.text, session_id: item.session_id || "" })} className="flex h-7 w-7 items-center justify-center rounded-[6px] hover:bg-[#F2F2F2]" title="Edit task"><img src="/icons/edit_profile.svg" alt="" aria-hidden="true" className="h-3.5 w-3.5" /></button>
-                          <button type="button" onClick={() => { setSessionPickerItemId((current) => current === item.id ? null : item.id); setSessionPickerValue(item.session_id || newTaskSessionId || ""); }} className="flex h-7 w-7 items-center justify-center rounded-[6px] hover:bg-[#F2F2F2]" title="Assign to session"><ListPlus size={14} strokeWidth={1.8} /></button>
+                          <button type="button" onClick={() => { setSessionPickerItemId((current) => current === item.id ? null : item.id); setSessionPickerValue(item.session_id || newTaskSessionId || ""); }} className="flex h-7 w-7 items-center justify-center rounded-[6px] text-[#2F2F2F] hover:bg-[#F2F2F2]" title="Assign to session"><ListPlus size={14} strokeWidth={1.8} /></button>
                           <button type="button" onClick={() => void deleteTask(item)} className="flex h-7 w-7 items-center justify-center rounded-[6px] text-[#E07A7A] hover:bg-[#FFF1F1]" title="Delete task"><IconMask src="/icons/tasks-page-delete.svg" fallback={<Trash2 size={14} />} size={14} /></button>
                         </div>
                       </div>
@@ -1246,7 +1299,7 @@ export default function TasksPageV3() {
               {activeListId !== "completed" ? (
                 <div className="border-t border-[#E5E5E5] px-4 py-3">
                   <input ref={quickAddRef} value={newTaskText} onChange={(event) => setNewTaskText(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void addTask()} placeholder="Type a task name..." className="h-8 w-full bg-transparent px-6 text-[12px] outline-none placeholder:text-[#A9A9A9]" />
-                  <button type="button" onClick={() => void addTask()} disabled={!newTaskText.trim() || plans.length === 0} className="mt-1 inline-flex items-center gap-1 rounded-full bg-[#2F2F2F] px-3 py-1.5 text-[13px] font-semibold leading-none text-white disabled:opacity-40"><Plus size={11} /> Add Task</button>
+                  <button type="button" onClick={() => void addTask()} disabled={!newTaskText.trim() || sortedPlans.length === 0} className="mt-1 inline-flex items-center gap-1 rounded-full bg-[#2F2F2F] px-3 py-1.5 text-[13px] font-semibold leading-none text-white disabled:opacity-40"><Plus size={11} /> Add Task</button>
                 </div>
               ) : null}
             </section>
@@ -1272,11 +1325,11 @@ export default function TasksPageV3() {
               activeListId === "all" ? "bg-[#F1F1F1]" : "hover:bg-[#F6F6F6]",
             ].join(" ")}>
               <span className="flex h-[13px] w-[13px] items-center justify-center text-[13px] leading-[13px]">🗂️</span>
-              <button type="button" onClick={() => { setActiveListId("all"); setPageMode("tasks"); setUtilityMode("none"); }} className="min-w-0 flex-1 truncate text-left text-[14px] font-medium text-[#2F2F2F]">All Tasks</button>
+              <button type="button" onClick={() => { setActiveListId("all"); setTaskStatusFilter("all"); setPageMode("tasks"); setUtilityMode("none"); }} className="min-w-0 flex-1 truncate text-left text-[14px] font-medium text-[#2F2F2F]">All Tasks</button>
               <span className={[
                 "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[9px] font-semibold",
                 activeListId === "all" ? "bg-[#2F2F2F] text-white" : "bg-[#EFEFEF] text-[#717680]",
-              ].join(" ")}>{allOpenCount}</span>
+              ].join(" ")}>{allTaskCount}</span>
             </div>
 
             <div className={[
@@ -1291,7 +1344,7 @@ export default function TasksPageV3() {
               ].join(" ")}>{completedCount}</span>
             </div>
 
-            {plansLoading ? <div className="px-3 py-3 text-[11px] text-[#717680]">Loading lists…</div> : plans.map((plan, index) => {
+            {plansLoading ? <div className="px-3 py-3 text-[11px] text-[#717680]">Loading lists…</div> : sortedPlans.map((plan, index) => {
               const active = activeListId === plan.id;
               const emoji = safeText(plan.emoji) || fallbackPlanEmoji(plan.title, index);
               const emojiOpen = emojiPlanId === plan.id;
