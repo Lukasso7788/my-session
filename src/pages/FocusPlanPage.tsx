@@ -9,7 +9,6 @@ import {
     CheckCircle2,
     ClipboardList,
     ListPlus,
-    Pencil,
     Plus,
     RefreshCw,
     Search,
@@ -1231,13 +1230,15 @@ export default function FocusPlanPage() {
                                                     <button
                                                         type="button"
                                                         onClick={() => startEditItem(item)}
-                                                        className="flex h-6 w-6 items-center justify-center rounded-[5px] transition hover:bg-[#F2F2F2] hover:text-[#4A4A4A]"
+                                                        className="flex h-6 w-6 items-center justify-center rounded-[5px] transition hover:bg-[#F2F2F2]"
                                                         title="Edit task"
                                                     >
-                                                        <TasksPageMaskIcon
-                                                            src="/icons/tasks-page-edit.svg"
-                                                            size={12}
-                                                            fallback={<Pencil size={12} strokeWidth={1.8} />}
+                                                        <img
+                                                            src="/icons/edit_profile.svg"
+                                                            alt=""
+                                                            aria-hidden="true"
+                                                            draggable={false}
+                                                            className="h-3 w-3 object-contain"
                                                         />
                                                     </button>
                                                     <button
