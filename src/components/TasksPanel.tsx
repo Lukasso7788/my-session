@@ -8,7 +8,7 @@ import {
   Trash2,
   X,
   Check,
-  ExternalLink,
+  PlusCircle,
   ListPlus,
   RefreshCw,
   Search,
@@ -3616,11 +3616,8 @@ export function TasksPanel({
       getPortalDocument().body,
     )
     : null;
-  const ImportModal = importModalOpen
+  const ImportPanel = importModalOpen
     ? (() => {
-      const modalDoc = getPortalDocument();
-
-      const backdropBg = isLight ? "bg-black/40" : "bg-[#E6E6E6]";
       const modalBg = isLight ? "bg-[#F3F3F3]" : "bg-[#1B1B1B]";
       const modalBorder = isLight ? "border-[#CFCFCF]" : "border-[#2B2B2B]";
       const modalTitle = isLight ? "text-black/85" : "text-white/85";
@@ -3630,22 +3627,18 @@ export function TasksPanel({
         : "bg-[#242424] hover:bg-[#2B2B2B]";
       const rowBorder = isLight ? "border-[#CFCFCF]" : "border-[#2B2B2B]";
 
-      return createPortal(
+      return (
         <div
           className={[
-            "fixed inset-0 z-[9999] flex items-center justify-center",
-            backdropBg,
+            "flex h-full min-h-0 flex-col",
+            modalBg,
             "font-inter",
           ].join(" ")}
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) closeImportModal();
-          }}
         >
           <div
             className={[
-              "w-[min(760px,calc(100vw-24px))] max-h-[min(78vh,780px)] rounded-2xl border shadow-xl overflow-hidden",
+              "flex h-full min-h-0 flex-col overflow-hidden",
               modalBg,
-              modalBorder,
             ].join(" ")}
             style={{ fontFamily: OVERLAY_FONT_FAMILY }}
             onMouseDown={stopRoomBubbling}
@@ -3660,47 +3653,14 @@ export function TasksPanel({
                       " ",
                     )}
                   >
-                    Tasks
+                    Add from Tasks
                   </div>
                   <div className={["text-[11px] mt-0.5", modalSub].join(" ")}>
                     Bring saved tasks from your Tasks page into this room.
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    className={
-                      "h-9 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2 " +
-                      ghostBtn
-                    }
-                    onClick={() => {
-                      const sid = (rawSessionId || sessionId || "").trim();
-                      window.open(
-                        `/tasks?sessionId=${encodeURIComponent(sid)}`,
-                        "_blank",
-                        "noopener,noreferrer",
-                      );
-                    }}
-                    title="Go to Tasks"
-                  >
-                    <ExternalLink size={14} />
-                    Go to Tasks
-                  </button>
-
-                  <button
-                    type="button"
-                    className={
-                      "h-9 px-3 rounded-xl text-[12px] font-semibold transition inline-flex items-center gap-2 " +
-                      ghostBtn
-                    }
-                    onClick={() => loadPlans()}
-                    title="Refresh plans"
-                  >
-                    <RefreshCw size={14} />
-                    Refresh
-                  </button>
-
+                <div className="flex shrink-0 items-center gap-2">
                   <button
                     type="button"
                     className={
@@ -3716,14 +3676,7 @@ export function TasksPanel({
               </div>
             </div>
 
-            <div
-              className="p-4 overflow-y-auto custom-scrollbar"
-              style={{ maxHeight: "calc(78vh - 56px)" }}
-            >
-              <div className={["mb-3 text-[11px] font-semibold uppercase tracking-[0.12em]", modalSub].join(" ")}>
-                Add from Tasks
-              </div>
-
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 custom-scrollbar">
               {plansLoading ? (
                 <div className={"text-[12px] italic " + mutedText}>
                   Loading plans…
@@ -3738,11 +3691,7 @@ export function TasksPanel({
               ) : (
                 <>
                   <div className="flex flex-col gap-2">
-                    <div className={"text-[11px] font-semibold " + mutedText}>
-                      Task list
-                    </div>
-
-                    <div className="flex items-center gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
                       <select
                         value={selectedPlanId}
                         onChange={(e) => setSelectedPlanId(e.target.value)}
@@ -3763,7 +3712,7 @@ export function TasksPanel({
                         className={[
                           "relative h-11 shrink-0 overflow-hidden rounded-xl border transition-[width,background-color,border-color] duration-200 ease-out",
                           planSearchExpanded || planSearch
-                            ? "w-[min(260px,42vw)]"
+                            ? "w-[44%] max-w-[180px]"
                             : "w-11",
                           isLight
                             ? "border-[#CFCFCF] bg-[#F3F3F3]"
@@ -3922,8 +3871,7 @@ export function TasksPanel({
               )}
             </div>
           </div>
-        </div>,
-        modalDoc.body,
+        </div>
       );
     })()
     : null;
@@ -4288,6 +4236,8 @@ export function TasksPanel({
       onMouseDown={stopRoomBubbling}
       onClick={stopRoomBubbling}
     >
+      {importModalOpen ? ImportPanel : (
+        <>
       <div className="px-4 pt-4 pb-2 shrink-0">
         <div
           className={
@@ -4403,11 +4353,15 @@ export function TasksPanel({
                 <button
                   type="button"
                   onClick={openImportModal}
-                  className="inline-flex h-[17px] w-[18px] shrink-0 items-center justify-center rounded-[8px] border border-[#2F2F2F] bg-white p-[2px] font-inter text-[17px] font-bold leading-[12px] text-black transition hover:bg-[#2F2F2F] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/40"
+                  className="inline-flex h-[17px] w-[18px] shrink-0 items-center justify-center rounded-[8px] bg-white p-0 text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/40"
                   title="Add tasks from Tasks page"
                   aria-label="Add tasks from Tasks page"
                 >
-                  <span aria-hidden="true">+</span>
+                  <PlusCircle
+                    aria-hidden="true"
+                    className="h-[17px] w-[18px]"
+                    strokeWidth={1.8}
+                  />
                 </button>
               </div>
               <div className="mt-0.5 flex items-center gap-1 text-[10px] text-black/40">
@@ -5030,8 +4984,9 @@ export function TasksPanel({
           </div>
         )}
       </div>
+        </>
+      )}
 
-      {ImportModal}
       {SaveTaskToTasksModal}
       {EncouragementModal}
       {AiPaywallModal}
