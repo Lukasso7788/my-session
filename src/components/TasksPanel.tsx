@@ -8,7 +8,7 @@ import {
   Trash2,
   X,
   Check,
-  PlusCircle,
+  Plus,
   ListPlus,
   RefreshCw,
   Search,
@@ -4353,14 +4353,14 @@ export function TasksPanel({
                 <button
                   type="button"
                   onClick={openImportModal}
-                  className="inline-flex h-[17px] w-[18px] shrink-0 items-center justify-center rounded-[8px] bg-white p-0 text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/40"
+                  className="inline-flex h-[17px] w-[18px] shrink-0 items-center justify-center rounded-[8px] bg-[#2F2F2F] p-0 text-white transition hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/40"
                   title="Add tasks from Tasks page"
                   aria-label="Add tasks from Tasks page"
                 >
-                  <PlusCircle
+                  <Plus
                     aria-hidden="true"
-                    className="h-[17px] w-[18px]"
-                    strokeWidth={1.8}
+                    size={12}
+                    strokeWidth={2.25}
                   />
                 </button>
               </div>
