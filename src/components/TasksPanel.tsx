@@ -23,7 +23,6 @@ import {
   MoreVertical,
   Pin,
   PinOff,
-  Plus,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useNavigate, useParams } from "react-router-dom";
@@ -778,10 +777,10 @@ export function TasksPanel({
   const [planItemsLoading, setPlanItemsLoading] = useState(false);
 
   const [planSearch, setPlanSearch] = useState("");
+  const [planSearchExpanded, setPlanSearchExpanded] = useState(false);
+  const planSearchInputRef = useRef<HTMLInputElement | null>(null);
   const [importingItemId, setImportingItemId] = useState<string | null>(null);
   const [lastPlansLoadedAt, setLastPlansLoadedAt] = useState<string>("");
-  const [savingPanelTasks, setSavingPanelTasks] = useState(false);
-  const [savePanelTasksFeedback, setSavePanelTasksFeedback] = useState("");
   const [saveTaskToPlanTask, setSaveTaskToPlanTask] = useState<PanelTask | null>(null);
   const [savingTaskToPlan, setSavingTaskToPlan] = useState(false);
   const [saveTaskToPlanFeedback, setSaveTaskToPlanFeedback] = useState("");
@@ -2456,139 +2455,6 @@ export function TasksPanel({
     selectedPlanId,
     user?.id,
   ]);
-  const savePanelTasksToTasks = useCallback(async () => {
-    if (!user?.id || savingPanelTasks) return;
-
-    const tasks = orderPanelTasks(panelTasks, panelTaskOrder).filter(
-      (task) => UUID_RE.test(String(task.id || "")) && safeTrim(task.text).length > 0,
-    );
-    if (tasks.length === 0) {
-      setSavePanelTasksFeedback("Add a task before saving this list.");
-      return;
-    }
-
-    setSavingPanelTasks(true);
-    setSavePanelTasksFeedback("");
-
-    try {
-      let planId = selectedPlanId;
-
-      if (!planId) {
-        const { data: createdPlan, error: createPlanError } = await supabase
-          .from("focus_plans")
-          .insert({ user_id: user.id, title: "My tasks" })
-          .select("id,user_id,title,created_at,updated_at")
-          .single();
-
-        if (createPlanError || !createdPlan) {
-          throw createPlanError || new Error("Task list was not created");
-        }
-
-        planId = String(createdPlan.id);
-        setPlans((current) => [createdPlan as FocusPlan, ...current]);
-        setSelectedPlanId(planId);
-      }
-
-      const { data: existingRows, error: existingRowsError } = await supabase
-        .from("focus_plan_items")
-        .select("id,plan_id,user_id,text,target_date,session_id,created_at,completed,sort_order")
-        .eq("user_id", user.id)
-        .eq("plan_id", planId)
-        .order("sort_order", { ascending: true })
-        .order("created_at", { ascending: false });
-
-      if (existingRowsError) throw existingRowsError;
-
-      const existingItems = (Array.isArray(existingRows) ? existingRows : []) as FocusPlanItem[];
-      const itemByText = new Map<string, FocusPlanItem>();
-      for (const item of existingItems) {
-        const normalized = normalizeTextForMatch(item.text);
-        if (normalized && !itemByText.has(normalized)) itemByText.set(normalized, item);
-      }
-
-      let nextSortOrder = existingItems.reduce(
-        (maximum, item) => Math.max(maximum, Number(item.sort_order) || 0),
-        -1,
-      ) + 1;
-      const pendingTexts = new Set<string>();
-      const rowsToInsert = tasks.flatMap((task) => {
-        const normalized = normalizeTextForMatch(task.text);
-        if (!normalized || itemByText.has(normalized) || pendingTexts.has(normalized)) return [];
-        pendingTexts.add(normalized);
-        return [{
-          user_id: user.id,
-          plan_id: planId,
-          text: safeTrim(task.text),
-          target_date: null,
-          session_id: null,
-          completed: Boolean(task.completed),
-          sort_order: nextSortOrder++,
-        }];
-      });
-
-      if (rowsToInsert.length > 0) {
-        const { data: insertedRows, error: insertRowsError } = await supabase
-          .from("focus_plan_items")
-          .insert(rowsToInsert)
-          .select("id,plan_id,user_id,text,target_date,session_id,created_at,completed,sort_order");
-
-        if (insertRowsError) throw insertRowsError;
-        for (const item of (Array.isArray(insertedRows) ? insertedRows : []) as FocusPlanItem[]) {
-          const normalized = normalizeTextForMatch(item.text);
-          if (normalized) itemByText.set(normalized, item);
-        }
-      }
-
-      const linkedTasks = new Map<string, string>();
-      for (const task of tasks) {
-        const item = itemByText.get(normalizeTextForMatch(task.text));
-        if (!item) continue;
-        const { error: linkError } = await supabase
-          .from(PANEL_TASKS_TABLE)
-          .update({ focus_plan_item_id: item.id })
-          .eq("id", task.id)
-          .eq("user_id", user.id);
-        if (linkError) throw linkError;
-        linkedTasks.set(task.id, item.id);
-      }
-
-      setPanelTasks((current) =>
-        current.map((task) => ({
-          ...task,
-          focus_plan_item_id: linkedTasks.get(task.id) || task.focus_plan_item_id,
-        })),
-      );
-
-      await supabase
-        .from("focus_plans")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", planId)
-        .eq("user_id", user.id);
-
-      await Promise.all([loadPlans(), loadPlanItems(planId), loadPanelTasks()]);
-      emitTasksSync({ action: "save-panel-list", userId: user.id, planId });
-      setSavePanelTasksFeedback(
-        rowsToInsert.length > 0
-          ? `Saved ${rowsToInsert.length} new ${rowsToInsert.length === 1 ? "task" : "tasks"}.`
-          : "Everything is already saved in Tasks.",
-      );
-    } catch (error) {
-      console.error("[TasksPanel] Failed to save room tasks to Tasks", error);
-      setSavePanelTasksFeedback("Could not save tasks. Please try again.");
-    } finally {
-      setSavingPanelTasks(false);
-    }
-  }, [
-    loadPanelTasks,
-    loadPlanItems,
-    loadPlans,
-    panelTaskOrder,
-    panelTasks,
-    savingPanelTasks,
-    selectedPlanId,
-    user?.id,
-  ]);
-
   const handleAddPanelTask = async (
     textOverride?: string,
     visibilityOverride?: "public" | "private",
@@ -3243,10 +3109,18 @@ export function TasksPanel({
   useEffect(() => () => clearAiSuggestionPreviewCloseTimer(), [clearAiSuggestionPreviewCloseTimer]);
 
   const openImportModal = useCallback(() => {
-    setSavePanelTasksFeedback("");
     setImportModalOpen(true);
   }, []);
-  const closeImportModal = useCallback(() => setImportModalOpen(false), []);
+  const closeImportModal = useCallback(() => {
+    setImportModalOpen(false);
+    setPlanSearch("");
+    setPlanSearchExpanded(false);
+  }, []);
+
+  const expandPlanSearch = useCallback(() => {
+    setPlanSearchExpanded(true);
+    window.requestAnimationFrame(() => planSearchInputRef.current?.focus());
+  }, []);
 
   useEffect(() => {
     if (!importModalOpen) return;
@@ -3789,8 +3663,7 @@ export function TasksPanel({
                     Tasks
                   </div>
                   <div className={["text-[11px] mt-0.5", modalSub].join(" ")}>
-                    Save this room todo list to Tasks, or bring saved tasks
-                    back into the room.
+                    Bring saved tasks from your Tasks page into this room.
                   </div>
                 </div>
 
@@ -3847,55 +3720,6 @@ export function TasksPanel({
               className="p-4 overflow-y-auto custom-scrollbar"
               style={{ maxHeight: "calc(78vh - 56px)" }}
             >
-              <div
-                className={[
-                  "mb-4 rounded-xl px-3 py-3",
-                  isLight ? "bg-[#E9E7E7]" : "bg-[#242424]",
-                ].join(" ")}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className={["text-[13px] font-semibold", modalTitle].join(" ")}>
-                      Save current todo list
-                    </div>
-                    <div className={["mt-0.5 text-[11px]", modalSub].join(" ")}>
-                      Every row becomes a separate task. Existing tasks are not duplicated.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={savingPanelTasks || plansLoading || panelTasks.length === 0}
-                    onClick={() => void savePanelTasksToTasks()}
-                    className={[
-                      "h-10 shrink-0 rounded-xl px-3 text-[12px] font-semibold transition inline-flex items-center gap-2",
-                      primaryBtn,
-                      savingPanelTasks || plansLoading || panelTasks.length === 0
-                        ? "cursor-not-allowed opacity-45"
-                        : "",
-                    ].join(" ")}
-                  >
-                    {savingPanelTasks ? (
-                      <RefreshCw size={15} className="animate-spin" />
-                    ) : (
-                      <ListPlus size={15} />
-                    )}
-                    {savingPanelTasks ? "Saving..." : "Save to Tasks"}
-                  </button>
-                </div>
-                {savePanelTasksFeedback ? (
-                  <div
-                    className={[
-                      "mt-2 text-[11px]",
-                      savePanelTasksFeedback.startsWith("Could not")
-                        ? "text-[#F65252]"
-                        : modalSub,
-                    ].join(" ")}
-                  >
-                    {savePanelTasksFeedback}
-                  </div>
-                ) : null}
-              </div>
-
               <div className={["mb-3 text-[11px] font-semibold uppercase tracking-[0.12em]", modalSub].join(" ")}>
                 Add from Tasks
               </div>
@@ -3918,52 +3742,72 @@ export function TasksPanel({
                       Task list
                     </div>
 
-                    <select
-                      value={selectedPlanId}
-                      onChange={(e) => setSelectedPlanId(e.target.value)}
-                      className={
-                        isLight
-                          ? "w-full h-11 px-3 rounded-xl border border-[#CFCFCF] bg-[#F3F3F3] text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-[#81DB86]"
-                          : "w-full h-11 px-3 rounded-xl border border-[#2B2B2B] bg-[#242424] text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-[#81DB86]"
-                      }
-                    >
-                      {plans.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.title}
-                        </option>
-                      ))}
-                    </select>
-
-                    <div
-                      className={
-                        "text-[11px] font-semibold " + mutedText + " mt-2"
-                      }
-                    >
-                      Search
-                    </div>
                     <div className="flex items-center gap-2">
+                      <select
+                        value={selectedPlanId}
+                        onChange={(e) => setSelectedPlanId(e.target.value)}
+                        className={
+                          isLight
+                            ? "min-w-0 flex-1 h-11 px-3 rounded-xl border border-[#CFCFCF] bg-[#F3F3F3] text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-[#81DB86]"
+                            : "min-w-0 flex-1 h-11 px-3 rounded-xl border border-[#2B2B2B] bg-[#242424] text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-[#81DB86]"
+                        }
+                      >
+                        {plans.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.title}
+                          </option>
+                        ))}
+                      </select>
+
                       <div
                         className={[
-                          "h-11 w-11 rounded-xl border flex items-center justify-center",
+                          "relative h-11 shrink-0 overflow-hidden rounded-xl border transition-[width,background-color,border-color] duration-200 ease-out",
+                          planSearchExpanded || planSearch
+                            ? "w-[min(260px,42vw)]"
+                            : "w-11",
                           isLight
                             ? "border-[#CFCFCF] bg-[#F3F3F3]"
                             : "border-[#2B2B2B] bg-[#242424]",
                         ].join(" ")}
-                      >
-                        <Search
-                          size={16}
-                          className={
-                            isLight ? "text-black/40" : "text-white/45"
+                        onMouseEnter={() => setPlanSearchExpanded(true)}
+                        onMouseLeave={() => {
+                          const input = planSearchInputRef.current;
+                          if (!planSearch && input?.ownerDocument.activeElement !== input) {
+                            setPlanSearchExpanded(false);
                           }
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={expandPlanSearch}
+                          className="absolute inset-y-0 left-0 z-10 flex w-11 items-center justify-center"
+                          title="Search tasks"
+                          aria-label="Search tasks"
+                          aria-expanded={planSearchExpanded || Boolean(planSearch)}
+                        >
+                          <Search
+                            size={16}
+                            className={isLight ? "text-black/40" : "text-white/45"}
+                          />
+                        </button>
+
+                        <input
+                          ref={planSearchInputRef}
+                          value={planSearch}
+                          onChange={(e) => setPlanSearch(e.target.value)}
+                          onFocus={() => setPlanSearchExpanded(true)}
+                          onBlur={() => {
+                            if (!planSearch) setPlanSearchExpanded(false);
+                          }}
+                          placeholder="Search tasks..."
+                          aria-label="Search tasks"
+                          className={[
+                            "h-full w-full bg-transparent pb-px pl-10 pr-3 text-[13px] outline-none transition-opacity duration-150 placeholder:text-current placeholder:opacity-40",
+                            planSearchExpanded || planSearch ? "opacity-100" : "pointer-events-none opacity-0",
+                            isLight ? "text-black/85" : "text-white/85",
+                          ].join(" ")}
                         />
                       </div>
-
-                      <input
-                        value={planSearch}
-                        onChange={(e) => setPlanSearch(e.target.value)}
-                        placeholder="Type to filter tasks..."
-                        className={"flex-1 " + inputCls}
-                      />
                     </div>
                   </div>
 
@@ -4038,10 +3882,10 @@ export function TasksPanel({
                                         ? "bg-[#E6E6E6] text-black/60 border border-[#CFCFCF]"
                                         : "bg-[#242424] text-white/70 border border-[#2B2B2B]",
                                     ].join(" ")}
-                                    title="Already attached to panel"
+                                    title="Already added to panel"
                                   >
                                     <Check size={16} />
-                                    Attached
+                                    Added
                                   </div>
                                 </div>
                               ) : (
@@ -4056,12 +3900,11 @@ export function TasksPanel({
                                       : "opacity-100",
                                     primaryBtn,
                                   ].join(" ")}
-                                  title="Attach to panel"
+                                  title="Add to panel"
                                 >
-                                  <ListPlus size={16} />
                                   {importingItemId === it.id
-                                    ? "Attaching..."
-                                    : "Attach"}
+                                    ? "Adding..."
+                                    : "+ Add"}
                                 </button>
                               )}
                             </div>
@@ -4560,11 +4403,11 @@ export function TasksPanel({
                 <button
                   type="button"
                   onClick={openImportModal}
-                  className="inline-flex h-[19px] w-[19px] shrink-0 items-center justify-center rounded-full border border-[#2F2F2F] bg-transparent text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/40"
+                  className="inline-flex h-[17px] w-[18px] shrink-0 items-center justify-center rounded-[8px] border border-[#2F2F2F] bg-white p-[2px] font-inter text-[17px] font-bold leading-[12px] text-black transition hover:bg-[#2F2F2F] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/40"
                   title="Add tasks from Tasks page"
                   aria-label="Add tasks from Tasks page"
                 >
-                  <Plus size={12} strokeWidth={2} aria-hidden="true" />
+                  <span aria-hidden="true">+</span>
                 </button>
               </div>
               <div className="mt-0.5 flex items-center gap-1 text-[10px] text-black/40">
