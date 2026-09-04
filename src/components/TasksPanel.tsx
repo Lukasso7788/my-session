@@ -23,6 +23,7 @@ import {
   MoreVertical,
   Pin,
   PinOff,
+  Plus,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useNavigate, useParams } from "react-router-dom";
@@ -754,6 +755,7 @@ export function TasksPanel({
   const loadSeqRef = useRef(0);
   const panelSeqRef = useRef(0);
   const sessionReloadTimerRef = useRef<number | null>(null);
+  const sessionTasksHydratedForRef = useRef("");
   const panelTasksHydratedRef = useRef(false);
   const publicTasksReconcileTimerRef = useRef<number | null>(null);
   const publicTasksReconcileVersionRef = useRef(0);
@@ -1537,12 +1539,17 @@ export function TasksPanel({
   }, [user?.id, loadPanelTasks]);
 
   const loadSessionTasks = useCallback(
-    async (sid?: string | null) => {
+    async (
+      sid?: string | null,
+      options: { showLoading?: boolean } = {},
+    ) => {
       const s = String(sid || sessionId || "");
       if (!s) return;
 
       const seq = ++loadSeqRef.current;
-      setSessionLoading(true);
+      const showLoading =
+        options.showLoading ?? sessionTasksHydratedForRef.current !== s;
+      if (showLoading) setSessionLoading(true);
 
       try {
         const { data, error } = await supabase
@@ -1556,7 +1563,7 @@ export function TasksPanel({
         if (seq !== loadSeqRef.current) return;
 
         if (error || !Array.isArray(data)) {
-          setSessionTasks([]);
+          if (showLoading) setSessionTasks([]);
           return;
         }
 
@@ -1571,6 +1578,7 @@ export function TasksPanel({
         }));
 
         setSessionTasks(merged);
+        sessionTasksHydratedForRef.current = s;
       } finally {
         if (seq === loadSeqRef.current) setSessionLoading(false);
       }
@@ -1589,7 +1597,7 @@ export function TasksPanel({
 
       sessionReloadTimerRef.current = window.setTimeout(() => {
         sessionReloadTimerRef.current = null;
-        void loadSessionTasks(targetSid);
+        void loadSessionTasks(targetSid, { showLoading: false });
       }, 120);
     },
     [sessionId, loadSessionTasks],
@@ -1691,7 +1699,7 @@ export function TasksPanel({
           userId: uid,
           taskCount: desiredByText.size,
         });
-        await loadSessionTasks(sid);
+        await loadSessionTasks(sid, { showLoading: false });
       } catch (error) {
         console.error("[TasksPanel] Failed to reconcile public room tasks", error);
       }
@@ -1723,7 +1731,7 @@ export function TasksPanel({
   useEffect(() => {
     if (!sessionId) return;
 
-    void loadSessionTasks(sessionId);
+    void loadSessionTasks(sessionId, { showLoading: true });
 
     const channel = supabase
       .channel(`intentions_realtime_${sessionId}`)
@@ -1731,13 +1739,66 @@ export function TasksPanel({
         "postgres_changes",
         { event: "*", schema: "public", table: SESSION_TASKS_TABLE },
         (payload: any) => {
-          const payloadSessionId = String(
-            payload?.new?.session_id || payload?.old?.session_id || "",
-          ).trim();
+          const eventType = String(payload?.eventType || "").toUpperCase();
+          const nextTask = (payload?.new || null) as SessionTask | null;
+          const previousTask = (payload?.old || null) as SessionTask | null;
+          const taskId = String(nextTask?.id || previousTask?.id || "").trim();
+          const nextSessionId = String(nextTask?.session_id || "").trim();
+          const previousSessionId = String(previousTask?.session_id || "").trim();
+          const activeSessionId = String(sessionId);
 
-          if (!payloadSessionId || payloadSessionId === String(sessionId)) {
-            scheduleSessionTasksReload(sessionId);
+          if (eventType === "DELETE" && taskId) {
+            setSessionTasks((current) =>
+              current.filter((task) => String(task.id) !== taskId),
+            );
+            return;
           }
+
+          if (!nextTask || !taskId) {
+            scheduleSessionTasksReload(activeSessionId);
+            return;
+          }
+
+          if (nextSessionId !== activeSessionId) {
+            if (previousSessionId === activeSessionId) {
+              setSessionTasks((current) =>
+                current.filter((task) => String(task.id) !== taskId),
+              );
+            }
+            return;
+          }
+
+          if (nextTask.completed) {
+            setSessionTasks((current) =>
+              current.filter((task) => String(task.id) !== taskId),
+            );
+            return;
+          }
+
+          setSessionTasks((current) => {
+            const existing = current.find((task) => String(task.id) === taskId);
+            const merged = {
+              ...existing,
+              ...nextTask,
+              profiles: existing?.profiles,
+            } as SessionTask;
+            if (existing) {
+              return current.map((task) =>
+                String(task.id) === taskId ? merged : task,
+              );
+            }
+            return [merged, ...current].slice(0, SESSION_TASKS_FETCH_LIMIT);
+          });
+
+          void fetchProfilesMap([nextTask.user_id]).then((profiles) => {
+            const profile = profiles.get(String(nextTask.user_id));
+            if (!profile) return;
+            setSessionTasks((current) =>
+              current.map((task) =>
+                String(task.id) === taskId ? { ...task, profiles: profile } : task,
+              ),
+            );
+          });
         },
       )
       .subscribe();
@@ -1759,8 +1820,9 @@ export function TasksPanel({
       const eventSessionId = String(detail?.sessionId || "").trim();
 
       if (eventSessionId && eventSessionId !== String(sessionId)) return;
+      if (detail?.source === "tasks-panel") return;
 
-      if (detail?.source !== "tasks-panel") void loadPanelTasks();
+      void loadPanelTasks();
       scheduleSessionTasksReload(sessionId);
     };
 
@@ -1993,13 +2055,20 @@ export function TasksPanel({
           return null;
         }
 
+        setSessionTasks((current) =>
+          completed
+            ? current.filter((task) => task.id !== existing.id)
+            : current.map((task) =>
+              task.id === existing.id ? { ...task, ...updates } : task,
+            ),
+        );
+
         emitTasksSync({
           action: "update",
           sessionId,
           userId: user.id,
           taskId: existing.id,
         });
-        void loadSessionTasks(sessionId);
         return existing.id;
       }
 
@@ -2019,9 +2088,9 @@ export function TasksPanel({
 
         if (error) throw error;
 
-        if (data) {
+        if (data && !data.completed) {
           setSessionTasks((prev) =>
-            [data as SessionTask, ...prev].slice(
+            [{ ...(data as SessionTask), profiles: undefined }, ...prev].slice(
               0,
               SESSION_TASKS_FETCH_LIMIT,
             ),
@@ -2034,7 +2103,6 @@ export function TasksPanel({
           userId: user.id,
           taskId: data?.id || null,
         });
-        void loadSessionTasks(sessionId);
         return data?.id || null;
       } catch {
         void loadSessionTasks(sessionId);
@@ -2073,14 +2141,12 @@ export function TasksPanel({
         userId: user.id,
         taskId: existing.id,
       });
-      scheduleSessionTasksReload(sessionId);
     },
     [
       user?.id,
       sessionId,
       findOwnSessionTaskLocal,
       loadSessionTasks,
-      scheduleSessionTasksReload,
     ],
   );
 
@@ -2912,7 +2978,6 @@ export function TasksPanel({
         userId: uid,
         taskId,
       });
-      scheduleSessionTasksReload(sid);
     } catch (error) {
       console.error("deleteOwnPublishedTask error:", error);
       void loadSessionTasks(sid);
@@ -4488,8 +4553,19 @@ export function TasksPanel({
         <div className="mb-5">
           <div className="mb-5 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className={titleText + " font-inter font-bold text-[17px]"}>
-                {oneOnOneMode ? "Your Tasks" : "My Tasks"}
+              <div className="flex items-center gap-2">
+                <div className={titleText + " font-inter font-bold text-[17px]"}>
+                  {oneOnOneMode ? "Your Tasks" : "My Tasks"}
+                </div>
+                <button
+                  type="button"
+                  onClick={openImportModal}
+                  className="inline-flex h-[19px] w-[19px] shrink-0 items-center justify-center rounded-full border border-[#2F2F2F] bg-transparent text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/40"
+                  title="Add tasks from Tasks page"
+                  aria-label="Add tasks from Tasks page"
+                >
+                  <Plus size={12} strokeWidth={2} aria-hidden="true" />
+                </button>
               </div>
               <div className="mt-0.5 flex items-center gap-1 text-[10px] text-black/40">
                 <Sparkles size={10} className="text-[#2F2F2F]" />
