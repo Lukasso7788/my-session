@@ -64,7 +64,7 @@ import ActiveBanModal from "../components/ActiveBanModal";
 import BugReportModal from "../components/BugReportModal";
 
 import ChatPanel from "../components/ChatPanel";
-import { TasksPanel } from "../components/TasksPanel";
+import { TasksPanel, type PublicPanelTask } from "../components/TasksPanel";
 import AIHostedRoomController from "../components/ai-host/AIHostedRoomController";
 import JoinGateModal, {
   type JoinGateHostSession,
@@ -17495,22 +17495,37 @@ export function RoomPageLiveKit({
     return allTilesForRender;
   }, [allTilesForRender, activeScreenShareTile, screenSharePinned]);
 
-  const [tileTasksByUserId, setTileTasksByUserId] = useState<Record<string, string[]>>({});
+  const [tileTasksByUserId, setTileTasksByUserId] =
+    useState<Record<string, PublicPanelTask[]>>({});
   const [participantPublicTasksByUserId, setParticipantPublicTasksByUserId] =
-    useState<Record<string, string[]>>({});
-  const localPublicTasksOverrideRef = useRef<string[] | null>(null);
+    useState<Record<string, PublicPanelTask[]>>({});
+  const localPublicTasksOverrideRef = useRef<PublicPanelTask[] | null>(null);
 
-  const normalizePublicTaskTexts = useCallback((values: unknown): string[] => {
+  const normalizePublicTasks = useCallback((values: unknown): PublicPanelTask[] => {
     if (!Array.isArray(values)) return [];
 
-    const result: string[] = [];
+    const result: PublicPanelTask[] = [];
     for (const value of values) {
-      const text = String(value || "").trim().slice(0, 240);
+      const text = String(
+        typeof value === "string"
+          ? value
+          : value && typeof value === "object"
+            ? (value as { text?: unknown }).text || ""
+            : "",
+      )
+        .trim()
+        .slice(0, 240);
       if (!text) continue;
-      if (result.some((current) => current.toLowerCase() === text.toLowerCase())) {
+      if (result.some((current) => current.text.toLowerCase() === text.toLowerCase())) {
         continue;
       }
-      result.push(text);
+      result.push({
+        text,
+        completed:
+          value && typeof value === "object"
+            ? Boolean((value as { completed?: unknown }).completed)
+            : false,
+      });
       if (result.length >= 12) break;
     }
     return result;
@@ -17518,7 +17533,7 @@ export function RoomPageLiveKit({
 
   const syncLocalPublicTasksMetadata = useCallback(
     async (values: unknown) => {
-      const tasks = normalizePublicTaskTexts(values);
+      const tasks = normalizePublicTasks(values);
       const localUserId = String(authUserId || "").trim().toLowerCase();
 
       if (localUserId) {
@@ -17534,27 +17549,35 @@ export function RoomPageLiveKit({
       if (!participant || typeof participant.setMetadata !== "function") return;
 
       const currentMetadata = parseParticipantMetadata(participant.metadata) || {};
-      const currentTasks = normalizePublicTaskTexts(currentMetadata.publicPanelTasks);
+      const currentTasks = normalizePublicTasks(
+        currentMetadata.publicPanelTaskStates || currentMetadata.publicPanelTasks,
+      );
       if (JSON.stringify(currentTasks) === JSON.stringify(tasks)) return;
 
       try {
         await participant.setMetadata(
-          JSON.stringify({ ...currentMetadata, publicPanelTasks: tasks }),
+          JSON.stringify({
+            ...currentMetadata,
+            publicPanelTasks: tasks
+              .filter((task) => !task.completed)
+              .map((task) => task.text),
+            publicPanelTaskStates: tasks,
+          }),
         );
       } catch (error) {
         console.warn("Failed to publish public panel tasks", error);
       }
     },
-    [authUserId, normalizePublicTaskTexts],
+    [authUserId, normalizePublicTasks],
   );
 
   const handlePublicPanelTasksChange = useCallback(
-    (values: string[]) => {
-      const tasks = normalizePublicTaskTexts(values);
+    (values: PublicPanelTask[]) => {
+      const tasks = normalizePublicTasks(values);
       localPublicTasksOverrideRef.current = tasks;
       void syncLocalPublicTasksMetadata(tasks);
     },
-    [normalizePublicTaskTexts, syncLocalPublicTasksMetadata],
+    [normalizePublicTasks, syncLocalPublicTasksMetadata],
   );
 
   useEffect(() => {
@@ -17565,10 +17588,12 @@ export function RoomPageLiveKit({
     }
 
     const refreshPublicTasks = () => {
-      const next: Record<string, string[]> = {};
+      const next: Record<string, PublicPanelTask[]> = {};
       const collect = (participant: any, fallbackUserId = "") => {
         const metadata = parseParticipantMetadata(participant?.metadata);
-        if (!metadata || !Array.isArray(metadata.publicPanelTasks)) return;
+        if (!metadata) return;
+        const publishedTasks = metadata.publicPanelTaskStates;
+        if (!Array.isArray(publishedTasks)) return;
 
         const userId = String(
           fallbackUserId ||
@@ -17577,7 +17602,7 @@ export function RoomPageLiveKit({
           .trim()
           .toLowerCase();
         if (!userId) return;
-        next[userId] = normalizePublicTaskTexts(metadata.publicPanelTasks);
+        next[userId] = normalizePublicTasks(publishedTasks);
       };
 
       collect(room.localParticipant, String(authUserId || ""));
@@ -17600,7 +17625,7 @@ export function RoomPageLiveKit({
       room.off(RoomEvent.ParticipantConnected, refreshPublicTasks);
       room.off(RoomEvent.ParticipantDisconnected, refreshPublicTasks);
     };
-  }, [authUserId, connected, normalizePublicTaskTexts]);
+  }, [authUserId, connected, normalizePublicTasks]);
 
   const tileTaskUserIds = useMemo(() => {
     const ids = new Set<string>();
@@ -17628,7 +17653,6 @@ export function RoomPageLiveKit({
         .from("panel_intentions")
         .select("id,text,user_id,created_at,completed,visibility,sort_order")
         .in("user_id", participantUserIds)
-        .eq("completed", false)
         .eq("visibility", "public")
         .order("sort_order", { ascending: true, nullsFirst: false })
         .order("created_at", { ascending: false })
@@ -17642,7 +17666,6 @@ export function RoomPageLiveKit({
           .from("panel_intentions")
           .select("id,text,user_id,created_at,completed,visibility")
           .in("user_id", participantUserIds)
-          .eq("completed", false)
           .eq("visibility", "public")
           .order("created_at", { ascending: false })
           .limit(500);
@@ -17653,12 +17676,18 @@ export function RoomPageLiveKit({
         return;
       }
 
-      const next: Record<string, string[]> = {};
-      const appendTask = (userId: string, taskText: string) => {
-        if (!userId || !taskText) return;
+      const next: Record<string, PublicPanelTask[]> = {};
+      const appendTask = (userId: string, task: PublicPanelTask) => {
+        if (!userId || !task.text) return;
         const current = next[userId] || [];
-        if (current.some((value) => value.toLowerCase() === taskText.toLowerCase())) return;
-        next[userId] = [...current, taskText].slice(0, 12);
+        if (
+          current.some(
+            (value) => value.text.toLowerCase() === task.text.toLowerCase(),
+          )
+        ) {
+          return;
+        }
+        next[userId] = [...current, task].slice(0, 12);
       };
 
       for (const row of panelResult.data as any[]) {
@@ -17668,12 +17697,14 @@ export function RoomPageLiveKit({
         if (
           !userId ||
           !text ||
-          Boolean(row?.completed) ||
           visibility !== "public"
         ) {
           continue;
         }
-        appendTask(userId, text);
+        appendTask(userId, {
+          text,
+          completed: Boolean(row?.completed),
+        });
       }
 
       const localUserId = String(authUserId || "").trim().toLowerCase();
@@ -17734,7 +17765,8 @@ export function RoomPageLiveKit({
   );
 
   const getCurrentIntentionForTile = useCallback(
-    (tile: TileModel) => getTasksForTile(tile)[0] || "",
+    (tile: TileModel) =>
+      getTasksForTile(tile).find((task) => !task.completed)?.text || "",
     [getTasksForTile],
   );
 

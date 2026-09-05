@@ -59,6 +59,11 @@ type PanelTask = {
   ai_suggestion_updated_at?: string | null;
 };
 
+export type PublicPanelTask = {
+  text: string;
+  completed: boolean;
+};
+
 type FocusPlan = {
   id: string;
   user_id: string;
@@ -115,7 +120,7 @@ type TasksPanelProps = {
   onOpenPictureInPicture?: () => void;
   accountabilityWallOpen?: boolean;
   onToggleAccountabilityWall?: () => void;
-  onPublicTasksChange?: (tasks: string[]) => void;
+  onPublicTasksChange?: (tasks: PublicPanelTask[]) => void;
 };
 
 type ProfileMini = {
@@ -831,32 +836,35 @@ export function TasksPanel({
   const [taskMenuOpenId, setTaskMenuOpenId] = useState<string | null>(null);
   const [taskTimersEnabled, setTaskTimersEnabled] = useState<boolean>(false);
 
-  const publicPanelTaskTexts = useMemo(
+  const publicPanelTasks = useMemo(
     () =>
       orderPanelTasks(panelTasks, panelTaskOrder)
         .filter(
           (task) =>
             isPanelTaskPublic(task) &&
-            !Boolean(task.completed) &&
             safeTrim(task.text).length > 0,
         )
-        .map((task) => safeTrim(task.text))
+        .map((task) => ({
+          text: safeTrim(task.text),
+          completed: Boolean(task.completed),
+        }))
         .filter(
-          (text, index, values) =>
+          (task, index, values) =>
             values.findIndex(
               (candidate) =>
-                normalizeTextForMatch(candidate) === normalizeTextForMatch(text),
+                normalizeTextForMatch(candidate.text) ===
+                normalizeTextForMatch(task.text),
             ) === index,
         )
         .slice(0, 12),
     [panelTaskOrder, panelTasks],
   );
-  const publicPanelTaskTextsKey = JSON.stringify(publicPanelTaskTexts);
+  const publicPanelTasksKey = JSON.stringify(publicPanelTasks);
 
   useEffect(() => {
     if (!panelTasksHydratedRef.current) return;
-    onPublicTasksChange?.(publicPanelTaskTexts);
-  }, [onPublicTasksChange, publicPanelTaskTextsKey]);
+    onPublicTasksChange?.(publicPanelTasks);
+  }, [onPublicTasksChange, publicPanelTasksKey]);
 
   useEffect(() => {
     setTaskTimers(readTaskTimers(taskTimerStorageKey));

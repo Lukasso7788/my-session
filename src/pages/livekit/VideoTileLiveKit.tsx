@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Track, LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
 import { BarVisualizer } from "@livekit/components-react";
-import { Pencil } from "lucide-react";
+import { Check, Pencil } from "lucide-react";
 import { formatTimeZoneCityLabel } from "../../lib/timezones";
 
 type RoomTheme = "dark" | "light";
@@ -16,6 +16,11 @@ type HostTileActions = {
     onToggleMuteCam?: () => void;
     onKick?: () => void;
     busy?: boolean;
+};
+
+export type VideoTileTaskItem = {
+    text: string;
+    completed?: boolean;
 };
 
 function getQueryBool(name: string, def = false) {
@@ -209,7 +214,7 @@ type VideoTileProps = {
     onEditName?: () => void;
     density?: "normal" | "compact";
     currentIntention?: string | null;
-    taskList?: string[];
+    taskList?: Array<string | VideoTileTaskItem>;
     showAllTasks?: boolean;
     showTaskOverlay?: boolean;
     accountabilityWall?: boolean;
@@ -478,15 +483,32 @@ function VideoTileInner({
     const safeCurrentIntention = String(currentIntention || "").trim();
     const safeTaskList = useMemo(() => {
         const seen = new Set<string>();
-        return [safeCurrentIntention, ...(Array.isArray(taskList) ? taskList : [])]
-            .map((value) => String(value || "").replace(/\s+/g, " ").trim())
-            .filter((value) => {
-                const key = value.toLowerCase();
-                if (!value || seen.has(key)) return false;
+        const normalized = (Array.isArray(taskList) ? taskList : [])
+            .map((value) => {
+                const text = String(
+                    typeof value === "string" ? value : value?.text || "",
+                )
+                    .replace(/\s+/g, " ")
+                    .trim();
+                return {
+                    text,
+                    completed:
+                        typeof value === "string" ? false : Boolean(value?.completed),
+                };
+            })
+            .filter((task) => {
+                const key = task.text.toLowerCase();
+                if (!task.text || seen.has(key)) return false;
                 seen.add(key);
                 return true;
-            })
-            .slice(0, 12);
+            });
+
+        const currentKey = safeCurrentIntention.toLowerCase();
+        if (safeCurrentIntention && !seen.has(currentKey)) {
+            normalized.unshift({ text: safeCurrentIntention, completed: false });
+        }
+
+        return normalized.slice(0, 12);
     }, [safeCurrentIntention, taskList]);
     const [participantClock, setParticipantClock] = useState(() => Date.now());
     const participantTime = formatParticipantTime(
@@ -924,7 +946,7 @@ function VideoTileInner({
                             ? "bg-gradient-to-t from-black/90 via-black/72 to-black/20 opacity-100"
                             : "group-hover:bg-gradient-to-t group-hover:from-black/90 group-hover:via-black/72 group-hover:to-black/20",
                     ].join(" ")}
-                    title={safeTaskList.join("\n")}
+                    title={safeTaskList.map((task) => task.text).join("\n")}
                 >
                     <div
                         className={[
@@ -933,9 +955,15 @@ function VideoTileInner({
                         ].join(" ")}
                     >
                         <div className={`flex min-w-0 items-start gap-2 ${isCompact ? "text-[11px] leading-4" : "text-[12px] leading-[1.15rem]"}`}>
-                            <span className="mt-[0.42rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#81DB86] shadow-[0_0_0_2px_rgba(129,219,134,0.16)]" />
-                            <span className={`min-w-0 font-medium ${showAllTasks ? "whitespace-normal" : "truncate group-hover:whitespace-normal group-hover:overflow-visible"}`}>
-                                {safeTaskList[0]}
+                            {safeTaskList[0].completed ? (
+                                <span className="mt-[0.18rem] inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#81DB86] text-black">
+                                    <Check size={9} strokeWidth={3} />
+                                </span>
+                            ) : (
+                                <span className="mt-[0.42rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#81DB86] shadow-[0_0_0_2px_rgba(129,219,134,0.16)]" />
+                            )}
+                            <span className={`min-w-0 font-medium ${safeTaskList[0].completed ? "text-white/65 line-through" : ""} ${showAllTasks ? "whitespace-normal" : "truncate group-hover:whitespace-normal group-hover:overflow-visible"}`}>
+                                {safeTaskList[0].text}
                             </span>
                         </div>
 
@@ -950,9 +978,17 @@ function VideoTileInner({
                                 ].join(" ")}
                             >
                                 {safeTaskList.slice(1).map((task, index) => (
-                                    <div key={`${task}-${index}`} className="flex gap-2">
-                                        <span className="mt-[0.34rem] h-1.5 w-1.5 shrink-0 rounded-full bg-white/55" />
-                                        <span className="min-w-0 break-words font-normal">{task}</span>
+                                    <div key={`${task.text}-${index}`} className="flex gap-2">
+                                        {task.completed ? (
+                                            <span className="mt-[0.12rem] inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#81DB86] text-black">
+                                                <Check size={9} strokeWidth={3} />
+                                            </span>
+                                        ) : (
+                                            <span className="mt-[0.34rem] h-1.5 w-1.5 shrink-0 rounded-full bg-white/55" />
+                                        )}
+                                        <span className={`min-w-0 break-words font-normal ${task.completed ? "text-white/60 line-through" : ""}`}>
+                                            {task.text}
+                                        </span>
                                     </div>
                                 ))}
                             </div>
@@ -1000,11 +1036,15 @@ function VideoTileInner({
                             <div className="space-y-1.5 pb-1">
                                 {safeTaskList.map((task, index) => (
                                     <div
-                                        key={`${tileId}-wall-task-${index}-${task}`}
-                                        className={`flex min-w-0 items-start gap-2 font-inter text-[11px] font-normal leading-4 ${isLight ? "text-black/85" : "text-white/90"}`}
+                                        key={`${tileId}-wall-task-${index}-${task.text}`}
+                                        className={`flex min-w-0 items-start gap-2 font-inter text-[11px] font-normal leading-4 ${task.completed ? (isLight ? "text-black/45" : "text-white/45") : (isLight ? "text-black/85" : "text-white/90")}`}
                                     >
-                                        <span className={`mt-[3px] h-2.5 w-2.5 shrink-0 rounded-[2px] border ${isLight ? "border-black/55 bg-white/20" : "border-white/60 bg-black/10"}`} />
-                                        <span className="min-w-0 break-words">{task}</span>
+                                        <span className={`mt-[3px] inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-[2px] border ${task.completed ? "border-[#81DB86] bg-[#81DB86] text-black" : (isLight ? "border-black/55 bg-white/20" : "border-white/60 bg-black/10")}`}>
+                                            {task.completed ? <Check size={8} strokeWidth={3} /> : null}
+                                        </span>
+                                        <span className={`min-w-0 break-words ${task.completed ? "line-through" : ""}`}>
+                                            {task.text}
+                                        </span>
                                     </div>
                                 ))}
                             </div>
