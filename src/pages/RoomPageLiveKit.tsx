@@ -4876,8 +4876,6 @@ function AccountabilityWall({
   theme,
   taskListsByUserId,
   isLight,
-  onOpenTasks,
-  onSwitchBackToVideo,
 }: {
   sessionId?: string | null;
   tiles: TileModel[];
@@ -4886,8 +4884,6 @@ function AccountabilityWall({
   theme: RoomTheme;
   taskListsByUserId: Record<string, string[]>;
   isLight: boolean;
-  onOpenTasks: () => void;
-  onSwitchBackToVideo: () => void;
 }) {
   const [wallTasks, setWallTasks] = useState<AccountabilityWallTask[]>([]);
   const [loading, setLoading] = useState(false);
@@ -5376,7 +5372,7 @@ function AccountabilityWall({
 
   return (
     <div className="h-full w-full min-h-0 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-4">
         <div className="flex flex-col gap-0.5">
           <div className={`font-inter text-[15px] font-semibold leading-tight ${isLight ? "text-black/85" : "text-white/90"}`}>
             Accountability Wall
@@ -5384,44 +5380,6 @@ function AccountabilityWall({
           <div className={`font-inter text-[12px] font-normal leading-tight ${mutedText}`}>
             Everyone’s current tasks, visible while you work.
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={onOpenTasks}
-            className={[
-              "inline-flex h-9 items-center justify-center rounded-2xl px-3 font-inter text-[12px] font-normal leading-none transition",
-              isLight
-                ? "bg-[#242424] text-white hover:bg-[#303030]"
-                : "bg-[#81DB86] text-black hover:brightness-95",
-            ].join(" ")}
-          >
-            Add / edit tasks
-          </button>
-
-          <button
-            type="button"
-            onClick={onSwitchBackToVideo}
-            className={[
-              "inline-flex h-9 items-center justify-center gap-1.5 rounded-2xl border px-3 font-inter text-[12px] font-normal leading-none transition",
-              isLight
-                ? "border-[#CFC6C6] bg-[#F7F5F5] text-black/70 hover:bg-[#ECEAEA]"
-                : "border-[#2B2B2B] bg-[#242424] text-white/80 hover:bg-white/[0.06]",
-            ].join(" ")}
-            title="Switch back to videos"
-          >
-            <img
-              src={isLight ? "/icons/pip-intentions-light.svg" : "/icons/pip-intentions-dark.svg"}
-              alt=""
-              className="h-3.5 w-3.5 opacity-85"
-              draggable={false}
-              onError={(e) => {
-                (e.currentTarget as HTMLImageElement).style.display = "none";
-              }}
-            />
-            <span>Switch back to videos</span>
-          </button>
         </div>
       </div>
 
