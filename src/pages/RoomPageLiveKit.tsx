@@ -17386,6 +17386,7 @@ export function RoomPageLiveKit({
             isSpeaking={!!t.isSpeaking}
             currentIntention={getCurrentIntentionForTile(t)}
             taskList={getTasksForTile(t)}
+            accountabilityWall={mainViewMode === "accountability"}
             participantTimeZone={t.participantTimeZone || null}
             onToggleMenu={handleToggleTileMenu}
             showMenuButton={
@@ -17895,19 +17896,7 @@ export function RoomPageLiveKit({
     );
   };
 
-  const videoLayout = mainViewMode === "accountability" ? (
-    <AccountabilityWall
-      sessionId={session?.id || null}
-      tiles={layoutTilesForRender}
-      profilesById={profilesById}
-      taskListsByUserId={effectiveTileTasksByUserId}
-      authUserId={authUserId || null}
-      theme={theme}
-      isLight={isLight}
-      onOpenTasks={() => openRightTab("tasks")}
-      onSwitchBackToVideo={() => setMainViewMode("video")}
-    />
-  ) : useFeaturedLayout ? (
+  const videoLayout = useFeaturedLayout ? (
     <div
       className="h-full w-full min-w-0 min-h-0 grid gap-2 sm:gap-3 p-2 sm:p-3 overflow-hidden"
       style={{
@@ -18015,7 +18004,7 @@ export function RoomPageLiveKit({
 
   const videoContent = (
     <div className="w-full h-full min-w-0 min-h-0 relative overflow-hidden">
-      {mainViewMode !== "accountability" && showMobileLayoutControls && showMobileLayoutSwitcher ? (
+      {showMobileLayoutControls && showMobileLayoutSwitcher ? (
         <div className="absolute right-2 top-2 z-20 flex items-center gap-1.5 rounded-2xl p-1 backdrop-blur-xl pointer-events-auto">
           <MobileLayoutButton
             mode="one"

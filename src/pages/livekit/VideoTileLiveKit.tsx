@@ -212,6 +212,7 @@ type VideoTileProps = {
     taskList?: string[];
     showAllTasks?: boolean;
     showTaskOverlay?: boolean;
+    accountabilityWall?: boolean;
     participantTimeZone?: string | null;
     cameraFramingMode?: CameraFramingMode;
 };
@@ -377,6 +378,7 @@ function VideoTileInner({
     taskList = [],
     showAllTasks = false,
     showTaskOverlay = true,
+    accountabilityWall = false,
     participantTimeZone,
     cameraFramingMode = "full",
     onToggleMenu,
@@ -909,9 +911,11 @@ function VideoTileInner({
                 />
             </div>
 
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[11] h-[30%] bg-gradient-to-t from-black/80 via-black/38 to-transparent" />
+            {!accountabilityWall ? (
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[11] h-[30%] bg-gradient-to-t from-black/80 via-black/38 to-transparent" />
+            ) : null}
 
-            {showTaskOverlay && safeTaskList.length ? (
+            {!accountabilityWall && showTaskOverlay && safeTaskList.length ? (
                 <div
                     className={[
                         "pointer-events-none absolute inset-0 z-[13] flex min-h-0 w-full flex-col justify-end overflow-hidden px-3 transition-all duration-300 ease-out",
@@ -957,49 +961,105 @@ function VideoTileInner({
                 </div>
             ) : null}
 
-            <div
-                className={`pointer-events-none absolute z-[14] flex min-w-0 items-end justify-between gap-[0.5rem] text-white ${isCompact ? "inset-x-[0.55rem] bottom-[0.45rem]" : "inset-x-[0.75rem] bottom-[0.65rem]"}`}
-            >
-                <div className="min-w-0 max-w-[calc(100%_-_2.5rem)]">
-                    <div className="flex min-w-0 items-center gap-[0.4rem]">
-                        <span
-                            className={`min-w-0 truncate font-inter ${isCompact ? "text-[10px]" : "text-[12px]"} font-semibold leading-none text-white drop-shadow-md`}
-                        >
+            {accountabilityWall ? (
+                <div
+                    className={[
+                        "pointer-events-auto absolute inset-0 z-[13] flex min-h-0 w-full flex-col overflow-hidden px-4 py-3 backdrop-blur-[1px]",
+                        isLight
+                            ? "bg-[#F7F5F5]/90 text-[#202020]"
+                            : "bg-[#2F2F2F]/90 text-white",
+                    ].join(" ")}
+                >
+                    <div className="min-w-0 shrink-0 font-inter">
+                        <div className="truncate text-[12px] font-medium leading-none">
                             {label || "User"}
-                        </span>
-
-                        {status ? (
-                            <span
-                                className={`pointer-events-auto inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${getStatusClass(status, false)}`}
-                                title={isLocal && status === "skip_deafened" ? "Skip me (room audio muted for you)" : getStatusLabel(status)}
+                        </div>
+                        {participantTime ? (
+                            <div
+                                className={`mt-1 truncate text-[10px] font-normal leading-none ${isLight ? "text-black/55" : "text-white/60"}`}
+                                title={String(participantTimeZone || "")}
                             >
-                                <span>{getStatusLabel(status)}</span>
-                                {isLocal && status === "skip_deafened" ? (
-                                    <SkipMeMutedStatusIcon theme={theme} className="h-2.5 w-2.5" />
-                                ) : null}
-                            </span>
+                                {participantTime}
+                            </div>
                         ) : null}
                     </div>
 
-                    {participantTime ? (
-                        <div
-                            className={`mt-1 truncate font-inter ${isCompact ? "text-[9px]" : "text-[10px]"} font-normal leading-none text-white/70 drop-shadow-md`}
-                            title={String(participantTimeZone || "")}
-                        >
-                            {participantTime}
-                        </div>
-                    ) : null}
-                </div>
+                    <div className={`mt-3 shrink-0 font-inter text-[9px] font-medium uppercase tracking-[0.12em] ${isLight ? "text-black/55" : "text-white/55"}`}>
+                        Tasks
+                    </div>
 
-                <MicBadgeWithBarVisualizer
-                    theme={theme}
-                    micMuted={micMuted}
-                    audioTrack={audioTrack}
-                    isSpeaking={heldSpeaking}
-                    isLocal={isLocal}
-                    hasCameraOn={hasCameraOn}
-                />
-            </div>
+                    <div
+                        className={[
+                            "mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]",
+                            isLight
+                                ? "[scrollbar-color:rgba(47,47,47,0.32)_transparent]"
+                                : "[scrollbar-color:rgba(255,255,255,0.3)_transparent]",
+                        ].join(" ")}
+                    >
+                        {safeTaskList.length ? (
+                            <div className="space-y-1.5 pb-1">
+                                {safeTaskList.map((task, index) => (
+                                    <div
+                                        key={`${tileId}-wall-task-${index}-${task}`}
+                                        className={`flex min-w-0 items-start gap-2 font-inter text-[11px] font-normal leading-4 ${isLight ? "text-black/85" : "text-white/90"}`}
+                                    >
+                                        <span className={`mt-[3px] h-2.5 w-2.5 shrink-0 rounded-[2px] border ${isLight ? "border-black/55 bg-white/20" : "border-white/60 bg-black/10"}`} />
+                                        <span className="min-w-0 break-words">{task}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className={`font-inter text-[11px] font-normal ${isLight ? "text-black/45" : "text-white/45"}`}>
+                                No public tasks yet
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ) : (
+                <div
+                    className={`pointer-events-none absolute z-[14] flex min-w-0 items-end justify-between gap-[0.5rem] text-white ${isCompact ? "inset-x-[0.55rem] bottom-[0.45rem]" : "inset-x-[0.75rem] bottom-[0.65rem]"}`}
+                >
+                    <div className="min-w-0 max-w-[calc(100%_-_2.5rem)]">
+                        <div className="flex min-w-0 items-center gap-[0.4rem]">
+                            <span
+                                className={`min-w-0 truncate font-inter ${isCompact ? "text-[10px]" : "text-[12px]"} font-semibold leading-none text-white drop-shadow-md`}
+                            >
+                                {label || "User"}
+                            </span>
+
+                            {status ? (
+                                <span
+                                    className={`pointer-events-auto inline-flex shrink-0 items-center gap-1 rounded-full border px-1.5 py-[1px] text-[10px] leading-none ${getStatusClass(status, false)}`}
+                                    title={isLocal && status === "skip_deafened" ? "Skip me (room audio muted for you)" : getStatusLabel(status)}
+                                >
+                                    <span>{getStatusLabel(status)}</span>
+                                    {isLocal && status === "skip_deafened" ? (
+                                        <SkipMeMutedStatusIcon theme={theme} className="h-2.5 w-2.5" />
+                                    ) : null}
+                                </span>
+                            ) : null}
+                        </div>
+
+                        {participantTime ? (
+                            <div
+                                className={`mt-1 truncate font-inter ${isCompact ? "text-[9px]" : "text-[10px]"} font-normal leading-none text-white/70 drop-shadow-md`}
+                                title={String(participantTimeZone || "")}
+                            >
+                                {participantTime}
+                            </div>
+                        ) : null}
+                    </div>
+
+                    <MicBadgeWithBarVisualizer
+                        theme={theme}
+                        micMuted={micMuted}
+                        audioTrack={audioTrack}
+                        isSpeaking={heldSpeaking}
+                        isLocal={isLocal}
+                        hasCameraOn={hasCameraOn}
+                    />
+                </div>
+            )}
         </div>
     );
 }
@@ -1024,6 +1084,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.taskList === next.taskList &&
         prev.showAllTasks === next.showAllTasks &&
         prev.showTaskOverlay === next.showTaskOverlay &&
+        prev.accountabilityWall === next.accountabilityWall &&
         prev.participantTimeZone === next.participantTimeZone &&
         prev.cameraFramingMode === next.cameraFramingMode &&
         prev.onToggleMenu === next.onToggleMenu &&
