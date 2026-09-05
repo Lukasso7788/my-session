@@ -508,6 +508,12 @@ function VideoTileInner({
             normalized.unshift({ text: safeCurrentIntention, completed: false });
         }
 
+        const firstActiveIndex = normalized.findIndex((task) => !task.completed);
+        if (firstActiveIndex > 0) {
+            const [firstActiveTask] = normalized.splice(firstActiveIndex, 1);
+            normalized.unshift(firstActiveTask);
+        }
+
         return normalized.slice(0, 12);
     }, [safeCurrentIntention, taskList]);
     const [participantClock, setParticipantClock] = useState(() => Date.now());
@@ -954,13 +960,13 @@ function VideoTileInner({
                             showAllTasks ? "max-h-full" : "max-h-[1.4rem] group-hover:max-h-full",
                         ].join(" ")}
                     >
-                        <div className={`flex min-w-0 items-start gap-2 ${isCompact ? "text-[11px] leading-4" : "text-[12px] leading-[1.15rem]"}`}>
+                        <div className={`flex min-w-0 items-center gap-2 ${isCompact ? "text-[11px] leading-4" : "text-[12px] leading-[1.15rem]"}`}>
                             {safeTaskList[0].completed ? (
-                                <span className="mt-[0.18rem] inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#81DB86] text-black">
+                                <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#81DB86] text-black">
                                     <Check size={9} strokeWidth={3} />
                                 </span>
                             ) : (
-                                <span className="mt-[0.42rem] h-1.5 w-1.5 shrink-0 rounded-full bg-[#81DB86] shadow-[0_0_0_2px_rgba(129,219,134,0.16)]" />
+                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#81DB86] shadow-[0_0_0_2px_rgba(129,219,134,0.16)]" />
                             )}
                             <span className={`min-w-0 font-medium ${safeTaskList[0].completed ? "text-white/65 line-through" : ""} ${showAllTasks ? "whitespace-normal" : "truncate group-hover:whitespace-normal group-hover:overflow-visible"}`}>
                                 {safeTaskList[0].text}
@@ -978,13 +984,13 @@ function VideoTileInner({
                                 ].join(" ")}
                             >
                                 {safeTaskList.slice(1).map((task, index) => (
-                                    <div key={`${task.text}-${index}`} className="flex gap-2">
+                                    <div key={`${task.text}-${index}`} className="flex items-center gap-2">
                                         {task.completed ? (
-                                            <span className="mt-[0.12rem] inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#81DB86] text-black">
+                                            <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#81DB86] text-black">
                                                 <Check size={9} strokeWidth={3} />
                                             </span>
                                         ) : (
-                                            <span className="mt-[0.34rem] h-1.5 w-1.5 shrink-0 rounded-full bg-white/55" />
+                                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white/55" />
                                         )}
                                         <span className={`min-w-0 break-words font-normal ${task.completed ? "text-white/60 line-through" : ""}`}>
                                             {task.text}
@@ -1037,9 +1043,9 @@ function VideoTileInner({
                                 {safeTaskList.map((task, index) => (
                                     <div
                                         key={`${tileId}-wall-task-${index}-${task.text}`}
-                                        className={`flex min-w-0 items-start gap-2 font-inter text-[11px] font-normal leading-4 ${task.completed ? (isLight ? "text-black/45" : "text-white/45") : (isLight ? "text-black/85" : "text-white/90")}`}
+                                        className={`flex min-w-0 items-center gap-2 font-inter text-[11px] font-normal leading-4 ${task.completed ? (isLight ? "text-black/45" : "text-white/45") : (isLight ? "text-black/85" : "text-white/90")}`}
                                     >
-                                        <span className={`mt-[3px] inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-[2px] border ${task.completed ? "border-[#81DB86] bg-[#81DB86] text-black" : (isLight ? "border-black/55 bg-white/20" : "border-white/60 bg-black/10")}`}>
+                                        <span className={`inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-[2px] border ${task.completed ? "border-[#81DB86] bg-[#81DB86] text-black" : (isLight ? "border-black/55 bg-white/20" : "border-white/60 bg-black/10")}`}>
                                             {task.completed ? <Check size={8} strokeWidth={3} /> : null}
                                         </span>
                                         <span className={`min-w-0 break-words ${task.completed ? "line-through" : ""}`}>
