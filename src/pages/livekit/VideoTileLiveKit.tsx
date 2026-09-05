@@ -956,11 +956,13 @@ function VideoTileInner({
                 >
                     <div
                         className={[
-                            "min-h-0 w-full overflow-hidden font-inter text-white transition-all duration-300 ease-out",
-                            showAllTasks ? "max-h-full" : "max-h-[1.4rem] group-hover:max-h-full",
+                            "flex min-h-0 w-full flex-col overflow-hidden font-inter text-white transition-all duration-300 ease-out",
+                            showAllTasks
+                                ? "max-h-[60%]"
+                                : "max-h-[1.4rem] group-hover:max-h-[60%]",
                         ].join(" ")}
                     >
-                        <div className={`flex min-w-0 items-center gap-2 ${isCompact ? "text-[11px] leading-4" : "text-[12px] leading-[1.15rem]"}`}>
+                        <div className={`flex min-w-0 shrink-0 items-center gap-2 ${isCompact ? "text-[11px] leading-4" : "text-[12px] leading-[1.15rem]"}`}>
                             {safeTaskList[0].completed ? (
                                 <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#81DB86] text-black">
                                     <Check size={9} strokeWidth={3} />
@@ -976,11 +978,13 @@ function VideoTileInner({
                         {safeTaskList.length > 1 ? (
                             <div
                                 className={[
-                                    "mt-2 space-y-1.5 border-t border-white/20 pt-2 text-white/90 transition-all duration-300 ease-out",
+                                    "mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain border-t border-white/20 pt-2 pr-1 text-white/90 transition-all duration-300 ease-out",
+                                    "[scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.32)_transparent]",
+                                    "[&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/30",
                                     isCompact ? "text-[10px] leading-4" : "text-[11px] leading-4",
                                     showAllTasks
-                                        ? "opacity-100"
-                                        : "translate-y-1 opacity-0 group-hover:translate-y-0 group-hover:opacity-100",
+                                        ? "pointer-events-auto opacity-100"
+                                        : "pointer-events-none translate-y-1 opacity-0 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100",
                                 ].join(" ")}
                             >
                                 {safeTaskList.slice(1).map((task, index) => (
@@ -1033,9 +1037,10 @@ function VideoTileInner({
                     <div
                         className={[
                             "mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]",
+                            "[&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full",
                             isLight
-                                ? "[scrollbar-color:rgba(47,47,47,0.32)_transparent]"
-                                : "[scrollbar-color:rgba(255,255,255,0.3)_transparent]",
+                                ? "[scrollbar-color:rgba(47,47,47,0.32)_transparent] [&::-webkit-scrollbar-thumb]:bg-black/25"
+                                : "[scrollbar-color:rgba(255,255,255,0.3)_transparent] [&::-webkit-scrollbar-thumb]:bg-white/30",
                         ].join(" ")}
                     >
                         {safeTaskList.length ? (
