@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect } from "react";
-import { Navigate, Routes, Route } from "react-router-dom";
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from "react";
+import { Navigate, Routes, Route, useParams } from "react-router-dom";
 
 import { SessionsPage } from "./pages/SessionsPage";
 import LandingPage from "./pages/LandingPage";
@@ -59,6 +59,42 @@ import SessionCardsPlayground from "./SessionCardsPlayground";
 import IconVectorizerPage from "./pages/IconVectorizerPage";
 
 const DataDrivenSeoPage = lazy(() => import("./pages/seo/DataDrivenSeoPage"));
+const MOBILE_ROOM_LEASE_PREFIX = "mysession_mobile_room_lease:";
+
+function clearRoomEntryRecoveryLease(sessionId: string) {
+  if (typeof window === "undefined" || !sessionId) return;
+
+  const prefix = `${MOBILE_ROOM_LEASE_PREFIX}${sessionId}:`;
+
+  try {
+    const matchingKeys: string[] = [];
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      const key = window.localStorage.key(index);
+      if (key?.startsWith(prefix)) matchingKeys.push(key);
+    }
+    matchingKeys.forEach((key) => window.localStorage.removeItem(key));
+  } catch {
+    // Storage can be unavailable in strict privacy modes. The room's own
+    // prejoin default still applies when no persisted recovery lease is readable.
+  }
+}
+
+function RoomPageLiveKitEntry() {
+  const { id = "" } = useParams<{ id: string }>();
+  const sessionId = String(id || "").trim();
+  const [preparedSessionId, setPreparedSessionId] = useState("");
+
+  useLayoutEffect(() => {
+    clearRoomEntryRecoveryLease(sessionId);
+    setPreparedSessionId(sessionId);
+  }, [sessionId]);
+
+  // Gate the production room for one layout pass so a stale recovery lease can
+  // never auto-skip prejoin on a fresh room entry or a full page refresh.
+  if (!sessionId || preparedSessionId !== sessionId) return null;
+
+  return <RoomPageLiveKit />;
+}
 
 export default function App() {
   console.log("[ROUTER] App mounted");
@@ -183,7 +219,7 @@ export default function App() {
         <Route path="/vectorizer" element={<IconVectorizerPage />} />
 
         <Route path="/room-iframe/:id" element={<RoomPageIFrame />} />
-        <Route path="/room-livekit/:id" element={<RoomPageLiveKit />} />
+        <Route path="/room-livekit/:id" element={<RoomPageLiveKitEntry />} />
         <Route
           path="/room-livekit-clean/:id"
           element={<RoomPageLiveKitClean />}
