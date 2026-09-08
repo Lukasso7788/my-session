@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
+import { installMobileRoomControls } from './mobileRoomControls';
+import { optimizedSupabaseFetch } from './supabaseFetchOptimizer';
 
 // Используем безопасное чтение переменных (без !), чтобы сборка не падала, если переменные не подтянулись
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -11,7 +13,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     detectSessionInUrl: true, // ЭТО ВАЖНО: Supabase сам парсит URL
     storage: localStorage,
     storageKey: "mysession-auth",
-  }
+  },
+  global: {
+    // Coalesce duplicate REST requests and keep very short-lived snapshots for
+    // the noisiest room/presence reads. This cuts Postgres egress without
+    // changing the database schema or the room's Realtime subscriptions.
+    fetch: optimizedSupabaseFetch,
+  },
 });
 
 const RECURRING_TASKS_MATERIALIZED_PREFIX = "mysession_recurring_tasks_materialized_v1";
@@ -57,6 +65,8 @@ async function materializeRecurringTasksForCurrentUser() {
 if (typeof window !== "undefined") {
   // @ts-ignore
   window.supabase = supabase;
+
+  installMobileRoomControls();
 
   // Materialize due recurring tasks on any app entry, including direct room links.
   window.setTimeout(() => void materializeRecurringTasksForCurrentUser(), 0);
