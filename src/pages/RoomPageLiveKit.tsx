@@ -6075,7 +6075,7 @@ export function RoomPageLiveKit({
   }, [profilesById]);
 
   // prejoin
-  const [prejoinOpen, setPrejoinOpen] = useState(false);
+  const [prejoinOpen, setPrejoinOpen] = useState(true);
   const [joinRequested, setJoinRequested] = useState(false);
   useEffect(() => {
     if (prejoinOpen) captureProductEvent("prejoin_opened");
@@ -6121,7 +6121,6 @@ export function RoomPageLiveKit({
   // Device identity is the primary signal. Viewport width remains a fallback
   // for older browsers, but landscape tablets and desktop-mode iPads must keep
   // their recovery lease even when their CSS viewport is wider than 1023px.
-  // ChromeOS is intentionally excluded from the phone/tablet FX restrictions.
   const lowPowerMobileMode = useMemo(() => {
     return (
       (isMobileOrTabletDevice || isMobileQuery || isTabletQuery) &&
@@ -6129,9 +6128,9 @@ export function RoomPageLiveKit({
     );
   }, [isMobileOrTabletDevice, isMobileQuery, isTabletQuery, isChromeOS]);
 
-  // Background processors stay disabled only on actual phones/tablets.
-  // ChromeOS devices can expose touch/tablet-like signals, so exclude them.
-  const shouldDisableBackgroundFx = lowPowerMobileMode;
+  // Background blur and image replacement are available on every form factor.
+  // Mobile devices still use a lighter preview preset below for performance.
+  const shouldDisableBackgroundFx = false;
 
   const prejoinPreviewPreset = useMemo(() => {
     if (lowPowerMobileMode) {
