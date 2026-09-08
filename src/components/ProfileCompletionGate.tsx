@@ -55,7 +55,7 @@ export default function ProfileCompletionGate() {
     let cancelled = false;
     const metadata = user.user_metadata || {};
     const savedTimeZone = metadataString(
-      metadata.timezone || metadata.time_zone || metadata.timeZone || metadata.tz,
+      profile?.timezone || metadata.timezone || metadata.time_zone || metadata.timeZone || metadata.tz,
     );
     const detectedTimeZone = getDetectedTimeZone();
     const currentName = String(
@@ -75,12 +75,16 @@ export default function ProfileCompletionGate() {
       loadEntitlementState(),
       supabase
         .from("profiles")
-        .select("real_name_required")
+        .select("real_name_required, timezone")
         .eq("id", user.id)
         .maybeSingle(),
     ])
       .then(([state, requirementResult]) => {
         if (cancelled) return;
+        const storedTimeZone = requirementResult.data?.timezone || "";
+        if (isValidTimeZone(storedTimeZone)) {
+          setTimeZone(storedTimeZone);
+        }
         const lifetimeCount = Number(state.lifetimeSessionsCount || 0);
         const adminRequiresRealName =
           requirementResult.data?.real_name_required === true;
@@ -101,6 +105,7 @@ export default function ProfileCompletionGate() {
     pathname,
     profile?.full_name,
     user?.id,
+    profile?.timezone,
     user?.user_metadata,
   ]);
 
@@ -134,7 +139,15 @@ export default function ProfileCompletionGate() {
       });
       if (authError) throw authError;
 
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ timezone: timeZone, updated_at: now })
+        .eq("id", user.id);
+      if (profileError) throw profileError;
+
+      await reloadProfile();
       const { data: sessionData, error: sessionError } =
+
         await supabase.auth.getSession();
       if (sessionError) throw sessionError;
       if (sessionData.session?.user?.id !== user.id) {

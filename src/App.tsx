@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Routes, Route } from "react-router-dom";
-import type { User } from "@supabase/supabase-js";
 
 import { SessionsPage } from "./pages/SessionsPage";
 import LandingPage from "./pages/LandingPage";
@@ -43,7 +42,6 @@ import ContactPage from "./pages/ContactPage";
 import AppLayout from "./layouts/AppLayout";
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
 import { storeReferralCodeFromUrl } from "./lib/referrals";
-import { supabase } from "./lib/supabase";
 import AppBootstrapGate from "./components/AppBootstrapGate";
 import InAppBrowserMediaGate from "./components/InAppBrowserMediaGate";
 
@@ -72,59 +70,6 @@ export default function App() {
     storeReferralCodeFromUrl();
   }, []);
 
-  useEffect(() => {
-    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (!timeZone) return;
-    const isAuthCallback =
-      window.location.pathname.replace(/\/$/, "") === "/auth/callback";
-    let syncTimer: number | null = null;
-
-    const syncUserTimeZone = async (user: User | null | undefined) => {
-      if (!user?.id) return;
-
-      // The first timezone write belongs to ProfileCompletionGate. Avoid a
-      // second updateUser call racing the OAuth callback and confirmation on
-      // slower devices.
-      if (!user.user_metadata?.timezone_confirmed_at) return;
-      const metadataTimeZone = String(
-        user.user_metadata?.timezone ||
-        user.user_metadata?.time_zone ||
-        user.user_metadata?.timeZone ||
-        user.user_metadata?.tz ||
-        ""
-      ).trim();
-      if (metadataTimeZone === timeZone) return;
-
-      const cacheKey = `mysession-timezone:${user.id}`;
-      if (localStorage.getItem(cacheKey) === timeZone) return;
-
-      const { error } = await supabase.auth.updateUser({
-        data: { timezone: timeZone },
-      });
-
-      if (!error) localStorage.setItem(cacheKey, timeZone);
-    };
-
-    if (!isAuthCallback) {
-      void supabase.auth.getUser().then(({ data }) => syncUserTimeZone(data.user));
-    }
-
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_IN") {
-        // Never call another Supabase auth method from inside the auth callback.
-        // It can contend with the OAuth code exchange lock, especially on Discord.
-        if (syncTimer) window.clearTimeout(syncTimer);
-        syncTimer = window.setTimeout(() => {
-          void syncUserTimeZone(session?.user);
-        }, 3_000);
-      }
-    });
-
-    return () => {
-      if (syncTimer) window.clearTimeout(syncTimer);
-      authListener.subscription.unsubscribe();
-    };
-  }, []);
 
   return (
     <CreateSessionModalProvider>

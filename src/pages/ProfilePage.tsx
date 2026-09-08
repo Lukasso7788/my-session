@@ -370,6 +370,7 @@ export default function ProfilePage() {
 
     const metadata = user.user_metadata || {};
     const savedTimeZone = String(
+      profile?.timezone ||
       metadata.timezone ||
       metadata.time_zone ||
       metadata.timeZone ||
@@ -380,13 +381,16 @@ export default function ProfilePage() {
     setTimeZone(
       isValidTimeZone(savedTimeZone) ? savedTimeZone : getDetectedTimeZone(),
     );
-  }, [user?.id, user?.user_metadata]);
+  }, [profile?.timezone, user?.id, user?.user_metadata]);
 
   useEffect(() => {
     if (!profile) return;
 
     setFullName(profile.full_name || "");
     setAvatarUrl(profile.avatar_url || null);
+    if (isValidTimeZone(profile.timezone || "")) {
+      setTimeZone(profile.timezone || "UTC");
+    }
 
     const p: any = profile as any;
 
@@ -400,7 +404,7 @@ export default function ProfilePage() {
     const loadProfile = async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("full_name, bio, avatar_url, created_at, attended_sessions_count")
+        .select("full_name, bio, avatar_url, timezone, created_at, attended_sessions_count")
         .eq("id", user.id)
         .single();
 
@@ -414,6 +418,9 @@ export default function ProfilePage() {
       setFullName(data.full_name || "");
       setBio(data.bio || "");
       setAvatarUrl(data.avatar_url || null);
+      if (isValidTimeZone(data.timezone || "")) {
+        setTimeZone(data.timezone || "UTC");
+      }
       setAttendedCount(typeof (data as any).attended_sessions_count === "number" ? (data as any).attended_sessions_count : 0);
       setCreatedAt(data.created_at ? formatSince(data.created_at) : "—");
     };
@@ -568,6 +575,10 @@ export default function ProfilePage() {
 
   const handleSave = async () => {
     if (!user) return;
+    if (!isValidTimeZone(timeZone)) {
+      alert("Choose a valid timezone.");
+      return;
+    }
     setSaving(true);
 
     try {
@@ -579,6 +590,7 @@ export default function ProfilePage() {
           bio,
           avatar_url: avatarUrl,
           updated_at: now,
+          timezone: timeZone,
         })
         .eq("id", user.id);
       if (profileError) throw profileError;

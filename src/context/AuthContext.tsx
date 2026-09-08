@@ -16,6 +16,7 @@ type Profile = {
     id: string;
     full_name: string | null;
     avatar_url: string | null;
+    timezone: string | null;
 };
 
 type AuthContextValue = {
@@ -40,6 +41,7 @@ function profileFromAuthMetadata(user: User): Profile {
     ).trim();
 
     return {
+        timezone: String(metadata.timezone || metadata.time_zone || metadata.timeZone || metadata.tz || "").trim() || null,
         id: user.id,
         full_name: fullName || "User",
         avatar_url: avatarUrl || null,
@@ -74,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
             const { data, error } = await supabase
                 .from("profiles")
-                .select("id, full_name, avatar_url")
+                .select("id, full_name, avatar_url, timezone")
                 .eq("id", u.id)
                 .single();
 

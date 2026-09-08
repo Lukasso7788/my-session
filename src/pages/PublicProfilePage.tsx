@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { formatTimeZoneLabel, isValidTimeZone } from "../lib/timezones";
 import {
   ensurePushSubscription,
   pushSupported,
@@ -12,6 +13,7 @@ type PublicProfileRow = {
   full_name: string | null;
   bio: string | null;
   avatar_url: string | null;
+  timezone: string | null;
   created_at: string | null;
   attended_sessions_count: number | null;
 };
@@ -143,6 +145,7 @@ export default function PublicProfilePage() {
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string>("—");
+  const [timeZone, setTimeZone] = useState("UTC");
   const [attendedCount, setAttendedCount] = useState<number>(0);
 
   const [sessions, setSessions] = useState<HostedSessionRow[]>([]);
@@ -308,7 +311,7 @@ export default function PublicProfilePage() {
         ] = await Promise.all([
           supabase
             .from("profiles")
-            .select("id, full_name, bio, avatar_url, created_at, attended_sessions_count")
+            .select("id, full_name, bio, avatar_url, timezone, created_at, attended_sessions_count")
             .eq("id", id)
             .single(),
           supabase
@@ -341,6 +344,9 @@ export default function PublicProfilePage() {
         setBio(profile.bio || "");
         setAvatarUrl(profile.avatar_url || null);
 
+        setTimeZone(
+          isValidTimeZone(profile.timezone || "") ? profile.timezone || "UTC" : "UTC",
+        );
         if (typeof profile.attended_sessions_count === "number") {
           setAttendedCount(profile.attended_sessions_count);
         } else {
@@ -612,6 +618,21 @@ export default function PublicProfilePage() {
           <span className="flex items-center gap-2">
             <img src="/icons/session_count.svg" alt="Total sessions attended" className="w-[24px] h-[24px]" />
             <span className="text-[14px] font-medium text-[#2F2F2F]">{attendedCount} sessions</span>
+          </span>
+
+          <span className="flex items-center gap-2" title={timeZone}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="#2F2F2F" strokeWidth="1.6" />
+              <path
+                d="M3 12h18M12 3c2.2 2.45 3.3 5.45 3.3 9S14.2 18.55 12 21c-2.2-2.45-3.3-5.45-3.3-9S9.8 5.45 12 3Z"
+                stroke="#2F2F2F"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
+            <span className="text-[14px] font-medium text-[#2F2F2F]">
+              {formatTimeZoneLabel(timeZone)}
+            </span>
           </span>
 
           <span className="flex items-center gap-2">
