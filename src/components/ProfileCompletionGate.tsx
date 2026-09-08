@@ -212,7 +212,9 @@ export default function ProfileCompletionGate() {
           real_name_required_by: null,
           updated_at: now,
         })
-        .eq("id", user.id);
+        .eq("id", user.id)
+        .select("id")
+        .maybeSingle();
 
       // Keep name confirmation working during the short deployment window
       // before the accompanying migration is applied.
@@ -224,9 +226,14 @@ export default function ProfileCompletionGate() {
         profileUpdate = await supabase
           .from("profiles")
           .update({ full_name: cleanName, updated_at: now })
-          .eq("id", user.id);
+          .eq("id", user.id)
+          .select("id")
+          .maybeSingle();
       }
       if (profileUpdate.error) throw profileUpdate.error;
+      if (!profileUpdate.data) {
+        throw new Error("Your profile could not be updated. Please try again.");
+      }
 
       const { error: authError } = await supabase.auth.updateUser({
         data: {
