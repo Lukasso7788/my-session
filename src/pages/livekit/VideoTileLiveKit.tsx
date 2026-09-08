@@ -1,5 +1,4 @@
 import React from "react";
-import { ChevronUp } from "lucide-react";
 
 import LegacyVideoTile, {
     SkipMeMutedStatusIcon,
@@ -14,39 +13,102 @@ export type {
 
 type VideoTileProps = React.ComponentProps<typeof LegacyVideoTileNamed>;
 
-function VideoTileWithCameraPreview(props: VideoTileProps) {
-    const openCameraPreview = (event: React.MouseEvent<HTMLButtonElement>) => {
-        event.preventDefault();
-        event.stopPropagation();
+const ROOM_SETTINGS_LABEL = "Video room settings";
+const BACKGROUND_SETTINGS_LABEL = "Background settings";
 
-        const cameraArrow = document.querySelector<HTMLButtonElement>(
-            'button[aria-label="Choose camera and background"]',
-        );
-        cameraArrow?.click();
-    };
-
-    return (
-        <div className="relative h-full w-full min-h-0 min-w-0">
-            <LegacyVideoTile {...props} />
-
-            {props.isLocal ? (
-                <button
-                    type="button"
-                    onClick={openCameraPreview}
-                    className={`absolute right-[3rem] top-[0.55rem] z-[30] flex h-[2.1rem] w-[2.1rem] items-center justify-center rounded-full border shadow-sm backdrop-blur-md transition hover:scale-[1.04] ${
-                        props.theme === "light"
-                            ? "border-black/10 bg-white/78 text-[#2F2F2F] hover:bg-white"
-                            : "border-white/15 bg-black/35 text-white hover:bg-black/50"
-                    }`}
-                    aria-label="Preview camera and background"
-                    title="Preview camera & background"
-                >
-                    <ChevronUp size={16} strokeWidth={2.3} />
-                </button>
-            ) : null}
-        </div>
+function openBackgroundSettingsFromRoomMenu(doc: Document) {
+    // The bottom-bar camera arrow is already the single entry point for both
+    // private preview (camera off) and live background controls (camera on).
+    const cameraArrow = document.querySelector<HTMLButtonElement>(
+        'button[aria-label="Choose camera and background"]',
     );
+
+    // Close the participant menu before opening the camera/background surface.
+    // RoomPageLiveKit already treats Escape as the canonical menu-close action.
+    try {
+        doc.dispatchEvent(
+            new KeyboardEvent("keydown", {
+                key: "Escape",
+                code: "Escape",
+                bubbles: true,
+            }),
+        );
+    } catch { }
+
+    window.setTimeout(() => cameraArrow?.click(), 0);
 }
 
-export const VideoTile = React.memo(VideoTileWithCameraPreview);
+function decorateLocalTileMenu(doc: Document) {
+    let observer: MutationObserver | null = null;
+    let timeoutId: number | null = null;
+
+    const decorate = () => {
+        const buttons = Array.from(
+            doc.querySelectorAll<HTMLButtonElement>("button"),
+        );
+        const settingsButton = buttons.find(
+            (button) =>
+                button.textContent?.trim() === ROOM_SETTINGS_LABEL &&
+                button.getClientRects().length > 0,
+        );
+
+        if (!settingsButton) return false;
+        if (settingsButton.dataset.mysessionBackgroundSettings === "true") {
+            return true;
+        }
+
+        settingsButton.dataset.mysessionBackgroundSettings = "true";
+        settingsButton.textContent = BACKGROUND_SETTINGS_LABEL;
+        settingsButton.setAttribute("aria-label", BACKGROUND_SETTINGS_LABEL);
+        settingsButton.title = BACKGROUND_SETTINGS_LABEL;
+
+        settingsButton.addEventListener(
+            "click",
+            (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+                openBackgroundSettingsFromRoomMenu(doc);
+            },
+            { capture: true, once: true },
+        );
+
+        return true;
+    };
+
+    if (decorate()) return;
+
+    const MutationObserverCtor =
+        doc.defaultView?.MutationObserver || window.MutationObserver;
+    observer = new MutationObserverCtor(() => {
+        if (!decorate()) return;
+        observer?.disconnect();
+        observer = null;
+        if (timeoutId !== null) {
+            window.clearTimeout(timeoutId);
+            timeoutId = null;
+        }
+    });
+    observer.observe(doc.body, { childList: true, subtree: true });
+
+    timeoutId = window.setTimeout(() => {
+        observer?.disconnect();
+        observer = null;
+        timeoutId = null;
+    }, 800);
+}
+
+function VideoTileWithCameraPreviewMenu(props: VideoTileProps) {
+    const onToggleMenu: VideoTileProps["onToggleMenu"] = props.isLocal
+        ? (tileId, anchorEl) => {
+            props.onToggleMenu?.(tileId, anchorEl);
+            const doc = anchorEl?.ownerDocument || document;
+            decorateLocalTileMenu(doc);
+        }
+        : props.onToggleMenu;
+
+    return <LegacyVideoTile {...props} onToggleMenu={onToggleMenu} />;
+}
+
+export const VideoTile = React.memo(VideoTileWithCameraPreviewMenu);
 export default VideoTile;
