@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 type EmbeddedBrowser = {
   name: string;
@@ -7,14 +6,25 @@ type EmbeddedBrowser = {
   ios: boolean;
 };
 
-const DISMISS_KEY = "mysession:iab-media-gate-dismissed:v1";
+function isMobileOrTablet(ua: string) {
+  const ipadDesktopMode =
+    /Macintosh/i.test(ua) &&
+    typeof navigator !== "undefined" &&
+    navigator.maxTouchPoints > 1;
+
+  return /Android|iPhone|iPad|iPod|Mobile|Tablet/i.test(ua) || ipadDesktopMode;
+}
 
 function detectEmbeddedBrowser(): EmbeddedBrowser | null {
   if (typeof navigator === "undefined") return null;
 
   const ua = String(navigator.userAgent || "");
+  if (!isMobileOrTablet(ua)) return null;
+
   const android = /Android/i.test(ua);
-  const ios = /iPhone|iPad|iPod/i.test(ua);
+  const ios =
+    /iPhone|iPad|iPod/i.test(ua) ||
+    (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1);
 
   const knownApps: Array<[RegExp, string]> = [
     [/FBAN|FBAV|\bFB_IAB\b/i, "Facebook"],
@@ -27,6 +37,13 @@ function detectEmbeddedBrowser(): EmbeddedBrowser | null {
     [/Pinterest/i, "Pinterest"],
     [/LinkedInApp/i, "LinkedIn"],
     [/Twitter|X-IAB/i, "X"],
+    [/WhatsApp/i, "WhatsApp"],
+    [/MicroMessenger/i, "WeChat"],
+    [/Viber/i, "Viber"],
+    [/Reddit/i, "Reddit"],
+    [/Threads/i, "Threads"],
+    [/VKClient|VKAndroidApp/i, "VK"],
+    [/GSA/i, "Google"],
   ];
 
   for (const [pattern, name] of knownApps) {
@@ -45,20 +62,6 @@ function detectEmbeddedBrowser(): EmbeddedBrowser | null {
   if (iosEmbeddedWebView) return { name: "this app", android, ios };
 
   return null;
-}
-
-function shouldProtectRoute(pathname: string) {
-  const path = pathname.toLowerCase();
-
-  return (
-    path === "/sessions" ||
-    path === "/login" ||
-    path === "/register" ||
-    path === "/one-on-one" ||
-    path.startsWith("/auth/callback") ||
-    path.startsWith("/room-livekit/") ||
-    path.startsWith("/room-iframe/")
-  );
 }
 
 function getSafeContinuationUrl() {
@@ -82,6 +85,22 @@ function getSafeContinuationUrl() {
   return current.toString();
 }
 
+function getChromeUrl(externalUrl: string, browser: EmbeddedBrowser) {
+  const target = new URL(externalUrl);
+
+  if (browser.android) {
+    const scheme = target.protocol.replace(":", "");
+    return `intent://${target.host}${target.pathname}${target.search}#Intent;scheme=${scheme};package=com.android.chrome;action=android.intent.action.VIEW;end`;
+  }
+
+  if (browser.ios) {
+    const scheme = target.protocol === "https:" ? "googlechromes" : "googlechrome";
+    return `${scheme}://${target.host}${target.pathname}${target.search}`;
+  }
+
+  return externalUrl;
+}
+
 async function copyText(text: string) {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
@@ -100,79 +119,45 @@ async function copyText(text: string) {
   if (!copied) throw new Error("Copy failed");
 }
 
-export default function InAppBrowserMediaGate() {
-  const location = useLocation();
+export default function InAppBrowserMediaGate({ children }: { children: ReactNode }) {
   const embeddedBrowser = useMemo(() => detectEmbeddedBrowser(), []);
-  const [visible, setVisible] = useState(false);
   const [status, setStatus] = useState("");
+  const externalUrl = useMemo(
+    () => (embeddedBrowser ? getSafeContinuationUrl() : ""),
+    [embeddedBrowser],
+  );
 
   useEffect(() => {
-    if (!embeddedBrowser || !shouldProtectRoute(location.pathname)) {
-      setVisible(false);
-      return;
-    }
+    if (!embeddedBrowser || !externalUrl) return;
 
-    try {
-      setVisible(sessionStorage.getItem(DISMISS_KEY) !== "1");
-    } catch {
-      setVisible(true);
-    }
-  }, [embeddedBrowser, location.pathname]);
+    const timer = window.setTimeout(() => {
+      setStatus("If Chrome did not open, use the button again or copy the link.");
+      window.location.replace(getChromeUrl(externalUrl, embeddedBrowser));
+    }, 150);
 
-  useEffect(() => {
-    if (!visible) return;
-    const previousOverflow = document.documentElement.style.overflow;
-    document.documentElement.style.overflow = "hidden";
-    return () => {
-      document.documentElement.style.overflow = previousOverflow;
-    };
-  }, [visible]);
+    return () => window.clearTimeout(timer);
+  }, [embeddedBrowser, externalUrl]);
 
-  if (!visible || !embeddedBrowser) return null;
-
-  const externalUrl = getSafeContinuationUrl();
-  const browserName = embeddedBrowser.ios ? "Safari" : "Chrome";
-  const menuHint = embeddedBrowser.ios
-    ? `Tap the menu button in ${embeddedBrowser.name}, then choose “Open in Safari”.`
-    : `Tap the menu button in ${embeddedBrowser.name}, then choose “Open in browser”.`;
+  if (!embeddedBrowser) return <>{children}</>;
 
   const handleCopy = async () => {
     try {
       await copyText(externalUrl);
-      setStatus(`Link copied. Paste it into ${browserName}.`);
+      setStatus("Link copied. Paste it into Chrome.");
     } catch {
-      setStatus(`Could not copy automatically. Use the app menu and open this page in ${browserName}.`);
+      setStatus("Use the app menu and choose “Open in browser”, then select Chrome.");
     }
   };
 
   const handleOpen = () => {
-    setStatus(menuHint);
-
-    if (embeddedBrowser.android) {
-      const target = new URL(externalUrl);
-      const intentTarget = `${target.host}${target.pathname}${target.search}`;
-      const fallback = encodeURIComponent(externalUrl);
-      window.location.href = `intent://${intentTarget}#Intent;scheme=https;action=android.intent.action.VIEW;S.browser_fallback_url=${fallback};end`;
-      return;
-    }
-
-    const opened = window.open(externalUrl, "_blank", "noopener,noreferrer");
-    if (!opened) void handleCopy();
-  };
-
-  const handleContinue = () => {
-    try {
-      sessionStorage.setItem(DISMISS_KEY, "1");
-    } catch {
-      // The explicit dismissal still applies to the current mounted page.
-    }
-    setVisible(false);
+    setStatus("If Chrome did not open, copy the link and paste it into Chrome.");
+    window.location.replace(getChromeUrl(externalUrl, embeddedBrowser));
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/55 px-4 py-6 backdrop-blur-[3px]"
-      role="dialog"
+    <main
+      className="fixed inset-0 z-[10000] flex min-h-[100dvh] items-center justify-center overflow-y-auto bg-[#F6F4EF] px-4 py-6 text-[#2F2F2F]"
+      role="alertdialog"
       aria-modal="true"
       aria-labelledby="in-app-browser-title"
     >
@@ -184,15 +169,15 @@ export default function InAppBrowserMediaGate() {
           </svg>
         </div>
 
-        <h2 id="in-app-browser-title" className="text-[22px] font-bold leading-tight">
-          Open MySession in {browserName}
-        </h2>
+        <h1 id="in-app-browser-title" className="text-[22px] font-bold leading-tight">
+          Open MySession in Chrome
+        </h1>
         <p className="mt-2 text-sm leading-6 text-black/60">
-          {embeddedBrowser.name}’s built-in browser may block your camera, microphone, or sign-in. Open MySession in {browserName} before joining the room.
+          MySession does not work inside {embeddedBrowser.name}’s built-in browser because it may block camera and microphone access.
         </p>
 
         <div className="mt-4 rounded-[16px] bg-[#F3F3F3] px-4 py-3 text-sm leading-5 text-black/70">
-          <span className="font-semibold text-[#2F2F2F]">How:</span> {menuHint}
+          If Chrome does not open automatically, tap the button below. You can also use {embeddedBrowser.name}’s menu and choose “Open in browser”.
         </div>
 
         {status ? (
@@ -207,7 +192,7 @@ export default function InAppBrowserMediaGate() {
             onClick={handleOpen}
             className="flex h-12 w-full items-center justify-center gap-2 rounded-[15px] bg-[#2F2F2F] px-4 text-sm font-semibold text-white transition hover:bg-black active:scale-[0.99]"
           >
-            Open in {browserName}
+            Open in Chrome
             <span aria-hidden="true">↗</span>
           </button>
           <button
@@ -217,15 +202,8 @@ export default function InAppBrowserMediaGate() {
           >
             Copy link
           </button>
-          <button
-            type="button"
-            onClick={handleContinue}
-            className="h-10 w-full px-4 text-xs font-medium text-black/45 transition hover:text-black/70"
-          >
-            Continue here anyway
-          </button>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
