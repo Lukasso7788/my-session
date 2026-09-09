@@ -2,13 +2,55 @@
 import { useEffect, useRef } from "react";
 import { supabase } from "../lib/supabase";
 
+const MIN_HEARTBEAT_GAP_MS = 20_000;
+const heartbeatLastSentAt = new Map<string, number>();
+const heartbeatInFlight = new Map<string, Promise<void>>();
+
+async function sendAttendanceHeartbeat(sessionId: string, userId: string) {
+    const key = `${userId}:${sessionId}`;
+    const now = Date.now();
+    const lastSentAt = heartbeatLastSentAt.get(key) || 0;
+
+    if (now - lastSentAt < MIN_HEARTBEAT_GAP_MS) return;
+
+    const pending = heartbeatInFlight.get(key);
+    if (pending) return pending;
+
+    // Mark before the RPC starts so duplicate effects/visibility events that
+    // fire together cannot enqueue another database write.
+    heartbeatLastSentAt.set(key, now);
+
+    const heartbeatPromise = (async () => {
+        try {
+            const { error } = await supabase.rpc("attendance_heartbeat", {
+                p_session_id: sessionId,
+            });
+
+            if (error && heartbeatLastSentAt.get(key) === now) {
+                heartbeatLastSentAt.delete(key);
+            }
+        } catch {
+            if (heartbeatLastSentAt.get(key) === now) {
+                heartbeatLastSentAt.delete(key);
+            }
+        }
+    })();
+
+    heartbeatInFlight.set(key, heartbeatPromise);
+
+    try {
+        await heartbeatPromise;
+    } finally {
+        if (heartbeatInFlight.get(key) === heartbeatPromise) {
+            heartbeatInFlight.delete(key);
+        }
+    }
+}
+
 export function useAttendancePresence(
     sessionId: string | null,
     opts?: { heartbeatMs?: number }
 ) {
-    // Presence RPCs are only used as a TTL lease. A 30-second heartbeat stays
-    // comfortably inside the 90-120 second live-presence window while cutting
-    // write traffic by two thirds.
     const heartbeatMs = opts?.heartbeatMs ?? 30_000;
     const timerRef = useRef<number | null>(null);
 
@@ -16,48 +58,53 @@ export function useAttendancePresence(
         if (!sessionId) return;
 
         let cancelled = false;
+        let userId = "";
 
-        const heartbeat = async () => {
+        const start = async () => {
             try {
-                const { data } = await supabase.auth.getUser();
-                const u = data.user;
-                if (!u?.id) return;
+                // getSession uses the local persisted auth session; unlike
+                // getUser(), this avoids an /auth/v1/user request per heartbeat.
+                const {
+                    data: { session },
+                } = await supabase.auth.getSession();
 
-                await supabase.rpc("attendance_heartbeat", { p_session_id: sessionId });
-            } catch (e) {
+                userId = String(session?.user?.id || "").trim();
+                if (!userId || cancelled) return;
+
+                await sendAttendanceHeartbeat(sessionId, userId);
+
+                if (cancelled) return;
+                timerRef.current = window.setInterval(() => {
+                    if (!cancelled && userId) {
+                        void sendAttendanceHeartbeat(sessionId, userId);
+                    }
+                }, heartbeatMs);
+            } catch {
                 // intentionally silent
             }
         };
 
         const leave = async () => {
+            if (!userId) return;
             try {
-                const { data } = await supabase.auth.getUser();
-                const u = data.user;
-                if (!u?.id) return;
-
                 await supabase.rpc("attendance_leave", { p_session_id: sessionId });
-            } catch (e) {
+            } catch {
                 // intentionally silent
             }
         };
 
-        // immediate heartbeat
-        heartbeat();
+        void start();
 
-        // interval heartbeat
-        timerRef.current = window.setInterval(() => {
-            if (!cancelled) heartbeat();
-        }, heartbeatMs);
-
-        // best-effort leave on tab close
         const onBeforeUnload = () => {
-            // async can be cut off, but TTL will fix it anyway
-            leave();
+            void leave();
         };
 
-        // when user returns to tab -> refresh heartbeat
+        // Returning to the tab may happen just after the interval heartbeat.
+        // The shared 20s guard prevents that from becoming a duplicate write.
         const onVisibility = () => {
-            if (document.visibilityState === "visible") heartbeat();
+            if (document.visibilityState === "visible" && userId) {
+                void sendAttendanceHeartbeat(sessionId, userId);
+            }
         };
 
         window.addEventListener("beforeunload", onBeforeUnload);
@@ -71,8 +118,7 @@ export function useAttendancePresence(
             window.removeEventListener("beforeunload", onBeforeUnload);
             document.removeEventListener("visibilitychange", onVisibility);
 
-            // remove presence on unmount
-            leave();
+            void leave();
         };
     }, [sessionId, heartbeatMs]);
 }

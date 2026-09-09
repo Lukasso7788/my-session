@@ -10,10 +10,15 @@ type CacheEntry = {
   snapshot: ResponseSnapshot;
 };
 
+type RequestPolicy = {
+  ttlMs: number;
+  coalesceDelayMs: number;
+};
+
 const responseCache = new Map<string, CacheEntry>();
 const inFlight = new Map<string, Promise<ResponseSnapshot>>();
 
-const MAX_CACHE_ENTRIES = 160;
+const MAX_CACHE_ENTRIES = 220;
 
 function getRequestUrl(input: RequestInfo | URL) {
   if (input instanceof Request) return input.url;
@@ -26,21 +31,60 @@ function requestMethod(input: RequestInfo | URL, init?: RequestInit) {
   return "GET";
 }
 
-function cacheTtlMs(method: string, pathname: string) {
+function requestPolicy(method: string, pathname: string): RequestPolicy {
   if (method === "GET") {
-    if (pathname === "/rest/v1/infinite_room_host_leases") return 15_000;
-    if (pathname === "/rest/v1/user_entitlements") return 15_000;
-    if (pathname === "/rest/v1/user_weekly_usage") return 15_000;
-    if (pathname === "/rest/v1/account_access_controls") return 15_000;
-    if (pathname === "/rest/v1/profiles") return 3_000;
+    // Realtime task updates can emit several events at once. Hold the first
+    // request briefly so the whole burst shares one fresh database response.
+    // Do not keep a post-response cache here: a later remote task change must
+    // always be able to trigger a fresh read.
+    if (pathname === "/rest/v1/panel_intentions") {
+      return { ttlMs: 0, coalesceDelayMs: 700 };
+    }
+    if (pathname === "/rest/v1/intention_encouragements") {
+      return { ttlMs: 0, coalesceDelayMs: 500 };
+    }
+    if (pathname === "/rest/v1/intentions") {
+      return { ttlMs: 0, coalesceDelayMs: 300 };
+    }
+    if (pathname === "/rest/v1/session_chat_message_reactions") {
+      return { ttlMs: 0, coalesceDelayMs: 300 };
+    }
+
+    if (pathname === "/rest/v1/infinite_room_host_leases") {
+      return { ttlMs: 15_000, coalesceDelayMs: 0 };
+    }
+    if (pathname === "/rest/v1/user_entitlements") {
+      return { ttlMs: 60_000, coalesceDelayMs: 0 };
+    }
+    if (pathname === "/rest/v1/user_weekly_usage") {
+      return { ttlMs: 60_000, coalesceDelayMs: 0 };
+    }
+    if (pathname === "/rest/v1/account_access_controls") {
+      return { ttlMs: 60_000, coalesceDelayMs: 0 };
+    }
+    if (pathname === "/rest/v1/profiles") {
+      return { ttlMs: 30_000, coalesceDelayMs: 0 };
+    }
+    if (pathname === "/rest/v1/session_attendance") {
+      return { ttlMs: 10_000, coalesceDelayMs: 0 };
+    }
   }
 
   if (method === "POST") {
-    if (pathname === "/rest/v1/rpc/attendance_heartbeat") return 4_000;
-    if (pathname === "/rest/v1/rpc/heartbeat_infinite_room_host") return 5_000;
+    // Normal attendance cadence is 30s, so 20s only suppresses duplicate
+    // remount/visibility heartbeats, not the regular presence refresh.
+    if (pathname === "/rest/v1/rpc/attendance_heartbeat") {
+      return { ttlMs: 20_000, coalesceDelayMs: 0 };
+    }
+    if (pathname === "/rest/v1/rpc/heartbeat_infinite_room_host") {
+      return { ttlMs: 8_000, coalesceDelayMs: 0 };
+    }
+    if (pathname === "/rest/v1/rpc/get_lifetime_attendance_count") {
+      return { ttlMs: 60_000, coalesceDelayMs: 0 };
+    }
   }
 
-  return 0;
+  return { ttlMs: 0, coalesceDelayMs: 0 };
 }
 
 async function snapshotResponse(response: Response): Promise<ResponseSnapshot> {
@@ -83,6 +127,13 @@ async function requestBodyKey(request: Request, method: string) {
   }
 }
 
+function wait(ms: number) {
+  if (ms <= 0) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 export const optimizedSupabaseFetch: typeof fetch = async (input, init) => {
   const method = requestMethod(input, init);
   const rawUrl = getRequestUrl(input);
@@ -97,8 +148,8 @@ export const optimizedSupabaseFetch: typeof fetch = async (input, init) => {
     return fetch(input, init);
   }
 
-  const ttlMs = cacheTtlMs(method, pathname);
-  if (!ttlMs) return fetch(input, init);
+  const policy = requestPolicy(method, pathname);
+  if (!policy.ttlMs && !policy.coalesceDelayMs) return fetch(input, init);
 
   const request = input instanceof Request && !init ? input : new Request(input, init);
   const auth = request.headers.get("authorization") || "";
@@ -108,9 +159,11 @@ export const optimizedSupabaseFetch: typeof fetch = async (input, init) => {
 
   pruneCache(now);
 
-  const cached = responseCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) {
-    return responseFromSnapshot(cached.snapshot);
+  if (policy.ttlMs) {
+    const cached = responseCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return responseFromSnapshot(cached.snapshot);
+    }
   }
 
   const pending = inFlight.get(cacheKey);
@@ -119,12 +172,20 @@ export const optimizedSupabaseFetch: typeof fetch = async (input, init) => {
   }
 
   const fetchPromise = (async () => {
+    if (policy.coalesceDelayMs) {
+      await wait(policy.coalesceDelayMs);
+    }
+
     const response = await fetch(request);
     const snapshot = await snapshotResponse(response);
 
-    if (snapshot.status >= 200 && snapshot.status < 300) {
+    if (
+      policy.ttlMs &&
+      snapshot.status >= 200 &&
+      snapshot.status < 300
+    ) {
       responseCache.set(cacheKey, {
-        expiresAt: Date.now() + ttlMs,
+        expiresAt: Date.now() + policy.ttlMs,
         snapshot,
       });
     }

@@ -27,6 +27,27 @@ export type EntitlementState = {
   weekly: ReturnType<typeof getWeeklyLimitState>;
 };
 
+type EntitlementCacheEntry = {
+  expiresAt: number;
+  state: EntitlementState;
+};
+
+const ENTITLEMENT_STATE_TTL_MS = 2 * 60_000;
+const entitlementStateCache = new Map<string, EntitlementCacheEntry>();
+const entitlementStateInFlight = new Map<string, Promise<EntitlementState>>();
+
+export function invalidateEntitlementStateCache(userId?: string) {
+  const normalizedUserId = String(userId || "").trim();
+  if (normalizedUserId) {
+    entitlementStateCache.delete(normalizedUserId);
+    entitlementStateInFlight.delete(normalizedUserId);
+    return;
+  }
+
+  entitlementStateCache.clear();
+  entitlementStateInFlight.clear();
+}
+
 export function isPersonalPaywallForced(
   state: EntitlementState | null | undefined
 ): boolean {
@@ -43,7 +64,6 @@ function normalizeWeekStartForQuery(input: unknown): string {
     return new Date().toISOString().slice(0, 10);
   }
 
-  // "2026-04-13 00:00:00+00" -> "2026-04-13"
   if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
     return raw.slice(0, 10);
   }
@@ -56,9 +76,6 @@ function normalizeWeekStartForQuery(input: unknown): string {
   return raw;
 }
 
-/**
- * 🔹 Получить entitlement пользователя
- */
 export async function getUserEntitlement(
   userId: string
 ): Promise<UserEntitlement | null> {
@@ -78,34 +95,7 @@ export async function getUserEntitlement(
   return (data as UserEntitlement | null) ?? null;
 }
 
-/**
- * 🔹 Fallback: получить usage напрямую, если helper не сработал
- */
-async function getWeeklyUsageDirect(
-  userId: string,
-  weekStart: string
-): Promise<WeeklyUsageRow | null> {
-  if (!userId || !weekStart) return null;
-
-  const { data, error } = await supabase
-    .from("user_weekly_usage")
-    .select("*")
-    .eq("user_id", userId)
-    .eq("week_start", weekStart)
-    .maybeSingle();
-
-  if (error) {
-    console.error("getWeeklyUsageDirect error:", error);
-    throw error;
-  }
-
-  return (data as WeeklyUsageRow | null) ?? null;
-}
-
 async function getLifetimeSessionsCount(userId: string): Promise<number | null> {
-  // Infinite rooms reuse one session id forever, so their attendance is counted
-  // by unique room + local calendar day in the database RPC. Keep the direct
-  // query as a rollout fallback while the migration reaches every environment.
   const rpcResult = await supabase.rpc("get_lifetime_attendance_count");
 
   if (!rpcResult.error) {
@@ -130,39 +120,27 @@ async function getLifetimeSessionsCount(userId: string): Promise<number | null> 
   return Math.max(0, Number(fallbackResult.count || 0));
 }
 
-/**
- * 🔹 Основная функция: собрать ВСЁ состояние пользователя
- */
-export async function loadEntitlementState(): Promise<EntitlementState> {
-  const {
-    data: { user },
-    error: userError,
-  } = await supabase.auth.getUser();
-
-  if (userError) {
-    console.error("getUser error:", userError);
-  }
-
-  if (!user) {
-    return {
+function loggedOutEntitlementState(): EntitlementState {
+  return {
+    entitlement: null,
+    usage: null,
+    lifetimeSessionsCount: null,
+    isLoggedIn: false,
+    isActive: false,
+    isTrial: false,
+    isUnlimited: false,
+    weekly: getWeeklyLimitState({
       entitlement: null,
-      usage: null,
-      lifetimeSessionsCount: null,
-      isLoggedIn: false,
-      isActive: false,
-      isTrial: false,
-      isUnlimited: false,
-      weekly: getWeeklyLimitState({
-        entitlement: null,
-        sessionsUsed: 0,
-        minutesUsed: 0,
-      }),
-    };
-  }
+      sessionsUsed: 0,
+      minutesUsed: 0,
+    }),
+  };
+}
 
+async function loadEntitlementStateForUser(userId: string): Promise<EntitlementState> {
   const [entitlement, lifetimeSessionsCount] = await Promise.all([
-    getUserEntitlement(user.id),
-    getLifetimeSessionsCount(user.id),
+    getUserEntitlement(userId),
+    getLifetimeSessionsCount(userId),
   ]);
 
   const rawWeekStart = getWeekStartDate();
@@ -171,27 +149,11 @@ export async function loadEntitlementState(): Promise<EntitlementState> {
   let usage: WeeklyUsageRow | null = null;
 
   try {
-    usage = await getWeeklyUsage(user.id, rawWeekStart);
+    // A missing weekly row is a valid zero-usage state. Do not issue the same
+    // query two more times just because maybeSingle() returned null.
+    usage = await getWeeklyUsage(userId, normalizedWeekStart);
   } catch (err) {
     console.error("getWeeklyUsage failed:", err);
-  }
-
-  // fallback №1: если helper вернул null, пробуем прямой запрос с нормализованной датой
-  if (!usage) {
-    try {
-      usage = await getWeeklyUsageDirect(user.id, normalizedWeekStart);
-    } catch (err) {
-      console.error("getWeeklyUsageDirect failed:", err);
-    }
-  }
-
-  // fallback №2: если helper ожидал строку YYYY-MM-DD, пробуем helper ещё раз уже с такой строкой
-  if (!usage) {
-    try {
-      usage = await getWeeklyUsage(user.id, normalizedWeekStart as any);
-    } catch (err) {
-      console.error("getWeeklyUsage helper retry failed:", err);
-    }
   }
 
   const sessionsUsed = usage?.sessions_count ?? 0;
@@ -208,7 +170,7 @@ export async function loadEntitlementState(): Promise<EntitlementState> {
   });
 
   console.log("[entitlements] loadEntitlementState result", {
-    userId: user.id,
+    userId,
     rawWeekStart,
     normalizedWeekStart,
     entitlement,
@@ -232,4 +194,48 @@ export async function loadEntitlementState(): Promise<EntitlementState> {
     isUnlimited,
     weekly,
   };
+}
+
+/**
+ * Room/access effects can ask for the same state several times in quick
+ * succession. Share one per-user result for two minutes instead of repeating
+ * the entitlement + weekly usage + lifetime attendance waterfall.
+ */
+export async function loadEntitlementState(): Promise<EntitlementState> {
+  const {
+    data: { session },
+    error: sessionError,
+  } = await supabase.auth.getSession();
+
+  if (sessionError) {
+    console.error("getSession error:", sessionError);
+  }
+
+  const userId = String(session?.user?.id || "").trim();
+  if (!userId) return loggedOutEntitlementState();
+
+  const now = Date.now();
+  const cached = entitlementStateCache.get(userId);
+  if (cached && cached.expiresAt > now) {
+    return cached.state;
+  }
+
+  const pending = entitlementStateInFlight.get(userId);
+  if (pending) return pending;
+
+  const loadPromise = loadEntitlementStateForUser(userId);
+  entitlementStateInFlight.set(userId, loadPromise);
+
+  try {
+    const state = await loadPromise;
+    entitlementStateCache.set(userId, {
+      expiresAt: Date.now() + ENTITLEMENT_STATE_TTL_MS,
+      state,
+    });
+    return state;
+  } finally {
+    if (entitlementStateInFlight.get(userId) === loadPromise) {
+      entitlementStateInFlight.delete(userId);
+    }
+  }
 }
