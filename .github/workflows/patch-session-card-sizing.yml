@@ -1,0 +1,70 @@
+name: Patch session card sizing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/patch-session-card-sizing.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Apply session-card sizing polish'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Patch stage bar and card sizing
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          card_path = Path('src/components/SessionCard.tsx')
+          bar_path = Path('src/components/SessionStageBar.tsx')
+          card = card_path.read_text()
+          bar = bar_path.read_text()
+
+          replacements_card = [
+              ('                    p-6\n                    flex flex-col', '                    px-5 py-4 sm:px-6 sm:py-[18px]\n                    flex flex-col'),
+              ('                <div className="flex flex-col min-[769px]:flex-row min-[769px]:items-center w-full gap-5 min-[1024px]:gap-6">', '                <div className="flex flex-col min-[769px]:flex-row min-[769px]:items-center w-full gap-4 min-[769px]:gap-5 min-[1024px]:gap-6">'),
+              ('                                className="h-2 w-full rounded-full bg-[#E7E7E7]"', '                                className="h-[10px] w-full rounded-full bg-[#E7E7E7]"'),
+          ]
+          for old, new in replacements_card:
+              if old not in card:
+                  raise SystemExit(f'SessionCard pattern not found: {old}')
+              card = card.replace(old, new, 1)
+
+          replacements_bar = [
+              ('    <div className="relative w-full h-2 overflow-visible">', '    <div className="relative w-full h-[10px] overflow-visible">'),
+              ('        className={`absolute inset-x-0 top-0 h-2 flex rounded-full overflow-visible ${trackBgClass}`}', '        className={`absolute inset-x-0 top-0 h-[10px] flex rounded-full overflow-visible ${trackBgClass}`}'),
+              ('            top: -3,\n            width: 2,\n            height: 12,', '            top: -2.5,\n            width: 2,\n            height: 15,'),
+          ]
+          for old, new in replacements_bar:
+              if old not in bar:
+                  raise SystemExit(f'SessionStageBar pattern not found: {old}')
+              bar = bar.replace(old, new, 1)
+
+          card_path.write_text(card)
+          bar_path.write_text(bar)
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Production build
+        run: npx vite build
+      - name: Check diff
+        run: git diff --check
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/SessionCard.tsx src/components/SessionStageBar.tsx
+          git commit -m "Polish session card height and stage bar"
+          git push origin main
