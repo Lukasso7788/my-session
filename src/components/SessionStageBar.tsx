@@ -435,9 +435,9 @@ export function SessionStageBar({
   const markerLeftPercent = clamp(cycleProgress * 100, 0.5, 99.5);
 
   return (
-    <div className="relative w-full h-2 overflow-visible">
+    <div className="relative w-full h-[10px] overflow-visible">
       <div
-        className={`absolute inset-x-0 top-0 h-2 flex rounded-full overflow-visible ${trackBgClass}`}
+        className={`absolute inset-x-0 top-0 h-[10px] flex rounded-full overflow-visible ${trackBgClass}`}
       >
         {(stages || []).map((stage, index) => {
           const durSec = stageSecondsList[index] || 0;
@@ -539,9 +539,9 @@ export function SessionStageBar({
           className="absolute pointer-events-none z-[40]"
           style={{
             left: `${markerLeftPercent}%`,
-            top: -3,
+            top: -2.5,
             width: 2,
-            height: 12,
+            height: 15,
             transform: "translateX(-50%)",
             backgroundColor: markerColor,
             borderRadius: 9999,

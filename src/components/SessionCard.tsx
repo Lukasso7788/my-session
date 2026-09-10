@@ -4899,13 +4899,13 @@ export default function SessionCard({
                     border-borderGray
                     hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
                     cursor-pointer
-                    p-6
+                    px-5 py-4 sm:px-6 sm:py-[18px]
                     flex flex-col
                     w-full gap-4
                     ${isOptionsOpen ? "z-[220]" : "z-0"}
                 `}
             >
-                <div className="flex flex-col min-[769px]:flex-row min-[769px]:items-center w-full gap-5 min-[1024px]:gap-6">
+                <div className="flex flex-col min-[769px]:flex-row min-[769px]:items-center w-full gap-4 min-[769px]:gap-5 min-[1024px]:gap-6">
                     <div className="flex min-w-0 items-stretch justify-between gap-4 min-[769px]:w-[42%] min-[769px]:max-w-[620px] min-[769px]:shrink-0">
                         <Link
                             to={`/profile/${displayedHostId}`}
@@ -5019,7 +5019,7 @@ export default function SessionCard({
                             />
                         ) : (
                             <div
-                                className="h-2 w-full rounded-full bg-[#E7E7E7]"
+                                className="h-[10px] w-full rounded-full bg-[#E7E7E7]"
                                 aria-label="Session timeline"
                             />
                         )}
