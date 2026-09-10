@@ -449,28 +449,22 @@ export function SessionStageBar({
       custom: "Custom",
     };
 
-    const seen = new Set<string>();
-    const items: Array<{ key: string; label: string; color: string }> = [];
+    return (stages || [])
+      .map((stage, index) => {
+        const visual = resolveStageVisual(stage as any);
+        const durSec = stageSecondsList[index] || 0;
+        const width = durSec > 0 ? (durSec / totalStagesSeconds) * 100 : 0;
 
-    for (const stage of stages || []) {
-      const visual = resolveStageVisual(stage as any);
-      const key = visual.kind === "custom"
-        ? `${visual.kind}:${visual.name.toLowerCase()}`
-        : visual.kind;
-      if (seen.has(key)) continue;
-      seen.add(key);
-
-      items.push({
-        key,
-        label: visual.kind === "custom"
-          ? String(visual.name || "Custom").slice(0, 14)
-          : shortLabelByKind[visual.kind],
-        color: visual.color,
-      });
-    }
-
-    return items;
-  }, [stages]);
+        return {
+          key: `${(stage as any)?.id || index}-${index}`,
+          label: visual.kind === "custom"
+            ? String(visual.name || "Custom").slice(0, 14)
+            : shortLabelByKind[visual.kind],
+          width,
+        };
+      })
+      .filter((item) => item.width > 0);
+  }, [stages, stageSecondsList, totalStagesSeconds]);
 
   return (
     <div className="w-full min-w-0">
@@ -594,16 +588,16 @@ export function SessionStageBar({
       </div>
 
       {showLegend && legendItems.length > 0 && (
-        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-medium leading-none text-[#777777] sm:text-[10px]">
+        <div className="mt-2 flex w-full min-w-0 items-start text-[7px] font-medium leading-none text-[#777777] min-[481px]:text-[8px] sm:text-[9px]">
           {legendItems.map((item) => (
-            <span key={item.key} className="inline-flex items-center gap-1 whitespace-nowrap">
-              <span
-                className="h-1.5 w-1.5 shrink-0 rounded-full"
-                style={stageColorStyle(item.color)}
-                aria-hidden="true"
-              />
-              {item.label}
-            </span>
+            <div
+              key={item.key}
+              className="min-w-0 px-[1px] text-center"
+              style={{ width: `${item.width}%` }}
+              title={item.label}
+            >
+              <span className="block truncate">{item.label}</span>
+            </div>
           ))}
         </div>
       )}
