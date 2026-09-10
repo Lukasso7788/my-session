@@ -4223,14 +4223,23 @@ export default function SessionCard({
             : "This session is full right now. If someone leaves, you can try joining again.";
 
     const hasStarted = useMemo(() => {
-        if (isInfinite) return true;
-        if (liveNowCount > 0) return true;
+    if (isInfinite) return true;
 
-        if (!session?.start_time) return false;
-        const t = Date.parse(String(session.start_time));
-        if (!Number.isFinite(t)) return false;
-        return Date.now() >= t;
-    }, [isInfinite, liveNowCount, session?.start_time]);
+    const status = safeLower(session?.status);
+    if (
+        status === "active" ||
+        status === "live" ||
+        status === "started" ||
+        status === "in_progress"
+    ) {
+        return true;
+    }
+
+    if (!session?.start_time) return false;
+    const t = Date.parse(String(session.start_time));
+    if (!Number.isFinite(t)) return false;
+    return Date.now() >= t;
+}, [isInfinite, session?.status, session?.start_time]);
 
     const timelineStartTime = useMemo(() => {
         const startedAt = session?.started_at;
