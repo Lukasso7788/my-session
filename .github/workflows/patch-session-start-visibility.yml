@@ -23,19 +23,15 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('src/components/SessionCard.tsx')
           text = path.read_text()
-          old = '''    const hasStarted = useMemo(() => {
-              if (isInfinite) return true;
-              if (liveNowCount > 0) return true;
-
-              if (!session?.start_time) return false;
-              const t = Date.parse(String(session.start_time));
-              if (!Number.isFinite(t)) return false;
-              return Date.now() >= t;
-          }, [isInfinite, liveNowCount, session?.start_time]);'''
-          new = '''    const hasStarted = useMemo(() => {
+          pattern = re.compile(
+              r'    const hasStarted = useMemo\(\(\) => \{\n.*?    \}, \[isInfinite, liveNowCount, session\?\.start_time\]\);',
+              re.S,
+          )
+          replacement = '''    const hasStarted = useMemo(() => {
               if (isInfinite) return true;
 
               const status = safeLower(session?.status);
@@ -53,9 +49,10 @@ jobs:
               if (!Number.isFinite(t)) return false;
               return Date.now() >= t;
           }, [isInfinite, session?.status, session?.start_time]);'''
-          if old not in text:
-              raise SystemExit('hasStarted block not found')
-          path.write_text(text.replace(old, new, 1))
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'hasStarted block match count: {count}')
+          path.write_text(text)
           PY
 
       - uses: actions/setup-node@v4
