@@ -11,6 +11,7 @@ interface Props {
   progressStyle?: "fill" | "tick";
   tickEveryMs?: number;
   theme?: RoomTheme;
+  showLegend?: boolean;
 }
 
 function clamp(n: number, a: number, b: number) {
@@ -328,6 +329,7 @@ export function SessionStageBar({
   progressStyle = "fill",
   tickEveryMs = 1000,
   theme = "dark",
+  showLegend = false,
 }: Props) {
   const [elapsed, setElapsed] = useState(0);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
@@ -434,8 +436,45 @@ export function SessionStageBar({
 
   const markerLeftPercent = clamp(cycleProgress * 100, 0.5, 99.5);
 
+  const legendItems = useMemo(() => {
+    const shortLabelByKind: Record<StageKind, string> = {
+      welcome: "Welcome",
+      intentions: "Plan",
+      focus: "Focus",
+      break: "Break",
+      checkin: "Check-in",
+      recap: "Recap",
+      celebrate: "Celebrate",
+      farewell: "End",
+      custom: "Custom",
+    };
+
+    const seen = new Set<string>();
+    const items: Array<{ key: string; label: string; color: string }> = [];
+
+    for (const stage of stages || []) {
+      const visual = resolveStageVisual(stage as any);
+      const key = visual.kind === "custom"
+        ? `${visual.kind}:${visual.name.toLowerCase()}`
+        : visual.kind;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      items.push({
+        key,
+        label: visual.kind === "custom"
+          ? String(visual.name || "Custom").slice(0, 14)
+          : shortLabelByKind[visual.kind],
+        color: visual.color,
+      });
+    }
+
+    return items;
+  }, [stages]);
+
   return (
-    <div className="relative w-full h-[10px] overflow-visible">
+    <div className="w-full min-w-0">
+      <div className="relative w-full h-[10px] overflow-visible">
       <div
         className={`absolute inset-x-0 top-0 h-[10px] flex rounded-full overflow-visible ${trackBgClass}`}
       >
@@ -551,6 +590,22 @@ export function SessionStageBar({
                 : "0 0 0 1px rgba(15,23,42,0.45)",
           }}
         />
+      )}
+      </div>
+
+      {showLegend && legendItems.length > 0 && (
+        <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-medium leading-none text-[#777777] sm:text-[10px]">
+          {legendItems.map((item) => (
+            <span key={item.key} className="inline-flex items-center gap-1 whitespace-nowrap">
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                style={stageColorStyle(item.color)}
+                aria-hidden="true"
+              />
+              {item.label}
+            </span>
+          ))}
+        </div>
       )}
     </div>
   );

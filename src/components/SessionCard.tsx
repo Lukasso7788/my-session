@@ -4905,8 +4905,8 @@ export default function SessionCard({
                     ${isOptionsOpen ? "z-[220]" : "z-0"}
                 `}
             >
-                <div className="flex flex-col min-[769px]:flex-row min-[769px]:items-center w-full gap-4 min-[769px]:gap-5 min-[1024px]:gap-6">
-                    <div className="flex min-w-0 items-stretch justify-between gap-4 min-[769px]:w-[42%] min-[769px]:max-w-[620px] min-[769px]:shrink-0">
+                <div className="flex flex-col min-[769px]:flex-row min-[769px]:items-center w-full gap-4 min-[769px]:gap-2 min-[1024px]:gap-3">
+                    <div className="flex min-w-0 items-stretch justify-between gap-4 min-[769px]:w-auto min-[769px]:max-w-[620px] min-[769px]:shrink-0">
                         <Link
                             to={`/profile/${displayedHostId}`}
                             onClick={(event) => event.stopPropagation()}
@@ -5016,6 +5016,7 @@ export default function SessionCard({
                                 progressStyle="tick"
                                 tickEveryMs={tickEveryMs}
                                 theme="light"
+                                showLegend
                             />
                         ) : (
                             <div
