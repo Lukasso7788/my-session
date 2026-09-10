@@ -376,8 +376,14 @@ export function SessionStageBar({
     }
 
     const raw = Number.isFinite(elapsed) ? elapsed : 0;
+    // A future session has negative elapsed time. Keep its marker at the
+    // beginning instead of modulo-wrapping it into an apparently active stage.
     const normalized =
-      loopSeconds > 0 ? ((raw % loopSeconds) + loopSeconds) % loopSeconds : raw;
+      raw <= 0
+        ? 0
+        : loopSeconds > 0
+          ? raw % loopSeconds
+          : raw;
 
     const cp = loopSeconds > 0 ? clamp(normalized / loopSeconds, 0, 1) : 0;
     setCycleProgress(Number.isFinite(cp) ? cp : 0);
