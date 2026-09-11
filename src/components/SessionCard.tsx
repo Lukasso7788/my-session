@@ -4926,31 +4926,6 @@ export default function SessionCard({
         </button>
     );
 
-    const primaryBookSessionButton = (
-        <button
-            type="button"
-            onClick={handleBookSession}
-            onMouseEnter={() => setIsHoveringBook(true)}
-            onMouseLeave={() => setIsHoveringBook(false)}
-            className="h-12 w-full rounded-full px-6 text-[14px] font-semibold text-white transition-all duration-200 ease-in-out min-[1024px]:w-auto min-[1024px]:min-w-[150px] xl:min-w-[160px]"
-            style={{ backgroundColor: isHoveringBook ? joinHoverBg : "#2f2f2f" }}
-            aria-label="Book session"
-        >
-            Book session
-        </button>
-    );
-
-    const primaryBookedSessionButton = (
-        <button
-            type="button"
-            onClick={() => setIsBookersModalOpen(true)}
-            className="h-12 w-full rounded-full border border-[#65D46C] bg-[#65D46C]/10 px-6 text-[14px] font-semibold text-[#49A650] transition hover:bg-[#65D46C]/15 min-[1024px]:w-auto min-[1024px]:min-w-[150px] xl:min-w-[160px]"
-            aria-label="Booked session; open session details"
-        >
-            Booked
-        </button>
-    );
-
     return (
         <>
             <div
@@ -5136,7 +5111,7 @@ export default function SessionCard({
                             : null}
 
                         {isStandardGroupSession && !isGroupJoinWindowOpen
-                            ? (isBookingConfirmed ? primaryBookedSessionButton : primaryBookSessionButton)
+                            ? (isBookingConfirmed ? confirmedBookingButton : bookSessionButton)
                             : (
                                 <button
                                     onClick={handleJoinRoom}
