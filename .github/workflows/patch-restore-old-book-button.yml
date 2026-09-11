@@ -1,0 +1,62 @@
+name: Restore original group Book session button
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-restore-old-book-button.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Restore original booking CTA styling
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/SessionCard.tsx')
+          text = path.read_text()
+
+          old_block = '''    const primaryBookSessionButton = (\n        <button\n            type="button"\n            onClick={handleBookSession}\n            onMouseEnter={() => setIsHoveringBook(true)}\n            onMouseLeave={() => setIsHoveringBook(false)}\n            className="h-12 w-full rounded-full px-6 text-[14px] font-semibold text-white transition-all duration-200 ease-in-out min-[1024px]:w-auto min-[1024px]:min-w-[150px] xl:min-w-[160px]"\n            style={{ backgroundColor: isHoveringBook ? joinHoverBg : "#2f2f2f" }}\n            aria-label="Book session"\n        >\n            Book session\n        </button>\n    );\n\n    const primaryBookedSessionButton = (\n        <button\n            type="button"\n            onClick={() => setIsBookersModalOpen(true)}\n            className="h-12 w-full rounded-full border border-[#65D46C] bg-[#65D46C]/10 px-6 text-[14px] font-semibold text-[#49A650] transition hover:bg-[#65D46C]/15 min-[1024px]:w-auto min-[1024px]:min-w-[150px] xl:min-w-[160px]"\n            aria-label="Booked session; open session details"\n        >\n            Booked\n        </button>\n    );\n\n'''
+
+          old_usage = '''                        {isStandardGroupSession && !isGroupJoinWindowOpen\n                            ? (isBookingConfirmed ? primaryBookedSessionButton : primaryBookSessionButton)\n                            : ('''
+
+          new_usage = '''                        {isStandardGroupSession && !isGroupJoinWindowOpen\n                            ? (isBookingConfirmed ? confirmedBookingButton : bookSessionButton)\n                            : ('''
+
+          if old_block not in text:
+              raise SystemExit('temporary primary booking button block not found')
+          if old_usage not in text:
+              raise SystemExit('temporary group booking CTA usage not found')
+
+          text = text.replace(old_block, '', 1)
+          text = text.replace(old_usage, new_usage, 1)
+          path.write_text(text)
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - name: Production build
+        run: npx vite build
+      - name: Check diff
+        run: git diff --check
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/SessionCard.tsx
+          git commit -m 'Restore original Book session button styling' || exit 0
+          git push origin main
