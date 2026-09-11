@@ -8405,6 +8405,11 @@ export function RoomPageLiveKit({
   const personalSoundscapeEngineRef = useRef<RoomSoundscapeEngine | null>(null);
   const soundscapeStateRef = useRef<RoomSoundtrackState | null>(null);
   const soundscapeVolumePublishTimerRef = useRef<number | null>(null);
+  const sharedTabMusicPublicationRef = useRef<LocalTrackPublication | null>(null);
+  const sharedTabMusicStreamRef = useRef<MediaStream | null>(null);
+  const [sharingTabMusic, setSharingTabMusic] = useState(false);
+  const [tabMusicShareBusy, setTabMusicShareBusy] = useState(false);
+  const [tabMusicShareError, setTabMusicShareError] = useState<string | null>(null);
   const [bugReportOpen, setBugReportOpen] = useState(false);
   const [mainViewMode, setMainViewMode] =
     useState<RoomMainViewMode>("video");
@@ -10523,6 +10528,127 @@ export function RoomPageLiveKit({
   const canControlRoomSoundtrack =
     connected && (isHost || isSelfModerator || isTemporaryRoomHost);
   const canUploadRoomSoundtrack = isHost || isSelfModerator;
+
+  const canShareTabMusic = connected && (isHost || isTemporaryRoomHost);
+
+  const stopSharedTabMusic = async () => {
+    const activeRoom = roomRef.current;
+    const publication = sharedTabMusicPublicationRef.current;
+    const stream = sharedTabMusicStreamRef.current;
+
+    sharedTabMusicPublicationRef.current = null;
+    sharedTabMusicStreamRef.current = null;
+
+    try {
+      if (activeRoom && publication?.track) {
+        await activeRoom.localParticipant.unpublishTrack(publication.track, true);
+      } else {
+        publication?.track?.stop?.();
+      }
+    } catch (error) {
+      console.warn('[tab-music] unpublish failed', error);
+    }
+
+    try {
+      stream?.getTracks().forEach((track) => {
+        track.onended = null;
+        track.stop();
+      });
+    } catch {
+      // The browser may already have ended the capture session.
+    }
+
+    setSharingTabMusic(false);
+  };
+
+  const startSharedTabMusic = async () => {
+    if (!canShareTabMusic || tabMusicShareBusy) return;
+    const activeRoom = roomRef.current;
+    if (!activeRoom) return;
+
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      setTabMusicShareError('Tab audio sharing is not supported in this browser.');
+      return;
+    }
+
+    setTabMusicShareBusy(true);
+    setTabMusicShareError(null);
+
+    try {
+      if (sharedTabMusicPublicationRef.current || sharedTabMusicStreamRef.current) {
+        await stopSharedTabMusic();
+      }
+
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { displaySurface: 'browser' },
+        audio: true,
+        preferCurrentTab: false,
+        selfBrowserSurface: 'exclude',
+        surfaceSwitching: 'exclude',
+      } as any);
+
+      const audioTrack = stream.getAudioTracks()[0];
+      if (!audioTrack) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error('Choose a browser tab and enable Share tab audio.');
+      }
+
+      // Keep the captured video track alive because Chromium ties tab-audio
+      // capture to the display-capture session, but never publish that video
+      // track to LiveKit. Participants receive audio only and no share tile.
+      sharedTabMusicStreamRef.current = stream;
+
+      const publication = (await activeRoom.localParticipant.publishTrack(audioTrack, {
+        source: Track.Source.ScreenShareAudio,
+        name: 'shared_tab_music',
+      } as any)) as LocalTrackPublication;
+
+      sharedTabMusicPublicationRef.current = publication;
+      setSharingTabMusic(true);
+
+      const handleCaptureEnded = () => {
+        void stopSharedTabMusic();
+      };
+      audioTrack.onended = handleCaptureEnded;
+      stream.getVideoTracks().forEach((track) => {
+        track.onended = handleCaptureEnded;
+      });
+    } catch (error: any) {
+      const name = String(error?.name || '');
+      const message = String(error?.message || '');
+      if (name !== 'NotAllowedError' && name !== 'AbortError') {
+        setTabMusicShareError(
+          message || 'Could not share audio from that tab. Choose a Chrome tab and enable Share tab audio.',
+        );
+      }
+      const stream = sharedTabMusicStreamRef.current;
+      sharedTabMusicStreamRef.current = null;
+      stream?.getTracks().forEach((track) => track.stop());
+      setSharingTabMusic(false);
+    } finally {
+      setTabMusicShareBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (connected) return;
+    const stream = sharedTabMusicStreamRef.current;
+    sharedTabMusicPublicationRef.current = null;
+    sharedTabMusicStreamRef.current = null;
+    stream?.getTracks().forEach((track) => track.stop());
+    setSharingTabMusic(false);
+    setTabMusicShareBusy(false);
+    setTabMusicShareError(null);
+  }, [connected]);
+
+  useEffect(
+    () => () => {
+      sharedTabMusicStreamRef.current?.getTracks().forEach((track) => track.stop());
+      sharedTabMusicStreamRef.current = null;
+      sharedTabMusicPublicationRef.current = null;
+    },
+    [],
+  );
 
   const publishSoundtrackPacket = async (packet: RoomSoundtrackPacket) => {
     const room = roomRef.current;
@@ -18904,6 +19030,16 @@ export function RoomPageLiveKit({
           canUpload={
             soundscapeListeningMode === "room" && canUploadRoomSoundtrack
           }
+          canShareTabMusic={canShareTabMusic}
+          sharingTabMusic={sharingTabMusic}
+          tabMusicShareBusy={tabMusicShareBusy}
+          tabMusicShareError={tabMusicShareError}
+          onShareTabMusic={() => {
+            void startSharedTabMusic();
+          }}
+          onStopTabMusicShare={() => {
+            void stopSharedTabMusic();
+          }}
           customTrackLabel={
             soundscapeListeningMode === "room" ? customSoundscapeLabel : null
           }

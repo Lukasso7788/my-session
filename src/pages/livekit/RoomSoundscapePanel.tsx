@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Pause,
   Play,
+  RadioTower,
   SkipBack,
   SkipForward,
   Upload,
@@ -51,6 +52,12 @@ export function RoomSoundscapePanel({
   personalMuted,
   canControl,
   canUpload,
+  canShareTabMusic,
+  sharingTabMusic,
+  tabMusicShareBusy,
+  tabMusicShareError,
+  onShareTabMusic,
+  onStopTabMusicShare,
   customTrackLabel,
   busy,
   uploading,
@@ -73,6 +80,12 @@ export function RoomSoundscapePanel({
   personalMuted: boolean;
   canControl: boolean;
   canUpload: boolean;
+  canShareTabMusic: boolean;
+  sharingTabMusic: boolean;
+  tabMusicShareBusy: boolean;
+  tabMusicShareError: string | null;
+  onShareTabMusic: () => void;
+  onStopTabMusicShare: () => void;
   customTrackLabel: string | null;
   busy: boolean;
   uploading: boolean;
@@ -276,6 +289,36 @@ export function RoomSoundscapePanel({
             )}
             {personalMuted ? "Unmute for me" : "Mute for me"}
           </button>
+
+          {canShareTabMusic ? (
+            <div className="mt-3 rounded-[14px] border border-[#DEDADA] bg-white p-2.5 text-left">
+              <button
+                type="button"
+                disabled={tabMusicShareBusy}
+                onClick={sharingTabMusic ? onStopTabMusicShare : onShareTabMusic}
+                className={`flex h-10 w-full items-center justify-center gap-2 rounded-xl text-[10px] font-semibold transition disabled:cursor-wait disabled:opacity-55 ${
+                  sharingTabMusic
+                    ? "bg-[#FFF0F0] text-[#B54444] hover:bg-[#FFE7E7]"
+                    : "bg-[#2F2F2F] text-white hover:bg-[#252525]"
+                }`}
+              >
+                <RadioTower className="h-3.5 w-3.5" strokeWidth={1.8} />
+                {tabMusicShareBusy
+                  ? "Opening Chrome…"
+                  : sharingTabMusic
+                    ? "Stop sharing tab music"
+                    : "Share music from tab"}
+              </button>
+              <p className="mt-2 px-1 text-[8px] leading-4 text-[#2F2F2F]/45">
+                Choose a Chrome tab such as YouTube or Spotify Web and enable Share tab audio. Only its audio is sent to the room.
+              </p>
+              {tabMusicShareError ? (
+                <p className="mt-1.5 px-1 text-[8px] leading-4 text-[#B54444]">
+                  {tabMusicShareError}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </section>
 
         <section className="mx-2 mb-2 rounded-[18px] bg-white px-2 pb-3 pt-3">
