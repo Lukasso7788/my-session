@@ -38,8 +38,15 @@ jobs:
               raise SystemExit('shared tab music marker missing')
           if "navigator.mediaDevices.getDisplayMedia({" not in text:
               raise SystemExit('shared tab music display capture missing')
-          if "audio: true," not in text:
-              raise SystemExit('shared tab music audio capture was unexpectedly removed')
+          if "audio: canSuppressLocalTabPlayback" not in text:
+              raise SystemExit('shared tab music audio capture was unexpectedly changed')
+
+          remaining_regular_audio = re.findall(
+              r'await lp\.setScreenShareEnabled\(true, \{\n\s*audio: true,',
+              text,
+          )
+          if remaining_regular_audio:
+              raise SystemExit('regular screen share still requests audio')
 
           path.write_text(text)
           PY
