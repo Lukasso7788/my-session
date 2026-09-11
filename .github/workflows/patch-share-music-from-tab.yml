@@ -1,0 +1,99 @@
+name: Patch Share music from tab
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-share-music-from-tab.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Add host-only tab music sharing
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          room_path = Path('src/pages/RoomPageLiveKit.tsx')
+          room = room_path.read_text()
+
+          state_anchor = '''  const soundscapeEngineRef = useRef<RoomSoundscapeEngine | null>(null);\n  const personalSoundscapeEngineRef = useRef<RoomSoundscapeEngine | null>(null);\n  const soundscapeStateRef = useRef<RoomSoundtrackState | null>(null);\n  const soundscapeVolumePublishTimerRef = useRef<number | null>(null);\n'''
+          state_new = state_anchor + '''  const sharedTabMusicPublicationRef = useRef<LocalTrackPublication | null>(null);\n  const sharedTabMusicStreamRef = useRef<MediaStream | null>(null);\n  const [sharingTabMusic, setSharingTabMusic] = useState(false);\n  const [tabMusicShareBusy, setTabMusicShareBusy] = useState(false);\n  const [tabMusicShareError, setTabMusicShareError] = useState<string | null>(null);\n'''
+          if 'sharedTabMusicPublicationRef' not in room:
+              if state_anchor not in room:
+                  raise SystemExit('soundscape state anchor not found')
+              room = room.replace(state_anchor, state_new, 1)
+
+          permission_anchor = '''  const canControlRoomSoundtrack =\n    connected && (isHost || isSelfModerator || isTemporaryRoomHost);\n  const canUploadRoomSoundtrack = isHost || isSelfModerator;\n\n'''
+          permission_new = permission_anchor + '''  const canShareTabMusic = connected && (isHost || isTemporaryRoomHost);\n\n  const stopSharedTabMusic = async () => {\n    const activeRoom = roomRef.current;\n    const publication = sharedTabMusicPublicationRef.current;\n    const stream = sharedTabMusicStreamRef.current;\n\n    sharedTabMusicPublicationRef.current = null;\n    sharedTabMusicStreamRef.current = null;\n\n    try {\n      if (activeRoom && publication?.track) {\n        await activeRoom.localParticipant.unpublishTrack(publication.track, true);\n      } else {\n        publication?.track?.stop?.();\n      }\n    } catch (error) {\n      console.warn('[tab-music] unpublish failed', error);\n    }\n\n    try {\n      stream?.getTracks().forEach((track) => {\n        track.onended = null;\n        track.stop();\n      });\n    } catch {\n      // The browser may already have ended the capture session.\n    }\n\n    setSharingTabMusic(false);\n  };\n\n  const startSharedTabMusic = async () => {\n    if (!canShareTabMusic || tabMusicShareBusy) return;\n    const activeRoom = roomRef.current;\n    if (!activeRoom) return;\n\n    if (!navigator.mediaDevices?.getDisplayMedia) {\n      setTabMusicShareError('Tab audio sharing is not supported in this browser.');\n      return;\n    }\n\n    setTabMusicShareBusy(true);\n    setTabMusicShareError(null);\n\n    try {\n      if (sharedTabMusicPublicationRef.current || sharedTabMusicStreamRef.current) {\n        await stopSharedTabMusic();\n      }\n\n      const stream = await navigator.mediaDevices.getDisplayMedia({\n        video: { displaySurface: 'browser' },\n        audio: true,\n        preferCurrentTab: false,\n        selfBrowserSurface: 'exclude',\n        surfaceSwitching: 'exclude',\n      } as any);\n\n      const audioTrack = stream.getAudioTracks()[0];\n      if (!audioTrack) {\n        stream.getTracks().forEach((track) => track.stop());\n        throw new Error('Choose a browser tab and enable Share tab audio.');\n      }\n\n      // Keep the captured video track alive because Chromium ties tab-audio\n      // capture to the display-capture session, but never publish that video\n      // track to LiveKit. Participants receive audio only and no share tile.\n      sharedTabMusicStreamRef.current = stream;\n\n      const publication = (await activeRoom.localParticipant.publishTrack(audioTrack, {\n        source: Track.Source.ScreenShareAudio,\n        name: 'shared_tab_music',\n      } as any)) as LocalTrackPublication;\n\n      sharedTabMusicPublicationRef.current = publication;\n      setSharingTabMusic(true);\n\n      const handleCaptureEnded = () => {\n        void stopSharedTabMusic();\n      };\n      audioTrack.onended = handleCaptureEnded;\n      stream.getVideoTracks().forEach((track) => {\n        track.onended = handleCaptureEnded;\n      });\n    } catch (error: any) {\n      const name = String(error?.name || '');\n      const message = String(error?.message || '');\n      if (name !== 'NotAllowedError' && name !== 'AbortError') {\n        setTabMusicShareError(\n          message || 'Could not share audio from that tab. Choose a Chrome tab and enable Share tab audio.',\n        );\n      }\n      const stream = sharedTabMusicStreamRef.current;\n      sharedTabMusicStreamRef.current = null;\n      stream?.getTracks().forEach((track) => track.stop());\n      setSharingTabMusic(false);\n    } finally {\n      setTabMusicShareBusy(false);\n    }\n  };\n\n  useEffect(() => {\n    if (connected) return;\n    const stream = sharedTabMusicStreamRef.current;\n    sharedTabMusicPublicationRef.current = null;\n    sharedTabMusicStreamRef.current = null;\n    stream?.getTracks().forEach((track) => track.stop());\n    setSharingTabMusic(false);\n    setTabMusicShareBusy(false);\n    setTabMusicShareError(null);\n  }, [connected]);\n\n  useEffect(\n    () => () => {\n      sharedTabMusicStreamRef.current?.getTracks().forEach((track) => track.stop());\n      sharedTabMusicStreamRef.current = null;\n      sharedTabMusicPublicationRef.current = null;\n    },\n    [],\n  );\n\n'''
+          if 'const startSharedTabMusic =' not in room:
+              if permission_anchor not in room:
+                  raise SystemExit('soundscape permission anchor not found')
+              room = room.replace(permission_anchor, permission_new, 1)
+
+          props_anchor = '''          canUpload={\n            soundscapeListeningMode === "room" && canUploadRoomSoundtrack\n          }\n          customTrackLabel={\n'''
+          props_new = '''          canUpload={\n            soundscapeListeningMode === "room" && canUploadRoomSoundtrack\n          }\n          canShareTabMusic={canShareTabMusic}\n          sharingTabMusic={sharingTabMusic}\n          tabMusicShareBusy={tabMusicShareBusy}\n          tabMusicShareError={tabMusicShareError}\n          onShareTabMusic={() => {\n            void startSharedTabMusic();\n          }}\n          onStopTabMusicShare={() => {\n            void stopSharedTabMusic();\n          }}\n          customTrackLabel={\n'''
+          if 'canShareTabMusic={canShareTabMusic}' not in room:
+              if props_anchor not in room:
+                  raise SystemExit('RoomSoundscapePanel props anchor not found')
+              room = room.replace(props_anchor, props_new, 1)
+
+          room_path.write_text(room)
+
+          panel_path = Path('src/pages/livekit/RoomSoundscapePanel.tsx')
+          panel = panel_path.read_text()
+
+          if '  RadioTower,\n' not in panel:
+              panel = panel.replace('  Play,\n', '  Play,\n  RadioTower,\n', 1)
+
+          signature_anchor = '''  canControl,\n  canUpload,\n  customTrackLabel,\n  busy,\n'''
+          signature_new = '''  canControl,\n  canUpload,\n  canShareTabMusic,\n  sharingTabMusic,\n  tabMusicShareBusy,\n  tabMusicShareError,\n  onShareTabMusic,\n  onStopTabMusicShare,\n  customTrackLabel,\n  busy,\n'''
+          if '  canShareTabMusic,\n' not in panel:
+              if signature_anchor not in panel:
+                  raise SystemExit('panel signature anchor not found')
+              panel = panel.replace(signature_anchor, signature_new, 1)
+
+          type_anchor = '''  canControl: boolean;\n  canUpload: boolean;\n  customTrackLabel: string | null;\n  busy: boolean;\n'''
+          type_new = '''  canControl: boolean;\n  canUpload: boolean;\n  canShareTabMusic: boolean;\n  sharingTabMusic: boolean;\n  tabMusicShareBusy: boolean;\n  tabMusicShareError: string | null;\n  onShareTabMusic: () => void;\n  onStopTabMusicShare: () => void;\n  customTrackLabel: string | null;\n  busy: boolean;\n'''
+          if '  canShareTabMusic: boolean;\n' not in panel:
+              if type_anchor not in panel:
+                  raise SystemExit('panel props type anchor not found')
+              panel = panel.replace(type_anchor, type_new, 1)
+
+          ui_anchor = '''            {personalMuted ? "Unmute for me" : "Mute for me"}\n          </button>\n        </section>\n'''
+          ui_new = '''            {personalMuted ? "Unmute for me" : "Mute for me"}\n          </button>\n\n          {canShareTabMusic ? (\n            <div className="mt-3 rounded-[14px] border border-[#DEDADA] bg-white p-2.5 text-left">\n              <button\n                type="button"\n                disabled={tabMusicShareBusy}\n                onClick={sharingTabMusic ? onStopTabMusicShare : onShareTabMusic}\n                className={`flex h-10 w-full items-center justify-center gap-2 rounded-xl text-[10px] font-semibold transition disabled:cursor-wait disabled:opacity-55 ${\n                  sharingTabMusic\n                    ? "bg-[#FFF0F0] text-[#B54444] hover:bg-[#FFE7E7]"\n                    : "bg-[#2F2F2F] text-white hover:bg-[#252525]"\n                }`}\n              >\n                <RadioTower className="h-3.5 w-3.5" strokeWidth={1.8} />\n                {tabMusicShareBusy\n                  ? "Opening Chrome…"\n                  : sharingTabMusic\n                    ? "Stop sharing tab music"\n                    : "Share music from tab"}\n              </button>\n              <p className="mt-2 px-1 text-[8px] leading-4 text-[#2F2F2F]/45">\n                Choose a Chrome tab such as YouTube or Spotify Web and enable Share tab audio. Only its audio is sent to the room.\n              </p>\n              {tabMusicShareError ? (\n                <p className="mt-1.5 px-1 text-[8px] leading-4 text-[#B54444]">\n                  {tabMusicShareError}\n                </p>\n              ) : null}\n            </div>\n          ) : null}\n        </section>\n'''
+          if 'Share music from tab' not in panel:
+              if ui_anchor not in panel:
+                  raise SystemExit('panel UI anchor not found')
+              panel = panel.replace(ui_anchor, ui_new, 1)
+
+          panel_path.write_text(panel)
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - name: Production Vite build
+        run: npx vite build
+      - name: Check diff
+        run: git diff --check
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/pages/RoomPageLiveKit.tsx src/pages/livekit/RoomSoundscapePanel.tsx
+          git commit -m 'Add host-only tab music sharing' || exit 0
+          git push origin main
