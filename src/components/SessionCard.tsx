@@ -4828,7 +4828,7 @@ export default function SessionCard({
             onMouseEnter={() => setIsHoveringBook(true)}
             onMouseLeave={() => setIsHoveringBook(false)}
             className={`
-                h-12 min-w-0 sm:min-w-[160px] rounded-full px-4 sm:px-6 text-[14px] font-semibold
+                h-12 min-w-0 min-[1024px]:min-w-[160px] rounded-full px-4 min-[1024px]:px-6 text-[14px] font-semibold
                 flex items-center justify-center gap-2
                 transition-all duration-200 ease-in-out
                 w-auto
@@ -4843,7 +4843,7 @@ export default function SessionCard({
                 className="w-4 h-4"
                 alt=""
             />
-            <span className="hidden sm:inline">Book session</span>
+            <span className="hidden min-[1024px]:inline">Book session</span>
         </button>
     );
 
@@ -4894,7 +4894,7 @@ export default function SessionCard({
                 }}
                 className={`
                     relative
-                    border rounded-[42px] bg-white
+                    border rounded-[30px] sm:rounded-[36px] min-[1024px]:rounded-[42px] bg-white
                     transition-all duration-200
                     border-borderGray
                     hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
@@ -4905,8 +4905,8 @@ export default function SessionCard({
                     ${isOptionsOpen ? "z-[220]" : "z-0"}
                 `}
             >
-                <div className="flex flex-col min-[769px]:flex-row min-[769px]:items-center w-full gap-4 min-[769px]:gap-2 min-[1024px]:gap-3">
-                    <div className="flex min-w-0 items-stretch justify-between gap-4 min-[769px]:w-auto min-[769px]:max-w-[620px] min-[769px]:shrink-0">
+                <div className="flex flex-col min-[1024px]:flex-row min-[1024px]:items-center w-full gap-3 min-[1024px]:gap-3 xl:gap-4">
+                    <div className="flex w-full min-w-0 items-stretch justify-between gap-3 min-[1024px]:w-auto min-[1024px]:max-w-[600px] min-[1024px]:shrink-0">
                         <Link
                             to={`/profile/${displayedHostId}`}
                             onClick={(event) => event.stopPropagation()}
@@ -4919,7 +4919,7 @@ export default function SessionCard({
 
                         <div className="flex min-w-0 flex-1 flex-col gap-1">
                             <div className="flex flex-wrap items-center gap-3">
-                                <h3 className="flex min-w-0 items-center gap-2 text-[24px] md:text-[29px] font-bold leading-tight">
+                                <h3 className="flex min-w-0 items-center gap-2 text-[16px] min-[420px]:text-[18px] sm:text-[20px] min-[1024px]:text-[24px] xl:text-[29px] font-bold leading-tight">
                                     {session?.is_private && (
                                         <Lock
                                             size={22}
@@ -4941,7 +4941,7 @@ export default function SessionCard({
 
                             </div>
 
-                            <div className="flex flex-wrap items-center gap-4 text-[12px] text-[#606060]">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] sm:text-[12px] text-[#606060]">
                                 <div className={isInfinite ? "hidden min-[481px]:flex items-center gap-1" : "flex items-center gap-1"}>
                                     <img src="/icons/duration.svg" className="w-4 h-4 opacity-70" alt="" />
                                     <span>{isInfinite ? "Infinite" : `${session.duration_minutes} min`}</span>
@@ -4956,7 +4956,7 @@ export default function SessionCard({
 
                                 <div className="inline-flex items-center gap-3">
                                     <div
-                                        className="hidden min-[481px]:inline-flex items-center gap-1 px-3 py-1 rounded-full border"
+                                        className="inline-flex items-center gap-1 px-2 min-[481px]:px-3 py-1 rounded-full border"
                                         style={{
                                             backgroundColor: isHoveringCard ? t.color : t.bg,
                                             color: isHoveringCard ? "white" : t.color,
@@ -5007,7 +5007,7 @@ export default function SessionCard({
 
                     </div>
 
-                                        <div className="w-full min-w-0 px-1 min-[769px]:flex-1 min-[769px]:px-0">
+                                        <div className="w-full min-w-0 px-0 min-[1024px]:flex-1">
                         {cardStages.length > 0 ? (
                             <SessionStageBar
                                 stages={cardStages}
@@ -5016,7 +5016,6 @@ export default function SessionCard({
                                 progressStyle="tick"
                                 tickEveryMs={tickEveryMs}
                                 theme="light"
-                                showLegend
                             />
                         ) : (
                             <div
@@ -5026,7 +5025,7 @@ export default function SessionCard({
                         )}
                     </div>
 
-                    <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_48px] items-center gap-3 min-[769px]:flex min-[769px]:w-auto min-[769px]:shrink-0 min-[769px]:justify-end">
+                    <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_48px] items-center gap-3 min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end">
                         <button
                             type="button"
                             onClick={() => setIsLiveUsersModalOpen(true)}
@@ -5073,7 +5072,7 @@ export default function SessionCard({
                                 h-12 rounded-full px-6 text-[14px] font-semibold
                                 flex items-center justify-center
                                 transition-all duration-200 ease-in-out
-                                w-full min-[769px]:w-auto min-[769px]:flex-none min-[769px]:min-w-[150px] xl:min-w-[160px]
+                                w-full min-[1024px]:w-auto min-[1024px]:flex-none min-[1024px]:min-w-[150px] xl:min-w-[160px]
                                 text-white
                             "
                             style={{
