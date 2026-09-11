@@ -333,12 +333,12 @@ function buildMessageQuery(
     }
 
     if (!currentUserId || !hostUserId) {
-        return q.eq("id", "__never__");
+        return q.is("id", null);
     }
 
     if (currentUserId === hostUserId) {
         if (!selectedDirectPeerId) {
-            return q.eq("id", "__never__");
+            return q.is("id", null);
         }
 
         return q
