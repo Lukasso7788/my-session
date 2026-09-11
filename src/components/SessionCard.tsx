@@ -5051,7 +5051,12 @@ export default function SessionCard({
 
                     </div>
 
-                                        <div className="w-full min-w-0 px-0 min-[1024px]:flex-1">
+                                        <div
+                        className={`hidden min-[1024px]:block min-[1024px]:min-w-0 min-[1024px]:flex-1 min-[1024px]:px-0 transition-opacity duration-200 ${
+                            isHoveringCard ? "min-[1024px]:opacity-100" : "min-[1024px]:opacity-0"
+                        }`}
+                        aria-hidden={!isHoveringCard}
+                    >
                         {cardStages.length > 0 ? (
                             <SessionStageBar
                                 stages={cardStages}
