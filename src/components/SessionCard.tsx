@@ -4983,7 +4983,7 @@ export default function SessionCard({
                                         {resolvedType}
                                     </div>
 
-                                    {hasStarted ? peopleInline : null}
+                                    {peopleInline}
 
 
 
@@ -5034,7 +5034,7 @@ export default function SessionCard({
                         <button
                             type="button"
                             onClick={() => setIsLiveUsersModalOpen(true)}
-                            className={`${hasStarted ? "hidden xl:flex" : "hidden"} items-center gap-5 xl:mr-3 transition-opacity hover:opacity-70`}
+                            className="hidden xl:flex items-center gap-5 xl:mr-3 transition-opacity hover:opacity-70"
                             title="People in the session now"
                             aria-label={`${liveNowCount} of ${displayedMaxParticipants} slots occupied${isSessionFull ? ", session full" : ""}`}
                         >
