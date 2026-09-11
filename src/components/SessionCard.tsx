@@ -5051,7 +5051,7 @@ export default function SessionCard({
 
                     </div>
 
-                                        <div className="w-full min-w-0 px-0 min-[1024px]:flex-1 min-[1024px]:pr-[15%]">
+                                        <div className="w-full min-w-0 px-0 min-[1024px]:flex-1">
                         {cardStages.length > 0 ? (
                             <SessionStageBar
                                 stages={cardStages}
@@ -5688,7 +5688,7 @@ export default function SessionCard({
                                     }}
                                     className="h-11 w-full rounded-full border border-[#F65252] bg-[#FFF7F7] text-[13px] font-semibold text-[#D83F3F] transition hover:bg-[#FFEDED] flex items-center justify-center gap-2"
                                 >
-                                    <IconCancel size={17} />
+                                    <img src="/icons/cross-cancel.svg" className="h-5 w-5" alt="" aria-hidden="true" />
                                     Cancel my booking
                                 </button>
                             </div>
