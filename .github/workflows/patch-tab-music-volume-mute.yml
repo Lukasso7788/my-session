@@ -1,0 +1,100 @@
+name: Patch tab music volume and mute
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-tab-music-volume-mute.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Integrate shared tab music with room music controls
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/pages/RoomPageLiveKit.tsx')
+          text = path.read_text()
+
+          # Shared tab audio needs its own stable LiveKit track name so listeners can
+          # distinguish it from ordinary screen-share audio.
+          const_anchor = 'const PARTICIPANT_CONTROL_TOPIC = "mysession.participant-control.v1";\n'
+          const_new = const_anchor + 'const SHARED_TAB_MUSIC_TRACK_NAME = "shared_tab_music";\n'
+          if 'const SHARED_TAB_MUSIC_TRACK_NAME =' not in text:
+              if const_anchor not in text:
+                  raise SystemExit('participant control constant anchor not found')
+              text = text.replace(const_anchor, const_new, 1)
+
+          state_anchor = '''  const sharedTabMusicPublicationRef = useRef<LocalTrackPublication | null>(null);\n  const sharedTabMusicStreamRef = useRef<MediaStream | null>(null);\n  const [sharingTabMusic, setSharingTabMusic] = useState(false);\n'''
+          state_new = '''  const sharedTabMusicPublicationRef = useRef<LocalTrackPublication | null>(null);\n  const sharedTabMusicStreamRef = useRef<MediaStream | null>(null);\n  const sharedTabMusicAudioContextRef = useRef<AudioContext | null>(null);\n  const sharedTabMusicSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);\n  const sharedTabMusicRoomGainRef = useRef<GainNode | null>(null);\n  const sharedTabMusicMonitorGainRef = useRef<GainNode | null>(null);\n  const sharedTabMusicDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);\n  const [remoteSharedTabMusicActive, setRemoteSharedTabMusicActive] = useState(false);\n  const [sharingTabMusic, setSharingTabMusic] = useState(false);\n'''
+          if 'sharedTabMusicRoomGainRef' not in text:
+              if state_anchor not in text:
+                  raise SystemExit('shared tab music state anchor not found')
+              text = text.replace(state_anchor, state_new, 1)
+
+          stop_old = '''  const stopSharedTabMusic = async () => {\n    const activeRoom = roomRef.current;\n    const publication = sharedTabMusicPublicationRef.current;\n    const stream = sharedTabMusicStreamRef.current;\n\n    sharedTabMusicPublicationRef.current = null;\n    sharedTabMusicStreamRef.current = null;\n\n    try {\n      if (activeRoom && publication?.track) {\n        await activeRoom.localParticipant.unpublishTrack(publication.track, true);\n      } else {\n        publication?.track?.stop?.();\n      }\n    } catch (error) {\n      console.warn('[tab-music] unpublish failed', error);\n    }\n\n    try {\n      stream?.getTracks().forEach((track) => {\n        track.onended = null;\n        track.stop();\n      });\n    } catch {\n      // The browser may already have ended the capture session.\n    }\n\n    setSharingTabMusic(false);\n  };\n'''
+          stop_new = '''  const stopSharedTabMusic = async () => {\n    const activeRoom = roomRef.current;\n    const publication = sharedTabMusicPublicationRef.current;\n    const stream = sharedTabMusicStreamRef.current;\n    const audioContext = sharedTabMusicAudioContextRef.current;\n\n    sharedTabMusicPublicationRef.current = null;\n    sharedTabMusicStreamRef.current = null;\n    sharedTabMusicAudioContextRef.current = null;\n    sharedTabMusicSourceNodeRef.current = null;\n    sharedTabMusicRoomGainRef.current = null;\n    sharedTabMusicMonitorGainRef.current = null;\n    sharedTabMusicDestinationRef.current = null;\n\n    try {\n      if (activeRoom && publication?.track) {\n        await activeRoom.localParticipant.unpublishTrack(publication.track, true);\n      } else {\n        publication?.track?.stop?.();\n      }\n    } catch (error) {\n      console.warn('[tab-music] unpublish failed', error);\n    }\n\n    try {\n      stream?.getTracks().forEach((track) => {\n        track.onended = null;\n        track.stop();\n      });\n    } catch {\n      // The browser may already have ended the capture session.\n    }\n\n    try {\n      if (audioContext && audioContext.state !== 'closed') {\n        await audioContext.close();\n      }\n    } catch {\n      // Audio graph cleanup is best-effort during room teardown.\n    }\n\n    setSharingTabMusic(false);\n  };\n'''
+          if 'const audioContext = sharedTabMusicAudioContextRef.current;' not in text:
+              if stop_old not in text:
+                  raise SystemExit('stopSharedTabMusic block not found')
+              text = text.replace(stop_old, stop_new, 1)
+
+          capture_anchor = '''      const stream = await navigator.mediaDevices.getDisplayMedia({\n        video: { displaySurface: 'browser' },\n        audio: true,\n        preferCurrentTab: false,\n        selfBrowserSurface: 'exclude',\n        surfaceSwitching: 'exclude',\n      } as any);\n'''
+          capture_new = '''      const supportedDisplayConstraints =\n        navigator.mediaDevices.getSupportedConstraints?.() as\n          | (MediaTrackSupportedConstraints & { suppressLocalAudioPlayback?: boolean })\n          | undefined;\n      const canSuppressLocalTabPlayback =\n        supportedDisplayConstraints?.suppressLocalAudioPlayback === true;\n\n      const stream = await navigator.mediaDevices.getDisplayMedia({\n        video: { displaySurface: 'browser' },\n        audio: canSuppressLocalTabPlayback\n          ? { suppressLocalAudioPlayback: true }\n          : true,\n        preferCurrentTab: false,\n        selfBrowserSurface: 'exclude',\n        surfaceSwitching: 'exclude',\n      } as any);\n'''
+          if 'canSuppressLocalTabPlayback' not in text:
+              if capture_anchor not in text:
+                  raise SystemExit('getDisplayMedia block not found')
+              text = text.replace(capture_anchor, capture_new, 1)
+
+          publish_old = '''      // Keep the captured video track alive because Chromium ties tab-audio\n      // capture to the display-capture session, but never publish that video\n      // track to LiveKit. Participants receive audio only and no share tile.\n      sharedTabMusicStreamRef.current = stream;\n\n      const publication = (await activeRoom.localParticipant.publishTrack(audioTrack, {\n        source: Track.Source.ScreenShareAudio,\n        name: 'shared_tab_music',\n      } as any)) as LocalTrackPublication;\n\n      sharedTabMusicPublicationRef.current = publication;\n      setSharingTabMusic(true);\n'''
+          publish_new = '''      // Keep the captured display stream alive because Chromium ties tab-audio\n      // capture to that session, but publish only a processed audio track. The\n      // gain node makes the existing room-music volume slider affect shared tab\n      // music too, without ever creating a screen-share tile.\n      sharedTabMusicStreamRef.current = stream;\n\n      let publishableAudioTrack: MediaStreamTrack = audioTrack;\n      const AudioContextCtor =\n        window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;\n\n      if (AudioContextCtor) {\n        const audioContext = new AudioContextCtor();\n        const sourceNode = audioContext.createMediaStreamSource(new MediaStream([audioTrack]));\n        const roomGain = audioContext.createGain();\n        const destination = audioContext.createMediaStreamDestination();\n        const roomVolume = Math.max(0, Math.min(1, roomSoundscapeVolume / 100));\n\n        roomGain.gain.value = roomVolume;\n        sourceNode.connect(roomGain);\n        roomGain.connect(destination);\n\n        sharedTabMusicAudioContextRef.current = audioContext;\n        sharedTabMusicSourceNodeRef.current = sourceNode;\n        sharedTabMusicRoomGainRef.current = roomGain;\n        sharedTabMusicDestinationRef.current = destination;\n\n        // Chromium can suppress the original source-tab playback. When that is\n        // available, monitor the capture locally through a separate gain node so\n        // the host's Music mute/unmute control works the same way as it does for\n        // everybody else.\n        if (canSuppressLocalTabPlayback) {\n          const monitorGain = audioContext.createGain();\n          monitorGain.gain.value =\n            soundscapeMuted || soundscapeListeningMode === 'personal'\n              ? 0\n              : roomVolume;\n          sourceNode.connect(monitorGain);\n          monitorGain.connect(audioContext.destination);\n          sharedTabMusicMonitorGainRef.current = monitorGain;\n        }\n\n        try {\n          if (audioContext.state === 'suspended') await audioContext.resume();\n        } catch {\n          // The user gesture that opened display capture normally unlocks audio.\n        }\n\n        publishableAudioTrack = destination.stream.getAudioTracks()[0] || audioTrack;\n      }\n\n      const publication = (await activeRoom.localParticipant.publishTrack(publishableAudioTrack, {\n        source: Track.Source.ScreenShareAudio,\n        name: SHARED_TAB_MUSIC_TRACK_NAME,\n      } as any)) as LocalTrackPublication;\n\n      sharedTabMusicPublicationRef.current = publication;\n      setSharingTabMusic(true);\n'''
+          if 'let publishableAudioTrack: MediaStreamTrack = audioTrack;' not in text:
+              if publish_old not in text:
+                  raise SystemExit('shared tab publish block not found')
+              text = text.replace(publish_old, publish_new, 1)
+
+          disconnect_old = '''  useEffect(() => {\n    if (connected) return;\n    const stream = sharedTabMusicStreamRef.current;\n    sharedTabMusicPublicationRef.current = null;\n    sharedTabMusicStreamRef.current = null;\n    stream?.getTracks().forEach((track) => track.stop());\n    setSharingTabMusic(false);\n    setTabMusicShareBusy(false);\n    setTabMusicShareError(null);\n  }, [connected]);\n\n  useEffect(\n    () => () => {\n      sharedTabMusicStreamRef.current?.getTracks().forEach((track) => track.stop());\n      sharedTabMusicStreamRef.current = null;\n      sharedTabMusicPublicationRef.current = null;\n    },\n    [],\n  );\n'''
+          disconnect_new = '''  useEffect(() => {\n    if (connected) return;\n    const stream = sharedTabMusicStreamRef.current;\n    const audioContext = sharedTabMusicAudioContextRef.current;\n    sharedTabMusicPublicationRef.current = null;\n    sharedTabMusicStreamRef.current = null;\n    sharedTabMusicAudioContextRef.current = null;\n    sharedTabMusicSourceNodeRef.current = null;\n    sharedTabMusicRoomGainRef.current = null;\n    sharedTabMusicMonitorGainRef.current = null;\n    sharedTabMusicDestinationRef.current = null;\n    stream?.getTracks().forEach((track) => track.stop());\n    if (audioContext && audioContext.state !== 'closed') {\n      void audioContext.close().catch(() => { });\n    }\n    setRemoteSharedTabMusicActive(false);\n    setSharingTabMusic(false);\n    setTabMusicShareBusy(false);\n    setTabMusicShareError(null);\n  }, [connected]);\n\n  useEffect(\n    () => () => {\n      sharedTabMusicStreamRef.current?.getTracks().forEach((track) => track.stop());\n      sharedTabMusicStreamRef.current = null;\n      sharedTabMusicPublicationRef.current = null;\n      const audioContext = sharedTabMusicAudioContextRef.current;\n      sharedTabMusicAudioContextRef.current = null;\n      sharedTabMusicSourceNodeRef.current = null;\n      sharedTabMusicRoomGainRef.current = null;\n      sharedTabMusicMonitorGainRef.current = null;\n      sharedTabMusicDestinationRef.current = null;\n      if (audioContext && audioContext.state !== 'closed') {\n        void audioContext.close().catch(() => { });\n      }\n    },\n    [],\n  );\n\n  useEffect(() => {\n    const roomVolume = Math.max(0, Math.min(1, roomSoundscapeVolume / 100));\n    const roomGain = sharedTabMusicRoomGainRef.current;\n    if (roomGain) {\n      try {\n        roomGain.gain.value = roomVolume;\n      } catch { }\n    }\n\n    const monitorGain = sharedTabMusicMonitorGainRef.current;\n    if (monitorGain) {\n      try {\n        monitorGain.gain.value =\n          soundscapeMuted || soundscapeListeningMode === 'personal'\n            ? 0\n            : roomVolume;\n      } catch { }\n    }\n  }, [roomSoundscapeVolume, soundscapeListeningMode, soundscapeMuted]);\n\n  useEffect(() => {\n    const room = roomRef.current;\n    if (!connected || !room) {\n      setRemoteSharedTabMusicActive(false);\n      return;\n    }\n\n    const syncSharedTabMusic = () => {\n      let active = false;\n      const locallyMuted =\n        soundscapeMuted || soundscapeListeningMode === 'personal';\n\n      room.remoteParticipants.forEach((participant) => {\n        participant.audioTrackPublications.forEach((publication) => {\n          const trackName = String(\n            (publication as any)?.trackName || (publication as any)?.name || '',\n          );\n          if (\n            publication.source !== Track.Source.ScreenShareAudio ||\n            trackName !== SHARED_TAB_MUSIC_TRACK_NAME\n          ) {\n            return;\n          }\n          if (!publication.isSubscribed || !publication.track) return;\n\n          active = true;\n          try {\n            (publication.track as RemoteAudioTrack).setVolume(locallyMuted ? 0 : 1);\n          } catch (error) {\n            console.warn('[tab-music] listener volume update failed', error);\n          }\n        });\n      });\n\n      setRemoteSharedTabMusicActive(active);\n    };\n\n    syncSharedTabMusic();\n    const onTrackChange = () => syncSharedTabMusic();\n    room.on(RoomEvent.ParticipantConnected, onTrackChange);\n    room.on(RoomEvent.ParticipantDisconnected, onTrackChange);\n    room.on(RoomEvent.TrackSubscribed, onTrackChange);\n    room.on(RoomEvent.TrackUnsubscribed, onTrackChange);\n    room.on(RoomEvent.TrackMuted, onTrackChange);\n    room.on(RoomEvent.TrackUnmuted, onTrackChange);\n    room.on(RoomEvent.Reconnected, onTrackChange);\n\n    return () => {\n      room.off(RoomEvent.ParticipantConnected, onTrackChange);\n      room.off(RoomEvent.ParticipantDisconnected, onTrackChange);\n      room.off(RoomEvent.TrackSubscribed, onTrackChange);\n      room.off(RoomEvent.TrackUnsubscribed, onTrackChange);\n      room.off(RoomEvent.TrackMuted, onTrackChange);\n      room.off(RoomEvent.TrackUnmuted, onTrackChange);\n      room.off(RoomEvent.Reconnected, onTrackChange);\n    };\n  }, [connected, roomState, soundscapeListeningMode, soundscapeMuted]);\n'''
+          if 'const syncSharedTabMusic = () =>' not in text:
+              if disconnect_old not in text:
+                  raise SystemExit('shared tab cleanup effects anchor not found')
+              text = text.replace(disconnect_old, disconnect_new, 1)
+
+          bottom_old = '''          soundscapeActive={\n            soundscapeListeningMode === "room"\n              ? activeSoundscapeId !== null && soundscapePlaying\n              : personalSoundscapeId !== null && personalSoundscapePlaying\n          }\n'''
+          bottom_new = '''          soundscapeActive={\n            soundscapeListeningMode === "room"\n              ? (activeSoundscapeId !== null && soundscapePlaying) ||\n                sharingTabMusic ||\n                remoteSharedTabMusicActive\n              : personalSoundscapeId !== null && personalSoundscapePlaying\n          }\n'''
+          if 'remoteSharedTabMusicActive\n              : personalSoundscapeId' not in text:
+              if bottom_old not in text:
+                  raise SystemExit('bottom music active anchor not found')
+              text = text.replace(bottom_old, bottom_new, 1)
+
+          path.write_text(text)
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - name: Production Vite build
+        run: npx vite build
+      - name: Check diff
+        run: git diff --check
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/pages/RoomPageLiveKit.tsx
+          git commit -m 'Sync shared tab music with volume and mute controls' || exit 0
+          git push origin main
