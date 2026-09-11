@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
+  ExternalLink,
   Pause,
   Play,
   SkipBack,
@@ -114,6 +115,22 @@ export function RoomSoundscapePanel({
     const start = selectedIndex >= 0 ? selectedIndex : offset > 0 ? -1 : 0;
     const nextIndex = (start + offset + count) % count;
     onSelect(ROOM_SOUNDSCAPE_OPTIONS[nextIndex].id);
+  };
+
+  const openStandalonePlayer = () => {
+    if (activeId === "custom") return;
+    const trackId = activeId || ROOM_SOUNDSCAPE_OPTIONS[0].id;
+    const params = new URLSearchParams({
+      track: trackId,
+      position: String(Math.max(0, shownPosition)),
+      volume: String(Math.max(0, Math.min(100, volume))),
+      autoplay: playing ? "1" : "0",
+    });
+    window.open(
+      `/music-player?${params.toString()}`,
+      "mysession-music-share",
+      "noopener,noreferrer",
+    );
   };
 
   return (
@@ -276,6 +293,20 @@ export function RoomSoundscapePanel({
             )}
             {personalMuted ? "Unmute for me" : "Mute for me"}
           </button>
+
+          <button
+            type="button"
+            disabled={activeId === "custom"}
+            onClick={openStandalonePlayer}
+            className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-[#D8D5D5] bg-white text-[10px] font-semibold text-[#2F2F2F] transition hover:bg-[#F3F1F1] disabled:cursor-not-allowed disabled:opacity-35"
+            title={activeId === "custom" ? "Uploaded tracks cannot be opened in the standalone tab yet" : "Open a standalone music tab for browser tab-audio sharing"}
+          >
+            <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.8} />
+            Open standalone share tab
+          </button>
+          <p className="mt-1.5 px-1 text-[8px] leading-4 text-[#2F2F2F]/40">
+            Share that tab from the room and enable browser tab audio.
+          </p>
         </section>
 
         <section className="mx-2 mb-2 rounded-[18px] bg-white px-2 pb-3 pt-3">

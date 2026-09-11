@@ -16015,13 +16015,13 @@ export function RoomPageLiveKit({
           }
 
           await lp.setScreenShareEnabled(true, {
-            audio: false,
+            audio: true,
             video: true,
           } as any);
         }
       } else {
         await lp.setScreenShareEnabled(true, {
-          audio: false,
+          audio: true,
           video: true,
         } as any);
       }
