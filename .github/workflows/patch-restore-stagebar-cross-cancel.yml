@@ -1,0 +1,62 @@
+name: Restore stage bar length and cross cancel icon
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-restore-stagebar-cross-cancel.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Patch SessionCard
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/SessionCard.tsx')
+          text = path.read_text()
+
+          old_timeline = 'className="w-full min-w-0 px-0 min-[1024px]:flex-1 min-[1024px]:pr-[15%]"'
+          new_timeline = 'className="w-full min-w-0 px-0 min-[1024px]:flex-1"'
+
+          old_icon = '<IconCancel size={17} />'
+          new_icon = '<img src="/icons/cross-cancel.svg" className="h-5 w-5" alt="" aria-hidden="true" />'
+
+          if old_timeline not in text:
+              raise SystemExit('shortened session stage bar wrapper not found')
+          if old_icon not in text:
+              raise SystemExit('drawer IconCancel usage not found')
+
+          text = text.replace(old_timeline, new_timeline, 1)
+          text = text.replace(old_icon, new_icon, 1)
+          path.write_text(text)
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - name: Production build
+        run: npx vite build
+      - name: Check diff
+        run: git diff --check
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/SessionCard.tsx
+          git commit -m 'Restore session stage bar length and use cross cancel icon' || exit 0
+          git push origin main
