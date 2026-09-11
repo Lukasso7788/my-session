@@ -1,0 +1,56 @@
+name: Patch session card hover timeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-session-card-hover-timeline.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Show session timeline only on desktop card hover
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/SessionCard.tsx')
+          text = path.read_text()
+
+          old = '''                    <div className="w-full min-w-0 px-0 min-[1024px]:flex-1">\n                        {cardStages.length > 0 ? (\n'''
+          new = '''                    <div\n                        className={`hidden min-[1024px]:block min-[1024px]:min-w-0 min-[1024px]:flex-1 min-[1024px]:px-0 transition-opacity duration-200 ${\n                            isHoveringCard ? "min-[1024px]:opacity-100" : "min-[1024px]:opacity-0"\n                        }`}\n                        aria-hidden={!isHoveringCard}\n                    >\n                        {cardStages.length > 0 ? (\n'''
+
+          if old not in text:
+              raise SystemExit('timeline wrapper anchor not found')
+
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - name: Production Vite build
+        run: npx vite build
+      - name: Check diff
+        run: git diff --check
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/SessionCard.tsx
+          git commit -m 'Show session timeline on card hover' || exit 0
+          git push origin main
