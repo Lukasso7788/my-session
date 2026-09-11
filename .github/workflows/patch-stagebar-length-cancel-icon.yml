@@ -26,62 +26,30 @@ jobs:
           path = Path('src/components/SessionCard.tsx')
           text = path.read_text()
 
-          old_timeline = '''                                        <div className="w-full min-w-0 px-0 min-[1024px]:flex-1">
-                        {cardStages.length > 0 ? (
-                            <SessionStageBar
-                                stages={cardStages}
-                                startTime={timelineStartTime}
-                                cycleSeconds={cycleSeconds}
-                                progressStyle="tick"
-                                tickEveryMs={tickEveryMs}
-                                theme="light"
-                            />
-                        ) : (
-                            <div
-                                className="h-[10px] w-full rounded-full bg-[#E7E7E7]"
-                                aria-label="Session timeline"
-                            />
-                        )}
-                    </div>'''
+          old_class = 'className="w-full min-w-0 px-0 min-[1024px]:flex-1"'
+          new_class = 'className="w-full min-w-0 px-0 min-[1024px]:flex-1 min-[1024px]:pr-[15%]"'
 
-          new_timeline = '''                                        <div className="w-full min-w-0 px-0 min-[1024px]:flex-1">
-                        <div className="w-full min-[1024px]:w-[85%]">
-                            {cardStages.length > 0 ? (
-                                <SessionStageBar
-                                    stages={cardStages}
-                                    startTime={timelineStartTime}
-                                    cycleSeconds={cycleSeconds}
-                                    progressStyle="tick"
-                                    tickEveryMs={tickEveryMs}
-                                    theme="light"
-                                />
-                            ) : (
-                                <div
-                                    className="h-[10px] w-full rounded-full bg-[#E7E7E7]"
-                                    aria-label="Session timeline"
-                                />
-                            )}
-                        </div>
-                    </div>'''
+          old_cancel_class = 'className="h-11 w-full rounded-full border border-[#F65252] bg-[#FFF7F7] text-[13px] font-semibold text-[#D83F3F] transition hover:bg-[#FFEDED]"'
+          new_cancel_class = 'className="h-11 w-full rounded-full border border-[#F65252] bg-[#FFF7F7] text-[13px] font-semibold text-[#D83F3F] transition hover:bg-[#FFEDED] flex items-center justify-center gap-2"'
 
-          old_cancel = '''                                    className="h-11 w-full rounded-full border border-[#F65252] bg-[#FFF7F7] text-[13px] font-semibold text-[#D83F3F] transition hover:bg-[#FFEDED]"
-                                >
-                                    Cancel my booking
-                                </button>'''
+          old_cancel_text = '>\n                                    Cancel my booking\n                                </button>'
+          new_cancel_text = '>\n                                    <IconCancel size={17} />\n                                    Cancel my booking\n                                </button>'
 
-          new_cancel = '''                                    className="h-11 w-full rounded-full border border-[#F65252] bg-[#FFF7F7] text-[13px] font-semibold text-[#D83F3F] transition hover:bg-[#FFEDED] flex items-center justify-center gap-2"
-                                >
-                                    <IconCancel size={17} />
-                                    Cancel my booking
-                                </button>'''
+          if old_class not in text:
+              raise SystemExit('session card timeline wrapper class not found')
+          if old_cancel_class not in text:
+              raise SystemExit('drawer cancel booking class not found')
 
-          if old_timeline not in text:
-              raise SystemExit('session card timeline block not found')
-          if old_cancel not in text:
-              raise SystemExit('drawer cancel booking button not found')
+          cancel_pos = text.find(old_cancel_class)
+          text = text.replace(old_class, new_class, 1)
+          text = text.replace(old_cancel_class, new_cancel_class, 1)
 
-          text = text.replace(old_timeline, new_timeline, 1)
-          text = text.replace(old_cancel, new_cancel, 1)
+          tail = text[cancel_pos:cancel_pos + 700]
+          if old_cancel_text not in tail:
+              raise SystemExit('drawer cancel booking text block not found')
+          tail = tail.replace(old_cancel_text, new_cancel_text, 1)
+          text = text[:cancel_pos] + tail + text[cancel_pos + 700:]
+
           path.write_text(text)
           PY
 
