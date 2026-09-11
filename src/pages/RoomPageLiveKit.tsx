@@ -123,6 +123,7 @@ import {
 type FxMode = "off" | "blur" | "bg";
 
 const PARTICIPANT_CONTROL_TOPIC = "mysession.participant-control.v1";
+const SHARED_TAB_MUSIC_TRACK_NAME = "shared_tab_music";
 
 type VoiceUiCommand =
   | "camera_on"
@@ -8407,6 +8408,12 @@ export function RoomPageLiveKit({
   const soundscapeVolumePublishTimerRef = useRef<number | null>(null);
   const sharedTabMusicPublicationRef = useRef<LocalTrackPublication | null>(null);
   const sharedTabMusicStreamRef = useRef<MediaStream | null>(null);
+  const sharedTabMusicAudioContextRef = useRef<AudioContext | null>(null);
+  const sharedTabMusicSourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const sharedTabMusicRoomGainRef = useRef<GainNode | null>(null);
+  const sharedTabMusicMonitorGainRef = useRef<GainNode | null>(null);
+  const sharedTabMusicDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const [remoteSharedTabMusicActive, setRemoteSharedTabMusicActive] = useState(false);
   const [sharingTabMusic, setSharingTabMusic] = useState(false);
   const [tabMusicShareBusy, setTabMusicShareBusy] = useState(false);
   const [tabMusicShareError, setTabMusicShareError] = useState<string | null>(null);
@@ -10535,9 +10542,15 @@ export function RoomPageLiveKit({
     const activeRoom = roomRef.current;
     const publication = sharedTabMusicPublicationRef.current;
     const stream = sharedTabMusicStreamRef.current;
+    const audioContext = sharedTabMusicAudioContextRef.current;
 
     sharedTabMusicPublicationRef.current = null;
     sharedTabMusicStreamRef.current = null;
+    sharedTabMusicAudioContextRef.current = null;
+    sharedTabMusicSourceNodeRef.current = null;
+    sharedTabMusicRoomGainRef.current = null;
+    sharedTabMusicMonitorGainRef.current = null;
+    sharedTabMusicDestinationRef.current = null;
 
     try {
       if (activeRoom && publication?.track) {
@@ -10556,6 +10569,14 @@ export function RoomPageLiveKit({
       });
     } catch {
       // The browser may already have ended the capture session.
+    }
+
+    try {
+      if (audioContext && audioContext.state !== 'closed') {
+        await audioContext.close();
+      }
+    } catch {
+      // Audio graph cleanup is best-effort during room teardown.
     }
 
     setSharingTabMusic(false);
@@ -10579,9 +10600,18 @@ export function RoomPageLiveKit({
         await stopSharedTabMusic();
       }
 
+      const supportedDisplayConstraints =
+        navigator.mediaDevices.getSupportedConstraints?.() as
+          | (MediaTrackSupportedConstraints & { suppressLocalAudioPlayback?: boolean })
+          | undefined;
+      const canSuppressLocalTabPlayback =
+        supportedDisplayConstraints?.suppressLocalAudioPlayback === true;
+
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { displaySurface: 'browser' },
-        audio: true,
+        audio: canSuppressLocalTabPlayback
+          ? { suppressLocalAudioPlayback: true }
+          : true,
         preferCurrentTab: false,
         selfBrowserSurface: 'exclude',
         surfaceSwitching: 'exclude',
@@ -10593,14 +10623,59 @@ export function RoomPageLiveKit({
         throw new Error('Choose a browser tab and enable Share tab audio.');
       }
 
-      // Keep the captured video track alive because Chromium ties tab-audio
-      // capture to the display-capture session, but never publish that video
-      // track to LiveKit. Participants receive audio only and no share tile.
+      // Keep the captured display stream alive because Chromium ties tab-audio
+      // capture to that session, but publish only a processed audio track. The
+      // gain node makes the existing room-music volume slider affect shared tab
+      // music too, without ever creating a screen-share tile.
       sharedTabMusicStreamRef.current = stream;
 
-      const publication = (await activeRoom.localParticipant.publishTrack(audioTrack, {
+      let publishableAudioTrack: MediaStreamTrack = audioTrack;
+      const AudioContextCtor =
+        window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+
+      if (AudioContextCtor) {
+        const audioContext = new AudioContextCtor();
+        const sourceNode = audioContext.createMediaStreamSource(new MediaStream([audioTrack]));
+        const roomGain = audioContext.createGain();
+        const destination = audioContext.createMediaStreamDestination();
+        const roomVolume = Math.max(0, Math.min(1, roomSoundscapeVolume / 100));
+
+        roomGain.gain.value = roomVolume;
+        sourceNode.connect(roomGain);
+        roomGain.connect(destination);
+
+        sharedTabMusicAudioContextRef.current = audioContext;
+        sharedTabMusicSourceNodeRef.current = sourceNode;
+        sharedTabMusicRoomGainRef.current = roomGain;
+        sharedTabMusicDestinationRef.current = destination;
+
+        // Chromium can suppress the original source-tab playback. When that is
+        // available, monitor the capture locally through a separate gain node so
+        // the host's Music mute/unmute control works the same way as it does for
+        // everybody else.
+        if (canSuppressLocalTabPlayback) {
+          const monitorGain = audioContext.createGain();
+          monitorGain.gain.value =
+            soundscapeMuted || soundscapeListeningMode === 'personal'
+              ? 0
+              : roomVolume;
+          sourceNode.connect(monitorGain);
+          monitorGain.connect(audioContext.destination);
+          sharedTabMusicMonitorGainRef.current = monitorGain;
+        }
+
+        try {
+          if (audioContext.state === 'suspended') await audioContext.resume();
+        } catch {
+          // The user gesture that opened display capture normally unlocks audio.
+        }
+
+        publishableAudioTrack = destination.stream.getAudioTracks()[0] || audioTrack;
+      }
+
+      const publication = (await activeRoom.localParticipant.publishTrack(publishableAudioTrack, {
         source: Track.Source.ScreenShareAudio,
-        name: 'shared_tab_music',
+        name: SHARED_TAB_MUSIC_TRACK_NAME,
       } as any)) as LocalTrackPublication;
 
       sharedTabMusicPublicationRef.current = publication;
@@ -10633,9 +10708,19 @@ export function RoomPageLiveKit({
   useEffect(() => {
     if (connected) return;
     const stream = sharedTabMusicStreamRef.current;
+    const audioContext = sharedTabMusicAudioContextRef.current;
     sharedTabMusicPublicationRef.current = null;
     sharedTabMusicStreamRef.current = null;
+    sharedTabMusicAudioContextRef.current = null;
+    sharedTabMusicSourceNodeRef.current = null;
+    sharedTabMusicRoomGainRef.current = null;
+    sharedTabMusicMonitorGainRef.current = null;
+    sharedTabMusicDestinationRef.current = null;
     stream?.getTracks().forEach((track) => track.stop());
+    if (audioContext && audioContext.state !== 'closed') {
+      void audioContext.close().catch(() => { });
+    }
+    setRemoteSharedTabMusicActive(false);
     setSharingTabMusic(false);
     setTabMusicShareBusy(false);
     setTabMusicShareError(null);
@@ -10646,9 +10731,96 @@ export function RoomPageLiveKit({
       sharedTabMusicStreamRef.current?.getTracks().forEach((track) => track.stop());
       sharedTabMusicStreamRef.current = null;
       sharedTabMusicPublicationRef.current = null;
+      const audioContext = sharedTabMusicAudioContextRef.current;
+      sharedTabMusicAudioContextRef.current = null;
+      sharedTabMusicSourceNodeRef.current = null;
+      sharedTabMusicRoomGainRef.current = null;
+      sharedTabMusicMonitorGainRef.current = null;
+      sharedTabMusicDestinationRef.current = null;
+      if (audioContext && audioContext.state !== 'closed') {
+        void audioContext.close().catch(() => { });
+      }
     },
     [],
   );
+
+  useEffect(() => {
+    const roomVolume = Math.max(0, Math.min(1, roomSoundscapeVolume / 100));
+    const roomGain = sharedTabMusicRoomGainRef.current;
+    if (roomGain) {
+      try {
+        roomGain.gain.value = roomVolume;
+      } catch { }
+    }
+
+    const monitorGain = sharedTabMusicMonitorGainRef.current;
+    if (monitorGain) {
+      try {
+        monitorGain.gain.value =
+          soundscapeMuted || soundscapeListeningMode === 'personal'
+            ? 0
+            : roomVolume;
+      } catch { }
+    }
+  }, [roomSoundscapeVolume, soundscapeListeningMode, soundscapeMuted]);
+
+  useEffect(() => {
+    const room = roomRef.current;
+    if (!connected || !room) {
+      setRemoteSharedTabMusicActive(false);
+      return;
+    }
+
+    const syncSharedTabMusic = () => {
+      let active = false;
+      const locallyMuted =
+        soundscapeMuted || soundscapeListeningMode === 'personal';
+
+      room.remoteParticipants.forEach((participant) => {
+        participant.audioTrackPublications.forEach((publication) => {
+          const trackName = String(
+            (publication as any)?.trackName || (publication as any)?.name || '',
+          );
+          if (
+            publication.source !== Track.Source.ScreenShareAudio ||
+            trackName !== SHARED_TAB_MUSIC_TRACK_NAME
+          ) {
+            return;
+          }
+          if (!publication.isSubscribed || !publication.track) return;
+
+          active = true;
+          try {
+            (publication.track as RemoteAudioTrack).setVolume(locallyMuted ? 0 : 1);
+          } catch (error) {
+            console.warn('[tab-music] listener volume update failed', error);
+          }
+        });
+      });
+
+      setRemoteSharedTabMusicActive(active);
+    };
+
+    syncSharedTabMusic();
+    const onTrackChange = () => syncSharedTabMusic();
+    room.on(RoomEvent.ParticipantConnected, onTrackChange);
+    room.on(RoomEvent.ParticipantDisconnected, onTrackChange);
+    room.on(RoomEvent.TrackSubscribed, onTrackChange);
+    room.on(RoomEvent.TrackUnsubscribed, onTrackChange);
+    room.on(RoomEvent.TrackMuted, onTrackChange);
+    room.on(RoomEvent.TrackUnmuted, onTrackChange);
+    room.on(RoomEvent.Reconnected, onTrackChange);
+
+    return () => {
+      room.off(RoomEvent.ParticipantConnected, onTrackChange);
+      room.off(RoomEvent.ParticipantDisconnected, onTrackChange);
+      room.off(RoomEvent.TrackSubscribed, onTrackChange);
+      room.off(RoomEvent.TrackUnsubscribed, onTrackChange);
+      room.off(RoomEvent.TrackMuted, onTrackChange);
+      room.off(RoomEvent.TrackUnmuted, onTrackChange);
+      room.off(RoomEvent.Reconnected, onTrackChange);
+    };
+  }, [connected, roomState, soundscapeListeningMode, soundscapeMuted]);
 
   const publishSoundtrackPacket = async (packet: RoomSoundtrackPacket) => {
     const room = roomRef.current;
@@ -20831,7 +21003,9 @@ export function RoomPageLiveKit({
           }}
           soundscapeActive={
             soundscapeListeningMode === "room"
-              ? activeSoundscapeId !== null && soundscapePlaying
+              ? (activeSoundscapeId !== null && soundscapePlaying) ||
+                sharingTabMusic ||
+                remoteSharedTabMusicActive
               : personalSoundscapeId !== null && personalSoundscapePlaying
           }
           soundscapeMuted={
