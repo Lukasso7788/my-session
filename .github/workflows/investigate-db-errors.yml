@@ -1,0 +1,29 @@
+name: Investigate DB errors
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/investigate-db-errors.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Find DB error sources
+        shell: bash
+        run: |
+          echo '=== __never__ occurrences ==='
+          grep -RIn --exclude-dir=node_modules --exclude-dir=.git '__never__' . || true
+          echo '=== room_live_count_leases occurrences ==='
+          grep -RIn --exclude-dir=node_modules --exclude-dir=.git 'room_live_count_leases' . || true
+          echo '=== cleanup_empty_free_flow_rooms occurrences ==='
+          grep -RIn --exclude-dir=node_modules --exclude-dir=.git 'cleanup_empty_free_flow_rooms' . || true
+          echo '=== suspicious never sentinels ==='
+          grep -RInE --exclude-dir=node_modules --exclude-dir=.git "(['\"]_*never_*['\"]|never[_-]?id|sentinel)" src supabase api 2>/dev/null || true
