@@ -186,7 +186,12 @@ function render(page) {
           dateModified: page.updatedAt,
         };
   html = html.replace("</head>", `  <script type="application/ld+json">${safeJson(jsonLd)}</script>\n</head>`);
-  return html.replace('<div id="root"></div>', `<div id="root">${renderVisibleContent(page)}</div>`);
+  const prerenderContent = renderVisibleContent(page);
+  const clearPrerenderBeforePaint = '<script id="seo-prerender-clear">(function(){var root=document.getElementById("root");if(root)root.innerHTML="";})();</script>';
+  return html.replace(
+    '<div id="root"></div>',
+    `<div id="root">${prerenderContent}</div>${clearPrerenderBeforePaint}`,
+  );
 }
 
 for (const page of prerenderPages) {
