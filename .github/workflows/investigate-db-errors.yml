@@ -1,4 +1,4 @@
-name: Investigate DB errors
+name: Repair DB error sources
 
 on:
   push:
@@ -7,25 +7,218 @@ on:
       - '.github/workflows/investigate-db-errors.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect:
+  repair:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
-      - name: Find DB error sources
+
+      - name: Remove invalid UUID sentinel from chat queries
         shell: bash
         run: |
-          echo '=== __never__ occurrences ==='
-          grep -RIn --exclude-dir=node_modules --exclude-dir=.git '__never__' . || true
-          echo '=== room_live_count_leases occurrences ==='
-          grep -RIn --exclude-dir=node_modules --exclude-dir=.git 'room_live_count_leases' . || true
-          echo '=== get_live_counts occurrences ==='
-          grep -RIn --exclude-dir=node_modules --exclude-dir=.git 'get_live_counts' supabase src api 2>/dev/null || true
-          echo '=== session_attendance SQL occurrences ==='
-          grep -RIn --exclude-dir=node_modules --exclude-dir=.git 'session_attendance' supabase/migrations 2>/dev/null | head -n 250 || true
-          echo '=== infinite_room_host_leases occurrences ==='
-          grep -RIn --exclude-dir=node_modules --exclude-dir=.git 'infinite_room_host_leases' supabase src api 2>/dev/null || true
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/ChatPanel.tsx')
+          text = path.read_text()
+          old = 'return q.eq("id", "__never__");'
+          count = text.count(old)
+          if count != 2:
+              raise SystemExit(f'expected exactly 2 __never__ chat sentinels, found {count}')
+          text = text.replace(old, 'return q.is("id", null);')
+          path.write_text(text)
+          PY
+
+      - name: Add Free Flow presence repair migration
+        shell: bash
+        run: |
+          cat > supabase/migrations/20260912000000_repair_free_flow_presence_sources.sql <<'SQL'
+          -- Repair Free Flow maintenance after the legacy room_live_count_leases
+          -- relation was removed. Live room presence now comes from
+          -- session_attendance, using the same 90-second heartbeat window as
+          -- other room-presence features.
+
+          create or replace function public.validate_free_flow_infinite_room()
+          returns trigger
+          language plpgsql
+          security definer
+          set search_path = public, auth
+          as $$
+          declare
+            v_user_id uuid := auth.uid();
+            v_attended bigint := 0;
+            v_hosted bigint := 0;
+            v_blocks integer := 0;
+            v_has_available_free_flow boolean := false;
+          begin
+            if coalesce(new.schedule ->> 'variant', '') <> 'free_flow'
+               and coalesce((new.schedule ->> 'free_flow')::boolean, false) = false then
+              return new;
+            end if;
+
+            if tg_op = 'INSERT' and v_user_id is not null then
+              v_attended := public.calculate_lifetime_session_count(v_user_id);
+              v_hosted := public.calculate_lifetime_hosted_session_count(v_user_id);
+
+              if v_attended < 50 or v_hosted < 5 then
+                raise exception 'free_flow_requires_50_attended_and_5_hosted_sessions'
+                  using errcode = '42501';
+              end if;
+
+              select exists (
+                select 1
+                from public.sessions s
+                where coalesce(s.status, 'active') not in ('cancelled', 'deleted')
+                  and coalesce(s.is_hidden, false) = false
+                  and coalesce(s.is_private, false) = false
+                  and (
+                    coalesce(s.schedule ->> 'variant', '') = 'free_flow'
+                    or coalesce((s.schedule ->> 'free_flow')::boolean, false) = true
+                  )
+                  and (
+                    select count(distinct a.user_id)
+                    from public.session_attendance a
+                    where a.session_id = s.id
+                      and a.left_at is null
+                      and a.last_seen_at >= now() - interval '90 seconds'
+                  ) < greatest(1, coalesce(s.max_participants, 8))
+              ) into v_has_available_free_flow;
+
+              if v_has_available_free_flow then
+                raise exception 'an_available_free_flow_room_already_exists'
+                  using errcode = '23505';
+              end if;
+            end if;
+
+            v_blocks := coalesce(
+              jsonb_array_length(
+                case
+                  when jsonb_typeof(new.schedule -> 'blocks') = 'array' then new.schedule -> 'blocks'
+                  when jsonb_typeof(new.schedule -> 'phases') = 'array' then new.schedule -> 'phases'
+                  when jsonb_typeof(new.schedule -> 'timer' -> 'phases') = 'array' then new.schedule -> 'timer' -> 'phases'
+                  else '[]'::jsonb
+                end
+              ),
+              0
+            );
+
+            if v_blocks > 9 then
+              raise exception 'free_flow_timeline_is_limited_to_9_blocks'
+                using errcode = '22023';
+            end if;
+
+            new.session_format_type := 'infinite';
+            new.format := 'infinite';
+            new.schedule := jsonb_set(new.schedule, '{kind}', '"infinite_room"', true);
+            new.schedule := jsonb_set(new.schedule, '{max_timeline_blocks}', '9', true);
+            return new;
+          end;
+          $$;
+
+          create or replace function public.cleanup_empty_free_flow_rooms()
+          returns integer
+          language plpgsql
+          security definer
+          set search_path = public
+          as $$
+          declare
+            v_cleaned integer := 0;
+          begin
+            update public.sessions s
+            set
+              status = 'cancelled',
+              is_hidden = true,
+              schedule = jsonb_set(coalesce(s.schedule, '{}'::jsonb), '{auto_closed}', 'true', true)
+            where coalesce(s.status, 'active') not in ('cancelled', 'deleted')
+              and coalesce(s.is_hidden, false) = false
+              and greatest(
+                coalesce(s.created_at, now()),
+                coalesce(
+                  (
+                    select max(
+                      greatest(
+                        coalesce(a0.joined_at, '-infinity'::timestamptz),
+                        coalesce(a0.last_seen_at, '-infinity'::timestamptz),
+                        coalesce(a0.left_at, '-infinity'::timestamptz)
+                      )
+                    )
+                    from public.session_attendance a0
+                    where a0.session_id = s.id
+                  ),
+                  s.created_at
+                ),
+                coalesce(
+                  (
+                    select max(h0.expires_at)
+                    from public.infinite_room_host_leases h0
+                    where h0.session_id = s.id
+                  ),
+                  s.created_at
+                )
+              ) <= now() - interval '10 minutes'
+              and (
+                coalesce(s.schedule ->> 'variant', '') = 'free_flow'
+                or coalesce((s.schedule ->> 'free_flow')::boolean, false) = true
+              )
+              and not exists (
+                select 1
+                from public.session_attendance a
+                where a.session_id = s.id
+                  and a.left_at is null
+                  and a.last_seen_at >= now() - interval '90 seconds'
+              )
+              and not exists (
+                select 1
+                from public.infinite_room_host_leases h
+                where h.session_id = s.id
+                  and h.expires_at > now()
+              );
+
+            get diagnostics v_cleaned = row_count;
+            return v_cleaned;
+          end;
+          $$;
+
+          revoke all on function public.cleanup_empty_free_flow_rooms() from public;
+          grant execute on function public.cleanup_empty_free_flow_rooms() to service_role;
+
+          notify pgrst, 'reload schema';
+          SQL
+
+      - name: Verify repaired sources
+        shell: bash
+        run: |
+          if grep -RIn '__never__' src; then
+            echo '__never__ UUID sentinel still exists in src'
+            exit 1
+          fi
+          if grep -n 'room_live_count_leases' supabase/migrations/20260912000000_repair_free_flow_presence_sources.sql; then
+            echo 'repair migration still references legacy room_live_count_leases'
+            exit 1
+          fi
+          grep -q 'session_attendance' supabase/migrations/20260912000000_repair_free_flow_presence_sources.sql
+          grep -q 'q.is("id", null)' src/components/ChatPanel.tsx
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - name: Production Vite build
+        run: npx vite build
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit repair
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/ChatPanel.tsx supabase/migrations/20260912000000_repair_free_flow_presence_sources.sql
+          git commit -m 'Repair chat UUID sentinel and Free Flow presence queries' || exit 0
+          git push origin main
