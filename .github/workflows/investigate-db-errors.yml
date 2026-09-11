@@ -25,5 +25,9 @@ jobs:
           grep -RIn --exclude-dir=node_modules --exclude-dir=.git 'room_live_count_leases' . || true
           echo '=== cleanup_empty_free_flow_rooms occurrences ==='
           grep -RIn --exclude-dir=node_modules --exclude-dir=.git 'cleanup_empty_free_flow_rooms' . || true
+          echo '=== infinite_room_host_leases occurrences ==='
+          grep -RIn --exclude-dir=node_modules --exclude-dir=.git 'infinite_room_host_leases' supabase src api 2>/dev/null || true
+          echo '=== session_attendance migration/schema occurrences ==='
+          grep -RInE --exclude-dir=node_modules --exclude-dir=.git 'create table.*session_attendance|session_attendance.*last_seen_at|last_seen_at.*session_attendance|session_attendance.*left_at|left_at.*session_attendance' supabase src api 2>/dev/null | head -n 200 || true
           echo '=== suspicious never sentinels ==='
           grep -RInE --exclude-dir=node_modules --exclude-dir=.git "(['\"]_*never_*['\"]|never[_-]?id|sentinel)" src supabase api 2>/dev/null || true
