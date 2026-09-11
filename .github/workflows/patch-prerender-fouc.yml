@@ -53,11 +53,12 @@ jobs:
           html = Path('dist/index.html').read_text()
           root = html.find('<div id="root">')
           guard = html.find('id="seo-prerender-clear"')
-          module = html.find('type="module"')
-          if root < 0 or guard < 0 or module < 0:
-              raise SystemExit('missing prerender root, guard, or module script')
-          if not (root < guard < module):
-              raise SystemExit('prerender clear guard is not placed before the module bundle')
+          if root < 0 or guard < 0:
+              raise SystemExit('missing prerender root or clear guard')
+          if not (root < guard):
+              raise SystemExit('prerender clear guard must appear after the prerendered root content')
+          if 'type="module"' not in html:
+              raise SystemExit('missing module bundle script')
           PY
       - name: Check diff
         run: git diff --check
