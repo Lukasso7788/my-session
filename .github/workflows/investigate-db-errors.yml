@@ -37,7 +37,7 @@ jobs:
         shell: bash
         run: |
           cat > supabase/migrations/20260912000000_repair_free_flow_presence_sources.sql <<'SQL'
-          -- Repair Free Flow maintenance after the legacy room_live_count_leases
+          -- Repair Free Flow maintenance after the legacy live-count lease
           -- relation was removed. Live room presence now comes from
           -- session_attendance, using the same 90-second heartbeat window as
           -- other room-presence features.
