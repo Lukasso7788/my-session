@@ -1,0 +1,84 @@
+name: Restore separate Book and Join actions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/restore-session-card-book-and-join.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Restore separate Book and Join buttons
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/SessionCard.tsx')
+          text = path.read_text()
+
+          gate_block = '''    const GROUP_JOIN_LEAD_MS = 10 * 60 * 1000;\n    const [groupJoinGateTick, setGroupJoinGateTick] = useState(0);\n\n    const isGroupJoinWindowOpen = useMemo(() => {\n        if (!isStandardGroupSession) return true;\n\n        const status = safeLower(session?.status);\n        if (\n            status === "active" ||\n            status === "live" ||\n            status === "started" ||\n            status === "in_progress"\n        ) {\n            return true;\n        }\n\n        const startMs = Date.parse(String(session?.start_time || ""));\n        if (!Number.isFinite(startMs)) return false;\n\n        return Date.now() >= startMs - GROUP_JOIN_LEAD_MS;\n    }, [\n        isStandardGroupSession,\n        session?.status,\n        session?.start_time,\n        groupJoinGateTick,\n    ]);\n\n    useEffect(() => {\n        if (!isStandardGroupSession) return;\n\n        const startMs = Date.parse(String(session?.start_time || ""));\n        if (!Number.isFinite(startMs)) return;\n\n        const gateAtMs = startMs - GROUP_JOIN_LEAD_MS;\n        const delayMs = gateAtMs - Date.now();\n        if (delayMs <= 0) return;\n\n        const timer = window.setTimeout(() => {\n            setGroupJoinGateTick((value) => value + 1);\n        }, delayMs + 100);\n\n        return () => window.clearTimeout(timer);\n    }, [isStandardGroupSession, session?.id, session?.start_time]);\n\n'''
+          if gate_block not in text:
+              raise SystemExit('group join gate block not found')
+          text = text.replace(gate_block, '', 1)
+
+          old_grid = '''                    <div className={`grid w-full items-center gap-3 ${isStandardGroupSession ? "grid-cols-[minmax(0,1fr)_48px]" : "grid-cols-[auto_minmax(0,1fr)_48px]"} min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end`}>'''
+          new_grid = '''                    <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_48px] items-center gap-3 min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end">'''
+          if old_grid not in text:
+              raise SystemExit('action grid anchor not found')
+          text = text.replace(old_grid, new_grid, 1)
+
+          actions_start = text.find('                        {!isStandardGroupSession\n')
+          actions_end_marker = '                        <div ref={optionsRef}'
+          actions_end = text.find(actions_end_marker, actions_start)
+          if actions_start < 0 or actions_end < 0:
+              raise SystemExit('booking/join action block not found')
+
+          new_actions = '''                        {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}\n\n                        <button\n                            onClick={handleJoinRoom}\n                            onMouseEnter={() => setIsHoveringJoinIframe(true)}\n                            onMouseLeave={() => setIsHoveringJoinIframe(false)}\n                            className="\n                                h-12 rounded-full px-6 text-[14px] font-semibold\n                                flex items-center justify-center\n                                transition-all duration-200 ease-in-out\n                                w-full min-[1024px]:w-auto min-[1024px]:flex-none min-[1024px]:min-w-[150px] xl:min-w-[160px]\n                                text-white\n                            "\n                            style={{\n                                backgroundColor: !canManageSession && isSessionFull\n                                    ? "#8A8A8A"\n                                    : isHoveringJoinIframe\n                                        ? joinHoverBg\n                                        : "#2f2f2f",\n                                cursor: !canManageSession && isSessionFull ? "not-allowed" : "pointer",\n                            }}\n                            aria-label={!canManageSession && isSessionFull ? "Session full" : "Join session"}\n                        >\n                            {!canManageSession && isSessionFull ? "Full" : "Join session"}\n                        </button>\n\n'''
+          text = text[:actions_start] + new_actions + text[actions_end:]
+
+          drawer_prefix = '''                        {isStandardGroupSession && isGroupJoinWindowOpen && !isBookingConfirmed ? (\n                            <div className="border-t border-[#E5E7EB] p-5">\n                                <button\n                                    type="button"\n                                    onClick={() => void handleBookSession()}\n                                    className="h-11 w-full rounded-full bg-[#2F2F2F] px-4 text-[13px] font-semibold text-white transition hover:bg-[#111827]"\n                                >\n                                    Book session\n                                </button>\n                            </div>\n                        ) : isBookingConfirmed ? (\n'''
+          drawer_new = '''                        {isBookingConfirmed ? (\n'''
+          if drawer_prefix not in text:
+              raise SystemExit('drawer booking gate block not found')
+          text = text.replace(drawer_prefix, drawer_new, 1)
+
+          leftovers = [
+              'GROUP_JOIN_LEAD_MS',
+              'groupJoinGateTick',
+              'isGroupJoinWindowOpen',
+          ]
+          for token in leftovers:
+              if token in text:
+                  raise SystemExit(f'leftover join gate token: {token}')
+
+          path.write_text(text)
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - name: Production Vite build
+        run: npx vite build
+      - name: Check diff
+        run: git diff --check
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/SessionCard.tsx
+          git commit -m 'Restore separate Book and Join session actions' || exit 0
+          git push origin main
