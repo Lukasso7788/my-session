@@ -4133,6 +4133,50 @@ export default function SessionCard({
 
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionIsInfinite;
+    const isStandardGroupSession = sessionType === "group";
+    const GROUP_JOIN_LEAD_MS = 10 * 60 * 1000;
+    const [groupJoinGateTick, setGroupJoinGateTick] = useState(0);
+
+    const isGroupJoinWindowOpen = useMemo(() => {
+        if (!isStandardGroupSession) return true;
+
+        const status = safeLower(session?.status);
+        if (
+            status === "active" ||
+            status === "live" ||
+            status === "started" ||
+            status === "in_progress"
+        ) {
+            return true;
+        }
+
+        const startMs = Date.parse(String(session?.start_time || ""));
+        if (!Number.isFinite(startMs)) return false;
+
+        return Date.now() >= startMs - GROUP_JOIN_LEAD_MS;
+    }, [
+        isStandardGroupSession,
+        session?.status,
+        session?.start_time,
+        groupJoinGateTick,
+    ]);
+
+    useEffect(() => {
+        if (!isStandardGroupSession) return;
+
+        const startMs = Date.parse(String(session?.start_time || ""));
+        if (!Number.isFinite(startMs)) return;
+
+        const gateAtMs = startMs - GROUP_JOIN_LEAD_MS;
+        const delayMs = gateAtMs - Date.now();
+        if (delayMs <= 0) return;
+
+        const timer = window.setTimeout(() => {
+            setGroupJoinGateTick((value) => value + 1);
+        }, delayMs + 100);
+
+        return () => window.clearTimeout(timer);
+    }, [isStandardGroupSession, session?.id, session?.start_time]);
 
     useEffect(() => {
         if (!isBookersModalOpen) return;
@@ -4882,6 +4926,31 @@ export default function SessionCard({
         </button>
     );
 
+    const primaryBookSessionButton = (
+        <button
+            type="button"
+            onClick={handleBookSession}
+            onMouseEnter={() => setIsHoveringBook(true)}
+            onMouseLeave={() => setIsHoveringBook(false)}
+            className="h-12 w-full rounded-full px-6 text-[14px] font-semibold text-white transition-all duration-200 ease-in-out min-[1024px]:w-auto min-[1024px]:min-w-[150px] xl:min-w-[160px]"
+            style={{ backgroundColor: isHoveringBook ? joinHoverBg : "#2f2f2f" }}
+            aria-label="Book session"
+        >
+            Book session
+        </button>
+    );
+
+    const primaryBookedSessionButton = (
+        <button
+            type="button"
+            onClick={() => setIsBookersModalOpen(true)}
+            className="h-12 w-full rounded-full border border-[#65D46C] bg-[#65D46C]/10 px-6 text-[14px] font-semibold text-[#49A650] transition hover:bg-[#65D46C]/15 min-[1024px]:w-auto min-[1024px]:min-w-[150px] xl:min-w-[160px]"
+            aria-label="Booked session; open session details"
+        >
+            Booked
+        </button>
+    );
+
     return (
         <>
             <div
@@ -5025,7 +5094,7 @@ export default function SessionCard({
                         )}
                     </div>
 
-                    <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_48px] items-center gap-3 min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end">
+                    <div className={`grid w-full items-center gap-3 ${isStandardGroupSession ? "grid-cols-[minmax(0,1fr)_48px]" : "grid-cols-[auto_minmax(0,1fr)_48px]"} min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end`}>
                         <button
                             type="button"
                             onClick={() => setIsLiveUsersModalOpen(true)}
@@ -5062,31 +5131,37 @@ export default function SessionCard({
                             </div>
                         </button>
 
-                        {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
+                        {!isStandardGroupSession
+                            ? (isBookingConfirmed ? confirmedBookingButton : bookSessionButton)
+                            : null}
 
-                        <button
-                            onClick={handleJoinRoom}
-                            onMouseEnter={() => setIsHoveringJoinIframe(true)}
-                            onMouseLeave={() => setIsHoveringJoinIframe(false)}
-                            className="
-                                h-12 rounded-full px-6 text-[14px] font-semibold
-                                flex items-center justify-center
-                                transition-all duration-200 ease-in-out
-                                w-full min-[1024px]:w-auto min-[1024px]:flex-none min-[1024px]:min-w-[150px] xl:min-w-[160px]
-                                text-white
-                            "
-                            style={{
-                                backgroundColor: !canManageSession && isSessionFull
-                                    ? "#8A8A8A"
-                                    : isHoveringJoinIframe
-                                        ? joinHoverBg
-                                        : "#2f2f2f",
-                                cursor: !canManageSession && isSessionFull ? "not-allowed" : "pointer",
-                            }}
-                            aria-label={!canManageSession && isSessionFull ? "Session full" : "Join session"}
-                        >
-                            {!canManageSession && isSessionFull ? "Full" : "Join session"}
-                        </button>
+                        {isStandardGroupSession && !isGroupJoinWindowOpen
+                            ? (isBookingConfirmed ? primaryBookedSessionButton : primaryBookSessionButton)
+                            : (
+                                <button
+                                    onClick={handleJoinRoom}
+                                    onMouseEnter={() => setIsHoveringJoinIframe(true)}
+                                    onMouseLeave={() => setIsHoveringJoinIframe(false)}
+                                    className="
+                                        h-12 rounded-full px-6 text-[14px] font-semibold
+                                        flex items-center justify-center
+                                        transition-all duration-200 ease-in-out
+                                        w-full min-[1024px]:w-auto min-[1024px]:flex-none min-[1024px]:min-w-[150px] xl:min-w-[160px]
+                                        text-white
+                                    "
+                                    style={{
+                                        backgroundColor: !canManageSession && isSessionFull
+                                            ? "#8A8A8A"
+                                            : isHoveringJoinIframe
+                                                ? joinHoverBg
+                                                : "#2f2f2f",
+                                        cursor: !canManageSession && isSessionFull ? "not-allowed" : "pointer",
+                                    }}
+                                    aria-label={!canManageSession && isSessionFull ? "Session full" : "Join session"}
+                                >
+                                    {!canManageSession && isSessionFull ? "Full" : "Join session"}
+                                </button>
+                            )}
 
                         <div ref={optionsRef} className={`relative w-12 ${isOptionsOpen ? "z-[230]" : "z-0"}`}>
                             <button
@@ -5618,7 +5693,17 @@ export default function SessionCard({
                             <div className="min-h-0 flex-1" />
                         )}
 
-                        {isBookingConfirmed ? (
+                        {isStandardGroupSession && isGroupJoinWindowOpen && !isBookingConfirmed ? (
+                            <div className="border-t border-[#E5E7EB] p-5">
+                                <button
+                                    type="button"
+                                    onClick={() => void handleBookSession()}
+                                    className="h-11 w-full rounded-full bg-[#2F2F2F] px-4 text-[13px] font-semibold text-white transition hover:bg-[#111827]"
+                                >
+                                    Book session
+                                </button>
+                            </div>
+                        ) : isBookingConfirmed ? (
                             <div className="border-t border-[#E5E7EB] p-5">
                                 <button
                                     type="button"
