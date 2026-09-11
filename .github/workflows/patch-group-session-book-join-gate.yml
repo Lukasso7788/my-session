@@ -1,0 +1,82 @@
+name: Patch group session booking and join gate
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/patch-group-session-book-join-gate.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Patch group booking and join CTA timing
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/SessionCard.tsx')
+          text = path.read_text()
+
+          anchor = '''    const sessionType = resolveSessionType(session);\n    const isInfinite = sessionIsInfinite;\n'''
+          inserted = '''    const sessionType = resolveSessionType(session);\n    const isInfinite = sessionIsInfinite;\n    const isStandardGroupSession = sessionType === "group";\n    const GROUP_JOIN_LEAD_MS = 10 * 60 * 1000;\n    const [groupJoinGateTick, setGroupJoinGateTick] = useState(0);\n\n    const isGroupJoinWindowOpen = useMemo(() => {\n        if (!isStandardGroupSession) return true;\n\n        const status = safeLower(session?.status);\n        if (\n            status === "active" ||\n            status === "live" ||\n            status === "started" ||\n            status === "in_progress"\n        ) {\n            return true;\n        }\n\n        const startMs = Date.parse(String(session?.start_time || ""));\n        if (!Number.isFinite(startMs)) return false;\n\n        return Date.now() >= startMs - GROUP_JOIN_LEAD_MS;\n    }, [\n        isStandardGroupSession,\n        session?.status,\n        session?.start_time,\n        groupJoinGateTick,\n    ]);\n\n    useEffect(() => {\n        if (!isStandardGroupSession) return;\n\n        const startMs = Date.parse(String(session?.start_time || ""));\n        if (!Number.isFinite(startMs)) return;\n\n        const gateAtMs = startMs - GROUP_JOIN_LEAD_MS;\n        const delayMs = gateAtMs - Date.now();\n        if (delayMs <= 0) return;\n\n        const timer = window.setTimeout(() => {\n            setGroupJoinGateTick((value) => value + 1);\n        }, delayMs + 100);\n\n        return () => window.clearTimeout(timer);\n    }, [isStandardGroupSession, session?.id, session?.start_time]);\n'''
+          if anchor not in text:
+              raise SystemExit('session type anchor not found')
+          text = text.replace(anchor, inserted, 1)
+
+          return_anchor = '''    return (\n        <>\n            <div\n                onMouseEnter={() => setIsHoveringCard(true)}'''
+          primary_buttons = '''    const primaryBookSessionButton = (\n        <button\n            type="button"\n            onClick={handleBookSession}\n            onMouseEnter={() => setIsHoveringBook(true)}\n            onMouseLeave={() => setIsHoveringBook(false)}\n            className="h-12 w-full rounded-full px-6 text-[14px] font-semibold text-white transition-all duration-200 ease-in-out min-[1024px]:w-auto min-[1024px]:min-w-[150px] xl:min-w-[160px]"\n            style={{ backgroundColor: isHoveringBook ? joinHoverBg : "#2f2f2f" }}\n            aria-label="Book session"\n        >\n            Book session\n        </button>\n    );\n\n    const primaryBookedSessionButton = (\n        <button\n            type="button"\n            onClick={() => setIsBookersModalOpen(true)}\n            className="h-12 w-full rounded-full border border-[#65D46C] bg-[#65D46C]/10 px-6 text-[14px] font-semibold text-[#49A650] transition hover:bg-[#65D46C]/15 min-[1024px]:w-auto min-[1024px]:min-w-[150px] xl:min-w-[160px]"\n            aria-label="Booked session; open session details"\n        >\n            Booked\n        </button>\n    );\n\n    return (\n        <>\n            <div\n                onMouseEnter={() => setIsHoveringCard(true)}'''
+          if return_anchor not in text:
+              raise SystemExit('return anchor not found')
+          text = text.replace(return_anchor, primary_buttons, 1)
+
+          old_actions_class = '''                    <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_48px] items-center gap-3 min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end">'''
+          new_actions_class = '''                    <div className={`grid w-full items-center gap-3 ${isStandardGroupSession ? "grid-cols-[minmax(0,1fr)_48px]" : "grid-cols-[auto_minmax(0,1fr)_48px]"} min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end`}>'''
+          if old_actions_class not in text:
+              raise SystemExit('actions class anchor not found')
+          text = text.replace(old_actions_class, new_actions_class, 1)
+
+          old_ctas = '''                        {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}\n\n                        <button\n                            onClick={handleJoinRoom}\n                            onMouseEnter={() => setIsHoveringJoinIframe(true)}\n                            onMouseLeave={() => setIsHoveringJoinIframe(false)}\n                            className="\n                                h-12 rounded-full px-6 text-[14px] font-semibold\n                                flex items-center justify-center\n                                transition-all duration-200 ease-in-out\n                                w-full min-[1024px]:w-auto min-[1024px]:flex-none min-[1024px]:min-w-[150px] xl:min-w-[160px]\n                                text-white\n                            "\n                            style={{\n                                backgroundColor: !canManageSession && isSessionFull\n                                    ? "#8A8A8A"\n                                    : isHoveringJoinIframe\n                                        ? joinHoverBg\n                                        : "#2f2f2f",\n                                cursor: !canManageSession && isSessionFull ? "not-allowed" : "pointer",\n                            }}\n                            aria-label={!canManageSession && isSessionFull ? "Session full" : "Join session"}\n                        >\n                            {!canManageSession && isSessionFull ? "Full" : "Join session"}\n                        </button>\n'''
+          new_ctas = '''                        {!isStandardGroupSession\n                            ? (isBookingConfirmed ? confirmedBookingButton : bookSessionButton)\n                            : null}\n\n                        {isStandardGroupSession && !isGroupJoinWindowOpen\n                            ? (isBookingConfirmed ? primaryBookedSessionButton : primaryBookSessionButton)\n                            : (\n                                <button\n                                    onClick={handleJoinRoom}\n                                    onMouseEnter={() => setIsHoveringJoinIframe(true)}\n                                    onMouseLeave={() => setIsHoveringJoinIframe(false)}\n                                    className="\n                                        h-12 rounded-full px-6 text-[14px] font-semibold\n                                        flex items-center justify-center\n                                        transition-all duration-200 ease-in-out\n                                        w-full min-[1024px]:w-auto min-[1024px]:flex-none min-[1024px]:min-w-[150px] xl:min-w-[160px]\n                                        text-white\n                                    "\n                                    style={{\n                                        backgroundColor: !canManageSession && isSessionFull\n                                            ? "#8A8A8A"\n                                            : isHoveringJoinIframe\n                                                ? joinHoverBg\n                                                : "#2f2f2f",\n                                        cursor: !canManageSession && isSessionFull ? "not-allowed" : "pointer",\n                                    }}\n                                    aria-label={!canManageSession && isSessionFull ? "Session full" : "Join session"}\n                                >\n                                    {!canManageSession && isSessionFull ? "Full" : "Join session"}\n                                </button>\n                            )}\n'''
+          if old_ctas not in text:
+              raise SystemExit('card CTA block not found')
+          text = text.replace(old_ctas, new_ctas, 1)
+
+          old_drawer_footer = '''                        {isBookingConfirmed ? (\n                            <div className="border-t border-[#E5E7EB] p-5">\n                                <button\n                                    type="button"\n                                    onClick={() => {\n                                        handleCancelBooking();\n                                        setIsBookersModalOpen(false);\n                                    }}\n                                    className="h-11 w-full rounded-full border border-[#F65252] bg-[#FFF7F7] text-[13px] font-semibold text-[#D83F3F] transition hover:bg-[#FFEDED]"\n                                >\n                                    Cancel my booking\n                                </button>\n                            </div>\n                        ) : null}\n'''
+          new_drawer_footer = '''                        {isStandardGroupSession && isGroupJoinWindowOpen && !isBookingConfirmed ? (\n                            <div className="border-t border-[#E5E7EB] p-5">\n                                <button\n                                    type="button"\n                                    onClick={() => void handleBookSession()}\n                                    className="h-11 w-full rounded-full bg-[#2F2F2F] px-4 text-[13px] font-semibold text-white transition hover:bg-[#111827]"\n                                >\n                                    Book session\n                                </button>\n                            </div>\n                        ) : isBookingConfirmed ? (\n                            <div className="border-t border-[#E5E7EB] p-5">\n                                <button\n                                    type="button"\n                                    onClick={() => {\n                                        handleCancelBooking();\n                                        setIsBookersModalOpen(false);\n                                    }}\n                                    className="h-11 w-full rounded-full border border-[#F65252] bg-[#FFF7F7] text-[13px] font-semibold text-[#D83F3F] transition hover:bg-[#FFEDED]"\n                                >\n                                    Cancel my booking\n                                </button>\n                            </div>\n                        ) : null}\n'''
+          if old_drawer_footer not in text:
+              raise SystemExit('drawer footer block not found')
+          text = text.replace(old_drawer_footer, new_drawer_footer, 1)
+
+          path.write_text(text)
+          PY
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Production build
+        run: npx vite build
+
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/components/SessionCard.tsx
+          git commit -m 'Gate group session join CTA to ten minutes before start' || exit 0
+          git push origin main
