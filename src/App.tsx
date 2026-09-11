@@ -56,7 +56,6 @@ import { seoRouteManifest } from "./data/seoRouteManifest";
 import NotFoundPage from "./pages/NotFoundPage";
 import SessionCardsPlayground from "./SessionCardsPlayground";
 import IconVectorizerPage from "./pages/IconVectorizerPage";
-import StandaloneSoundscapePage from "./pages/StandaloneSoundscapePage";
 
 const DataDrivenSeoPage = lazy(() => import("./pages/seo/DataDrivenSeoPage"));
 const MOBILE_ROOM_LEASE_PREFIX = "mysession_mobile_room_lease:";
@@ -101,17 +100,10 @@ export default function App() {
   const isOneOnOneHost =
     typeof window !== "undefined" &&
     window.location.hostname.toLowerCase() === "1-on-1.mysession.club";
-  const isStandaloneSoundscape =
-    typeof window !== "undefined" &&
-    window.location.pathname === "/music-player";
 
   useEffect(() => {
     storeReferralCodeFromUrl();
   }, []);
-
-  if (isStandaloneSoundscape) {
-    return <StandaloneSoundscapePage />;
-  }
 
   return (
     <CreateSessionModalProvider>
