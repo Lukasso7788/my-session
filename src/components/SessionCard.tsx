@@ -5051,7 +5051,7 @@ export default function SessionCard({
 
                     </div>
 
-                                        <div className="w-full min-w-0 px-0 min-[1024px]:flex-1">
+                                        <div className="w-full min-w-0 px-0 min-[1024px]:flex-1 min-[1024px]:pr-[15%]">
                         {cardStages.length > 0 ? (
                             <SessionStageBar
                                 stages={cardStages}
@@ -5686,8 +5686,9 @@ export default function SessionCard({
                                         handleCancelBooking();
                                         setIsBookersModalOpen(false);
                                     }}
-                                    className="h-11 w-full rounded-full border border-[#F65252] bg-[#FFF7F7] text-[13px] font-semibold text-[#D83F3F] transition hover:bg-[#FFEDED]"
+                                    className="h-11 w-full rounded-full border border-[#F65252] bg-[#FFF7F7] text-[13px] font-semibold text-[#D83F3F] transition hover:bg-[#FFEDED] flex items-center justify-center gap-2"
                                 >
+                                    <IconCancel size={17} />
                                     Cancel my booking
                                 </button>
                             </div>
