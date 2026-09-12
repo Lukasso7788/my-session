@@ -347,6 +347,12 @@ async function handleTaskAiSuggestions(req: VercelRequest, res: VercelResponse) 
   }
 }
 
+function isTaskListDraft(value: any): value is { title: string; tasks: string[] } {
+  return typeof value?.title === "string" && !!value.title.trim() && value.title.length <= 120 &&
+    Array.isArray(value.tasks) && value.tasks.length >= 1 && value.tasks.length <= 30 &&
+    value.tasks.every((task: unknown) => typeof task === "string" && !!task.trim() && task.length <= 300);
+}
+
 async function handleGenerateTaskList(req: VercelRequest, res: VercelResponse) {
   res.setHeader("Cache-Control", "no-store");
   const token = getBearerToken(req);
@@ -361,11 +367,17 @@ async function handleGenerateTaskList(req: VercelRequest, res: VercelResponse) {
     return res.status(503).json({ error: "Could not verify Pro access. Please try again." });
   }
   const body = getRequestBody(req);
+  const approving = body.action === "task-list-approve";
   const goal = typeof body.goal === "string" ? body.goal.trim() : "";
+  const adjustment = typeof body.adjustment === "string" ? body.adjustment.trim() : "";
   const planId = typeof body.requestId === "string" ? body.requestId : "";
-  if (goal.length < 10 || goal.length > 2000 ||
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(planId)) {
-    return res.status(400).json({ error: "Describe your goal in 10–2000 characters." });
+  if (approving ? (!isTaskListDraft(body.draft) ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(planId))
+      : (goal.length < 10 || goal.length > 2000 || adjustment.length > 2000 ||
+        (body.draft != null && (!isTaskListDraft(body.draft) || !adjustment)))) {
+    return res.status(400).json({ error: approving
+      ? "A title (up to 120 characters) and 1–30 non-empty tasks (up to 300 characters each) are required."
+      : "Describe your goal in 10–2000 characters and provide valid adjustment instructions." });
   }
   // All task writes use the caller's JWT and existing ownership RLS, never the service role.
   const db = createClient(supabaseUrl, supabaseKey, {
@@ -376,7 +388,9 @@ async function handleGenerateTaskList(req: VercelRequest, res: VercelResponse) {
   const timeout = setTimeout(() => controller.abort(), 25_000);
   try {
     // Stable request IDs recover a saved result after a lost HTTP response.
-    const existing = await db.from("focus_plans").select("*").eq("id", planId).eq("user_id", auth.user.id).maybeSingle();
+    const existing = approving
+      ? await db.from("focus_plans").select("*").eq("id", planId).eq("user_id", auth.user.id).maybeSingle()
+      : { data: null, error: null };
     if (existing.error) throw existing.error;
     if (existing.data) {
       const saved = await db.from("focus_plan_items").select("*").eq("plan_id", planId).eq("user_id", auth.user.id).order("sort_order");
@@ -385,40 +399,42 @@ async function handleGenerateTaskList(req: VercelRequest, res: VercelResponse) {
       // Recover an empty parent left by an interrupted save. Deterministic item
       // IDs below make concurrent recovery safe without duplicating tasks.
     }
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return res.status(503).json({ error: "AI generation is not configured yet." });
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: process.env.OPENAI_TASK_SUGGESTIONS_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini",
-        store: false,
-        max_output_tokens: 1800,
-        instructions: "Turn the user's goal into a practical task list. Use the user's language. Give a short descriptive title and 3–12 concrete, ordered, achievable tasks. Start with a small actionable step. Respect their purpose, constraints and desired outcome. Do not claim to have performed the tasks. No markdown, vague encouragement or invented deadlines.",
-        input: existing.data ? `Goal: ${goal}\nUse this existing plan title: ${existing.data.title}` : goal,
-        text: { format: {
-          type: "json_schema", name: "generated_task_list", strict: true,
-          schema: {
-            type: "object", additionalProperties: false,
-            properties: {
-              title: { type: "string", minLength: 1, maxLength: 120 },
-              tasks: { type: "array", minItems: 3, maxItems: 12, items: { type: "string", minLength: 1, maxLength: 300 } },
+    let parsed = body.draft;
+    if (!approving) {
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) return res.status(503).json({ error: "AI generation is not configured yet." });
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: process.env.OPENAI_TASK_SUGGESTIONS_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini",
+          store: false,
+          max_output_tokens: 4000,
+          instructions: "Turn the user's goal into a practical task list. Use the user's language. Give a short descriptive title and 1–30 concrete, ordered, achievable tasks (usually 3–12, more when requested). Start with a small actionable step. When given a current draft and adjustment, revise that draft according to the adjustment, preserving unaffected tasks and manual edits unless the user asks to replace the whole plan. Respect their purpose, constraints and desired outcome. Do not claim to have performed the tasks. No markdown, vague encouragement or invented deadlines.",
+          input: JSON.stringify({ goal, ...(body.draft ? { currentDraft: body.draft, adjustment } : {}) }),
+          text: { format: {
+            type: "json_schema", name: "generated_task_list", strict: true,
+            schema: {
+              type: "object", additionalProperties: false,
+              properties: {
+                title: { type: "string", minLength: 1, maxLength: 120 },
+                tasks: { type: "array", minItems: 1, maxItems: 30, items: { type: "string", minLength: 1, maxLength: 300 } },
+              },
+              required: ["title", "tasks"],
             },
-            required: ["title", "tasks"],
-          },
-        } },
-      }),
-    });
-    if (!response.ok) return res.status(502).json({ error: "AI generation is temporarily unavailable. Please retry." });
-    const payload = await response.json();
-    const parts = (payload.output || []).flatMap((item: any) => item.content || []);
-    const parsed = safeJsonParse(parts.filter((part: any) => part.type === "output_text").map((part: any) => part.text).join(""));
-    if (payload.status !== "completed" || typeof parsed?.title !== "string" ||
-        !parsed.title.trim() || parsed.title.length > 120 || !Array.isArray(parsed.tasks) ||
-        parsed.tasks.length < 3 || parsed.tasks.length > 12 ||
-        parsed.tasks.some((task: unknown) => typeof task !== "string" || !task.trim() || task.length > 300)) {
-      return res.status(502).json({ error: "AI could not produce a complete plan. Please retry or clarify your goal." });
+          } },
+        }),
+      });
+      if (!response.ok) return res.status(502).json({ error: "AI generation is temporarily unavailable. Please retry." });
+      const payload = await response.json();
+      const parts = (payload.output || []).flatMap((item: any) => item.content || []);
+      parsed = safeJsonParse(parts.filter((part: any) => part.type === "output_text").map((part: any) => part.text).join(""));
+      if (payload.status !== "completed" || !isTaskListDraft(parsed)) {
+        return res.status(502).json({ error: "AI could not produce a complete plan. Please retry or clarify your goal." });
+      }
+      // Generation and regeneration are read-only: only explicit approval saves.
+      return res.status(200).json({ draft: { title: parsed.title.trim(), tasks: parsed.tasks.map((task: string) => task.trim()) } });
     }
     const plan = existing.data ? { data: existing.data, error: null } : await db.from("focus_plans").insert({
       id: planId, user_id: auth.user.id, title: parsed.title.trim(),
@@ -464,7 +480,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const body = getRequestBody(req);
 
   if (req.method === "POST") {
-    if (body?.action === "task-list-generate") return handleGenerateTaskList(req, res);
+    if (body?.action === "task-list-generate" || body?.action === "task-list-approve") return handleGenerateTaskList(req, res);
     if (body?.action === "ai-host-respond") return handleAiHost(req, res);
     if (body?.action === "task-ai-suggestions") {
       return handleTaskAiSuggestions(req, res);
