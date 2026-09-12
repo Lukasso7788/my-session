@@ -37,6 +37,7 @@ import {
 } from "@livekit/track-processors";
 
 import { supabase } from "../lib/supabase";
+import { invalidateHostLeaseCache } from "../lib/supabaseFetchOptimizer";
 import { withTimeout } from "../lib/promiseTimeout";
 import { readSessionRoomPolicies, withRoomPolicies, type RoomPolicies } from "../lib/roomPolicies";
 import { captureProductEvent } from "../lib/analytics";
@@ -6264,6 +6265,10 @@ export function RoomPageLiveKit({
   const [activeRoomHostLease, setActiveRoomHostLease] =
     useState<InfiniteRoomHostLease | null>(null);
   const [activeRoomHostBusy, setActiveRoomHostBusy] = useState(false);
+  const activeRoomHostActionRef = useRef(false);
+  const activeRoomHostEpochRef = useRef(0);
+  const activeRoomHostReadRef = useRef(0);
+  const activeRoomHostDirtyRef = useRef(false);
   const [activeRoomHostError, setActiveRoomHostError] = useState("");
   const [activeRoomHostClock, setActiveRoomHostClock] = useState(() => Date.now());
   const [rolesLoading, setRolesLoading] = useState(false);
@@ -12077,7 +12082,11 @@ export function RoomPageLiveKit({
     });
   }, [authUserId, connected, sessionOwnerId, tiles]);
 
-  const loadActiveRoomHostLease = useCallback(async () => {
+  const loadActiveRoomHostLease = useCallback(async (duringAction = false) => {
+    if (activeRoomHostActionRef.current && !duringAction) return;
+    activeRoomHostDirtyRef.current = false;
+    const epoch = activeRoomHostEpochRef.current;
+    const read = ++activeRoomHostReadRef.current;
     if (!isInfiniteRoom || !sessionId) {
       setActiveRoomHostLease(null);
       return;
@@ -12091,15 +12100,15 @@ export function RoomPageLiveKit({
       .eq("session_id", sessionId)
       .maybeSingle();
 
+    if (epoch !== activeRoomHostEpochRef.current || read !== activeRoomHostReadRef.current) return;
     if (error) {
-      // A deployment can briefly run before its migration is applied. Do not
-      // break the room for that case; the action remains unavailable.
+      // Keep the last confirmed lease when a refresh fails transiently.
       console.warn("active room host lease unavailable", error);
-      setActiveRoomHostLease(null);
       return;
     }
 
     const rawProfile = (data as any)?.active_host_profile;
+    setActiveRoomHostClock(Date.now());
     const profile = Array.isArray(rawProfile) ? rawProfile[0] : rawProfile;
     setActiveRoomHostLease(
       data
@@ -12136,11 +12145,16 @@ export function RoomPageLiveKit({
           table: "infinite_room_host_leases",
           filter: `session_id=eq.${sessionId}`,
         },
-        () => void loadActiveRoomHostLease(),
+        () => {
+          invalidateHostLeaseCache();
+          activeRoomHostDirtyRef.current = true;
+          void loadActiveRoomHostLease();
+        },
       )
       .subscribe();
 
     return () => {
+      activeRoomHostEpochRef.current += 1;
       void supabase.removeChannel(channel);
     };
   }, [isInfiniteRoom, loadActiveRoomHostLease, sessionId]);
@@ -12156,12 +12170,19 @@ export function RoomPageLiveKit({
       return;
     }
 
+    let cancelled = false;
     const heartbeat = async () => {
+      if (activeRoomHostActionRef.current) return;
+      const epoch = activeRoomHostEpochRef.current;
+      const read = activeRoomHostReadRef.current;
       const { data, error } = await supabase.rpc(
         "heartbeat_infinite_room_host",
         { p_session_id: sessionId },
       );
+      if (cancelled || activeRoomHostActionRef.current || epoch !== activeRoomHostEpochRef.current) return;
       if (error || data === false) {
+        if (read !== activeRoomHostReadRef.current) return;
+        activeRoomHostReadRef.current += 1;
         setActiveRoomHostLease(null);
         if (error) console.warn("active host heartbeat failed", error);
         return;
@@ -12172,7 +12193,10 @@ export function RoomPageLiveKit({
 
     void heartbeat();
     const heartbeatTimer = window.setInterval(heartbeat, 30_000);
-    return () => window.clearInterval(heartbeatTimer);
+    return () => {
+      cancelled = true;
+      window.clearInterval(heartbeatTimer);
+    };
   }, [
     authUserId,
     connected,
@@ -12182,30 +12206,24 @@ export function RoomPageLiveKit({
     sessionId,
   ]);
 
-  useEffect(() => {
-    if (!sessionOwnerIsPresent || !isTemporaryRoomHost || !sessionId) return;
-    void supabase
-      .rpc("release_infinite_room_host", { p_session_id: sessionId })
-      .then(() => loadActiveRoomHostLease());
-  }, [
-    isTemporaryRoomHost,
-    loadActiveRoomHostLease,
-    sessionId,
-    sessionOwnerIsPresent,
-  ]);
-
   const claimActiveRoomHost = useCallback(async () => {
-    if (!sessionId || activeRoomHostBusy) return;
+    if (!sessionId || activeRoomHostActionRef.current) return;
+    activeRoomHostActionRef.current = true;
+    const epoch = ++activeRoomHostEpochRef.current;
     setActiveRoomHostBusy(true);
     setActiveRoomHostError("");
     try {
-      const { error } = await supabase.rpc("claim_infinite_room_host", {
+      const { data, error } = await supabase.rpc("claim_infinite_room_host", {
         p_session_id: sessionId,
       });
       if (error) throw error;
-      await loadActiveRoomHostLease();
+      if (data === false) throw new Error("active_host_already_claimed");
+      if (epoch !== activeRoomHostEpochRef.current) return false;
+      invalidateHostLeaseCache();
+      await loadActiveRoomHostLease(true);
       return true;
     } catch (error: any) {
+      if (epoch !== activeRoomHostEpochRef.current) return false;
       const message = String(error?.message || error || "");
       setActiveRoomHostError(
         message.includes("session_owner_present")
@@ -12214,12 +12232,15 @@ export function RoomPageLiveKit({
             ? "Someone else has already stepped in as host."
             : "Could not step in as host. Please try again.",
       );
-      await loadActiveRoomHostLease();
+      invalidateHostLeaseCache();
+      await loadActiveRoomHostLease(true);
       return false;
     } finally {
+      activeRoomHostActionRef.current = false;
       setActiveRoomHostBusy(false);
+      if (activeRoomHostDirtyRef.current && epoch === activeRoomHostEpochRef.current) void loadActiveRoomHostLease();
     }
-  }, [activeRoomHostBusy, loadActiveRoomHostLease, sessionId]);
+  }, [loadActiveRoomHostLease, sessionId]);
 
   const reservedHostAutoClaimRef = useRef("");
   useEffect(() => {
@@ -12270,22 +12291,36 @@ export function RoomPageLiveKit({
   ]);
 
   const releaseActiveRoomHost = useCallback(async () => {
-    if (!sessionId || activeRoomHostBusy) return;
+    if (!sessionId || activeRoomHostActionRef.current) return;
+    activeRoomHostActionRef.current = true;
+    const epoch = ++activeRoomHostEpochRef.current;
     setActiveRoomHostBusy(true);
     setActiveRoomHostError("");
     try {
-      const { error } = await supabase.rpc("release_infinite_room_host", {
+      const { data, error } = await supabase.rpc("release_infinite_room_host", {
         p_session_id: sessionId,
       });
       if (error) throw error;
-      await loadActiveRoomHostLease();
+      if (data === false) throw new Error("host_release_not_confirmed");
+      if (epoch !== activeRoomHostEpochRef.current) return;
+      invalidateHostLeaseCache();
+      setActiveRoomHostLease(null);
+      await loadActiveRoomHostLease(true);
     } catch (error) {
+      if (epoch !== activeRoomHostEpochRef.current) return;
       console.warn("active host release failed", error);
       setActiveRoomHostError("Could not step down. Please try again.");
     } finally {
+      activeRoomHostActionRef.current = false;
       setActiveRoomHostBusy(false);
+      if (activeRoomHostDirtyRef.current && epoch === activeRoomHostEpochRef.current) void loadActiveRoomHostLease();
     }
-  }, [activeRoomHostBusy, loadActiveRoomHostLease, sessionId]);
+  }, [loadActiveRoomHostLease, sessionId]);
+
+  useEffect(() => {
+    if (!sessionOwnerIsPresent || !isTemporaryRoomHost || !sessionId) return;
+    void releaseActiveRoomHost();
+  }, [isTemporaryRoomHost, releaseActiveRoomHost, sessionId, sessionOwnerIsPresent]);
 
   const activeOperationalHostProfile = useMemo<HostProfile | null>(() => {
     if (sessionOwnerIsPresent) return session?.host_profile || null;

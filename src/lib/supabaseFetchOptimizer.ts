@@ -20,6 +20,18 @@ const inFlight = new Map<string, Promise<ResponseSnapshot>>();
 
 const MAX_CACHE_ENTRIES = 220;
 
+let hostLeaseGeneration = 0;
+
+export function invalidateHostLeaseCache() {
+  hostLeaseGeneration += 1;
+  for (const key of responseCache.keys()) {
+    if (key.includes("/infinite_room_host_leases") || key.includes("/rpc/heartbeat_infinite_room_host")) responseCache.delete(key);
+  }
+  for (const key of inFlight.keys()) {
+    if (key.includes("/infinite_room_host_leases") || key.includes("/rpc/heartbeat_infinite_room_host")) inFlight.delete(key);
+  }
+}
+
 function getRequestUrl(input: RequestInfo | URL) {
   if (input instanceof Request) return input.url;
   return String(input);
@@ -149,12 +161,14 @@ export const optimizedSupabaseFetch: typeof fetch = async (input, init) => {
   }
 
   const policy = requestPolicy(method, pathname);
+  const leaseGeneration = hostLeaseGeneration;
+  const isLeaseRequest = pathname === "/rest/v1/infinite_room_host_leases" || pathname === "/rest/v1/rpc/heartbeat_infinite_room_host";
   if (!policy.ttlMs && !policy.coalesceDelayMs) return fetch(input, init);
 
   const request = input instanceof Request && !init ? input : new Request(input, init);
   const auth = request.headers.get("authorization") || "";
   const bodyKey = await requestBodyKey(request, method);
-  const cacheKey = `${method}|${request.url}|${auth.slice(-24)}|${bodyKey}`;
+  const cacheKey = `${method}|${request.url}|${auth.slice(-24)}|${bodyKey}|${isLeaseRequest ? leaseGeneration : ""}`;
   const now = Date.now();
 
   pruneCache(now);
@@ -181,6 +195,7 @@ export const optimizedSupabaseFetch: typeof fetch = async (input, init) => {
 
     if (
       policy.ttlMs &&
+      (!isLeaseRequest || leaseGeneration === hostLeaseGeneration) &&
       snapshot.status >= 200 &&
       snapshot.status < 300
     ) {
