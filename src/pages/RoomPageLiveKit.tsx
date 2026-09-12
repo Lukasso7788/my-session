@@ -42,7 +42,7 @@ import { readSessionRoomPolicies, withRoomPolicies, type RoomPolicies } from "..
 import { captureProductEvent } from "../lib/analytics";
 import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
-import { formatTimeZoneCityLabel } from "../lib/timezones";
+import { formatTimeZoneCityLabel, isValidTimeZone } from "../lib/timezones";
 import {
   loadEntitlementState,
   isPersonalPaywallForced,
@@ -707,6 +707,7 @@ type HostProfile = {
   full_name: string;
   avatar_url?: string | null;
   bio?: string | null;
+  timezone?: string | null;
 };
 
 type InfiniteRoomHostLease = {
@@ -6070,10 +6071,16 @@ export function RoomPageLiveKit({
     {},
   );
   const profilesByIdRef = useRef<Record<string, HostProfile>>({});
+  const [localProfileTimeZone, setLocalProfileTimeZone] = useState("");
+  const localProfileTimeZoneRef = useRef("");
 
   useEffect(() => {
     profilesByIdRef.current = profilesById;
   }, [profilesById]);
+
+  useEffect(() => {
+    localProfileTimeZoneRef.current = localProfileTimeZone;
+  }, [localProfileTimeZone]);
 
   // prejoin
   const [prejoinOpen, setPrejoinOpen] = useState(true);
@@ -8074,20 +8081,67 @@ export function RoomPageLiveKit({
   }, [refreshRoomAuth]);
 
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
-      if (!authUserId) return;
+      if (!authUserId) {
+        localProfileTimeZoneRef.current = "";
+        setLocalProfileTimeZone("");
+        return;
+      }
+
+      const normalizedUserId = String(authUserId).trim().toLowerCase();
+      try {
+        const storedTimeZone = String(
+          localStorage.getItem(`mysession-timezone:${authUserId}`) || "",
+        ).trim();
+        if (isValidTimeZone(storedTimeZone)) {
+          localProfileTimeZoneRef.current = storedTimeZone;
+          setLocalProfileTimeZone(storedTimeZone);
+        }
+      } catch { }
 
       try {
         const { data } = await supabase
           .from("profiles")
-          .select("id, full_name, avatar_url")
+          .select("id, full_name, avatar_url, timezone")
           .eq("id", authUserId)
           .maybeSingle();
+
+        if (cancelled) return;
 
         const nm = String((data as any)?.full_name || "").trim();
         const avatar = await resolveAvatarUrlFromProfilesField(
           String((data as any)?.avatar_url || ""),
         );
+        const rawTimeZone = String((data as any)?.timezone || "").trim();
+        const profileTimeZone = isValidTimeZone(rawTimeZone) ? rawTimeZone : "";
+
+        if (cancelled) return;
+
+        if (profileTimeZone) {
+          localProfileTimeZoneRef.current = profileTimeZone;
+          setLocalProfileTimeZone(profileTimeZone);
+          try {
+            localStorage.setItem(`mysession-timezone:${authUserId}`, profileTimeZone);
+          } catch { }
+        }
+
+        if (normalizedUserId) {
+          setProfilesById((prev) => {
+            const previousProfile = prev[normalizedUserId];
+            const nextProfile: HostProfile = {
+              id: normalizedUserId,
+              full_name: nm || String(previousProfile?.full_name || "").trim(),
+              avatar_url: avatar || previousProfile?.avatar_url || null,
+              bio: previousProfile?.bio ?? null,
+              timezone: profileTimeZone || previousProfile?.timezone || null,
+            };
+            const next = { ...prev, [normalizedUserId]: nextProfile };
+            profilesByIdRef.current = next;
+            return next;
+          });
+        }
 
         if (nm) {
           setUserName(nm);
@@ -8110,7 +8164,66 @@ export function RoomPageLiveKit({
         console.warn("self profile fetch failed", e);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [authUserId]);
+
+  useEffect(() => {
+    const normalizedUserId = String(authUserId || "").trim().toLowerCase();
+    if (!normalizedUserId || !looksLikeUuid(normalizedUserId)) return;
+
+    const applyTimeZone = (raw: unknown) => {
+      const nextTimeZone = String(raw || "").trim();
+      if (!isValidTimeZone(nextTimeZone)) return;
+
+      localProfileTimeZoneRef.current = nextTimeZone;
+      setLocalProfileTimeZone(nextTimeZone);
+      try {
+        localStorage.setItem(`mysession-timezone:${normalizedUserId}`, nextTimeZone);
+      } catch { }
+
+      setProfilesById((prev) => {
+        const previousProfile = prev[normalizedUserId];
+        const nextProfile: HostProfile = {
+          id: normalizedUserId,
+          full_name: String(previousProfile?.full_name || userName || displayName || "").trim(),
+          avatar_url: previousProfile?.avatar_url || localAvatarUrl || null,
+          bio: previousProfile?.bio ?? null,
+          timezone: nextTimeZone,
+        };
+        const next = { ...prev, [normalizedUserId]: nextProfile };
+        profilesByIdRef.current = next;
+        return next;
+      });
+    };
+
+    const storageKey = `mysession-timezone:${normalizedUserId}`;
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === storageKey && event.newValue) applyTimeZone(event.newValue);
+    };
+    window.addEventListener("storage", onStorage);
+
+    const channel = supabase
+      .channel(`room-self-profile-timezone:${normalizedUserId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: `id=eq.${normalizedUserId}`,
+        },
+        (payload) => applyTimeZone((payload.new as any)?.timezone),
+      )
+      .subscribe();
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      void supabase.removeChannel(channel);
+    };
+  }, [authUserId, displayName, localAvatarUrl, userName]);
 
   const openTimelineEditor = () => {
     if (!canEditRoomTimeline) return;
@@ -8861,6 +8974,54 @@ export function RoomPageLiveKit({
       );
     };
   }, [applySelfDeafenToRoom, connected]);
+
+  useEffect(() => {
+    if (!connected) return;
+
+    const room = roomRef.current;
+    const profileTimeZone = String(
+      localProfileTimeZone || localProfileTimeZoneRef.current || "",
+    ).trim();
+    if (!room || !isValidTimeZone(profileTimeZone)) return;
+
+    let cancelled = false;
+    const publishProfileTimeZone = async () => {
+      try {
+        const currentMetadata =
+          parseParticipantMetadata(room.localParticipant.metadata) || {};
+        const currentSource = String(
+          currentMetadata.timeZoneSource || "",
+        ).trim().toLowerCase();
+        if (
+          getTimeZoneFromParticipantMetadata(room.localParticipant.metadata) ===
+          profileTimeZone &&
+          currentSource === "profile"
+        ) {
+          scheduleRebuildTiles();
+          return;
+        }
+
+        await room.localParticipant.setMetadata(
+          JSON.stringify({
+            ...currentMetadata,
+            timeZone: profileTimeZone,
+            timeZoneSource: "profile",
+          }),
+        );
+        if (!cancelled) {
+          scheduleRebuildTiles();
+          window.setTimeout(() => scheduleRebuildTiles(), 80);
+        }
+      } catch (error) {
+        console.warn("[room] profile timezone metadata sync failed", error);
+      }
+    };
+
+    void publishProfileTimeZone();
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, localProfileTimeZone]);
 
   const trackWeeklyUsageOnLeave = useCallback(async () => {
     if (!USAGE_TRACKING_ENABLED) return;
@@ -9973,8 +10134,10 @@ export function RoomPageLiveKit({
   const recordInfiniteRoomDailyAttendance = async () => {
     if (!isInfiniteRoom || !session?.id || !authUserId) return;
 
-    const timezone =
-      Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const savedProfileTimeZone = String(localProfileTimeZoneRef.current || "").trim();
+    const timezone = isValidTimeZone(savedProfileTimeZone)
+      ? savedProfileTimeZone
+      : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
     try {
       const { error } = await supabase.rpc(
@@ -12865,7 +13028,7 @@ export function RoomPageLiveKit({
       try {
         const { data } = await supabase
           .from("profiles")
-          .select("id, full_name, avatar_url, bio")
+          .select("id, full_name, avatar_url, bio, timezone")
           .in("id", missing);
 
         const rows = Array.isArray(data) ? data : [];
@@ -12882,6 +13045,9 @@ export function RoomPageLiveKit({
             full_name: String(r?.full_name || "").trim(),
             avatar_url: avatar || null,
             bio: r?.bio ?? null,
+            timezone: isValidTimeZone(String(r?.timezone || "").trim())
+              ? String(r.timezone).trim()
+              : null,
           };
         }
 
@@ -13033,7 +13199,15 @@ export function RoomPageLiveKit({
         userName ||
         "You",
       ).trim() || "You";
+    const localProfileTimeZoneValue = String(
+      currentProfilesById[localUserId]?.timezone ||
+      localProfileTimeZoneRef.current ||
+      "",
+    ).trim();
     const localParticipantTimeZone =
+      (isValidTimeZone(localProfileTimeZoneValue)
+        ? localProfileTimeZoneValue
+        : "") ||
       getTimeZoneFromParticipantMetadata((lp as any)?.metadata) ||
       Intl.DateTimeFormat().resolvedOptions().timeZone ||
       "UTC";
@@ -13102,7 +13276,14 @@ export function RoomPageLiveKit({
         getDisplayNameFromParticipantMetadata((rp as any)?.metadata);
 
       const participantStatus = getStatusFromMetadata((rp as any)?.metadata);
-      const participantTimeZone = getTimeZoneFromParticipantMetadata((rp as any)?.metadata);
+      const participantMetadata = parseParticipantMetadata((rp as any)?.metadata);
+      const metadataTimeZone = getTimeZoneFromParticipantMetadata((rp as any)?.metadata);
+      const profileTimeZone = String(prof?.timezone || "").trim();
+      const participantTimeZone =
+        metadataTimeZone &&
+        String(participantMetadata?.timeZoneSource || "").trim().toLowerCase() === "profile"
+          ? metadataTimeZone
+          : (isValidTimeZone(profileTimeZone) ? profileTimeZone : "") || metadataTimeZone;
 
       const effectiveRemoteLabel =
         participantMetadataDisplayName ||
@@ -13689,15 +13870,25 @@ export function RoomPageLiveKit({
       connectedToRoom = true;
 
       try {
-        const localTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-        const currentMetadata = parseParticipantMetadata(r.localParticipant.metadata) || {};
-        if (getTimeZoneFromParticipantMetadata(r.localParticipant.metadata) !== localTimeZone) {
-          await r.localParticipant.setMetadata(
-            JSON.stringify({ ...currentMetadata, timeZone: localTimeZone }),
-          );
+        const localTimeZone = String(localProfileTimeZoneRef.current || "").trim();
+        if (isValidTimeZone(localTimeZone)) {
+          const currentMetadata = parseParticipantMetadata(r.localParticipant.metadata) || {};
+          const currentSource = String(currentMetadata.timeZoneSource || "").trim().toLowerCase();
+          if (
+            getTimeZoneFromParticipantMetadata(r.localParticipant.metadata) !== localTimeZone ||
+            currentSource !== "profile"
+          ) {
+            await r.localParticipant.setMetadata(
+              JSON.stringify({
+                ...currentMetadata,
+                timeZone: localTimeZone,
+                timeZoneSource: "profile",
+              }),
+            );
+          }
         }
       } catch (error) {
-        console.warn("[room] participant timezone metadata was not published", error);
+        console.warn("[room] profile timezone metadata was not published", error);
       }
 
       if (USAGE_TRACKING_ENABLED && !opts.preserveAttendance) {
