@@ -1,4 +1,4 @@
-name: Inspect timezone sync
+name: Fix profile timezone sync
 
 on:
   push:
@@ -7,23 +7,127 @@ on:
       - '.github/workflows/inspect-timezone-sync.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect:
+  fix:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
-      - name: Inspect room profile map and local auth IDs
+
+      - name: Make profile timezone authoritative in room tiles and PiP
         shell: bash
         run: |
-          echo '=== profilesById refs ==='
-          grep -n -B 6 -A 16 'profilesById' src/pages/RoomPageLiveKit.tsx || true
-          echo '=== profile fetches in room ==='
-          grep -n -B 5 -A 14 '\.from("profiles")' src/pages/RoomPageLiveKit.tsx || true
-          echo '=== authUserId definition refs ==='
-          grep -n -B 8 -A 12 'authUserId' src/pages/RoomPageLiveKit.tsx | head -n 180 || true
-          echo '=== profile event constants/usages ==='
-          grep -RIn 'AUTH_PROFILE_READY_EVENT\|profile-ready\|profile.*updated' src | head -n 160 || true
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/pages/RoomPageLiveKit.tsx')
+          text = path.read_text()
+
+          def replace_once(old: str, new: str, label: str):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              'import { formatTimeZoneCityLabel } from "../lib/timezones";',
+              'import { formatTimeZoneCityLabel, isValidTimeZone } from "../lib/timezones";',
+              'timezone import',
+          )
+
+          replace_once(
+              '''type HostProfile = {\n  id: string;\n  full_name: string;\n  avatar_url?: string | null;\n  bio?: string | null;\n};''',
+              '''type HostProfile = {\n  id: string;\n  full_name: string;\n  avatar_url?: string | null;\n  bio?: string | null;\n  timezone?: string | null;\n};''',
+              'HostProfile timezone',
+          )
+
+          replace_once(
+              '''  const profilesByIdRef = useRef<Record<string, HostProfile>>({});\n\n  useEffect(() => {\n    profilesByIdRef.current = profilesById;\n  }, [profilesById]);''',
+              '''  const profilesByIdRef = useRef<Record<string, HostProfile>>({});\n  const [localProfileTimeZone, setLocalProfileTimeZone] = useState("");\n  const localProfileTimeZoneRef = useRef("");\n\n  useEffect(() => {\n    profilesByIdRef.current = profilesById;\n  }, [profilesById]);\n\n  useEffect(() => {\n    localProfileTimeZoneRef.current = localProfileTimeZone;\n  }, [localProfileTimeZone]);''',
+              'local profile timezone state',
+          )
+
+          old_local_profile = '''  useEffect(() => {\n    (async () => {\n      if (!authUserId) return;\n\n      try {\n        const { data } = await supabase\n          .from("profiles")\n          .select("id, full_name, avatar_url")\n          .eq("id", authUserId)\n          .maybeSingle();\n\n        const nm = String((data as any)?.full_name || "").trim();\n        const avatar = await resolveAvatarUrlFromProfilesField(\n          String((data as any)?.avatar_url || ""),\n        );\n\n        if (nm) {\n          setUserName(nm);\n          setDisplayName((prev) => String(prev || "").trim() || nm);\n          setPrejoin((prev) => {\n            if (String(prev.displayName || "").trim()) return prev;\n            return { ...prev, displayName: nm };\n          });\n          prejoinRef.current = {\n            ...prejoinRef.current,\n            displayName:\n              String(prejoinRef.current.displayName || "").trim() || nm,\n          };\n        }\n\n        if (avatar) {\n          setLocalAvatarUrl(avatar);\n        }\n      } catch (e) {\n        console.warn("self profile fetch failed", e);\n      }\n    })();\n  }, [authUserId]);'''
+
+          new_local_profile = '''  useEffect(() => {\n    let cancelled = false;\n\n    (async () => {\n      if (!authUserId) {\n        localProfileTimeZoneRef.current = "";\n        setLocalProfileTimeZone("");\n        return;\n      }\n\n      const normalizedUserId = String(authUserId).trim().toLowerCase();\n      try {\n        const storedTimeZone = String(\n          localStorage.getItem(`mysession-timezone:${authUserId}`) || "",\n        ).trim();\n        if (isValidTimeZone(storedTimeZone)) {\n          localProfileTimeZoneRef.current = storedTimeZone;\n          setLocalProfileTimeZone(storedTimeZone);\n        }\n      } catch { }\n\n      try {\n        const { data } = await supabase\n          .from("profiles")\n          .select("id, full_name, avatar_url, timezone")\n          .eq("id", authUserId)\n          .maybeSingle();\n\n        if (cancelled) return;\n\n        const nm = String((data as any)?.full_name || "").trim();\n        const avatar = await resolveAvatarUrlFromProfilesField(\n          String((data as any)?.avatar_url || ""),\n        );\n        const rawTimeZone = String((data as any)?.timezone || "").trim();\n        const profileTimeZone = isValidTimeZone(rawTimeZone) ? rawTimeZone : "";\n\n        if (cancelled) return;\n\n        if (profileTimeZone) {\n          localProfileTimeZoneRef.current = profileTimeZone;\n          setLocalProfileTimeZone(profileTimeZone);\n          try {\n            localStorage.setItem(`mysession-timezone:${authUserId}`, profileTimeZone);\n          } catch { }\n        }\n\n        if (normalizedUserId) {\n          setProfilesById((prev) => {\n            const previousProfile = prev[normalizedUserId];\n            const nextProfile: HostProfile = {\n              id: normalizedUserId,\n              full_name: nm || String(previousProfile?.full_name || "").trim(),\n              avatar_url: avatar || previousProfile?.avatar_url || null,\n              bio: previousProfile?.bio ?? null,\n              timezone: profileTimeZone || previousProfile?.timezone || null,\n            };\n            const next = { ...prev, [normalizedUserId]: nextProfile };\n            profilesByIdRef.current = next;\n            return next;\n          });\n        }\n\n        if (nm) {\n          setUserName(nm);\n          setDisplayName((prev) => String(prev || "").trim() || nm);\n          setPrejoin((prev) => {\n            if (String(prev.displayName || "").trim()) return prev;\n            return { ...prev, displayName: nm };\n          });\n          prejoinRef.current = {\n            ...prejoinRef.current,\n            displayName:\n              String(prejoinRef.current.displayName || "").trim() || nm,\n          };\n        }\n\n        if (avatar) {\n          setLocalAvatarUrl(avatar);\n        }\n      } catch (e) {\n        console.warn("self profile fetch failed", e);\n      }\n    })();\n\n    return () => {\n      cancelled = true;\n    };\n  }, [authUserId]);\n\n  useEffect(() => {\n    const normalizedUserId = String(authUserId || "").trim().toLowerCase();\n    if (!normalizedUserId || !looksLikeUuid(normalizedUserId)) return;\n\n    const applyTimeZone = (raw: unknown) => {\n      const nextTimeZone = String(raw || "").trim();\n      if (!isValidTimeZone(nextTimeZone)) return;\n\n      localProfileTimeZoneRef.current = nextTimeZone;\n      setLocalProfileTimeZone(nextTimeZone);\n      try {\n        localStorage.setItem(`mysession-timezone:${normalizedUserId}`, nextTimeZone);\n      } catch { }\n\n      setProfilesById((prev) => {\n        const previousProfile = prev[normalizedUserId];\n        const nextProfile: HostProfile = {\n          id: normalizedUserId,\n          full_name: String(previousProfile?.full_name || userName || displayName || "").trim(),\n          avatar_url: previousProfile?.avatar_url || localAvatarUrl || null,\n          bio: previousProfile?.bio ?? null,\n          timezone: nextTimeZone,\n        };\n        const next = { ...prev, [normalizedUserId]: nextProfile };\n        profilesByIdRef.current = next;\n        return next;\n      });\n    };\n\n    const storageKey = `mysession-timezone:${normalizedUserId}`;\n    const onStorage = (event: StorageEvent) => {\n      if (event.key === storageKey && event.newValue) applyTimeZone(event.newValue);\n    };\n    window.addEventListener("storage", onStorage);\n\n    const channel = supabase\n      .channel(`room-self-profile-timezone:${normalizedUserId}`)\n      .on(\n        "postgres_changes",\n        {\n          event: "UPDATE",\n          schema: "public",\n          table: "profiles",\n          filter: `id=eq.${normalizedUserId}`,\n        },\n        (payload) => applyTimeZone((payload.new as any)?.timezone),\n      )\n      .subscribe();\n\n    return () => {\n      window.removeEventListener("storage", onStorage);\n      void supabase.removeChannel(channel);\n    };\n  }, [authUserId, displayName, localAvatarUrl, userName]);'''
+
+          replace_once(old_local_profile, new_local_profile, 'local profile loader/realtime')
+
+          replace_once(
+              '.select("id, full_name, avatar_url, bio")\n          .in("id", missing);',
+              '.select("id, full_name, avatar_url, bio, timezone")\n          .in("id", missing);',
+              'remote profile select timezone',
+          )
+
+          replace_once(
+              '''            bio: r?.bio ?? null,\n          };''',
+              '''            bio: r?.bio ?? null,\n            timezone: isValidTimeZone(String(r?.timezone || "").trim())\n              ? String(r.timezone).trim()\n              : null,\n          };''',
+              'remote profile patch timezone',
+          )
+
+          replace_once(
+              '''    const localParticipantTimeZone =\n      getTimeZoneFromParticipantMetadata((lp as any)?.metadata) ||\n      Intl.DateTimeFormat().resolvedOptions().timeZone ||\n      "UTC";''',
+              '''    const localProfileTimeZoneValue = String(\n      currentProfilesById[localUserId]?.timezone ||\n      localProfileTimeZoneRef.current ||\n      "",\n    ).trim();\n    const localParticipantTimeZone =\n      (isValidTimeZone(localProfileTimeZoneValue)\n        ? localProfileTimeZoneValue\n        : "") ||\n      getTimeZoneFromParticipantMetadata((lp as any)?.metadata) ||\n      Intl.DateTimeFormat().resolvedOptions().timeZone ||\n      "UTC";''',
+              'local tile timezone',
+          )
+
+          replace_once(
+              '''      const participantStatus = getStatusFromMetadata((rp as any)?.metadata);\n      const participantTimeZone = getTimeZoneFromParticipantMetadata((rp as any)?.metadata);''',
+              '''      const participantStatus = getStatusFromMetadata((rp as any)?.metadata);\n      const participantMetadata = parseParticipantMetadata((rp as any)?.metadata);\n      const metadataTimeZone = getTimeZoneFromParticipantMetadata((rp as any)?.metadata);\n      const profileTimeZone = String(prof?.timezone || "").trim();\n      const participantTimeZone =\n        metadataTimeZone &&\n        String(participantMetadata?.timeZoneSource || "").trim().toLowerCase() === "profile"\n          ? metadataTimeZone\n          : (isValidTimeZone(profileTimeZone) ? profileTimeZone : "") || metadataTimeZone;''',
+              'remote tile timezone',
+          )
+
+          old_connect_timezone = '''      try {\n        const localTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";\n        const currentMetadata = parseParticipantMetadata(r.localParticipant.metadata) || {};\n        if (getTimeZoneFromParticipantMetadata(r.localParticipant.metadata) !== localTimeZone) {\n          await r.localParticipant.setMetadata(\n            JSON.stringify({ ...currentMetadata, timeZone: localTimeZone }),\n          );\n        }\n      } catch (error) {\n        console.warn("[room] participant timezone metadata was not published", error);\n      }'''
+
+          new_connect_timezone = '''      try {\n        const localTimeZone = String(localProfileTimeZoneRef.current || "").trim();\n        if (isValidTimeZone(localTimeZone)) {\n          const currentMetadata = parseParticipantMetadata(r.localParticipant.metadata) || {};\n          const currentSource = String(currentMetadata.timeZoneSource || "").trim().toLowerCase();\n          if (\n            getTimeZoneFromParticipantMetadata(r.localParticipant.metadata) !== localTimeZone ||\n            currentSource !== "profile"\n          ) {\n            await r.localParticipant.setMetadata(\n              JSON.stringify({\n                ...currentMetadata,\n                timeZone: localTimeZone,\n                timeZoneSource: "profile",\n              }),\n            );\n          }\n        }\n      } catch (error) {\n        console.warn("[room] profile timezone metadata was not published", error);\n      }'''
+
+          replace_once(old_connect_timezone, new_connect_timezone, 'connect timezone metadata')
+
+          replace_once(
+              '''    const timezone =\n      Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";''',
+              '''    const savedProfileTimeZone = String(localProfileTimeZoneRef.current || "").trim();\n    const timezone = isValidTimeZone(savedProfileTimeZone)\n      ? savedProfileTimeZone\n      : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";''',
+              'attendance profile timezone',
+          )
+
+          metadata_effect_anchor = '''  }, [applySelfDeafenToRoom, connected]);\n\n  const trackWeeklyUsageOnLeave = useCallback(async () => {'''
+          metadata_effect_replacement = '''  }, [applySelfDeafenToRoom, connected]);\n\n  useEffect(() => {\n    if (!connected) return;\n\n    const room = roomRef.current;\n    const profileTimeZone = String(\n      localProfileTimeZone || localProfileTimeZoneRef.current || "",\n    ).trim();\n    if (!room || !isValidTimeZone(profileTimeZone)) return;\n\n    let cancelled = false;\n    const publishProfileTimeZone = async () => {\n      try {\n        const currentMetadata =\n          parseParticipantMetadata(room.localParticipant.metadata) || {};\n        const currentSource = String(\n          currentMetadata.timeZoneSource || "",\n        ).trim().toLowerCase();\n        if (\n          getTimeZoneFromParticipantMetadata(room.localParticipant.metadata) ===\n          profileTimeZone &&\n          currentSource === "profile"\n        ) {\n          scheduleRebuildTiles();\n          return;\n        }\n\n        await room.localParticipant.setMetadata(\n          JSON.stringify({\n            ...currentMetadata,\n            timeZone: profileTimeZone,\n            timeZoneSource: "profile",\n          }),\n        );\n        if (!cancelled) {\n          scheduleRebuildTiles();\n          window.setTimeout(() => scheduleRebuildTiles(), 80);\n        }\n      } catch (error) {\n        console.warn("[room] profile timezone metadata sync failed", error);\n      }\n    };\n\n    void publishProfileTimeZone();\n    return () => {\n      cancelled = true;\n    };\n  }, [connected, localProfileTimeZone]);\n\n  const trackWeeklyUsageOnLeave = useCallback(async () => {'''
+          replace_once(metadata_effect_anchor, metadata_effect_replacement, 'live profile timezone publisher')
+
+          path.write_text(text)
+          PY
+
+      - name: Verify timezone sources
+        shell: bash
+        run: |
+          grep -Fq 'timezone?: string | null;' src/pages/RoomPageLiveKit.tsx
+          grep -Fq '.select("id, full_name, avatar_url, bio, timezone")' src/pages/RoomPageLiveKit.tsx
+          grep -Fq 'timeZoneSource: "profile"' src/pages/RoomPageLiveKit.tsx
+          grep -Fq 'room-self-profile-timezone:' src/pages/RoomPageLiveKit.tsx
+          grep -Fq 'localProfileTimeZoneRef.current' src/pages/RoomPageLiveKit.tsx
+          if grep -Fq 'const localTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";' src/pages/RoomPageLiveKit.tsx; then
+            echo 'Room metadata still publishes detected browser timezone'
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Production Vite build
+        run: npx vite build
+      - name: Check diff
+        run: git diff --check
+
+      - name: Commit timezone sync
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/pages/RoomPageLiveKit.tsx
+          git commit -m 'Sync room tile timezone from user profiles'
+          git push origin main
