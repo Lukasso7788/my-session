@@ -27,31 +27,15 @@ jobs:
           text = stagebar.read_text()
 
           replacements = [
-              (
-                  '  showLegend?: boolean;\n}',
-                  '  showLegend?: boolean;\n  size?: "default" | "card";\n}',
-                  1,
-              ),
-              (
-                  '  showLegend = false,\n}: Props) {',
-                  '  showLegend = false,\n  size = "default",\n}: Props) {',
-                  1,
-              ),
+              ('  showLegend?: boolean;\n}', '  showLegend?: boolean;\n  size?: "default" | "card";\n}', 1),
+              ('  showLegend = false,\n}: Props) {', '  showLegend = false,\n  size = "default",\n}: Props) {', 1),
               (
                   '  const markerLeftPercent = clamp(cycleProgress * 100, 0.5, 99.5);\n',
                   '  const markerLeftPercent = clamp(cycleProgress * 100, 0.5, 99.5);\n  const isCardSize = size === "card";\n  const trackHeightClass = isCardSize ? "h-[10px]" : "h-2";\n  const markerTop = isCardSize ? -2.5 : -3;\n  const markerHeight = isCardSize ? 15 : 12;\n',
                   1,
               ),
-              (
-                  '      <div className="relative w-full h-[10px] overflow-visible">',
-                  '      <div className={`relative w-full ${trackHeightClass} overflow-visible`}>',
-                  1,
-              ),
-              (
-                  '        className={`absolute inset-x-0 top-0 h-[10px] flex rounded-full overflow-visible ${trackBgClass}`}',
-                  '        className={`absolute inset-x-0 top-0 ${trackHeightClass} flex rounded-full overflow-visible ${trackBgClass}`}',
-                  1,
-              ),
+              ('      <div className="relative w-full h-[10px] overflow-visible">', '      <div className={`relative w-full ${trackHeightClass} overflow-visible`}>', 1),
+              ('        className={`absolute inset-x-0 top-0 h-[10px] flex rounded-full overflow-visible ${trackBgClass}`}', '        className={`absolute inset-x-0 top-0 ${trackHeightClass} flex rounded-full overflow-visible ${trackBgClass}`}', 1),
               ('            top: -2.5,', '            top: markerTop,', 1),
               ('            height: 15,', '            height: markerHeight,', 1),
           ]
@@ -77,11 +61,11 @@ jobs:
       - name: Verify scoped sizing
         shell: bash
         run: |
-          grep -q 'size?: "default" | "card"' src/components/SessionStageBar.tsx
-          grep -q 'const trackHeightClass = isCardSize ? "h-\[10px\]" : "h-2"' src/components/SessionStageBar.tsx
-          grep -q 'const markerHeight = isCardSize ? 15 : 12' src/components/SessionStageBar.tsx
-          test "$(grep -c 'size="card"' src/components/SessionCard.tsx)" -eq 1
-          grep -q 'className="h-\[10px\] w-full rounded-full bg\[#E7E7E7\]"' src/components/SessionCard.tsx
+          grep -Fq 'size?: "default" | "card"' src/components/SessionStageBar.tsx
+          grep -Fq 'const trackHeightClass = isCardSize ? "h-[10px]" : "h-2"' src/components/SessionStageBar.tsx
+          grep -Fq 'const markerHeight = isCardSize ? 15 : 12' src/components/SessionStageBar.tsx
+          test "$(grep -Fc 'size="card"' src/components/SessionCard.tsx)" -eq 1
+          grep -Fq 'className="h-[10px] w-full rounded-full bg-[#E7E7E7]"' src/components/SessionCard.tsx
 
       - uses: actions/setup-node@v4
         with:
