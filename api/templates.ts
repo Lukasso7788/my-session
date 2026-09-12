@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL!;
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY!;
@@ -346,10 +347,124 @@ async function handleTaskAiSuggestions(req: VercelRequest, res: VercelResponse) 
   }
 }
 
+async function handleGenerateTaskList(req: VercelRequest, res: VercelResponse) {
+  res.setHeader("Cache-Control", "no-store");
+  const token = getBearerToken(req);
+  if (!token) return res.status(401).json({ error: "Please log in to generate a task list." });
+  const { data: auth, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !auth.user) return res.status(401).json({ error: "Your session expired. Please log in again." });
+  try {
+    if (!(await hasPaidTaskAiAccess(auth.user.id))) {
+      return res.status(403).json({ error: "Task list generation is available with MySession Pro." });
+    }
+  } catch {
+    return res.status(503).json({ error: "Could not verify Pro access. Please try again." });
+  }
+  const body = getRequestBody(req);
+  const goal = typeof body.goal === "string" ? body.goal.trim() : "";
+  const planId = typeof body.requestId === "string" ? body.requestId : "";
+  if (goal.length < 10 || goal.length > 2000 ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(planId)) {
+    return res.status(400).json({ error: "Describe your goal in 10–2000 characters." });
+  }
+  // All task writes use the caller's JWT and existing ownership RLS, never the service role.
+  const db = createClient(supabaseUrl, supabaseKey, {
+    global: { headers: { Authorization: `Bearer ${token}` } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25_000);
+  try {
+    // Stable request IDs recover a saved result after a lost HTTP response.
+    const existing = await db.from("focus_plans").select("*").eq("id", planId).eq("user_id", auth.user.id).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data) {
+      const saved = await db.from("focus_plan_items").select("*").eq("plan_id", planId).eq("user_id", auth.user.id).order("sort_order");
+      if (saved.error) throw saved.error;
+      if (saved.data?.length) return res.status(200).json({ plan: existing.data, items: saved.data });
+      // Recover an empty parent left by an interrupted save. Deterministic item
+      // IDs below make concurrent recovery safe without duplicating tasks.
+    }
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: "AI generation is not configured yet." });
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: process.env.OPENAI_TASK_SUGGESTIONS_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini",
+        store: false,
+        max_output_tokens: 1800,
+        instructions: "Turn the user's goal into a practical task list. Use the user's language. Give a short descriptive title and 3–12 concrete, ordered, achievable tasks. Start with a small actionable step. Respect their purpose, constraints and desired outcome. Do not claim to have performed the tasks. No markdown, vague encouragement or invented deadlines.",
+        input: existing.data ? `Goal: ${goal}\nUse this existing plan title: ${existing.data.title}` : goal,
+        text: { format: {
+          type: "json_schema", name: "generated_task_list", strict: true,
+          schema: {
+            type: "object", additionalProperties: false,
+            properties: {
+              title: { type: "string", minLength: 1, maxLength: 120 },
+              tasks: { type: "array", minItems: 3, maxItems: 12, items: { type: "string", minLength: 1, maxLength: 300 } },
+            },
+            required: ["title", "tasks"],
+          },
+        } },
+      }),
+    });
+    if (!response.ok) return res.status(502).json({ error: "AI generation is temporarily unavailable. Please retry." });
+    const payload = await response.json();
+    const parts = (payload.output || []).flatMap((item: any) => item.content || []);
+    const parsed = safeJsonParse(parts.filter((part: any) => part.type === "output_text").map((part: any) => part.text).join(""));
+    if (payload.status !== "completed" || typeof parsed?.title !== "string" ||
+        !parsed.title.trim() || parsed.title.length > 120 || !Array.isArray(parsed.tasks) ||
+        parsed.tasks.length < 3 || parsed.tasks.length > 12 ||
+        parsed.tasks.some((task: unknown) => typeof task !== "string" || !task.trim() || task.length > 300)) {
+      return res.status(502).json({ error: "AI could not produce a complete plan. Please retry or clarify your goal." });
+    }
+    const plan = existing.data ? { data: existing.data, error: null } : await db.from("focus_plans").insert({
+      id: planId, user_id: auth.user.id, title: parsed.title.trim(),
+    }).select("*").single();
+    if (plan.error) {
+      if (plan.error.code === "23505") return res.status(409).json({ error: "This list is already being saved. Wait a moment and retry." });
+      throw plan.error;
+    }
+    const rows = parsed.tasks.map((text: string, index: number) => {
+      const hash = createHash("sha256").update(`${planId}:${index}`).digest("hex");
+      const id = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-8${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+      return {
+      id,
+      plan_id: planId, user_id: auth.user.id, text: text.trim(),
+      completed: false, sort_order: index, target_date: null, session_id: null,
+      };
+    });
+    const items = await db.from("focus_plan_items").upsert(rows, { onConflict: "id", ignoreDuplicates: true }).select("*");
+    if (items.error) {
+      // The bulk INSERT is atomic; remove the empty parent on a confirmed failure.
+      // Never delete on a transport error: the INSERT might have committed.
+      if (!existing.data && /^[0-9A-Z]{5}$/.test(items.error.code || "")) {
+        const cleanup = await db.from("focus_plans").delete().eq("id", planId).eq("user_id", auth.user.id);
+        if (cleanup.error) console.error("[task-list-generate] empty list cleanup failed", { code: cleanup.error.code });
+      }
+      throw items.error;
+    }
+    // A simultaneous retry may have inserted some of the same deterministic IDs.
+    if (items.data?.length !== rows.length) {
+      const saved = await db.from("focus_plan_items").select("*").eq("plan_id", planId).eq("user_id", auth.user.id).order("sort_order");
+      if (saved.error || !saved.data?.length) throw saved.error || new Error("Save not confirmed");
+      return res.status(200).json({ plan: plan.data, items: saved.data });
+    }
+    return res.status(200).json({ plan: plan.data, items: items.data });
+  } catch {
+    return res.status(502).json({ error: "Could not generate or save the list. Please retry; your request will not create a duplicate list." });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const body = getRequestBody(req);
 
   if (req.method === "POST") {
+    if (body?.action === "task-list-generate") return handleGenerateTaskList(req, res);
     if (body?.action === "ai-host-respond") return handleAiHost(req, res);
     if (body?.action === "task-ai-suggestions") {
       return handleTaskAiSuggestions(req, res);

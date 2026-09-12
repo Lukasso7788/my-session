@@ -16,6 +16,7 @@ import {
   X,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { GenerateTaskListDialog } from "../components/GenerateTaskListDialog";
 import {
   loadEligibleTaskSessions,
   type TaskSessionOption,
@@ -352,6 +353,7 @@ export default function TasksPageV3() {
   const [sessionPickerValue, setSessionPickerValue] = useState("");
 
   const [showNewListInput, setShowNewListInput] = useState(false);
+  const [showGenerator, setShowGenerator] = useState(false);
   const [newPlanTitle, setNewPlanTitle] = useState("");
   const [renamingPlanId, setRenamingPlanId] = useState<string | null>(null);
   const [renamePlanTitle, setRenamePlanTitle] = useState("");
@@ -980,6 +982,7 @@ export default function TasksPageV3() {
     <div className="min-h-[calc(100vh-72px)] bg-white font-[Inter] text-[#2F2F2F]">
       <div className="flex min-h-[calc(100vh-72px)] w-full">
         <main className="min-w-0 flex-1 px-6 pb-14 pt-7 md:px-8 lg:px-9">
+          <button type="button" onClick={() => setShowGenerator(true)} className="mb-4 rounded-full border border-[#D8D8D8] px-3 py-2 text-xs min-[900px]:hidden">Generate task list · Pro</button>
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex min-w-0 items-baseline gap-2 whitespace-nowrap">
               <button
@@ -1309,6 +1312,7 @@ export default function TasksPageV3() {
         <aside className="hidden w-[350px] max-w-[30vw] shrink-0 border-l border-[#E5E5E5] bg-white px-5 pb-10 pt-7 min-[900px]:block">
           <div className="flex items-center justify-between gap-2">
             <div className="text-[12px] font-bold uppercase leading-4 text-[#474C50]">Task Lists</div>
+            <button type="button" onClick={() => setShowGenerator(true)} className="rounded-full border border-[#D8D8D8] px-2 py-1 text-[12px] text-[#717680] hover:bg-[#F8F8F8]">Generate · Pro</button>
             <button type="button" onClick={() => setShowNewListInput((value) => !value)} className="inline-flex items-center gap-1 rounded-full border border-[#D8D8D8] px-1 py-1 text-[12px] font-normal leading-none text-[#717680] hover:bg-[#F8F8F8]"><Plus size={12} /> Add list</button>
           </div>
 
@@ -1415,6 +1419,19 @@ export default function TasksPageV3() {
 
           {selectedPlan ? <div className="mt-6 border-t border-[#F0F0F0] pt-3 text-[10px] leading-4 text-[#9A9A9A]">New tasks added from “All Tasks” go to <span className="font-medium text-[#666]">{selectedPlan.title}</span>.</div> : null}
         </aside>
+        {showGenerator ? <GenerateTaskListDialog key={user.id} userId={user.id}
+          onClose={() => setShowGenerator(false)}
+          onCreated={({ plan, items: generatedItems }) => {
+            setPlans((current) => [plan, ...current.filter((entry) => entry.id !== plan.id)]);
+            setItems((current) => [...current.filter((entry) => entry.plan_id !== plan.id), ...generatedItems]);
+            setSelectedPlanId(plan.id);
+            setActiveListId(plan.id);
+            setPageMode("tasks");
+            setUtilityMode("none");
+            setTaskSearch("");
+            setTaskStatusFilter("all");
+            setShowGenerator(false);
+          }} /> : null}
       </div>
     </div>
   );
