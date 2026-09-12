@@ -1,0 +1,22 @@
+name: Inspect stage bar usages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/inspect-stagebar-usages.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Inspect SessionStageBar usages
+        shell: bash
+        run: |
+          grep -RIn -B 6 -A 12 '<SessionStageBar' src --exclude='SessionStageBar.tsx' || true
