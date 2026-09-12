@@ -16,18 +16,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
-      - name: Inspect room auth and timezone publication paths
+      - name: Inspect room profile map and local auth IDs
         shell: bash
         run: |
-          echo '=== useAuth / profile in RoomPage ==='
-          grep -nE 'useAuth\(|const \{[^}]*profile|profile\?\.timezone|profile\.timezone' src/pages/RoomPageLiveKit.tsx || true
-          echo '=== component declaration vicinity ==='
-          grep -nE '^export default function|^function RoomPage|const RoomPage' src/pages/RoomPageLiveKit.tsx || true
-          echo '=== local timezone publication ==='
-          sed -n '13660,13720p' src/pages/RoomPageLiveKit.tsx
-          echo '=== tile build local+remote ==='
-          sed -n '12990,13140p' src/pages/RoomPageLiveKit.tsx
-          echo '=== profile save ==='
-          sed -n '570,635p' src/pages/ProfilePage.tsx
-          echo '=== AuthContext profile lifecycle ==='
-          sed -n '1,220p' src/context/AuthContext.tsx
+          echo '=== profilesById refs ==='
+          grep -n -B 6 -A 16 'profilesById' src/pages/RoomPageLiveKit.tsx || true
+          echo '=== profile fetches in room ==='
+          grep -n -B 5 -A 14 '\.from("profiles")' src/pages/RoomPageLiveKit.tsx || true
+          echo '=== authUserId definition refs ==='
+          grep -n -B 8 -A 12 'authUserId' src/pages/RoomPageLiveKit.tsx | head -n 180 || true
+          echo '=== profile event constants/usages ==='
+          grep -RIn 'AUTH_PROFILE_READY_EVENT\|profile-ready\|profile.*updated' src | head -n 160 || true
