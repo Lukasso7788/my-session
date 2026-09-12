@@ -5021,6 +5021,7 @@ export default function SessionCard({
                                 progressStyle="tick"
                                 tickEveryMs={tickEveryMs}
                                 theme="light"
+                                size="card"
                             />
                         ) : (
                             <div

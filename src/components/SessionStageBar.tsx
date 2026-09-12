@@ -12,6 +12,7 @@ interface Props {
   tickEveryMs?: number;
   theme?: RoomTheme;
   showLegend?: boolean;
+  size?: "default" | "card";
 }
 
 function clamp(n: number, a: number, b: number) {
@@ -330,6 +331,7 @@ export function SessionStageBar({
   tickEveryMs = 1000,
   theme = "dark",
   showLegend = false,
+  size = "default",
 }: Props) {
   const [elapsed, setElapsed] = useState(0);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
@@ -435,6 +437,10 @@ export function SessionStageBar({
       : "border-r border-b border-[#2B2B2B] bg-[#252525]";
 
   const markerLeftPercent = clamp(cycleProgress * 100, 0.5, 99.5);
+  const isCardSize = size === "card";
+  const trackHeightClass = isCardSize ? "h-[10px]" : "h-2";
+  const markerTop = isCardSize ? -2.5 : -3;
+  const markerHeight = isCardSize ? 15 : 12;
 
   const legendItems = useMemo(() => {
     const shortLabelByKind: Record<StageKind, string> = {
@@ -468,9 +474,9 @@ export function SessionStageBar({
 
   return (
     <div className="w-full min-w-0">
-      <div className="relative w-full h-[10px] overflow-visible">
+      <div className={`relative w-full ${trackHeightClass} overflow-visible`}>
       <div
-        className={`absolute inset-x-0 top-0 h-[10px] flex rounded-full overflow-visible ${trackBgClass}`}
+        className={`absolute inset-x-0 top-0 ${trackHeightClass} flex rounded-full overflow-visible ${trackBgClass}`}
       >
         {(stages || []).map((stage, index) => {
           const durSec = stageSecondsList[index] || 0;
@@ -572,9 +578,9 @@ export function SessionStageBar({
           className="absolute pointer-events-none z-[40]"
           style={{
             left: `${markerLeftPercent}%`,
-            top: -2.5,
+            top: markerTop,
             width: 2,
-            height: 15,
+            height: markerHeight,
             transform: "translateX(-50%)",
             backgroundColor: markerColor,
             borderRadius: 9999,
