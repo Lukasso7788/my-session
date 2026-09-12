@@ -1,0 +1,27 @@
+name: Inspect timezone sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/inspect-timezone-sync.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Inspect timezone/profile/tile/PiP sources
+        shell: bash
+        run: |
+          echo '=== timezone occurrences ==='
+          grep -RInEi --exclude-dir=node_modules --exclude-dir=.git 'time[_-]?zone|timezone|Intl\.DateTimeFormat|resolvedOptions\(\)' src api supabase 2>/dev/null | head -n 400 || true
+          echo '=== PiP occurrences near timezone ==='
+          grep -RInEi --exclude-dir=node_modules --exclude-dir=.git 'pip|picture.in.picture|video tile|participant tile|participantmetadata|metadata' src/pages/RoomPageLiveKit.tsx src/components 2>/dev/null | head -n 400 || true
+          echo '=== profile select/update timezone ==='
+          grep -RInEi --exclude-dir=node_modules --exclude-dir=.git 'profiles.*timezone|timezone.*profiles|select\([^)]*timezone|update\([^)]*timezone|upsert\([^)]*timezone' src 2>/dev/null | head -n 300 || true
