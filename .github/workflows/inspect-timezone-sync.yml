@@ -16,12 +16,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
-      - name: Inspect timezone/profile/tile/PiP sources
+      - name: Inspect room auth and timezone publication paths
         shell: bash
         run: |
-          echo '=== timezone occurrences ==='
-          grep -RInEi --exclude-dir=node_modules --exclude-dir=.git 'time[_-]?zone|timezone|Intl\.DateTimeFormat|resolvedOptions\(\)' src api supabase 2>/dev/null | head -n 400 || true
-          echo '=== PiP occurrences near timezone ==='
-          grep -RInEi --exclude-dir=node_modules --exclude-dir=.git 'pip|picture.in.picture|video tile|participant tile|participantmetadata|metadata' src/pages/RoomPageLiveKit.tsx src/components 2>/dev/null | head -n 400 || true
-          echo '=== profile select/update timezone ==='
-          grep -RInEi --exclude-dir=node_modules --exclude-dir=.git 'profiles.*timezone|timezone.*profiles|select\([^)]*timezone|update\([^)]*timezone|upsert\([^)]*timezone' src 2>/dev/null | head -n 300 || true
+          echo '=== useAuth / profile in RoomPage ==='
+          grep -nE 'useAuth\(|const \{[^}]*profile|profile\?\.timezone|profile\.timezone' src/pages/RoomPageLiveKit.tsx || true
+          echo '=== component declaration vicinity ==='
+          grep -nE '^export default function|^function RoomPage|const RoomPage' src/pages/RoomPageLiveKit.tsx || true
+          echo '=== local timezone publication ==='
+          sed -n '13660,13720p' src/pages/RoomPageLiveKit.tsx
+          echo '=== tile build local+remote ==='
+          sed -n '12990,13140p' src/pages/RoomPageLiveKit.tsx
+          echo '=== profile save ==='
+          sed -n '570,635p' src/pages/ProfilePage.tsx
+          echo '=== AuthContext profile lifecycle ==='
+          sed -n '1,220p' src/context/AuthContext.tsx
