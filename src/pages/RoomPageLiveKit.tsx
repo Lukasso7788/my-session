@@ -22,7 +22,6 @@ import {
   Room,
   RoomEvent,
   Track,
-  AudioPresets,
   RemoteParticipant,
   LocalVideoTrack,
   LocalAudioTrack,
@@ -898,7 +897,8 @@ type RoomSoundtrackState = {
 
 type RoomSoundtrackPacket =
   | { type: "soundtrack_state"; state: RoomSoundtrackState }
-  | { type: "soundtrack_request"; requestedAt: number };
+  | { type: "soundtrack_request"; requestedAt: number }
+  | { type: "shared_tab_music_volume"; volume: number; updatedAt: number };
 
 type SoundscapeListeningMode = "room" | "personal";
 
@@ -10798,56 +10798,58 @@ export function RoomPageLiveKit({
       // music too, without ever creating a screen-share tile.
       sharedTabMusicStreamRef.current = stream;
 
-      let publishableAudioTrack: MediaStreamTrack = audioTrack;
+      // Preserve the browser tab capture all the way to the WebRTC sender.
+      // WebAudio is intentionally kept out of the transmission path: routing
+      // tab audio through MediaStreamAudioDestinationNode can alter channel
+      // layout/resampling before Opus sees the signal.
+      try {
+        audioTrack.contentHint = "music";
+      } catch {
+        // Older Chromium builds may expose contentHint as read-only/unsupported.
+      }
+
       const AudioContextCtor =
-        window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        window.AudioContext ||
+        (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
 
-      if (AudioContextCtor) {
+      // Chromium can suppress the source tab's native local playback while it
+      // is captured. If so, build a LOCAL-ONLY monitor so the host still hears
+      // the room-music volume/mute state. This graph is never published.
+      if (canSuppressLocalTabPlayback && AudioContextCtor) {
         const audioContext = new AudioContextCtor();
-        const sourceNode = audioContext.createMediaStreamSource(new MediaStream([audioTrack]));
-        const roomGain = audioContext.createGain();
-        const destination = audioContext.createMediaStreamDestination();
+        const sourceNode = audioContext.createMediaStreamSource(
+          new MediaStream([audioTrack]),
+        );
+        const monitorGain = audioContext.createGain();
         const roomVolume = Math.max(0, Math.min(1, roomSoundscapeVolume / 100));
-
-        roomGain.gain.value = roomVolume;
-        sourceNode.connect(roomGain);
-        roomGain.connect(destination);
+        monitorGain.gain.value =
+          soundscapeMuted || soundscapeListeningMode === "personal"
+            ? 0
+            : roomVolume;
+        sourceNode.connect(monitorGain);
+        monitorGain.connect(audioContext.destination);
 
         sharedTabMusicAudioContextRef.current = audioContext;
         sharedTabMusicSourceNodeRef.current = sourceNode;
-        sharedTabMusicRoomGainRef.current = roomGain;
-        sharedTabMusicDestinationRef.current = destination;
-
-        // Chromium can suppress the original source-tab playback. When that is
-        // available, monitor the capture locally through a separate gain node so
-        // the host's Music mute/unmute control works the same way as it does for
-        // everybody else.
-        if (canSuppressLocalTabPlayback) {
-          const monitorGain = audioContext.createGain();
-          monitorGain.gain.value =
-            soundscapeMuted || soundscapeListeningMode === 'personal'
-              ? 0
-              : roomVolume;
-          sourceNode.connect(monitorGain);
-          monitorGain.connect(audioContext.destination);
-          sharedTabMusicMonitorGainRef.current = monitorGain;
-        }
+        sharedTabMusicMonitorGainRef.current = monitorGain;
+        sharedTabMusicRoomGainRef.current = null;
+        sharedTabMusicDestinationRef.current = null;
 
         try {
-          if (audioContext.state === 'suspended') await audioContext.resume();
+          if (audioContext.state === "suspended") await audioContext.resume();
         } catch {
-          // The user gesture that opened display capture normally unlocks audio.
+          // The user capture gesture normally unlocks audio.
         }
-
-        publishableAudioTrack = destination.stream.getAudioTracks()[0] || audioTrack;
       }
 
       const publication = (await activeRoom.localParticipant.publishTrack(
-        publishableAudioTrack,
+        audioTrack,
         {
           source: Track.Source.ScreenShareAudio,
           name: SHARED_TAB_MUSIC_TRACK_NAME,
-          audioPreset: AudioPresets.musicHighQualityStereo,
+          // Keep enough Opus headroom for full-range stereo music instead of
+          // inheriting the room's lower voice-oriented/default audio budget.
+          audioPreset: { maxBitrate: 192_000, priority: "high" },
           forceStereo: true,
           dtx: false,
           red: false,
@@ -10856,6 +10858,11 @@ export function RoomPageLiveKit({
 
       sharedTabMusicPublicationRef.current = publication;
       setSharingTabMusic(true);
+      void publishSoundtrackPacket({
+        type: "shared_tab_music_volume",
+        volume: roomSoundscapeVolume,
+        updatedAt: Date.now(),
+      }).catch(() => { });
 
       const handleCaptureEnded = () => {
         void stopSharedTabMusic();
@@ -10922,18 +10929,11 @@ export function RoomPageLiveKit({
 
   useEffect(() => {
     const roomVolume = Math.max(0, Math.min(1, roomSoundscapeVolume / 100));
-    const roomGain = sharedTabMusicRoomGainRef.current;
-    if (roomGain) {
-      try {
-        roomGain.gain.value = roomVolume;
-      } catch { }
-    }
-
     const monitorGain = sharedTabMusicMonitorGainRef.current;
     if (monitorGain) {
       try {
         monitorGain.gain.value =
-          soundscapeMuted || soundscapeListeningMode === 'personal'
+          soundscapeMuted || soundscapeListeningMode === "personal"
             ? 0
             : roomVolume;
       } catch { }
@@ -10967,7 +10967,11 @@ export function RoomPageLiveKit({
 
           active = true;
           try {
-            (publication.track as RemoteAudioTrack).setVolume(locallyMuted ? 0 : 1);
+            (publication.track as RemoteAudioTrack).setVolume(
+            locallyMuted
+              ? 0
+              : Math.max(0, Math.min(1, roomSoundscapeVolume / 100)),
+          );
           } catch (error) {
             console.warn('[tab-music] listener volume update failed', error);
           }
@@ -10996,7 +11000,13 @@ export function RoomPageLiveKit({
       room.off(RoomEvent.TrackUnmuted, onTrackChange);
       room.off(RoomEvent.Reconnected, onTrackChange);
     };
-  }, [connected, roomState, soundscapeListeningMode, soundscapeMuted]);
+  }, [
+    connected,
+    roomState,
+    roomSoundscapeVolume,
+    soundscapeListeningMode,
+    soundscapeMuted,
+  ]);
 
   const publishSoundtrackPacket = async (packet: RoomSoundtrackPacket) => {
     const room = roomRef.current;
@@ -11069,6 +11079,13 @@ export function RoomPageLiveKit({
     const volume = Math.max(0, Math.min(100, Math.round(rawVolume)));
     setRoomSoundscapeVolume(volume);
     soundscapeEngineRef.current?.setVolume(volume / 100);
+    // Shared tab music stays at full level before Opus. Broadcast only the
+    // control value; each listener applies it after receiving the track.
+    void publishSoundtrackPacket({
+      type: "shared_tab_music_volume",
+      volume,
+      updatedAt: Date.now(),
+    }).catch(() => { });
 
     const current = soundscapeStateRef.current;
     if (!current) return;
@@ -11313,7 +11330,34 @@ export function RoomPageLiveKit({
           applyRemoteState(packet.state);
           return;
         }
+        if (packet.type === "shared_tab_music_volume") {
+          if (!sender) return;
+          const senderUserId = extractBaseUserIdFromIdentity(
+            String(sender.identity || ""),
+          )
+            .trim()
+            .toLowerCase();
+          const senderCanControl =
+            (sender as any)?.permissions?.roomAdmin === true ||
+            participantControlSenderIdsRef.current.has(senderUserId);
+          if (!senderCanControl) return;
+          const nextVolume = Math.max(
+            0,
+            Math.min(
+              100,
+              Number.isFinite(Number(packet.volume)) ? Number(packet.volume) : 35,
+            ),
+          );
+          setRoomSoundscapeVolume(nextVolume);
+          soundscapeEngineRef.current?.setVolume(nextVolume / 100);
+          return;
+        }
         if (packet.type === "soundtrack_request" && canControlRoomSoundtrack) {
+          void publishSoundtrackPacket({
+            type: "shared_tab_music_volume",
+            volume: roomSoundscapeVolume,
+            updatedAt: Date.now(),
+          }).catch(() => { });
           const current = soundscapeStateRef.current;
           if (current) {
             void publishSoundtrackPacket({
@@ -11342,7 +11386,13 @@ export function RoomPageLiveKit({
     // The listener is tied to the active LiveKit room. Personal volume/mute is
     // applied by separate effects and does not require a new data subscription.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, roomState, canControlRoomSoundtrack, canUploadRoomSoundtrack]);
+  }, [
+    connected,
+    roomState,
+    canControlRoomSoundtrack,
+    canUploadRoomSoundtrack,
+    roomSoundscapeVolume,
+  ]);
 
   useEffect(() => {
     if (!session?.id || !defaultLivekitUrl) return;
