@@ -1,5 +1,11 @@
 /* Free Flow structure picker.
-   Scoped to the z-[235] overlay rendered by RoomPageLiveKit. */
+   Scoped to the z-[235] overlay rendered by RoomPageLiveKit.
+
+   The preset timelines deliberately keep their stage data/colours/proportions
+   in React (resolveStageVisual + minute-weighted flex), the same source used by
+   SessionStageBar. This stylesheet only gives that shared logic the compact
+   picker presentation: one continuous track, square internal joins, rounded
+   outer ends only. */
 
 @keyframes free-flow-intro-backdrop-in {
   from { opacity: 0; }
@@ -56,10 +62,13 @@
   transform-origin: 50% 46%;
 }
 
+/* Let the five preset buttons participate directly in the outer 2-column grid.
+   The custom action is the sixth sibling/grid cell below. */
 [class~="z-[235]"] > div > :nth-child(3) {
   display: contents !important;
 }
 
+/* Header */
 [class~="z-[235]"] > div > :first-child {
   position: relative;
   grid-column: 1 / -1;
@@ -147,6 +156,7 @@
   letter-spacing: 0.085em;
 }
 
+/* Preset cards */
 [class~="z-[235]"] > div > :nth-child(3) > button {
   position: relative;
   isolation: isolate;
@@ -175,6 +185,7 @@
 [class~="z-[235]"] > div > :nth-child(3) > button:nth-child(4) { animation-delay: 120ms; }
 [class~="z-[235]"] > div > :nth-child(3) > button:nth-child(5) { animation-delay: 145ms; }
 
+/* Card icon badges. Keep these independent from timeline stage colours. */
 [class~="z-[235]"] > div > :nth-child(3) > button::before {
   position: absolute;
   left: 16px;
@@ -184,34 +195,53 @@
   place-items: center;
   width: 42px;
   height: 42px;
-  border: 1px solid rgba(96, 165, 250, 0.24);
+  border: 1px solid rgba(96, 165, 250, 0.28);
   border-radius: 12px;
-  background: rgba(30, 64, 175, 0.16);
-  color: #8fb8ff;
+  background: linear-gradient(145deg, rgba(37, 99, 235, 0.2), rgba(30, 64, 175, 0.12));
+  color: #9bc2ff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 7px 18px rgba(0, 0, 0, 0.08);
   font-size: 19px;
   font-weight: 750;
   line-height: 1;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
 }
 
-[class~="z-[235]"] > div > :nth-child(3) > button:nth-child(1)::before { content: "▥"; }
-[class~="z-[235]"] > div > :nth-child(3) > button:nth-child(2)::before { content: "◷"; }
+[class~="z-[235]"] > div > :nth-child(3) > button:nth-child(1)::before {
+  content: "H";
+  font-size: 17px;
+  font-weight: 800;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+[class~="z-[235]"] > div > :nth-child(3) > button:nth-child(2)::before {
+  content: "◷";
+  border-color: rgba(129, 140, 248, 0.34);
+  background: rgba(79, 70, 229, 0.15);
+  color: #b7b7ff;
+  font-size: 22px;
+}
+
 [class~="z-[235]"] > div > :nth-child(3) > button:nth-child(3)::before {
   content: "⚡";
-  border-color: rgba(251, 191, 36, 0.22);
-  background: rgba(146, 64, 14, 0.14);
-  color: #facc15;
+  border-color: rgba(251, 191, 36, 0.28);
+  background: rgba(146, 64, 14, 0.17);
+  color: #fbbf24;
+  font-size: 19px;
 }
+
 [class~="z-[235]"] > div > :nth-child(3) > button:nth-child(4)::before {
   content: "≋";
-  border-color: rgba(167, 139, 250, 0.28);
-  background: rgba(91, 33, 182, 0.14);
-  color: #b9a6ff;
+  border-color: rgba(192, 132, 252, 0.34);
+  background: rgba(126, 34, 206, 0.15);
+  color: #d8b4fe;
+  font-size: 24px;
 }
+
 [class~="z-[235]"] > div > :nth-child(3) > button:nth-child(5)::before {
   content: "●";
-  border-color: rgba(74, 222, 128, 0.23);
-  background: rgba(22, 101, 52, 0.16);
+  border-color: rgba(74, 222, 128, 0.28);
+  background: rgba(22, 101, 52, 0.18);
   color: #4ade80;
   font-size: 13px;
 }
@@ -251,30 +281,48 @@
     background-color 180ms ease;
 }
 
+/* Mini timelines.
+   RoomPageLiveKit already supplies exactly the important SessionStageBar logic:
+   - resolveStageVisual(...) for the same stage colours
+   - flex: `${block.minutes} 1 0%` for duration-proportional widths
+
+   Therefore the picker track only needs to match SessionStageBar geometry:
+   one clipped rounded track, zero gaps, square internal boundaries. */
 [class~="z-[235]"] > div > :nth-child(3) > button > :nth-child(2) {
+  display: flex !important;
   height: 10px !important;
   min-height: 10px !important;
   margin-top: 14px !important;
   padding: 0 !important;
-  gap: 3px !important;
-  overflow: visible !important;
+  gap: 0 !important;
+  overflow: hidden !important;
   border: 0 !important;
-  border-radius: 999px !important;
-  background: transparent !important;
-  box-shadow: none !important;
+  border-radius: 9999px !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.12),
+    0 0 0 1px rgba(255, 255, 255, 0.025) !important;
 }
 
 [class~="z-[235]"] > div > :nth-child(3) > button > :nth-child(2) > span {
-  min-width: 4px !important;
+  min-width: 0 !important;
   height: 10px !important;
-  border-radius: 999px !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 0 0 1px rgba(0, 0, 0, 0.05);
+  margin: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
   transition:
     filter 180ms ease,
-    opacity 180ms ease,
-    transform 180ms ease;
+    opacity 180ms ease;
+}
+
+[class~="z-[235]"] > div > :nth-child(3) > button > :nth-child(2) > span:first-child {
+  border-top-left-radius: 9999px !important;
+  border-bottom-left-radius: 9999px !important;
+}
+
+[class~="z-[235]"] > div > :nth-child(3) > button > :nth-child(2) > span:last-child {
+  border-top-right-radius: 9999px !important;
+  border-bottom-right-radius: 9999px !important;
 }
 
 [class~="z-[235]"] > div > :nth-child(3) > button > :nth-child(3) {
@@ -308,7 +356,6 @@
 [class~="z-[235]"] > div > :nth-child(3) > button:hover::after { opacity: 1; }
 [class~="z-[235]"] > div > :nth-child(3) > button:hover > :nth-child(2) > span {
   filter: brightness(1.08) saturate(1.05);
-  transform: translateY(-0.5px);
 }
 [class~="z-[235]"] > div > :nth-child(3) > button:hover > :first-child > span {
   transform: translateY(-1px);
@@ -324,18 +371,21 @@
   outline-offset: 2px;
 }
 
+/* Custom structure: the sixth card, not a full-width CTA. */
 [class~="z-[235]"] > div > :last-child {
   position: relative;
   display: block !important;
+  grid-column: auto !important;
+  width: auto !important;
   min-width: 0;
   min-height: 160px;
   margin: 0 !important;
   overflow: hidden;
-  border: 1px solid rgba(74, 222, 128, 0.34);
+  border: 1px solid rgba(74, 222, 128, 0.38);
   border-radius: 16px;
   background:
-    radial-gradient(circle at 0% 0%, rgba(74, 222, 128, 0.18), transparent 48%),
-    linear-gradient(145deg, rgba(24, 78, 47, 0.6), rgba(29, 48, 39, 0.82));
+    radial-gradient(circle at 0% 0%, rgba(74, 222, 128, 0.16), transparent 48%),
+    linear-gradient(145deg, rgba(24, 78, 47, 0.56), rgba(29, 48, 39, 0.8));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
     0 0 0 1px rgba(22, 163, 74, 0.04);
@@ -359,7 +409,7 @@
   color: #f0fdf4 !important;
   box-shadow: none !important;
   text-align: left;
-  font-size: 16px !important;
+  font-size: 15px !important;
   font-weight: 700 !important;
   line-height: 1.25;
   letter-spacing: -0.012em;
@@ -375,12 +425,13 @@
   place-items: center;
   width: 42px;
   height: 42px;
-  border: 1px dashed rgba(134, 239, 172, 0.72);
-  border-radius: 999px;
-  background: rgba(22, 101, 52, 0.22);
+  border: 1px solid rgba(74, 222, 128, 0.46);
+  border-radius: 12px;
+  background: rgba(22, 101, 52, 0.24);
   color: #86efac;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
   font-size: 25px;
-  font-weight: 350;
+  font-weight: 420;
   line-height: 1;
 }
 
@@ -388,7 +439,7 @@
   content: "Create a custom structure that repeats forever.";
   position: absolute;
   left: 72px;
-  top: 47px;
+  top: 45px;
   max-width: 225px;
   color: rgba(220, 252, 231, 0.67);
   font-size: 11px;
@@ -398,48 +449,48 @@
 }
 
 [class~="z-[235]"] > div > :last-child::before {
-  content: "→";
+  content: "Custom";
   position: absolute;
   right: 16px;
-  top: 16px;
+  top: 17px;
   z-index: 3;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border: 1px solid rgba(134, 239, 172, 0.18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(134, 239, 172, 0.16);
   border-radius: 999px;
-  background: rgba(134, 239, 172, 0.1);
-  color: #bbf7d0;
-  font-size: 18px;
+  background: rgba(134, 239, 172, 0.09);
+  color: rgba(220, 252, 231, 0.74);
+  font-size: 10px;
+  font-weight: 600;
   line-height: 1;
   pointer-events: none;
-  transition: transform 180ms ease, background-color 180ms ease;
 }
 
+/* Decorative preview for a timeline that does not exist yet. It follows the
+   same geometry as SessionStageBar: contiguous stages and rounded outer ends. */
 [class~="z-[235]"] > div > :last-child::after {
   content: "";
   position: absolute;
-  left: 72px;
-  bottom: 24px;
+  left: 17px;
+  right: 17px;
+  bottom: 35px;
   z-index: 3;
-  width: 178px;
   height: 10px;
-  border-radius: 999px;
-  background:
-    linear-gradient(
-      90deg,
-      #4ade80 0 21%,
-      transparent 21% 24%,
-      #86efac 24% 32%,
-      transparent 32% 35%,
-      #22c55e 35% 67%,
-      transparent 67% 70%,
-      #bbf7d0 70% 76%,
-      transparent 76% 79%,
-      #4ade80 79% 100%
-    );
-  box-shadow: 0 0 0 1px rgba(134, 239, 172, 0.07);
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    #86efac 0 12%,
+    #4ade80 12% 40%,
+    #22c55e 40% 68%,
+    #6ee7b7 68% 82%,
+    #fda4af 82% 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 0 1px rgba(134, 239, 172, 0.06);
   pointer-events: none;
 }
 
@@ -450,11 +501,6 @@
     0 15px 32px rgba(0, 0, 0, 0.22),
     0 0 0 1px rgba(34, 197, 94, 0.09),
     inset 0 1px 0 rgba(255, 255, 255, 0.055);
-}
-
-[class~="z-[235]"] > div > :last-child:hover::before {
-  transform: translateX(2px);
-  background: rgba(134, 239, 172, 0.16);
 }
 
 [class~="z-[235]"] > div > :last-child:active {
@@ -471,6 +517,7 @@
     grid-template-columns: 1fr;
     gap: 10px;
     max-height: 92dvh;
+    overflow-y: auto;
     padding: 20px !important;
     border-bottom-left-radius: 0 !important;
     border-bottom-right-radius: 0 !important;
