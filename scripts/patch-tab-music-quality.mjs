@@ -32,3 +32,4 @@ text = text.replace(
 );
 
 fs.writeFileSync(path, text);
+// temporary trigger for the one-shot patch workflow
