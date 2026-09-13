@@ -22,6 +22,7 @@ import {
   Room,
   RoomEvent,
   Track,
+  AudioPresets,
   RemoteParticipant,
   LocalVideoTrack,
   LocalAudioTrack,
@@ -10841,10 +10842,17 @@ export function RoomPageLiveKit({
         publishableAudioTrack = destination.stream.getAudioTracks()[0] || audioTrack;
       }
 
-      const publication = (await activeRoom.localParticipant.publishTrack(publishableAudioTrack, {
-        source: Track.Source.ScreenShareAudio,
-        name: SHARED_TAB_MUSIC_TRACK_NAME,
-      } as any)) as LocalTrackPublication;
+      const publication = (await activeRoom.localParticipant.publishTrack(
+        publishableAudioTrack,
+        {
+          source: Track.Source.ScreenShareAudio,
+          name: SHARED_TAB_MUSIC_TRACK_NAME,
+          audioPreset: AudioPresets.musicHighQualityStereo,
+          forceStereo: true,
+          dtx: false,
+          red: false,
+        } as any,
+      )) as LocalTrackPublication;
 
       sharedTabMusicPublicationRef.current = publication;
       setSharingTabMusic(true);
