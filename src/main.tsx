@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import IconVectorizerPage from "./pages/IconVectorizerPage";
 import "./index.css";
+import "./free-flow-intro.css";
 
 import { AuthProvider } from "./context/AuthContext";
 import AnalyticsProvider from "./components/AnalyticsProvider";
