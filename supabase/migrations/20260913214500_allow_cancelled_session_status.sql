@@ -20,7 +20,7 @@ begin
   end if;
 
   -- If cancelled is already explicitly allowed, leave the constraint alone.
-  if current_check_expression ~* $$'cancelled'$$ then
+  if position('''cancelled''' in lower(current_check_expression)) > 0 then
     return;
   end if;
 
