@@ -20,18 +20,16 @@ begin
   end if;
 
   -- If cancelled is already explicitly allowed, leave the constraint alone.
-  if position('''cancelled''' in lower(current_check_expression)) > 0 then
-    return;
+  if position('''cancelled''' in lower(current_check_expression)) = 0 then
+    alter table public.sessions
+      drop constraint sessions_status_check;
+
+    execute format(
+      'alter table public.sessions add constraint sessions_status_check check ((status = %L) or (%s))',
+      'cancelled',
+      current_check_expression
+    );
   end if;
-
-  alter table public.sessions
-    drop constraint sessions_status_check;
-
-  execute format(
-    'alter table public.sessions add constraint sessions_status_check check ((status = %L) or (%s))',
-    'cancelled',
-    current_check_expression
-  );
 end;
 $$;
 
