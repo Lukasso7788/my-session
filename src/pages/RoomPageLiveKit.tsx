@@ -71,6 +71,7 @@ import JoinGateModal, {
   type JoinGateHostSession,
 } from "../components/JoinGateModal";
 import { UserProfileModal } from "../components/UserProfileModal";
+import FreeFlowIntroModal from "../components/FreeFlowIntroModal";
 import RoomTopBar from "../components/RoomTopBar";
 import RoomTimelineEditor, {
   type RoomTimelineBlock,
@@ -79,9 +80,7 @@ import RoomTimelineEditor, {
   getTimelineTotalMinutes,
   makeDefaultTimelineBlocks,
   makeFreeFlowTimelineBlocks,
-  FREE_FLOW_TIMELINE_PRESETS,
 } from "../components/RoomTimelineEditor";
-import { resolveStageVisual } from "../components/SessionStageBar";
 import { LiveKitBottomBar } from "./livekit/LiveKitBottomBar";
 import RoomSoundscapePanel from "./livekit/RoomSoundscapePanel";
 import {
@@ -21721,80 +21720,29 @@ export function RoomPageLiveKit({
           />
         )}
 
-        {freeFlowIntroOpen && (
-          <div className="fixed inset-0 z-[235] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-            <div className={`w-full max-w-[760px] max-h-[min(90vh,760px)] overflow-y-auto rounded-[24px] border p-6 shadow-2xl ${isLight ? "border-[#D8D8D8] bg-white text-[#2F2F2F]" : "border-[#343434] bg-[#1B1B1B] text-white"}`}>
-              <div className="text-[20px] font-semibold">Host your Free Flow</div>
-              <p className={`mt-2 text-[14px] leading-6 ${isLight ? "text-black/60" : "text-white/60"}`}>
-                Start with 2 minutes of goal setting, then choose a suggested structure or build your own timeline. You can use up to 9 blocks.
-              </p>
-
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                {FREE_FLOW_TIMELINE_PRESETS.map((preset) => {
-                  const totalMinutes = preset.blocks.reduce((sum, block) => sum + block.minutes, 0);
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      className={`group rounded-2xl border p-4 text-left transition hover:-translate-y-0.5 ${isLight ? "border-[#DDDDDD] bg-[#F8F8F8] hover:border-[#AFAFAF] hover:bg-white" : "border-[#353535] bg-[#242424] hover:border-[#565656] hover:bg-[#292929]"}`}
-                      onClick={() => {
-                        window.localStorage.setItem(`mysession:free-flow-intro:${sessionId}:${authUserId || "host"}`, "seen");
-                        setFreeFlowIntroOpen(false);
-                        setTimelineDraftBlocks(makeFreeFlowTimelineBlocks(preset.id));
-                        setTimelineEditorOpen(true);
-                      }}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="text-[14px] font-semibold">{preset.name}</div>
-                          <div className={`mt-1 text-[12px] leading-5 ${isLight ? "text-black/55" : "text-white/55"}`}>
-                            {preset.description}
-                          </div>
-                        </div>
-                        <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] ${isLight ? "bg-black/[0.06] text-black/60" : "bg-white/[0.08] text-white/60"}`}>
-                          {totalMinutes} min
-                        </span>
-                      </div>
-                      <div className={`mt-4 flex h-9 overflow-hidden rounded-xl border p-1 ${isLight ? "border-black/10 bg-white" : "border-white/10 bg-[#181818]"}`}>
-                        {preset.blocks.map((block, index) => {
-                          const visual = resolveStageVisual({ type: block.kind, title: block.title, minutes: block.minutes });
-                          return (
-                            <span
-                              key={`${preset.id}-${index}`}
-                              title={`${block.title} · ${block.minutes} min`}
-                              className="min-w-[5px] rounded-[7px] first:rounded-l-lg last:rounded-r-lg"
-                              style={{ backgroundColor: visual.color, flex: `${block.minutes} 1 0%` }}
-                            />
-                          );
-                        })}
-                      </div>
-                      <div className={`mt-2 flex flex-wrap gap-x-2 gap-y-1 text-[10px] ${isLight ? "text-black/45" : "text-white/45"}`}>
-                        {preset.blocks.map((block, index) => (
-                          <span key={`${preset.id}-label-${index}`}>{block.title} {block.minutes}</span>
-                        ))}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="mt-5 flex justify-end">
-                <button
-                  type="button"
-                  className={`h-11 rounded-full px-5 text-[13px] font-medium ${isLight ? "bg-[#EFEFEF] hover:bg-[#E5E5E5]" : "bg-[#2A2A2A] hover:bg-[#333]"}`}
-                  onClick={() => {
-                    window.localStorage.setItem(`mysession:free-flow-intro:${sessionId}:${authUserId || "host"}`, "seen");
-                    setFreeFlowIntroOpen(false);
-                    setTimelineDraftBlocks(makeFreeFlowTimelineBlocks("30-10").slice(0, 1));
-                    setTimelineEditorOpen(true);
-                  }}
-                >
-                  Build my own
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
+        <FreeFlowIntroModal
+          open={freeFlowIntroOpen}
+          theme={theme}
+          onClose={() => setFreeFlowIntroOpen(false)}
+          onBuildOwn={() => {
+            window.localStorage.setItem(
+              `mysession:free-flow-intro:${sessionId}:${authUserId || "host"}`,
+              "seen",
+            );
+            setFreeFlowIntroOpen(false);
+            setTimelineDraftBlocks(makeFreeFlowTimelineBlocks("30-10").slice(0, 1));
+            setTimelineEditorOpen(true);
+          }}
+          onStartPreset={(presetId) => {
+            window.localStorage.setItem(
+              `mysession:free-flow-intro:${sessionId}:${authUserId || "host"}`,
+              "seen",
+            );
+            setFreeFlowIntroOpen(false);
+            setTimelineDraftBlocks(makeFreeFlowTimelineBlocks(presetId));
+            setTimelineEditorOpen(true);
+          }}
+        />
         {selectedUser && (
           <UserProfileModal
             user={selectedUser}
