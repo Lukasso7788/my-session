@@ -47,3 +47,5 @@ jobs:
           fi
           git commit -m "Implement Free Flow structure picker"
           git push origin HEAD:main
+
+# Triggered after reconnecting the GitHub connector.
