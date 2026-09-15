@@ -6933,9 +6933,31 @@ export function RoomPageLiveKit({
     );
   }, [session?.schedule]);
 
-  // Timeline/stage bar must be driven only by the actual schedule/stages.
-  // Do not auto-hide or stop it based on session title/format/template text like "silent".
-  const isSilentRoom = false;
+  const isSilentRoom = useMemo(() => {
+    let schedule: any = session?.schedule;
+    if (typeof schedule === "string") {
+      try {
+        schedule = JSON.parse(schedule);
+      } catch {
+        schedule = null;
+      }
+    }
+
+    const variant = String(schedule?.variant || "").trim().toLowerCase();
+    const scheduleMicLocked = schedule?.room_policies?.microphone_locked === true;
+    const sessionMicLocked = (session as any)?.microphone_locked === true;
+    const slug = String((session as any)?.custom_slug || "").trim().toLowerCase();
+    const title = String(session?.title || "").trim().toLowerCase();
+
+    return (
+      variant === "silent_cameras_on" ||
+      scheduleMicLocked ||
+      sessionMicLocked ||
+      slug === "silentroom" ||
+      title === "🤫 silent room - 24/7" ||
+      title === "silent · cameras on 24/7"
+    );
+  }, [session]);
 
   useEffect(() => {
     console.log("[LK SERVER ROUTING]", {
@@ -9751,7 +9773,7 @@ export function RoomPageLiveKit({
     );
   }, [activeRoomHostLease?.user_id, authUserId, hasValidActiveRoomHostLease]);
 
-  const canEditRoomTimeline = isHost || isTemporaryRoomHost;
+  const canEditRoomTimeline = (isHost || isTemporaryRoomHost) && !isSilentRoom;
 
   useEffect(() => {
     if (!isFreeFlowRoom || !canEditRoomTimeline || !sessionId) return;
