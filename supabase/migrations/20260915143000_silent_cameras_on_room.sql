@@ -62,7 +62,7 @@ begin
       public_chat_disabled,
       microphone_locked
     ) values (
-      'Silent · Cameras On 24/7',
+      '🤫 Silent Room - 24/7',
       'Silent coworking room open 24/7. Keep your camera on for presence and accountability. Microphones are permanently disabled — join anytime, set your intention, and focus alongside others.',
       v_owner_id,
       'MySession',
@@ -82,7 +82,7 @@ begin
   else
     update public.sessions
     set
-      title = 'Silent · Cameras On 24/7',
+      title = '🤫 Silent Room - 24/7',
       description = 'Silent coworking room open 24/7. Keep your camera on for presence and accountability. Microphones are permanently disabled — join anytime, set your intention, and focus alongside others.',
       host_id = v_owner_id,
       host_name = 'MySession',
