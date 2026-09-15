@@ -375,7 +375,7 @@ function VideoTileInner({
     hostActions,
     avatarUrl,
     micMuted,
-    mirrorVideo = true,
+    mirrorVideo = false,
     isSpeaking = false,
     showMenuButton = false,
     density = "normal",
@@ -709,11 +709,9 @@ function VideoTileInner({
 
         try {
             el.style.backgroundColor = mediaBgColor;
-            el.style.transform = isLocal
-                ? mirrorVideo
-                    ? "translateZ(0) scaleX(-1)"
-                    : "translateZ(0) scaleX(1)"
-                : "translateZ(0)";
+            el.style.transform = mirrorVideo
+                ? "translateZ(0) scaleX(-1)"
+                : "translateZ(0) scaleX(1)";
 
             if (el instanceof HTMLVideoElement) {
                 el.muted = !!isLocal;

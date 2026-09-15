@@ -45,6 +45,7 @@ function fileToDataUrl(file: File): Promise<string> {
  */
 export function LiveKitBottomBar(props: LegacyProps) {
     const initialBlur = Number(props.blurStrength || 12);
+    const cameraMirrored = props.cameraMirrored ?? true;
     const [previewOpen, setPreviewOpen] = useState(false);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewError, setPreviewError] = useState("");
@@ -496,7 +497,10 @@ export function LiveKitBottomBar(props: LegacyProps) {
                             muted
                             autoPlay
                             playsInline
-                            className="h-full w-full scale-x-[-1] object-cover"
+                            className="h-full w-full object-cover"
+                            style={{
+                                transform: cameraMirrored ? "scaleX(-1)" : "scaleX(1)",
+                            }}
                         />
                         {previewLoading ? (
                             <div className="absolute inset-0 flex items-center justify-center bg-black/35 text-[11px] font-medium text-white">
@@ -512,6 +516,30 @@ export function LiveKitBottomBar(props: LegacyProps) {
                             NOT SHARED
                         </div>
                     </div>
+
+                    {props.onToggleCameraMirrored ? (
+                        <button
+                            type="button"
+                            onClick={() => props.onToggleCameraMirrored?.(!cameraMirrored)}
+                            className={`mt-2.5 flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left text-[11px] font-medium transition ${props.isLight ? "bg-black/[0.035] hover:bg-black/[0.07]" : "bg-white/[0.055] hover:bg-white/[0.09]"}`}
+                            aria-pressed={cameraMirrored}
+                        >
+                            <span>
+                                <span className="block font-semibold">Mirror camera</span>
+                                <span className={`mt-0.5 block text-[9px] font-normal ${previewSubtle}`}>
+                                    This orientation is shown to everyone when your camera is on.
+                                </span>
+                            </span>
+                            <span
+                                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition ${cameraMirrored ? "bg-[#5286F6]" : props.isLight ? "bg-black/15" : "bg-white/20"}`}
+                                aria-hidden="true"
+                            >
+                                <span
+                                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${cameraMirrored ? "translate-x-[18px]" : "translate-x-0.5"}`}
+                                />
+                            </span>
+                        </button>
+                    ) : null}
 
                     {!props.backgroundFxDisabled && props.onApplyVideoFx ? (
                         <div className="mt-3">

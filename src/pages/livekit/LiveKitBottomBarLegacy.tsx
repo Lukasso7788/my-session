@@ -136,6 +136,8 @@ export function LiveKitBottomBar(props: {
     selectedVideoInputId?: string;
     onChangeAudioInput?: (deviceId: string) => void | Promise<void>;
     onChangeVideoInput?: (deviceId: string) => void | Promise<void>;
+    cameraMirrored?: boolean;
+    onToggleCameraMirrored?: (mirrored: boolean) => void;
     videoFxMode?: "off" | "blur" | "bg";
     blurStrength?: number;
     onBlurStrengthChange?: (strength: number) => void;
@@ -197,6 +199,8 @@ export function LiveKitBottomBar(props: {
         selectedVideoInputId = "",
         onChangeAudioInput,
         onChangeVideoInput,
+        cameraMirrored = true,
+        onToggleCameraMirrored,
         videoFxMode = "off",
         blurStrength = 12,
         onBlurStrengthChange,
@@ -789,6 +793,28 @@ export function LiveKitBottomBar(props: {
                                             );
                                         })}
                                     </div>
+                                    {onToggleCameraMirrored ? (
+                                        <>
+                                            <div className={`mx-2 my-2 h-px ${isLight ? "bg-black/10" : "bg-white/10"}`} />
+                                            <button
+                                                type="button"
+                                                onClick={() => onToggleCameraMirrored(!cameraMirrored)}
+                                                className={`flex w-full items-center justify-between gap-3 rounded-xl px-2.5 py-2 text-left text-[12px] transition ${menuItem}`}
+                                                aria-pressed={cameraMirrored}
+                                                title="Flip your camera horizontally for you and everyone in the room"
+                                            >
+                                                <span>Mirror camera</span>
+                                                <span
+                                                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full transition ${cameraMirrored ? "bg-[#5286F6]" : isLight ? "bg-black/15" : "bg-white/20"}`}
+                                                    aria-hidden="true"
+                                                >
+                                                    <span
+                                                        className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${cameraMirrored ? "translate-x-[18px]" : "translate-x-0.5"}`}
+                                                    />
+                                                </span>
+                                            </button>
+                                        </>
+                                    ) : null}
                                     {!backgroundFxDisabled && onApplyVideoFx ? (
                                         <>
                                             <div className={`mx-2 my-2 h-px ${isLight ? "bg-black/10" : "bg-white/10"}`} />

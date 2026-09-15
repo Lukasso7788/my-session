@@ -799,6 +799,7 @@ type TileModel = {
   metadataDisplayName?: string;
   status?: string | null;
   isLocal: boolean;
+  mirrorVideo?: boolean;
 
   videoTrack?: Track;
   audioTrack?: LocalAudioTrack | RemoteAudioTrack;
@@ -834,6 +835,7 @@ function areTileListsEqual(prev: TileModel[], next: TileModel[]) {
       a.metadataDisplayName === b.metadataDisplayName &&
       a.status === b.status &&
       a.isLocal === b.isLocal &&
+      a.mirrorVideo === b.mirrorVideo &&
       a.videoTrack === b.videoTrack &&
       a.audioTrack === b.audioTrack &&
       a.audioLevel === b.audioLevel &&
@@ -2128,6 +2130,24 @@ function getStatusFromMetadata(raw: unknown): string | null {
 
   const status = String(meta.status || "").trim();
   return status || null;
+}
+
+function getCameraMirroredFromParticipantMetadata(
+  raw: unknown,
+  fallback = false,
+): boolean {
+  const meta = parseParticipantMetadata(raw);
+  if (!meta) return fallback;
+
+  const value = meta.cameraMirrored ?? meta.camera_mirrored;
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+
+  return fallback;
 }
 
 function getTimeZoneFromParticipantMetadata(raw: unknown): string {
@@ -5455,7 +5475,7 @@ function AccountabilityWall({
                   theme={theme}
                   avatarUrl={avatarUrl}
                   micMuted={!!tile.micMuted}
-                  mirrorVideo={tile.isLocal}
+                  mirrorVideo={!!tile.mirrorVideo}
                   isSpeaking={!!tile.isSpeaking}
                   currentIntention={null}
                   taskList={[]}
@@ -9001,6 +9021,64 @@ export function RoomPageLiveKit({
       );
     };
   }, [applySelfDeafenToRoom, connected]);
+
+  useEffect(() => {
+    if (!connected) return;
+
+    const room = roomRef.current;
+    if (!room?.localParticipant) return;
+
+    let cancelled = false;
+
+    const publishCameraMirrorPreference = async () => {
+      // Other room metadata (timezone/status/tasks) can be written immediately
+      // after connect. Re-read metadata after a short yield so this merge does
+      // not overwrite another just-published field.
+      await delay(80);
+      if (cancelled) return;
+
+      try {
+        const currentMetadata =
+          parseParticipantMetadata(room.localParticipant.metadata) || {};
+        const currentRaw =
+          currentMetadata.cameraMirrored ?? currentMetadata.camera_mirrored;
+        const hasExplicitMirror =
+          typeof currentRaw === "boolean" ||
+          (typeof currentRaw === "string" &&
+            ["true", "false"].includes(currentRaw.trim().toLowerCase()));
+        const currentMirror = getCameraMirroredFromParticipantMetadata(
+          room.localParticipant.metadata,
+          previewMirrored,
+        );
+
+        if (hasExplicitMirror && currentMirror === previewMirrored) {
+          scheduleRebuildTiles();
+          return;
+        }
+
+        await room.localParticipant.setMetadata(
+          JSON.stringify({
+            ...currentMetadata,
+            cameraMirrored: previewMirrored,
+          }),
+        );
+
+        if (!cancelled) {
+          scheduleRebuildTiles();
+          window.setTimeout(() => scheduleRebuildTiles(), 80);
+          window.setTimeout(() => scheduleRebuildTiles(), 220);
+        }
+      } catch (error) {
+        console.warn("[room] camera mirror metadata sync failed", error);
+      }
+    };
+
+    void publishCameraMirrorPreference();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, previewMirrored]);
 
   useEffect(() => {
     if (!connected) return;
@@ -13333,6 +13411,10 @@ export function RoomPageLiveKit({
       metadataDisplayName: localParticipantMetadataDisplayName || undefined,
       status: localParticipantStatus,
       isLocal: true,
+      mirrorVideo: getCameraMirroredFromParticipantMetadata(
+        (lp as any)?.metadata,
+        previewMirrored,
+      ),
       videoTrack: localCamTrack,
       audioTrack: localAudioTrackRaw,
       isSpeaking: !localMicMuted && !!lp.isSpeaking,
@@ -13412,6 +13494,10 @@ export function RoomPageLiveKit({
         metadataDisplayName: participantMetadataDisplayName || undefined,
         status: participantStatus,
         isLocal: false,
+        mirrorVideo: getCameraMirroredFromParticipantMetadata(
+          (rp as any)?.metadata,
+          false,
+        ),
         videoTrack: vt,
         audioTrack: remoteAudioTrack,
         isSpeaking: !remoteMicMuted && !!rp.isSpeaking,
@@ -17941,7 +18027,7 @@ export function RoomPageLiveKit({
             hostActions={undefined}
             avatarUrl={tileAvatarUrl}
             micMuted={micMuted}
-            mirrorVideo={t.isLocal ? previewMirrored : false}
+            mirrorVideo={!!t.mirrorVideo}
             cameraFramingMode={cameraFramingMode}
             isSpeaking={!!t.isSpeaking}
             currentIntention={getCurrentIntentionForTile(t)}
@@ -18023,7 +18109,7 @@ export function RoomPageLiveKit({
           hostActions={undefined}
           avatarUrl={tileAvatarUrl}
           micMuted={micMuted}
-          mirrorVideo={t.isLocal ? previewMirrored : false}
+          mirrorVideo={!!t.mirrorVideo}
           cameraFramingMode={cameraFramingMode}
           isSpeaking={!!t.isSpeaking}
           currentIntention={null}
@@ -21241,6 +21327,8 @@ export function RoomPageLiveKit({
             prejoinRef.current = { ...prejoinRef.current, videoInputId: deviceId };
             await syncLiveVideoInput(deviceId);
           }}
+          cameraMirrored={previewMirrored}
+          onToggleCameraMirrored={setPreviewMirrored}
           videoFxMode={videoFxMode}
           blurStrength={blurStrength}
           onBlurStrengthChange={setBlurStrength}
