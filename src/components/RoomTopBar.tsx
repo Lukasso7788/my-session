@@ -103,9 +103,15 @@ export default function RoomTopBar(props: RoomTopBarProps) {
 
     const thumbTranslate = isLight ? "translateX(0px)" : "translateX(52px)";
 
-    const showTimer = !isSilentRoom && stages.length > 0 && !!stagebarStartTime;
+    const normalizedSessionTitle = String(sessionTitle || "").trim().toLowerCase();
+    const effectiveSilentRoom =
+        isSilentRoom ||
+        normalizedSessionTitle === "🤫 silent room - 24/7" ||
+        normalizedSessionTitle === "silent · cameras on 24/7";
+
+    const showTimer = !effectiveSilentRoom && stages.length > 0 && !!stagebarStartTime;
     const showStageBar =
-        !isSilentRoom && stages.length > 0 && !!stagebarStartTime;
+        !effectiveSilentRoom && stages.length > 0 && !!stagebarStartTime;
 
     const showEditTimeline =
         showStageBar && !!canEditTimeline && typeof onEditTimeline === "function";
