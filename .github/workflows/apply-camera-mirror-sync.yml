@@ -29,15 +29,35 @@ jobs:
           cache: npm
 
       - name: Apply mirror patch
-        run: node scripts/apply-camera-mirror-sync.mjs
+        id: patch
+        continue-on-error: true
+        run: |
+          node scripts/apply-camera-mirror-sync.mjs > /tmp/camera-mirror-patch.log 2>&1
+          status=$?
+          cat /tmp/camera-mirror-patch.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Persist patch failure
+        if: steps.patch.outputs.status != '0'
+        run: |
+          cp /tmp/camera-mirror-patch.log camera-mirror-patch-error.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add camera-mirror-patch-error.txt
+          git commit -m "Record camera mirror patch error"
+          git push origin HEAD:main
+          exit 1
 
       - name: Install dependencies
+        if: steps.patch.outputs.status == '0'
         run: npm ci
 
       - name: Build
+        if: steps.patch.outputs.status == '0'
         run: npm run build
 
       - name: Commit implementation
+        if: steps.patch.outputs.status == '0'
         run: |
           if git diff --quiet; then
             echo "No source changes to commit."
