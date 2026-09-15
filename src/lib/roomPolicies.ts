@@ -1,11 +1,13 @@
 export type RoomPolicies = {
   cameraRequired: boolean;
   publicChatDisabled: boolean;
+  microphoneLocked?: boolean;
 };
 
 export const DEFAULT_ROOM_POLICIES: RoomPolicies = {
   cameraRequired: false,
   publicChatDisabled: false,
+  microphoneLocked: false,
 };
 
 function parseSchedule(raw: unknown): unknown {
@@ -31,6 +33,7 @@ export function readRoomPolicies(schedule: unknown): RoomPolicies {
   return {
     cameraRequired: raw.camera_required === true,
     publicChatDisabled: raw.public_chat_disabled === true,
+    microphoneLocked: raw.microphone_locked === true,
   };
 }
 
@@ -39,6 +42,7 @@ export function readSessionRoomPolicies(
     | {
         camera_required?: boolean | null;
         public_chat_disabled?: boolean | null;
+        microphone_locked?: boolean | null;
         schedule?: unknown;
       }
     | null
@@ -55,6 +59,10 @@ export function readSessionRoomPolicies(
       typeof session?.public_chat_disabled === "boolean"
         ? session.public_chat_disabled
         : legacy.publicChatDisabled,
+    microphoneLocked:
+      typeof session?.microphone_locked === "boolean"
+        ? session.microphone_locked
+        : legacy.microphoneLocked,
   };
 }
 
@@ -66,6 +74,7 @@ export function withRoomPolicies(
   const roomPolicies = {
     camera_required: policies.cameraRequired === true,
     public_chat_disabled: policies.publicChatDisabled === true,
+    microphone_locked: policies.microphoneLocked === true,
   };
 
   if (Array.isArray(parsed)) {

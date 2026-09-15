@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, TrackSource } from "livekit-server-sdk";
 import { createClient } from "@supabase/supabase-js";
 
 type Body = { roomName?: string; identity?: string; name?: string; sessionId?: string; isHost?: boolean; isModerator?: boolean; baseUserId?: string; tabId?: string; inviteToken?: string; };
@@ -34,6 +34,64 @@ function extractBaseUserIdFromIdentity(identity?: string): string {
 }
 function adminClient(supabaseUrl: string, serviceKey: string) {
   return createClient(supabaseUrl, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+function readMicrophoneLocked(row: any): boolean {
+  if (row?.microphone_locked === true) return true;
+
+  let schedule = row?.schedule;
+  if (typeof schedule === "string") {
+    try {
+      schedule = JSON.parse(schedule);
+    } catch {
+      schedule = null;
+    }
+  }
+
+  return Boolean(
+    schedule &&
+    typeof schedule === "object" &&
+    !Array.isArray(schedule) &&
+    schedule.room_policies?.microphone_locked === true,
+  );
+}
+
+async function resolveMicrophoneLocked(params: {
+  supabaseUrl: string;
+  serviceKey: string;
+  sessionId: string;
+}): Promise<boolean> {
+  if (!looksLikeUuid(params.sessionId)) return false;
+
+  const sb = adminClient(params.supabaseUrl, params.serviceKey);
+  const { data, error } = await sb
+    .from("sessions")
+    .select("id,microphone_locked,schedule")
+    .eq("id", params.sessionId)
+    .maybeSingle();
+
+  if (!error) return readMicrophoneLocked(data);
+
+  const code = String((error as { code?: string }).code || "");
+  if (code !== "42703" && code !== "PGRST204") {
+    console.error("token: microphone policy lookup failed", error);
+    throw new Error("session_media_policy_lookup_failed");
+  }
+
+  // Safe deploy ordering: before PostgREST sees the new DB column, fall back
+  // to schedule.room_policies so normal rooms keep working during rollout.
+  const { data: fallbackData, error: fallbackError } = await sb
+    .from("sessions")
+    .select("id,schedule")
+    .eq("id", params.sessionId)
+    .maybeSingle();
+
+  if (fallbackError) {
+    console.error("token: microphone policy fallback lookup failed", fallbackError);
+    throw new Error("session_media_policy_lookup_failed");
+  }
+
+  return readMicrophoneLocked(fallbackData);
 }
 
 async function resolveRole(params: { supabaseUrl: string; serviceKey: string; accessToken: string; sessionId: string; }): Promise<ResolvedRole> {
@@ -390,6 +448,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (!livekitWsUrl) return res.status(500).json({ error: "livekit_url_missing", hint: "Set LIVEKIT_URL or assign a server with ws_url" });
 
+    const microphoneLocked = looksLikeUuid(sessionId)
+      ? await resolveMicrophoneLocked({ supabaseUrl, serviceKey, sessionId })
+      : false;
+
     const at = new AccessToken(apiKey, apiSecret, { identity: String(identity), name: name ? String(name) : undefined });
 
     const grant: any = {
@@ -403,11 +465,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (role.isHost || role.isModerator) grant.roomAdmin = true;
 
+    if (microphoneLocked) {
+      grant.canPublishSources = [
+        TrackSource.CAMERA,
+        TrackSource.SCREEN_SHARE,
+      ];
+    }
+
     at.addGrant(grant);
     const token = await at.toJwt();
 
     console.log("LK TOKEN GENERATED", {
-      marker: "lk-token-secure-v4-admission-aware",
+      marker: "lk-token-secure-v5-media-policy-aware",
       roomName: String(roomName),
       identity: String(identity),
       sessionId,
@@ -415,11 +484,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       livekitWsUrl,
       isHost: role.isHost,
       isModerator: role.isModerator,
+      microphoneLocked,
       apiKeyPrefix: String(apiKey).slice(0, 6),
       tokenPreview: `${token.slice(0, 18)}...${token.slice(-10)}`,
     });
 
-    return res.status(200).json({ token, url: livekitWsUrl, assignedServerId, isHost: role.isHost, isModerator: role.isModerator });
+    return res.status(200).json({ token, url: livekitWsUrl, assignedServerId, isHost: role.isHost, isModerator: role.isModerator, microphoneLocked });
   } catch (e: any) {
     const msg = String(e?.message || e || "unknown_error");
     console.error("livekit token error:", e);
@@ -428,6 +498,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (msg === "session_not_found") return res.status(404).json({ error: "session_not_found" });
     if (msg === "ban_check_failed") return res.status(500).json({ error: "ban_check_failed" });
     if (msg === "admission_check_failed") return res.status(500).json({ error: "admission_check_failed" });
+    if (msg === "session_media_policy_lookup_failed") return res.status(500).json({ error: "session_media_policy_lookup_failed" });
 
     return res.status(500).json({ error: "token_generation_failed", message: msg });
   }
