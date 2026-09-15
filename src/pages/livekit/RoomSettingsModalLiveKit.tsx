@@ -1782,8 +1782,8 @@ export function RoomSettingsModalLiveKit({
                                     </div>
 
                                     <ToggleRow
-                                        label="Mirror camera preview"
-                                        description="Flip your local preview horizontally like a typical selfie view."
+                                        label="Mirror camera"
+                                        description="Flip your camera horizontally for you and everyone in the room."
                                         checked={previewMirrored}
                                         onChange={onTogglePreviewMirrored}
                                         isLight={isLight}
