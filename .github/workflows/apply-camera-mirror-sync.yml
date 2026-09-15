@@ -1,0 +1,55 @@
+name: Apply camera mirror sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/apply-camera-mirror-sync.mjs
+      - .github/workflows/apply-camera-mirror-sync.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: contains(github.event.head_commit.message, 'Run camera mirror patch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply mirror patch
+        run: node scripts/apply-camera-mirror-sync.mjs
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit implementation
+        run: |
+          if git diff --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            src/pages/RoomPageLiveKit.tsx \
+            src/pages/livekit/VideoTileLiveKitLegacy.tsx \
+            src/pages/livekit/LiveKitBottomBarLegacy.tsx \
+            src/pages/livekit/LiveKitBottomBar.tsx \
+            src/pages/livekit/RoomSettingsModalLiveKit.tsx
+          git commit -m "Sync camera mirror preference across room"
+          git push origin HEAD:main
