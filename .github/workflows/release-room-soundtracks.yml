@@ -1,0 +1,83 @@
+name: Release room soundtracks
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/add-brown-noise-neon-drift.mjs
+      - .github/workflows/release-room-soundtracks.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: contains(github.event.head_commit.message, 'Run room soundtrack release')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install media tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          python3 -m pip install --quiet --upgrade yt-dlp
+
+      - name: Generate Brown Noise
+        run: |
+          mkdir -p public/sounds/room-music
+          ffmpeg -y -hide_banner -loglevel error \
+            -f lavfi -i "anoisesrc=color=brown:duration=420:amplitude=0.18:sample_rate=44100" \
+            -af "highpass=f=20,lowpass=f=8000" \
+            -ac 1 -c:a libmp3lame -b:a 64k \
+            public/sounds/room-music/brown-noise.mp3
+
+      - name: Build Neon Drift from owner video
+        run: |
+          yt-dlp \
+            --no-playlist \
+            -f "bestaudio/best" \
+            -x --audio-format mp3 --audio-quality 96K \
+            -o "/tmp/neon-drift.%(ext)s" \
+            "https://www.youtube.com/watch?v=5zqhH2TRGYc"
+          cp /tmp/neon-drift.mp3 public/sounds/room-music/neon-drift.mp3
+
+      - name: Register tracks in music panel
+        run: node scripts/add-brown-noise-neon-drift.mjs
+
+      - name: Verify audio assets
+        run: |
+          test -s public/sounds/room-music/brown-noise.mp3
+          test -s public/sounds/room-music/neon-drift.mp3
+          ffprobe -v error -show_entries format=duration,bit_rate -of default=nw=1 public/sounds/room-music/brown-noise.mp3
+          ffprobe -v error -show_entries format=duration,bit_rate -of default=nw=1 public/sounds/room-music/neon-drift.mp3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Remove one-shot release helpers
+        run: |
+          git rm scripts/add-brown-noise-neon-drift.mjs
+          git rm .github/workflows/release-room-soundtracks.yml
+
+      - name: Commit soundtrack release
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/lib/roomSoundscapes.ts public/sounds/room-music/brown-noise.mp3 public/sounds/room-music/neon-drift.mp3
+          git commit -m "Add Brown Noise and Neon Drift soundtracks"
+          git push origin HEAD:main
