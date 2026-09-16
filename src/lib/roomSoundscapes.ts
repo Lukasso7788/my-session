@@ -4,6 +4,8 @@ export type RoomSoundscapeId =
   | "rain"
   | "forest"
   | "fireplace"
+  | "brown-noise"
+  | "neon-drift"
   | "custom";
 
 export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
@@ -59,6 +61,24 @@ export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
     icon: "/icons/music-fireplace.svg",
     artwork: "/images/room-music/campfire.svg",
     durationSeconds: 30,
+  },
+  {
+    id: "brown-noise",
+    label: "Brown Noise",
+    description: "Deep low-frequency noise for steady focus",
+    file: "/sounds/brown-noise-528hz-seamless-loop-7min(1).mp3",
+    icon: "/icons/music-brown-noise.svg",
+    artwork: "/images/room-music/flow-relax.svg",
+    durationSeconds: 420,
+  },
+  {
+    id: "neon-drift",
+    label: "Neon Drift",
+    description: "Progressive ambient trance for sustained focus",
+    file: "/sounds/Trance - Progressive September.mp3",
+    icon: "/icons/music-neon-drift.svg",
+    artwork: "/images/room-music/ambient-focus.svg",
+    durationSeconds: 428,
   },
 ];
 
