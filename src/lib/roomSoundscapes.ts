@@ -74,7 +74,7 @@ export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
   {
     id: "downtown-flow",
     label: "Downtown Flow",
-    description: "Upbeat progressive trance for a steady city-walk flow",
+    description: "Upbeat progressive trance for a focused city-walk flow",
     file: "/sounds/Trance - Progressive September.mp3",
     icon: "/icons/walk.svg",
     artwork: "/images/room-music/ambient-focus.svg",
@@ -192,8 +192,6 @@ export class RoomSoundscapeEngine {
       incoming.volume = 0;
       await incoming.play();
     } catch {
-      // A second media element can occasionally be blocked on restrictive
-      // browsers. Fall back to their native loop rather than stopping audio.
       outgoing.loop = true;
       return;
     }
@@ -218,7 +216,6 @@ export class RoomSoundscapeEngine {
         0,
         Math.min(1, (performance.now() - startedAt) / (fadeSeconds * 1000)),
       );
-      // Equal-power curves keep perceived loudness stable during the overlap.
       outgoing.volume = this.requestedVolume * Math.cos(progress * Math.PI * 0.5);
       incoming.volume = this.requestedVolume * Math.sin(progress * Math.PI * 0.5);
       if (progress < 1) return;
@@ -228,9 +225,7 @@ export class RoomSoundscapeEngine {
       outgoing.loop = false;
       try {
         outgoing.currentTime = 0;
-      } catch {
-        // The inactive element will be reset again before its next use.
-      }
+      } catch {}
       outgoing.volume = 0;
       incoming.volume = this.requestedVolume;
       this.audio = incoming;
@@ -280,9 +275,7 @@ export class RoomSoundscapeEngine {
     if (Math.abs(audio.currentTime - normalizedPosition) > 1.25) {
       try {
         audio.currentTime = normalizedPosition;
-      } catch {
-        // Some browsers reject seeks until enough data has buffered.
-      }
+      } catch {}
     }
 
     audio.volume = this.requestedVolume;
@@ -311,9 +304,7 @@ export class RoomSoundscapeEngine {
     try {
       this.audio.currentTime = 0;
       if (this.standbyAudio) this.standbyAudio.currentTime = 0;
-    } catch {
-      // Seeking can fail while a file is still loading.
-    }
+    } catch {}
   }
 
   setVolume(volume: number) {
@@ -354,9 +345,7 @@ export class RoomSoundscapeEngine {
     );
     try {
       this.audio.currentTime = next;
-    } catch {
-      // Browsers may reject a seek while metadata is still loading.
-    }
+    } catch {}
     if (this.playing) this.scheduleSeamlessLoop();
     return this.currentTime();
   }
