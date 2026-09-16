@@ -5,7 +5,7 @@ export type RoomSoundscapeId =
   | "forest"
   | "fireplace"
   | "brown-noise"
-  | "neon-drift"
+  | "downtown-flow"
   | "custom";
 
 export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
@@ -72,11 +72,11 @@ export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
     durationSeconds: 420,
   },
   {
-    id: "neon-drift",
-    label: "Neon Drift",
-    description: "Progressive ambient trance for sustained focus",
+    id: "downtown-flow",
+    label: "Downtown Flow",
+    description: "Upbeat progressive trance for a steady city-walk flow",
     file: "/sounds/Trance - Progressive September.mp3",
-    icon: "/icons/music-neon-drift.svg",
+    icon: "/icons/walk.svg",
     artwork: "/images/room-music/ambient-focus.svg",
     durationSeconds: 428,
   },
