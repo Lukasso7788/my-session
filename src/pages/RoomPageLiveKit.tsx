@@ -749,6 +749,7 @@ type SessionRow = {
   max_participants?: number | null;
   host_id?: string | null;
   camera_required?: boolean | null;
+  screen_share_required?: boolean | null;
   public_chat_disabled?: boolean | null;
 };
 
@@ -878,7 +879,7 @@ type FloatingReaction = {
 type RoomSystemNotice = {
   open: boolean;
   kind: "info" | "error" | "kick";
-  presentation?: "camera-reminder";
+  presentation?: "camera-reminder" | "screen-share-reminder";
   title: string;
   body: string;
   actionLabel?: string;
@@ -9825,6 +9826,7 @@ export function RoomPageLiveKit({
     () => readSessionRoomPolicies(session),
     [
       session?.camera_required,
+      session?.screen_share_required,
       session?.public_chat_disabled,
       session?.schedule,
     ],
@@ -10061,6 +10063,7 @@ export function RoomPageLiveKit({
   const kickEventChannelRef = useRef<any>(null);
   const kickedBySignalRef = useRef(false);
   const cameraPolicyTimerRef = useRef<number | null>(null);
+  const screenSharePolicyTimerRef = useRef<number | null>(null);
   // Attendance is a TTL lease, not a realtime media signal. Thirty seconds is
   // well below the 90-second live-user window and avoids needless PostgREST
   // writes while preserving immediate heartbeats on join/background recovery.
@@ -13078,6 +13081,7 @@ export function RoomPageLiveKit({
 
     const previousSchedule = session.schedule;
     const previousCameraRequired = session.camera_required;
+    const previousScreenShareRequired = session.screen_share_required;
     const previousPublicChatDisabled = session.public_chat_disabled;
     const nextSchedule = withRoomPolicies(previousSchedule, next);
     setSession((previous) =>
@@ -13086,6 +13090,7 @@ export function RoomPageLiveKit({
             ...previous,
             schedule: nextSchedule,
             camera_required: next.cameraRequired,
+            screen_share_required: next.screenShareRequired === true,
             public_chat_disabled: next.publicChatDisabled,
           }
         : previous,
@@ -13096,6 +13101,7 @@ export function RoomPageLiveKit({
       .update({
         schedule: nextSchedule,
         camera_required: next.cameraRequired,
+        screen_share_required: next.screenShareRequired === true,
         public_chat_disabled: next.publicChatDisabled,
       })
       .eq("id", session.id);
@@ -13107,6 +13113,7 @@ export function RoomPageLiveKit({
               ...previous,
               schedule: previousSchedule,
               camera_required: previousCameraRequired,
+              screen_share_required: previousScreenShareRequired,
               public_chat_disabled: previousPublicChatDisabled,
             }
           : previous,
@@ -14802,6 +14809,88 @@ export function RoomPageLiveKit({
     isSelfModerator,
     kickRedirecting,
     roomPolicies.cameraRequired,
+  ]);
+
+  useEffect(() => {
+    if (screenSharePolicyTimerRef.current !== null) {
+      window.clearTimeout(screenSharePolicyTimerRef.current);
+      screenSharePolicyTimerRef.current = null;
+    }
+
+    if (
+      !connected ||
+      !roomPolicies.screenShareRequired ||
+      isHost ||
+      isSelfModerator ||
+      screenShareOn ||
+      kickRedirecting
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const schedule = (callback: () => void, delayMs: number) => {
+      screenSharePolicyTimerRef.current = window.setTimeout(() => {
+        screenSharePolicyTimerRef.current = null;
+        if (!cancelled) callback();
+      }, delayMs);
+    };
+
+    const disconnectForScreenSharePolicy = () => {
+      void (async () => {
+        kickedBySignalRef.current = true;
+        setKickRedirecting(true);
+        await disconnectRoom({
+          skipNavigate: true,
+          preserveKickNotice: true,
+        });
+        setSystemNotice({
+          open: true,
+          kind: "kick",
+          title: "Screen share required",
+          body: "The host enabled screen-share-only mode, so you were disconnected from the room.",
+        });
+      })();
+    };
+
+    const showReminder = (reminder: 1 | 2) => {
+      showSystemNotice({
+        kind: "info",
+        presentation: "screen-share-reminder",
+        title: "Please share your screen",
+        body:
+          reminder === 1
+            ? "This room requires screen sharing. Please start sharing within two minutes of joining to stay in the room."
+            : "Your screen is still not being shared. This is the final reminder; start sharing within 30 seconds to stay in the room.",
+        actionLabel: "Share screen",
+        action: () => {
+          if (!screenShareOn) void toggleScreenShare();
+        },
+      });
+    };
+
+    schedule(() => {
+      showReminder(1);
+      schedule(() => {
+        showReminder(2);
+        schedule(disconnectForScreenSharePolicy, 30_000);
+      }, 70_000);
+    }, 20_000);
+
+    return () => {
+      cancelled = true;
+      if (screenSharePolicyTimerRef.current !== null) {
+        window.clearTimeout(screenSharePolicyTimerRef.current);
+        screenSharePolicyTimerRef.current = null;
+      }
+    };
+  }, [
+    connected,
+    isHost,
+    isSelfModerator,
+    kickRedirecting,
+    roomPolicies.screenShareRequired,
+    screenShareOn,
   ]);
 
   voiceUiCommandHandlerRef.current = async (command: VoiceUiCommand) => {
@@ -21439,11 +21528,18 @@ export function RoomPageLiveKit({
           hideBackgroundFx={shouldDisableBackgroundFx}
           showHostRoomPolicies={isHost}
           cameraRequired={roomPolicies.cameraRequired}
+          screenShareRequired={roomPolicies.screenShareRequired === true}
           publicChatDisabled={roomPolicies.publicChatDisabled}
           onChangeCameraRequired={(value) => {
             void updateRoomPolicies({
               ...roomPolicies,
               cameraRequired: value,
+            });
+          }}
+          onChangeScreenShareRequired={(value) => {
+            void updateRoomPolicies({
+              ...roomPolicies,
+              screenShareRequired: value,
             });
           }}
           onChangePublicChatDisabled={(value) => {
@@ -21710,7 +21806,7 @@ export function RoomPageLiveKit({
                     : "text-white/55 hover:bg-white/[0.06] hover:text-white/80"
                     }`}
                 >
-                  {systemNotice.presentation === "camera-reminder" ? "Not now" : "OK"}
+                  {systemNotice.presentation === "camera-reminder" || systemNotice.presentation === "screen-share-reminder" ? "Not now" : "OK"}
                 </button>
 
                 {systemNotice.actionLabel && systemNotice.action ? (

@@ -68,10 +68,12 @@ type SessionWithRelations = Session & {
   is_silent?: boolean;
   is_private?: boolean;
   is_hidden?: boolean;
+  is_pinned?: boolean;
 
   max_participants?: number | null;
   schedule?: any;
   camera_required?: boolean | null;
+  screen_share_required?: boolean | null;
   public_chat_disabled?: boolean | null;
 
   session_bookings?: SessionBookingRow[];
@@ -1340,7 +1342,7 @@ export function SessionsPage() {
           const { data: policyRows, error: policyError } = await withTimeout(
             supabase
               .from("sessions")
-              .select("id, camera_required, public_chat_disabled")
+              .select("id, camera_required, screen_share_required, public_chat_disabled, is_pinned")
               .in("id", ids),
             SESSIONS_ENRICHMENT_TIMEOUT_MS,
             "sessions_room_policies_enrichment"
@@ -1821,7 +1823,15 @@ export function SessionsPage() {
     sessionTypeTab === "group" && isAllDatesValue(dateFilter);
 
   const visibleSessions = useMemo(() => {
-    if (sessionTypeTab === "infinite") return typeFilteredSessions;
+    if (sessionTypeTab === "infinite") {
+      return typeFilteredSessions
+        .map((session, index) => ({ session, index }))
+        .sort((a, b) => {
+          const pinDelta = Number(b.session.is_pinned === true) - Number(a.session.is_pinned === true);
+          return pinDelta || a.index - b.index;
+        })
+        .map(({ session }) => session);
+    }
     if (isAllDatesValue(dateFilter)) return typeFilteredSessions;
 
     return typeFilteredSessions.filter((s) => {
@@ -2138,6 +2148,7 @@ export function SessionsPage() {
       stages_json?: any;
       duration_minutes?: number | null;
       camera_required?: boolean;
+      screen_share_required?: boolean;
       public_chat_disabled?: boolean;
     }
   ) => {
@@ -2178,6 +2189,27 @@ export function SessionsPage() {
       previous.map((session) =>
         String(session.id) === String(sessionId)
           ? { ...session, is_hidden: hidden }
+          : session
+      )
+    );
+  };
+
+  const setSessionPinned = async (sessionId: string, pinned: boolean) => {
+    if (!user || !isSuperAdmin) {
+      throw new Error("Super-admin access is required.");
+    }
+
+    const { error } = await supabase.rpc("set_infinite_room_catalog_pinned", {
+      p_session_id: sessionId,
+      p_pinned: pinned,
+    });
+
+    if (error) throw error;
+
+    setSessions((previous) =>
+      previous.map((session) =>
+        String(session.id) === String(sessionId)
+          ? { ...session, is_pinned: pinned }
           : session
       )
     );
@@ -2433,6 +2465,7 @@ export function SessionsPage() {
       onHostTransferComplete={fetchSessions}
       canManageAnySession={isSuperAdmin}
       onVisibilityChange={isSuperAdmin ? setSessionHidden : undefined}
+      onPinnedChange={isSuperAdmin ? setSessionPinned : undefined}
     />
   );
 

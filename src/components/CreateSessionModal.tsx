@@ -1333,6 +1333,7 @@ export function CreateSessionModal({
   const [presetCycles, setPresetCycles] = useState<number>(3);
   const [accessMode, setAccessMode] = useState<AccessMode>("public");
   const [cameraRequired, setCameraRequired] = useState(false);
+  const [screenShareRequired, setScreenShareRequired] = useState(false);
   const [publicChatDisabled, setPublicChatDisabled] = useState(false);
 
   // ---------- Scheduling in advance ----------
@@ -1427,6 +1428,7 @@ export function CreateSessionModal({
     setPresetCycles(3);
     setAccessMode("public");
     setCameraRequired(false);
+    setScreenShareRequired(false);
     setPublicChatDisabled(false);
 
     setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
@@ -2654,6 +2656,7 @@ export function CreateSessionModal({
           : (template as any)?.blocks || (template as any)?.schedule || [];
       const schedulePayload = withRoomPolicies(baseSchedulePayload, {
         cameraRequired,
+        screenShareRequired,
         publicChatDisabled,
       });
 
@@ -2958,6 +2961,7 @@ export function CreateSessionModal({
           format: formatLabel,
           schedule: schedulePayload,
           camera_required: cameraRequired,
+          screen_share_required: screenShareRequired,
           public_chat_disabled: publicChatDisabled,
           daily_room_url: dailyUrls[idx],
           status: "planned",
@@ -3992,6 +3996,18 @@ export function CreateSessionModal({
                       <div className="font-inter text-[13px] font-semibold">Cameras required</div>
                       <div className={`mt-1 font-inter text-[11px] leading-4 ${cameraRequired ? "text-white/70" : "text-[#667085]"}`}>
                         Participants get two reminders, then are disconnected if their camera stays off.
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setScreenShareRequired((value) => !value)}
+                      className={`rounded-[14px] px-4 py-3 text-left transition ${screenShareRequired ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EBEBEB]"}`}
+                      aria-pressed={screenShareRequired}
+                    >
+                      <div className="font-inter text-[13px] font-semibold">Screen share required</div>
+                      <div className={`mt-1 font-inter text-[11px] leading-4 ${screenShareRequired ? "text-white/70" : "text-[#667085]"}`}>
+                        Participants get two reminders, then are disconnected if screen sharing stays off.
                       </div>
                     </button>
 

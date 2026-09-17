@@ -8,7 +8,7 @@ import {
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock, Eye, EyeOff, Camera, MessageSquareOff } from "lucide-react";
+import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock, Eye, EyeOff, Pin, PinOff, Camera, MessageSquareOff } from "lucide-react";
 import { SessionStageBar } from "./SessionStageBar";
 import { supabase } from "../lib/supabase";
 import {
@@ -57,6 +57,7 @@ interface SessionCardProps {
             host_id?: string | null;
             host_name?: string | null;
             camera_required?: boolean;
+            screen_share_required?: boolean;
             public_chat_disabled?: boolean;
         }
     ) => void | Promise<any>;
@@ -69,6 +70,7 @@ interface SessionCardProps {
     onHostTransferComplete?: () => void | Promise<void>;
     canManageAnySession?: boolean;
     onVisibilityChange?: (sessionId: string, hidden: boolean) => void | Promise<void>;
+    onPinnedChange?: (sessionId: string, pinned: boolean) => void | Promise<void>;
 
     currentUser?: {
         id: string;
@@ -2686,6 +2688,7 @@ function EditSessionStudioModal(props: {
         host_id?: string | null;
         host_name?: string | null;
         camera_required?: boolean;
+        screen_share_required?: boolean;
         public_chat_disabled?: boolean;
     }) => Promise<void> | void;
     session: any;
@@ -2718,6 +2721,7 @@ function EditSessionStudioModal(props: {
     });
     const initialRoomPolicies = readSessionRoomPolicies(session);
     const [editCameraRequired, setEditCameraRequired] = useState(initialRoomPolicies.cameraRequired);
+    const [editScreenShareRequired, setEditScreenShareRequired] = useState(initialRoomPolicies.screenShareRequired === true);
     const [editPublicChatDisabled, setEditPublicChatDisabled] = useState(initialRoomPolicies.publicChatDisabled);
 
     const [studioBlocks, setStudioBlocks] = useState<StudioBlock[]>([]);
@@ -2801,6 +2805,7 @@ function EditSessionStudioModal(props: {
         );
         const nextPolicies = readSessionRoomPolicies(session);
         setEditCameraRequired(nextPolicies.cameraRequired);
+        setEditScreenShareRequired(nextPolicies.screenShareRequired === true);
         setEditPublicChatDisabled(nextPolicies.publicChatDisabled);
         setStudioBlocks(normalizeStudioBlocksFromSession({
             ...session,
@@ -2826,6 +2831,7 @@ function EditSessionStudioModal(props: {
         session?.max_participants,
         session?.schedule,
         session?.camera_required,
+        session?.screen_share_required,
         session?.public_chat_disabled,
     ]);
 
@@ -2835,13 +2841,14 @@ function EditSessionStudioModal(props: {
         let cancelled = false;
         void supabase
             .from("sessions")
-            .select("camera_required, public_chat_disabled, schedule")
+            .select("camera_required, screen_share_required, public_chat_disabled, schedule")
             .eq("id", session.id)
             .maybeSingle()
             .then(({ data, error }) => {
                 if (cancelled || error || !data) return;
                 const policies = readSessionRoomPolicies(data);
                 setEditCameraRequired(policies.cameraRequired);
+                setEditScreenShareRequired(policies.screenShareRequired === true);
                 setEditPublicChatDisabled(policies.publicChatDisabled);
             });
 
@@ -3203,10 +3210,12 @@ function EditSessionStudioModal(props: {
                                 );
                                 updates.schedule = withRoomPolicies(nextSchedule, {
                                     cameraRequired: editCameraRequired,
+                                    screenShareRequired: editScreenShareRequired,
                                     publicChatDisabled: editPublicChatDisabled,
                                 });
                                 updates.duration_minutes = studioTotal || null;
                                 updates.camera_required = editCameraRequired;
+                                updates.screen_share_required = editScreenShareRequired;
                                 updates.public_chat_disabled = editPublicChatDisabled;
 
                                 await onSave(updates);
@@ -3305,6 +3314,17 @@ function EditSessionStudioModal(props: {
                             <div className="text-[13px] font-semibold">Cameras required</div>
                             <div className={`mt-1 text-[11px] leading-4 ${editCameraRequired ? "text-white/70" : "text-[#667085]"}`}>
                                 Warn twice, then disconnect participants whose camera stays off.
+                            </div>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setEditScreenShareRequired((value) => !value)}
+                            className={`rounded-[16px] px-4 py-3 text-left transition ${editScreenShareRequired ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EAEAEA]"}`}
+                            aria-pressed={editScreenShareRequired}
+                        >
+                            <div className="text-[13px] font-semibold">Screen share required</div>
+                            <div className={`mt-1 text-[11px] leading-4 ${editScreenShareRequired ? "text-white/70" : "text-[#667085]"}`}>
+                                Warn twice, then disconnect participants who do not share their screen.
                             </div>
                         </button>
                         <button
@@ -3881,6 +3901,7 @@ export default function SessionCard({
     onHostTransferComplete,
     canManageAnySession = false,
     onVisibilityChange,
+    onPinnedChange,
     currentUser,
 }: SessionCardProps) {
     const navigate = useNavigate();
@@ -3916,6 +3937,7 @@ export default function SessionCard({
     const [isHoveringOptions, setIsHoveringOptions] = useState(false);
     const [isHoveringCard, setIsHoveringCard] = useState(false);
     const [isSavingVisibility, setIsSavingVisibility] = useState(false);
+    const [isSavingPinned, setIsSavingPinned] = useState(false);
 
     const CANCEL_HOVER_DELAY_MS = 120;
     const [cancelHoverTimer, setCancelHoverTimer] = useState<number | null>(null);
@@ -4677,7 +4699,9 @@ export default function SessionCard({
     const canCancelBooking = !!isBookingConfirmed;
     const canCancelSession = canManageSession;
     const canToggleVisibility = canManageAnySession && !!onVisibilityChange;
+    const canTogglePinned = canManageAnySession && isInfinite && !!onPinnedChange;
     const isHidden = session?.is_hidden === true;
+    const isPinned = session?.is_pinned === true;
 
     const hasPrettySessionSlug = !!getSessionPublicSlug(session);
     const hasHostSlug = !!String(resolvedHostSlug || "").trim();
@@ -5183,6 +5207,33 @@ export default function SessionCard({
                                                 onClick={() => {
                                                     setIsOptionsOpen(false);
                                                     setIsEditModalOpen(true);
+                                                }}
+                                            />
+                                        )}
+
+                                        {canTogglePinned && (
+                                            <MenuItem
+                                                icon={isPinned ? <PinOff /> : <Pin />}
+                                                label={
+                                                    isSavingPinned
+                                                        ? "Saving…"
+                                                        : isPinned
+                                                          ? "Unpin from top"
+                                                          : "Pin to top"
+                                                }
+                                                outlined
+                                                onClick={async () => {
+                                                    if (isSavingPinned) return;
+                                                    setIsSavingPinned(true);
+                                                    try {
+                                                        await onPinnedChange?.(session.id, !isPinned);
+                                                        setIsOptionsOpen(false);
+                                                    } catch (error) {
+                                                        console.error("[SessionCard] pin update failed:", error);
+                                                        window.alert("Could not update pinned state. Please try again.");
+                                                    } finally {
+                                                        setIsSavingPinned(false);
+                                                    }
                                                 }}
                                             />
                                         )}
