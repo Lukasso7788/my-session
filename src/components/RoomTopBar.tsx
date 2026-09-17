@@ -50,36 +50,23 @@ type RoomTopBarProps = {
     onEditTimeline?: () => void;
 };
 
-function MusicRadioIcon({
+function MusicVolumeIcon({
     muted,
-    className = "w-4 h-4",
+    isLight,
+    className = "w-5 h-5",
 }: {
     muted: boolean;
+    isLight: boolean;
     className?: string;
 }) {
     return (
-        <svg
-            viewBox="0 0 512 512"
-            className={className}
+        <img
+            src={muted ? "/icons/volume.svg" : "/icons/volume-up.svg"}
+            alt=""
+            className={`${className} object-contain ${isLight ? "" : "brightness-0 invert"}`}
+            draggable={false}
             aria-hidden="true"
-            focusable="false"
-        >
-            <path fill="currentColor" d="m256 120c-13.255 0-24 10.745-24 24v224c0 13.255 10.745 24 24 24s24-10.745 24-24v-224c0-13.255-10.745-24-24-24z" />
-            <path fill="currentColor" d="m176 168c-13.255 0-24 10.745-24 24v128c0 13.255 10.745 24 24 24s24-10.745 24-24v-128c0-13.255-10.745-24-24-24z" />
-            <path fill="currentColor" d="m392 232v48c0 13.255 10.745 24 24 24s24-10.745 24-24v-48c0-13.255-10.745-24-24-24s-24 10.745-24 24z" />
-            <path fill="currentColor" d="m336 168c-13.255 0-24 10.745-24 24v128c0 13.255 10.745 24 24 24s24-10.745 24-24v-128c0-13.255-10.745-24-24-24z" />
-            <path fill="currentColor" d="m96 208c-13.255 0-24 10.745-24 24v48c0 13.255 10.745 24 24 24s24-10.745 24-24v-48c0-13.255-10.745-24-24-24z" />
-            <path fill="currentColor" d="m256 0c-68.38 0-132.667 26.629-181.02 74.98-48.351 48.353-74.98 112.64-74.98 181.02s26.629 132.667 74.98 181.02c48.353 48.351 112.64 74.98 181.02 74.98s132.667-26.629 181.02-74.98c48.351-48.353 74.98-112.64 74.98-181.02s-26.629-132.667-74.98-181.02c-48.353-48.351-112.64-74.98-181.02-74.98zm0 464c-114.691 0-208-93.309-208-208s93.309-208 208-208 208 93.309 208 208-93.309 208-208 208z" />
-            {muted ? (
-                <path
-                    d="M88 88 424 424"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="42"
-                    strokeLinecap="round"
-                />
-            ) : null}
-        </svg>
+        />
     );
 }
 
@@ -149,7 +136,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
             onClick={() => window.dispatchEvent(new Event("mysession:toggle-soundscape-mute"))}
             disabled={!mobileMusicState.active}
             className={[
-                "lg:hidden flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-full border transition",
+                "lg:hidden flex h-[32px] w-[84px] max-[480px]:w-[78px] shrink-0 items-center justify-center rounded-full border transition",
                 "disabled:cursor-default disabled:opacity-35",
                 isLight
                     ? "border-[#CFCFCF] bg-[#E1E3E6] text-[#2F2F2F] hover:bg-[#E0E0E0]"
@@ -159,7 +146,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
             aria-label={mobileMusicState.muted ? "Unmute background music" : "Mute background music"}
             aria-pressed={mobileMusicState.muted}
         >
-            <MusicRadioIcon muted={mobileMusicState.muted} className="h-[18px] w-[18px]" />
+            <MusicVolumeIcon muted={mobileMusicState.muted} isLight={isLight} className="h-[20px] w-[20px]" />
         </button>
     );
 
