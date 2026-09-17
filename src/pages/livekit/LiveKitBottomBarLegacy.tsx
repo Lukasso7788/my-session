@@ -229,6 +229,33 @@ export function LiveKitBottomBar(props: {
     const customBackgroundUploadSlotRef = useRef<string | null>(null);
     const moreMenuRef = useRef<HTMLDivElement | null>(null);
 
+    useEffect(() => {
+        const broadcastSoundscapeState = () => {
+            window.dispatchEvent(
+                new CustomEvent("mysession:soundscape-state", {
+                    detail: {
+                        active: soundscapeActive,
+                        muted: soundscapeMuted,
+                    },
+                }),
+            );
+        };
+        const handleToggleSoundscapeMute = () => {
+            if (soundscapeActive && onToggleSoundscapeMute) {
+                onToggleSoundscapeMute();
+            }
+        };
+
+        window.addEventListener("mysession:toggle-soundscape-mute", handleToggleSoundscapeMute);
+        window.addEventListener("mysession:request-soundscape-state", broadcastSoundscapeState);
+        broadcastSoundscapeState();
+
+        return () => {
+            window.removeEventListener("mysession:toggle-soundscape-mute", handleToggleSoundscapeMute);
+            window.removeEventListener("mysession:request-soundscape-state", broadcastSoundscapeState);
+        };
+    }, [soundscapeActive, soundscapeMuted, onToggleSoundscapeMute]);
+
     useEffect(() => setBlurDraft(blurStrength), [blurStrength]);
 
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);

@@ -50,6 +50,39 @@ type RoomTopBarProps = {
     onEditTimeline?: () => void;
 };
 
+function MusicRadioIcon({
+    muted,
+    className = "w-4 h-4",
+}: {
+    muted: boolean;
+    className?: string;
+}) {
+    return (
+        <svg
+            viewBox="0 0 512 512"
+            className={className}
+            aria-hidden="true"
+            focusable="false"
+        >
+            <path fill="currentColor" d="m256 120c-13.255 0-24 10.745-24 24v224c0 13.255 10.745 24 24 24s24-10.745 24-24v-224c0-13.255-10.745-24-24-24z" />
+            <path fill="currentColor" d="m176 168c-13.255 0-24 10.745-24 24v128c0 13.255 10.745 24 24 24s24-10.745 24-24v-128c0-13.255-10.745-24-24-24z" />
+            <path fill="currentColor" d="m392 232v48c0 13.255 10.745 24 24 24s24-10.745 24-24v-48c0-13.255-10.745-24-24-24s-24 10.745-24 24z" />
+            <path fill="currentColor" d="m336 168c-13.255 0-24 10.745-24 24v128c0 13.255 10.745 24 24 24s24-10.745 24-24v-128c0-13.255-10.745-24-24-24z" />
+            <path fill="currentColor" d="m96 208c-13.255 0-24 10.745-24 24v48c0 13.255 10.745 24 24 24s24-10.745 24-24v-48c0-13.255-10.745-24-24-24z" />
+            <path fill="currentColor" d="m256 0c-68.38 0-132.667 26.629-181.02 74.98-48.351 48.353-74.98 112.64-74.98 181.02s26.629 132.667 74.98 181.02c48.353 48.351 112.64 74.98 181.02 74.98s132.667-26.629 181.02-74.98c48.351-48.353 74.98-112.64 74.98-181.02s-26.629-132.667-74.98-181.02c-48.353-48.351-112.64-74.98-181.02-74.98zm0 464c-114.691 0-208-93.309-208-208s93.309-208 208-208 208 93.309 208 208-93.309 208-208 208z" />
+            {muted ? (
+                <path
+                    d="M88 88 424 424"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="42"
+                    strokeLinecap="round"
+                />
+            ) : null}
+        </svg>
+    );
+}
+
 export default function RoomTopBar(props: RoomTopBarProps) {
     const {
         theme,
@@ -79,6 +112,25 @@ export default function RoomTopBar(props: RoomTopBarProps) {
     } = props;
 
     const isLight = theme === "light";
+    const [mobileMusicState, setMobileMusicState] = useState({
+        active: false,
+        muted: false,
+    });
+
+    useEffect(() => {
+        const handleState = (event: Event) => {
+            const detail = (event as CustomEvent<{ active?: boolean; muted?: boolean }>).detail;
+            if (!detail) return;
+            setMobileMusicState({
+                active: detail.active === true,
+                muted: detail.muted === true,
+            });
+        };
+
+        window.addEventListener("mysession:soundscape-state", handleState);
+        window.dispatchEvent(new Event("mysession:request-soundscape-state"));
+        return () => window.removeEventListener("mysession:soundscape-state", handleState);
+    }, []);
 
     const topBarBg = isLight
         ? "bg-[#F3F1F1]/95 border border-[#CFCFCF]"
@@ -90,6 +142,26 @@ export default function RoomTopBar(props: RoomTopBarProps) {
 
     const strongText = isLight ? "text-black/85" : "text-[#F1F1F1]/90";
     const mutedText = isLight ? "text-black/65" : "text-white/80";
+
+    const renderMobileMusicMute = () => (
+        <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event("mysession:toggle-soundscape-mute"))}
+            disabled={!mobileMusicState.active}
+            className={[
+                "lg:hidden flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-full border transition",
+                "disabled:cursor-default disabled:opacity-35",
+                isLight
+                    ? "border-[#CFCFCF] bg-[#E1E3E6] text-[#2F2F2F] hover:bg-[#E0E0E0]"
+                    : "border-[#2B2B2B] bg-white/5 text-white hover:bg-[#F2F3F5]/10",
+            ].join(" ")}
+            title={mobileMusicState.muted ? "Unmute background music" : "Mute background music"}
+            aria-label={mobileMusicState.muted ? "Unmute background music" : "Mute background music"}
+            aria-pressed={mobileMusicState.muted}
+        >
+            <MusicRadioIcon muted={mobileMusicState.muted} className="h-[18px] w-[18px]" />
+        </button>
+    );
 
     const switchTrack =
         "w-[84px] max-[480px]:w-[78px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
@@ -309,6 +381,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                 </div>
                             </button>
 
+                            {renderMobileMusicMute()}
+
                             {!isInfiniteRoom && !!hostProfile && (
                                 <button
                                     onClick={onOpenHostProfile}
@@ -356,6 +430,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                 />
                             </div>
                         </button>
+
+                        {renderMobileMusicMute()}
 
                         {!isInfiniteRoom && !!hostProfile && (
                             <button
