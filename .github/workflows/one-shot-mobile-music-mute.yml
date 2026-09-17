@@ -1,0 +1,97 @@
+name: One-shot mobile music mute
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/one-shot-mobile-music-mute.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Patch mobile/tablet music mute control
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          top_path = Path('src/components/RoomTopBar.tsx')
+          top = top_path.read_text()
+
+          marker = '''};\n\nexport default function RoomTopBar(props: RoomTopBarProps) {'''
+          icon_component = '''};\n\nfunction MusicRadioIcon({\n    muted,\n    className = "w-4 h-4",\n}: {\n    muted: boolean;\n    className?: string;\n}) {\n    return (\n        <svg\n            viewBox="0 0 512 512"\n            className={className}\n            aria-hidden="true"\n            focusable="false"\n        >\n            <path fill="currentColor" d="m256 120c-13.255 0-24 10.745-24 24v224c0 13.255 10.745 24 24 24s24-10.745 24-24v-224c0-13.255-10.745-24-24-24z" />\n            <path fill="currentColor" d="m176 168c-13.255 0-24 10.745-24 24v128c0 13.255 10.745 24 24 24s24-10.745 24-24v-128c0-13.255-10.745-24-24-24z" />\n            <path fill="currentColor" d="m392 232v48c0 13.255 10.745 24 24 24s24-10.745 24-24v-48c0-13.255-10.745-24-24-24s-24 10.745-24 24z" />\n            <path fill="currentColor" d="m336 168c-13.255 0-24 10.745-24 24v128c0 13.255 10.745 24 24 24s24-10.745 24-24v-128c0-13.255-10.745-24-24-24z" />\n            <path fill="currentColor" d="m96 208c-13.255 0-24 10.745-24 24v48c0 13.255 10.745 24 24 24s24-10.745 24-24v-48c0-13.255-10.745-24-24-24z" />\n            <path fill="currentColor" d="m256 0c-68.38 0-132.667 26.629-181.02 74.98-48.351 48.353-74.98 112.64-74.98 181.02s26.629 132.667 74.98 181.02c48.353 48.351 112.64 74.98 181.02 74.98s132.667-26.629 181.02-74.98c48.351-48.353 74.98-112.64 74.98-181.02s-26.629-132.667-74.98-181.02c-48.353-48.351-112.64-74.98-181.02-74.98zm0 464c-114.691 0-208-93.309-208-208s93.309-208 208-208 208 93.309 208 208-93.309 208-208 208z" />\n            {muted ? (\n                <path\n                    d="M88 88 424 424"\n                    fill="none"\n                    stroke="currentColor"\n                    strokeWidth="42"\n                    strokeLinecap="round"\n                />\n            ) : null}\n        </svg>\n    );\n}\n\nexport default function RoomTopBar(props: RoomTopBarProps) {'''
+          if marker not in top:
+              raise SystemExit('RoomTopBar export marker not found')
+          top = top.replace(marker, icon_component, 1)
+
+          state_marker = '''    const isLight = theme === "light";\n\n    const topBarBg = isLight'''
+          state_block = '''    const isLight = theme === "light";\n    const [mobileMusicState, setMobileMusicState] = useState({\n        active: false,\n        muted: false,\n    });\n\n    useEffect(() => {\n        const handleState = (event: Event) => {\n            const detail = (event as CustomEvent<{ active?: boolean; muted?: boolean }>).detail;\n            if (!detail) return;\n            setMobileMusicState({\n                active: detail.active === true,\n                muted: detail.muted === true,\n            });\n        };\n\n        window.addEventListener("mysession:soundscape-state", handleState);\n        window.dispatchEvent(new Event("mysession:request-soundscape-state"));\n        return () => window.removeEventListener("mysession:soundscape-state", handleState);\n    }, []);\n\n    const topBarBg = isLight'''
+          if state_marker not in top:
+              raise SystemExit('RoomTopBar state marker not found')
+          top = top.replace(state_marker, state_block, 1)
+
+          render_marker = '''    const mutedText = isLight ? "text-black/65" : "text-white/80";\n\n    const switchTrack ='''
+          render_block = '''    const mutedText = isLight ? "text-black/65" : "text-white/80";\n\n    const renderMobileMusicMute = () => (\n        <button\n            type="button"\n            onClick={() => window.dispatchEvent(new Event("mysession:toggle-soundscape-mute"))}\n            disabled={!mobileMusicState.active}\n            className={[\n                "lg:hidden flex h-[32px] w-[32px] shrink-0 items-center justify-center rounded-full border transition",\n                "disabled:cursor-default disabled:opacity-35",\n                isLight\n                    ? "border-[#CFCFCF] bg-[#E1E3E6] text-[#2F2F2F] hover:bg-[#E0E0E0]"\n                    : "border-[#2B2B2B] bg-white/5 text-white hover:bg-[#F2F3F5]/10",\n            ].join(" ")}\n            title={mobileMusicState.muted ? "Unmute background music" : "Mute background music"}\n            aria-label={mobileMusicState.muted ? "Unmute background music" : "Mute background music"}\n            aria-pressed={mobileMusicState.muted}\n        >\n            <MusicRadioIcon muted={mobileMusicState.muted} className="h-[18px] w-[18px]" />\n        </button>\n    );\n\n    const switchTrack ='''
+          if render_marker not in top:
+              raise SystemExit('RoomTopBar render marker not found')
+          top = top.replace(render_marker, render_block, 1)
+
+          desktop_marker = '''                            </button>\n\n                            {!isInfiniteRoom && !!hostProfile && ('''
+          if top.count(desktop_marker) != 1:
+              raise SystemExit(f'Expected one wide top-bar theme marker, found {top.count(desktop_marker)}')
+          top = top.replace(
+              desktop_marker,
+              '''                            </button>\n\n                            {renderMobileMusicMute()}\n\n                            {!isInfiniteRoom && !!hostProfile && (''',
+              1,
+          )
+
+          mobile_marker = '''                        </button>\n\n                        {!isInfiniteRoom && !!hostProfile && ('''
+          if top.count(mobile_marker) != 1:
+              raise SystemExit(f'Expected one compact top-bar theme marker, found {top.count(mobile_marker)}')
+          top = top.replace(
+              mobile_marker,
+              '''                        </button>\n\n                        {renderMobileMusicMute()}\n\n                        {!isInfiniteRoom && !!hostProfile && (''',
+              1,
+          )
+          top_path.write_text(top)
+
+          legacy_path = Path('src/pages/livekit/LiveKitBottomBarLegacy.tsx')
+          legacy = legacy_path.read_text()
+          bridge_marker = '''    const moreMenuRef = useRef<HTMLDivElement | null>(null);\n\n    useEffect(() => setBlurDraft(blurStrength), [blurStrength]);'''
+          bridge_block = '''    const moreMenuRef = useRef<HTMLDivElement | null>(null);\n\n    useEffect(() => {\n        const broadcastSoundscapeState = () => {\n            window.dispatchEvent(\n                new CustomEvent("mysession:soundscape-state", {\n                    detail: {\n                        active: soundscapeActive,\n                        muted: soundscapeMuted,\n                    },\n                }),\n            );\n        };\n        const handleToggleSoundscapeMute = () => {\n            if (soundscapeActive && onToggleSoundscapeMute) {\n                onToggleSoundscapeMute();\n            }\n        };\n\n        window.addEventListener("mysession:toggle-soundscape-mute", handleToggleSoundscapeMute);\n        window.addEventListener("mysession:request-soundscape-state", broadcastSoundscapeState);\n        broadcastSoundscapeState();\n\n        return () => {\n            window.removeEventListener("mysession:toggle-soundscape-mute", handleToggleSoundscapeMute);\n            window.removeEventListener("mysession:request-soundscape-state", broadcastSoundscapeState);\n        };\n    }, [soundscapeActive, soundscapeMuted, onToggleSoundscapeMute]);\n\n    useEffect(() => setBlurDraft(blurStrength), [blurStrength]);'''
+          if bridge_marker not in legacy:
+              raise SystemExit('LiveKitBottomBarLegacy bridge marker not found')
+          legacy = legacy.replace(bridge_marker, bridge_block, 1)
+          legacy_path.write_text(legacy)
+          PY
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit feature and remove one-shot workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/one-shot-mobile-music-mute.yml
+          git add src/components/RoomTopBar.tsx src/pages/livekit/LiveKitBottomBarLegacy.tsx
+          git commit -m "Add mobile music mute control"
+          git push origin HEAD:main
