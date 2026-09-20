@@ -10238,52 +10238,14 @@ export function RoomPageLiveKit({
         : null,
     });
   };
-
-  const recordInfiniteRoomDailyAttendance = async () => {
-    if (!isInfiniteRoom || !session?.id || !authUserId) return;
-
-    const savedProfileTimeZone = String(localProfileTimeZoneRef.current || "").trim();
-    const timezone = isValidTimeZone(savedProfileTimeZone)
-      ? savedProfileTimeZone
-      : Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-
-    try {
-      const { error } = await supabase.rpc(
-        "record_infinite_room_daily_attendance",
-        {
-          p_session_id: session.id,
-          p_timezone: timezone,
-        },
-      );
-
-      if (error) {
-        const code = String((error as any)?.code || "");
-        // During rollout the frontend can safely ship before the SQL function.
-        // Presence remains operational; daily counting starts once SQL is applied.
-        if (code !== "42883" && code !== "PGRST202") {
-          console.warn(
-            "[attendance] infinite daily attendance was not recorded:",
-            error,
-          );
-        }
-      }
-    } catch (error) {
-      console.warn(
-        "[attendance] infinite daily attendance request failed:",
-        error,
-      );
-    }
-  };
-
   const attendanceJoin = async () => {
     if (!session?.id || !authUserId) return;
 
     roomLifecycleDiagnosticRef.current("attendance.join_started");
     const nowIso = new Date().toISOString();
 
-    // This RPC is idempotent for user + infinite room + local calendar day.
-    // It is deliberately independent from the live-presence row below.
-    void recordInfiniteRoomDailyAttendance();
+    // The database records infinite-room calendar days from confirmed presence
+    // writes (join and heartbeat), including midnight without reconnecting.
 
     try {
       const { error } = await supabase.rpc("attendance_join", {
