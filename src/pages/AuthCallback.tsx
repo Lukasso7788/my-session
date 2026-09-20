@@ -102,34 +102,22 @@ export const AuthCallback = () => {
     useEffect(() => {
         let mounted = true;
 
-        const finishAuth = async (session: Session) => {
+        const finishAuth = (session: Session) => {
             if (!mounted || !session?.user?.id) return;
 
             const userId = String(session.user.id);
 
             if (handledUserIdRef.current === userId) {
-                // A repeated SIGNED_IN event is expected when persistence is
-                // confirmed below. The first invocation owns navigation; a
-                // duplicate must not unmount the callback while it is awaiting.
                 return;
             }
 
             handledUserIdRef.current = userId;
 
-            // Discord has already returned a valid session at this point.
-            // Re-apply that exact session before routing so persistence is
-            // completed even when the browser's initial URL detection was slow.
-            const { data: persistedData, error: persistError } =
-                await supabase.auth.setSession({
-                    access_token: session.access_token,
-                    refresh_token: session.refresh_token,
-                });
-            if (persistError) throw persistError;
-            if (persistedData.session?.user?.id !== userId) {
-                throw new Error("The browser did not persist the signed-in session.");
-            }
-            if (!mounted) return;
-            adoptSession(persistedData.session);
+            // getSession waits for SDK URL initialization and persistence.
+            // setSession is NOT a persistence check: it makes another /user
+            // request and emits SIGNED_IN again. Do not replay old tokens or
+            // introduce another network failure after OAuth already succeeded.
+            adoptSession(session);
 
             // The authenticated session is sufficient to enter the app. Profile
             // hydration is best-effort and must not add PostgREST latency to OAuth.
@@ -162,6 +150,7 @@ export const AuthCallback = () => {
                 // and the PKCE exchange share one browser lock; abandoned calls
                 // keep running and retries only create a lock queue.
                 const result = await supabase.auth.getSession();
+                if (!mounted) return;
                 if (result.error) throw result.error;
 
                 if (result.data.session) {
@@ -169,11 +158,15 @@ export const AuthCallback = () => {
                         window.clearTimeout(recoveryTimer);
                         recoveryTimer = null;
                     }
-                    await finishAuth(result.data.session);
+                    finishAuth(result.data.session);
+                } else {
+                    throw new Error("No session was returned after the sign-in redirect.");
                 }
             } catch (error) {
                 console.warn("[auth callback] session restore failed:", error);
-                if (mounted && !handledUserIdRef.current) {
+                if (mounted) {
+                    handledUserIdRef.current = "";
+                    if (recoveryTimer) window.clearTimeout(recoveryTimer);
                     setCallbackError(
                         "We couldn't finish signing you in. Check the connection and try once more."
                     );

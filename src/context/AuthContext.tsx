@@ -113,6 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 🌟 ВОССТАНОВЛЕНИЕ СЕССИИ + LISTENER
     useEffect(() => {
         let active = true;
+        let signOutTimer: number | null = null;
         const isAuthCallback =
             typeof window !== "undefined" &&
             window.location.pathname.replace(/\/$/, "") === "/auth/callback";
@@ -161,9 +162,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const {
             data: { subscription },
         } = supabase.auth.onAuthStateChange(
-            async (event, currentSession) => {
+            (event, currentSession) => {
                 if (!active) return;
-                authEventGenerationRef.current += 1;
 
                 // Supabase can emit a late INITIAL_SESSION with `null` while an
                 // OAuth/PKCE SIGNED_IN event has already restored the user on a
@@ -176,6 +176,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     return;
                 }
 
+                const eventGeneration = ++authEventGenerationRef.current;
+                if (signOutTimer !== null) window.clearTimeout(signOutTimer);
+
                 if (currentSession) {
                     adoptSession(currentSession);
                 } else {
@@ -183,9 +186,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     // dispatching onAuthStateChange; it shares the auth lock.
                     // Verify storage just after the callback returns so a stale
                     // cross-tab event cannot erase a freshly persisted login.
-                    window.setTimeout(() => {
-                        void supabase.auth.getSession().then(({ data }) => {
-                            if (!active) return;
+                    signOutTimer = window.setTimeout(() => {
+                        if (!active || eventGeneration !== authEventGenerationRef.current) return;
+                        void supabase.auth.getSession().then(({ data, error }) => {
+                            // A newer login/refresh may have completed while this
+                            // storage read was pending. Its result wins, even if
+                            // this older read now resolves to null.
+                            if (!active || eventGeneration !== authEventGenerationRef.current) return;
+                            if (error) throw error;
                             if (data.session) {
                                 adoptSession(data.session);
                                 return;
@@ -196,6 +204,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                             currentUserRef.current = null;
                             setProfile(null);
                             setLoading(false);
+                        }).catch((error) => {
+                            console.warn("[Auth] Sign-out reconciliation failed:", error);
                         });
                     }, 150);
                 }
@@ -214,18 +224,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         return () => {
             active = false;
+            if (signOutTimer !== null) window.clearTimeout(signOutTimer);
             window.removeEventListener(AUTH_PROFILE_READY_EVENT, handleProfileReady);
             subscription.unsubscribe();
         };
     }, [adoptSession, loadProfile]);
 
     const signOut = useCallback(async () => {
-        await supabase.auth.signOut();
-        setUser(null);
-        setSession(null);
-        setProfile(null);
-        currentUserRef.current = null;
-        setLoading(false);
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+        // The SIGNED_OUT listener owns reconciliation. An unconditional clear
+        // here could overwrite a subsequent login while signOut was awaiting.
     }, []);
 
     return (
