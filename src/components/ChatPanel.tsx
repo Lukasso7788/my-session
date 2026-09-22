@@ -1530,12 +1530,7 @@ export function ChatPanel({
         return () => {
             readReceiptReadyRef.current = false;
             readReceiptChannelRef.current = null;
-            try {
-                void channel.unsubscribe?.();
-            } catch { }
-            try {
-                void (supabase as any).removeChannel?.(channel);
-            } catch { }
+            void supabase.removeChannel(channel);
         };
     }, [sessionId, userId, rememberMessageReaders]);
 

@@ -1662,7 +1662,7 @@ export function SessionsPage() {
           table: "infinite_room_host_leases",
         },
         (payload) => {
-          // heartbeat_infinite_room_host updates the same lease every 30s.
+          // Host heartbeats update the same lease about every 90s.
           // That does not require downloading sessions, bookings, profiles,
           // slugs and counts again. Apply the expiry/user fields locally and
           // reserve a full refresh for actual INSERT/DELETE lifecycle changes.

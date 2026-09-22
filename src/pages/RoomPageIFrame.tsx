@@ -573,19 +573,18 @@ function buildStageStateFromSession(data: any): {
 // ============================================
 function safeRemoveRealtimeChannel(ch: any) {
     if (!ch) return;
-
+    const sb: any = supabase as any;
+    // removeChannel handles unsubscribe plus client-side channel/timer cleanup.
     try {
-        if (typeof ch.unsubscribe === "function") {
-            void ch.unsubscribe();
+        if (typeof sb.removeChannel === "function") {
+            void sb.removeChannel(ch);
             return;
         }
     } catch { }
 
-    const sb: any = supabase as any;
-
     try {
-        if (typeof sb.removeChannel === "function") {
-            void sb.removeChannel(ch);
+        if (typeof ch.unsubscribe === "function") {
+            void ch.unsubscribe();
             return;
         }
     } catch { }
@@ -739,8 +738,11 @@ const MIN_PARTICIPANTS = 3;
 const MAX_PARTICIPANTS = 64;
 
 // ====== attendance ======
-const ATT_HEARTBEAT_MS = 10_000;
-const ONLINE_WINDOW_MS = 35_000;
+// 30 seconds leaves two missed ticks before the 90-second presence timeout.
+const ATT_HEARTBEAT_MS = 30_000;
+// Allow a delayed 30s heartbeat without showing an active participant offline;
+// remain inside the server's 90-second presence lease.
+const ONLINE_WINDOW_MS = 80_000;
 
 // ====== adaptive video quality ======
 function pickTargetVideoHeight(participantsTotal: number) {
@@ -1970,6 +1972,10 @@ export default function RoomPageIFrame() {
     // Attendance: join / heartbeat / leave (+ keepalive leave)
     // ============================================
     const attendanceHbTimerRef = useRef<number | null>(null);
+    const attendanceHeartbeatPromiseRef = useRef<Promise<void> | null>(null);
+    const attendanceLeavePromiseRef = useRef<Promise<void> | null>(null);
+    const attendanceResumePromiseRef = useRef<Promise<void> | null>(null);
+    const attendanceLastHeartbeatAtRef = useRef(0);
     const leaveOnceRef = useRef(false);
 
     const startAttendanceHeartbeat = () => {
@@ -2004,27 +2010,35 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    const attendanceHeartbeat = async () => {
-        if (!sessionId || !currentUserId) return;
+    const attendanceHeartbeat = (): Promise<void> => {
+        if (!sessionId || !currentUserId || !localJoinedRef.current || leaveOnceRef.current) return Promise.resolve();
+        if (attendanceHeartbeatPromiseRef.current) return attendanceHeartbeatPromiseRef.current;
+        if (Date.now() - attendanceLastHeartbeatAtRef.current < 20_000) return Promise.resolve();
         const nowIso = new Date().toISOString();
-
-        try {
-            const { error } = await supabase.rpc("attendance_heartbeat", { p_session_id: sessionId });
-            if (!error) return;
-        } catch { }
-
-        try {
-            await supabase
-                .from("session_attendance")
-                .update({ last_seen_at: nowIso, left_at: null })
-                .eq("session_id", sessionId)
-                .eq("user_id", currentUserId);
-        } catch { }
+        const heartbeatPromise = (async () => {
+            try {
+                const { error } = await supabase.rpc("attendance_heartbeat", { p_session_id: sessionId });
+                if (!error) { attendanceLastHeartbeatAtRef.current = Date.now(); return; }
+            } catch { }
+            try {
+                const { error } = await supabase
+                    .from("session_attendance")
+                    .update({ last_seen_at: nowIso, left_at: null })
+                    .eq("session_id", sessionId)
+                    .eq("user_id", currentUserId);
+                if (!error) attendanceLastHeartbeatAtRef.current = Date.now();
+            } catch { }
+        })().finally(() => {
+            if (attendanceHeartbeatPromiseRef.current === heartbeatPromise) attendanceHeartbeatPromiseRef.current = null;
+        });
+        attendanceHeartbeatPromiseRef.current = heartbeatPromise;
+        return heartbeatPromise;
     };
 
     const attendanceLeave = async () => {
         stopAttendanceHeartbeat();
         if (!sessionId || !currentUserId) return;
+        await attendanceHeartbeatPromiseRef.current?.catch(() => { });
         const nowIso = new Date().toISOString();
 
         try {
@@ -2068,22 +2082,54 @@ export default function RoomPageIFrame() {
         } catch { }
     };
 
-    const leaveOnce = async (opts: { dispose?: boolean; keepalive?: boolean } = {}) => {
-        if (leaveOnceRef.current) return;
+    const leaveOnce = (opts: { dispose?: boolean; keepalive?: boolean } = {}): Promise<void> => {
+        if (leaveOnceRef.current) return attendanceLeavePromiseRef.current ?? Promise.resolve();
         leaveOnceRef.current = true;
 
         if (opts.keepalive) keepaliveLeaveWrite();
-
-        try {
-            await attendanceLeave();
-        } catch { }
-
-        if (opts.dispose === false) return;
-
-        try {
-            apiRef.current?.dispose?.();
-        } catch { }
+        const leavePromise = (async () => {
+            try { await attendanceLeave(); } catch { }
+            if (opts.dispose === false) return;
+            try { apiRef.current?.dispose?.(); } catch { }
+        })();
+        attendanceLeavePromiseRef.current = leavePromise;
+        return leavePromise;
     };
+
+    useEffect(() => {
+        let cancelled = false;
+        const resumePresence = () => {
+            if (!localJoinedRef.current || document.visibilityState !== "visible") return;
+            if (attendanceResumePromiseRef.current) return;
+            const resumePromise = (async () => {
+                // A bfcache pageshow can arrive before the pagehide leave RPC
+                // finishes. Never let that old leave overwrite the new join.
+                await attendanceLeavePromiseRef.current?.catch(() => { });
+                if (cancelled || !localJoinedRef.current || document.visibilityState !== "visible") return;
+                if (leaveOnceRef.current) {
+                    leaveOnceRef.current = false;
+                    await attendanceJoin();
+                    attendanceLastHeartbeatAtRef.current = 0;
+                }
+                if (!cancelled) {
+                    void attendanceHeartbeat();
+                    startAttendanceHeartbeat();
+                }
+            })().finally(() => {
+                if (attendanceResumePromiseRef.current === resumePromise) attendanceResumePromiseRef.current = null;
+            });
+            attendanceResumePromiseRef.current = resumePromise;
+        };
+        document.addEventListener("visibilitychange", resumePresence);
+        window.addEventListener("pageshow", resumePresence);
+        window.addEventListener("online", resumePresence);
+        return () => {
+            cancelled = true;
+            document.removeEventListener("visibilitychange", resumePresence);
+            window.removeEventListener("pageshow", resumePresence);
+            window.removeEventListener("online", resumePresence);
+        };
+    }, [sessionId, currentUserId]);
 
     useEffect(() => {
         const onBeforeUnload = () => {

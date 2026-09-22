@@ -1882,19 +1882,19 @@ function getParticipantVolumeKey(
 // realtime cleanup safe
 function safeRemoveRealtimeChannel(ch: any) {
   if (!ch) return;
-
+  const sb: any = supabase as any;
+  // Supabase's removeChannel unsubscribes, removes the channel from the client,
+  // and tears down its timers. Do not unsubscribe and return early here.
   try {
-    if (typeof ch.unsubscribe === "function") {
-      void ch.unsubscribe();
+    if (typeof sb.removeChannel === "function") {
+      void sb.removeChannel(ch);
       return;
     }
   } catch { }
 
-  const sb: any = supabase as any;
-
   try {
-    if (typeof sb.removeChannel === "function") {
-      void sb.removeChannel(ch);
+    if (typeof ch.unsubscribe === "function") {
+      void ch.unsubscribe();
       return;
     }
   } catch { }
@@ -2698,18 +2698,23 @@ const CONNECTION_DIAGNOSTICS_LOCAL_KEY =
 const CONNECTION_DIAGNOSTICS_LOCAL_MAX = 120;
 const connectionDiagnosticsMemoryBuffer: Record<string, unknown>[] = [];
 const CONNECTION_DIAGNOSTICS_DEDUP_MS = 30_000;
-const CONNECTION_DIAGNOSTICS_REMOTE_SAMPLE_RATE = 1 / 100;
+const CONNECTION_DIAGNOSTICS_REMOTE_REPEAT_MS = 120_000;
 const ROOM_RECOVERY_REQUEST_EVENT = "mysession:room-recovery-request";
-const CONNECTION_DIAGNOSTICS_CRITICAL_EVENTS = new Set([
-  "livekit.connected",
+// Keep routine lifecycle/heartbeat samples in the local ring buffer for bug
+// reports. Only actionable failures and connection transitions write to SQL.
+const CONNECTION_DIAGNOSTICS_REMOTE_EVENTS = new Set([
   "livekit.disconnected",
   "livekit.reconnecting",
   "livekit.signal_reconnecting",
   "livekit.reconnected",
-  "livekit.controlled_reconnect_started",
   "livekit.controlled_reconnect_failed",
-  "attendance.leave_started",
+  "token.fetch_failed",
+  "attendance.join_failed",
+  "heartbeat.failed",
+  "camera.track_ended",
+  "camera.frame_delayed",
   "window.offline",
+  "window.online",
 ]);
 
 function normalizeVideoTileLayoutPreset(raw: unknown): VideoTileLayoutPreset {
@@ -10301,6 +10306,11 @@ export function RoomPageLiveKit({
     if (attendanceHeartbeatPromiseRef.current) {
       return attendanceHeartbeatPromiseRef.current;
     }
+    // Visibility/reconnect callbacks may fire together. A successful beat less
+    // than 20s ago is still safely inside the 90s offline window.
+    if (Date.now() - (attendanceLastSuccessAtRef.current || 0) < 20_000) {
+      return Promise.resolve();
+    }
 
     const generation = attendanceHeartbeatGenerationRef.current;
     const nowIso = new Date().toISOString();
@@ -11668,6 +11678,7 @@ export function RoomPageLiveKit({
   const [camOn, setCamOn] = useState(false);
   const [screenShareOn, setScreenShareOn] = useState(false);
   const connectionDiagnosticWriteTimesRef = useRef<Record<string, number>>({});
+  const connectionDiagnosticRemoteWriteTimesRef = useRef<Record<string, number>>({});
 
   const writeConnectionDiagnostic = useCallback(
     async (eventType: string, payload: Record<string, unknown> = {}) => {
@@ -11729,14 +11740,18 @@ export function RoomPageLiveKit({
         console.info("[ROOM-LIFECYCLE]", localEntry);
       }
 
-      const isCriticalEvent =
-        CONNECTION_DIAGNOSTICS_CRITICAL_EVENTS.has(eventType);
-      if (
-        !isCriticalEvent &&
-        Math.random() >= CONNECTION_DIAGNOSTICS_REMOTE_SAMPLE_RATE
-      ) {
-        return;
-      }
+      const shouldWriteRemote =
+        CONNECTION_DIAGNOSTICS_REMOTE_EVENTS.has(eventType) ||
+        eventType.startsWith("camera.start_failed") ||
+        eventType.startsWith("device.") && eventType.endsWith("failed") ||
+        eventType.startsWith("livekit.") && eventType.endsWith("failed");
+      if (!shouldWriteRemote) return;
+      // Reconnect/error storms are kept locally but capped in Postgres per
+      // event type. Critical transitions remain available for investigation.
+      const lastRemoteWriteAt =
+        connectionDiagnosticRemoteWriteTimesRef.current[eventType] || 0;
+      if (now - lastRemoteWriteAt < CONNECTION_DIAGNOSTICS_REMOTE_REPEAT_MS) return;
+      connectionDiagnosticRemoteWriteTimesRef.current[eventType] = now;
 
       try {
         const { error } = await supabase
@@ -11774,9 +11789,7 @@ export function RoomPageLiveKit({
             remote_participants: roomAny?.remoteParticipants?.size ?? null,
             mic_on: micOn,
             cam_on: camOn,
-            sample_rate: isCriticalEvent
-              ? 1
-              : CONNECTION_DIAGNOSTICS_REMOTE_SAMPLE_RATE,
+            sample_rate: 1,
             details: {
               attempt_id: roomLifecycleAttemptIdRef.current,
               tab_id: tabId,
@@ -12293,28 +12306,37 @@ export function RoomPageLiveKit({
     }
 
     let cancelled = false;
+    let inFlight = false;
     const heartbeat = async () => {
-      if (activeRoomHostActionRef.current) return;
+      if (inFlight || cancelled || activeRoomHostActionRef.current) return;
+      inFlight = true;
       const epoch = activeRoomHostEpochRef.current;
       const read = activeRoomHostReadRef.current;
-      const { data, error } = await supabase.rpc(
-        "heartbeat_infinite_room_host",
-        { p_session_id: sessionId },
-      );
-      if (cancelled || activeRoomHostActionRef.current || epoch !== activeRoomHostEpochRef.current) return;
-      if (error || data === false) {
-        if (read !== activeRoomHostReadRef.current) return;
-        activeRoomHostReadRef.current += 1;
-        setActiveRoomHostLease(null);
-        if (error) console.warn("active host heartbeat failed", error);
-        return;
+      try {
+        const { data, error } = await supabase.rpc(
+          "heartbeat_infinite_room_host",
+          { p_session_id: sessionId },
+        );
+        if (cancelled || activeRoomHostActionRef.current || epoch !== activeRoomHostEpochRef.current) return;
+        if (error || data === false) {
+          if (read !== activeRoomHostReadRef.current) return;
+          activeRoomHostReadRef.current += 1;
+          setActiveRoomHostLease(null);
+          if (error) console.warn("active host heartbeat failed", error);
+          return;
+        }
+        setActiveRoomHostClock(Date.now());
+        // The lease UPDATE is already delivered by the session-scoped Realtime
+        // channel. Avoid a second SELECT for every successful heartbeat.
+      } catch (error) {
+        if (!cancelled) console.warn("active host heartbeat failed", error);
+      } finally {
+        inFlight = false;
       }
-      setActiveRoomHostClock(Date.now());
-      void loadActiveRoomHostLease();
     };
 
     void heartbeat();
-    const heartbeatTimer = window.setInterval(heartbeat, 30_000);
+    const heartbeatTimer = window.setInterval(heartbeat, 90_000);
     return () => {
       cancelled = true;
       window.clearInterval(heartbeatTimer);
@@ -12324,7 +12346,6 @@ export function RoomPageLiveKit({
     connected,
     isInfiniteRoom,
     isTemporaryRoomHost,
-    loadActiveRoomHostLease,
     sessionId,
   ]);
 

@@ -1,124 +1,113 @@
-// src/hooks/useAttendancePresence.ts
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { supabase } from "../lib/supabase";
 
-const MIN_HEARTBEAT_GAP_MS = 20_000;
-const heartbeatLastSentAt = new Map<string, number>();
-const heartbeatInFlight = new Map<string, Promise<void>>();
+type PresenceLease = {
+    consumers: Set<symbol>;
+    cadenceMs: number;
+    timer: number | null;
+    leaveTimer: number | null;
+    inFlight: Promise<void> | null;
+    leaving: Promise<void> | null;
+    lastSuccessAt: number;
+    beat: () => Promise<void>;
+    leave: () => Promise<void>;
+    onVisible: () => void;
+    onUnload: () => void;
+};
 
-async function sendAttendanceHeartbeat(sessionId: string, userId: string) {
-    const key = `${userId}:${sessionId}`;
-    const now = Date.now();
-    const lastSentAt = heartbeatLastSentAt.get(key) || 0;
+// One heartbeat timer per session in this browser tab, even if two components
+// mount the hook. The last consumer owns the leave; StrictMode remounts cancel
+// its short grace period instead of briefly marking attendance offline.
+const presenceLeases = new Map<string, PresenceLease>();
 
-    if (now - lastSentAt < MIN_HEARTBEAT_GAP_MS) return;
+function startTimer(lease: PresenceLease) {
+    if (lease.timer !== null) window.clearInterval(lease.timer);
+    lease.timer = window.setInterval(() => { void lease.beat(); }, lease.cadenceMs);
+}
 
-    const pending = heartbeatInFlight.get(key);
-    if (pending) return pending;
-
-    // Mark before the RPC starts so duplicate effects/visibility events that
-    // fire together cannot enqueue another database write.
-    heartbeatLastSentAt.set(key, now);
-
-    const heartbeatPromise = (async () => {
-        try {
-            const { error } = await supabase.rpc("attendance_heartbeat", {
-                p_session_id: sessionId,
+function acquirePresence(sessionId: string, cadenceMs: number, consumer: symbol) {
+    let lease = presenceLeases.get(sessionId);
+    if (!lease) {
+        lease = {
+            consumers: new Set(), cadenceMs, timer: null, leaveTimer: null,
+            inFlight: null, leaving: null, lastSuccessAt: 0,
+            beat: async () => {}, leave: async () => {}, onVisible: () => {}, onUnload: () => {},
+        };
+        const current = lease;
+        current.beat = () => {
+            if (current.consumers.size === 0) return Promise.resolve();
+            if (current.inFlight) return current.inFlight;
+            if (Date.now() - current.lastSuccessAt < 20_000) return Promise.resolve();
+            const request = (async () => {
+                const { error } = await supabase.rpc("attendance_heartbeat", { p_session_id: sessionId });
+                if (!error) current.lastSuccessAt = Date.now();
+            })().catch(() => {}).finally(() => {
+                if (current.inFlight === request) current.inFlight = null;
             });
-
-            if (error && heartbeatLastSentAt.get(key) === now) {
-                heartbeatLastSentAt.delete(key);
-            }
-        } catch {
-            if (heartbeatLastSentAt.get(key) === now) {
-                heartbeatLastSentAt.delete(key);
-            }
-        }
-    })();
-
-    heartbeatInFlight.set(key, heartbeatPromise);
-
-    try {
-        await heartbeatPromise;
-    } finally {
-        if (heartbeatInFlight.get(key) === heartbeatPromise) {
-            heartbeatInFlight.delete(key);
-        }
+            current.inFlight = request;
+            return request;
+        };
+        current.leave = () => {
+            if (current.leaving) return current.leaving;
+            const request = (async () => {
+                await current.inFlight?.catch(() => {});
+                await supabase.rpc("attendance_leave", { p_session_id: sessionId });
+                current.lastSuccessAt = 0;
+            })().catch(() => {}).finally(() => {
+                current.leaving = null;
+                if (current.consumers.size > 0) void current.beat();
+                const replacement = presenceLeases.get(sessionId);
+                if (replacement && replacement !== current && replacement.consumers.size > 0) {
+                    replacement.lastSuccessAt = 0;
+                    void replacement.beat();
+                }
+            });
+            current.leaving = request;
+            return request;
+        };
+        current.onVisible = () => {
+            if (document.visibilityState === "visible") void current.beat();
+        };
+        current.onUnload = () => { void current.leave(); };
+        presenceLeases.set(sessionId, current);
+        document.addEventListener("visibilitychange", current.onVisible);
+        window.addEventListener("online", current.onVisible);
+        window.addEventListener("beforeunload", current.onUnload);
     }
+
+    lease.consumers.add(consumer);
+    if (lease.leaveTimer !== null) {
+        window.clearTimeout(lease.leaveTimer);
+        lease.leaveTimer = null;
+    }
+    if (cadenceMs < lease.cadenceMs) lease.cadenceMs = cadenceMs;
+    startTimer(lease);
+    void lease.beat();
+
+    return () => {
+        lease.consumers.delete(consumer);
+        if (lease.consumers.size > 0) return;
+        if (lease.timer !== null) window.clearInterval(lease.timer);
+        lease.timer = null;
+        lease.leaveTimer = window.setTimeout(() => {
+            lease.leaveTimer = null;
+            if (lease.consumers.size > 0) return;
+            presenceLeases.delete(sessionId);
+            document.removeEventListener("visibilitychange", lease.onVisible);
+            window.removeEventListener("online", lease.onVisible);
+            window.removeEventListener("beforeunload", lease.onUnload);
+            void lease.leave();
+        }, 1000);
+    };
 }
 
 export function useAttendancePresence(
     sessionId: string | null,
-    opts?: { heartbeatMs?: number }
+    opts?: { heartbeatMs?: number },
 ) {
-    const heartbeatMs = opts?.heartbeatMs ?? 30_000;
-    const timerRef = useRef<number | null>(null);
-
+    const heartbeatMs = Math.max(25_000, Number(opts?.heartbeatMs) || 30_000);
     useEffect(() => {
         if (!sessionId) return;
-
-        let cancelled = false;
-        let userId = "";
-
-        const start = async () => {
-            try {
-                // getSession uses the local persisted auth session; unlike
-                // getUser(), this avoids an /auth/v1/user request per heartbeat.
-                const {
-                    data: { session },
-                } = await supabase.auth.getSession();
-
-                userId = String(session?.user?.id || "").trim();
-                if (!userId || cancelled) return;
-
-                await sendAttendanceHeartbeat(sessionId, userId);
-
-                if (cancelled) return;
-                timerRef.current = window.setInterval(() => {
-                    if (!cancelled && userId) {
-                        void sendAttendanceHeartbeat(sessionId, userId);
-                    }
-                }, heartbeatMs);
-            } catch {
-                // intentionally silent
-            }
-        };
-
-        const leave = async () => {
-            if (!userId) return;
-            try {
-                await supabase.rpc("attendance_leave", { p_session_id: sessionId });
-            } catch {
-                // intentionally silent
-            }
-        };
-
-        void start();
-
-        const onBeforeUnload = () => {
-            void leave();
-        };
-
-        // Returning to the tab may happen just after the interval heartbeat.
-        // The shared 20s guard prevents that from becoming a duplicate write.
-        const onVisibility = () => {
-            if (document.visibilityState === "visible" && userId) {
-                void sendAttendanceHeartbeat(sessionId, userId);
-            }
-        };
-
-        window.addEventListener("beforeunload", onBeforeUnload);
-        document.addEventListener("visibilitychange", onVisibility);
-
-        return () => {
-            cancelled = true;
-            if (timerRef.current) window.clearInterval(timerRef.current);
-            timerRef.current = null;
-
-            window.removeEventListener("beforeunload", onBeforeUnload);
-            document.removeEventListener("visibilitychange", onVisibility);
-
-            void leave();
-        };
+        return acquirePresence(sessionId, heartbeatMs, Symbol(sessionId));
     }, [sessionId, heartbeatMs]);
 }
