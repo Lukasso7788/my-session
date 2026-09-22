@@ -8314,11 +8314,23 @@ export function RoomPageLiveKit({
       return;
     }
 
+    const previousSchedule = safeParseJson(session?.schedule);
+    const previousFreeFlowSchedule = isRecord(previousSchedule) ? previousSchedule : {};
+    const activeFreeFlowPresetId = freeFlowDraftPresetId
+      || String(previousFreeFlowSchedule.free_flow_preset_id || "").trim()
+      || null;
     const selectedFreeFlowPreset = FREE_FLOW_TIMELINE_PRESETS.find(
-      (preset) => preset.id === freeFlowDraftPresetId,
+      (preset) => preset.id === activeFreeFlowPresetId,
     );
-    const customFreeFlowName = freeFlowCustomName.trim();
-    if (isFreeFlowRoom && freeFlowDraftPresetId === "custom" && !customFreeFlowName) {
+    const customFreeFlowName = String(
+      freeFlowDraftPresetId === "custom"
+        ? freeFlowCustomName
+        : previousFreeFlowSchedule.free_flow_custom_name || "",
+    )
+      .trim()
+      .replace(/\s*[-–—]\s*24\/7\s*$/i, "")
+      .trim();
+    if (isFreeFlowRoom && activeFreeFlowPresetId === "custom" && !customFreeFlowName) {
       alert("Name your Free Flow room before saving");
       return;
     }
@@ -8345,6 +8357,10 @@ export function RoomPageLiveKit({
             free_flow: true,
             max_timeline_blocks: 9,
             host_configured: true,
+            ...(activeFreeFlowPresetId ? { free_flow_preset_id: activeFreeFlowPresetId } : {}),
+            ...(activeFreeFlowPresetId === "custom"
+              ? { free_flow_custom_name: customFreeFlowName }
+              : {}),
           }
         : generatedSchedule;
 
@@ -8361,17 +8377,28 @@ export function RoomPageLiveKit({
               && actual.minutes === block.minutes;
           })
         : false;
-      const freeFlowSessionDetails = isFreeFlowRoom && freeFlowDraftPresetId
+      const focusMinutes = timelineDraftBlocks
+        .filter((block) => block.kind === "focus")
+        .map((block) => block.minutes);
+      const breakMinutes = timelineDraftBlocks
+        .filter((block) => block.kind === "break")
+        .map((block) => block.minutes);
+      const customizedPresetTimer = focusMinutes.length
+        ? `${focusMinutes.join("→")} min focus${breakMinutes.length ? ` / ${breakMinutes.join("+")} min break` : ""}`
+        : `${nextDurationMinutes} min cycle`;
+      const freeFlowSessionDetails = isFreeFlowRoom && activeFreeFlowPresetId
         ? selectedFreeFlowPreset
           ? {
-              title: selectedFreeFlowPreset.name,
+              title: presetTimelineUnchanged
+                ? selectedFreeFlowPreset.sessionTitle
+                : `${selectedFreeFlowPreset.emoji} ${selectedFreeFlowPreset.name} · ${customizedPresetTimer} - 24/7`,
               description: presetTimelineUnchanged
-                ? selectedFreeFlowPreset.description
+                ? selectedFreeFlowPreset.sessionDescription
                 : actualTimelineDescription,
             }
-          : freeFlowDraftPresetId === "custom"
+          : activeFreeFlowPresetId === "custom"
             ? {
-                title: customFreeFlowName,
+                title: `✨ ${customFreeFlowName} · ${nextDurationMinutes} min cycle - 24/7`,
                 description: actualTimelineDescription,
               }
             : null

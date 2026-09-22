@@ -1923,7 +1923,7 @@ export function SessionsPage() {
           };
 
       const payload = {
-        title: freeFlow ? "Free Flow - 24/7" : `${source?.title} · Extra`,
+        title: freeFlow ? "✨ Free Flow - 24/7" : `${source?.title} · Extra`,
         host_id: user.id,
         host_name: currentProfile?.full_name || "Host",
         duration_minutes: freeFlow ? 86 : source?.duration_minutes,

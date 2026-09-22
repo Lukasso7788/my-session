@@ -1928,6 +1928,9 @@ export type FreeFlowTimelinePreset = {
     id: string;
     name: string;
     description: string;
+    emoji: string;
+    sessionTitle: string;
+    sessionDescription: string;
     blocks: Omit<RoomTimelineBlock, "id">[];
 };
 
@@ -1943,6 +1946,9 @@ export const FREE_FLOW_TIMELINE_PRESETS: FreeFlowTimelinePreset[] = [
         id: "ladder",
         name: "Ladder",
         description: "Focus blocks gradually grow from 10 to 25 minutes.",
+        emoji: "📈",
+        sessionTitle: "📈 Ladder · 10→15→20→25 min focus - 24/7",
+        sessionDescription: "Start with 2 minutes of goal setting. Focus for 10, 15, 20 and 25 minutes, with 2-minute check-ins between blocks, then take a 10-minute break. The structure repeats.",
         blocks: [
             FREE_FLOW_GOAL_SETTING,
             { kind: "focus", title: "Focus", minutes: 10, note: "Start with a quick focused win" },
@@ -1959,6 +1965,9 @@ export const FREE_FLOW_TIMELINE_PRESETS: FreeFlowTimelinePreset[] = [
         id: "30-10",
         name: "30/10",
         description: "A balanced focus block with a proper reset.",
+        emoji: "⏱️",
+        sessionTitle: "⏱️ 30/10 · Focus / Break - 24/7",
+        sessionDescription: "Set a goal for 2 minutes, focus for 30 minutes, then take a 10-minute break. The structure repeats.",
         blocks: [
             FREE_FLOW_GOAL_SETTING,
             { kind: "focus", title: "Focus", minutes: 30, note: "One clear focused outcome" },
@@ -1969,6 +1978,9 @@ export const FREE_FLOW_TIMELINE_PRESETS: FreeFlowTimelinePreset[] = [
         id: "75-15",
         name: "75/15",
         description: "A long deep-work block followed by recovery.",
+        emoji: "⚡",
+        sessionTitle: "⚡ 75/15 · Deep Focus / Break - 24/7",
+        sessionDescription: "Set a goal for 2 minutes, do 75 minutes of uninterrupted deep work, then take a 15-minute recovery break. The structure repeats.",
         blocks: [
             FREE_FLOW_GOAL_SETTING,
             { kind: "focus", title: "Deep focus", minutes: 75, note: "Protect one substantial work block" },
@@ -1979,6 +1991,9 @@ export const FREE_FLOW_TIMELINE_PRESETS: FreeFlowTimelinePreset[] = [
         id: "sprint-stack",
         name: "Sprint stack",
         description: "Two short sprints with a quick accountability reset.",
+        emoji: "🚀",
+        sessionTitle: "🚀 Sprint Stack · 2×25 min focus - 24/7",
+        sessionDescription: "Set a goal for 2 minutes, complete a 25-minute focus sprint, check in for 2 minutes, then do another 25-minute sprint and take an 8-minute break. The structure repeats.",
         blocks: [
             FREE_FLOW_GOAL_SETTING,
             { kind: "focus", title: "Focus", minutes: 25, note: "Complete the first sprint" },
@@ -1991,6 +2006,9 @@ export const FREE_FLOW_TIMELINE_PRESETS: FreeFlowTimelinePreset[] = [
         id: "deep-arc",
         name: "Deep arc",
         description: "Build into a longer uninterrupted deep-work finish.",
+        emoji: "🌊",
+        sessionTitle: "🌊 Deep Arc · 45→60 min focus - 24/7",
+        sessionDescription: "Set a goal for 2 minutes, focus for 45 minutes, check in for 3 minutes, then finish with 60 minutes of deep work and a 15-minute break. The structure repeats.",
         blocks: [
             FREE_FLOW_GOAL_SETTING,
             { kind: "focus", title: "Focus", minutes: 45, note: "Build momentum" },
