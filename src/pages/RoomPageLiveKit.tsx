@@ -80,6 +80,7 @@ import RoomTimelineEditor, {
   getTimelineTotalMinutes,
   makeDefaultTimelineBlocks,
   makeFreeFlowTimelineBlocks,
+  FREE_FLOW_TIMELINE_PRESETS,
 } from "../components/RoomTimelineEditor";
 import { LiveKitBottomBar } from "./livekit/LiveKitBottomBar";
 import RoomSoundscapePanel from "./livekit/RoomSoundscapePanel";
@@ -6013,6 +6014,8 @@ export function RoomPageLiveKit({
   >([]);
   const [timelineSaving, setTimelineSaving] = useState(false);
   const [freeFlowIntroOpen, setFreeFlowIntroOpen] = useState(false);
+  const [freeFlowDraftPresetId, setFreeFlowDraftPresetId] = useState<string | null>(null);
+  const [freeFlowCustomName, setFreeFlowCustomName] = useState("");
   const [reportModalOpen, setReportModalOpen] = useState(false);
   const [reportTarget, setReportTarget] = useState<TileModel | null>(null);
   const [reportReason, setReportReason] = useState("");
@@ -8295,6 +8298,11 @@ export function RoomPageLiveKit({
   const closeTimelineEditor = () => {
     if (timelineSaving) return;
     setTimelineEditorOpen(false);
+    if (freeFlowDraftPresetId) {
+      setFreeFlowDraftPresetId(null);
+      setFreeFlowCustomName("");
+      setFreeFlowIntroOpen(true);
+    }
   };
 
   const saveTimelineEditor = async () => {
@@ -8303,6 +8311,15 @@ export function RoomPageLiveKit({
 
     if (!timelineDraftBlocks.length) {
       alert("Add at least one block before saving");
+      return;
+    }
+
+    const selectedFreeFlowPreset = FREE_FLOW_TIMELINE_PRESETS.find(
+      (preset) => preset.id === freeFlowDraftPresetId,
+    );
+    const customFreeFlowName = freeFlowCustomName.trim();
+    if (isFreeFlowRoom && freeFlowDraftPresetId === "custom" && !customFreeFlowName) {
+      alert("Name your Free Flow room before saving");
       return;
     }
 
@@ -8332,12 +8349,40 @@ export function RoomPageLiveKit({
         : generatedSchedule;
 
       const nextDurationMinutes = getTimelineTotalMinutes(timelineDraftBlocks);
+      const actualTimelineDescription = `Free Flow timeline: ${timelineDraftBlocks
+        .map((block) => `${String(block.title || block.kind).trim()} (${block.minutes} min)`)
+        .join(" · ")}. Repeats continuously.`;
+      const presetTimelineUnchanged = selectedFreeFlowPreset
+        ? selectedFreeFlowPreset.blocks.length === timelineDraftBlocks.length
+          && selectedFreeFlowPreset.blocks.every((block, index) => {
+            const actual = timelineDraftBlocks[index];
+            return actual.kind === block.kind
+              && actual.title === block.title
+              && actual.minutes === block.minutes;
+          })
+        : false;
+      const freeFlowSessionDetails = isFreeFlowRoom && freeFlowDraftPresetId
+        ? selectedFreeFlowPreset
+          ? {
+              title: selectedFreeFlowPreset.name,
+              description: presetTimelineUnchanged
+                ? selectedFreeFlowPreset.description
+                : actualTimelineDescription,
+            }
+          : freeFlowDraftPresetId === "custom"
+            ? {
+                title: customFreeFlowName,
+                description: actualTimelineDescription,
+              }
+            : null
+        : null;
 
       const { data: updated, error } = await supabase
         .from("sessions")
         .update({
           schedule: nextSchedule,
           duration_minutes: nextDurationMinutes,
+          ...(freeFlowSessionDetails || {}),
         })
         .eq("id", sessionId)
         .select(SESSION_SELECT_STR)
@@ -8351,9 +8396,20 @@ export function RoomPageLiveKit({
           ...session,
           schedule: nextSchedule,
           duration_minutes: nextDurationMinutes,
+          ...(freeFlowSessionDetails || {}),
         } as SessionRow);
 
       applySessionSnapshot(nextSession);
+      if (freeFlowSessionDetails) {
+        try {
+          window.localStorage.setItem(
+            `mysession:free-flow-intro:${sessionId}:${authUserId || "host"}`,
+            "seen",
+          );
+        } catch { /* Browser storage can be unavailable; the session save still succeeded. */ }
+        setFreeFlowDraftPresetId(null);
+        setFreeFlowCustomName("");
+      }
       setTimelineEditorOpen(false);
     } catch (e: any) {
       console.error("Timeline save error:", e);
@@ -21906,6 +21962,8 @@ export function RoomPageLiveKit({
             saving={timelineSaving}
             preserveInfinite={isInfiniteRoom}
             maxBlocks={isFreeFlowRoom ? 9 : undefined}
+            customRoomName={freeFlowDraftPresetId === "custom" ? freeFlowCustomName : undefined}
+            onCustomRoomNameChange={freeFlowDraftPresetId === "custom" ? setFreeFlowCustomName : undefined}
           />
         )}
 
@@ -21914,19 +21972,15 @@ export function RoomPageLiveKit({
           theme={theme}
           onClose={() => setFreeFlowIntroOpen(false)}
           onBuildOwn={() => {
-            window.localStorage.setItem(
-              `mysession:free-flow-intro:${sessionId}:${authUserId || "host"}`,
-              "seen",
-            );
+            setFreeFlowDraftPresetId("custom");
+            setFreeFlowCustomName("");
             setFreeFlowIntroOpen(false);
             setTimelineDraftBlocks(makeFreeFlowTimelineBlocks("30-10").slice(0, 1));
             setTimelineEditorOpen(true);
           }}
           onStartPreset={(presetId) => {
-            window.localStorage.setItem(
-              `mysession:free-flow-intro:${sessionId}:${authUserId || "host"}`,
-              "seen",
-            );
+            setFreeFlowDraftPresetId(presetId);
+            setFreeFlowCustomName("");
             setFreeFlowIntroOpen(false);
             setTimelineDraftBlocks(makeFreeFlowTimelineBlocks(presetId));
             setTimelineEditorOpen(true);

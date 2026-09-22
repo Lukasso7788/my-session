@@ -50,6 +50,8 @@ interface Props {
     saving?: boolean;
     preserveInfinite?: boolean;
     maxBlocks?: number;
+    customRoomName?: string;
+    onCustomRoomNameChange?: (name: string) => void;
 }
 
 const END_DROP_ID = "__end__";
@@ -1094,6 +1096,8 @@ export default function RoomTimelineEditor({
     saving = false,
     preserveInfinite = false,
     maxBlocks,
+    customRoomName,
+    onCustomRoomNameChange,
 }: Props) {
     const isLight = theme === "light";
 
@@ -1414,6 +1418,24 @@ export default function RoomTimelineEditor({
                 </div>
 
                 <div ref={modalScrollRef} className="flex-1 overflow-y-auto p-4 sm:p-6">
+                    {onCustomRoomNameChange && (
+                        <label className="mb-5 block font-inter text-[12px] font-semibold">
+                            Room name <span className="text-[#D25555]">*</span>
+                            <input
+                                type="text"
+                                required
+                                maxLength={100}
+                                autoFocus
+                                value={customRoomName || ""}
+                                onChange={(event) => onCustomRoomNameChange(event.target.value)}
+                                placeholder="Name your Free Flow room"
+                                className={`mt-2 w-full rounded-[14px] border px-3 py-2.5 text-[13px] ${inputCls}`}
+                            />
+                            <span className={`mt-1 block font-normal ${mutedText}`}>
+                                This name will appear on the session card and in the room.
+                            </span>
+                        </label>
+                    )}
                     <TimelinePreview
                         blocks={blocks}
                         onChange={onChange}
@@ -1890,7 +1912,7 @@ export default function RoomTimelineEditor({
                         <button
                             type="button"
                             onClick={onSave}
-                            disabled={saving || blocks.length === 0}
+                            disabled={saving || blocks.length === 0 || (Boolean(onCustomRoomNameChange) && !customRoomName?.trim())}
                             className="px-4 py-2.5 rounded-xl bg-[#81DB86] hover:bg-[#72CF78] text-black text-[13px] font-semibold transition disabled:opacity-50"
                         >
                             {saving ? "Saving..." : "Save timeline"}

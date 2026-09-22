@@ -225,7 +225,7 @@ export default function FreeFlowIntroModal({
               Host your Free Flow
             </h2>
             <p className="free-flow-picker__subtitle">
-              Start with 2 minutes of goal setting, then choose a suggested structure or build your own timeline. You can use up to 8 blocks.
+              Start with 2 minutes of goal setting, then choose a suggested structure or build your own timeline. You can use up to 9 blocks.
             </p>
           </div>
 
