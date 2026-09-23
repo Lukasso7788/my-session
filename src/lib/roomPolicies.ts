@@ -2,6 +2,7 @@ export type RoomPolicies = {
   cameraRequired: boolean;
   publicChatDisabled: boolean;
   screenShareRequired?: boolean;
+  cameraOrScreenShareRequired?: boolean;
   microphoneLocked?: boolean;
 };
 
@@ -9,6 +10,7 @@ export const DEFAULT_ROOM_POLICIES: RoomPolicies = {
   cameraRequired: false,
   publicChatDisabled: false,
   screenShareRequired: false,
+  cameraOrScreenShareRequired: false,
   microphoneLocked: false,
 };
 
@@ -36,6 +38,7 @@ export function readRoomPolicies(schedule: unknown): RoomPolicies {
     cameraRequired: raw.camera_required === true,
     publicChatDisabled: raw.public_chat_disabled === true,
     screenShareRequired: raw.screen_share_required === true,
+    cameraOrScreenShareRequired: raw.camera_or_screen_share_required === true,
     microphoneLocked: raw.microphone_locked === true,
   };
 }
@@ -67,6 +70,7 @@ export function readSessionRoomPolicies(
       typeof session?.screen_share_required === "boolean"
         ? session.screen_share_required
         : legacy.screenShareRequired === true,
+    cameraOrScreenShareRequired: legacy.cameraOrScreenShareRequired === true,
     microphoneLocked:
       typeof session?.microphone_locked === "boolean"
         ? session.microphone_locked
@@ -83,6 +87,7 @@ export function withRoomPolicies(
     camera_required: policies.cameraRequired === true,
     public_chat_disabled: policies.publicChatDisabled === true,
     screen_share_required: policies.screenShareRequired === true,
+    camera_or_screen_share_required: policies.cameraOrScreenShareRequired === true,
     microphone_locked: policies.microphoneLocked === true,
   };
 

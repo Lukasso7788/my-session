@@ -1334,6 +1334,7 @@ export function CreateSessionModal({
   const [accessMode, setAccessMode] = useState<AccessMode>("public");
   const [cameraRequired, setCameraRequired] = useState(false);
   const [screenShareRequired, setScreenShareRequired] = useState(false);
+  const [cameraOrScreenShareRequired, setCameraOrScreenShareRequired] = useState(false);
   const [publicChatDisabled, setPublicChatDisabled] = useState(false);
 
   // ---------- Scheduling in advance ----------
@@ -1429,6 +1430,7 @@ export function CreateSessionModal({
     setAccessMode("public");
     setCameraRequired(false);
     setScreenShareRequired(false);
+    setCameraOrScreenShareRequired(false);
     setPublicChatDisabled(false);
 
     setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
@@ -2657,6 +2659,7 @@ export function CreateSessionModal({
       const schedulePayload = withRoomPolicies(baseSchedulePayload, {
         cameraRequired,
         screenShareRequired,
+        cameraOrScreenShareRequired,
         publicChatDisabled,
       });
 
@@ -3989,7 +3992,10 @@ export function CreateSessionModal({
                   <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <button
                       type="button"
-                      onClick={() => setCameraRequired((value) => !value)}
+                      onClick={() => {
+                        setCameraRequired((value) => !value);
+                        setCameraOrScreenShareRequired(false);
+                      }}
                       className={`rounded-[14px] px-4 py-3 text-left transition ${cameraRequired ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EBEBEB]"}`}
                       aria-pressed={cameraRequired}
                     >
@@ -4001,13 +4007,32 @@ export function CreateSessionModal({
 
                     <button
                       type="button"
-                      onClick={() => setScreenShareRequired((value) => !value)}
+                      onClick={() => {
+                        setScreenShareRequired((value) => !value);
+                        setCameraOrScreenShareRequired(false);
+                      }}
                       className={`rounded-[14px] px-4 py-3 text-left transition ${screenShareRequired ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EBEBEB]"}`}
                       aria-pressed={screenShareRequired}
                     >
                       <div className="font-inter text-[13px] font-semibold">Screen share required</div>
                       <div className={`mt-1 font-inter text-[11px] leading-4 ${screenShareRequired ? "text-white/70" : "text-[#667085]"}`}>
                         Participants get two reminders, then are disconnected if screen sharing stays off.
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCameraOrScreenShareRequired((value) => !value);
+                        setCameraRequired(false);
+                        setScreenShareRequired(false);
+                      }}
+                      className={`rounded-[14px] px-4 py-3 text-left transition ${cameraOrScreenShareRequired ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EBEBEB]"}`}
+                      aria-pressed={cameraOrScreenShareRequired}
+                    >
+                      <div className="font-inter text-[13px] font-semibold">Camera or screen share required</div>
+                      <div className={`mt-1 font-inter text-[11px] leading-4 ${cameraOrScreenShareRequired ? "text-white/70" : "text-[#667085]"}`}>
+                        Either one is enough. Two reminders, then disconnect only if both stay off.
                       </div>
                     </button>
 

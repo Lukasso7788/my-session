@@ -1102,9 +1102,11 @@ export function RoomSettingsModalLiveKit({
     showHostRoomPolicies = false,
     cameraRequired = false,
     screenShareRequired = false,
+    cameraOrScreenShareRequired = false,
     publicChatDisabled = false,
     onChangeCameraRequired,
     onChangeScreenShareRequired,
+    onChangeCameraOrScreenShareRequired,
     onChangePublicChatDisabled,
 
     devices,
@@ -1183,9 +1185,11 @@ export function RoomSettingsModalLiveKit({
     showHostRoomPolicies?: boolean;
     cameraRequired?: boolean;
     screenShareRequired?: boolean;
+    cameraOrScreenShareRequired?: boolean;
     publicChatDisabled?: boolean;
     onChangeCameraRequired?: (value: boolean) => void;
     onChangeScreenShareRequired?: (value: boolean) => void;
+    onChangeCameraOrScreenShareRequired?: (value: boolean) => void;
     onChangePublicChatDisabled?: (value: boolean) => void;
 
 
@@ -1426,6 +1430,13 @@ export function RoomSettingsModalLiveKit({
                                     description="Participants get two reminders and are disconnected if screen sharing stays off. Hosts and moderators are exempt."
                                     checked={screenShareRequired}
                                     onChange={(value) => onChangeScreenShareRequired?.(value)}
+                                    isLight={isLight}
+                                />
+                                <ToggleRow
+                                    label="Camera or screen share required"
+                                    description="Either one is enough. Participants with both off get two reminders, then are disconnected. Hosts and moderators are exempt."
+                                    checked={cameraOrScreenShareRequired}
+                                    onChange={(value) => onChangeCameraOrScreenShareRequired?.(value)}
                                     isLight={isLight}
                                 />
                                 <ToggleRow

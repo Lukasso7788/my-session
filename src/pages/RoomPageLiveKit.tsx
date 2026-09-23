@@ -14943,10 +14943,11 @@ export function RoomPageLiveKit({
 
     if (
       !connected ||
-      !roomPolicies.screenShareRequired ||
+      (!roomPolicies.screenShareRequired && !roomPolicies.cameraOrScreenShareRequired) ||
       isHost ||
       isSelfModerator ||
       screenShareOn ||
+      (roomPolicies.cameraOrScreenShareRequired && camOn) ||
       kickRedirecting
     ) {
       return;
@@ -14971,8 +14972,10 @@ export function RoomPageLiveKit({
         setSystemNotice({
           open: true,
           kind: "kick",
-          title: "Screen share required",
-          body: "The host enabled screen-share-only mode, so you were disconnected from the room.",
+          title: roomPolicies.cameraOrScreenShareRequired ? "Camera or screen share required" : "Screen share required",
+          body: roomPolicies.cameraOrScreenShareRequired
+            ? "Your camera and screen share were both off, so you were disconnected from the room."
+            : "The host enabled screen-share-only mode, so you were disconnected from the room.",
         });
       })();
     };
@@ -14981,11 +14984,15 @@ export function RoomPageLiveKit({
       showSystemNotice({
         kind: "info",
         presentation: "screen-share-reminder",
-        title: "Please share your screen",
+        title: roomPolicies.cameraOrScreenShareRequired ? "Turn on your camera or share your screen" : "Please share your screen",
         body:
           reminder === 1
-            ? "This room requires screen sharing. Please start sharing within two minutes of joining to stay in the room."
-            : "Your screen is still not being shared. This is the final reminder; start sharing within 30 seconds to stay in the room.",
+            ? roomPolicies.cameraOrScreenShareRequired
+              ? "This room requires a camera or screen share. Turn on either within two minutes to stay in the room."
+              : "This room requires screen sharing. Please start sharing within two minutes of joining to stay in the room."
+            : roomPolicies.cameraOrScreenShareRequired
+              ? "Your camera and screen share are both off. Turn on either within 30 seconds to stay in the room."
+              : "Your screen is still not being shared. This is the final reminder; start sharing within 30 seconds to stay in the room.",
         actionLabel: "Share screen",
         action: () => {
           if (!screenShareOn) void toggleScreenShare();
@@ -15014,6 +15021,8 @@ export function RoomPageLiveKit({
     isSelfModerator,
     kickRedirecting,
     roomPolicies.screenShareRequired,
+    roomPolicies.cameraOrScreenShareRequired,
+    camOn,
     screenShareOn,
   ]);
 
@@ -21658,17 +21667,28 @@ export function RoomPageLiveKit({
           showHostRoomPolicies={isHost}
           cameraRequired={roomPolicies.cameraRequired}
           screenShareRequired={roomPolicies.screenShareRequired === true}
+          cameraOrScreenShareRequired={roomPolicies.cameraOrScreenShareRequired === true}
           publicChatDisabled={roomPolicies.publicChatDisabled}
           onChangeCameraRequired={(value) => {
             void updateRoomPolicies({
               ...roomPolicies,
               cameraRequired: value,
+              cameraOrScreenShareRequired: value ? false : roomPolicies.cameraOrScreenShareRequired,
             });
           }}
           onChangeScreenShareRequired={(value) => {
             void updateRoomPolicies({
               ...roomPolicies,
               screenShareRequired: value,
+              cameraOrScreenShareRequired: value ? false : roomPolicies.cameraOrScreenShareRequired,
+            });
+          }}
+          onChangeCameraOrScreenShareRequired={(value) => {
+            void updateRoomPolicies({
+              ...roomPolicies,
+              cameraOrScreenShareRequired: value,
+              cameraRequired: value ? false : roomPolicies.cameraRequired,
+              screenShareRequired: value ? false : roomPolicies.screenShareRequired,
             });
           }}
           onChangePublicChatDisabled={(value) => {

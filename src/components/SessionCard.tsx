@@ -2722,6 +2722,7 @@ function EditSessionStudioModal(props: {
     const initialRoomPolicies = readSessionRoomPolicies(session);
     const [editCameraRequired, setEditCameraRequired] = useState(initialRoomPolicies.cameraRequired);
     const [editScreenShareRequired, setEditScreenShareRequired] = useState(initialRoomPolicies.screenShareRequired === true);
+    const [editCameraOrScreenShareRequired, setEditCameraOrScreenShareRequired] = useState(initialRoomPolicies.cameraOrScreenShareRequired === true);
     const [editPublicChatDisabled, setEditPublicChatDisabled] = useState(initialRoomPolicies.publicChatDisabled);
 
     const [studioBlocks, setStudioBlocks] = useState<StudioBlock[]>([]);
@@ -2806,6 +2807,7 @@ function EditSessionStudioModal(props: {
         const nextPolicies = readSessionRoomPolicies(session);
         setEditCameraRequired(nextPolicies.cameraRequired);
         setEditScreenShareRequired(nextPolicies.screenShareRequired === true);
+        setEditCameraOrScreenShareRequired(nextPolicies.cameraOrScreenShareRequired === true);
         setEditPublicChatDisabled(nextPolicies.publicChatDisabled);
         setStudioBlocks(normalizeStudioBlocksFromSession({
             ...session,
@@ -2849,6 +2851,7 @@ function EditSessionStudioModal(props: {
                 const policies = readSessionRoomPolicies(data);
                 setEditCameraRequired(policies.cameraRequired);
                 setEditScreenShareRequired(policies.screenShareRequired === true);
+                setEditCameraOrScreenShareRequired(policies.cameraOrScreenShareRequired === true);
                 setEditPublicChatDisabled(policies.publicChatDisabled);
             });
 
@@ -3211,6 +3214,7 @@ function EditSessionStudioModal(props: {
                                 updates.schedule = withRoomPolicies(nextSchedule, {
                                     cameraRequired: editCameraRequired,
                                     screenShareRequired: editScreenShareRequired,
+                                    cameraOrScreenShareRequired: editCameraOrScreenShareRequired,
                                     publicChatDisabled: editPublicChatDisabled,
                                 });
                                 updates.duration_minutes = studioTotal || null;
@@ -3307,7 +3311,10 @@ function EditSessionStudioModal(props: {
                     <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <button
                             type="button"
-                            onClick={() => setEditCameraRequired((value) => !value)}
+                            onClick={() => {
+                                setEditCameraRequired((value) => !value);
+                                setEditCameraOrScreenShareRequired(false);
+                            }}
                             className={`rounded-[16px] px-4 py-3 text-left transition ${editCameraRequired ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EAEAEA]"}`}
                             aria-pressed={editCameraRequired}
                         >
@@ -3318,13 +3325,31 @@ function EditSessionStudioModal(props: {
                         </button>
                         <button
                             type="button"
-                            onClick={() => setEditScreenShareRequired((value) => !value)}
+                            onClick={() => {
+                                setEditScreenShareRequired((value) => !value);
+                                setEditCameraOrScreenShareRequired(false);
+                            }}
                             className={`rounded-[16px] px-4 py-3 text-left transition ${editScreenShareRequired ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EAEAEA]"}`}
                             aria-pressed={editScreenShareRequired}
                         >
                             <div className="text-[13px] font-semibold">Screen share required</div>
                             <div className={`mt-1 text-[11px] leading-4 ${editScreenShareRequired ? "text-white/70" : "text-[#667085]"}`}>
                                 Warn twice, then disconnect participants who do not share their screen.
+                            </div>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setEditCameraOrScreenShareRequired((value) => !value);
+                                setEditCameraRequired(false);
+                                setEditScreenShareRequired(false);
+                            }}
+                            className={`rounded-[16px] px-4 py-3 text-left transition ${editCameraOrScreenShareRequired ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EAEAEA]"}`}
+                            aria-pressed={editCameraOrScreenShareRequired}
+                        >
+                            <div className="text-[13px] font-semibold">Camera or screen share required</div>
+                            <div className={`mt-1 text-[11px] leading-4 ${editCameraOrScreenShareRequired ? "text-white/70" : "text-[#667085]"}`}>
+                                Either one is enough. Disconnect only if both stay off after two reminders.
                             </div>
                         </button>
                         <button
