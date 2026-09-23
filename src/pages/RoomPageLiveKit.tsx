@@ -9054,6 +9054,7 @@ export function RoomPageLiveKit({
   }, [voiceUiHelpOpen]);
 
   const [mobileMediaRestoreOpen, setMobileMediaRestoreOpen] = useState(false);
+  const mobileMediaRestoreOpenRef = useRef(false);
   const [mobileMediaRestoreBusy, setMobileMediaRestoreBusy] = useState(false);
   const [mobileRestoreMode, setMobileRestoreMode] = useState<
     "restoring" | "needs_action"
@@ -9070,6 +9071,10 @@ export function RoomPageLiveKit({
   useEffect(() => {
     connectedRef.current = connected;
   }, [connected]);
+
+  useEffect(() => {
+    mobileMediaRestoreOpenRef.current = mobileMediaRestoreOpen;
+  }, [mobileMediaRestoreOpen]);
 
   useEffect(() => {
     if (!connected) return;
@@ -11627,6 +11632,7 @@ export function RoomPageLiveKit({
     clearRestoreOverlayDelayTimer();
     clearMobileRestoreEscalationTimer();
     setMobileRestoreMode(mode);
+    mobileMediaRestoreOpenRef.current = true;
     setMobileMediaRestoreOpen(true);
     setPrejoinOpen(false);
 
@@ -11642,6 +11648,7 @@ export function RoomPageLiveKit({
   const closeMobileRestoreState = () => {
     clearRestoreOverlayDelayTimer();
     clearMobileRestoreEscalationTimer();
+    mobileMediaRestoreOpenRef.current = false;
     setMobileMediaRestoreOpen(false);
     setMobileRestoreMode("restoring");
   };
@@ -11655,12 +11662,31 @@ export function RoomPageLiveKit({
       if (
         roomRef.current !== room ||
         getLiveKitRoomState() !== "reconnecting" ||
+        document.visibilityState !== "visible" ||
         explicitLeaveRequestedRef.current ||
         kickedBySignalRef.current
       ) return;
       openMobileRestoreState("restoring");
       setMediaWarning("Restoring your connection…");
     }, 2_500);
+  };
+
+  const scheduleRestoreOverlayForBackgroundDisconnect = () => {
+    if (restoreOverlayDelayTimerRef.current !== null) return;
+    // Background tabs can lose their socket without losing network access.
+    // Give automatic rejoin time to finish before covering the room.
+    restoreOverlayDelayTimerRef.current = window.setTimeout(() => {
+      restoreOverlayDelayTimerRef.current = null;
+      if (
+        document.visibilityState !== "visible" ||
+        roomIsActuallyConnected() ||
+        getLiveKitRoomState() === "signalreconnecting" ||
+        explicitLeaveRequestedRef.current ||
+        kickedBySignalRef.current
+      ) return;
+      openMobileRestoreState("restoring");
+      setMediaWarning("Restoring your connection…");
+    }, 8_000);
   };
 
   const logRoomDiagnostic = useCallback(
@@ -12689,7 +12715,7 @@ export function RoomPageLiveKit({
       }
 
       if (shouldShowMobileRestore()) {
-        openMobileRestoreState("needs_action");
+        scheduleRestoreOverlayForBackgroundDisconnect();
         scheduleRebuildTiles();
         window.setTimeout(() => scheduleRebuildTiles(), 120);
       }
@@ -14013,10 +14039,11 @@ export function RoomPageLiveKit({
           });
           void attendanceHeartbeat();
           startAttendanceHeartbeat();
-          openMobileRestoreState(
-            document.visibilityState === "visible" ? "restoring" : "needs_action",
-          );
-          setMediaWarning("Restoring your connection…");
+          if (document.visibilityState === "visible") {
+            scheduleRestoreOverlayForBackgroundDisconnect();
+          } else {
+            closeMobileRestoreState();
+          }
 
           if (document.visibilityState === "visible") {
             if (unexpectedDisconnectRecoveryTimerRef.current) {
@@ -16468,14 +16495,18 @@ export function RoomPageLiveKit({
       roomLifecycleDiagnosticRef.current(
         "livekit.controlled_reconnect_started",
       );
-      closeMobileRestoreState();
-      openMobileRestoreState("restoring");
+      if (forceReconnectNow) {
+        openMobileRestoreState("restoring");
+      } else if (!mobileMediaRestoreOpenRef.current) {
+        closeMobileRestoreState();
+        scheduleRestoreOverlayForBackgroundDisconnect();
+      }
       setClientError("");
       setTokenError("");
-      setMediaWarning("Restoring your room…");
 
-      await loadBrowserDevices({ preserveSelection: true }).catch(() => { });
-      await attendanceHeartbeat().catch(() => { });
+      // Device enumeration can stall on a resumed tab. The saved device
+      // selection is sufficient to reconnect without enumerating first.
+      void attendanceHeartbeat().catch(() => { });
 
       if (roomIsActuallyConnected()) {
         roomLifecycleDiagnosticRef.current(
@@ -16496,8 +16527,9 @@ export function RoomPageLiveKit({
       // the room down. Automatic recovery must not interrupt it. The explicit
       // Rejoin button can still force a fresh connection when the user asks.
       if (roomIsRecovering() && !forceReconnectNow) {
-        openMobileRestoreState("restoring");
-        setMediaWarning("Restoring your connection…");
+        if (getLiveKitRoomState() === "reconnecting" && roomRef.current) {
+          scheduleRestoreOverlayForMediaReconnect(roomRef.current);
+        }
         return;
       }
 
@@ -16565,8 +16597,7 @@ export function RoomPageLiveKit({
         const offerManualRejoin =
           mobileRecoveryAttemptRef.current >=
           ROOM_AUTO_RECOVERY_MANUAL_THRESHOLD;
-        setMobileRestoreMode(offerManualRejoin ? "needs_action" : "restoring");
-        setMobileMediaRestoreOpen(true);
+        openMobileRestoreState(offerManualRejoin ? "needs_action" : "restoring");
         setMediaWarning(
           offerManualRejoin
             ? "Automatic reconnect is taking longer than expected. You can use Rejoin room to retry now."
@@ -16581,8 +16612,7 @@ export function RoomPageLiveKit({
       const offerManualRejoin =
         mobileRecoveryAttemptRef.current >=
         ROOM_AUTO_RECOVERY_MANUAL_THRESHOLD;
-      setMobileRestoreMode(offerManualRejoin ? "needs_action" : "restoring");
-      setMobileMediaRestoreOpen(true);
+      openMobileRestoreState(offerManualRejoin ? "needs_action" : "restoring");
       setMediaWarning(
         offerManualRejoin
           ? "Automatic reconnect failed. Use Rejoin room to try again."
