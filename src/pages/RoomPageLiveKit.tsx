@@ -9059,6 +9059,7 @@ export function RoomPageLiveKit({
     "restoring" | "needs_action"
   >("restoring");
   const mobileRestoreEscalationTimerRef = useRef<number | null>(null);
+  const restoreOverlayDelayTimerRef = useRef<number | null>(null);
   const mobileMediaRestoreBusyRef = useRef(false);
   const mobileAutoRestoreInFlightRef = useRef(false);
   const mobileRecoveryRetryTimerRef = useRef<number | null>(null);
@@ -11614,9 +11615,16 @@ export function RoomPageLiveKit({
     mobileRestoreEscalationTimerRef.current = null;
   };
 
+  const clearRestoreOverlayDelayTimer = () => {
+    if (restoreOverlayDelayTimerRef.current === null) return;
+    window.clearTimeout(restoreOverlayDelayTimerRef.current);
+    restoreOverlayDelayTimerRef.current = null;
+  };
+
   const openMobileRestoreState = (
     mode: "restoring" | "needs_action" = "restoring",
   ) => {
+    clearRestoreOverlayDelayTimer();
     clearMobileRestoreEscalationTimer();
     setMobileRestoreMode(mode);
     setMobileMediaRestoreOpen(true);
@@ -11632,9 +11640,27 @@ export function RoomPageLiveKit({
   };
 
   const closeMobileRestoreState = () => {
+    clearRestoreOverlayDelayTimer();
     clearMobileRestoreEscalationTimer();
     setMobileMediaRestoreOpen(false);
     setMobileRestoreMode("restoring");
+  };
+
+  const scheduleRestoreOverlayForMediaReconnect = (room: Room) => {
+    if (restoreOverlayDelayTimerRef.current !== null) return;
+    // A brief transport hiccup should not cover a still-usable room. In
+    // particular, LiveKit's signal-only reconnect normally leaves media up.
+    restoreOverlayDelayTimerRef.current = window.setTimeout(() => {
+      restoreOverlayDelayTimerRef.current = null;
+      if (
+        roomRef.current !== room ||
+        getLiveKitRoomState() !== "reconnecting" ||
+        explicitLeaveRequestedRef.current ||
+        kickedBySignalRef.current
+      ) return;
+      openMobileRestoreState("restoring");
+      setMediaWarning("Restoring your connection…");
+    }, 2_500);
   };
 
   const logRoomDiagnostic = useCallback(
@@ -12653,10 +12679,10 @@ export function RoomPageLiveKit({
       if (roomIsRecovering()) {
         void attendanceHeartbeat();
         startAttendanceHeartbeat();
-        openMobileRestoreState("restoring");
-        setMediaWarning(
-          "Restoring your connection… Your browser or network may briefly pause the room.",
-        );
+        // Signal-only recovery does not interrupt the media path.
+        if (getLiveKitRoomState() === "reconnecting" && roomRef.current) {
+          scheduleRestoreOverlayForMediaReconnect(roomRef.current);
+        }
         scheduleRebuildTiles();
         window.setTimeout(() => scheduleRebuildTiles(), 120);
         return;
@@ -13870,7 +13896,9 @@ export function RoomPageLiveKit({
         existingState === "reconnecting" ||
         existingState === "signalreconnecting")
     ) {
-      openMobileRestoreState("restoring");
+      if (existingState === "reconnecting") {
+        scheduleRestoreOverlayForMediaReconnect(existingRoom);
+      }
       return;
     }
 
@@ -14002,6 +14030,8 @@ export function RoomPageLiveKit({
           return;
         }
 
+        closeMobileRestoreState();
+
         void trackWeeklyUsageOnLeave();
         void leaveAttendanceOnce({ keepalive: false });
 
@@ -14025,11 +14055,11 @@ export function RoomPageLiveKit({
         });
 
         if (
+          eventType === "livekit.reconnecting" &&
           !explicitLeaveRequestedRef.current &&
           !kickedBySignalRef.current
         ) {
-          openMobileRestoreState("restoring");
-          setMediaWarning("Restoring your connection…");
+          scheduleRestoreOverlayForMediaReconnect(r);
         }
       };
 
@@ -14435,6 +14465,7 @@ export function RoomPageLiveKit({
         window.clearTimeout(unexpectedDisconnectRecoveryTimerRef.current);
         unexpectedDisconnectRecoveryTimerRef.current = null;
       }
+      clearRestoreOverlayDelayTimer();
       const retention = mobileRoomRetentionRef.current;
       const preserveBackgroundSession =
         retention.enabled &&
@@ -16620,7 +16651,9 @@ export function RoomPageLiveKit({
       }
 
       if (roomIsRecovering()) {
-        openMobileRestoreState("restoring");
+        if (getLiveKitRoomState() === "reconnecting" && roomRef.current) {
+          scheduleRestoreOverlayForMediaReconnect(roomRef.current);
+        }
         scheduleRecoveryRetry();
         return;
       }
