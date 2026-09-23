@@ -776,16 +776,17 @@ export function TasksPanel({
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [plans, setPlans] = useState<FocusPlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
+  const [plansLoadError, setPlansLoadError] = useState(false);
 
   const [selectedPlanId, setSelectedPlanId] = useState<string>("");
   const [planItems, setPlanItems] = useState<FocusPlanItem[]>([]);
   const [planItemsLoading, setPlanItemsLoading] = useState(false);
+  const [planItemsLoadError, setPlanItemsLoadError] = useState(false);
 
   const [planSearch, setPlanSearch] = useState("");
   const [planSearchExpanded, setPlanSearchExpanded] = useState(false);
   const planSearchInputRef = useRef<HTMLInputElement | null>(null);
   const [importingItemId, setImportingItemId] = useState<string | null>(null);
-  const [lastPlansLoadedAt, setLastPlansLoadedAt] = useState<string>("");
   const [saveTaskToPlanTask, setSaveTaskToPlanTask] = useState<PanelTask | null>(null);
   const [savingTaskToPlan, setSavingTaskToPlan] = useState(false);
   const [saveTaskToPlanFeedback, setSaveTaskToPlanFeedback] = useState("");
@@ -2198,6 +2199,7 @@ export function TasksPanel({
     if (!user?.id) return;
 
     setPlansLoading(true);
+    setPlansLoadError(false);
     try {
       const { data, error } = await supabase
         .from("focus_plans")
@@ -2207,6 +2209,7 @@ export function TasksPanel({
         .limit(FOCUS_PLANS_FETCH_LIMIT);
 
       if (error || !Array.isArray(data)) {
+        setPlansLoadError(true);
         setPlans([]);
         setSelectedPlanId("");
         return;
@@ -2221,11 +2224,10 @@ export function TasksPanel({
         return list[0].id;
       });
 
-      setLastPlansLoadedAt(new Date().toISOString());
     } catch {
+      setPlansLoadError(true);
       setPlans([]);
       setSelectedPlanId("");
-      setLastPlansLoadedAt(new Date().toISOString());
     } finally {
       setPlansLoading(false);
     }
@@ -2240,6 +2242,7 @@ export function TasksPanel({
       }
 
       setPlanItemsLoading(true);
+      setPlanItemsLoadError(false);
       try {
         const { data, error } = await supabase
           .from("focus_plan_items")
@@ -2253,12 +2256,14 @@ export function TasksPanel({
           .limit(FOCUS_PLAN_ITEMS_FETCH_LIMIT);
 
         if (error || !Array.isArray(data)) {
+          setPlanItemsLoadError(true);
           setPlanItems([]);
           return;
         }
 
         setPlanItems(data as FocusPlanItem[]);
       } catch {
+        setPlanItemsLoadError(true);
         setPlanItems([]);
       } finally {
         setPlanItemsLoading(false);
@@ -3634,6 +3639,45 @@ export function TasksPanel({
         ? "bg-[#FAFAFA] hover:bg-[#F3F3F3]"
         : "bg-[#242424] hover:bg-[#2B2B2B]";
       const rowBorder = isLight ? "border-[#CFCFCF]" : "border-[#2B2B2B]";
+      const emptyState = (inList: boolean) => (
+        <div
+          className={[
+            "flex min-h-[250px] flex-col items-center justify-center rounded-[20px] border px-5 py-7 text-center",
+            isLight ? "border-[#DDE7DD] bg-white" : "border-[#344537] bg-[#222A23]",
+          ].join(" ")}
+        >
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#81DB86]/30 bg-[#81DB86]/15 text-[#58AE62]">
+            <ListPlus size={22} strokeWidth={1.8} aria-hidden="true" />
+          </div>
+          <h3 className={["mt-4 text-[14px] font-bold leading-5", modalTitle].join(" ")}>
+            {inList ? "No tasks in this list yet." : "You don't have any tasks planned."}
+          </h3>
+          <p className={["mt-2 max-w-[250px] text-[11px] leading-[17px]", modalSub].join(" ")}>
+            {inList
+              ? "Add a task to this list in Tasks, then bring it into your room."
+              : "Create your first task in Tasks, then add it to this room whenever you're ready."}
+          </p>
+          <button
+            type="button"
+            onClick={() => window.open("/tasks", "_blank", "noopener,noreferrer")}
+            className="mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#81DB86] px-4 text-[12px] font-bold text-[#18351D] transition hover:bg-[#9AE99E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86] focus-visible:ring-offset-2"
+          >
+            <Plus size={15} strokeWidth={2.4} aria-hidden="true" />
+            Add your first task
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              void loadPlans();
+              if (selectedPlanId) void loadPlanItems(selectedPlanId);
+            }}
+            className={["mt-3 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]", modalSub].join(" ")}
+          >
+            <RefreshCw size={12} aria-hidden="true" />
+            Refresh after adding
+          </button>
+        </div>
+      );
 
       return (
         <div
@@ -3689,13 +3733,15 @@ export function TasksPanel({
                 <div className={"text-[12px] italic " + mutedText}>
                   Loading plans…
                 </div>
-              ) : plans.length === 0 ? (
-                <div className={"text-[12px] italic " + mutedText}>
-                  No plans found. Create one on the Tasks page.
-                  {lastPlansLoadedAt
-                    ? ` (checked ${new Date(lastPlansLoadedAt).toLocaleTimeString()})`
-                    : ""}
+              ) : plansLoadError ? (
+                <div className={["rounded-2xl border p-5 text-center", rowBorder, modalTitle].join(" ")}>
+                  <p className="text-[13px] font-semibold">Couldn't load your task lists.</p>
+                  <button type="button" onClick={() => void loadPlans()} className="mt-3 rounded-xl bg-[#81DB86] px-4 py-2 text-[12px] font-bold text-[#18351D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]">
+                    Try again
+                  </button>
                 </div>
+              ) : plans.length === 0 ? (
+                emptyState(false)
               ) : (
                 <>
                   <div className="flex flex-col gap-2">
@@ -3774,6 +3820,15 @@ export function TasksPanel({
                     <div className={"text-[12px] italic " + mutedText}>
                       Loading items…
                     </div>
+                  ) : planItemsLoadError ? (
+                    <div className={["rounded-2xl border p-5 text-center", rowBorder, modalTitle].join(" ")}>
+                      <p className="text-[13px] font-semibold">Couldn't load tasks from this list.</p>
+                      <button type="button" onClick={() => void loadPlanItems(selectedPlanId)} className="mt-3 rounded-xl bg-[#81DB86] px-4 py-2 text-[12px] font-bold text-[#18351D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]">
+                        Try again
+                      </button>
+                    </div>
+                  ) : planItems.length === 0 ? (
+                    emptyState(true)
                   ) : filteredPlanItems.length === 0 ? (
                     <div className={"text-[12px] italic " + mutedText}>
                       No items match your filter.
@@ -4361,13 +4416,13 @@ export function TasksPanel({
                 <button
                   type="button"
                   onClick={openImportModal}
-                  className="inline-flex h-[17px] w-[18px] shrink-0 items-center justify-center rounded-[8px] border border-[#2F2F2F] bg-white p-0 text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/40"
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border border-[#81DB86]/60 bg-[#81DB86]/20 p-0 text-[#276B32] transition hover:border-[#81DB86] hover:bg-[#81DB86]/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]"
                   title="Add tasks from Tasks page"
                   aria-label="Add tasks from Tasks page"
                 >
                   <Plus
                     aria-hidden="true"
-                    size={12}
+                    size={16}
                     strokeWidth={2.25}
                   />
                 </button>
