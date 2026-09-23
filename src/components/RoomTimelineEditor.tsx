@@ -1947,7 +1947,7 @@ export const FREE_FLOW_TIMELINE_PRESETS: FreeFlowTimelinePreset[] = [
         name: "Ladder",
         description: "Focus blocks gradually grow from 10 to 25 minutes.",
         emoji: "📈",
-        sessionTitle: "📈 Ladder · 10→15→20→25 min focus - 24/7",
+        sessionTitle: "📈 Ladder · 10→25 min focus - 24/7",
         sessionDescription: "Start with 2 minutes of goal setting. Focus for 10, 15, 20 and 25 minutes, with 2-minute check-ins between blocks, then take a 10-minute break. The structure repeats.",
         blocks: [
             FREE_FLOW_GOAL_SETTING,
