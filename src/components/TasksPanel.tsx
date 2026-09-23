@@ -4416,13 +4416,13 @@ export function TasksPanel({
                 <button
                   type="button"
                   onClick={openImportModal}
-                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border border-[#81DB86]/60 bg-[#81DB86]/20 p-0 text-[#276B32] transition hover:border-[#81DB86] hover:bg-[#81DB86]/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]"
+                  className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border border-[#81DB86]/60 bg-[#81DB86]/20 p-0 text-[#276B32] transition hover:border-[#81DB86] hover:bg-[#81DB86]/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]"
                   title="Add tasks from Tasks page"
                   aria-label="Add tasks from Tasks page"
                 >
                   <Plus
                     aria-hidden="true"
-                    size={16}
+                    size={12}
                     strokeWidth={2.25}
                   />
                 </button>
