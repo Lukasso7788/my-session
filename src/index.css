@@ -184,3 +184,13 @@ body {
     animation: none;
   }
 }
+.ms-screen-share-tile:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  aspect-ratio: auto !important;
+  background: #000;
+}
+
+.ms-screen-share-tile:fullscreen video {
+  object-fit: contain !important;
+}

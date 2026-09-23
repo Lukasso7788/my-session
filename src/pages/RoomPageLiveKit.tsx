@@ -14,6 +14,8 @@ import {
   Check,
   ChevronDown,
   Clock3,
+  Maximize2,
+  Minimize2,
   Users,
   X,
 } from "lucide-react";
@@ -28,6 +30,7 @@ import {
   RemoteAudioTrack,
   LocalTrackPublication,
   RemoteTrackPublication,
+  ScreenSharePresets,
   createLocalVideoTrack,
 } from "livekit-client";
 
@@ -64,8 +67,7 @@ import PaywallModal from "../components/PaywallModal";
 import ActiveBanModal from "../components/ActiveBanModal";
 import BugReportModal from "../components/BugReportModal";
 
-import ChatPanel from "../components/ChatPanel";
-import { TasksPanel, type PublicPanelTask } from "../components/TasksPanel";
+import type { PublicPanelTask } from "../components/TasksPanel";
 import AIHostedRoomController from "../components/ai-host/AIHostedRoomController";
 import JoinGateModal, {
   type JoinGateHostSession,
@@ -102,6 +104,7 @@ import {
 } from "@livekit/components-react";
 import ReportParticipantModalLiveKit from "./livekit/ReportParticipantModalLiveKit";
 import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
+import { FX_BG_PRESETS } from "./livekit/backgroundPresets";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
 import {
   createPersonColorBackgroundProcessor,
@@ -122,6 +125,16 @@ import {
 } from "./livekit/sizing";
 
 type FxMode = "off" | "blur" | "bg";
+
+// LiveKit adaptive stream selects a layer from the rendered tile dimensions.
+// A 1080p screen share needs intermediate layers for gallery-sized tiles.
+const SCREEN_SHARE_SIMULCAST_LAYERS = [
+  ScreenSharePresets.h360fps15,
+  ScreenSharePresets.h720fps15,
+];
+
+const ChatPanel = React.lazy(() => import("../components/ChatPanel"));
+const TasksPanel = React.lazy(() => import("../components/TasksPanel"));
 
 const PARTICIPANT_CONTROL_TOPIC = "mysession.participant-control.v1";
 const SHARED_TAB_MUSIC_TRACK_NAME = "shared_tab_music";
@@ -2476,54 +2489,6 @@ const DEFAULT_BG_DATA_URL =
 </svg>
 `);
 
-function makeBgPresetDataUrl(a: string, b: string, c: string, d: string) {
-  return (
-    "data:image/svg+xml;utf8," +
-    encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="${a}"/>
-      <stop offset="0.5" stop-color="${b}"/>
-      <stop offset="1" stop-color="${c}"/>
-    </linearGradient>
-    <radialGradient id="r" cx="25%" cy="25%" r="80%">
-      <stop offset="0" stop-color="${d}" stop-opacity="0.28"/>
-      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
-  <rect width="1280" height="720" fill="url(#g)"/>
-  <rect width="1280" height="720" fill="url(#r)"/>
-  <circle cx="1030" cy="170" r="230" fill="#F3F3F3" opacity="0.04"/>
-  <circle cx="360" cy="520" r="310" fill="#F3F3F3" opacity="0.03"/>
-</svg>
-`)
-  );
-}
-
-const FX_BG_PRESETS = [
-  {
-    id: "ocean",
-    label: "Ocean",
-    url: makeBgPresetDataUrl("#DCEBFF", "#83B8F4", "#EAF4FF", "#FFFFFF"),
-  },
-  {
-    id: "forest",
-    label: "Forest",
-    url: makeBgPresetDataUrl("#E0F5E8", "#87CCA1", "#F1FAF4", "#FFFFFF"),
-  },
-  {
-    id: "violet",
-    label: "Violet",
-    url: makeBgPresetDataUrl("#EEE8FF", "#B7A4ED", "#F8F5FF", "#FFFFFF"),
-  },
-  {
-    id: "sunset",
-    label: "Sunset",
-    url: makeBgPresetDataUrl("#FFF0E5", "#F4AAA4", "#FFF8F3", "#FFFFFF"),
-  },
-];
-
 type CustomBackgroundSlotId = "one" | "two" | "three";
 type CustomBackgroundSlot = {
   id: CustomBackgroundSlotId;
@@ -3192,7 +3157,7 @@ type MobilePiPRoomTile = {
 const MOBILE_PIP_CANVAS_WIDTH = 960;
 const MOBILE_PIP_CANVAS_HEIGHT = 540;
 const MOBILE_PIP_COLLAGE_FPS = 8;
-const MOBILE_PIP_SNAPSHOT_REFRESH_MS = 500;
+const MOBILE_PIP_FRAME_CACHE_REFRESH_MS = 1_000;
 const MOBILE_PIP_APPLE_LOOP_DURATION_MS = 900;
 const MOBILE_PIP_HINT_DISMISSED_KEY = "mysession_mobile_pip_hint_dismissed_v1";
 
@@ -3325,6 +3290,15 @@ function isMobilePiPSourceRenderable(video: HTMLVideoElement): boolean {
 function updateMobilePiPCachedFrame(video: HTMLVideoElement): void {
   if (!isMobilePiPSourceRenderable(video)) return;
 
+  // The fallback is only ever drawn into the 960×540 PiP collage. Caching a
+  // native 1080p/4K frame for every participant wastes substantial RAM.
+  const scale = Math.min(
+    1,
+    MOBILE_PIP_CANVAS_WIDTH / video.videoWidth,
+    MOBILE_PIP_CANVAS_HEIGHT / video.videoHeight,
+  );
+  const width = Math.max(1, Math.round(video.videoWidth * scale));
+  const height = Math.max(1, Math.round(video.videoHeight * scale));
   let cached = mobilePiPVideoFrameCache.get(video);
   if (!cached) {
     cached = {
@@ -3334,19 +3308,20 @@ function updateMobilePiPCachedFrame(video: HTMLVideoElement): void {
     mobilePiPVideoFrameCache.set(video, cached);
   }
 
-  if (
-    cached.canvas.width !== video.videoWidth ||
-    cached.canvas.height !== video.videoHeight
-  ) {
-    cached.canvas.width = video.videoWidth;
-    cached.canvas.height = video.videoHeight;
+  const resized = cached.canvas.width !== width || cached.canvas.height !== height;
+  if (!resized && Date.now() - cached.updatedAt < MOBILE_PIP_FRAME_CACHE_REFRESH_MS) {
+    return;
+  }
+  if (resized) {
+    cached.canvas.width = width;
+    cached.canvas.height = height;
   }
 
   const context = cached.canvas.getContext("2d", { alpha: false });
   if (!context) return;
 
   try {
-    context.drawImage(video, 0, 0, cached.canvas.width, cached.canvas.height);
+    context.drawImage(video, 0, 0, width, height);
     cached.updatedAt = Date.now();
   } catch {
     // Preserve the last valid frame.
@@ -3815,11 +3790,12 @@ function useMobilePiPCollage(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   stageRef: React.RefObject<MobilePiPVideoElement | null>,
   enabled: boolean,
+  active: boolean,
 ): () => Promise<MobilePiPVideoElement | null> {
   const streamRef = useRef<MediaStream | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const intervalRef = useRef<number | null>(null);
-  const snapshotIntervalRef = useRef<number | null>(null);
 
   const pushCollageFrame = useCallback((): void => {
     const canvas = canvasRef.current;
@@ -3897,24 +3873,15 @@ function useMobilePiPCollage(
       if (!cancelled) pushCollageFrame();
     });
 
-    const animate = (): void => {
-      pushCollageFrame();
-      animationFrameRef.current = window.requestAnimationFrame(animate);
-    };
-
-    animationFrameRef.current = window.requestAnimationFrame(animate);
-
-    intervalRef.current = window.setInterval(
-      pushCollageFrame,
-      Math.max(125, Math.round(1000 / MOBILE_PIP_COLLAGE_FPS)),
-    );
-
-    snapshotIntervalRef.current = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      getMobilePiPRoomVideos(roomRootRef.current).forEach(
-        updateMobilePiPCachedFrame,
-      );
-    }, MOBILE_PIP_SNAPSHOT_REFRESH_MS);
+    // Keep the stage ready for browser-initiated PiP without rendering an
+    // idle collage on every animation frame (and again on a timer).
+    let idleTicks = 0;
+    intervalRef.current = window.setInterval(() => {
+      if (activeRef.current || ++idleTicks >= MOBILE_PIP_COLLAGE_FPS) {
+        idleTicks = 0;
+        pushCollageFrame();
+      }
+    }, Math.max(125, Math.round(1000 / MOBILE_PIP_COLLAGE_FPS)));
 
     const handleVisibilityChange = (): void => {
       pushCollageFrame();
@@ -3932,16 +3899,9 @@ function useMobilePiPCollage(
       cancelled = true;
       document.removeEventListener("visibilitychange", handleVisibilityChange);
 
-      if (animationFrameRef.current !== null) {
-        window.cancelAnimationFrame(animationFrameRef.current);
-      }
       if (intervalRef.current !== null) {
         window.clearInterval(intervalRef.current);
       }
-      if (snapshotIntervalRef.current !== null) {
-        window.clearInterval(snapshotIntervalRef.current);
-      }
-
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
 
@@ -11561,13 +11521,14 @@ export function RoomPageLiveKit({
     if (!session?.id || !defaultLivekitUrl) return;
 
     const warmRoom = new Room({
-      adaptiveStream: false,
+      adaptiveStream: { pixelDensity: 1, pauseVideoInBackground: false },
       dynacast: true,
       disconnectOnPageLeave: false,
       reconnectPolicy: createMobileReconnectPolicy(),
       publishDefaults: {
         simulcast: !lowPowerMobileMode,
         videoCodec: "vp8",
+        screenShareSimulcastLayers: SCREEN_SHARE_SIMULCAST_LAYERS,
       } as any,
     });
 
@@ -12911,6 +12872,7 @@ export function RoomPageLiveKit({
     mobilePiPCanvasRef,
     mobilePiPStageRef,
     connected && mobilePiPRuntime,
+    mobilePipOpen,
   );
   const prepareMobilePiPPosterLoop = useMobilePiPPosterLoop(
     videoWrapRef,
@@ -13107,6 +13069,34 @@ export function RoomPageLiveKit({
     if (!r) return 0;
     return 1 + r.remoteParticipants.size;
   }, [roomState, tiles]);
+
+  const remoteCameraSignature = useMemo(
+    () => tiles
+      .filter((tile) => !tile.isLocal && tile.kind === "camera")
+      .map((tile) => `${tile.camTrackSid || ""}:${!!tile.videoTrack}`)
+      .join("|"),
+    [tiles],
+  );
+
+  useEffect(() => {
+    if (!connected || !roomState) return;
+
+    // Cap cameras by room size. Screen shares use adaptive stream alone:
+    // their attached video element requests 360p/720p/full quality as the
+    // gallery tile is resized, pinned, or opened full screen.
+    const maxCameraDimensions = participantsCount <= 2
+      ? { width: 1280, height: 720 }
+      : participantsCount <= 4
+        ? { width: 854, height: 480 }
+        : { width: 640, height: 360 };
+
+    roomState.remoteParticipants.forEach((participant) => {
+      participant.videoTrackPublications.forEach((publication) => {
+        if (publication.source !== Track.Source.Camera || !publication.isSubscribed) return;
+        publication.setVideoDimensions(maxCameraDimensions);
+      });
+    });
+  }, [connected, roomState, participantsCount, remoteCameraSignature]);
 
   const micToggleHook = useTrackToggle({
     source: Track.Source.Microphone,
@@ -13961,13 +13951,14 @@ export function RoomPageLiveKit({
       const r =
         prewarmedRoomRef.current ||
         new Room({
-          adaptiveStream: false,
+          adaptiveStream: { pixelDensity: 1, pauseVideoInBackground: false },
           dynacast: true,
           disconnectOnPageLeave: false,
           reconnectPolicy: createMobileReconnectPolicy(),
           publishDefaults: {
             simulcast: !lowPowerMobileMode,
             videoCodec: "vp8",
+            screenShareSimulcastLayers: SCREEN_SHARE_SIMULCAST_LAYERS,
           } as any,
         });
       prewarmedRoomRef.current = null;
@@ -18151,6 +18142,17 @@ export function RoomPageLiveKit({
     },
     [profilesById, tilesForRender],
   );
+  const [fullscreenScreenTileId, setFullscreenScreenTileId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      const tile = document.fullscreenElement as HTMLElement | null;
+      setFullscreenScreenTileId(tile?.dataset.screenTileId || null);
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
   const renderTile = (t: TileModel) => {
     const isMenuOpen = openTileAdminMenuId === t.id;
 
@@ -18236,7 +18238,8 @@ export function RoomPageLiveKit({
 
     return (
       <div
-        className="relative group w-full min-w-0 min-h-0"
+        className={`relative group w-full min-w-0 min-h-0 ${t.kind === "screen" ? "ms-screen-share-tile" : ""}`}
+        data-screen-tile-id={t.kind === "screen" ? t.id : undefined}
         style={{ aspectRatio: "16 / 9" }}
       >
         <div
@@ -18269,6 +18272,34 @@ export function RoomPageLiveKit({
             onOpenContextMenu={handleOpenTileContextMenu}
           />
         </div>
+
+        {t.kind === "screen" && t.videoTrack && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              const tile = event.currentTarget.closest<HTMLElement>("[data-screen-tile-id]");
+              if (!tile) return;
+              if (document.fullscreenElement === tile) {
+                void document.exitFullscreen();
+              } else if (tile.requestFullscreen) {
+                void tile.requestFullscreen().catch(() => {
+                  setMediaWarning("Full-screen screen share is unavailable in this browser.");
+                });
+              } else {
+                const video = tile.querySelector("video") as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
+                if (video?.webkitEnterFullscreen) video.webkitEnterFullscreen();
+                else setMediaWarning("Full-screen screen share is unavailable in this browser.");
+              }
+            }}
+            className="absolute left-2 top-2 z-40 flex items-center gap-1.5 rounded-xl bg-black/75 px-2.5 py-2 text-xs font-semibold text-white shadow-lg transition hover:bg-black/90"
+            aria-label={fullscreenScreenTileId === t.id ? "Exit full-screen screen share" : "View screen share full screen"}
+            title={fullscreenScreenTileId === t.id ? "Exit full screen" : "View screen share full screen"}
+          >
+            {fullscreenScreenTileId === t.id ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            <span>{fullscreenScreenTileId === t.id ? "Exit full screen" : "Full screen"}</span>
+          </button>
+        )}
 
         {showLocalEditButton && (
           <div className="absolute top-2 left-2 z-30">
@@ -19077,9 +19108,11 @@ export function RoomPageLiveKit({
       data-theme="light"
       style={{ colorScheme: "light" }}
     >
+      <React.Suspense fallback={<div className="p-4 text-sm text-black/60">Loading chat…</div>}>
       <ChatPanel
         key={`pip-chat-${session.id}`}
         sessionId={sessionId}
+        currentUserId={authUserId}
         theme="light"
         showHeader={false}
         onClose={() => setPipMode("gallery")}
@@ -19092,6 +19125,7 @@ export function RoomPageLiveKit({
         renderDocument={pipChatDocument}
         renderWindow={pipChatWindow}
       />
+      </React.Suspense>
     </div>
   ) : null;
 
@@ -19184,8 +19218,6 @@ export function RoomPageLiveKit({
     if (!q) return base;
     return base.filter((t) => (t.label || "").toLowerCase().includes(q));
   }, [tilesBaseForUi, participantsSearch]);
-
-  const ChatPanelAny = ChatPanel as any;
 
   const RightPanelBody = (
     <div
@@ -19759,8 +19791,10 @@ export function RoomPageLiveKit({
             </button>
           </div>
 
+          <React.Suspense fallback={<div className="p-4 text-sm text-black/60">Loading chat…</div>}>
           <ChatPanel
             sessionId={sessionId}
+            currentUserId={authUserId}
             theme={theme}
             showHeader={false}
             onClose={() => {
@@ -19776,6 +19810,7 @@ export function RoomPageLiveKit({
             onDirectPeerIdsChange={setHostChatPeerIds}
             generalChatDisabled={roomPolicies.publicChatDisabled}
           />
+          </React.Suspense>
         </div>
       )}
 
@@ -19927,8 +19962,10 @@ export function RoomPageLiveKit({
                   className="h-full min-h-0"
                 >
                   {session?.id ? (
+                    <React.Suspense fallback={<div className="p-4 text-sm text-black/60">Loading tasks…</div>}>
                     <TasksPanel
                       key={`tasks-${session.id}`}
+                      currentUserId={authUserId}
                       theme="light"
                       sessionId={session.id}
                       oneOnOneMode={isOneOnOneRoom}
@@ -19956,6 +19993,7 @@ export function RoomPageLiveKit({
                         );
                       }}
                     />
+                    </React.Suspense>
                   ) : null}
                 </div>
               </div>
@@ -21702,8 +21740,8 @@ export function RoomPageLiveKit({
           onBlurStrengthChange={setBlurStrength}
           bgImageUrl={bgImageUrl}
           onSetBgImageUrl={setBgImageUrl}
-          onApplyMode={async (m) => {
-            await applyVideoFx(m);
+          onApplyMode={async (m, backgroundUrl) => {
+            await applyVideoFx(m, backgroundUrl);
           }}
           onClose={() => {
             setSettingsOpen(false);

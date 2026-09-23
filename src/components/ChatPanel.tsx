@@ -7,8 +7,7 @@ import React, {
     useState,
 } from "react";
 import { createPortal } from "react-dom";
-import Picker from "@emoji-mart/react";
-import emojiData from "@emoji-mart/data";
+import { EmojiPickerPopover } from "./EmojiPickerPopover";
 import { supabase } from "../lib/supabase";
 import {
     Check,
@@ -883,19 +882,10 @@ function MessageCardInner({
                                                 </div>
                                             </div>
                                             <div className="max-h-[360px] overflow-hidden">
-                                                <Picker
-                                                    data={emojiData}
+                                                <EmojiPickerPopover
                                                     theme="light"
-                                                    set="native"
-                                                    previewPosition="none"
-                                                    searchPosition="sticky"
-                                                    navPosition="bottom"
-                                                    skinTonePosition="preview"
-                                                    onEmojiSelect={(emojiEvent: any) => {
-                                                        const native =
-                                                            emojiEvent?.native || emojiEvent?.emoji || "";
-                                                        if (!native) return;
-                                                        onToggleReaction(msg.id, String(native));
+                                                    onPick={(native) => {
+                                                        onToggleReaction(msg.id, native);
                                                         setOpenReactions(false);
                                                     }}
                                                 />
@@ -1036,18 +1026,9 @@ function MessageCardInner({
                                 }
                                 onMouseDown={(e) => e.stopPropagation()}
                             >
-                                <Picker
-                                    data={emojiData}
+                                <EmojiPickerPopover
                                     theme="light"
-                                    set="native"
-                                    previewPosition="none"
-                                    searchPosition="sticky"
-                                    navPosition="bottom"
-                                    skinTonePosition="preview"
-                                    onEmojiSelect={(event: any) => {
-                                        const native = event?.native || event?.emoji || "";
-                                        if (native) insertEmojiToEdit(String(native));
-                                    }}
+                                    onPick={insertEmojiToEdit}
                                 />
                             </div>
                         )}
@@ -1156,6 +1137,7 @@ export function ChatPanel({
     externalDirectPeerUserId = null,
     onDirectPeerIdsChange,
     generalChatDisabled = false,
+    currentUserId = null,
     renderDocument,
     renderWindow,
 }: {
@@ -1172,6 +1154,7 @@ export function ChatPanel({
     externalDirectPeerUserId?: string | null;
     onDirectPeerIdsChange?: (peerIds: string[]) => void;
     generalChatDisabled?: boolean;
+    currentUserId?: string | null;
     renderDocument?: Document | null;
     renderWindow?: Window | null;
 }) {
@@ -1179,7 +1162,7 @@ export function ChatPanel({
     const chatDocument = renderDocument || document;
     const chatWindow = renderWindow || window;
 
-    const [userId, setUserId] = useState<string | null>(null);
+    const [userId, setUserId] = useState<string | null>(currentUserId);
     const [hostUserId, setHostUserId] = useState<string | null>(null);
     useEffect(() => {
         const nextHostId = String(hostUserIdOverride || "").trim();
@@ -1702,34 +1685,6 @@ export function ChatPanel({
         setUnseenNew(0);
     }, [onBecameVisible, sessionId, activeMode, activeDirectPeerId]);
 
-    useEffect(() => {
-        console.log("[chat][dm-debug]", {
-            sessionId,
-            userId,
-            hostUserId,
-            hostUserIdOverride,
-            isHost,
-            canUseDirect,
-            activeMode,
-            externalMode,
-            activeDirectPeerId,
-            directPeerIds,
-            externalDirectPeerUserId,
-        });
-    }, [
-        sessionId,
-        userId,
-        hostUserId,
-        hostUserIdOverride,
-        isHost,
-        canUseDirect,
-        activeMode,
-        externalMode,
-        activeDirectPeerId,
-        directPeerIds,
-        externalDirectPeerUserId,
-    ]);
-
     const headerBorder = "border-[#D8D0D0]";
     const titleText = "text-black/85";
     const subText = "text-black/50";
@@ -1749,10 +1704,10 @@ export function ChatPanel({
         "rounded-2xl border border-[#D8D0D0] bg-[#F3F1F1] shadow-2xl overflow-hidden";
 
     useEffect(() => {
+        let cancelled = false;
         (async () => {
-            const { data } = await supabase.auth.getUser();
-            const uid = data.user?.id ?? null;
-            if (!aliveRef.current) return;
+            const uid = currentUserId || (await supabase.auth.getUser()).data.user?.id || null;
+            if (!aliveRef.current || cancelled) return;
             setUserId(uid);
 
             if (uid) {
@@ -1762,7 +1717,7 @@ export function ChatPanel({
                     .eq("id", uid)
                     .single();
 
-                if (!aliveRef.current) return;
+                if (!aliveRef.current || cancelled) return;
 
                 if (p) {
                     meProfileRef.current = p as any;
@@ -1775,10 +1730,11 @@ export function ChatPanel({
                 }
             }
         })();
-    }, []);
+        return () => { cancelled = true; };
+    }, [currentUserId]);
 
     useEffect(() => {
-        if (!sessionId) return;
+        if (!sessionId || hostUserIdOverride) return;
         let cancelled = false;
 
         const loadHost = async () => {
@@ -1814,7 +1770,7 @@ export function ChatPanel({
         return () => {
             cancelled = true;
         };
-    }, [sessionId]);
+    }, [sessionId, hostUserIdOverride]);
 
     const ensureProfiles = useCallback(async (userIds: string[]) => {
         const unique = Array.from(new Set(userIds)).filter(Boolean);
@@ -1987,6 +1943,7 @@ export function ChatPanel({
                 .from(MSG_TABLE)
                 .select("user_id, dm_peer_user_id, scope")
                 .eq("session_id", sessionId)
+                .eq("scope", "direct")
                 .limit(2000);
 
             if (error) {
@@ -2070,7 +2027,12 @@ export function ChatPanel({
                 }
 
                 const safeRows = ((rows as any as MsgRow[]) || []).slice().reverse();
-                await ensureProfiles(
+                const attached = safeRows.map((r) => attachProfile(r));
+                messagesRef.current = attached;
+                setMessages(attached);
+                // Names/avatars hydrate separately; they must not hold the first
+                // paint of the message list behind another network request.
+                void ensureProfiles(
                     safeRows
                         .map((r) => r.user_id)
                         .concat(
@@ -2079,12 +2041,6 @@ export function ChatPanel({
                                 .filter(Boolean),
                         ),
                 );
-                if (!aliveRef.current || reqId !== messagesReqIdRef.current)
-                    return null;
-
-                const attached = safeRows.map((r) => attachProfile(r));
-                messagesRef.current = attached;
-                setMessages(attached);
                 return attached;
             } catch (e) {
                 console.warn("loadMessages failed:", e);
@@ -2218,10 +2174,6 @@ export function ChatPanel({
             const now = Date.now();
             if (!opts?.force && now - bootTsRef.current < 8000) return;
 
-            if (isHost) {
-                await loadDirectPeers();
-            }
-
             const loaded = await loadMessages({ silent: opts?.silent });
             const list = loaded ?? messagesRef.current;
             const ids = normalizeReactionMessageIds(list.map((m) => m.id));
@@ -2232,7 +2184,7 @@ export function ChatPanel({
             });
             bootTsRef.current = now;
         },
-        [sessionId, isHost, loadDirectPeers, loadMessages, loadReactions],
+        [sessionId, loadMessages, loadReactions],
     );
 
     useEffect(() => {
@@ -3136,18 +3088,9 @@ export function ChatPanel({
                             style={{ maxHeight: emojiPos.maxHeight }}
                             className="overflow-hidden"
                         >
-                            <Picker
-                                data={emojiData}
+                            <EmojiPickerPopover
                                 theme="light"
-                                set="native"
-                                previewPosition="none"
-                                searchPosition="sticky"
-                                navPosition="bottom"
-                                skinTonePosition="preview"
-                                onEmojiSelect={(e: any) => {
-                                    const native = e?.native || e?.emoji || "";
-                                    if (native) insertEmojiToComposer(String(native));
-                                }}
+                                onPick={insertEmojiToComposer}
                             />
                         </div>
                     </div>

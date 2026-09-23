@@ -1,30 +1,10 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useState } from "react";
 import { Navigate, Routes, Route, useParams } from "react-router-dom";
 
-import { SessionsPage } from "./pages/SessionsPage";
 import LandingPage from "./pages/LandingPage";
-import RoomPageIFrame from "./pages/RoomPageIFrame";
-import RoomPageLiveKit from "./pages/RoomPageLiveKit";
-import RoomPageLiveKitClean from "./pages/RoomPageLiveKitClean";
-import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
-import UpdatePasswordPage from "./pages/UpdatePasswordPage";
-import ProfilePage from "./pages/ProfilePage";
-import ProfileSettingsPage from "./pages/ProfileSettingsPage";
-import FocusPlanPage from "./pages/FocusPlanPage";
-import FocusShieldPage from "./pages/FocusShieldPage";
-import PublicProfilePage from "./pages/PublicProfilePage";
-import PublicSlugRedirectPage from "./pages/PublicSlugRedirectPage";
 import AuthCallback from "./pages/AuthCallback";
-import AdminPage from "./pages/AdminPage";
-import DailyScheduleEmailAdminPage from "./pages/DailyScheduleEmailAdminPage";
-import DailyScheduleUnsubscribePage from "./pages/DailyScheduleUnsubscribePage";
-import EmailPreferencesPage from "./pages/EmailPreferencesPage";
-import SenderEmailAdminPage from "./pages/SenderEmailAdminPage";
-import BlogAdminPage from "./pages/BlogAdminPage";
 import BlogIndex from "./pages/BlogIndex";
 import BlogPost from "./pages/BlogPost";
-import OneOnOnePage from "./pages/OneOnOnePage";
 
 import PricingPage from "./pages/PricingPage";
 import PricingSuccessPage from "./pages/PricingSuccessPage";
@@ -54,10 +34,31 @@ import FaqPage from "./pages/seo/FaqPage";
 import { seoRouteManifest } from "./data/seoRouteManifest";
 
 import NotFoundPage from "./pages/NotFoundPage";
-import SessionCardsPlayground from "./SessionCardsPlayground";
-import IconVectorizerPage from "./pages/IconVectorizerPage";
 
 const DataDrivenSeoPage = lazy(() => import("./pages/seo/DataDrivenSeoPage"));
+// Keep media SDKs, chat and task panels out of the initial landing/Sessions bundle.
+const SessionsPage = lazy(() => import("./pages/SessionsPage"));
+const RoomPageIFrame = lazy(() => import("./pages/RoomPageIFrame"));
+const RoomPageLiveKit = lazy(() => import("./pages/RoomPageLiveKit"));
+const RoomPageLiveKitClean = lazy(() => import("./pages/RoomPageLiveKitClean"));
+const PublicSlugRedirectPage = lazy(() => import("./pages/PublicSlugRedirectPage"));
+const LoginPage = lazy(() => import("./pages/LoginPage"));
+const RegisterPage = lazy(() => import("./pages/RegisterPage"));
+const UpdatePasswordPage = lazy(() => import("./pages/UpdatePasswordPage"));
+const ProfilePage = lazy(() => import("./pages/ProfilePage"));
+const ProfileSettingsPage = lazy(() => import("./pages/ProfileSettingsPage"));
+const FocusPlanPage = lazy(() => import("./pages/FocusPlanPage"));
+const FocusShieldPage = lazy(() => import("./pages/FocusShieldPage"));
+const PublicProfilePage = lazy(() => import("./pages/PublicProfilePage"));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+const DailyScheduleEmailAdminPage = lazy(() => import("./pages/DailyScheduleEmailAdminPage"));
+const DailyScheduleUnsubscribePage = lazy(() => import("./pages/DailyScheduleUnsubscribePage"));
+const EmailPreferencesPage = lazy(() => import("./pages/EmailPreferencesPage"));
+const SenderEmailAdminPage = lazy(() => import("./pages/SenderEmailAdminPage"));
+const BlogAdminPage = lazy(() => import("./pages/BlogAdminPage"));
+const SessionCardsPlayground = lazy(() => import("./SessionCardsPlayground"));
+const IconVectorizerPage = lazy(() => import("./pages/IconVectorizerPage"));
+const OneOnOnePage = lazy(() => import("./pages/OneOnOnePage"));
 const MOBILE_ROOM_LEASE_PREFIX = "mysession_mobile_room_lease:";
 
 function clearRoomEntryRecoveryLease(sessionId: string) {
@@ -108,6 +109,7 @@ export default function App() {
   return (
     <CreateSessionModalProvider>
       <AppBootstrapGate>
+        <Suspense fallback={<div className="min-h-screen bg-[#fafafa]" aria-label="Loading page" />}>
         <Routes>
         <Route element={<AppLayout />}>
           <Route path="/" element={isOneOnOneHost ? <OneOnOnePage /> : <LandingPage />} />
@@ -228,6 +230,7 @@ export default function App() {
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/auth/callback/" element={<AuthCallback />} />
         </Routes>
+        </Suspense>
 
       </AppBootstrapGate>
     </CreateSessionModalProvider>

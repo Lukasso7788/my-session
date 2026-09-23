@@ -1,5 +1,5 @@
-import * as Sentry from "@sentry/react";
-import posthog from "posthog-js";
+type SentryClient = typeof import("@sentry/react");
+type PosthogClient = (typeof import("posthog-js"))["default"];
 
 export type ProductEventProperties = Record<string, unknown>;
 
@@ -26,6 +26,8 @@ const EVENT_NAME_PATTERN = /^[a-z][a-z0-9_]{1,63}$/;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 let initialized = false;
+let Sentry: SentryClient | null = null;
+let posthog: PosthogClient | null = null;
 let posthogReady = false;
 let sentryReady = false;
 let clarityReady = false;
@@ -34,6 +36,7 @@ let lastTrackedPath = "";
 let analyticsUserId: string | null = null;
 let posthogReplayWasActive = false;
 let sentryReplayWasActive = false;
+const pendingPosthogEvents: Array<{ name: string; properties: ProductEventProperties }> = [];
 
 const isEnabled = () => import.meta.env.VITE_ANALYTICS_ENABLED?.trim().toLowerCase() === "true";
 
@@ -109,9 +112,12 @@ export function initializeAnalytics(): void {
   protectSensitiveRoot(sensitiveRoomRoute);
 
   const posthogKey = import.meta.env.VITE_POSTHOG_KEY?.trim();
-  if (posthogKey) {
-    try {
-      posthog.init(posthogKey, {
+  const sentryDsn = import.meta.env.VITE_SENTRY_DSN?.trim();
+  // Analytics is not part of room admission. Load its SDKs after the first
+  // paint so they cannot delay the Sessions/LiveKit route chunks.
+  const loadSdk = () => {
+    if (posthogKey) void import("posthog-js").then(({ default: client }) => {
+      client.init(posthogKey, {
         api_host: import.meta.env.VITE_POSTHOG_HOST?.trim() || "https://us.i.posthog.com",
         autocapture: false,
         capture_pageview: false,
@@ -123,16 +129,17 @@ export function initializeAnalytics(): void {
           blockSelector: "video, audio, canvas, iframe",
         },
       });
+      posthog = client;
       posthogReady = true;
-    } catch (error) {
+      if (analyticsUserId) client.identify(analyticsUserId);
+      if (!sensitiveRoomRoute && lastTrackedPath) client.capture("$pageview", { path: lastTrackedPath });
+      pendingPosthogEvents.splice(0).forEach(({ name, properties }) => client.capture(name, properties));
+    }).catch((error) => {
       console.warn("[analytics] PostHog initialization failed", error);
-    }
-  }
+    });
 
-  const sentryDsn = import.meta.env.VITE_SENTRY_DSN?.trim();
-  if (sentryDsn) {
-    try {
-      Sentry.init({
+    if (sentryDsn) void import("@sentry/react").then((client) => {
+      client.init({
         dsn: sentryDsn,
         environment: import.meta.env.VITE_SENTRY_ENVIRONMENT?.trim() || import.meta.env.MODE,
         sendDefaultPii: false,
@@ -141,12 +148,21 @@ export function initializeAnalytics(): void {
           ? 0
           : parseRate(import.meta.env.VITE_SENTRY_REPLAY_SESSION_SAMPLE_RATE, 0.02),
         replaysOnErrorSampleRate: sensitiveRoomRoute ? 0 : 1,
-        integrations: [Sentry.replayIntegration({ maskAllText: true, maskAllInputs: true, blockAllMedia: true })],
+        integrations: [client.replayIntegration({ maskAllText: true, maskAllInputs: true, blockAllMedia: true })],
       });
+      Sentry = client;
       sentryReady = true;
-    } catch (error) {
+      client.setTag("route_group", sensitiveRoomRoute ? "room" : lastTrackedPath || "/");
+      client.setUser(analyticsUserId ? { id: analyticsUserId } : null);
+    }).catch((error) => {
       console.warn("[analytics] Sentry initialization failed", error);
-    }
+    });
+  };
+
+  if (typeof window.requestIdleCallback === "function") {
+    window.requestIdleCallback(loadSdk, { timeout: 2_000 });
+  } else {
+    window.setTimeout(loadSdk, 500);
   }
 
   ensureClarity();
@@ -162,7 +178,7 @@ export function trackRoute(pathname: string): void {
   sensitiveRoomRoute = nextSensitive;
   protectSensitiveRoot(nextSensitive);
 
-  if (posthogReady && nextSensitive !== wasSensitive) {
+  if (posthogReady && posthog && nextSensitive !== wasSensitive) {
     if (nextSensitive) {
       posthogReplayWasActive = posthog.sessionRecordingStarted();
       posthog.stopSessionRecording();
@@ -172,7 +188,7 @@ export function trackRoute(pathname: string): void {
     }
   }
 
-  if (sentryReady) {
+  if (sentryReady && Sentry) {
     Sentry.setTag("route_group", nextSensitive ? "room" : path);
     if (nextSensitive !== wasSensitive) {
       const replay = Sentry.getReplay();
@@ -193,7 +209,7 @@ export function trackRoute(pathname: string): void {
 
   if (lastTrackedPath === path) return;
   lastTrackedPath = path;
-  if (!nextSensitive && posthogReady) posthog.capture("$pageview", { path });
+  if (!nextSensitive && posthogReady && posthog) posthog.capture("$pageview", { path });
 }
 
 export function setAnalyticsUser(userId: string | null): void {
@@ -204,11 +220,11 @@ export function setAnalyticsUser(userId: string | null): void {
   if (analyticsUserId === safeId) return;
   analyticsUserId = safeId;
 
-  if (posthogReady) {
+  if (posthogReady && posthog) {
     if (safeId) posthog.identify(safeId);
     else posthog.reset();
   }
-  if (sentryReady) Sentry.setUser(safeId ? { id: safeId } : null);
+  if (sentryReady && Sentry) Sentry.setUser(safeId ? { id: safeId } : null);
   if (safeId && !sensitiveRoomRoute) (window as AnalyticsWindow).clarity?.("identify", safeId);
 }
 
@@ -225,8 +241,11 @@ export function captureProductEvent(
 
   const safeProperties = sanitizeProperties(properties);
   try {
-    if (posthogReady) posthog.capture(name, safeProperties);
-    if (sentryReady) {
+    if (posthogReady && posthog) posthog.capture(name, safeProperties);
+    else if (import.meta.env.VITE_POSTHOG_KEY && pendingPosthogEvents.length < 20) {
+      pendingPosthogEvents.push({ name, properties: safeProperties });
+    }
+    if (sentryReady && Sentry) {
       Sentry.addBreadcrumb({ category: "product", message: name, data: safeProperties, level: "info" });
     }
     if (!sensitiveRoomRoute) (window as AnalyticsWindow).clarity?.("event", name);

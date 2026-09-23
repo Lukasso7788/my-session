@@ -1,6 +1,6 @@
 const DEBUG = false;
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
@@ -10,7 +10,6 @@ import HostSessionPromptModal, { type HostPromptKind } from "../components/HostS
 import CommunityPromptModal from "../components/CommunityPromptModal";
 import InviteFriendsModal from "../components/InviteFriendsModal";
 import { SessionsDateFilter } from "../components/SessionsDateFilter";
-import OneOnOnePage from "./OneOnOnePage";
 import { supabase } from "../lib/supabase";
 import {
   getCurrentUserActiveBan,
@@ -24,8 +23,10 @@ import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
 import { ListChecks, UserPlus } from "lucide-react";
-import SessionsTasksSidebar from "../components/SessionsTasksSidebar";
 import { captureProductEvent } from "../lib/analytics";
+
+const OneOnOnePage = lazy(() => import("./OneOnOnePage"));
+const SessionsTasksSidebar = lazy(() => import("../components/SessionsTasksSidebar"));
 
 type BookingProfile = {
   id: string;
@@ -535,6 +536,10 @@ export function SessionsPage() {
   const [hostPromptKind, setHostPromptKind] = useState<HostPromptKind>("never_hosted");
   const [communityPromptOpen, setCommunityPromptOpen] = useState(false);
   const [tasksSidebarOpen, setTasksSidebarOpen] = useState(false);
+  const [tasksSidebarActivated, setTasksSidebarActivated] = useState(false);
+  useEffect(() => {
+    if (tasksSidebarOpen) setTasksSidebarActivated(true);
+  }, [tasksSidebarOpen]);
   const [unfinishedTaskCount, setUnfinishedTaskCount] = useState(0);
   const [inviteFriendsOpen, setInviteFriendsOpen] = useState(false);
   const [inviteFriendsLink, setInviteFriendsLink] = useState("");
@@ -2542,7 +2547,9 @@ export function SessionsPage() {
           ) : null}
 
           {sessionTypeTab === "one-on-one" ? (
+            <Suspense fallback={<div className="py-12 text-center text-sm text-[#606060]">Loading sessions…</div>}>
             <OneOnOnePage embedded />
+            </Suspense>
           ) : (
             <>
               {sessionTypeTab === "group" && (
@@ -2657,11 +2664,15 @@ export function SessionsPage() {
         onSendEmail={sendFriendInvite}
       />
 
-      <SessionsTasksSidebar
-        open={tasksSidebarOpen}
-        userId={user?.id || ""}
-        onClose={() => setTasksSidebarOpen(false)}
-      />
+      {(tasksSidebarOpen || tasksSidebarActivated) && (
+        <Suspense fallback={null}>
+          <SessionsTasksSidebar
+            open={tasksSidebarOpen}
+            userId={user?.id || ""}
+            onClose={() => setTasksSidebarOpen(false)}
+          />
+        </Suspense>
+      )}
 
 
 

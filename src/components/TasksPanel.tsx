@@ -111,6 +111,7 @@ const getPersistedTaskAiSuggestion = (task: PanelTask): TaskAiSuggestion | null 
 
 type TasksPanelProps = {
   sessionId?: string; // uuid or slug
+  currentUserId?: string | null;
   oneOnOneMode?: boolean;
   theme?: RoomTheme;
   timerText?: string;
@@ -693,6 +694,7 @@ async function fetchProfilesMap(
 
 export function TasksPanel({
   sessionId: sessionIdProp,
+  currentUserId = null,
   oneOnOneMode = false,
   theme = "dark",
   timerText: timerTextProp,
@@ -711,7 +713,7 @@ export function TasksPanel({
   const panelTheme: RoomTheme = "light";
   const isLight = true;
 
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<any>(() => currentUserId ? { id: currentUserId } : null);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   const [panelTasks, setPanelTasks] = useState<PanelTask[]>([]);
@@ -1245,8 +1247,16 @@ export function TasksPanel({
   }, []);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user || null));
-  }, []);
+    if (currentUserId) {
+      setUser((previous: any) => previous?.id === currentUserId ? previous : { id: currentUserId });
+      return;
+    }
+    let active = true;
+    void supabase.auth.getUser().then(({ data }) => {
+      if (active) setUser(data.user || null);
+    });
+    return () => { active = false; };
+  }, [currentUserId]);
 
   useEffect(() => {
     let active = true;
@@ -1576,17 +1586,16 @@ export function TasksPanel({
         }
 
         const rows = data as SessionTask[];
-        const profileMap = await fetchProfilesMap(rows.map((r) => r.user_id));
-
-        if (seq !== loadSeqRef.current) return;
-
-        const merged = rows.map((row) => ({
-          ...row,
-          profiles: profileMap.get(String(row.user_id)) || undefined,
-        }));
-
-        setSessionTasks(merged);
+        setSessionTasks(rows);
         sessionTasksHydratedForRef.current = s;
+        // Task text can paint immediately; names/avatars hydrate afterward.
+        void fetchProfilesMap(rows.map((row) => row.user_id)).then((profileMap) => {
+          if (seq !== loadSeqRef.current) return;
+          setSessionTasks((current) => current.map((row) => ({
+            ...row,
+            profiles: profileMap.get(String(row.user_id)) || row.profiles,
+          })));
+        });
       } finally {
         if (seq === loadSeqRef.current) setSessionLoading(false);
       }

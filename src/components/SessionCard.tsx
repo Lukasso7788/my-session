@@ -21,6 +21,15 @@ import PaywallModal from "./PaywallModal";
 import type { SessionStage } from "../SessionConfig";
 import { readSessionRoomPolicies, withRoomPolicies } from "../lib/roomPolicies";
 
+let roomPagePrefetchPromise: Promise<unknown> | null = null;
+function prefetchRoomPage() {
+    // Warm the LiveKit route only when the visitor is about to join a room.
+    // A failed download can be retried on the next interaction.
+    roomPagePrefetchPromise ??= import("../pages/RoomPageLiveKit").catch(() => {
+        roomPagePrefetchPromise = null;
+    });
+}
+
 function getSupabase(): SupabaseClient | null {
     // SessionCard must use the same client and auth storage key as the rest of
     // the app. Creating a second client here used the default Supabase storage
@@ -5121,7 +5130,12 @@ export default function SessionCard({
 
                         <button
                             onClick={handleJoinRoom}
-                            onMouseEnter={() => setIsHoveringJoinIframe(true)}
+                            onMouseEnter={() => {
+                                setIsHoveringJoinIframe(true);
+                                prefetchRoomPage();
+                            }}
+                            onFocus={prefetchRoomPage}
+                            onTouchStart={prefetchRoomPage}
                             onMouseLeave={() => setIsHoveringJoinIframe(false)}
                             className="
                                 h-12 rounded-full px-6 text-[14px] font-semibold

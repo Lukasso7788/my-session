@@ -1,5 +1,6 @@
 import React from "react";
 import type { CameraFramingMode } from "./VideoTileLiveKit";
+import { FX_BG_PRESETS } from "./backgroundPresets";
 
 type RoomTheme = "dark" | "light";
 type FxMode = "off" | "blur" | "bg";
@@ -13,54 +14,6 @@ type SinkAudioElement = HTMLAudioElement & {
     // so hidden test audio elements do not trigger TypeScript errors.
     playsInline?: boolean;
 };
-
-function makeBgPresetDataUrl(a: string, b: string, c: string, d: string) {
-    return (
-        "data:image/svg+xml;utf8," +
-        encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720">
-  <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="${a}"/>
-      <stop offset="0.5" stop-color="${b}"/>
-      <stop offset="1" stop-color="${c}"/>
-    </linearGradient>
-    <radialGradient id="r" cx="25%" cy="25%" r="80%">
-      <stop offset="0" stop-color="${d}" stop-opacity="0.28"/>
-      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
-    </radialGradient>
-  </defs>
-  <rect width="1280" height="720" fill="url(#g)"/>
-  <rect width="1280" height="720" fill="url(#r)"/>
-  <circle cx="1030" cy="170" r="230" fill="#ffffff" opacity="0.04"/>
-  <circle cx="360" cy="520" r="310" fill="#ffffff" opacity="0.03"/>
-</svg>
-`)
-    );
-}
-
-const FX_BG_PRESETS = [
-    {
-        id: "ocean",
-        label: "Ocean",
-        url: makeBgPresetDataUrl("#081226", "#123a76", "#031019", "#38bdf8"),
-    },
-    {
-        id: "forest",
-        label: "Forest",
-        url: makeBgPresetDataUrl("#07160f", "#124b2c", "#040d08", "#22c55e"),
-    },
-    {
-        id: "violet",
-        label: "Violet",
-        url: makeBgPresetDataUrl("#120a22", "#3b2378", "#090512", "#a78bfa"),
-    },
-    {
-        id: "sunset",
-        label: "Sunset",
-        url: makeBgPresetDataUrl("#1c0d10", "#7c2d12", "#11070a", "#fb7185"),
-    },
-];
 
 function isFirefoxLike() {
     if (typeof navigator === "undefined") return false;
@@ -1155,7 +1108,7 @@ export function RoomSettingsModalLiveKit({
     onDefaultRemoteVolumePctChange: (value: number) => void;
     onResetAllParticipantVolumes: () => void;
 
-    onApplyMode: (m: FxMode) => void | Promise<void>;
+    onApplyMode: (m: FxMode, backgroundUrl?: string) => void | Promise<void>;
     onClose: () => void;
     fxError: string;
     fxApplying: boolean;
@@ -1247,7 +1200,7 @@ export function RoomSettingsModalLiveKit({
     const [localFxApplying, setLocalFxApplying] = React.useState(false);
     const [recoveryGuideOpen, setRecoveryGuideOpen] = React.useState<RecoveryGuideKey | null>(null);
     const applyModeInFlightRef = React.useRef(false);
-    const pendingApplyRef = React.useRef<{ mode: FxMode; reason: string } | null>(null);
+    const pendingApplyRef = React.useRef<{ mode: FxMode; reason: string; backgroundUrl?: string } | null>(null);
     const blurApplyTimerRef = React.useRef<number | null>(null);
 
     const effectiveFxApplying = !!fxApplying || localFxApplying;
@@ -1266,11 +1219,11 @@ export function RoomSettingsModalLiveKit({
     }, []);
 
     const safeApplyMode = React.useCallback(
-        async (nextMode: FxMode, reason = "") => {
+        async (nextMode: FxMode, reason = "", backgroundUrl?: string) => {
             if (disableFxControls && nextMode !== "off") return;
 
             if (applyModeInFlightRef.current) {
-                pendingApplyRef.current = { mode: nextMode, reason };
+                pendingApplyRef.current = { mode: nextMode, reason, backgroundUrl };
                 return;
             }
 
@@ -1279,7 +1232,7 @@ export function RoomSettingsModalLiveKit({
 
             try {
                 await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-                await onApplyMode(nextMode);
+                await onApplyMode(nextMode, backgroundUrl);
             } catch {
                 // Parent owns fxError/fxStatusText.
             } finally {
@@ -1291,7 +1244,7 @@ export function RoomSettingsModalLiveKit({
 
                 if (pending) {
                     window.setTimeout(() => {
-                        void safeApplyMode(pending.mode, pending.reason);
+                        void safeApplyMode(pending.mode, pending.reason, pending.backgroundUrl);
                     }, firefoxSafeUi ? 180 : 60);
                 }
             }
@@ -2016,9 +1969,7 @@ export function RoomSettingsModalLiveKit({
                                                         key={p.id}
                                                         onClick={() => {
                                                             onSetBgImageUrl(p.url);
-                                                            if (mode === "bg") {
-                                                                void safeApplyMode("bg", "background-preset");
-                                                            }
+                                                            void safeApplyMode("bg", "background-preset", p.url);
                                                         }}
                                                         className={
                                                             "rounded-2xl overflow-hidden border text-left " +
