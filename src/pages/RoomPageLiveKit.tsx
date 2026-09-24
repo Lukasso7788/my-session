@@ -11674,7 +11674,9 @@ export function RoomPageLiveKit({
           Number((screenSnapshot as any).localScreenLiveTrackCount || 0) +
           Number((screenSnapshot as any).remoteScreenLiveTrackCount || 0);
 
-        await supabase.from("room_diagnostics").insert({
+        // Keep only real table columns at top level; extra client details live
+        // in payload so diagnostics cannot fail with a PostgREST 400.
+        const { error } = await supabase.from("room_diagnostics").insert({
           session_id: session?.id || null,
           user_id: authUserId || null,
           event_type: eventType,
@@ -11682,7 +11684,6 @@ export function RoomPageLiveKit({
           user_agent: String(nav?.userAgent || ""),
           platform: String(nav?.userAgentData?.platform || nav?.platform || ""),
           browser,
-          browser_version: browserVersion,
           os,
           device_type: deviceType,
 
@@ -11695,17 +11696,17 @@ export function RoomPageLiveKit({
           device_pixel_ratio: Number(win?.devicePixelRatio || 1),
 
           supports_display_media: supportsScreenShareCapture(),
-          screen_share_supported: supportsScreenShareCapture(),
           supports_set_sink_id: canUseSetSinkId(),
           supports_media_devices: !!nav?.mediaDevices,
 
-          screen_share_track_count: Number.isFinite(screenShareTrackCount)
-            ? screenShareTrackCount
-            : 0,
-          livekit_connected: !!connectedRef.current,
-
           payload: {
             ...payload,
+            browserVersion,
+            screenShareSupported: supportsScreenShareCapture(),
+            screenShareTrackCount: Number.isFinite(screenShareTrackCount)
+              ? screenShareTrackCount
+              : 0,
+            livekitConnected: !!connectedRef.current,
             tabId,
             routeId: routeId || null,
             effectiveSessionParam,
@@ -11722,6 +11723,7 @@ export function RoomPageLiveKit({
             languages: Array.isArray(nav?.languages) ? nav.languages : [],
           },
         });
+        if (error) throw error;
       } catch (e) {
         console.warn("[room-diagnostics] insert failed:", e);
       }
@@ -11769,6 +11771,7 @@ export function RoomPageLiveKit({
 
   const connectInFlightRef = useRef(false);
   const connectAttemptIdRef = useRef(0);
+  const connectAttemptCompletionRef = useRef<Promise<void> | null>(null);
 
   const [micOn, setMicOn] = useState(false);
   const [camOn, setCamOn] = useState(false);
@@ -13669,7 +13672,11 @@ export function RoomPageLiveKit({
     preserveAttendance?: boolean;
     preserveTabPresence?: boolean;
     preserveJoinRequested?: boolean;
+    preserveConnectAttempt?: boolean;
   }) => {
+    // Invalidate the pending connection before awaiting SDK cleanup. Otherwise
+    // its Connected event can revive the room while a leave is in progress.
+    if (!opts?.preserveConnectAttempt) connectAttemptIdRef.current += 1;
     try {
       const r = roomRef.current;
       roomRef.current = null;
@@ -13695,7 +13702,10 @@ export function RoomPageLiveKit({
       if (!opts?.preserveJoinRequested) {
         setJoinRequested(false);
       }
-      connectInFlightRef.current = false;
+      if (!opts?.preserveConnectAttempt) {
+        // Internal reconnect cleanup keeps this lock until its owner finishes.
+        connectInFlightRef.current = false;
+      }
 
       if (!opts?.preserveKickNotice) {
         setSystemNotice((prev) => ({ ...prev, open: false }));
@@ -13886,7 +13896,12 @@ export function RoomPageLiveKit({
       opts.serverUrlOverride || lkServerUrl || "",
     ).trim();
     if (!connectServerUrl || !connectToken) return;
-    if (connectInFlightRef.current) return;
+    if (connectInFlightRef.current) {
+      // Token state and controlled recovery may both request a connection.
+      // The second caller must wait for the owner before deciding to retry.
+      await connectAttemptCompletionRef.current;
+      return;
+    }
 
     const existingRoom: any = roomRef.current as any;
     const existingState = String(existingRoom?.state || "").toLowerCase();
@@ -13926,26 +13941,32 @@ export function RoomPageLiveKit({
     connectInFlightRef.current = true;
     const attemptId = connectAttemptIdRef.current + 1;
     connectAttemptIdRef.current = attemptId;
+    let finishConnectAttempt!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      finishConnectAttempt = resolve;
+    });
+    connectAttemptCompletionRef.current = completion;
 
     let connectedToRoom = false;
+    let connectingRoom: Room | null = null;
 
     setClientError("");
     setFxError("");
     setMediaWarning("");
 
-    if (roomRef.current) {
-      await disconnectRoom({
-        // This cleanup is part of the same join/reconnect attempt. Releasing the
-        // tab slot, writing an attendance leave, and clearing join state here only
-        // adds network work and immediately undoes the gate acquired by Join.
-        preserveAttendance: opts.preserveAttendance ?? true,
-        preserveTabPresence: opts.preserveTabPresence ?? true,
-        preserveJoinRequested: opts.preserveJoinRequested ?? true,
-      });
-      connectInFlightRef.current = true;
-    }
-
     try {
+      if (roomRef.current) {
+        await disconnectRoom({
+          // This cleanup is part of the same join/reconnect attempt. Releasing the
+          // tab slot, writing an attendance leave, and clearing join state here only
+          // adds network work and immediately undoes the gate acquired by Join.
+          preserveAttendance: opts.preserveAttendance ?? true,
+          preserveTabPresence: opts.preserveTabPresence ?? true,
+          preserveJoinRequested: opts.preserveJoinRequested ?? true,
+          preserveConnectAttempt: true,
+        });
+      }
+
       const pj = prejoinRef.current;
 
       const r =
@@ -13963,12 +13984,16 @@ export function RoomPageLiveKit({
         });
       prewarmedRoomRef.current = null;
 
+      connectingRoom = r;
       roomRef.current = r;
       setRoomState(r);
 
       const refresh = () => scheduleRebuildTiles();
 
       r.on(RoomEvent.Connected, () => {
+        if (roomRef.current !== r || connectAttemptIdRef.current !== attemptId) {
+          return;
+        }
         captureProductEvent("room_connected", { recovered: false });
         void writeConnectionDiagnostic("livekit.connected", {
           roomState: String((r as any)?.state || ""),
@@ -14179,11 +14204,19 @@ export function RoomPageLiveKit({
       // Limit only the signalling connection itself. The previous watchdog kept
       // running while camera/microphone permissions and tracks were prepared, so
       // a slow permission prompt could disconnect an already connected room.
-      await withTimeout(
-        r.connect(connectServerUrl, connectToken, { autoSubscribe: true }),
-        ROOM_CONNECT_TIMEOUT_MS,
-        "Connecting to LiveKit timed out. Please try again.",
-      );
+      try {
+        await withTimeout(
+          r.connect(connectServerUrl, connectToken, { autoSubscribe: true }),
+          ROOM_CONNECT_TIMEOUT_MS,
+          "Connecting to LiveKit timed out. Please try again.",
+        );
+      } catch (connectError) {
+        // LiveKit's Connected event can narrowly beat the timeout. Preserve
+        // the confirmed room rather than disconnecting a visible participant.
+        if (String(r.state || "").toLowerCase() !== "connected") {
+          throw connectError;
+        }
+      }
 
       if (connectAttemptIdRef.current !== attemptId) {
         throw new Error("LiveKit connection attempt was superseded.");
@@ -14433,6 +14466,15 @@ export function RoomPageLiveKit({
       setPrejoinOpen(false);
       setPrejoinPreviewVersion((v) => v + 1);
     } catch (e: any) {
+      if (connectAttemptIdRef.current !== attemptId) {
+        // A leave/kick or a newer join superseded this attempt. Do not let its
+        // late failure tear down the current room.
+        if (connectingRoom) {
+          connectingRoom.removeAllListeners();
+          await connectingRoom.disconnect().catch(() => { });
+        }
+        return;
+      }
       console.error("LiveKit connect failed:", e);
 
       const msg = String(e?.message || e || "connect_failed");
@@ -14443,6 +14485,7 @@ export function RoomPageLiveKit({
           preserveAttendance: opts.preserveAttendance,
           preserveTabPresence: opts.preserveTabPresence,
           preserveJoinRequested: opts.preserveJoinRequested,
+          preserveConnectAttempt: true,
         });
 
         if (!opts.preserveJoinRequested) {
@@ -14459,6 +14502,10 @@ export function RoomPageLiveKit({
       if (connectAttemptIdRef.current === attemptId) {
         connectInFlightRef.current = false;
       }
+      if (connectAttemptCompletionRef.current === completion) {
+        connectAttemptCompletionRef.current = null;
+      }
+      finishConnectAttempt();
     }
   };
 
