@@ -94,6 +94,7 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
 const TASK_TIME_MEASUREMENTS_STORAGE_PREFIX = "mysession_task_time_measurements_v1";
 const PLAN_EMOJI_STORAGE_PREFIX = "mysession_focus_plan_emoji_v1";
+const DEFAULT_TASK_LIST_TITLE = "My Tasks";
 const QUICK_EMOJIS = [
   "📋",
   "📚",
@@ -331,6 +332,8 @@ export default function TasksPageV3() {
   const [measurements, setMeasurements] = useState<TaskTimeMeasurement[]>([]);
 
   const [plansLoading, setPlansLoading] = useState(false);
+  const [plansLoaded, setPlansLoaded] = useState(false);
+  const [plansError, setPlansError] = useState(false);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [recurringLoading, setRecurringLoading] = useState(false);
@@ -347,6 +350,8 @@ export default function TasksPageV3() {
   const [recurringStatusFilter, setRecurringStatusFilter] = useState<RecurringStatusFilter>("all");
 
   const [newTaskText, setNewTaskText] = useState("");
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [taskCreateError, setTaskCreateError] = useState<string | null>(null);
   const [newTaskSessionId, setNewTaskSessionId] = useState("");
   const [editTask, setEditTask] = useState<EditTaskDraft | null>(null);
   const [sessionPickerItemId, setSessionPickerItemId] = useState<string | null>(null);
@@ -375,6 +380,7 @@ export default function TasksPageV3() {
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
 
   const quickAddRef = useRef<HTMLInputElement | null>(null);
+  const addTaskInFlightRef = useRef(false);
 
   useEffect(() => {
     void supabase.auth.getUser().then(({ data }) => setUser(data.user || null));
@@ -393,6 +399,7 @@ export default function TasksPageV3() {
   const reloadPlans = async () => {
     if (!user?.id) return;
     setPlansLoading(true);
+    setPlansError(false);
     try {
       const localEmoji = readPlanEmojiMap(user.id);
       const { data, error } = await supabase
@@ -406,6 +413,7 @@ export default function TasksPageV3() {
         emoji: safeText(plan.emoji) || localEmoji[plan.id] || null,
       }));
       setPlans(next);
+      setPlansError(false);
       setSelectedPlanId((current) => {
         if (current && next.some((plan) => plan.id === current)) return current;
         return next[0]?.id || null;
@@ -413,8 +421,10 @@ export default function TasksPageV3() {
     } catch {
       setPlans([]);
       setSelectedPlanId(null);
+      setPlansError(true);
     } finally {
       setPlansLoading(false);
+      setPlansLoaded(true);
     }
   };
 
@@ -731,47 +741,88 @@ export default function TasksPageV3() {
   };
 
   const addTask = async () => {
-    if (!requireAuth()) return;
+    if (addTaskInFlightRef.current) return;
     const text = safeText(newTaskText);
-    const planId = targetPlanIdForNewTask();
-    if (!text || !planId) return;
+    if (!text) {
+      quickAddRef.current?.focus();
+      return;
+    }
+    if (!requireAuth()) return;
+    if (!plansLoaded || plansLoading || plansError) {
+      setTaskCreateError("Task lists are still loading. Please try again.");
+      return;
+    }
     const sessionId = safeText(newTaskSessionId);
-    if (sessionId && !eligibleSessionIds.has(sessionId)) return;
+    if (sessionId && !eligibleSessionIds.has(sessionId)) {
+      setTaskCreateError("The selected session is no longer available. Please choose another.");
+      return;
+    }
 
-    const maxSort = items
-      .filter((item) => item.plan_id === planId)
-      .reduce((max, item) => Math.max(max, Number(item.sort_order || 0)), -1);
-
-    const { data, error } = await supabase
-      .from("focus_plan_items")
-      .insert({
-        user_id: user.id,
-        plan_id: planId,
-        text,
-        target_date: null,
-        session_id: sessionId || null,
-        sort_order: maxSort + 1,
-        completed: false,
-      })
-      .select("id,plan_id,user_id,text,target_date,session_id,created_at,completed,sort_order")
-      .single();
-    if (error || !data) return;
-
-    const item = data as FocusPlanItem;
-    setItems((current) => [...current, item]);
-    setNewTaskText("");
-
+    addTaskInFlightRef.current = true;
+    setCreatingTask(true);
+    setTaskCreateError(null);
+    let createdPlan = false;
     try {
-      await supabase.from("panel_intentions").insert({
-        user_id: user.id,
-        text: item.text,
-        focus_plan_item_id: item.id,
-        completed: false,
-        visibility: "public",
-        sort_order: maxSort + 1,
-      });
+      let planId = targetPlanIdForNewTask();
+      if (!planId) {
+        // focus_plan_items.plan_id is required. Make the first task usable even
+        // when the user has not created a named list yet.
+        const { data: newPlan, error: planError } = await supabase
+          .from("focus_plans")
+          .insert({ user_id: user.id, title: DEFAULT_TASK_LIST_TITLE })
+          .select("*")
+          .single();
+        if (planError || !newPlan) throw planError || new Error("Could not create a task list");
+        const plan = newPlan as FocusPlan;
+        planId = plan.id;
+        createdPlan = true;
+        setPlans((current) => current.some((row) => row.id === plan.id) ? current : [plan, ...current]);
+        setSelectedPlanId(plan.id);
+        setActiveListId("all");
+      }
+
+      const maxSort = items
+        .filter((item) => item.plan_id === planId)
+        .reduce((max, item) => Math.max(max, Number(item.sort_order || 0)), -1);
+      const { data, error } = await supabase
+        .from("focus_plan_items")
+        .insert({
+          user_id: user.id,
+          plan_id: planId,
+          text,
+          target_date: null,
+          session_id: sessionId || null,
+          sort_order: maxSort + 1,
+          completed: false,
+        })
+        .select("id,plan_id,user_id,text,target_date,session_id,created_at,completed,sort_order")
+        .single();
+      if (error || !data) throw error || new Error("Could not save task");
+
+      const item = data as FocusPlanItem;
+      setItems((current) => [...current, item]);
+      setNewTaskText("");
+      setTaskStatusFilter("all");
+      try {
+        await supabase.from("panel_intentions").insert({
+          user_id: user.id,
+          text: item.text,
+          focus_plan_item_id: item.id,
+          completed: false,
+          visibility: "public",
+          sort_order: maxSort + 1,
+        });
+      } catch {
+        // The task is already saved; a temporary panel-sync failure must not
+        // present it as failed or make a retry create a duplicate.
+      }
     } catch {
-      // Tasks page stays usable even if panel sync is temporarily unavailable.
+      setTaskCreateError(createdPlan
+        ? "Your list was created, but the task could not be saved. Please try again."
+        : "Could not add your task. Please try again.");
+    } finally {
+      addTaskInFlightRef.current = false;
+      setCreatingTask(false);
     }
   };
 
@@ -955,6 +1006,8 @@ export default function TasksPageV3() {
     setPageMode("tasks");
     setUtilityMode("none");
     if (activeListId === "completed") setActiveListId("all");
+    setTaskSearch("");
+    setTaskStatusFilter("all");
     window.setTimeout(() => quickAddRef.current?.focus(), 0);
   };
 
@@ -1085,7 +1138,7 @@ export default function TasksPageV3() {
                     focusAddTask();
                   }
                 }}
-                disabled={sortedPlans.length === 0}
+                disabled={pageMode === "recurring" && sortedPlans.length === 0}
                 className="inline-flex h-10 items-center gap-1.5 rounded-full bg-[#2F2F2F] px-5 text-[13px] font-normal text-white transition hover:bg-[#1F1F1F] disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Plus size={13} /> Add Task
@@ -1232,21 +1285,36 @@ export default function TasksPageV3() {
                 </div>
               )}
             </section>
-          ) : itemsLoading ? (
+          ) : itemsLoading || plansLoading || !plansLoaded ? (
             <div className="flex min-h-[480px] items-center justify-center text-[12px] text-[#717680]">Loading tasks…</div>
+          ) : plansError ? (
+            <section className="flex min-h-[480px] flex-col items-center justify-center gap-3 text-center">
+              <p className="text-[14px] text-[#717680]">Could not load your task lists. Please try again.</p>
+              <button type="button" onClick={() => void reloadPlans()} className="rounded-full border border-[#2F2F2F] bg-white px-5 py-2.5 text-[13px] font-medium text-[#2F2F2F] hover:bg-[#F8F8F8]">Retry</button>
+            </section>
           ) : visibleItems.length === 0 ? (
             <section className="flex min-h-[560px] items-start justify-center pt-[130px]">
               <div className="w-full max-w-[440px] text-center">
                 <div className="mx-auto flex h-[104px] w-[104px] items-center justify-center rounded-full border border-[#E2E2E2] bg-[#FAFAFA] text-[#2F2F2F]"><ClipboardList size={38} strokeWidth={1.5} /></div>
                 <h2 className="mt-7 text-[22px] font-semibold tracking-[-0.02em] text-[#2F2F2F]">{taskSearch ? "No tasks found" : activeListId === "completed" ? "No completed tasks yet" : "No tasks set yet"}</h2>
-                <p className="mx-auto mt-2 max-w-[390px] text-[13px] leading-[1.4] text-[#717680]">{taskSearch ? "Try another search or switch task lists." : activeListId === "completed" ? "Every task you complete is automatically collected here." : "Add your first one in the list. Focus on your deep work sessions with visual goals."}</p>
+                <p className="mx-auto mt-2 max-w-[390px] text-[13px] leading-[1.4] text-[#717680]">{taskSearch ? "Try another search or switch task lists." : activeListId === "completed" ? "Every task you complete is automatically collected here." : sortedPlans.length === 0 ? "Add your first task. We'll create a My Tasks list for you automatically." : "Add your first one in the list. Focus on your deep work sessions with visual goals."}</p>
                 {!taskSearch && activeListId !== "completed" ? (
                   <>
-                    <div className="mx-auto mt-7 flex h-11 max-w-[410px] items-center overflow-hidden rounded-full border border-[#DEDEDE] bg-white">
-                      <input ref={quickAddRef} value={newTaskText} onChange={(event) => setNewTaskText(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void addTask()} disabled={sortedPlans.length === 0} placeholder="e.g. Prepare presentation slides..." className="h-full min-w-0 flex-1 bg-transparent px-4 text-[12px] outline-none placeholder:text-[#B0B0B0]" />
-                      <button type="button" onClick={() => void addTask()} disabled={!newTaskText.trim() || sortedPlans.length === 0} className="mr-[-1px] inline-flex h-11 items-center gap-2 rounded-full border border-[#3A3A3A] bg-white px-5 text-[13px] font-medium text-[#2F2F2F] disabled:opacity-40"><span className="flex h-4 w-4 items-center justify-center rounded-full border border-current"><Plus size={10} /></span>Add First Task</button>
-                    </div>
-                    <button type="button" onClick={() => setShowNewListInput(true)} className="mt-3 text-[12px] font-medium text-[#5E8ED6] underline underline-offset-2">or create a task list first</button>
+                    <form onSubmit={(event) => { event.preventDefault(); void addTask(); }} className="mx-auto mt-7 flex w-full max-w-[410px] flex-col items-center gap-3">
+                      <label htmlFor="first-task-input" className="sr-only">Your first task</label>
+                      <input id="first-task-input" ref={quickAddRef} value={newTaskText} onChange={(event) => { setNewTaskText(event.target.value); setTaskCreateError(null); }} maxLength={300} placeholder="e.g. Prepare presentation slides..." className="h-12 w-full rounded-full border border-[#D8D8D8] bg-white px-5 text-[14px] text-[#2F2F2F] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10 placeholder:text-[#A9A9A9]" />
+                      <button
+                        type="submit"
+                        disabled={creatingTask}
+                        className="group inline-flex items-center gap-2 rounded-full border border-[#2F2F2F] bg-white px-6 py-3 text-base font-medium text-[#2F2F2F] transition-colors duration-200 hover:bg-[#2F2F2F] hover:text-white focus-visible:bg-[#2F2F2F] focus-visible:text-white disabled:cursor-wait disabled:opacity-60"
+                      >
+                        <img src="/icons/create-session.svg" className="h-5 w-5 group-hover:hidden group-focus-visible:hidden" alt="" />
+                        <img src="/icons/create-session-white.svg" className="hidden h-5 w-5 group-hover:block group-focus-visible:block" alt="" />
+                        <span>{creatingTask ? "Adding task…" : "Add First Task"}</span>
+                      </button>
+                    </form>
+                    {taskCreateError ? <p role="alert" className="mt-3 text-[12px] text-red-700">{taskCreateError}</p> : null}
+                    <button type="button" onClick={() => setShowNewListInput(true)} className="mt-3 text-[12px] font-medium text-[#5E8ED6] underline underline-offset-2">or create a custom task list</button>
                   </>
                 ) : null}
               </div>
@@ -1301,8 +1369,9 @@ export default function TasksPageV3() {
               </div>
               {activeListId !== "completed" ? (
                 <div className="border-t border-[#E5E5E5] px-4 py-3">
-                  <input ref={quickAddRef} value={newTaskText} onChange={(event) => setNewTaskText(event.target.value)} onKeyDown={(event) => event.key === "Enter" && void addTask()} placeholder="Type a task name..." className="h-8 w-full bg-transparent px-6 text-[12px] outline-none placeholder:text-[#A9A9A9]" />
-                  <button type="button" onClick={() => void addTask()} disabled={!newTaskText.trim() || sortedPlans.length === 0} className="mt-1 inline-flex items-center gap-1 rounded-full bg-[#2F2F2F] px-3 py-1.5 text-[13px] font-semibold leading-none text-white disabled:opacity-40"><Plus size={11} /> Add Task</button>
+                  <input ref={quickAddRef} value={newTaskText} onChange={(event) => { setNewTaskText(event.target.value); setTaskCreateError(null); }} onKeyDown={(event) => event.key === "Enter" && void addTask()} placeholder="Type a task name..." className="h-8 w-full bg-transparent px-6 text-[12px] outline-none placeholder:text-[#A9A9A9]" />
+                  <button type="button" onClick={() => void addTask()} disabled={!newTaskText.trim() || creatingTask} className="mt-1 inline-flex items-center gap-1 rounded-full bg-[#2F2F2F] px-3 py-1.5 text-[13px] font-semibold leading-none text-white disabled:opacity-40"><Plus size={11} /> Add Task</button>
+                  {taskCreateError ? <p role="alert" className="mt-2 text-[12px] text-red-700">{taskCreateError}</p> : null}
                 </div>
               ) : null}
             </section>
