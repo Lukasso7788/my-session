@@ -18202,6 +18202,8 @@ export function RoomPageLiveKit({
 
   const renderTile = (t: TileModel) => {
     const isMenuOpen = openTileAdminMenuId === t.id;
+    const isFullscreenScreenShare =
+      t.kind === "screen" && fullscreenScreenTileId === t.id;
 
     const canAdminTarget =
       isSelfModerator && !t.isLocal && !!t.participantIdentity;
@@ -18309,6 +18311,8 @@ export function RoomPageLiveKit({
             isSpeaking={!!t.isSpeaking}
             currentIntention={getCurrentIntentionForTile(t)}
             taskList={getTasksForTile(t)}
+            showTaskOverlay={!isFullscreenScreenShare}
+            showBottomShade={!isFullscreenScreenShare}
             accountabilityWall={mainViewMode === "accountability"}
             participantTimeZone={t.participantTimeZone || null}
             onToggleMenu={handleToggleTileMenu}

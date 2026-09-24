@@ -217,6 +217,7 @@ type VideoTileProps = {
     taskList?: Array<string | VideoTileTaskItem>;
     showAllTasks?: boolean;
     showTaskOverlay?: boolean;
+    showBottomShade?: boolean;
     accountabilityWall?: boolean;
     participantTimeZone?: string | null;
     cameraFramingMode?: CameraFramingMode;
@@ -383,6 +384,7 @@ function VideoTileInner({
     taskList = [],
     showAllTasks = false,
     showTaskOverlay = true,
+    showBottomShade = true,
     accountabilityWall = false,
     participantTimeZone,
     cameraFramingMode = "full",
@@ -937,7 +939,7 @@ function VideoTileInner({
                 />
             </div>
 
-            {!accountabilityWall ? (
+            {!accountabilityWall && showBottomShade ? (
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[11] h-[30%] bg-gradient-to-t from-black/80 via-black/38 to-transparent" />
             ) : null}
 
@@ -1133,6 +1135,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.taskList === next.taskList &&
         prev.showAllTasks === next.showAllTasks &&
         prev.showTaskOverlay === next.showTaskOverlay &&
+        prev.showBottomShade === next.showBottomShade &&
         prev.accountabilityWall === next.accountabilityWall &&
         prev.participantTimeZone === next.participantTimeZone &&
         prev.cameraFramingMode === next.cameraFramingMode &&
