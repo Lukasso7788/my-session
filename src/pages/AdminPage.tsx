@@ -194,6 +194,14 @@ type MonthlyAttendancePoint = {
   attendeeIds: string[];
 };
 
+type MonthlyAttendanceAggregateRow = {
+  month_start: string;
+  unique_attendees: number;
+  attendance_records: number;
+  attended_sessions: number;
+  attendee_ids: string[] | null;
+};
+
 type AdminRecordMetric = {
   id: string;
   label: string;
@@ -321,43 +329,24 @@ function makeLastMonths(count: number) {
   });
 }
 
-function toLocalMonthKey(value?: string | null) {
-  const ms = toMs(value);
-  if (!ms) return "";
-  const date = new Date(ms);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function buildMonthlyAttendance(rows: AnyRow[], count = 6): MonthlyAttendancePoint[] {
+function buildMonthlyAttendance(
+  rows: MonthlyAttendanceAggregateRow[],
+  count = 6,
+): MonthlyAttendancePoint[] {
   const months = makeLastMonths(count);
-  const people = new Map<string, Set<string>>();
-  const sessions = new Map<string, Set<string>>();
-  const records = new Map<string, number>();
+  const byMonth = new Map(rows.map((row) => [row.month_start.slice(0, 7), row]));
 
-  months.forEach(({ key }) => {
-    people.set(key, new Set());
-    sessions.set(key, new Set());
-    records.set(key, 0);
+  return months.map(({ key, label }) => {
+    const row = byMonth.get(key);
+    return {
+      key,
+      label,
+      uniqueAttendees: Number(row?.unique_attendees || 0),
+      attendanceRecords: Number(row?.attendance_records || 0),
+      attendedSessions: Number(row?.attended_sessions || 0),
+      attendeeIds: row?.attendee_ids || [],
+    };
   });
-
-  rows.forEach((row) => {
-    const key = toLocalMonthKey(getRowTimestamp(row));
-    if (!people.has(key)) return;
-    const userId = getAttendanceUserId(row);
-    const sessionId = getAttendanceSessionId(row);
-    if (userId) people.get(key)?.add(userId);
-    if (sessionId) sessions.get(key)?.add(sessionId);
-    records.set(key, (records.get(key) || 0) + 1);
-  });
-
-  return months.map(({ key, label }) => ({
-    key,
-    label,
-    uniqueAttendees: people.get(key)?.size || 0,
-    attendanceRecords: records.get(key) || 0,
-    attendedSessions: sessions.get(key)?.size || 0,
-    attendeeIds: [...(people.get(key) || [])],
-  }));
 }
 
 function getRowTimestamp(row: AnyRow): string {
@@ -1634,9 +1623,13 @@ export default function AdminPage() {
       const weekIso = daysAgoIso(7);
       const monthIso = daysAgoIso(30);
       const chartIso = daysAgoIso(14);
-      const oldestMonth = makeLastMonths(36)[0]?.key;
+      const historyMonths = makeLastMonths(36);
+      const oldestMonth = historyMonths[0]?.key;
       const attendanceHistoryIso = oldestMonth
         ? new Date(`${oldestMonth}-01T00:00:00`).toISOString() : daysAgoIso(1100);
+      const lastMonth = historyMonths[historyMonths.length - 1].key;
+      const nextMonth = new Date(`${lastMonth}-01T00:00:00.000Z`);
+      nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
       const nowIso = new Date().toISOString();
 
       const [
@@ -1662,6 +1655,7 @@ export default function AdminPage() {
         sessionsCreatedChartResult,
         sessionsHostedChartResult,
         paymentsChartResult,
+        monthlyAttendanceResult,
       ] = await Promise.all([
         safeCount("profiles", "created_at", todayIso),
         safeCount("profiles", "created_at", weekIso),
@@ -1718,10 +1712,18 @@ export default function AdminPage() {
           .from("host_support_payments")
           .select("host_amount_usd, status, created_at")
           .gte("created_at", chartIso),
+        supabase.rpc("admin_monthly_attendance", {
+          p_start_month: `${oldestMonth}-01`,
+          p_end_month: nextMonth.toISOString().slice(0, 10),
+        }),
       ]);
 
+      if (monthlyAttendanceResult.error) throw monthlyAttendanceResult.error;
       const activityData = await buildAdminActivity(attendanceRows, bookingRows, monthIso);
-      const monthlyAttendanceData = buildMonthlyAttendance(attendanceHistoryRows, 36);
+      const monthlyAttendanceData = buildMonthlyAttendance(
+        (monthlyAttendanceResult.data as MonthlyAttendanceAggregateRow[]) || [],
+        36,
+      );
       setActivity(activityData);
       setMonthlyAttendance(monthlyAttendanceData);
 
