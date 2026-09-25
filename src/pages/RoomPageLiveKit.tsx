@@ -65,15 +65,11 @@ import {
 } from "../lib/roomSoundscapes";
 import PaywallModal from "../components/PaywallModal";
 import ActiveBanModal from "../components/ActiveBanModal";
-import BugReportModal from "../components/BugReportModal";
 
 import type { PublicPanelTask } from "../components/TasksPanel";
-import AIHostedRoomController from "../components/ai-host/AIHostedRoomController";
 import JoinGateModal, {
   type JoinGateHostSession,
 } from "../components/JoinGateModal";
-import { UserProfileModal } from "../components/UserProfileModal";
-import FreeFlowIntroModal from "../components/FreeFlowIntroModal";
 import RoomTopBar from "../components/RoomTopBar";
 import RoomTimelineEditor, {
   type RoomTimelineBlock,
@@ -94,7 +90,6 @@ import {
 } from "./livekit/LiveKitUI";
 
 import { PreJoinModal } from "./livekit/PreJoinModalLiveKit";
-import { RoomSettingsModalLiveKit } from "./livekit/RoomSettingsModalLiveKit";
 import { SkipMeMutedStatusIcon, VideoTile } from "./livekit/VideoTileLiveKit";
 import type { CameraFramingMode } from "./livekit/VideoTileLiveKit";
 import {
@@ -102,7 +97,6 @@ import {
   StartAudio,
   useTrackToggle,
 } from "@livekit/components-react";
-import ReportParticipantModalLiveKit from "./livekit/ReportParticipantModalLiveKit";
 import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 import { FX_BG_PRESETS } from "./livekit/backgroundPresets";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
@@ -135,6 +129,16 @@ const SCREEN_SHARE_SIMULCAST_LAYERS = [
 
 const ChatPanel = React.lazy(() => import("../components/ChatPanel"));
 const TasksPanel = React.lazy(() => import("../components/TasksPanel"));
+// These panels are not needed to connect. Keep their code and mounted UI out
+// of the room's initial path until the user actually opens them.
+const AIHostedRoomController = React.lazy(() => import("../components/ai-host/AIHostedRoomController"));
+const BugReportModal = React.lazy(() => import("../components/BugReportModal"));
+const RoomSettingsModalLiveKit = React.lazy(() => import("./livekit/RoomSettingsModalLiveKit"));
+const ReportParticipantModalLiveKit = React.lazy(() => import("./livekit/ReportParticipantModalLiveKit"));
+const FreeFlowIntroModal = React.lazy(() => import("../components/FreeFlowIntroModal"));
+const UserProfileModal = React.lazy(() =>
+  import("../components/UserProfileModal").then((module) => ({ default: module.UserProfileModal })),
+);
 
 const PARTICIPANT_CONTROL_TOPIC = "mysession.participant-control.v1";
 const SHARED_TAB_MUSIC_TRACK_NAME = "shared_tab_music";
@@ -14232,13 +14236,17 @@ export function RoomPageLiveKit({
             getTimeZoneFromParticipantMetadata(r.localParticipant.metadata) !== localTimeZone ||
             currentSource !== "profile"
           ) {
-            await r.localParticipant.setMetadata(
+            // Timezone metadata is useful to peers, but its signalling round trip
+            // must not delay local camera/microphone publication after connect.
+            void r.localParticipant.setMetadata(
               JSON.stringify({
                 ...currentMetadata,
                 timeZone: localTimeZone,
                 timeZoneSource: "profile",
               }),
-            );
+            ).catch((error) => {
+              console.warn("[room] profile timezone metadata was not published", error);
+            });
           }
         }
       } catch (error) {
@@ -20814,7 +20822,8 @@ export function RoomPageLiveKit({
         }}
       />
 
-      {aiHostedEnabled && session?.id && authUserId ? (
+      <React.Suspense fallback={null}>
+        {aiHostedEnabled && session?.id && authUserId ? (
         <AIHostedRoomController
           sessionId={session.id}
           currentUserId={authUserId}
@@ -20829,7 +20838,8 @@ export function RoomPageLiveKit({
           onUnmuteLocalMic={unmuteMicForAiCheckin}
           onMuteLocalMic={muteMicAfterAiCheckin}
         />
-      ) : null}
+        ) : null}
+      </React.Suspense>
 
       <div className={`ms-room-page h-[100dvh] overflow-hidden ${pageBg}`}>
         <input
@@ -21739,7 +21749,8 @@ export function RoomPageLiveKit({
           onOpenAIHost={() => setAiHostInputOpen(true)}
         />
 
-        <BugReportModal
+        <React.Suspense fallback={null}>
+        {bugReportOpen && <BugReportModal
           open={bugReportOpen}
           theme={theme}
           isLight={isLight}
@@ -21747,9 +21758,11 @@ export function RoomPageLiveKit({
           sessionId={session?.id || null}
           roomName={session?.title || session?.id || null}
           userId={authUserId || null}
-        />
+        />}
+        </React.Suspense>
 
-        <RoomSettingsModalLiveKit
+        <React.Suspense fallback={null}>
+        {settingsOpen && <RoomSettingsModalLiveKit
           open={settingsOpen}
           theme={theme}
           hideBackgroundFx={shouldDisableBackgroundFx}
@@ -21944,7 +21957,8 @@ export function RoomPageLiveKit({
           onChangeShowMobileLayoutSwitcher={updateShowMobileLayoutSwitcher}
           voiceUiHotkey={voiceUiHotkey}
           onChangeVoiceUiHotkey={setVoiceUiHotkey}
-        />
+        />}
+        </React.Suspense>
 
         {settingsOpen && deviceError ? (
           <div
@@ -22072,7 +22086,8 @@ export function RoomPageLiveKit({
             </div>
           </div>
         )}
-        <ReportParticipantModalLiveKit
+        <React.Suspense fallback={null}>
+        {reportModalOpen && <ReportParticipantModalLiveKit
           open={reportModalOpen}
           theme={theme}
           participantName={reportTarget?.label || "Participant"}
@@ -22090,7 +22105,8 @@ export function RoomPageLiveKit({
           onSubmit={() => {
             submitParticipantReport().catch(() => { });
           }}
-        />
+        />}
+        </React.Suspense>
 
         {editNameOpen && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center">
@@ -22166,7 +22182,8 @@ export function RoomPageLiveKit({
           />
         )}
 
-        <FreeFlowIntroModal
+        <React.Suspense fallback={null}>
+        {freeFlowIntroOpen && <FreeFlowIntroModal
           open={freeFlowIntroOpen}
           theme={theme}
           onClose={() => setFreeFlowIntroOpen(false)}
@@ -22184,12 +22201,15 @@ export function RoomPageLiveKit({
             setTimelineDraftBlocks(makeFreeFlowTimelineBlocks(presetId));
             setTimelineEditorOpen(true);
           }}
-        />
+        />}
+        </React.Suspense>
         {selectedUser && (
-          <UserProfileModal
-            user={selectedUser}
-            onClose={() => setSelectedUser(null)}
-          />
+          <React.Suspense fallback={null}>
+            <UserProfileModal
+              user={selectedUser}
+              onClose={() => setSelectedUser(null)}
+            />
+          </React.Suspense>
         )}
       </div>
       {openTileAdminMenuId &&
