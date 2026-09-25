@@ -57,6 +57,7 @@ const EmailPreferencesPage = lazy(() => import("./pages/EmailPreferencesPage"));
 const SenderEmailAdminPage = lazy(() => import("./pages/SenderEmailAdminPage"));
 const BlogAdminPage = lazy(() => import("./pages/BlogAdminPage"));
 const SessionCardsPlayground = lazy(() => import("./SessionCardsPlayground"));
+const MilestoneBadgesDemoPage = lazy(() => import("./pages/MilestoneBadgesDemoPage"));
 const IconVectorizerPage = lazy(() => import("./pages/IconVectorizerPage"));
 const OneOnOnePage = lazy(() => import("./pages/OneOnOnePage"));
 const MOBILE_ROOM_LEASE_PREFIX = "mysession_mobile_room_lease:";
@@ -147,6 +148,7 @@ export default function App() {
           <Route path="/focus-shield" element={<FocusShieldPage />} />
 
           <Route path="/ui-playground" element={<SessionCardsPlayground />} />
+          <Route path="/ui-playground/milestones" element={<MilestoneBadgesDemoPage />} />
 
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<PrivacyPage />} />
