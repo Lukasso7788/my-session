@@ -4527,12 +4527,7 @@ function RoomAuthModal({
             onClick={() => void startOAuth("discord")}
             className="flex h-12 w-full items-center justify-center gap-3 rounded-2xl bg-[#5865F2] text-[15px] font-semibold text-white transition hover:bg-[#4752C4] disabled:opacity-60"
           >
-            <span
-              aria-hidden="true"
-              className="flex h-5 w-5 items-center justify-center rounded-md bg-[#F3F3F3] text-[13px] font-black text-[#5865F2]"
-            >
-              D
-            </span>
+            <img src="/icons/discord.svg" className="h-5 w-5" alt="" />
             {oauthLoading === "discord"
               ? "Opening Discord…"
               : "Continue with Discord"}
