@@ -18803,7 +18803,9 @@ export function RoomPageLiveKit({
   // Layout
   const tileCount = layoutTilesForRender.length;
 
-  const aiHostedEnabled = !!session?.ai_hosted;
+  // Infinite Rooms always have an AI host, including rooms created before the
+  // ai_hosted flag existed. Preserve explicit AI-hosted scheduled rooms.
+  const aiHostedEnabled = isInfiniteRoom || !!session?.ai_hosted;
 
   const currentStageForAiHost = stages[currentStage] || null;
 

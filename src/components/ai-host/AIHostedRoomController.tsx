@@ -73,6 +73,25 @@ function setRoomVoiceUiPaused(paused: boolean) {
     );
 }
 
+function chooseAiHostVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | undefined {
+    const english = voices.filter((voice) => /^en(?:-|_)/i.test(voice.lang));
+    const preferredNames = [
+        /microsoft (aria|jenny|guy).*natural/i,
+        /google us english/i,
+        /microsoft (aria|jenny|guy)/i,
+        /samantha/i,
+    ];
+
+    for (const name of preferredNames) {
+        const match = english.find((voice) => name.test(voice.name));
+        if (match) return match;
+    }
+
+    return english.find((voice) => voice.default)
+        ?? english.find((voice) => /^en-US$/i.test(voice.lang))
+        ?? english[0];
+}
+
 function speak(text: string) {
     if (typeof window === "undefined") return;
     if (!("speechSynthesis" in window)) return;
@@ -81,8 +100,12 @@ function speak(text: string) {
         window.speechSynthesis.cancel();
 
         const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = "en-US";
-        utterance.rate = 0.95;
+        // Browser voices are free but device-dependent; prefer a natural English voice when available.
+        // getVoices() may initially be empty, so reevaluate for each utterance after voiceschanged.
+        const voice = chooseAiHostVoice(window.speechSynthesis.getVoices());
+        if (voice) utterance.voice = voice;
+        utterance.lang = voice?.lang ?? "en-US";
+        utterance.rate = 0.96;
         utterance.pitch = 1;
 
         window.speechSynthesis.speak(utterance);
