@@ -4527,7 +4527,12 @@ function RoomAuthModal({
             onClick={() => void startOAuth("discord")}
             className="flex h-12 w-full items-center justify-center gap-3 rounded-2xl bg-[#5865F2] text-[15px] font-semibold text-white transition hover:bg-[#4752C4] disabled:opacity-60"
           >
-            <img src="/icons/discord.svg" className="h-5 w-5" alt="" />
+            <span
+              aria-hidden="true"
+              className="flex h-5 w-5 items-center justify-center rounded-md bg-[#F3F3F3] text-[13px] font-black text-[#5865F2]"
+            >
+              D
+            </span>
             {oauthLoading === "discord"
               ? "Opening Discord…"
               : "Continue with Discord"}
@@ -18803,9 +18808,7 @@ export function RoomPageLiveKit({
   // Layout
   const tileCount = layoutTilesForRender.length;
 
-  // Infinite Rooms always have an AI host, including rooms created before the
-  // ai_hosted flag existed. Preserve explicit AI-hosted scheduled rooms.
-  const aiHostedEnabled = isInfiniteRoom || !!session?.ai_hosted;
+  const aiHostedEnabled = !!session?.ai_hosted;
 
   const currentStageForAiHost = stages[currentStage] || null;
 

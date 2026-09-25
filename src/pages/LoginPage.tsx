@@ -310,7 +310,12 @@ export default function LoginPage() {
             disabled={oauthLoading !== null}
             className="mb-3 flex w-full items-center justify-center gap-3 rounded-[16px] bg-[#5865F2] py-3 text-[18px] font-semibold text-white transition hover:bg-[#4752C4] disabled:opacity-60"
           >
-            <img src="/icons/discord.svg" className="h-5 w-5" alt="" />
+            <span
+              aria-hidden="true"
+              className="flex h-5 w-5 items-center justify-center rounded-md bg-white text-[13px] font-black text-[#5865F2]"
+            >
+              D
+            </span>
             {oauthLoading === "discord"
               ? "Opening Discord…"
               : "Continue with Discord"}
