@@ -301,7 +301,9 @@ function MicBadgeWithBarVisualizer({
         isSelfMutedBadge || hasCameraOn ? "dark" : isLight ? "light" : "dark";
 
     const speaking = !micMuted && isSpeaking;
-    const showVisualizer = !micMuted && !!audioTrack;
+    // LiveKit already reports speaking. Do not keep a Web Audio analyser per
+    // silent microphone just to draw a bar hidden behind its icon.
+    const showVisualizer = speaking && !!audioTrack;
 
 
     return (
@@ -1132,7 +1134,15 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.showMenuButton === next.showMenuButton &&
         prev.density === next.density &&
         prev.currentIntention === next.currentIntention &&
-        prev.taskList === next.taskList &&
+        (prev.taskList === next.taskList || (
+            (prev.taskList?.length || 0) === (next.taskList?.length || 0) &&
+            (prev.taskList || []).every((task, index) =>
+                typeof task === "string"
+                    ? task === next.taskList?.[index]
+                    : typeof next.taskList?.[index] !== "string" &&
+                        task.text === (next.taskList?.[index] as VideoTileTaskItem)?.text &&
+                        !!task.completed === !!(next.taskList?.[index] as VideoTileTaskItem)?.completed)
+        )) &&
         prev.showAllTasks === next.showAllTasks &&
         prev.showTaskOverlay === next.showTaskOverlay &&
         prev.showBottomShade === next.showBottomShade &&

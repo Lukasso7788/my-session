@@ -86,7 +86,7 @@ const SOUND_URL_BY_ID = new Map(
   ROOM_SOUNDSCAPE_OPTIONS.map((option) => [option.id, option.file]),
 );
 
-function waitForAudioMetadata(audio: HTMLAudioElement) {
+function waitForAudioMetadata(audio: HTMLAudioElement, signal: AbortSignal) {
   if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) {
     return Promise.resolve();
   }
@@ -100,6 +100,7 @@ function waitForAudioMetadata(audio: HTMLAudioElement) {
       window.clearTimeout(timeout);
       audio.removeEventListener("loadedmetadata", onReady);
       audio.removeEventListener("error", onError);
+      signal.removeEventListener("abort", onAbort);
     };
     const onReady = () => {
       cleanup();
@@ -109,8 +110,14 @@ function waitForAudioMetadata(audio: HTMLAudioElement) {
       cleanup();
       reject(new Error("This soundtrack file is not available yet."));
     };
+    const onAbort = () => {
+      cleanup();
+      reject(new DOMException("Soundtrack loading cancelled", "AbortError"));
+    };
     audio.addEventListener("loadedmetadata", onReady, { once: true });
     audio.addEventListener("error", onError, { once: true });
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) onAbort();
   });
 }
 
@@ -125,6 +132,7 @@ export class RoomSoundscapeEngine {
   private loopTimer: number | null = null;
   private fadeTimer: number | null = null;
   private playbackGeneration = 0;
+  private pendingLoad: AbortController | null = null;
 
   private clearLoopTimers() {
     if (this.loopTimer != null) window.clearTimeout(this.loopTimer);
@@ -134,9 +142,12 @@ export class RoomSoundscapeEngine {
   }
 
   private makeAudio(url: string) {
-    const audio = new Audio(url);
+    const audio = new Audio();
     audio.loop = false;
-    audio.preload = "auto";
+    // Elements are created only by Play. Do not download two whole tracks just
+    // to learn their duration; playback itself streams the selected source.
+    audio.preload = "metadata";
+    audio.src = url;
     audio.muted = this.muted;
     audio.volume = 0;
     return audio;
@@ -244,16 +255,18 @@ export class RoomSoundscapeEngine {
     if (!url) throw new Error("Unknown room soundtrack.");
 
     this.requestedVolume = Math.max(0, Math.min(1, volume));
+    this.pendingLoad?.abort();
+    const controller = new AbortController();
+    this.pendingLoad = controller;
+    const generation = ++this.playbackGeneration;
+    this.clearLoopTimers();
     let audio = this.audio;
     const resolvedUrl = new URL(url, window.location.href).href;
 
     if (!audio || this.activeId !== id || this.activeUrl !== resolvedUrl) {
-      this.clearLoopTimers();
-      this.playbackGeneration += 1;
       const previous = [this.audio, this.standbyAudio];
       audio = this.makeAudio(url);
       const standby = this.makeAudio(url);
-      await Promise.all([waitForAudioMetadata(audio), waitForAudioMetadata(standby)]);
       for (const item of previous) {
         item?.pause();
         item?.removeAttribute("src");
@@ -265,27 +278,43 @@ export class RoomSoundscapeEngine {
       this.activeUrl = resolvedUrl;
     }
 
-    const duration = Number(audio.duration || 0);
-    const requestedPosition = Math.max(0, Number(positionSeconds || 0));
-    const normalizedPosition =
-      Number.isFinite(duration) && duration > 0
-        ? requestedPosition % duration
-        : requestedPosition;
+    try {
+      // The standby stream must not delay initial playback. It can prepare its
+      // metadata independently for the existing seamless crossfade behavior.
+      await waitForAudioMetadata(audio, controller.signal);
+      if (controller.signal.aborted || generation !== this.playbackGeneration) return false;
+      const duration = Number(audio.duration || 0);
+      const requestedPosition = Math.max(0, Number(positionSeconds || 0));
+      const normalizedPosition =
+        Number.isFinite(duration) && duration > 0
+          ? requestedPosition % duration
+          : requestedPosition;
 
-    if (Math.abs(audio.currentTime - normalizedPosition) > 1.25) {
-      try {
-        audio.currentTime = normalizedPosition;
-      } catch {}
+      if (Math.abs(audio.currentTime - normalizedPosition) > 1.25) {
+        try {
+          audio.currentTime = normalizedPosition;
+        } catch {}
+      }
+
+      audio.volume = this.requestedVolume;
+      audio.muted = this.muted;
+      await audio.play();
+      if (controller.signal.aborted || generation !== this.playbackGeneration) return false;
+      this.playing = true;
+      this.scheduleSeamlessLoop();
+      return true;
+    } catch (error) {
+      if (controller.signal.aborted || generation !== this.playbackGeneration) return false;
+      this.destroy();
+      throw error;
+    } finally {
+      if (this.pendingLoad === controller) this.pendingLoad = null;
     }
-
-    audio.volume = this.requestedVolume;
-    audio.muted = this.muted;
-    await audio.play();
-    this.playing = true;
-    this.scheduleSeamlessLoop();
   }
 
   pause() {
+    this.pendingLoad?.abort();
+    this.pendingLoad = null;
     this.playing = false;
     this.playbackGeneration += 1;
     this.clearLoopTimers();
@@ -295,16 +324,9 @@ export class RoomSoundscapeEngine {
   }
 
   stop() {
-    if (!this.audio) return;
-    this.playing = false;
-    this.playbackGeneration += 1;
-    this.clearLoopTimers();
-    this.audio.pause();
-    this.standbyAudio?.pause();
-    try {
-      this.audio.currentTime = 0;
-      if (this.standbyAudio) this.standbyAudio.currentTime = 0;
-    } catch {}
+    // Stop/disconnect releases network + decoder buffers. Pause keeps only the
+    // current pair for instant resume; other tracks are never cached here.
+    this.destroy();
   }
 
   setVolume(volume: number) {
@@ -351,6 +373,8 @@ export class RoomSoundscapeEngine {
   }
 
   destroy() {
+    this.pendingLoad?.abort();
+    this.pendingLoad = null;
     const elements = [this.audio, this.standbyAudio];
     this.clearLoopTimers();
     this.playing = false;

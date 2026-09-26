@@ -1,4 +1,5 @@
 import React from "react";
+import { useLatestCallback } from "../../hooks/useLatestCallback";
 
 import LegacyVideoTile, {
     SkipMeMutedStatusIcon,
@@ -99,15 +100,31 @@ function decorateLocalTileMenu(doc: Document) {
 }
 
 function VideoTileWithCameraPreviewMenu(props: VideoTileProps) {
-    const onToggleMenu: VideoTileProps["onToggleMenu"] = props.isLocal
-        ? (tileId, anchorEl) => {
+    const onToggleMenu = useLatestCallback((tileId: string, anchorEl: HTMLElement | null) => {
             props.onToggleMenu?.(tileId, anchorEl);
+            if (!props.isLocal) return;
             const doc = anchorEl?.ownerDocument || document;
             decorateLocalTileMenu(doc);
-        }
-        : props.onToggleMenu;
+        });
+    const onOpenProfile = useLatestCallback((...args: Parameters<NonNullable<VideoTileProps["onOpenProfile"]>>) => props.onOpenProfile?.(...args));
+    const onOpenContextMenu = useLatestCallback((...args: Parameters<NonNullable<VideoTileProps["onOpenContextMenu"]>>) => props.onOpenContextMenu?.(...args));
+    const onEditName = useLatestCallback(() => props.onEditName?.());
+    const onToggleMuteMic = useLatestCallback(() => props.hostActions?.onToggleMuteMic?.());
+    const onToggleMuteCam = useLatestCallback(() => props.hostActions?.onToggleMuteCam?.());
+    const onKick = useLatestCallback(() => props.hostActions?.onKick?.());
 
-    return <LegacyVideoTile {...props} onToggleMenu={onToggleMenu} />;
+    return <LegacyVideoTile {...props}
+        onToggleMenu={props.onToggleMenu ? onToggleMenu : undefined}
+        onOpenProfile={props.onOpenProfile ? onOpenProfile : undefined}
+        onOpenContextMenu={props.onOpenContextMenu ? onOpenContextMenu : undefined}
+        onEditName={props.onEditName ? onEditName : undefined}
+        hostActions={props.hostActions ? {
+            ...props.hostActions,
+            onToggleMuteMic: props.hostActions.onToggleMuteMic ? onToggleMuteMic : undefined,
+            onToggleMuteCam: props.hostActions.onToggleMuteCam ? onToggleMuteCam : undefined,
+            onKick: props.hostActions.onKick ? onKick : undefined,
+        } : undefined}
+    />;
 }
 
 export const VideoTile = React.memo(VideoTileWithCameraPreviewMenu);

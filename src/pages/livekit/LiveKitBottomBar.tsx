@@ -11,7 +11,6 @@ import {
 } from "livekit-client";
 
 import { LiveKitBottomBar as LegacyLiveKitBottomBar } from "./LiveKitBottomBarLegacy";
-import { createPersonColorBackgroundProcessor } from "./PersonColorCorrectionProcessor";
 
 type LegacyProps = React.ComponentProps<typeof LegacyLiveKitBottomBar>;
 type FxMode = "off" | "blur" | "bg";
@@ -51,6 +50,8 @@ export function LiveKitBottomBar(props: LegacyProps) {
     const [previewError, setPreviewError] = useState("");
     const [previewTrack, setPreviewTrack] = useState<LocalVideoTrack | null>(null);
     const previewTrackRef = useRef<LocalVideoTrack | null>(null);
+    const previewFxRequestRef = useRef(0);
+    const previewFxQueueRef = useRef<Promise<void>>(Promise.resolve());
     const previewVideoRef = useRef<HTMLVideoElement | null>(null);
     const previewPanelRef = useRef<HTMLDivElement | null>(null);
 
@@ -66,6 +67,7 @@ export function LiveKitBottomBar(props: LegacyProps) {
     const pendingFxRef = useRef<PendingFx | null>(null);
 
     const stopPrivatePreview = useCallback(async () => {
+        previewFxRequestRef.current += 1;
         const track = previewTrackRef.current;
         previewTrackRef.current = null;
         setPreviewTrack(null);
@@ -90,43 +92,54 @@ export function LiveKitBottomBar(props: LegacyProps) {
             backgroundUrl?: string,
             blurStrength = 12,
         ) => {
-            setPreviewError("");
+            const requestId = ++previewFxRequestRef.current;
+            const operation = previewFxQueueRef.current.catch(() => {}).then(async () => {
+                if (requestId !== previewFxRequestRef.current || previewTrackRef.current !== track) return;
+                setPreviewError("");
 
-            try {
-                if (mode === "off") {
-                    await (track as any).stopProcessor?.(true);
-                    return;
+                try {
+                    if (mode === "off") {
+                        await (track as any).stopProcessor?.(true);
+                        return;
+                    }
+
+                    if (props.backgroundFxDisabled) return;
+
+                    const { createPersonColorBackgroundProcessor } = await import("./PersonColorCorrectionProcessor");
+                    if (requestId !== previewFxRequestRef.current || previewTrackRef.current !== track || track.mediaStreamTrack.readyState === "ended") return;
+                    const processor = createPersonColorBackgroundProcessor({
+                        mode:
+                            mode === "blur"
+                                ? {
+                                    mode: "background-blur" as const,
+                                    blurRadius: Math.max(4, Math.min(30, Math.round(blurStrength))),
+                                }
+                                : {
+                                    mode: "virtual-background" as const,
+                                    imagePath: String(backgroundUrl || ""),
+                                },
+                        correction: PREVIEW_COLOR_CORRECTION,
+                    });
+
+                    if (mode === "bg" && !String(backgroundUrl || "").trim()) {
+                        throw new Error("Choose a background first.");
+                    }
+
+                    await (track as any).setProcessor(processor, true);
+                } catch (error) {
+                    if (requestId !== previewFxRequestRef.current) return;
+                    console.warn("[camera-private-preview] FX preview failed", error);
+                    setPreviewError(
+                        error instanceof Error
+                            ? error.message
+                            : "This browser could not preview the selected video effect.",
+                    );
                 }
-
-                if (props.backgroundFxDisabled) return;
-
-                const processor = createPersonColorBackgroundProcessor({
-                    mode:
-                        mode === "blur"
-                            ? {
-                                mode: "background-blur" as const,
-                                blurRadius: Math.max(4, Math.min(30, Math.round(blurStrength))),
-                            }
-                            : {
-                                mode: "virtual-background" as const,
-                                imagePath: String(backgroundUrl || ""),
-                            },
-                    correction: PREVIEW_COLOR_CORRECTION,
-                });
-
-                if (mode === "bg" && !String(backgroundUrl || "").trim()) {
-                    throw new Error("Choose a background first.");
-                }
-
-                await (track as any).setProcessor(processor, true);
-            } catch (error) {
-                console.warn("[camera-private-preview] FX preview failed", error);
-                setPreviewError(
-                    error instanceof Error
-                        ? error.message
-                        : "This browser could not preview the selected video effect.",
-                );
-            }
+            });
+            // Preview changes are serialized too; a late background import or
+            // setProcessor completion must not overwrite the newest selection.
+            previewFxQueueRef.current = operation;
+            await operation;
         },
         [props.backgroundFxDisabled],
     );

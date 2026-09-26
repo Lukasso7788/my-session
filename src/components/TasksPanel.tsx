@@ -1,6 +1,7 @@
 // src/components/TasksPanel.tsx
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useLatestCallback } from "../hooks/useLatestCallback";
 import type { ReactNode, MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -1006,10 +1007,12 @@ export function TasksPanel({
     };
   }, [taskTimerStorageKey]);
 
+  const hasRunningTaskTimer = Object.values(taskTimers).some((timer) => !!timer.running_since_ms);
   useEffect(() => {
+    if (!hasRunningTaskTimer || !taskTimersEnabled) return;
     const id = window.setInterval(() => setTaskTimerTickMs(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [hasRunningTaskTimer, taskTimersEnabled]);
 
   const persistTaskTimers = useCallback(
     (next: TaskTimerMap) => {
@@ -1750,74 +1753,81 @@ export function TasksPanel({
 
     void loadSessionTasks(sessionId, { showLoading: true });
 
+    const onSessionTaskChange = (payload: any) => {
+      const eventType = String(payload?.eventType || "").toUpperCase();
+      const nextTask = (payload?.new || null) as SessionTask | null;
+      const previousTask = (payload?.old || null) as SessionTask | null;
+      const taskId = String(nextTask?.id || previousTask?.id || "").trim();
+      const nextSessionId = String(nextTask?.session_id || "").trim();
+      const previousSessionId = String(previousTask?.session_id || "").trim();
+      const activeSessionId = String(sessionId);
+
+      if (eventType === "DELETE" && taskId) {
+        setSessionTasks((current) =>
+          current.some((task) => String(task.id) === taskId)
+            ? current.filter((task) => String(task.id) !== taskId)
+            : current,
+        );
+        return;
+      }
+
+      if (!nextTask || !taskId) {
+        scheduleSessionTasksReload(activeSessionId);
+        return;
+      }
+
+      if (nextSessionId !== activeSessionId) {
+        if (previousSessionId === activeSessionId) {
+          setSessionTasks((current) =>
+            current.filter((task) => String(task.id) !== taskId),
+          );
+        }
+        return;
+      }
+
+      if (nextTask.completed) {
+        setSessionTasks((current) =>
+          current.filter((task) => String(task.id) !== taskId),
+        );
+        return;
+      }
+
+      setSessionTasks((current) => {
+        const existing = current.find((task) => String(task.id) === taskId);
+        const merged = {
+          ...existing,
+          ...nextTask,
+          profiles: existing?.profiles,
+        } as SessionTask;
+        if (existing) {
+          return current.map((task) =>
+            String(task.id) === taskId ? merged : task,
+          );
+        }
+        return [merged, ...current].slice(0, SESSION_TASKS_FETCH_LIMIT);
+      });
+
+      void fetchProfilesMap([nextTask.user_id]).then((profiles) => {
+        const profile = profiles.get(String(nextTask.user_id));
+        if (!profile) return;
+        setSessionTasks((current) =>
+          current.map((task) =>
+            String(task.id) === taskId ? { ...task, profiles: profile } : task,
+          ),
+        );
+      });
+    };
     const channel = supabase
       .channel(`intentions_realtime_${sessionId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: SESSION_TASKS_TABLE },
-        (payload: any) => {
-          const eventType = String(payload?.eventType || "").toUpperCase();
-          const nextTask = (payload?.new || null) as SessionTask | null;
-          const previousTask = (payload?.old || null) as SessionTask | null;
-          const taskId = String(nextTask?.id || previousTask?.id || "").trim();
-          const nextSessionId = String(nextTask?.session_id || "").trim();
-          const previousSessionId = String(previousTask?.session_id || "").trim();
-          const activeSessionId = String(sessionId);
-
-          if (eventType === "DELETE" && taskId) {
-            setSessionTasks((current) =>
-              current.filter((task) => String(task.id) !== taskId),
-            );
-            return;
-          }
-
-          if (!nextTask || !taskId) {
-            scheduleSessionTasksReload(activeSessionId);
-            return;
-          }
-
-          if (nextSessionId !== activeSessionId) {
-            if (previousSessionId === activeSessionId) {
-              setSessionTasks((current) =>
-                current.filter((task) => String(task.id) !== taskId),
-              );
-            }
-            return;
-          }
-
-          if (nextTask.completed) {
-            setSessionTasks((current) =>
-              current.filter((task) => String(task.id) !== taskId),
-            );
-            return;
-          }
-
-          setSessionTasks((current) => {
-            const existing = current.find((task) => String(task.id) === taskId);
-            const merged = {
-              ...existing,
-              ...nextTask,
-              profiles: existing?.profiles,
-            } as SessionTask;
-            if (existing) {
-              return current.map((task) =>
-                String(task.id) === taskId ? merged : task,
-              );
-            }
-            return [merged, ...current].slice(0, SESSION_TASKS_FETCH_LIMIT);
-          });
-
-          void fetchProfilesMap([nextTask.user_id]).then((profiles) => {
-            const profile = profiles.get(String(nextTask.user_id));
-            if (!profile) return;
-            setSessionTasks((current) =>
-              current.map((task) =>
-                String(task.id) === taskId ? { ...task, profiles: profile } : task,
-              ),
-            );
-          });
-        },
-      )
+      .on("postgres_changes",
+        { event: "INSERT", schema: "public", table: SESSION_TASKS_TABLE, filter: `session_id=eq.${sessionId}` },
+        onSessionTaskChange)
+      // UPDATE stays broad to remove tasks moved OUT of this room. DELETE can
+      // contain only the primary key; Supabase cannot filter DELETE events.
+      .on("postgres_changes",
+        { event: "UPDATE", schema: "public", table: SESSION_TASKS_TABLE }, onSessionTaskChange)
+      .on("postgres_changes",
+        { event: "DELETE", schema: "public", table: SESSION_TASKS_TABLE }, onSessionTaskChange)
       .subscribe();
 
     return () => {
@@ -1852,10 +1862,13 @@ export function TasksPanel({
     };
   }, [sessionId, loadPanelTasks, scheduleSessionTasksReload]);
 
+  const encouragementTaskIdsKey = useMemo(() => sessionTasks
+    .map((task) => String(task.id || "")).filter(Boolean).sort().join(","), [sessionTasks]);
+  const encouragementRequestRef = useRef(0);
   const loadEncouragements = useCallback(async () => {
-    const ids = sessionTasks
-      .map((x) => String(x.id || ""))
-      .filter(Boolean);
+    const requestId = ++encouragementRequestRef.current;
+    const ids = encouragementTaskIdsKey ? encouragementTaskIdsKey.split(",") : [];
+    const idSet = new Set(ids);
 
     if (!ids.length) {
       setEncouragementCounts({});
@@ -1869,6 +1882,8 @@ export function TasksPanel({
         .from(TASK_ENCOURAGEMENTS_TABLE)
         .select("session_intention_id,intention_id,user_id,emoji")
         .in("session_intention_id", ids);
+
+      if (requestId !== encouragementRequestRef.current) return;
 
       if (error || !Array.isArray(data)) {
         console.error("loadEncouragements error:", error);
@@ -1886,7 +1901,7 @@ export function TasksPanel({
         const taskId = String(row?.session_intention_id || row?.intention_id || "");
         const rowUserId = String(row?.user_id || "");
 
-        if (!taskId || !ids.includes(taskId)) return;
+        if (!taskId || !idSet.has(taskId)) return;
 
         nextCounts[taskId] = (nextCounts[taskId] || 0) + 1;
 
@@ -1899,14 +1914,18 @@ export function TasksPanel({
         }
       });
 
+      // Counts paint without waiting for avatars; profile hydration is secondary.
+      setEncouragementCounts(nextCounts);
+      setMyEncouragedIds(nextMine);
       const profileMap = await fetchProfilesMap(userIds);
+      if (requestId !== encouragementRequestRef.current) return;
       const nextUsersByIntention: Record<string, EncouragementUser[]> = {};
 
       data.forEach((row) => {
         const taskId = String(row?.session_intention_id || row?.intention_id || "");
         const rowUserId = String(row?.user_id || "");
 
-        if (!taskId || !ids.includes(taskId) || !rowUserId) return;
+        if (!taskId || !idSet.has(taskId) || !rowUserId) return;
 
         const profile = profileMap.get(rowUserId);
         const list = nextUsersByIntention[taskId] || [];
@@ -1929,28 +1948,39 @@ export function TasksPanel({
     } catch (e) {
       console.error("loadEncouragements crashed:", e);
     }
-  }, [sessionTasks, user?.id]);
+  }, [encouragementTaskIdsKey, user?.id]);
 
   useEffect(() => {
     void loadEncouragements();
+    return () => { encouragementRequestRef.current += 1; };
   }, [loadEncouragements]);
 
+  const refreshEncouragements = useLatestCallback(() => void loadEncouragements());
   useEffect(() => {
     if (!sessionId) return;
+    let reloadTimer: number | null = null;
+    const scheduleReload = () => {
+      if (reloadTimer !== null) return;
+      reloadTimer = window.setTimeout(() => {
+        reloadTimer = null;
+        refreshEncouragements();
+      }, 150);
+    };
 
     const channel = supabase
       .channel(`intention_encouragements_${sessionId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: TASK_ENCOURAGEMENTS_TABLE },
-        () => void loadEncouragements(),
+        { event: "*", schema: "public", table: TASK_ENCOURAGEMENTS_TABLE, filter: `session_id=eq.${sessionId}` },
+        scheduleReload,
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      if (reloadTimer !== null) window.clearTimeout(reloadTimer);
+      void supabase.removeChannel(channel);
     };
-  }, [sessionId, loadEncouragements]);
+  }, [sessionId, refreshEncouragements]);
 
   const toggleEncouragement = useCallback(
     async (taskId: string) => {
@@ -4921,7 +4951,8 @@ export function TasksPanel({
               const isDeletingPublishedTask = deletingPublishedTaskId === item.id;
 
               return (
-                <div key={item.id} className={teamCardCls + " font-inter"}>
+                <div key={item.id} className={teamCardCls + " font-inter"}
+                  style={{ contentVisibility: "auto", containIntrinsicSize: "auto 100px" }}>
                   <div className="flex items-stretch gap-2 min-w-0">
                     <div
                       className="flex h-7 max-w-7 shrink-0 self-center items-center overflow-hidden rounded-full bg-transparent transition-[max-width,background-color] duration-300 ease-out group-hover:max-w-[150px] group-hover:bg-black/[0.045] group-focus-within:max-w-[150px] group-focus-within:bg-black/[0.045]"

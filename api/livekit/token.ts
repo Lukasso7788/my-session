@@ -393,12 +393,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       role = resolved;
 
-      const pendingAccessState = await hasPendingAccessState({ supabaseUrl, serviceKey, userId: resolved.userId });
+      // Independent read-only gates run together. Admission (which can claim an
+      // invitation booking) still runs only after both security gates pass.
+      const [pendingAccessState, activeBan] = await Promise.all([
+        hasPendingAccessState({ supabaseUrl, serviceKey, userId: resolved.userId }),
+        getActiveBan({ supabaseUrl, serviceKey, userId: resolved.userId }),
+      ]);
       if (pendingAccessState) {
         return res.status(503).json({ error: "SERVICE_UNAVAILABLE" });
       }
 
-      const activeBan = await getActiveBan({ supabaseUrl, serviceKey, userId: resolved.userId });
       if (activeBan) {
         const activeBanRecord = activeBan as {
           reason?: string | null;
@@ -440,17 +444,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let assignedServerId: string | null = null;
     let livekitWsUrl = String(process.env.LIVEKIT_URL || "").trim();
 
+    let microphoneLocked = false;
     if (looksLikeUuid(sessionId)) {
-      const resolvedServer = await resolveAssignedServer({ supabaseUrl, serviceKey, sessionId });
+      const [resolvedServer, mediaPolicy] = await Promise.all([
+        resolveAssignedServer({ supabaseUrl, serviceKey, sessionId }),
+        resolveMicrophoneLocked({ supabaseUrl, serviceKey, sessionId }),
+      ]);
       assignedServerId = resolvedServer.assignedServerId;
       livekitWsUrl = resolvedServer.livekitWsUrl;
+      microphoneLocked = mediaPolicy;
     }
 
     if (!livekitWsUrl) return res.status(500).json({ error: "livekit_url_missing", hint: "Set LIVEKIT_URL or assign a server with ws_url" });
-
-    const microphoneLocked = looksLikeUuid(sessionId)
-      ? await resolveMicrophoneLocked({ supabaseUrl, serviceKey, sessionId })
-      : false;
 
     const at = new AccessToken(apiKey, apiSecret, { identity: String(identity), name: name ? String(name) : undefined });
 

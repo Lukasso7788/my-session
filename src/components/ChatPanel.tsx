@@ -9,6 +9,8 @@ import React, {
 import { createPortal } from "react-dom";
 import { EmojiPickerPopover } from "./EmojiPickerPopover";
 import { supabase } from "../lib/supabase";
+import { useLatestCallback } from "../hooks/useLatestCallback";
+import { boundChatMessages, reconcileChatSnapshot, CHAT_PAGE_SIZE, CHAT_WINDOW_LIMIT } from "../lib/chatMessageWindow";
 import {
     Check,
     CheckCheck,
@@ -70,11 +72,12 @@ const CHAT_READ_RECEIPT_EVENT = "message-read";
 const CHAT_READ_RECEIPT_CHANNEL_PREFIX = "chat-read-receipts";
 const CHAT_READ_RECEIPT_STORAGE_PREFIX = "mysession_chat_read_receipts_v1";
 
-const MESSAGE_BOOTSTRAP_LIMIT = 150;
+const MESSAGE_BOOTSTRAP_LIMIT = CHAT_PAGE_SIZE;
 const REACTIONS_BOOTSTRAP_LIMIT = 120;
 const REACTIONS_MESSAGE_ID_LIMIT = 60;
 const REACTIONS_REFETCH_DEDUPE_MS = 30_000;
-const VISIBLE_MESSAGE_LIMIT = 150;
+const VISIBLE_MESSAGE_LIMIT = CHAT_WINDOW_LIMIT;
+const EMPTY_READERS: ReadReceiptReader[] = [];
 const REACTION_EMOJIS = [
     "🔥",
     "😂",
@@ -210,7 +213,8 @@ type ChatCacheEntry = {
 };
 
 const CHAT_CACHE = new Map<string, ChatCacheEntry>();
-const CACHE_MAX = 8;
+const CACHE_MAX = 4;
+const CACHE_TTL_MS = 5 * 60_000;
 
 function setChatCache(sessionId: string, entry: ChatCacheEntry) {
     CHAT_CACHE.set(sessionId, entry);
@@ -324,6 +328,7 @@ function buildMessageQuery(
         .select("id, session_id, user_id, body, created_at, scope, dm_peer_user_id")
         .eq("session_id", sessionId)
         .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
         .limit(MESSAGE_BOOTSTRAP_LIMIT);
 
     if (mode === "general") {
@@ -1345,6 +1350,18 @@ export function ChatPanel({
     const [voiceMessagePreview, setVoiceMessagePreview] = useState(false);
 
     const [loading, setLoading] = useState(true);
+    const [hasOlderMessages, setHasOlderMessages] = useState(false);
+    const [loadingOlder, setLoadingOlder] = useState(false);
+    const olderLoadingRef = useRef(false);
+    const historyScrollAnchorRef = useRef<{ requestId: number; height: number; top: number } | null>(null);
+    const messageRevisionRef = useRef(0);
+    const messageChangesRef = useRef(new Map<string, number>());
+    const noteMessageChange = useLatestCallback((id: string) => {
+        messageChangesRef.current.set(id, ++messageRevisionRef.current);
+        if (messageChangesRef.current.size > CHAT_WINDOW_LIMIT * 2) {
+            messageChangesRef.current.delete(messageChangesRef.current.keys().next().value!);
+        }
+    });
     const [replyTo, setReplyTo] = useState<Msg | null>(null);
     const [highlightedMessageId, setHighlightedMessageId] = useState<
         string | null
@@ -1370,10 +1387,10 @@ export function ChatPanel({
     const loadingReactionsRef = useRef(false);
     const queuedMessagesReloadRef = useRef(false);
     const queuedReactionsReloadRef = useRef(false);
+    const queuedReactionMessageIdsRef = useRef(new Set<string>());
 
     const lastReactionsLoadKeyRef = useRef("");
     const lastReactionsLoadAtRef = useRef(0);
-    const myReactionsRefreshKeyRef = useRef("");
 
     const atBottomRef = useRef<boolean>(true);
     const initialBottomScrollPendingRef = useRef(true);
@@ -1451,8 +1468,12 @@ export function ChatPanel({
         return profilesById[activeDirectPeerId] || null;
     }, [activeDirectPeerId, profilesById]);
 
-    const activeViewKey = `${sessionId}|${activeMode}|${activeDirectPeerId || ""}`;
+    const messageQueryPeerId = activeMode === "direct" ? activeDirectPeerId : null;
+    const activeViewKey = `${sessionId}|${activeMode}|${messageQueryPeerId || ""}`;
     const newestMessageId = messages[messages.length - 1]?.id || "";
+    const chatCacheKey = `${activeViewKey}|${userId || "anon"}`;
+    const latestChatViewRef = useRef(chatCacheKey);
+    useLayoutEffect(() => { latestChatViewRef.current = chatCacheKey; }, [chatCacheKey]);
 
     useEffect(() => {
         if (!sessionId || !userId) return;
@@ -1627,11 +1648,23 @@ export function ChatPanel({
         };
     }, [chatWindow]);
 
-    useEffect(() => {
+    const hydrateChatView = useLatestCallback(() => {
         if (!sessionId) return;
 
-        const cached = CHAT_CACHE.get(sessionId);
-        if (cached) {
+        // Invalidate reads before switching room, account or DM thread.
+        messagesReqIdRef.current += 1;
+        reactionsReqIdRef.current += 1;
+        loadingMessagesRef.current = false;
+        loadingReactionsRef.current = false;
+        queuedMessagesReloadRef.current = false;
+        queuedReactionsReloadRef.current = false;
+        queuedReactionMessageIdsRef.current.clear();
+        olderLoadingRef.current = false;
+        historyScrollAnchorRef.current = null;
+        setLoadingOlder(false);
+        messageChangesRef.current.clear();
+        const cached = CHAT_CACHE.get(chatCacheKey);
+        if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
             messagesRef.current = cached.messages || [];
             profilesByIdRef.current = cached.profilesById || {};
             meProfileRef.current = cached.meProfile || null;
@@ -1641,9 +1674,10 @@ export function ChatPanel({
             setMyReactions(cached.myReactions || {});
             setProfilesById(cached.profilesById || {});
             setMeProfile(cached.meProfile || null);
-            setHostUserId(cached.hostUserId || null);
+            if (!hostUserIdOverride) setHostUserId(cached.hostUserId || null);
             setDirectPeerIds(cached.directPeerIds || []);
             setLoading(false);
+            setHasOlderMessages((cached.messages?.length || 0) >= CHAT_PAGE_SIZE);
         } else {
             messagesRef.current = [];
             setMessages([]);
@@ -1654,12 +1688,17 @@ export function ChatPanel({
             setUnseenNew(0);
             setDirectPeerIds([]);
             setLoading(true);
+            setHasOlderMessages(false);
         }
-    }, [sessionId]);
+    });
+    useEffect(hydrateChatView, [chatCacheKey, hydrateChatView]);
 
     useEffect(() => {
         if (!sessionId) return;
-        setChatCache(sessionId, {
+        // A view hydration effect has scheduled a new state; don't cache the
+        // previous thread's reactions/profile state under the new thread key.
+        if (messages !== messagesRef.current) return;
+        setChatCache(chatCacheKey, {
             ts: Date.now(),
             messages: messagesRef.current,
             reactions,
@@ -1671,6 +1710,7 @@ export function ChatPanel({
         });
     }, [
         sessionId,
+        chatCacheKey,
         messages,
         reactions,
         myReactions,
@@ -1990,6 +2030,8 @@ export function ChatPanel({
         onDirectPeerIdsChange?.(directPeerIds);
     }, [directPeerIds, onDirectPeerIdsChange]);
 
+    // General chat does not depend on host discovery/lease changes.
+    const messageQueryHostId = activeMode === "direct" ? hostUserId : null;
     const loadMessages = useCallback(
         async (opts?: { silent?: boolean }): Promise<Msg[] | null> => {
             if (!sessionId) return null;
@@ -2001,6 +2043,7 @@ export function ChatPanel({
 
             loadingMessagesRef.current = true;
             const reqId = ++messagesReqIdRef.current;
+            const revision = messageRevisionRef.current;
 
             if (!opts?.silent) setLoading(true);
 
@@ -2009,8 +2052,8 @@ export function ChatPanel({
                     sessionId,
                     activeMode,
                     userId,
-                    hostUserId,
-                    activeDirectPeerId,
+                    messageQueryHostId,
+                    messageQueryPeerId,
                 );
                 const loadMessagesResult = (await withTimeout<any>(
                     q as any,
@@ -2028,8 +2071,12 @@ export function ChatPanel({
 
                 const safeRows = ((rows as any as MsgRow[]) || []).slice().reverse();
                 const attached = safeRows.map((r) => attachProfile(r));
-                messagesRef.current = attached;
-                setMessages(attached);
+                const changed = new Set([...messageChangesRef.current]
+                    .filter(([, version]) => version > revision).map(([id]) => id));
+                const next = reconcileChatSnapshot(attached, messagesRef.current, changed);
+                messagesRef.current = next;
+                setMessages(next);
+                setHasOlderMessages(safeRows.length === CHAT_PAGE_SIZE);
                 // Names/avatars hydrate separately; they must not hold the first
                 // paint of the message list behind another network request.
                 void ensureProfiles(
@@ -2041,7 +2088,7 @@ export function ChatPanel({
                                 .filter(Boolean),
                         ),
                 );
-                return attached;
+                return messagesRef.current;
             } catch (e) {
                 console.warn("loadMessages failed:", e);
                 if (!aliveRef.current || reqId !== messagesReqIdRef.current)
@@ -2054,10 +2101,12 @@ export function ChatPanel({
                     !opts?.silent
                 )
                     setLoading(false);
-                loadingMessagesRef.current = false;
-                if (queuedMessagesReloadRef.current) {
-                    queuedMessagesReloadRef.current = false;
-                    void loadMessages({ silent: true });
+                if (aliveRef.current && reqId === messagesReqIdRef.current) {
+                    loadingMessagesRef.current = false;
+                    if (queuedMessagesReloadRef.current) {
+                        queuedMessagesReloadRef.current = false;
+                        void loadMessages({ silent: true });
+                    }
                 }
             }
         },
@@ -2065,8 +2114,8 @@ export function ChatPanel({
             sessionId,
             activeMode,
             userId,
-            hostUserId,
-            activeDirectPeerId,
+            messageQueryHostId,
+            messageQueryPeerId,
             ensureProfiles,
             attachProfile,
         ],
@@ -2080,16 +2129,17 @@ export function ChatPanel({
         }) => {
             if (!sessionId) return;
 
-            if (loadingReactionsRef.current) {
-                queuedReactionsReloadRef.current = true;
-                return;
-            }
-
             const msgIdsRaw =
                 opts?.messageIds && opts.messageIds.length > 0
                     ? opts.messageIds
                     : getRecentMessageIdsForReactions();
             const msgIds = normalizeReactionMessageIds(msgIdsRaw);
+
+            if (loadingReactionsRef.current) {
+                queuedReactionsReloadRef.current = true;
+                msgIds.forEach((id) => queuedReactionMessageIdsRef.current.add(id));
+                return;
+            }
 
             if (msgIds.length === 0) {
                 setReactions({});
@@ -2152,16 +2202,26 @@ export function ChatPanel({
                     }
                 }
 
-                setReactions(counts);
-                setMyReactions(mine);
+                // Replace only this page's counts; keep loaded older pages.
+                const mergePage = <T,>(previous: Record<string, T>, page: Record<string, T>) => {
+                    const next = { ...previous };
+                    msgIds.forEach((id) => delete next[id]);
+                    return { ...next, ...page };
+                };
+                setReactions((previous) => mergePage(previous, counts));
+                setMyReactions((previous) => mergePage(previous, mine));
             } catch (e) {
                 console.warn("loadReactions failed:", e);
             } finally {
-                loadingReactionsRef.current = false;
-
-                if (queuedReactionsReloadRef.current) {
-                    queuedReactionsReloadRef.current = false;
-                    void loadReactions({ silent: true, force: true });
+                if (aliveRef.current && reqId === reactionsReqIdRef.current) {
+                    loadingReactionsRef.current = false;
+                    if (queuedReactionsReloadRef.current) {
+                        // Preserve the requested older page, not just recent IDs.
+                        const messageIds = [...queuedReactionMessageIdsRef.current].slice(0, CHAT_PAGE_SIZE);
+                        messageIds.forEach((id) => queuedReactionMessageIdsRef.current.delete(id));
+                        queuedReactionsReloadRef.current = queuedReactionMessageIdsRef.current.size > 0;
+                        void loadReactions({ silent: true, force: true, messageIds });
+                    }
                 }
             }
         },
@@ -2175,6 +2235,7 @@ export function ChatPanel({
             if (!opts?.force && now - bootTsRef.current < 8000) return;
 
             const loaded = await loadMessages({ silent: opts?.silent });
+            if (!aliveRef.current || latestChatViewRef.current !== chatCacheKey) return;
             const list = loaded ?? messagesRef.current;
             const ids = normalizeReactionMessageIds(list.map((m) => m.id));
             await loadReactions({
@@ -2182,241 +2243,189 @@ export function ChatPanel({
                 messageIds: ids,
                 force: opts?.force,
             });
-            bootTsRef.current = now;
+            if (latestChatViewRef.current === chatCacheKey) bootTsRef.current = now;
         },
-        [sessionId, loadMessages, loadReactions],
+        [sessionId, chatCacheKey, loadMessages, loadReactions],
     );
 
     useEffect(() => {
         if (!sessionId) return;
         void bootstrap({ silent: false, force: true });
-    }, [sessionId, activeMode, activeDirectPeerId, bootstrap]);
+    }, [sessionId, bootstrap]);
 
-    useEffect(() => {
-        if (!sessionId || !userId) return;
+    // Bootstrap already depends on userId through both loaders, so a second
+    // auth-triggered reactions effect would queue the same SELECT twice.
+    const onMessageInsert = useLatestCallback(async (payload: any) => {
+        const row = payload?.new as MsgRow | undefined;
+        if (!row?.id) return;
 
-        const ids = getRecentMessageIdsForReactions();
-        if (ids.length === 0) return;
+        const relevant = messageBelongsToView(
+            row,
+            activeMode,
+            userId,
+            messageQueryHostId,
+            activeDirectPeerId,
+        );
 
-        const key = `${sessionId}|${userId}|${activeMode}|${activeDirectPeerId || ""}|${ids.join(",")}`;
-        if (myReactionsRefreshKeyRef.current === key) return;
-
-        myReactionsRefreshKeyRef.current = key;
-
-        void loadReactions({
-            silent: true,
-            messageIds: ids,
-            force: true,
-        });
-    }, [sessionId, userId, activeMode, activeDirectPeerId, loadReactions]);
-
-    useEffect(() => {
-        if (!sessionId) return;
-
-        if (pollingRef.current) {
-            chatWindow.clearInterval(pollingRef.current);
-            pollingRef.current = null;
+        if (row.scope === "direct" && isHost && hostUserId) {
+            const otherId =
+                row.user_id === hostUserId
+                    ? String(row.dm_peer_user_id || "").trim()
+                    : row.user_id;
+            if (otherId && otherId !== hostUserId) {
+                setDirectPeerIds((prev) =>
+                    prev.includes(otherId) ? prev : [...prev, otherId],
+                );
+                void ensureProfiles([otherId]);
+            }
         }
 
-        const channel = supabase.channel(`chat:${sessionId}`);
+        if (!relevant) return;
+        noteMessageChange(row.id);
 
-        channel.on(
-            "postgres_changes",
-            {
-                event: "INSERT",
-                schema: "public",
-                table: MSG_TABLE,
-                filter: `session_id=eq.${sessionId}`,
-            },
-            async (payload: any) => {
-                const row = payload?.new as MsgRow | undefined;
-                if (!row?.id) return;
-
-                const relevant = messageBelongsToView(
-                    row,
-                    activeMode,
-                    userId,
-                    hostUserId,
-                    activeDirectPeerId,
-                );
-
-                if (row.scope === "direct" && isHost && hostUserId) {
-                    const otherId =
-                        row.user_id === hostUserId
-                            ? String(row.dm_peer_user_id || "").trim()
-                            : row.user_id;
-                    if (otherId && otherId !== hostUserId) {
-                        setDirectPeerIds((prev) =>
-                            prev.includes(otherId) ? prev : [...prev, otherId],
-                        );
-                        void ensureProfiles([otherId]);
-                    }
-                }
-
-                if (!relevant) return;
-
-                await ensureProfiles(
-                    [row.user_id, String(row.dm_peer_user_id || "").trim()].filter(
-                        Boolean,
-                    ),
-                );
-                if (!aliveRef.current) return;
-
-                const beforeAtBottom = isAtBottom();
-                atBottomRef.current = beforeAtBottom;
-
-                setMessages((prev) => {
-                    if (prev.some((m) => m.id === row.id)) return prev;
-
-                    const idxOptimistic = prev.findIndex(
-                        (m) =>
-                            m.id.startsWith("optimistic-") &&
-                            m.user_id === row.user_id &&
-                            m.body === row.body &&
-                            (m.scope || "general") === (row.scope || "general") &&
-                            String(m.dm_peer_user_id || "") ===
-                            String(row.dm_peer_user_id || ""),
-                    );
-
-                    const merged = attachProfile(row);
-                    let next: Msg[];
-                    if (idxOptimistic !== -1) {
-                        next = [...prev];
-                        next[idxOptimistic] = merged;
-                    } else {
-                        next = [...prev, merged];
-                    }
-
-                    messagesRef.current = next;
-                    return next;
-                });
-
-                if (!beforeAtBottom && row.user_id !== userId) {
-                    setUnseenNew((n) => Math.min(99, n + 1));
-                }
-            },
+        void ensureProfiles(
+            [row.user_id, String(row.dm_peer_user_id || "").trim()].filter(
+                Boolean,
+            ),
         );
+        if (!aliveRef.current) return;
 
-        channel.on(
-            "postgres_changes",
-            {
-                event: "UPDATE",
-                schema: "public",
-                table: MSG_TABLE,
-                filter: `session_id=eq.${sessionId}`,
-            },
-            async (payload: any) => {
-                const row = payload?.new as MsgRow | undefined;
-                if (!row?.id) return;
-                const relevant = messageBelongsToView(
-                    row,
-                    activeMode,
-                    userId,
-                    hostUserId,
-                    activeDirectPeerId,
-                );
-                if (!relevant) {
-                    setMessages((prev) => {
-                        const next = prev.filter((m) => m.id !== row.id);
-                        messagesRef.current = next;
-                        return next;
-                    });
-                    return;
-                }
+        const beforeAtBottom = isAtBottom();
+        atBottomRef.current = beforeAtBottom;
 
-                await ensureProfiles(
-                    [row.user_id, String(row.dm_peer_user_id || "").trim()].filter(
-                        Boolean,
-                    ),
-                );
-                if (!aliveRef.current) return;
+        setMessages((prev) => {
+            if (prev.some((m) => m.id === row.id)) return prev;
 
-                setMessages((prev) => {
-                    const exists = prev.some((m) => m.id === row.id);
-                    const mapped = attachProfile(row);
-                    const next = exists
-                        ? prev.map((m) => (m.id === row.id ? mapped : m))
-                        : [...prev, mapped];
-                    messagesRef.current = next;
-                    return next;
-                });
-            },
-        );
+            const idxOptimistic = prev.findIndex(
+                (m) =>
+                    m.id === `optimistic-${row.id}`,
+            );
 
-        channel.on(
-            "postgres_changes",
-            {
-                event: "DELETE",
-                schema: "public",
-                table: MSG_TABLE,
-                filter: `session_id=eq.${sessionId}`,
-            },
-            (payload: any) => {
-                const deletedId = payload?.old?.id as string | undefined;
-                if (!deletedId) return;
-
-                setMessages((prev) => {
-                    const next = prev.filter((m) => m.id !== deletedId);
-                    messagesRef.current = next;
-                    return next;
-                });
-
-                setReactions((prev) => {
-                    if (!prev[deletedId]) return prev;
-                    const next = { ...prev };
-                    delete next[deletedId];
-                    return next;
-                });
-
-                setMyReactions((prev) => {
-                    if (!prev[deletedId]) return prev;
-                    const next = { ...prev };
-                    delete next[deletedId];
-                    return next;
-                });
-            },
-        );
-
-        channel.subscribe((status) => {
-            if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-                if (!pollingRef.current) {
-                    pollingRef.current = chatWindow.setInterval(() => {
-                        void bootstrap({ silent: true, force: true });
-                    }, 15000);
-                }
-                return;
+            const merged = attachProfile(row);
+            let next: Msg[];
+            if (idxOptimistic !== -1) {
+                next = [...prev];
+                next[idxOptimistic] = merged;
+            } else {
+                next = [...prev, merged];
             }
 
-            if (status === "SUBSCRIBED") {
-                if (pollingRef.current) {
-                    chatWindow.clearInterval(pollingRef.current);
-                    pollingRef.current = null;
-                }
-                if (messagesRef.current.length === 0) {
-                    void bootstrap({ silent: true, force: true });
-                }
-            }
+            const bounded = boundChatMessages(next);
+            messagesRef.current = bounded;
+            return bounded;
         });
 
-        return () => {
-            if (pollingRef.current) {
-                chatWindow.clearInterval(pollingRef.current);
+        if (!beforeAtBottom && row.user_id !== userId) {
+            setUnseenNew((n) => Math.min(99, n + 1));
+        }
+    });
+
+    const onMessageUpdate = useLatestCallback(async (payload: any) => {
+        const row = payload?.new as MsgRow | undefined;
+        if (!row?.id) return;
+        noteMessageChange(row.id);
+        const relevant = messageBelongsToView(
+            row,
+            activeMode,
+            userId,
+            messageQueryHostId,
+            activeDirectPeerId,
+        );
+        if (!relevant) {
+            setMessages((prev) => {
+                const next = prev.filter((m) => m.id !== row.id);
+                messagesRef.current = next;
+                return next;
+            });
+            return;
+        }
+
+        void ensureProfiles(
+            [row.user_id, String(row.dm_peer_user_id || "").trim()].filter(
+                Boolean,
+            ),
+        );
+        if (!aliveRef.current) return;
+
+        setMessages((prev) => {
+            const exists = prev.some((m) => m.id === row.id);
+            const mapped = attachProfile(row);
+            const next = exists
+                ? prev.map((m) => (m.id === row.id ? mapped : m))
+                : [...prev, mapped];
+            const bounded = boundChatMessages(next);
+            messagesRef.current = bounded;
+            return bounded;
+        });
+    });
+
+    const onMessageDelete = useLatestCallback((payload: any) => {
+        const deletedId = payload?.old?.id as string | undefined;
+        if (!deletedId) return;
+        noteMessageChange(deletedId);
+
+        setMessages((prev) => {
+            const next = prev.filter((m) => m.id !== deletedId);
+            const bounded = boundChatMessages(next);
+            messagesRef.current = bounded;
+            return bounded;
+        });
+
+        setReactions((prev) => {
+            if (!prev[deletedId]) return prev;
+            const next = { ...prev };
+            delete next[deletedId];
+            return next;
+        });
+
+        setMyReactions((prev) => {
+            if (!prev[deletedId]) return prev;
+            const next = { ...prev };
+            delete next[deletedId];
+            return next;
+        });
+    });
+
+    const refreshChat = useLatestCallback(() => {
+        if (!loadingMessagesRef.current) void bootstrap({ silent: true, force: true });
+    });
+    useEffect(() => {
+        if (!sessionId) return;
+        let disposed = false;
+        let subscribed = false;
+        const channel = supabase.channel(`chat:${sessionId}`);
+        channel.on("postgres_changes",
+            { event: "INSERT", schema: "public", table: MSG_TABLE, filter: `session_id=eq.${sessionId}` },
+            onMessageInsert);
+        channel.on("postgres_changes",
+            { event: "UPDATE", schema: "public", table: MSG_TABLE, filter: `session_id=eq.${sessionId}` },
+            onMessageUpdate);
+        channel.on("postgres_changes",
+            { event: "DELETE", schema: "public", table: MSG_TABLE, filter: `session_id=eq.${sessionId}` },
+            onMessageDelete);
+        channel.subscribe((status) => {
+            if (disposed) return;
+            if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+                // Fallback only while Realtime is unavailable, never healthy rooms.
+                if (!pollingRef.current) {
+                    pollingRef.current = chatWindow.setInterval(() => {
+                        if (chatDocument.visibilityState !== "hidden" && chatWindow.navigator.onLine) refreshChat();
+                    }, 15_000);
+                }
+            } else if (status === "SUBSCRIBED") {
+                if (pollingRef.current) chatWindow.clearInterval(pollingRef.current);
                 pollingRef.current = null;
+                if (subscribed) refreshChat();
+                subscribed = true;
             }
-            supabase.removeChannel(channel);
+        });
+        return () => {
+            disposed = true;
+            if (pollingRef.current) chatWindow.clearInterval(pollingRef.current);
+            pollingRef.current = null;
+            void supabase.removeChannel(channel);
         };
-    }, [
-        sessionId,
-        userId,
-        activeMode,
-        hostUserId,
-        activeDirectPeerId,
-        isHost,
-        attachProfile,
-        ensureProfiles,
-        bootstrap,
-        chatWindow,
-    ]);
+    }, [sessionId, userId, chatWindow, chatDocument, onMessageInsert, onMessageUpdate, onMessageDelete, refreshChat]);
 
     useEffect(() => {
         if (!sessionId) return;
@@ -2503,6 +2512,8 @@ export function ChatPanel({
                     const n = payload?.new as ReactionRow | undefined;
                     const o = payload?.old as ReactionRow | undefined;
 
+                    const messageId = String(n?.message_id || o?.message_id || "");
+                    if (!messagesRef.current.some((message) => message.id === messageId)) return;
                     if (ev === "INSERT" && n) {
                         if (shouldSkipFromPending("INSERT", n)) return;
                         applyInsert(n);
@@ -2543,6 +2554,13 @@ export function ChatPanel({
     }, [sessionId, userId, loadReactions]);
 
     useLayoutEffect(() => {
+        const historyAnchor = historyScrollAnchorRef.current;
+        if (historyAnchor && historyAnchor.requestId === messagesReqIdRef.current && listRef.current) {
+            historyScrollAnchorRef.current = null;
+            listRef.current.scrollTop = historyAnchor.top + listRef.current.scrollHeight - historyAnchor.height;
+            atBottomRef.current = false;
+            return;
+        }
         const viewChanged = activeViewKeyRef.current !== activeViewKey;
         if (viewChanged) {
             activeViewKeyRef.current = activeViewKey;
@@ -2752,7 +2770,7 @@ export function ChatPanel({
         }
 
         const optimistic: Msg = {
-            id: `optimistic-${Date.now()}`,
+            id: `optimistic-${crypto.randomUUID()}`,
             session_id: sessionId,
             user_id: userId,
             body: composed,
@@ -2764,10 +2782,12 @@ export function ChatPanel({
                 meProfileRef.current ||
                 ({ id: userId, full_name: "You", avatar_url: null } as any),
         };
+        const sendViewKey = chatCacheKey;
 
         atBottomRef.current = true;
+        noteMessageChange(optimistic.id);
         setMessages((prev) => {
-            const next = [...prev, optimistic];
+            const next = boundChatMessages([...prev, optimistic]);
             messagesRef.current = next;
             return next;
         });
@@ -2776,15 +2796,18 @@ export function ChatPanel({
         setComposerEmojiOpen(false);
         setReplyTo(null);
 
-        const { error } = await supabase.from(MSG_TABLE).insert({
+        const { data: confirmed, error } = await Promise.resolve(supabase.from(MSG_TABLE).insert({
+            id: optimistic.id.slice("optimistic-".length),
             session_id: sessionId,
             user_id: userId,
             body: composed,
             created_at: new Date().toISOString(),
             scope: outgoingScope,
             dm_peer_user_id: outgoingPeerId,
-        });
+        }).select("id,session_id,user_id,body,created_at,scope,dm_peer_user_id").single())
+            .catch((error: unknown) => ({ data: null, error }));
 
+        if (!aliveRef.current || latestChatViewRef.current !== sendViewKey) return;
         if (error) {
             console.error("chat send error:", error);
             setMessages((prev) => {
@@ -2796,6 +2819,7 @@ export function ChatPanel({
             return;
         }
 
+        if (confirmed) void onMessageInsert({ new: confirmed });
         if (isHost && outgoingScope === "direct" && outgoingPeerId) {
             setDirectPeerIds((prev) =>
                 prev.includes(outgoingPeerId) ? prev : [...prev, outgoingPeerId],
@@ -2827,6 +2851,8 @@ export function ChatPanel({
 
     const updateMessage = async (messageId: string, newBody: string) => {
         if (!userId || !sessionId) return;
+        const editViewKey = chatCacheKey;
+        noteMessageChange(messageId);
         const prevBody =
             messagesRef.current.find((m) => m.id === messageId)?.body ?? null;
 
@@ -2845,12 +2871,12 @@ export function ChatPanel({
             .eq("session_id", sessionId)
             .eq("user_id", userId);
 
-        if (error) {
+        if (error && aliveRef.current && latestChatViewRef.current === editViewKey) {
             console.error("chat update error:", error);
             if (prevBody !== null) {
                 setMessages((prev) => {
                     const next = prev.map((m) =>
-                        m.id === messageId ? { ...m, body: prevBody } : m,
+                        m.id === messageId && m.body === newBody ? { ...m, body: prevBody } : m,
                     );
                     messagesRef.current = next;
                     return next;
@@ -2863,7 +2889,9 @@ export function ChatPanel({
 
     const deleteMessage = async (messageId: string) => {
         if (!userId || !sessionId) return;
-        const snapshot = messagesRef.current;
+        const deleteViewKey = chatCacheKey;
+        const deleted = messagesRef.current.find((message) => message.id === messageId);
+        noteMessageChange(messageId);
 
         setMessages((prev) => {
             const next = prev.filter((m) => m.id !== messageId);
@@ -2878,10 +2906,13 @@ export function ChatPanel({
             .eq("session_id", sessionId)
             .eq("user_id", userId);
 
-        if (error) {
+        if (error && deleted && aliveRef.current && latestChatViewRef.current === deleteViewKey) {
             console.error("chat delete error:", error);
-            setMessages(snapshot);
-            messagesRef.current = snapshot;
+            setMessages((current) => {
+                const next = boundChatMessages([deleted, ...current]);
+                messagesRef.current = next;
+                return next;
+            });
         }
     };
 
@@ -2978,10 +3009,76 @@ export function ChatPanel({
         }
     };
 
+
+    const loadOlderMessages = async () => {
+        if (olderLoadingRef.current || !hasOlderMessages || messagesRef.current.length >= CHAT_WINDOW_LIMIT) return;
+        const oldest = messagesRef.current.find((message) => !message.id.startsWith("optimistic-"));
+        if (!oldest) return;
+        olderLoadingRef.current = true;
+        setLoadingOlder(true);
+        const requestId = messagesReqIdRef.current;
+        const revision = messageRevisionRef.current;
+        const list = listRef.current;
+        const previousHeight = list?.scrollHeight || 0;
+        const previousTop = list?.scrollTop || 0;
+        try {
+            const query = buildMessageQuery(sessionId, activeMode, userId, hostUserId, activeDirectPeerId)
+                .or(`created_at.lt.${oldest.created_at},and(created_at.eq.${oldest.created_at},id.lt.${oldest.id})`);
+            const { data, error } = await withTimeout(Promise.resolve(query), 12_000, "older messages timeout");
+            if (!aliveRef.current || requestId !== messagesReqIdRef.current) return;
+            if (error) throw error;
+            const rows = ((data || []) as MsgRow[]).reverse();
+            // A deletion while this page was loading must not be resurrected.
+            const currentIds = new Set(messagesRef.current.map((message) => message.id));
+            const page = rows.filter((row) =>
+                (messageChangesRef.current.get(row.id) || 0) <= revision || currentIds.has(row.id));
+            const next = boundChatMessages([...page.map(attachProfile), ...messagesRef.current]);
+            if (list) historyScrollAnchorRef.current = { requestId, height: previousHeight, top: previousTop };
+            messagesRef.current = next;
+            setMessages(next);
+            setHasOlderMessages(rows.length === CHAT_PAGE_SIZE);
+            void ensureProfiles(rows.map((row) => row.user_id));
+            void loadReactions({ messageIds: rows.map((row) => row.id), force: true });
+        } catch (error) {
+            console.warn("chat history load failed:", error);
+        } finally {
+            if (requestId === messagesReqIdRef.current && aliveRef.current) {
+                olderLoadingRef.current = false;
+                setLoadingOlder(false);
+            }
+        }
+    };
+    const onReplyMessage = useLatestCallback((msg: Msg) => {
+        setReplyTo(msg);
+        chatWindow.requestAnimationFrame(() => {
+            const composer = composerRef.current;
+            if (!composer || composer.disabled) return;
+            composer.focus();
+            const end = composer.value.length;
+            try { composer.setSelectionRange(end, end); } catch { }
+        });
+    });
+    const onToggleMessageReaction = useLatestCallback(toggleReaction);
+    const onOpenMessageReactionDetails = useLatestCallback(loadReactionDetails);
+    const onUpdateChatMessage = useLatestCallback(updateMessage);
+    const onDeleteChatMessage = useLatestCallback(deleteMessage);
     const visibleMessages = useMemo(
         () => messages.slice(-VISIBLE_MESSAGE_LIMIT),
         [messages],
     );
+
+    useEffect(() => {
+        const retainedIds = new Set(messages.map((message) => message.id));
+        const prune = <T,>(previous: Record<string, T>) => {
+            const keys = Object.keys(previous);
+            if (keys.every((id) => retainedIds.has(id))) return previous;
+            return Object.fromEntries(keys.filter((id) => retainedIds.has(id)).map((id) => [id, previous[id]]));
+        };
+        setReactions(prune);
+        setMyReactions(prune);
+        setReadersByMessage(prune);
+        reportedReadIdsRef.current = new Set([...reportedReadIdsRef.current].filter((id) => retainedIds.has(id)));
+    }, [messages]);
 
     useEffect(() => {
         if (!sessionId || !userId) return;
@@ -3371,6 +3468,15 @@ export function ChatPanel({
                     </div>
                 )}
 
+                {!loading && hasOlderMessages && messages.length < CHAT_WINDOW_LIMIT && (
+                    <button type="button" disabled={loadingOlder} onClick={() => void loadOlderMessages()}
+                        className="mx-auto block rounded-lg px-3 py-2 text-xs text-black/55 hover:bg-black/5 disabled:opacity-50">
+                        {loadingOlder ? "Loading history…" : "Load older messages"}
+                    </button>
+                )}
+                {messages.length >= CHAT_WINDOW_LIMIT && (
+                    <p className="text-center text-[11px] text-black/40">Showing the latest {CHAT_WINDOW_LIMIT} loaded messages</p>
+                )}
                 {visibleMessages.map((m) => {
                     const mine = m.user_id === userId;
                     const canEdit = mine && !m.id.startsWith("optimistic-");
@@ -3378,36 +3484,26 @@ export function ChatPanel({
                         <div
                             key={m.id}
                             ref={(el) => {
-                                messageElementRefs.current[m.id] = el;
+                                if (el) messageElementRefs.current[m.id] = el;
+                                else delete messageElementRefs.current[m.id];
                             }}
                             data-message-id={m.id}
                         >
                             <MessageCard
                                 msg={m}
                                 mine={mine}
-                                onReply={(msg) => {
-                                    setReplyTo(msg);
-                                    chatWindow.requestAnimationFrame(() => {
-                                        const composer = composerRef.current;
-                                        if (!composer || composer.disabled) return;
-                                        composer.focus();
-                                        const end = composer.value.length;
-                                        try {
-                                            composer.setSelectionRange(end, end);
-                                        } catch { }
-                                    });
-                                }}
+                                onReply={onReplyMessage}
                                 reactionsCounts={reactions[m.id]}
                                 myReactions={myReactions[m.id]}
-                                onToggleReaction={toggleReaction}
-                                onOpenReactionDetails={loadReactionDetails}
+                                onToggleReaction={onToggleMessageReaction}
+                                onOpenReactionDetails={onOpenMessageReactionDetails}
                                 isLight={isLight}
                                 canEdit={canEdit}
-                                onUpdateMessage={updateMessage}
-                                onDeleteMessage={deleteMessage}
+                                onUpdateMessage={onUpdateChatMessage}
+                                onDeleteMessage={onDeleteChatMessage}
                                 onJumpToMessage={jumpToMessage}
                                 highlighted={highlightedMessageId === m.id}
-                                readers={mine ? readersByMessage[m.id] || [] : []}
+                                readers={mine ? readersByMessage[m.id] || EMPTY_READERS : EMPTY_READERS}
                                 renderDocument={chatDocument}
                                 renderWindow={chatWindow}
                             />

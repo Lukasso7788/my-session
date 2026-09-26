@@ -34,12 +34,9 @@ import {
   createLocalVideoTrack,
 } from "livekit-client";
 
-import {
-  supportsBackgroundProcessors,
-  supportsModernBackgroundProcessors,
-} from "@livekit/track-processors";
 
 import { supabase } from "../lib/supabase";
+import { useLatestCallback } from "../hooks/useLatestCallback";
 import { invalidateHostLeaseCache } from "../lib/supabaseFetchOptimizer";
 import { withTimeout } from "../lib/promiseTimeout";
 import { readSessionRoomPolicies, withRoomPolicies, type RoomPolicies } from "../lib/roomPolicies";
@@ -101,12 +98,10 @@ import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 import { FX_BG_PRESETS } from "./livekit/backgroundPresets";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
 import {
-  createPersonColorBackgroundProcessor,
-  createPublishedColorCorrectionProcessor,
   isPublishedColorCorrectionIdentity,
   publishedColorCorrectionSignature,
   type PublishedColorCorrection,
-} from "./livekit/PersonColorCorrectionProcessor";
+} from "../lib/publishedColorCorrection";
 
 import {
   useElementSize,
@@ -4963,10 +4958,12 @@ function AccountabilityWall({
     };
   }, [taskTimerStorageKey]);
 
+  const hasRunningTaskTimer = Object.values(taskTimers).some((timer) => !!timer.running_since_ms);
   useEffect(() => {
+    if (!hasRunningTaskTimer) return;
     const id = window.setInterval(() => setTaskTimerTickMs(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [hasRunningTaskTimer]);
 
   const persistTaskTimers = useCallback(
     (next: TaskTimerMap) => {
@@ -6009,6 +6006,7 @@ export function RoomPageLiveKit({
   const lkTokenRef = useRef("");
   const lkServerUrlRef = useRef(defaultLivekitUrl);
   const tokenRequestInFlightRef = useRef(false);
+  const tokenRequestCompletionRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     lkTokenRef.current = lkToken;
@@ -8617,6 +8615,8 @@ export function RoomPageLiveKit({
   const [personalSoundscapeMuted, setPersonalSoundscapeMuted] = useState(false);
   const soundscapeEngineRef = useRef<RoomSoundscapeEngine | null>(null);
   const personalSoundscapeEngineRef = useRef<RoomSoundscapeEngine | null>(null);
+  const roomSoundscapeRequestRef = useRef(0);
+  const personalSoundscapeRequestRef = useRef(0);
   const soundscapeStateRef = useRef<RoomSoundtrackState | null>(null);
   const soundscapeVolumePublishTimerRef = useRef<number | null>(null);
   const sharedTabMusicPublicationRef = useRef<LocalTrackPublication | null>(null);
@@ -8789,6 +8789,7 @@ export function RoomPageLiveKit({
     customUrl?: string,
     volumeOverride = roomSoundscapeVolume,
   ) => {
+    const requestId = ++roomSoundscapeRequestRef.current;
     try {
       setSoundscapeBusy(true);
       setSoundscapeError(null);
@@ -8798,12 +8799,13 @@ export function RoomPageLiveKit({
       soundscapeEngineRef.current.setMuted(
         soundscapeMuted || soundscapeListeningMode === "personal",
       );
-      await soundscapeEngineRef.current.play(
+      const started = await soundscapeEngineRef.current.play(
         id,
         volumeOverride / 100,
         positionSeconds,
         customUrl,
       );
+      if (!started || requestId !== roomSoundscapeRequestRef.current) return false;
       setSoundscapePosition(soundscapeEngineRef.current.currentTime());
       setSoundscapeDuration(soundscapeEngineRef.current.duration());
       setActiveSoundscapeId(id);
@@ -8813,7 +8815,9 @@ export function RoomPageLiveKit({
       } catch {
         // Persistence is optional in browser privacy modes.
       }
+      return true;
     } catch (error) {
+      if (requestId !== roomSoundscapeRequestRef.current) return false;
       setSoundscapeError(
         error instanceof Error
           ? error.message
@@ -8821,11 +8825,13 @@ export function RoomPageLiveKit({
       );
       throw error;
     } finally {
-      setSoundscapeBusy(false);
+      if (requestId === roomSoundscapeRequestRef.current) setSoundscapeBusy(false);
     }
   };
 
   const pauseSoundscapeLocally = () => {
+    roomSoundscapeRequestRef.current += 1;
+    setSoundscapeBusy(false);
     const position = soundscapeEngineRef.current?.pause() || 0;
     setSoundscapePosition(position);
     setSoundscapePlaying(false);
@@ -8867,7 +8873,7 @@ export function RoomPageLiveKit({
   }, [personalSoundscapeMuted, soundscapeListeningMode, soundscapeMuted]);
 
   useEffect(() => {
-    if (!activeSoundscapeId) return;
+    if (!activeSoundscapeId || !soundscapePlaying || rightTab !== "music") return;
     const updateProgress = () => {
       const engine = soundscapeEngineRef.current;
       if (!engine) return;
@@ -8877,10 +8883,10 @@ export function RoomPageLiveKit({
     updateProgress();
     const timer = window.setInterval(updateProgress, 500);
     return () => window.clearInterval(timer);
-  }, [activeSoundscapeId, soundscapePlaying]);
+  }, [activeSoundscapeId, soundscapePlaying, rightTab]);
 
   useEffect(() => {
-    if (!personalSoundscapeId) return;
+    if (!personalSoundscapeId || !personalSoundscapePlaying || rightTab !== "music") return;
     const updateProgress = () => {
       const engine = personalSoundscapeEngineRef.current;
       if (!engine) return;
@@ -8890,7 +8896,7 @@ export function RoomPageLiveKit({
     updateProgress();
     const timer = window.setInterval(updateProgress, 500);
     return () => window.clearInterval(timer);
-  }, [personalSoundscapeId, personalSoundscapePlaying]);
+  }, [personalSoundscapeId, personalSoundscapePlaying, rightTab]);
 
   useEffect(() => {
     if (connected || !activeSoundscapeId) return;
@@ -9255,7 +9261,8 @@ export function RoomPageLiveKit({
     new WeakMap<LocalVideoTrack, Promise<void>>(),
   );
 
-  const ensureFxSupportedOrThrow = () => {
+  const ensureFxSupportedOrThrow = async () => {
+    const { supportsBackgroundProcessors, supportsModernBackgroundProcessors } = await import("@livekit/track-processors");
     if (!supportsBackgroundProcessors())
       throw new Error(
         "Background processors are not supported in this browser/device",
@@ -9265,12 +9272,13 @@ export function RoomPageLiveKit({
     } catch { }
   };
 
-  const makeProcessorForMode = (
+  const makeProcessorForMode = async (
     mode: FxMode,
     blur: number,
     bgUrl: string,
     correction: PublishedColorCorrection,
-  ): any | null => {
+  ): Promise<any | null> => {
+    const { createPersonColorBackgroundProcessor, createPublishedColorCorrectionProcessor } = await import("./livekit/PersonColorCorrectionProcessor");
     if (mode === "off") {
       return isPublishedColorCorrectionIdentity(correction)
         ? null
@@ -9348,10 +9356,10 @@ export function RoomPageLiveKit({
     bgUrl: string,
     correction: PublishedColorCorrection = effectiveColorCorrection,
   ) => {
+    // readyState is mutable across awaits; always read it again.
+    const trackHasEnded = () => track.mediaStreamTrack.readyState === "ended";
     // Color correction alone only needs LiveKit's generic video processor.
     // MediaPipe/WebGL background support is required only for blur/background.
-    if (mode !== "off") ensureFxSupportedOrThrow();
-
     const normalizedBlur = normalizeFxBlurStrength(blur, firefoxSafeFx);
     const effectSignature =
       mode === "off"
@@ -9374,6 +9382,10 @@ export function RoomPageLiveKit({
     const previousOperation = pendingOperation?.catch(() => { });
     const operation = (previousOperation || Promise.resolve()).then(async () => {
       if (activeFxSignaturesRef.current.get(track) === signature) return;
+      // Register the operation BEFORE lazy loading. Otherwise a later Off
+      // request could finish first and an older, slow import re-enable blur.
+      if (mode !== "off") await ensureFxSupportedOrThrow();
+      if (trackHasEnded()) return;
 
       // Decode the image while the current processor keeps rendering. The
       // processor is switched only after the next background is locally ready.
@@ -9425,6 +9437,8 @@ export function RoomPageLiveKit({
 
         await stopAnyProcessor(track);
         if (!isPublishedColorCorrectionIdentity(correction)) {
+          const { createPublishedColorCorrectionProcessor } = await import("./livekit/PersonColorCorrectionProcessor");
+          if (trackHasEnded()) return;
           const colorProcessor =
             createPublishedColorCorrectionProcessor(correction);
           await (track as any).setProcessor(colorProcessor, true);
@@ -9437,12 +9451,13 @@ export function RoomPageLiveKit({
         await delay(90);
       }
 
-      const proc = makeProcessorForMode(
+      const proc = await makeProcessorForMode(
         mode,
         normalizedBlur,
         bgUrl,
         correction,
       );
+      if (trackHasEnded()) return;
       if (proc) {
         // LiveKit initializes the replacement before releasing the current
         // processor. Do not call stopProcessor() first: that exposes the raw
@@ -10579,10 +10594,9 @@ export function RoomPageLiveKit({
     if (!session) return;
 
     if (tokenRequestInFlightRef.current) {
-      const deadline = Date.now() + 20_000;
-      while (tokenRequestInFlightRef.current && Date.now() < deadline) {
-        await delay(100);
-      }
+      // Share the owner's completion instead of a second caller waking every
+      // 100ms. No additional token requests or background polling.
+      await tokenRequestCompletionRef.current;
 
       const pendingToken = String(lkTokenRef.current || "").trim();
       const pendingUrl = String(lkServerUrlRef.current || "").trim();
@@ -10592,6 +10606,8 @@ export function RoomPageLiveKit({
     }
 
     tokenRequestInFlightRef.current = true;
+    let finishTokenRequest!: () => void;
+    tokenRequestCompletionRef.current = new Promise<void>((resolve) => { finishTokenRequest = resolve; });
     setTokenError("");
     setTokenLoading(true);
     const tokenRequestStartedAt = Date.now();
@@ -10791,6 +10807,8 @@ export function RoomPageLiveKit({
       setPrejoinOpen(true);
     } finally {
       tokenRequestInFlightRef.current = false;
+      finishTokenRequest();
+      tokenRequestCompletionRef.current = null;
     }
   };
 
@@ -11152,7 +11170,7 @@ export function RoomPageLiveKit({
       previous?.trackId === id && !previous.playing
         ? Math.max(0, previous.position)
         : 0;
-    await playSoundscapeLocally(id, resumePosition);
+    if (!(await playSoundscapeLocally(id, resumePosition))) return;
     const next: RoomSoundtrackState = {
       trackId: id,
       duration: soundscapeEngineRef.current?.duration() || 0,
@@ -11171,6 +11189,7 @@ export function RoomPageLiveKit({
 
   const selectPersonalSoundtrack = async (id: RoomSoundscapeId) => {
     if (!connected || id === "custom") return;
+    const requestId = ++personalSoundscapeRequestRef.current;
     try {
       setSoundscapeBusy(true);
       setSoundscapeError(null);
@@ -11185,19 +11204,21 @@ export function RoomPageLiveKit({
         personalSoundscapeId === id && !personalSoundscapePlaying
           ? personalSoundscapePosition
           : 0;
-      await engine.play(id, soundscapeVolume / 100, resumePosition);
+      const started = await engine.play(id, soundscapeVolume / 100, resumePosition);
+      if (!started || requestId !== personalSoundscapeRequestRef.current) return;
       setPersonalSoundscapeId(id);
       setPersonalSoundscapePlaying(true);
       setPersonalSoundscapePosition(engine.currentTime());
       setPersonalSoundscapeDuration(engine.duration());
     } catch (error) {
+      if (requestId !== personalSoundscapeRequestRef.current) return;
       setSoundscapeError(
         error instanceof Error
           ? error.message
           : "Your personal soundtrack could not be started.",
       );
     } finally {
-      setSoundscapeBusy(false);
+      if (requestId === personalSoundscapeRequestRef.current) setSoundscapeBusy(false);
     }
   };
 
@@ -11245,6 +11266,7 @@ export function RoomPageLiveKit({
     if (!connected) return;
     const engine = personalSoundscapeEngineRef.current;
     if (personalSoundscapePlaying) {
+      personalSoundscapeRequestRef.current += 1;
       const position = engine?.pause() || 0;
       setPersonalSoundscapePosition(position);
       setPersonalSoundscapePlaying(false);
@@ -11324,7 +11346,7 @@ export function RoomPageLiveKit({
       if (directUploadError) throw directUploadError;
 
       const label = String(payload.label || file.name).slice(0, 60);
-      await playSoundscapeLocally("custom", 0, String(payload.url));
+      if (!(await playSoundscapeLocally("custom", 0, String(payload.url)))) return;
       const next: RoomSoundtrackState = {
         trackId: "custom",
         trackUrl: String(payload.url),
@@ -18642,8 +18664,11 @@ export function RoomPageLiveKit({
   }, [allTilesForRender]);
 
   const tileTaskUserIdsKey = tileTaskUserIds.join("|");
+  const tileTasksRequestRef = useRef(0);
 
   const loadTileTasks = useCallback(async () => {
+    const requestId = ++tileTasksRequestRef.current;
+    if (!connected) return;
     const participantUserIds = tileTaskUserIdsKey
       ? tileTaskUserIdsKey.split("|").filter(Boolean)
       : [];
@@ -18676,6 +18701,7 @@ export function RoomPageLiveKit({
           .limit(500);
       }
 
+      if (requestId !== tileTasksRequestRef.current) return;
       if (panelResult.error || !Array.isArray(panelResult.data)) {
         setTileTasksByUserId({});
         return;
@@ -18718,44 +18744,62 @@ export function RoomPageLiveKit({
         next[localUserId] = localOverride;
       }
 
-      setTileTasksByUserId(next);
+      setTileTasksByUserId((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next);
       if (localUserId) {
         void syncLocalPublicTasksMetadata(next[localUserId] || []);
       }
     } catch {
-      setTileTasksByUserId({});
+      if (requestId === tileTasksRequestRef.current) setTileTasksByUserId({});
     }
-  }, [authUserId, syncLocalPublicTasksMetadata, tileTaskUserIdsKey]);
+  }, [authUserId, connected, syncLocalPublicTasksMetadata, tileTaskUserIdsKey]);
 
   useEffect(() => {
     void loadTileTasks();
+    return () => { tileTasksRequestRef.current += 1; };
   }, [loadTileTasks]);
 
+  const refreshTileTasks = useLatestCallback(() => void loadTileTasks());
   useEffect(() => {
-    if (!tileTaskUserIdsKey) return;
+    if (!tileTaskUserIdsKey || !connected) return;
+    let timer: number | null = null;
+    const ids = new Set(tileTaskUserIdsKey.split("|"));
+    const scheduleRefresh = () => {
+      if (timer !== null) return;
+      timer = window.setTimeout(() => { timer = null; refreshTileTasks(); }, 150);
+    };
 
     const sid = String(session?.id || "room").trim() || "room";
     const panelChannel = supabase
       .channel(`tile-panel-intentions:${sid}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "panel_intentions" },
-        () => void loadTileTasks(),
+        {
+          event: "*", schema: "public", table: "panel_intentions",
+          ...(ids.size <= 100 ? { filter: `user_id=in.(${[...ids].join(",")})` } : {}),
+        },
+        (payload) => {
+          const userId = String((payload.new as { user_id?: string })?.user_id || (payload.old as { user_id?: string })?.user_id || "");
+          // DELETE may carry only the primary key. Reconcile those safely, but
+          // ignore known users outside this room and coalesce bursts.
+          if (userId && !ids.has(userId)) return;
+          scheduleRefresh();
+        },
       )
       .subscribe();
 
-    const refreshFromTaskOrder = () => void loadTileTasks();
+    const refreshFromTaskOrder = scheduleRefresh;
     window.addEventListener("mysession:task-order-synced", refreshFromTaskOrder);
     window.addEventListener(TASKS_SYNC_EVENT, refreshFromTaskOrder);
     window.addEventListener("mysession:tasks-updated", refreshFromTaskOrder);
 
     return () => {
+      if (timer !== null) window.clearTimeout(timer);
       safeRemoveRealtimeChannel(panelChannel);
       window.removeEventListener("mysession:task-order-synced", refreshFromTaskOrder);
       window.removeEventListener(TASKS_SYNC_EVENT, refreshFromTaskOrder);
       window.removeEventListener("mysession:tasks-updated", refreshFromTaskOrder);
     };
-  }, [session?.id, tileTaskUserIdsKey, loadTileTasks]);
+  }, [session?.id, connected, tileTaskUserIdsKey, refreshTileTasks]);
   const effectiveTileTasksByUserId = useMemo(
     () => ({ ...tileTasksByUserId, ...participantPublicTasksByUserId }),
     [participantPublicTasksByUserId, tileTasksByUserId],
@@ -19975,11 +20019,12 @@ export function RoomPageLiveKit({
             if (!state) return;
             if (state.trackId === "custom" && !canUploadRoomSoundtrack) return;
             void (async () => {
-              await playSoundscapeLocally(
+              const started = await playSoundscapeLocally(
                 state.trackId,
                 state.position,
                 state.trackUrl,
               );
+              if (!started) return;
               const next: RoomSoundtrackState = {
                 ...state,
                 playing: true,
@@ -20020,7 +20065,7 @@ export function RoomPageLiveKit({
                   style={{ colorScheme: "light" }}
                   className="h-full min-h-0"
                 >
-                  {session?.id ? (
+                  {session?.id && connected ? (
                     <React.Suspense fallback={<div className="p-4 text-sm text-black/60">Loading tasks…</div>}>
                     <TasksPanel
                       key={`tasks-${session.id}`}
