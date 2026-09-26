@@ -10,11 +10,19 @@ const rows = Array.from({ length: 120 }, (_, index) => ({
   created_at: new Date(Date.UTC(2026, 8, 20, 0, index)).toISOString(),
 }));
 const channels = new Set();
+const panelTasks = [{ id: '44444444-4444-4444-8444-444444444444', user_id: userId,
+  text: 'Cached personal task', visibility: 'private', completed: false, sort_order: 0,
+  created_at: '2026-09-26T10:00:00Z', updated_at: '2026-09-26T10:00:00Z', focus_plan_item_id: null }];
+const roomTasks = [{ id: '55555555-5555-4555-8555-555555555555', user_id: hostId,
+  session_id: sessionId, text: 'Cached team task', completed: false, created_at: '2026-09-26T10:00:00Z' }];
+const encouragements = [{ session_intention_id: roomTasks[0].id, intention_id: roomTasks[0].id,
+  user_id: userId, emoji: '🤩', session_id: sessionId }];
 export const control = {
   requests: [], createdChannels: 0, removedChannels: 0, failNextSend: false,
   delayNextRead: 0,
   profileDelay: Number(new URLSearchParams(window.location.search).get('profileDelay') || 0),
   profileFailures: {},
+  panelTasks, roomTasks, encouragements, taskReadDelay: 0, failTaskReads: 0,
   get channels() { return [...channels].map((channel) => ({ name: channel.name, filters: channel.handlers.map((item) => item.filter) })); },
   emit(table, eventType, row) {
     for (const channel of channels) for (const handler of channel.handlers) {
@@ -77,6 +85,15 @@ class Query {
       data = list.map((id) => ({ id, full_name: id === userId ? 'Tester' : id === hostId ? 'Host Name' : `Member ${id}`, avatar_url: avatar }));
     } else if (this.table === 'sessions') {
       data = [{ id: sessionId, host_id: hostId, task_timers_enabled: false }];
+    } else if (['panel_intentions', 'intentions', 'intention_encouragements'].includes(this.table)) {
+      const source = this.table === 'panel_intentions' ? panelTasks : this.table === 'intentions' ? roomTasks : encouragements;
+      data = source.map(row => ({ ...row }));
+      for (const [field, value] of this.filters) data = data.filter(row => Array.isArray(value) ? value.includes(row[field]) : row[field] === value);
+      data = data.slice(0, this.count);
+      if (this.operation === 'select') {
+        if (control.taskReadDelay) await new Promise(done => setTimeout(done, control.taskReadDelay));
+        if (control.failTaskReads > 0) { control.failTaskReads--; return { data: null, error: { message: 'Intentional task read failure' } }; }
+      }
     }
     const delay = this.table === 'session_chat_messages' && this.operation === 'select' ? control.delayNextRead : 0;
     if (delay) { control.delayNextRead = 0; await new Promise((done) => setTimeout(done, delay)); }

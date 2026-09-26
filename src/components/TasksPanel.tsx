@@ -1,7 +1,8 @@
 // src/components/TasksPanel.tsx
 
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useLatestCallback } from "../hooks/useLatestCallback";
+import { createTasksPanelCache, tasksPanelCacheKey, reconcileTasksSnapshot } from "../lib/tasksPanelCache";
 import type { ReactNode, MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -134,6 +135,19 @@ type ProfileMini = {
 type EncouragementUser = ProfileMini & {
   emoji?: string;
 };
+
+type TasksPanelSnapshot = {
+  sessionId: string | null;
+  panelTasks: PanelTask[];
+  sessionTasks: SessionTask[];
+  panelHydrated: boolean;
+  sessionHydrated: boolean;
+  order: string[];
+  encouragementCounts: Record<string, number>;
+  myEncouragedIds: Set<string>;
+  encouragementUsersByTask: Record<string, EncouragementUser[]>;
+};
+const TASKS_PANEL_CACHE = createTasksPanelCache<TasksPanelSnapshot>();
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -714,24 +728,35 @@ export function TasksPanel({
   const panelTheme: RoomTheme = "light";
   const isLight = true;
 
-  const [user, setUser] = useState<any>(() => currentUserId ? { id: currentUserId } : null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [initialSnapshot] = useState(() =>
+    TASKS_PANEL_CACHE.read(tasksPanelCacheKey(rawSessionId, currentUserId)));
+  const [authenticatedUser, setUser] = useState<any>(() => currentUserId ? { id: currentUserId } : null);
+  const user = useMemo(() => currentUserId ? { id: currentUserId } : authenticatedUser,
+    [currentUserId, authenticatedUser]);
+  const taskCacheKey = tasksPanelCacheKey(rawSessionId, user?.id);
+  const [snapshotScope, setSnapshotScope] = useState(taskCacheKey);
+  const activeTaskScopeRef = useRef(taskCacheKey);
+  const taskPanelAliveRef = useRef(true);
+  const [sessionId, setSessionId] = useState<string | null>(() =>
+    UUID_RE.test(rawSessionId) ? rawSessionId : initialSnapshot?.sessionId || null);
 
-  const [panelTasks, setPanelTasks] = useState<PanelTask[]>([]);
-  const [panelLoading, setPanelLoading] = useState(true);
+  const [panelTasks, setPanelTasks] = useState<PanelTask[]>(() => initialSnapshot?.panelTasks || []);
+  const panelTasksRef = useRef(panelTasks);
+  const [panelLoading, setPanelLoading] = useState(() => !initialSnapshot?.panelHydrated);
 
   const [sessionTasks, setSessionTasks] = useState<
     SessionTask[]
-  >([]);
-  const [sessionLoading, setSessionLoading] = useState(true);
+  >(() => initialSnapshot?.sessionTasks || []);
+  const sessionTasksRef = useRef(sessionTasks);
+  const [sessionLoading, setSessionLoading] = useState(() => !initialSnapshot?.sessionHydrated);
   const [encouragementCounts, setEncouragementCounts] = useState<
     Record<string, number>
-  >({});
+  >(() => initialSnapshot?.encouragementCounts || {});
   const [myEncouragedIds, setMyEncouragedIds] = useState<Set<string>>(
-    () => new Set(),
+    () => initialSnapshot?.myEncouragedIds || new Set(),
   );
   const [encouragementUsersByTask, setEncouragementUsersByTask] =
-    useState<Record<string, EncouragementUser[]>>({});
+    useState<Record<string, EncouragementUser[]>>(() => initialSnapshot?.encouragementUsersByTask || {});
   const [encouragementModalTaskId, setEncouragementModalTaskId] =
     useState<string | null>(null);
   const [deletingPublishedTaskId, setDeletingPublishedTaskId] =
@@ -762,8 +787,10 @@ export function TasksPanel({
   const loadSeqRef = useRef(0);
   const panelSeqRef = useRef(0);
   const sessionReloadTimerRef = useRef<number | null>(null);
-  const sessionTasksHydratedForRef = useRef("");
-  const panelTasksHydratedRef = useRef(false);
+  const sessionTasksHydratedForRef = useRef(initialSnapshot?.sessionHydrated ? initialSnapshot.sessionId || "" : "");
+  const panelTasksHydratedRef = useRef(Boolean(initialSnapshot?.panelHydrated));
+  // Cached tasks are immediately usable for display, not authoritative writes.
+  const panelTasksValidatedForRef = useRef("");
   const publicTasksReconcileTimerRef = useRef<number | null>(null);
   const publicTasksReconcileVersionRef = useRef(0);
 
@@ -828,8 +855,8 @@ export function TasksPanel({
     [user?.id],
   );
 
-  const [panelTaskOrder, setPanelTaskOrder] = useState<string[]>([]);
-  const panelTaskOrderRef = useRef<string[]>([]);
+  const [panelTaskOrder, setPanelTaskOrder] = useState<string[]>(() => initialSnapshot?.order || []);
+  const panelTaskOrderRef = useRef<string[]>(initialSnapshot?.order || []);
   const reorderVersionRef = useRef(0);
   const reorderInFlightRef = useRef(0);
   const reorderQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -839,6 +866,56 @@ export function TasksPanel({
   const [pinnedTaskIds, setPinnedTaskIds] = useState<string[]>([]);
   const [taskMenuOpenId, setTaskMenuOpenId] = useState<string | null>(null);
   const [taskTimersEnabled, setTaskTimersEnabled] = useState<boolean>(false);
+
+  useLayoutEffect(() => {
+    taskPanelAliveRef.current = true;
+    activeTaskScopeRef.current = taskCacheKey;
+    const cached = TASKS_PANEL_CACHE.read(taskCacheKey);
+    const personal = cached?.panelTasks || [];
+    const room = cached?.sessionTasks || [];
+    panelTasksRef.current = personal;
+    sessionTasksRef.current = room;
+    panelTasksHydratedRef.current = Boolean(cached?.panelHydrated);
+    panelTasksValidatedForRef.current = "";
+    sessionTasksHydratedForRef.current = cached?.sessionHydrated ? cached.sessionId || "" : "";
+    setPanelTasks(personal);
+    setSessionTasks(room);
+    panelTaskOrderRef.current = cached?.order || [];
+    setPanelTaskOrder(panelTaskOrderRef.current);
+    setPanelLoading(!cached?.panelHydrated);
+    setSessionLoading(!cached?.sessionHydrated);
+    setSessionId(UUID_RE.test(rawSessionId) ? rawSessionId : cached?.sessionId || null);
+    setEncouragementCounts(cached?.encouragementCounts || {});
+    setMyEncouragedIds(cached?.myEncouragedIds || new Set());
+    setEncouragementUsersByTask(cached?.encouragementUsersByTask || {});
+    setSnapshotScope(taskCacheKey);
+    return () => {
+      taskPanelAliveRef.current = false;
+      panelSeqRef.current += 1;
+      loadSeqRef.current += 1;
+      encouragementRequestRef.current += 1;
+      publicTasksReconcileVersionRef.current += 1;
+    };
+  }, [taskCacheKey, rawSessionId]);
+
+  useEffect(() => {
+    if (snapshotScope !== taskCacheKey) return;
+    panelTasksRef.current = panelTasks;
+    sessionTasksRef.current = sessionTasks;
+    if (!taskCacheKey ||
+      !taskPanelAliveRef.current || (!panelTasksHydratedRef.current && !sessionTasksHydratedForRef.current)) return;
+    const cached = TASKS_PANEL_CACHE.read(taskCacheKey);
+    if (cached?.panelTasks === panelTasks && cached.sessionTasks === sessionTasks &&
+      cached.order === panelTaskOrder && cached.encouragementCounts === encouragementCounts &&
+      cached.myEncouragedIds === myEncouragedIds && cached.encouragementUsersByTask === encouragementUsersByTask) return;
+    TASKS_PANEL_CACHE.write(taskCacheKey, {
+      sessionId, panelTasks, sessionTasks, order: panelTaskOrder,
+      panelHydrated: panelTasksHydratedRef.current,
+      sessionHydrated: sessionTasksHydratedForRef.current === sessionId,
+      encouragementCounts, myEncouragedIds, encouragementUsersByTask,
+    });
+  }, [taskCacheKey, snapshotScope, sessionId, panelTasks, sessionTasks, panelTaskOrder,
+    panelLoading, sessionLoading, encouragementCounts, myEncouragedIds, encouragementUsersByTask]);
 
   const publicPanelTasks = useMemo(
     () =>
@@ -1367,11 +1444,14 @@ export function TasksPanel({
     if (!user?.id) return;
 
     const seq = ++panelSeqRef.current;
+    const scope = taskCacheKey;
+    const before = panelTasksRef.current;
     logTaskReorder("refetch_started", {
       seq,
       reorderInFlight: reorderInFlightRef.current,
     });
-    setPanelLoading(true);
+    // Revalidation must not replace cached/optimistically edited tasks with a spinner.
+    if (!panelTasksHydratedRef.current) setPanelLoading(true);
 
     try {
       let { data, error } = await supabase
@@ -1397,7 +1477,7 @@ export function TasksPanel({
         error = fallback.error;
       }
 
-      if (seq !== panelSeqRef.current) {
+      if (!taskPanelAliveRef.current || scope !== activeTaskScopeRef.current || seq !== panelSeqRef.current) {
         logTaskReorder("refetch_discarded", {
           seq,
           latestSeq: panelSeqRef.current,
@@ -1414,6 +1494,7 @@ export function TasksPanel({
       }
 
       panelTasksHydratedRef.current = true;
+      panelTasksValidatedForRef.current = scope;
 
       const databaseOrder = data
         .map((task: any) => String(task.id || ""))
@@ -1446,7 +1527,7 @@ export function TasksPanel({
         });
       }
 
-      setPanelTasks(data as PanelTask[]);
+      setPanelTasks((current) => reconcileTasksSnapshot(data as PanelTask[], before, current, PANEL_TASKS_FETCH_LIMIT));
       logTaskReorder("refetch_applied", {
         seq,
         databaseOrder: data.map((task: any) => ({
@@ -1454,14 +1535,18 @@ export function TasksPanel({
           sortOrder: task.sort_order ?? null,
         })),
       });
+    } catch (error) {
+      console.error("[TasksPanel] Failed to refresh personal tasks", error);
     } finally {
-      if (seq === panelSeqRef.current) setPanelLoading(false);
+      if (taskPanelAliveRef.current && scope === activeTaskScopeRef.current && seq === panelSeqRef.current) setPanelLoading(false);
     }
-  }, [user?.id]);
+  }, [user?.id, taskCacheKey]);
 
   useEffect(() => {
     if (!user?.id) return;
     void loadPanelTasks();
+    const scope = taskCacheKey;
+    let active = true;
     let realtimeReloadTimer: number | null = null;
 
     const scheduleRealtimeReload = () => {
@@ -1476,6 +1561,7 @@ export function TasksPanel({
     };
 
     const onExternalTasksUpdated = (event: Event) => {
+      if (!active || scope !== activeTaskScopeRef.current) return;
       const detail = (event as CustomEvent)?.detail || {};
       if (detail?.source === "tasks-panel") return;
       void loadPanelTasks();
@@ -1497,6 +1583,7 @@ export function TasksPanel({
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
+          if (!active || scope !== activeTaskScopeRef.current) return;
           const eventType = String(payload.eventType || "").toUpperCase();
           const nextTask = (payload.new || null) as Partial<PanelTask> | null;
           const previousTask = (payload.old || null) as Partial<PanelTask> | null;
@@ -1548,6 +1635,7 @@ export function TasksPanel({
       .subscribe();
 
     return () => {
+      active = false;
       window.removeEventListener(
         "mysession:tasks-updated",
         onExternalTasksUpdated,
@@ -1557,7 +1645,7 @@ export function TasksPanel({
       }
       supabase.removeChannel(ch);
     };
-  }, [user?.id, loadPanelTasks]);
+  }, [user?.id, loadPanelTasks, taskCacheKey]);
 
   const loadSessionTasks = useCallback(
     async (
@@ -1568,6 +1656,8 @@ export function TasksPanel({
       if (!s) return;
 
       const seq = ++loadSeqRef.current;
+      const scope = taskCacheKey;
+      const before = sessionTasksRef.current;
       const showLoading =
         options.showLoading ?? sessionTasksHydratedForRef.current !== s;
       if (showLoading) setSessionLoading(true);
@@ -1581,7 +1671,7 @@ export function TasksPanel({
           .order("created_at", { ascending: false })
           .limit(SESSION_TASKS_FETCH_LIMIT);
 
-        if (seq !== loadSeqRef.current) return;
+        if (!taskPanelAliveRef.current || scope !== activeTaskScopeRef.current || seq !== loadSeqRef.current) return;
 
         if (error || !Array.isArray(data)) {
           if (showLoading) setSessionTasks([]);
@@ -1589,21 +1679,23 @@ export function TasksPanel({
         }
 
         const rows = data as SessionTask[];
-        setSessionTasks(rows);
+        setSessionTasks((current) => reconcileTasksSnapshot(rows, before, current, SESSION_TASKS_FETCH_LIMIT));
         sessionTasksHydratedForRef.current = s;
         // Task text can paint immediately; names/avatars hydrate afterward.
         void fetchProfilesMap(rows.map((row) => row.user_id)).then((profileMap) => {
-          if (seq !== loadSeqRef.current) return;
+          if (!taskPanelAliveRef.current || scope !== activeTaskScopeRef.current || seq !== loadSeqRef.current) return;
           setSessionTasks((current) => current.map((row) => ({
             ...row,
             profiles: profileMap.get(String(row.user_id)) || row.profiles,
           })));
         });
+      } catch (error) {
+        console.error("[TasksPanel] Failed to refresh room tasks", error);
       } finally {
-        if (seq === loadSeqRef.current) setSessionLoading(false);
+        if (taskPanelAliveRef.current && scope === activeTaskScopeRef.current && seq === loadSeqRef.current) setSessionLoading(false);
       }
     },
-    [sessionId],
+    [sessionId, taskCacheKey],
   );
 
   const scheduleSessionTasksReload = useCallback(
@@ -1627,7 +1719,8 @@ export function TasksPanel({
     async (tasks: PanelTask[], order: string[], version: number) => {
       const uid = String(user?.id || "").trim();
       const sid = String(sessionId || "").trim();
-      if (!uid || !sid || !panelTasksHydratedRef.current) return;
+      if (!uid || !sid || !panelTasksHydratedRef.current ||
+        panelTasksValidatedForRef.current !== taskCacheKey) return;
 
       const desiredTasks = orderPanelTasks(tasks, order)
         .filter(
@@ -1655,6 +1748,8 @@ export function TasksPanel({
         if (existingError || !Array.isArray(existingRows)) {
           throw existingError || new Error("Could not load published tasks");
         }
+        if (!taskPanelAliveRef.current || taskCacheKey !== activeTaskScopeRef.current ||
+          version !== publicTasksReconcileVersionRef.current) return;
 
         const retainedKeys = new Set<string>();
         const staleIds: string[] = [];
@@ -1705,6 +1800,9 @@ export function TasksPanel({
           mutations.push(supabase.from(SESSION_TASKS_TABLE).insert(rowsToInsert));
         }
 
+        // A no-op reconcile has nothing to publish/refetch. The normal room
+        // load already validates the snapshot; repeating it wastes a full read.
+        if (mutations.length === 0) return;
         if (mutations.length > 0) {
           const results = await Promise.all(mutations);
           const failed = results.find((result: any) => result?.error);
@@ -1724,11 +1822,12 @@ export function TasksPanel({
         console.error("[TasksPanel] Failed to reconcile public room tasks", error);
       }
     },
-    [loadSessionTasks, sessionId, user?.id],
+    [loadSessionTasks, sessionId, user?.id, taskCacheKey],
   );
 
   useEffect(() => {
-    if (!panelTasksHydratedRef.current || !user?.id || !sessionId) return;
+    if (!panelTasksHydratedRef.current || !user?.id || !sessionId ||
+      panelTasksValidatedForRef.current !== taskCacheKey) return;
 
     if (publicTasksReconcileTimerRef.current !== null) {
       window.clearTimeout(publicTasksReconcileTimerRef.current);
@@ -1746,14 +1845,19 @@ export function TasksPanel({
         publicTasksReconcileTimerRef.current = null;
       }
     };
-  }, [panelTasks, reconcilePublicPanelTasks, sessionId, user?.id]);
+  }, [panelTasks, reconcilePublicPanelTasks, sessionId, user?.id, taskCacheKey]);
 
   useEffect(() => {
     if (!sessionId) return;
 
-    void loadSessionTasks(sessionId, { showLoading: true });
+    // A fresh SELECT catches changes missed while the panel was closed, but
+    // the last snapshot remains visible (including participant avatars).
+    void loadSessionTasks(sessionId);
+    let active = true;
+    const scope = taskCacheKey;
 
     const onSessionTaskChange = (payload: any) => {
+      if (!active || scope !== activeTaskScopeRef.current) return;
       const eventType = String(payload?.eventType || "").toUpperCase();
       const nextTask = (payload?.new || null) as SessionTask | null;
       const previousTask = (payload?.old || null) as SessionTask | null;
@@ -1808,6 +1912,7 @@ export function TasksPanel({
       });
 
       void fetchProfilesMap([nextTask.user_id]).then((profiles) => {
+        if (!active) return;
         const profile = profiles.get(String(nextTask.user_id));
         if (!profile) return;
         setSessionTasks((current) =>
@@ -1831,13 +1936,14 @@ export function TasksPanel({
       .subscribe();
 
     return () => {
+      active = false;
       if (sessionReloadTimerRef.current) {
         window.clearTimeout(sessionReloadTimerRef.current);
         sessionReloadTimerRef.current = null;
       }
       supabase.removeChannel(channel);
     };
-  }, [sessionId, loadSessionTasks, scheduleSessionTasksReload]);
+  }, [sessionId, loadSessionTasks, scheduleSessionTasksReload, taskCacheKey]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -1849,7 +1955,9 @@ export function TasksPanel({
       if (eventSessionId && eventSessionId !== String(sessionId)) return;
       if (detail?.source === "tasks-panel") return;
 
-      void loadPanelTasks();
+      // tasks-updated already has an owner-scoped personal-task listener above.
+      // Do not issue the same personal SELECT from both listeners.
+      if (event.type !== "mysession:tasks-updated") void loadPanelTasks();
       scheduleSessionTasksReload(sessionId);
     };
 
@@ -1867,6 +1975,7 @@ export function TasksPanel({
   const encouragementRequestRef = useRef(0);
   const loadEncouragements = useCallback(async () => {
     const requestId = ++encouragementRequestRef.current;
+    const scope = taskCacheKey;
     const ids = encouragementTaskIdsKey ? encouragementTaskIdsKey.split(",") : [];
     const idSet = new Set(ids);
 
@@ -1883,13 +1992,12 @@ export function TasksPanel({
         .select("session_intention_id,intention_id,user_id,emoji")
         .in("session_intention_id", ids);
 
-      if (requestId !== encouragementRequestRef.current) return;
+      if (!taskPanelAliveRef.current || scope !== activeTaskScopeRef.current ||
+        requestId !== encouragementRequestRef.current) return;
 
       if (error || !Array.isArray(data)) {
         console.error("loadEncouragements error:", error);
-        setEncouragementCounts({});
-        setMyEncouragedIds(new Set());
-        setEncouragementUsersByTask({});
+        // A failed background read is not an authoritative empty result.
         return;
       }
 
@@ -1918,7 +2026,8 @@ export function TasksPanel({
       setEncouragementCounts(nextCounts);
       setMyEncouragedIds(nextMine);
       const profileMap = await fetchProfilesMap(userIds);
-      if (requestId !== encouragementRequestRef.current) return;
+      if (!taskPanelAliveRef.current || scope !== activeTaskScopeRef.current ||
+        requestId !== encouragementRequestRef.current) return;
       const nextUsersByIntention: Record<string, EncouragementUser[]> = {};
 
       data.forEach((row) => {
@@ -1948,7 +2057,7 @@ export function TasksPanel({
     } catch (e) {
       console.error("loadEncouragements crashed:", e);
     }
-  }, [encouragementTaskIdsKey, user?.id]);
+  }, [encouragementTaskIdsKey, user?.id, taskCacheKey]);
 
   useEffect(() => {
     void loadEncouragements();

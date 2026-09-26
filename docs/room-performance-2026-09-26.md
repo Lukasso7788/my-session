@@ -134,6 +134,40 @@ Get-Content -Raw scripts/fixtures/chat-profile-browser-check.js | npx --no-insta
 npx --no-install agent-browser --session chat-profile close
 ```
 
+### Tasks-panel warm reopen follow-up
+
+Previously every mount initialized personal/room tasks to empty arrays, resolved
+even UUID room IDs in an effect, and showed blocking spinners again on refresh.
+The Tasks panel now restores a per-account/per-room in-memory snapshot before
+paint: tasks, participant profiles, order and encouragement state. The cache is
+limited to four snapshots with a five-minute TTL and is not stored on disk.
+Authenticated UUID rooms no longer need a resolving render on initial mount.
+
+Reopening still revalidates in the background because subscriptions are removed
+while the panel is closed. This is not a claim that every reopen makes zero
+database reads. Cached tasks/avatars remain visible, including when that read
+fails. A fresh snapshot cannot undo newer edits/inserts/deletes. Account/room
+changes invalidate pending reads; cached data cannot trigger automatic public
+task reconciliation until personal tasks have been validated against Supabase.
+One external tasks-updated event no longer issues two personal SELECTs. A public
+task reconcile with no changes no longer refetches the entire room task list.
+Timers, ordering, task visibility and subscription cleanup are preserved.
+
+Verification: 22 unit/regression tests and 18 actual TasksPanel browser assertions
+passed with mock delayed/failed reads, changes while closed, stale SELECTs,
+account/room switches, cached-public-task protection and repeated-open cleanup.
+Warm reopen displayed cached tasks within the test's 250ms ceiling while all
+task reads were artificially delayed 900ms. This is a local mock test, not a
+measured production speedup. Production PostgREST/RLS is unchanged.
+
+```powershell
+node --test scripts/tasks-panel-cache.test.mjs scripts/chat-profile-loader.test.mjs scripts/room-performance.test.mjs
+# With the isolated fixture server running in another terminal:
+npx --no-install agent-browser --session tasks-cache open http://127.0.0.1:4192/
+Get-Content -Raw scripts/fixtures/tasks-panel-cache-browser-check.js | npx --no-install agent-browser --session tasks-cache eval --stdin
+npx --no-install agent-browser --session tasks-cache close
+```
+
 ## Intentionally preserved / remaining measurement
 
 Existing adaptive video sizing, screen-share simulcast, LiveKit prewarming,

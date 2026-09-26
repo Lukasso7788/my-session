@@ -1,0 +1,72 @@
+(async()=>{
+const c=window.__roomPerf, checks=[];
+if(!c)throw new Error('Use the isolated fixture only');
+const assert=(ok,label)=>{if(!ok)throw new Error(label);checks.push(label);};
+const wait=async f=>{const end=Date.now()+6000;while(!f()){if(Date.now()>end)throw new Error('Timed out waiting for test state');await new Promise(r=>setTimeout(r,15));}};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const text=()=>document.querySelector('section')?.innerText||'';
+const own='22222222-2222-4222-8222-222222222222',sid='11111111-1111-4111-8111-111111111111';
+const personalReads=()=>c.requests.filter(r=>r.table==='panel_intentions'&&r.operation==='select').length;
+const roomReads=()=>c.requests.filter(r=>r.table==='intentions'&&r.operation==='select'&&r.filters.some(([f])=>f==='completed')).length;
+const roomWrites=()=>c.requests.filter(r=>r.table==='intentions'&&r.operation!=='select').length;
+const external=()=>window.dispatchEvent(new CustomEvent('mysession:tasks-updated',{detail:{userId:own,sessionId:sid,source:'test'}}));
+c.showTasks();await wait(()=>text().includes('Cached personal task')&&text().includes('Cached team task')&&text().includes('Host Name'));
+await sleep(300);
+assert(window.__consoleErrors.length===0,'TasksPanel renders without runtime errors');
+assert(roomReads()===1,'no-op public reconcile does not refetch the room');
+c.unmount();await wait(()=>c.channels.length===0);
+assert(c.channels.length===0,'closing Tasks removes all channels');
+c.panelTasks[0].text='Updated remotely';
+c.taskReadDelay=900;
+const first=performance.now();c.mount();
+await wait(()=>text().includes('Cached personal task')&&text().includes('Cached team task'));
+assert(performance.now()-first<250,'reopen displays cached tasks before slow reads finish');
+assert(!/Loading|Resolving/.test(text()),'warm reopen has no loading spinner');
+assert([...document.querySelectorAll('section img')].some(i=>i.src.startsWith('data:image/')),'cached participant avatar remains available');
+await wait(()=>text().includes('Updated remotely'));
+assert(!text().includes('Cached personal task'),'background revalidation adopts changes made while closed');
+c.taskReadDelay=0;await sleep(450);
+let count=personalReads();external();await sleep(350);
+assert(personalReads()-count===1,'one external tasks-updated signal issues one personal SELECT');
+
+c.taskReadDelay=650;count=personalReads();const roomCount=roomReads();external();
+await wait(()=>personalReads()>count&&roomReads()>roomCount);
+c.panelTasks[0].text='Newest realtime task';
+c.emit('panel_intentions','UPDATE',{...c.panelTasks[0]});
+const oldTeam={...c.roomTasks[0]};
+c.roomTasks.splice(0,1);c.emit('intentions','DELETE',oldTeam);
+await wait(()=>text().includes('Newest realtime task')&&!text().includes('Cached team task'));
+await sleep(800);
+assert(text().includes('Newest realtime task'),'slow SELECT cannot undo a newer task edit');
+assert(!text().includes('Cached team task'),'slow SELECT cannot resurrect a deleted team task');
+c.taskReadDelay=0;await sleep(350);
+
+c.roomTasks.push({...oldTeam,text:'Restored team task'});c.emit('intentions','INSERT',c.roomTasks[0]);
+await wait(()=>text().includes('Restored team task')&&text().includes('Host Name'));await sleep(300);
+c.unmount();await wait(()=>c.channels.length===0);
+c.failTaskReads=30;c.mount();
+await wait(()=>text().includes('Newest realtime task')&&text().includes('Restored team task'));await sleep(400);
+assert(text().includes('Newest realtime task')&&text().includes('Restored team task'),'failed revalidation keeps the cached task snapshot');
+assert(!/Loading|Resolving/.test(text()),'failed background refresh does not hide cached tasks');
+
+c.failTaskReads=0;c.taskReadDelay=450;count=personalReads();external();await wait(()=>personalReads()>count);
+c.changeTaskScope('66666666-6666-4666-8666-666666666666',sid);
+await wait(()=>!text().includes('Newest realtime task'));await sleep(950);
+assert(!text().includes('Newest realtime task'),'different account cannot see cached private tasks or stale response');
+c.taskReadDelay=0;c.changeTaskScope(own,'77777777-7777-4777-8777-777777777777');
+await wait(()=>!text().includes('Restored team task'));await sleep(300);
+assert(!text().includes('Restored team task'),'another room cannot see the previous room task snapshot');
+c.changeTaskScope(own,sid);await wait(()=>text().includes('Newest realtime task')&&text().includes('Restored team task'));await sleep(350);
+
+c.emit('panel_intentions','UPDATE',{...c.panelTasks[0],text:'Stale cached public task',visibility:'public'});
+await wait(()=>text().includes('Stale cached public task'));c.unmount();await wait(()=>c.channels.length===0);
+c.panelTasks.splice(0);const writes=roomWrites();c.taskReadDelay=700;c.mount();
+await wait(()=>text().includes('Stale cached public task'));await sleep(200);
+assert(roomWrites()===writes,'cached public tasks are not republished before validation');
+await wait(()=>!text().includes('Stale cached public task'));c.taskReadDelay=0;await sleep(250);
+assert(roomWrites()===writes,'fresh empty personal result does not resurrect stale cached public task');
+assert(window.__consoleErrors.length===0,'all task-cache flows have no uncaught errors');
+c.unmount();await wait(()=>c.channels.length===0);
+assert(c.channels.length===0,'all channels clean up after repeated opens and scope switches');
+window.__tasksCacheResults=checks;return checks;
+})()

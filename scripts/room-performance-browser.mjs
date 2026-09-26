@@ -23,8 +23,13 @@ function Harness() {
   const [panel, setPanel] = useState('chat');
   const [mode, setMode] = useState('general');
   const [tick, setTick] = useState(0);
+  const [taskUser, setTaskUser] = useState(userId);
+  const [taskRoom, setTaskRoom] = useState(sessionId);
   const button = (text, onClick) => h('button', { onClick, style: { padding: 12, border: '1px solid #ccc' } }, text);
   control.unmount = () => setMounted(false);
+  control.mount = () => setMounted(true);
+  control.showTasks = () => { setPanel('tasks'); setMounted(true); };
+  control.changeTaskScope = (uid, sid) => { setTaskUser(uid); setTaskRoom(sid); };
   return h('main', { style: { padding: 24 } },
     h('h1', null, 'Room performance test — mock data only'),
     h('nav', null, button('Chat', () => setPanel('chat')), button('Tasks', () => setPanel('tasks')),
@@ -35,7 +40,7 @@ function Harness() {
     h('section', { style: { width: 480, height: 670, border: '1px solid #ddd', marginTop: 16 } },
       !mounted ? h('p', null, 'Unmounted') : panel === 'chat' ?
         h(ChatPanel, { sessionId, currentUserId: userId, hostUserIdOverride: hostId, hostProfileOverride: partialHost, externalMode: mode }) :
-        h(TasksPanel, { sessionId, currentUserId: userId, timerText: '25:00' })));
+        h(TasksPanel, { sessionId: taskRoom, currentUserId: taskUser, timerText: '25:00' })));
 }
 createRoot(document.getElementById('root')).render(h(MemoryRouter, null, h(Harness)));
 `;

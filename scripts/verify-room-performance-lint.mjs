@@ -8,7 +8,7 @@ const files = ['api/livekit/token.ts', 'src/components/ChatPanel.tsx', 'src/comp
   'src/lib/roomSoundscapes.ts', 'src/pages/RoomPageLiveKit.tsx', 'src/pages/livekit/LiveKitBottomBar.tsx',
   'src/pages/livekit/PersonColorCorrectionProcessor.ts', 'src/pages/livekit/VideoTileLiveKit.tsx',
   'src/pages/livekit/VideoTileLiveKitLegacy.tsx', 'src/hooks/useLatestCallback.ts',
-  'src/lib/chatMessageWindow.ts', 'src/lib/publishedColorCorrection.ts', 'src/lib/chatProfileLoader.ts'];
+  'src/lib/chatMessageWindow.ts', 'src/lib/publishedColorCorrection.ts', 'src/lib/chatProfileLoader.ts', 'src/lib/tasksPanelCache.ts'];
 let newErrors = 0, newWarnings = 0, baselineErrors = 0, currentErrors = 0;
 for (const file of files) {
   const current = (await eslint.lintFiles([file]))[0];
