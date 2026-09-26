@@ -17,6 +17,7 @@ import TasksPanel from '/src/components/TasksPanel.tsx';
 import { control, sessionId, userId, hostId } from 'room-performance-mock';
 import '/src/index.css';
 const h = React.createElement;
+const partialHost = { id: hostId, full_name: 'Host', avatar_url: null };
 function Harness() {
   const [mounted, setMounted] = useState(true);
   const [panel, setPanel] = useState('chat');
@@ -33,7 +34,7 @@ function Harness() {
     h('p', null, 'Render: ' + tick),
     h('section', { style: { width: 480, height: 670, border: '1px solid #ddd', marginTop: 16 } },
       !mounted ? h('p', null, 'Unmounted') : panel === 'chat' ?
-        h(ChatPanel, { sessionId, currentUserId: userId, hostUserIdOverride: hostId, externalMode: mode }) :
+        h(ChatPanel, { sessionId, currentUserId: userId, hostUserIdOverride: hostId, hostProfileOverride: partialHost, externalMode: mode }) :
         h(TasksPanel, { sessionId, currentUserId: userId, timerText: '25:00' })));
 }
 createRoot(document.getElementById('root')).render(h(MemoryRouter, null, h(Harness)));
@@ -56,7 +57,7 @@ const server = await createServer({
     },
     configureServer(server) {
       server.middlewares.use(async (req, res, next) => {
-        if (req.url !== '/') return next();
+        if (req.url?.split('?')[0] !== '/') return next();
         const html = await server.transformIndexHtml('/', '<html><head><title>Room performance verification</title></head><body><div id="root"></div><script>window.__consoleErrors=[];window.addEventListener("error",e=>window.__consoleErrors.push(e.message));window.addEventListener("unhandledrejection",e=>window.__consoleErrors.push(String(e.reason)));</script><script type="module" src="/@id/__x00__room-performance-harness"></script></body></html>');
         res.setHeader('Content-Type', 'text/html'); res.end(html);
       });

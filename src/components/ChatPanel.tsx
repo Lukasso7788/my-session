@@ -11,6 +11,7 @@ import { EmojiPickerPopover } from "./EmojiPickerPopover";
 import { supabase } from "../lib/supabase";
 import { useLatestCallback } from "../hooks/useLatestCallback";
 import { boundChatMessages, reconcileChatSnapshot, CHAT_PAGE_SIZE, CHAT_WINDOW_LIMIT } from "../lib/chatMessageWindow";
+import { createChatProfileLoader } from "../lib/chatProfileLoader";
 import {
     Check,
     CheckCheck,
@@ -207,6 +208,7 @@ type ChatCacheEntry = {
     reactions: Record<string, Record<string, number>>;
     myReactions: Record<string, Record<string, boolean>>;
     profilesById: Record<string, Profile>;
+    confirmedProfiles: Record<string, Profile>;
     meProfile: Profile | null;
     hostUserId: string | null;
     directPeerIds: string[];
@@ -1182,8 +1184,8 @@ export function ChatPanel({
                 ...prev,
                 [normalizedId]: {
                     id: normalizedId,
-                    full_name: hostProfileOverride.full_name || "Host",
-                    avatar_url: hostProfileOverride.avatar_url || null,
+                    full_name: prev[normalizedId]?.full_name || hostProfileOverride.full_name,
+                    avatar_url: prev[normalizedId]?.avatar_url || hostProfileOverride.avatar_url,
                 },
             }));
         }
@@ -1199,6 +1201,24 @@ export function ChatPanel({
 
     const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
     const profilesByIdRef = useRef<Record<string, Profile>>({});
+    const [profileLoadFailed, setProfileLoadFailed] = useState(false);
+    const failedProfileIdsRef = useRef(new Set<string>());
+    const profileLoader = useMemo(() => ({
+        scope: `${sessionId}|${userId || "anon"}`,
+        ...createChatProfileLoader(async (ids) => {
+            const { data, error } = await withTimeout(Promise.resolve(supabase
+                .from("profiles").select("id, full_name, avatar_url").in("id", ids)),
+                6_000, "chat profiles timeout");
+            if (error) throw error;
+            return (data || []) as Profile[];
+        }),
+    }), [sessionId, userId]);
+    const profileLoaderRef = useRef(profileLoader);
+    useLayoutEffect(() => {
+        profileLoaderRef.current = profileLoader;
+        failedProfileIdsRef.current.clear();
+        setProfileLoadFailed(false);
+    }, [profileLoader]);
     useEffect(() => {
         profilesByIdRef.current = profilesById;
     }, [profilesById]);
@@ -1665,6 +1685,7 @@ export function ChatPanel({
         messageChangesRef.current.clear();
         const cached = CHAT_CACHE.get(chatCacheKey);
         if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+            profileLoader.seed(cached.confirmedProfiles || {});
             messagesRef.current = cached.messages || [];
             profilesByIdRef.current = cached.profilesById || {};
             meProfileRef.current = cached.meProfile || null;
@@ -1704,6 +1725,7 @@ export function ChatPanel({
             reactions,
             myReactions,
             profilesById: profilesByIdRef.current,
+            confirmedProfiles: profileLoader.snapshot(),
             meProfile: meProfileRef.current,
             hostUserId,
             directPeerIds,
@@ -1715,6 +1737,7 @@ export function ChatPanel({
         reactions,
         myReactions,
         profilesById,
+        profileLoader,
         meProfile,
         hostUserId,
         directPeerIds,
@@ -1749,26 +1772,6 @@ export function ChatPanel({
             const uid = currentUserId || (await supabase.auth.getUser()).data.user?.id || null;
             if (!aliveRef.current || cancelled) return;
             setUserId(uid);
-
-            if (uid) {
-                const { data: p } = await supabase
-                    .from("profiles")
-                    .select("id, full_name, avatar_url")
-                    .eq("id", uid)
-                    .single();
-
-                if (!aliveRef.current || cancelled) return;
-
-                if (p) {
-                    meProfileRef.current = p as any;
-                    setMeProfile(p as any);
-                    profilesByIdRef.current = {
-                        ...profilesByIdRef.current,
-                        [uid]: p as any,
-                    };
-                    setProfilesById((prev) => ({ ...prev, [uid]: p as any }));
-                }
-            }
         })();
         return () => { cancelled = true; };
     }, [currentUserId]);
@@ -1812,31 +1815,39 @@ export function ChatPanel({
         };
     }, [sessionId, hostUserIdOverride]);
 
-    const ensureProfiles = useCallback(async (userIds: string[]) => {
+    const ensureProfiles = useLatestCallback(async (userIds: string[]) => {
         const unique = Array.from(new Set(userIds)).filter(Boolean);
-        const missing = unique.filter((id) => !profilesByIdRef.current[id]);
-        if (missing.length === 0) return;
-
-        const { data: profs, error } = await supabase
-            .from("profiles")
-            .select("id, full_name, avatar_url")
-            .in("id", missing);
-
-        if (error) {
+        const loader = profileLoader;
+        const confirmed = loader.snapshot();
+        if (unique.every((id) => confirmed[id] && confirmed[id] === profilesByIdRef.current[id])) return;
+        let map: Record<string, Profile>;
+        try {
+            map = await loader.ensure(unique);
+        } catch (error) {
+            if (!aliveRef.current || loader !== profileLoaderRef.current) return;
             console.error("profiles load error:", error);
-            return;
+            map = loader.snapshot();
+            unique.filter((id) => !map[id]).forEach((id) => failedProfileIdsRef.current.add(id));
         }
-
-        const map: Record<string, Profile> = {};
-        (profs || []).forEach((p: any) => {
-            map[p.id] = p;
-        });
-
-        if (!aliveRef.current) return;
-
+        if (!aliveRef.current || loader !== profileLoaderRef.current) return;
+        Object.keys(map).forEach((id) => failedProfileIdsRef.current.delete(id));
+        setProfileLoadFailed(failedProfileIdsRef.current.size > 0);
         profilesByIdRef.current = { ...profilesByIdRef.current, ...map };
         setProfilesById((prev) => ({ ...prev, ...map }));
-    }, []);
+    });
+
+    useEffect(() => {
+        let cancelled = false;
+        if (userId) void ensureProfiles([userId]).then(() => {
+            if (cancelled || !aliveRef.current) return;
+            const profile = profilesByIdRef.current[userId];
+            if (profile) {
+                meProfileRef.current = profile;
+                setMeProfile(profile);
+            }
+        });
+        return () => { cancelled = true; };
+    }, [userId, profileLoader, ensureProfiles]);
 
     useEffect(() => {
         if (!messagesRef.current.length) return;
@@ -1847,6 +1858,7 @@ export function ChatPanel({
                 const nextProfile =
                     profilesByIdRef.current[m.user_id] ||
                     (m.user_id === userId ? meProfileRef.current : null) ||
+                    m.profile ||
                     null;
                 const prevName = m.profile?.full_name || null;
                 const nextName = nextProfile?.full_name || null;
@@ -2070,6 +2082,11 @@ export function ChatPanel({
                 }
 
                 const safeRows = ((rows as any as MsgRow[]) || []).slice().reverse();
+                // Resolve the real author name and avatar URL before painting.
+                // The image itself downloads independently; it never gates chat.
+                await ensureProfiles(safeRows.flatMap((row) =>
+                    [row.user_id, String(row.dm_peer_user_id || "")]).filter(Boolean));
+                if (!aliveRef.current || reqId !== messagesReqIdRef.current) return null;
                 const attached = safeRows.map((r) => attachProfile(r));
                 const changed = new Set([...messageChangesRef.current]
                     .filter(([, version]) => version > revision).map(([id]) => id));
@@ -2077,17 +2094,6 @@ export function ChatPanel({
                 messagesRef.current = next;
                 setMessages(next);
                 setHasOlderMessages(safeRows.length === CHAT_PAGE_SIZE);
-                // Names/avatars hydrate separately; they must not hold the first
-                // paint of the message list behind another network request.
-                void ensureProfiles(
-                    safeRows
-                        .map((r) => r.user_id)
-                        .concat(
-                            safeRows
-                                .map((r) => String(r.dm_peer_user_id || ""))
-                                .filter(Boolean),
-                        ),
-                );
                 return messagesRef.current;
             } catch (e) {
                 console.warn("loadMessages failed:", e);
@@ -2282,13 +2288,15 @@ export function ChatPanel({
 
         if (!relevant) return;
         noteMessageChange(row.id);
-
-        void ensureProfiles(
+        const viewKey = chatCacheKey;
+        const revision = messageChangesRef.current.get(row.id);
+        await ensureProfiles(
             [row.user_id, String(row.dm_peer_user_id || "").trim()].filter(
                 Boolean,
             ),
         );
-        if (!aliveRef.current) return;
+        if (!aliveRef.current || latestChatViewRef.current !== viewKey ||
+            messageChangesRef.current.get(row.id) !== revision) return;
 
         const beforeAtBottom = isAtBottom();
         atBottomRef.current = beforeAtBottom;
@@ -2324,6 +2332,8 @@ export function ChatPanel({
         const row = payload?.new as MsgRow | undefined;
         if (!row?.id) return;
         noteMessageChange(row.id);
+        const viewKey = chatCacheKey;
+        const revision = messageChangesRef.current.get(row.id);
         const relevant = messageBelongsToView(
             row,
             activeMode,
@@ -2340,12 +2350,13 @@ export function ChatPanel({
             return;
         }
 
-        void ensureProfiles(
+        await ensureProfiles(
             [row.user_id, String(row.dm_peer_user_id || "").trim()].filter(
                 Boolean,
             ),
         );
-        if (!aliveRef.current) return;
+        if (!aliveRef.current || latestChatViewRef.current !== viewKey ||
+            messageChangesRef.current.get(row.id) !== revision) return;
 
         setMessages((prev) => {
             const exists = prev.some((m) => m.id === row.id);
@@ -3028,6 +3039,8 @@ export function ChatPanel({
             if (!aliveRef.current || requestId !== messagesReqIdRef.current) return;
             if (error) throw error;
             const rows = ((data || []) as MsgRow[]).reverse();
+            await ensureProfiles(rows.map((row) => row.user_id));
+            if (!aliveRef.current || requestId !== messagesReqIdRef.current) return;
             // A deletion while this page was loading must not be resurrected.
             const currentIds = new Set(messagesRef.current.map((message) => message.id));
             const page = rows.filter((row) =>
@@ -3037,7 +3050,6 @@ export function ChatPanel({
             messagesRef.current = next;
             setMessages(next);
             setHasOlderMessages(rows.length === CHAT_PAGE_SIZE);
-            void ensureProfiles(rows.map((row) => row.user_id));
             void loadReactions({ messageIds: rows.map((row) => row.id), force: true });
         } catch (error) {
             console.warn("chat history load failed:", error);
@@ -3451,6 +3463,16 @@ export function ChatPanel({
                         }
                     >
                         Loading…
+                    </div>
+                )}
+
+                {profileLoadFailed && (
+                    <div role="status" className="rounded-lg bg-black/5 px-3 py-2 text-xs text-black/60">
+                        Some names and avatars couldn’t load.{' '}
+                        <button type="button" className="underline font-medium hover:text-black"
+                            onClick={() => void ensureProfiles([...failedProfileIdsRef.current])}>
+                            Retry profiles
+                        </button>
                     </div>
                 )}
 

@@ -46,7 +46,8 @@ Existing separate Plunk email migration edits are not part of this change.
   messages rather than 150, then keyset-page older messages on demand. Bound
   messages/reactions/read-receipt references to a 300-message client window.
   This does not delete messages in the database. At most four view/account-scoped
-  caches, with a five-minute reuse TTL. Message/profile first paints are separate.
+  caches, with a five-minute reuse TTL. Resolve author profiles before first
+  message paint; avatar image downloads remain independent of message rendering.
   Keep channels stable across thread switches/rerenders; clean them on unmount.
   Healthy Realtime has no polling; existing degraded fallback runs only while
   online/visible. UUID-based optimistic sends reconcile RPC/Realtime confirmation
@@ -98,6 +99,39 @@ Optional isolated browser fixture (never included in the app build):
 ```powershell
 node scripts/room-performance-browser.mjs
 # http://127.0.0.1:4192 — local mock data only
+```
+
+### Chat author reliability follow-up
+
+The initial performance change painted messages before author profiles arrived.
+Additionally, a partial host override was treated as a loaded profile, and a
+failed profile request had no automatic retry. This could leave a generic name
+or initials in place indefinitely.
+
+Chat now batches/deduplicates author reads, waits for actual names and avatar URLs
+before displaying initial/history/realtime messages, and caches only confirmed
+database profiles for read suppression. Partial overrides cannot stop the read
+or wipe a confirmed name/avatar. Avatar image fetching does not delay the text.
+Transient profile failures retry once; persistent failures show a Retry profiles
+action rather than silently stranding placeholders. No polling was added.
+Existing message/view revisions guard every post-profile-await update, so deleted
+messages cannot reappear and delayed events cannot leak into another DM thread.
+
+Verification: 15/15 unit/regression tests passed; 17 isolated actual-ChatPanel
+browser assertions passed (slow author reads, partial override, deduplication,
+automatic/manual retry, avatar rerender, pending delete/update, stale reconnect
+SELECT, thread switching and channel cleanup). Production build/SEO verification
+passed; TypeScript stayed at 251 baseline diagnostics (zero new); changed-file
+ESLint improved from 714 to 709 errors (zero new errors/warnings).
+
+```powershell
+node --test scripts/chat-profile-loader.test.mjs scripts/room-performance.test.mjs
+# Start the isolated server in a separate terminal:
+node scripts/room-performance-browser.mjs
+# Then verify actual components using mock data only:
+npx --no-install agent-browser --session chat-profile open 'http://127.0.0.1:4192/?profileDelay=1500'
+Get-Content -Raw scripts/fixtures/chat-profile-browser-check.js | npx --no-install agent-browser --session chat-profile eval --stdin
+npx --no-install agent-browser --session chat-profile close
 ```
 
 ## Intentionally preserved / remaining measurement

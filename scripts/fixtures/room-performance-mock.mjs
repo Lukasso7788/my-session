@@ -13,6 +13,8 @@ const channels = new Set();
 export const control = {
   requests: [], createdChannels: 0, removedChannels: 0, failNextSend: false,
   delayNextRead: 0,
+  profileDelay: Number(new URLSearchParams(window.location.search).get('profileDelay') || 0),
+  profileFailures: {},
   get channels() { return [...channels].map((channel) => ({ name: channel.name, filters: channel.handlers.map((item) => item.filter) })); },
   emit(table, eventType, row) {
     for (const channel of channels) for (const handler of channel.handlers) {
@@ -66,7 +68,13 @@ class Query {
       data = data.slice(0, this.count);
     } else if (this.table === 'profiles') {
       const ids = this.filters.find(([field]) => field === 'id')?.[1] || [userId, hostId];
-      data = (Array.isArray(ids) ? ids : [ids]).map((id) => ({ id, full_name: id === userId ? 'Tester' : 'Host', avatar_url: avatar }));
+      const list = Array.isArray(ids) ? ids : [ids];
+      if (control.profileDelay) await new Promise((done) => setTimeout(done, control.profileDelay));
+      for (const id of list) if (control.profileFailures[id] > 0) {
+        control.profileFailures[id]--;
+        return { data: null, error: { message: 'Intentional profile read failure' } };
+      }
+      data = list.map((id) => ({ id, full_name: id === userId ? 'Tester' : id === hostId ? 'Host Name' : `Member ${id}`, avatar_url: avatar }));
     } else if (this.table === 'sessions') {
       data = [{ id: sessionId, host_id: hostId, task_timers_enabled: false }];
     }
