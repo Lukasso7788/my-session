@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createHash, randomBytes, randomUUID } from "crypto";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { Resend } from "resend";
+import { missingPlunkEnvironment, sendPlunkEmail } from "../_lib/plunk.js";
 import {
   SENDER_EVENT_TYPES,
   emitSenderTestSuite,
@@ -21,6 +21,8 @@ type LiveKitAdminAction =
   | "unmute_microphone";
 
 type EmailAdminAction =
+  | "plunk_test_preview"
+  | "plunk_test_send"
   | "daily_schedule_preview"
   | "daily_schedule_send"
   | "daily_schedule_all_users"
@@ -79,6 +81,8 @@ type Body = {
   limit?: number;
   selectedUserIds?: string[];
   audienceName?: string;
+  testRequestId?: string;
+  testPreviewHash?: string;
 
   // Sender lifecycle email actions
   senderEventId?: string;
@@ -365,6 +369,7 @@ function normalizeLiveKitAction(raw: unknown): LiveKitAdminAction | "" {
 
 function normalizeEmailAction(raw: unknown): EmailAdminAction | "" {
   const a = String(raw || "").trim().toLowerCase();
+  if (a === "plunk_test_preview" || a === "plunk_test_send") return a;
 
   if (a === "daily_schedule_preview") return "daily_schedule_preview";
   if (a === "daily_schedule_send") return "daily_schedule_send";
@@ -1057,16 +1062,12 @@ async function handleFriendInviteAction(params: {
 
   const referralCode = await ensureReferralCodeForInvite(sb, user.id);
   const inviteUrl = `https://mysession.club/?ref=${encodeURIComponent(referralCode)}`;
-  const resendKey = env("RESEND_API_KEY");
-  const fromEmail =
-    env("RESEND_INVITES_FROM") ||
-    env("RESEND_FROM_EMAIL") ||
-    env("RESEND_DAILY_SCHEDULE_FROM");
+  const missingPlunkEnv = missingPlunkEnvironment();
   const replyTo = env("RESEND_REPLY_TO") || "support@mysession.club";
-  if (!resendKey || !fromEmail) {
+  if (missingPlunkEnv.length) {
     return res.status(500).json({
-      error: "missing_resend_env",
-      required: ["RESEND_API_KEY", "RESEND_FROM_EMAIL or RESEND_INVITES_FROM"],
+      error: "missing_plunk_env",
+      required: missingPlunkEnv,
     });
   }
 
@@ -1076,19 +1077,16 @@ async function handleFriendInviteAction(params: {
     "Come work with me for one session. We’ll set our tasks and focus alongside other people."
   );
   const safeInviteUrl = escapeHtml(inviteUrl);
-  const resend = new Resend(resendKey);
   const dayKey = new Date().toISOString().slice(0, 10);
   const idempotencyKey = `friend-invite-${createHash("sha256")
     .update(`${user.id}:${recipientEmail}:${dayKey}`)
     .digest("hex")}`;
 
-  const { data, error } = await resend.emails.send(
-    {
-      from: fromEmail,
-      to: [recipientEmail],
-      replyTo,
-      subject: `${senderName} invited you to focus together on MySession`,
-      html: `
+  const { id: plunkId } = await sendPlunkEmail({
+    to: recipientEmail,
+    replyTo,
+    subject: `${senderName} invited you to focus together on MySession`,
+    body: `
         <div style="background:#f5f5f3;padding:36px 16px;font-family:Inter,Arial,sans-serif;color:#2f2f2f;">
           <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:24px;padding:32px;border:1px solid #e7e7e4;">
             <div style="font-size:24px;font-weight:800;letter-spacing:-0.04em;margin-bottom:28px;">MySession</div>
@@ -1100,17 +1098,15 @@ async function handleFriendInviteAction(params: {
             <p style="font-size:12px;line-height:1.55;color:#8a8a8a;margin:22px 0 0;">This one-time invitation was sent by ${safeSenderName} through MySession. You were not added to a marketing list.</p>
           </div>
         </div>`,
-      text: `${senderName} invited you to focus together on MySession.\n\n${inviteMessage || "Come work with me for one session. We’ll set our tasks and focus alongside other people."}\n\nJoin here: ${inviteUrl}\n\nThis one-time invitation does not subscribe you to marketing emails.`,
-      tags: [{ name: "type", value: "friend_invite" }],
-    },
-    { idempotencyKey },
-  );
+    headers: { "X-MySession-Email-Type": "friend_invite" },
+    idempotencyKey,
+  });
 
-  if (error) throw error;
   return res.status(200).json({
     ok: true,
     inviteUrl,
-    resendId: data?.id || null,
+    // Keep the legacy response field for existing clients; it now holds the Plunk email ID.
+    resendId: plunkId,
   });
 }
 
@@ -1828,6 +1824,40 @@ async function handleDailyScheduleEmailAction(params: {
   );
   const sessionIds = sessions.map((s) => String(s.id)).filter(Boolean);
 
+  // Isolated admin test: no audience scan, unsubscribe creation or delivery-ledger writes.
+  if (action === "plunk_test_preview" || action === "plunk_test_send") {
+    const recipient = "lukasus7788@gmail.com";
+    const email = buildDailyScheduleEmail({
+      scheduleDate,
+      sessions,
+      infiniteHostingSlots,
+      recipientName: "Yaroslav",
+      recipientTimeZone: "Europe/Kyiv",
+      unsubscribeToken: "",
+    });
+    const subject = `[TEST] ${email.subject}`;
+    const html = email.html
+      .replace(`${getAppUrl()}/email/unsubscribe?token=`, `${getAppUrl()}/settings`)
+      .replace("Unsubscribe from daily schedule emails", "Test preview — no subscription changed");
+    const previewHash = createHash("sha256").update(subject + html).digest("hex");
+    const missing = missingPlunkEnvironment();
+    if (action === "plunk_test_preview") {
+      return res.status(200).json({ ok: true, provider: "Plunk", recipient, subject, html,
+        previewHash, missing, scheduleDate, sessionsCount: sessions.length });
+    }
+    if (missing.length) return res.status(503).json({ error: "missing_plunk_env", required: missing });
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(body.testRequestId || ""))) {
+      return res.status(400).json({ error: "invalid_test_request_id" });
+    }
+    if (body.testPreviewHash !== previewHash) {
+      return res.status(409).json({ error: "schedule_changed_preview_again" });
+    }
+    const { id } = await sendPlunkEmail({ to: recipient, subject, body: html,
+      replyTo: env("RESEND_REPLY_TO") || "support@mysession.club",
+      idempotencyKey: `mysession-plunk-test-${body.testRequestId}` });
+    return res.status(200).json({ ok: true, accepted: true, provider: "Plunk", recipient, id });
+  }
+
   const { data: bookingsData } = sessionIds.length
     ? await sb
       .from("session_bookings")
@@ -1936,18 +1966,16 @@ async function handleDailyScheduleEmailAction(params: {
     });
   }
 
-  const resendKey = env("RESEND_API_KEY");
-  const fromEmail = env("RESEND_DAILY_SCHEDULE_FROM") || env("RESEND_FROM_EMAIL");
+  const missingPlunkEnv = missingPlunkEnvironment();
   const replyTo = env("RESEND_REPLY_TO") || "support@mysession.club";
 
-  if (!resendKey || !fromEmail) {
+  if (missingPlunkEnv.length) {
     return res.status(500).json({
-      error: "missing_resend_env",
-      required: ["RESEND_API_KEY", "RESEND_DAILY_SCHEDULE_FROM or RESEND_FROM_EMAIL"],
+      error: "missing_plunk_env",
+      required: missingPlunkEnv,
     });
   }
 
-  const resend = new Resend(resendKey);
   const results: any[] = [];
 
   for (let i = 0; i < selected.length; i += 1) {
@@ -1962,20 +1990,17 @@ async function handleDailyScheduleEmailAction(params: {
     });
 
     try {
-      const { data, error } = await resend.emails.send({
-        from: fromEmail,
-        to: [recipient.email],
+      const { id: plunkId } = await sendPlunkEmail({
+        to: recipient.email,
         replyTo,
         subject: email.subject,
-        html: email.html,
-        text: email.text,
-        tags: [
-          { name: "type", value: "daily_schedule" },
-          { name: "schedule_date", value: scheduleDate.replaceAll("-", "_") },
-        ],
+        body: email.html,
+        headers: {
+          "X-MySession-Email-Type": "daily_schedule",
+          "X-MySession-Schedule-Date": scheduleDate.replaceAll("-", "_"),
+        },
+        idempotencyKey: `mysession-daily-schedule-${recipient.userId}-${scheduleDate}`,
       });
-
-      if (error) throw error;
 
       await sb.from("daily_schedule_email_sends").insert({
         user_id: recipient.userId,
@@ -1983,7 +2008,7 @@ async function handleDailyScheduleEmailAction(params: {
         schedule_date: scheduleDate,
         status: "sent",
         selected_rank: i + 1,
-        resend_id: (data as any)?.id || null,
+        resend_id: plunkId,
       });
 
       await sb
@@ -2001,7 +2026,7 @@ async function handleDailyScheduleEmailAction(params: {
         userId: recipient.userId,
         email: recipient.email,
         status: "sent",
-        resendId: (data as any)?.id || null,
+        resendId: plunkId,
       });
     } catch (e: any) {
       const message = String(e?.message || JSON.stringify(e) || e || "send_failed");

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 
@@ -100,6 +100,11 @@ export default function DailyScheduleEmailAdminPage() {
   const [usersLoading, setUsersLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [testSending, setTestSending] = useState(false);
+  const [plunkPreview, setPlunkPreview] = useState<{ recipient: string; subject: string; html: string; previewHash: string; missing: string[]; scheduleDate: string } | null>(null);
+  const [plunkBusy, setPlunkBusy] = useState(false);
+  const [plunkMessage, setPlunkMessage] = useState("");
+  const plunkLock = useRef(false);
+  const plunkRequestId = useRef("");
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<any>(null);
   const [lastSendResult, setLastSendResult] = useState<any>(null);
@@ -188,10 +193,12 @@ export default function DailyScheduleEmailAdminPage() {
       : `Send auto top ${limit}`;
 
   const callEndpoint = async (
-    action: "daily_schedule_preview" | "daily_schedule_send" | "daily_schedule_all_users" | "daily_schedule_saved_audience_get" | "daily_schedule_saved_audience_set",
+    action: "daily_schedule_preview" | "daily_schedule_send" | "daily_schedule_all_users" | "daily_schedule_saved_audience_get" | "daily_schedule_saved_audience_set" | "plunk_test_preview" | "plunk_test_send",
     options?: {
       selectedUserIds?: string[];
       limitOverride?: number;
+      testRequestId?: string;
+      testPreviewHash?: string;
     }
   ) => {
     const { data } = await supabase.auth.getSession();
@@ -220,6 +227,8 @@ export default function DailyScheduleEmailAdminPage() {
         limit: finalLimit,
         selectedUserIds: ids,
         audienceName: "default",
+        testRequestId: options?.testRequestId,
+        testPreviewHash: options?.testPreviewHash,
       }),
     });
 
@@ -245,6 +254,37 @@ export default function DailyScheduleEmailAdminPage() {
     }
 
     return json;
+  };
+
+  const runPlunkTest = async (send: boolean) => {
+    if (plunkLock.current) return;
+    plunkLock.current = true;
+    setPlunkBusy(true);
+    setPlunkMessage("");
+    try {
+      if (send) {
+        if (!plunkPreview || plunkPreview.scheduleDate !== scheduleDate) throw new Error("Preview this date first.");
+        const result = await callEndpoint("plunk_test_send", {
+          testRequestId: plunkRequestId.current, testPreviewHash: plunkPreview.previewHash,
+        });
+        if (result?.accepted) {
+          setPlunkMessage(`Plunk accepted the test for ${result.recipient}. Check your inbox and spam folder.`);
+          setPlunkPreview(null);
+        }
+      } else {
+        const result = await callEndpoint("plunk_test_preview");
+        if (result) {
+          plunkRequestId.current = crypto.randomUUID();
+          setPlunkPreview(result);
+        }
+      }
+    } catch (error) {
+      // Keep the request ID on failure: retry must not send a duplicate logical email.
+      setPlunkMessage(error instanceof Error ? error.message : "Plunk test failed.");
+    } finally {
+      plunkLock.current = false;
+      setPlunkBusy(false);
+    }
   };
 
   const loadAllUsers = async () => {
@@ -603,6 +643,21 @@ export default function DailyScheduleEmailAdminPage() {
               {sending ? "Sending..." : effectiveSendLabel}
             </button>
           </div>
+
+          <section id="plunk-test" className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5">
+            <h2 className="text-lg font-semibold">Plunk · Upcoming sessions test</h2>
+            <p className="mt-1 text-sm">To: lukasus7788@gmail.com · Uses the selected schedule date. No audience or daily send history is changed.</p>
+            <div className="mt-3 flex flex-wrap gap-3">
+              <button type="button" disabled={plunkBusy} onClick={() => void runPlunkTest(false)} className="rounded-full border border-[#2F2F2F] bg-white px-5 py-2 disabled:opacity-50">{plunkBusy ? "Working…" : "Preview email"}</button>
+              <button type="button" disabled={plunkBusy || !plunkPreview || plunkPreview.scheduleDate !== scheduleDate || !!plunkPreview.missing.length} onClick={() => void runPlunkTest(true)} className="rounded-full bg-[#2F2F2F] px-5 py-2 text-white disabled:opacity-50">Send test via Plunk</button>
+            </div>
+            {plunkMessage && <p role="status" className="mt-3 text-sm">{plunkMessage}</p>}
+            {plunkPreview && <>
+              {!!plunkPreview.missing.length && <p role="alert" className="mt-3 text-sm">Missing server configuration: {plunkPreview.missing.join(", ")}</p>}
+              <p className="my-3 text-sm font-semibold">{plunkPreview.subject}</p>
+              <iframe title="Plunk upcoming sessions email preview" sandbox="" srcDoc={plunkPreview.html} className="h-[600px] w-full rounded-xl border bg-white" />
+            </>}
+          </section>
 
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" disabled={loading} onClick={() => void selectOnlyMe()} className="rounded-full border border-black/10 bg-white px-4 py-2 text-[13px] font-semibold hover:bg-black/[0.04] disabled:opacity-60">
