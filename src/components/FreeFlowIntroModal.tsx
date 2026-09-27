@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { SlidersHorizontal, X } from "lucide-react";
 
-import { FREE_FLOW_TIMELINE_PRESETS } from "./RoomTimelineEditor";
+import { FREE_FLOW_TIMELINE_PRESETS } from "../lib/roomTimelineModel";
 import { resolveStageVisual, type StageKind } from "./SessionStageBar";
 import type { RoomTheme } from "./VideoControls";
 

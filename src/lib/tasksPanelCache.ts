@@ -1,3 +1,5 @@
+import { createPanelSnapshotCache } from "./panelSnapshotCache.ts";
+
 export function tasksPanelCacheKey(room: string, userId: string | null | undefined) {
     // Never reuse another account's private tasks or an anonymous snapshot.
     return room.trim() && userId ? `${room.trim().toLowerCase()}|${userId}` : "";
@@ -5,21 +7,7 @@ export function tasksPanelCacheKey(room: string, userId: string | null | undefin
 
 /** Small in-memory snapshot cache, not a second persistent task database. */
 export function createTasksPanelCache<T>(maxEntries = 4, ttlMs = 5 * 60_000) {
-    const entries = new Map<string, { value: T; savedAt: number }>();
-    return {
-        read(key: string, now = Date.now()): T | undefined {
-            const entry = key ? entries.get(key) : undefined;
-            if (!entry) return undefined;
-            if (now - entry.savedAt >= ttlMs) { entries.delete(key); return undefined; }
-            return entry.value;
-        },
-        write(key: string, value: T, now = Date.now()) {
-            if (!key) return;
-            entries.delete(key);
-            entries.set(key, { value, savedAt: now });
-            while (entries.size > maxEntries) entries.delete(entries.keys().next().value!);
-        },
-    };
+    return createPanelSnapshotCache<T>(maxEntries, ttlMs);
 }
 
 /** A background SELECT must not undo task edits/inserts/deletes made meanwhile.

@@ -70,7 +70,7 @@ import JoinGateModal, {
   type JoinGateHostSession,
 } from "../components/JoinGateModal";
 import RoomTopBar from "../components/RoomTopBar";
-import RoomTimelineEditor, {
+import {
   type RoomTimelineBlock,
   timelineBlocksFromSchedule,
   timelineBlocksToSchedulePayload,
@@ -78,9 +78,8 @@ import RoomTimelineEditor, {
   makeDefaultTimelineBlocks,
   makeFreeFlowTimelineBlocks,
   FREE_FLOW_TIMELINE_PRESETS,
-} from "../components/RoomTimelineEditor";
+} from "../lib/roomTimelineModel";
 import { LiveKitBottomBar } from "./livekit/LiveKitBottomBar";
-import RoomSoundscapePanel from "./livekit/RoomSoundscapePanel";
 import {
   Icon,
   reactionEmoji as REACTION_EMOJI,
@@ -126,6 +125,8 @@ const SCREEN_SHARE_SIMULCAST_LAYERS = [
 
 const ChatPanel = React.lazy(() => import("../components/ChatPanel"));
 const TasksPanel = React.lazy(() => import("../components/TasksPanel"));
+const RoomTimelineEditor = React.lazy(() => import("../components/RoomTimelineEditor"));
+const RoomSoundscapePanel = React.lazy(() => import("./livekit/RoomSoundscapePanel"));
 // These panels are not needed to connect. Keep their code and mounted UI out
 // of the room's initial path until the user actually opens them.
 const AIHostedRoomController = React.lazy(() => import("../components/ai-host/AIHostedRoomController"));
@@ -19918,6 +19919,12 @@ export function RoomPageLiveKit({
       )}
 
       {rightTab === "music" && (
+        <React.Suspense fallback={
+          <div className="p-5 flex items-center justify-between gap-3">
+            <span role="status">Loading music controls…</span>
+            <button type="button" onClick={() => openRightTab(null)} aria-label="Close music panel">✕</button>
+          </div>
+        }>
         <RoomSoundscapePanel
           listeningMode={soundscapeListeningMode}
           activeId={
@@ -20036,6 +20043,7 @@ export function RoomPageLiveKit({
           }}
           onClose={() => openRightTab(null)}
         />
+        </React.Suspense>
       )}
 
       {rightTab === "tasks" && (
@@ -22211,6 +22219,15 @@ export function RoomPageLiveKit({
         )}
 
         {timelineEditorOpen && (
+          <React.Suspense fallback={
+            <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4">
+              <div role="dialog" aria-modal="true" aria-label="Loading timeline editor"
+                className={`rounded-2xl p-6 shadow-xl ${isLight ? "bg-white text-black" : "bg-[#202020] text-white"}`}>
+                <p role="status">Loading timeline editor…</p>
+                <button type="button" onClick={closeTimelineEditor} className="mt-4 rounded-xl border px-4 py-2">Cancel</button>
+              </div>
+            </div>
+          }>
           <RoomTimelineEditor
             open={timelineEditorOpen}
             theme={theme}
@@ -22225,6 +22242,7 @@ export function RoomPageLiveKit({
             customRoomName={freeFlowDraftPresetId === "custom" ? freeFlowCustomName : undefined}
             onCustomRoomNameChange={freeFlowDraftPresetId === "custom" ? setFreeFlowCustomName : undefined}
           />
+          </React.Suspense>
         )}
 
         <React.Suspense fallback={null}>

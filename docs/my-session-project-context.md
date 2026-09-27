@@ -1,6 +1,6 @@
 # MySession — project architecture and continuation context
 
-Updated: 2026-09-27. This is a project-wide navigation/architecture handoff based on
+Updated: 2026-09-28. This is a project-wide navigation/architecture handoff based on
 the checked-out source, not a claim that every module or production service was
 audited. Never put secret values, tokens, user exports or private logs in this file.
 
@@ -12,14 +12,19 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   C:\Users\misha\.codex\worktrees\monthly-attendance\my-session.
   Local branch: codex/session-milestone-tree-badges. Its name is historical; reuse
   it rather than create another checkout purely for naming.
-- Base for this change: 6e8f04a1c158313bcaa27020b9c4cab5e55e8e0c, previously pushed
-  to main. Earlier relevant commits: ab831cf (Tasks warm reopening), 68acc34
+- Base for the current panel-only pass: f2b44702c1608d99a3d99f6a091e759605e5dcf6,
+  previously pushed to main. Earlier relevant commits: 6e8f04a (Plunk direct
+  transport/admin preview), ab831cf (Tasks warm reopening), 68acc34
   (reliable chat names/avatars), b376843 (room performance).
 - C:\projects\my-session is a different old/dirty checkout with nested work.
   Do not reset, delete or overwrite it. This active checkout is outside current
   writable roots, so commands/patches require approved filesystem escalation.
 - User requests full project architectural/technical context in a file for every
   code task. Keep this file and feature-specific handoffs current and link them.
+- Latest explicit restriction: do NOT change video behavior during performance
+  work. This includes tab/background handling, capture/send/receive quality,
+  subscriptions, attachment/recovery, fullscreen and PiP. Discuss any proposed
+  video optimization with the user BEFORE implementing it.
 
 ## Product/runtime architecture
 
@@ -83,7 +88,7 @@ bookings, attendance and daily attendance history, infinite_room_host_leases,
 chat messages/reactions, intentions/panel tasks/focus plans, notifications,
 email preferences/send ledgers and email_event_outbox. Current migrations are the
 schema authority, not this overview. RLS/admission must not be weakened. Never
-authorize against editable user_metadata. No schema changes in this indicator task.
+authorize against editable user_metadata. No schema changes in the current panel pass.
 
 Presence/host behavior: attendance heartbeat and crash detection are separate
 from UI timers; the user has a 90-second alive-window requirement historically.
@@ -176,7 +181,7 @@ playback and visible selected music UI. Don't propose Play-only loading as missi
 
 See docs/room-performance-2026-09-26.md for exact prior changes and test results.
 
-## Current task: restore microphone indicator
+## Previous task: restore microphone indicator
 
 User wants the real original LiveKit indicator including blue idle bar whenever
 the microphone is enabled. They also request investigation/concepts FIRST for
@@ -271,9 +276,92 @@ belongs to the same commit. Commit message:
 "Bound room media caches and isolate speaking and clock updates".
 No claims of measured production RAM or join-speed percentage. Real multiuser
 SFU/mobile PiP and long-duration tab-memory benchmarks remain follow-up checks.
-Other candidate optimizations below remain design work, not shipped features.
+Other candidate optimizations below remain design work unless explicitly listed
+in the next continuation.
 
-## Optimization backlog (1–3 implemented above; remaining items are concepts)
+## Current continuation: lazy optional controls and expiring panel snapshots
+
+User authorized continued optimization of panels/imported modules, with an
+explicit prohibition on changing video behavior. Scope implemented 2026-09-28:
+
+- src/lib/roomTimelineModel.ts: 24 existing pure declarations extracted from
+  RoomTimelineEditor.tsx. Schedule parsing/serialization, infinite anchor, block
+  colors/defaults, Free Flow presets/names and generated IDs retain their bodies.
+  Verified all declarations against the preceding commit's TS AST: identical
+  except export modifiers/line endings. No schedule/admission/host changes.
+- src/components/RoomTimelineEditor.tsx retains the original UI, hooks and old
+  public re-export API for legacy callers. RoomPageLiveKit and FreeFlowIntroModal
+  import the pure model directly rather than dragging editor UI into startup.
+- RoomPageLiveKit loads RoomTimelineEditor and RoomSoundscapePanel through
+  module-scope React.lazy only when opened, with LOCAL Suspense boundaries.
+  Loading a control must not suspend/remount the entire room or its audio/video.
+  Music fallback can close the drawer; timeline fallback can cancel the modal.
+  The music engine, progress logic, playback/sharing/seek callbacks remain intact.
+- src/lib/panelSnapshotCache.ts: shared bounded snapshot utility for Chat/Tasks.
+  Default four entries, five-minute TTL, access-time sweep of ALL expired entries
+  even when reading a missing key or writing another room. No periodic sweep,
+  timers, DB reads, subscription changes or persistence added. Expired references
+  are released at the NEXT cache access, not guaranteed at the exact TTL instant.
+  Reads don't extend TTL; updating a key refreshes write order and expiry.
+- tasksPanelCache.ts preserves its wrapper, scope key and stale-read reconciler.
+  ChatPanel replaces only its Map/TTL plumbing. Account/room/DM keys, author
+  hydration, confirmed profiles, avatar URLs, reactions, request guards, optimistic
+  messages and all Realtime handling are unchanged. Warm reopening still renders
+  the snapshot while normal background validation proceeds. The confirmed author
+  loader Map itself remains a separate potential optimization (not changed).
+
+Product files changed: src/pages/RoomPageLiveKit.tsx,
+src/components/{ChatPanel,FreeFlowIntroModal,RoomTimelineEditor}.tsx,
+src/lib/{panelSnapshotCache,roomTimelineModel,tasksPanelCache}.ts.
+Verification files: scripts/{panel-snapshot-cache.test,room-timeline-model.test,
+room-performance-browser,verify-room-performance-bundle,
+verify-room-performance-lint}.mjs and
+scripts/fixtures/lazy-room-panels-browser-check.js, plus this context file.
+No API, DB migration, infrastructure, media-track/tile/background or email changes.
+
+Verification from this checkout:
+node --test scripts/panel-snapshot-cache.test.mjs scripts/room-timeline-model.test.mjs scripts/tasks-panel-cache.test.mjs scripts/chat-profile-loader.test.mjs scripts/room-memory.test.mjs scripts/room-performance.test.mjs
+node scripts/verify-room-performance-types.mjs
+node scripts/verify-room-performance-lint.mjs
+npm run build
+node scripts/verify-room-performance-bundle.mjs
+git diff --check
+
+Results: 37/37 unit tests; App TS baseline=251, current=251, new=0. Focused lint
+baseline/current=729, new errors/warnings=0 (expanded coverage includes timeline
+editor and optional controls; this is not an increase over its same-scope base).
+Lint compares the mechanically moved editor/model as ONE logical unit; other
+files still compare independently and new cache code gets no baseline exemption.
+Production build and public raw-HTML five-route SEO verification passed.
+Actual build import traversal confirms both optional UI chunks absent from the
+room's static dependency graph: editor 26,226 bytes (7,226 gzip), music 11,035
+bytes (3,729 gzip), combined 37,261 bytes raw / 10,955 gzip deferred. This is a
+startup loading reduction, not a measured RAM/join-speed percentage.
+
+Browser test: node scripts/room-performance-browser.mjs (127.0.0.1:4192).
+The fixture imports actual ChatPanel/TasksPanel and lazy editor/music UI, but uses
+an isolated mock Supabase client and callbacks: NO production data/credentials,
+real SFU or actual shared audio session. Open a fresh browser page for each suite:
+Get-Content -Raw scripts/fixtures/chat-profile-browser-check.js | npx --no-install agent-browser --session room-panels eval --stdin
+Get-Content -Raw scripts/fixtures/tasks-panel-cache-browser-check.js | npx --no-install agent-browser --session room-panels eval --stdin
+Get-Content -Raw scripts/fixtures/lazy-room-panels-browser-check.js | npx --no-install agent-browser --session room-panels eval --stdin
+First two suites may run sequentially on one fresh page; reload before the lazy
+suite so optional-resource assertions aren't affected by a previous opening.
+55/55 browser assertions passed (17 author/realtime, 18 task cache, 20 lazy UI):
+warm reopen, failed refresh, stale reads, scope isolation, real names/avatar URLs,
+cleanup, modules not fetched before opening/not fetched again on reopen,
+timeline edit/save/cancel/anchor, music select/play/pause/close/state persistence,
+and zero uncaught runtime errors. Music callbacks are mock actions, not a claim
+of real audible playback; unchanged audio engine regression tests also passed.
+Windows temp screenshots are local verification artifacts, not repository assets.
+
+Deploy the scoped frontend commit through the existing main deployment pipeline;
+no new environment variables or migrations. New optional chunks must be served
+with the matching build assets. Real-device, slow-network, multiuser SFU and long
+heap/native-media retention benchmarks remain follow-up measurement work.
+Git log/completion response record the final commit/push identity for this pass.
+
+## Optimization backlog (implemented items noted; remaining items are concepts)
 
 Prioritize measurement before changing semantics. Heap is only part of Chrome tab
 memory: video decode buffers, GPU/canvas surfaces and native WebRTC/audio allocations
@@ -290,7 +378,8 @@ can dominate. No production RAM percentage or join-latency improvement is measur
    visible/cached messages and active participants, keep confirmed names, dedupe
    pending requests and guard late results. TTLs are reuse rules, not guarantees
    of immediate expired-entry memory reclamation; clean stale chat/task cache
-   entries opportunistically on navigation/account change without constant polling.
+   entries opportunistically without constant polling. Snapshot expiry sweep is
+   now implemented on cache access; confirmed-profile pruning remains a concept.
 5. Avoid simultaneous unnecessary video presentations. Main grid, pinned/fullscreen
    and PiP can attach the same track to multiple elements. Measure attached-element
    count and decoded frame sizes; detach obscured duplicate views when safe. More
@@ -317,8 +406,9 @@ can dominate. No production RAM percentage or join-latency improvement is measur
 11. Tasks granular updates/virtualization and snapshot pruning. Preserve warm reopen,
     timer persistence, drag/drop order and public task consistency. Offscreen content
     visibility and existing fetch/render bounds are already in place.
-12. Remaining bundle splitting: measure timeline editors, PiP/mobile recovery and
-    room command grammar as optional modules. Several settings/FX/panels are already
+12. Timeline editor and music UI deferral are now implemented. Remaining splitting:
+    measure PiP/mobile recovery and room command grammar as optional modules.
+    Several settings/FX/panels are already
     lazy; imports that affect permission/connection must not cause new waterfalls.
 13. Startup critical-path traces: measure auth/bootstrap/token, DNS/TLS/SFU, first
     audio/video separately; preload room code on deliberate join intent, start only

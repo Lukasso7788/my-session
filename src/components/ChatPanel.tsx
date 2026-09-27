@@ -12,6 +12,7 @@ import { supabase } from "../lib/supabase";
 import { useLatestCallback } from "../hooks/useLatestCallback";
 import { boundChatMessages, reconcileChatSnapshot, CHAT_PAGE_SIZE, CHAT_WINDOW_LIMIT } from "../lib/chatMessageWindow";
 import { createChatProfileLoader } from "../lib/chatProfileLoader";
+import { createPanelSnapshotCache } from "../lib/panelSnapshotCache";
 import {
     Check,
     CheckCheck,
@@ -214,24 +215,10 @@ type ChatCacheEntry = {
     directPeerIds: string[];
 };
 
-const CHAT_CACHE = new Map<string, ChatCacheEntry>();
-const CACHE_MAX = 4;
-const CACHE_TTL_MS = 5 * 60_000;
+const CHAT_CACHE = createPanelSnapshotCache<ChatCacheEntry>();
 
 function setChatCache(sessionId: string, entry: ChatCacheEntry) {
-    CHAT_CACHE.set(sessionId, entry);
-
-    if (CHAT_CACHE.size > CACHE_MAX) {
-        let oldestKey: string | null = null;
-        let oldestTs = Infinity;
-        for (const [k, v] of CHAT_CACHE.entries()) {
-            if (v.ts < oldestTs) {
-                oldestTs = v.ts;
-                oldestKey = k;
-            }
-        }
-        if (oldestKey) CHAT_CACHE.delete(oldestKey);
-    }
+    CHAT_CACHE.write(sessionId, entry, entry.ts);
 }
 
 type ReactionDetailsState = {
@@ -1683,8 +1670,8 @@ export function ChatPanel({
         historyScrollAnchorRef.current = null;
         setLoadingOlder(false);
         messageChangesRef.current.clear();
-        const cached = CHAT_CACHE.get(chatCacheKey);
-        if (cached && Date.now() - cached.ts < CACHE_TTL_MS) {
+        const cached = CHAT_CACHE.read(chatCacheKey);
+        if (cached) {
             profileLoader.seed(cached.confirmedProfiles || {});
             messagesRef.current = cached.messages || [];
             profilesByIdRef.current = cached.profilesById || {};
