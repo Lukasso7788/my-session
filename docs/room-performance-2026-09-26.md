@@ -170,6 +170,37 @@ npx --no-install agent-browser --session tasks-cache close
 
 ## Intentionally preserved / remaining measurement
 
+### 2026-09-27: restore the original microphone indicator
+
+The speaking-only mount optimization hid LiveKit's idle blue bar and is now
+reversed in VideoTileLiveKitLegacy.tsx. BarVisualizer mounts whenever an audio
+track exists and the mic is unmuted, with the unchanged minHeight:16 styling.
+Speech still controls the frame/label. Mute and track removal clean the analyser.
+This intentionally restores per-open-mic analysis, not an overall RAM reduction.
+25 isolated real-component/synthetic-audio browser checks passed (including
+analyser disposal); 22 existing regressions, full build/SEO and diff check passed.
+No new TypeScript or focused lint diagnostics. Full project context and the next
+optimization concepts are in docs/my-session-project-context.md. No new memory
+optimizations or production deployment were performed in this follow-up.
+
+### 2026-09-27 continuation: bounded media retention and lightweight updates
+
+The subsequent user request authorized implementation and push. Added a 64-entry
+PiP avatar LRU (cleared on disconnect, guarded late image callbacks), narrow
+ActiveSpeakersChanged flag updates with old-Room/attempt guards, and a shared
+30-second clock store consumed only by memoized participant time labels. Full
+track/participant/reconnection reconciliation and the restored idle microphone
+visualizer remain intact. No schema, heartbeat, admission or media quality change.
+
+28 unit tests and 40 actual-tile browser assertions passed (including no media-tile
+render on clock tick); no new TypeScript or focused lint diagnostics; full build
+and SEO checks passed. See docs/my-session-project-context.md for complete
+architecture, implementation, remaining risks and continuation commands.
+
+```powershell
+node --test scripts/room-memory.test.mjs scripts/tasks-panel-cache.test.mjs scripts/chat-profile-loader.test.mjs scripts/room-performance.test.mjs
+```
+
 Existing adaptive video sizing, screen-share simulcast, LiveKit prewarming,
 prepared-camera reuse, lazy panels/emoji data and video detach cleanup already
 existed and are preserved. Do not pause attendance/host-lease heartbeats, room

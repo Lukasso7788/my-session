@@ -1,0 +1,63 @@
+(async () => {
+  const results = [];
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const check = (name, condition) => {
+    if (!condition) throw new Error(name);
+    results.push(name);
+  };
+  const bars = () => [...document.querySelectorAll('.lk-audio-bar')];
+  const openContexts = () => window.__audioContexts.filter(context => context.state !== 'closed').length;
+  const control = () => window.__indicator;
+  check('both timezone labels render', document.querySelectorAll('[title="Europe/Kyiv"], [title="America/New_York"]').length === 2);
+  check('two tiles share exactly one 30-second clock timer', window.__clockIntervals.size === 1);
+  const nativeNow = Date.now;
+  const label = document.querySelector('[title="Europe/Kyiv"]');
+  const before = label.textContent;
+  const future = nativeNow() + 60_000;
+  const beforeTileRenders = window.__tileRenders;
+  Date.now = () => future;
+  for (const tick of window.__clockIntervals.values()) tick();
+  await wait(100);
+  check('shared clock updates timezone label without replacing its node', label.isConnected && label.textContent !== before);
+  check('clock tick does not rerender media tiles', Number.isFinite(beforeTileRenders) && window.__tileRenders === beforeTileRenders);
+  Date.now = nativeNow;
+  check('both local and remote idle mics show a bar', bars().length === 2);
+  check('silence retains the original 16 percent minimum', bars().every(bar => bar.style.height === '16%'));
+  check('both badges report microphone on', document.querySelectorAll('[aria-label="Microphone on"]').length === 2);
+  await control().speak();
+  await wait(300);
+  check('real LiveKit analyser responds to synthetic speech', bars().every(bar => parseFloat(bar.style.height) > 16));
+  check('speaking labels update on both tiles', document.querySelectorAll('[aria-label="Speaking"]').length === 2);
+  control().silence();
+  await wait(850);
+  check('bar remains after speech ends', bars().length === 2 && bars().every(bar => bar.style.height === '16%'));
+  check('speech end does not rebuild audio contexts', openContexts() === 3);
+  control().mute();
+  await wait(200);
+  check('mute removes both visualizers', bars().length === 0);
+  check('mute releases LiveKit analyser contexts', openContexts() === 1);
+  check('muted badges remain visible', document.querySelectorAll('[aria-label="Microphone off"]').length === 2);
+  control().unmute();
+  await wait(200);
+  check('unmute restores idle bars without speech', bars().length === 2);
+  control().replace();
+  await wait(200);
+  check('replacement track retains bars', bars().length === 2);
+  check('replacement releases previous analyser contexts', openContexts() === 3);
+  for (let index = 0; index < 5; index++) {
+    control().unmount(); await wait(120);
+    check('unmount releases analysers ' + index, openContexts() === 1);
+    check('unmount releases shared clock ' + index, window.__clockIntervals.size === 0);
+    control().mount(); await wait(120);
+    check('remount has exactly two analysers ' + index, openContexts() === 3 && bars().length === 2);
+    check('remount has one shared clock ' + index, window.__clockIntervals.size === 1);
+  }
+  control().removeTrack();
+  await wait(200);
+  check('missing audio track has no visualizer', bars().length === 0 && openContexts() === 1);
+  check('no uncaught browser errors', window.__consoleErrors.length === 0);
+  control().unmount(); await wait(120);
+  check('final teardown releases clock', window.__clockIntervals.size === 0);
+  await control().source.close();
+  return { passed: results.length, results, liveAudioContexts: openContexts() };
+})()

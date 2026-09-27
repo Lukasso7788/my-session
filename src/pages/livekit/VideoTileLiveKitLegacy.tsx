@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Track, LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
 import { BarVisualizer } from "@livekit/components-react";
 import { Check, Pencil } from "lucide-react";
-import { formatTimeZoneCityLabel } from "../../lib/timezones";
+import { ParticipantTimeLabel } from "./ParticipantTimeLabel";
 
 type RoomTheme = "dark" | "light";
 export type CameraFramingMode = "full" | "fill";
@@ -223,23 +223,6 @@ type VideoTileProps = {
     cameraFramingMode?: CameraFramingMode;
 };
 
-function formatParticipantTime(timeZone: string, at = new Date()) {
-    const safeTimeZone = String(timeZone || "").trim();
-    if (!safeTimeZone) return "";
-
-    try {
-        const city = formatTimeZoneCityLabel(safeTimeZone);
-        const time = new Intl.DateTimeFormat(undefined, {
-            timeZone: safeTimeZone,
-            hour: "numeric",
-            minute: "2-digit",
-        }).format(at);
-        return `${city} · ${time}`;
-    } catch {
-        return "";
-    }
-}
-
 function useHeldSpeaking(active: boolean, holdMs = 650) {
     const [held, setHeld] = useState(active);
     const releaseTimerRef = useRef<number | null>(null);
@@ -301,9 +284,10 @@ function MicBadgeWithBarVisualizer({
         isSelfMutedBadge || hasCameraOn ? "dark" : isLight ? "light" : "dark";
 
     const speaking = !micMuted && isSpeaking;
-    // LiveKit already reports speaking. Do not keep a Web Audio analyser per
-    // silent microphone just to draw a bar hidden behind its icon.
-    const showVisualizer = speaking && !!audioTrack;
+    // Keep LiveKit's idle minimum-height bar visible whenever the mic is on.
+    // Speaking controls the frame/label, not the visualizer's mount lifecycle.
+    // Muting or removing the track unmounts it and lets LiveKit clean its analyser.
+    const showVisualizer = !micMuted && !!audioTrack;
 
 
     return (
@@ -520,18 +504,7 @@ function VideoTileInner({
 
         return normalized.slice(0, 12);
     }, [safeCurrentIntention, taskList]);
-    const [participantClock, setParticipantClock] = useState(() => Date.now());
-    const participantTime = formatParticipantTime(
-        String(participantTimeZone || ""),
-        new Date(participantClock),
-    );
     const [sizeText, setSizeText] = useState<string>("");
-
-    useEffect(() => {
-        if (!participantTimeZone) return;
-        const timer = window.setInterval(() => setParticipantClock(Date.now()), 30_000);
-        return () => window.clearInterval(timer);
-    }, [participantTimeZone]);
 
     useEffect(() => {
         if (!debugSizing) return;
@@ -1022,13 +995,11 @@ function VideoTileInner({
                         <div className="truncate text-[12px] font-medium leading-none">
                             {label || "User"}
                         </div>
-                        {participantTime ? (
-                            <div
+                        {participantTimeZone ? (
+                            <ParticipantTimeLabel
                                 className={`mt-1 truncate text-[10px] font-normal leading-none ${isLight ? "text-black/55" : "text-white/60"}`}
-                                title={String(participantTimeZone || "")}
-                            >
-                                {participantTime}
-                            </div>
+                                timeZone={participantTimeZone.trim()}
+                            />
                         ) : null}
                     </div>
 
@@ -1093,13 +1064,11 @@ function VideoTileInner({
                             ) : null}
                         </div>
 
-                        {participantTime ? (
-                            <div
+                        {participantTimeZone ? (
+                            <ParticipantTimeLabel
                                 className={`mt-1 truncate font-inter ${isCompact ? "text-[9px]" : "text-[10px]"} font-normal leading-none text-white/70 drop-shadow-md`}
-                                title={String(participantTimeZone || "")}
-                            >
-                                {participantTime}
-                            </div>
+                                timeZone={participantTimeZone.trim()}
+                            />
                         ) : null}
                     </div>
 

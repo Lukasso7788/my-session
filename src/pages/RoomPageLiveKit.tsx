@@ -37,6 +37,8 @@ import {
 
 import { supabase } from "../lib/supabase";
 import { useLatestCallback } from "../hooks/useLatestCallback";
+import { updateTileSpeakingState } from "../lib/roomSpeakingState";
+import { createPiPAvatarCache } from "../lib/pipAvatarCache";
 import { invalidateHostLeaseCache } from "../lib/supabaseFetchOptimizer";
 import { withTimeout } from "../lib/promiseTimeout";
 import { readSessionRoomPolicies, withRoomPolicies, type RoomPolicies } from "../lib/roomPolicies";
@@ -3164,7 +3166,7 @@ const mobilePiPVideoFrameCache = new WeakMap<
   HTMLVideoElement,
   MobileCachedVideoFrame
 >();
-const mobilePiPAvatarCache = new Map<string, HTMLImageElement | null>();
+const mobilePiPAvatarCache = createPiPAvatarCache(() => new Image());
 
 function isTabletOrMobilePiPRuntime(): boolean {
   if (typeof navigator === "undefined" || typeof window === "undefined") {
@@ -3217,19 +3219,7 @@ function getMobilePiPRoomTiles(root: HTMLElement | null): MobilePiPRoomTile[] {
 }
 
 function getMobilePiPAvatar(avatarUrl: string): HTMLImageElement | null {
-  if (!avatarUrl) return null;
-  const cached = mobilePiPAvatarCache.get(avatarUrl);
-  if (cached !== undefined) {
-    return cached?.complete && cached.naturalWidth > 0 ? cached : null;
-  }
-
-  const image = new Image();
-  image.crossOrigin = "anonymous";
-  image.referrerPolicy = "no-referrer";
-  image.onerror = () => mobilePiPAvatarCache.set(avatarUrl, null);
-  mobilePiPAvatarCache.set(avatarUrl, image);
-  image.src = avatarUrl;
-  return null;
+  return mobilePiPAvatarCache.get(avatarUrl);
 }
 
 function getPreferredMobilePiPSourceVideo(
@@ -13744,6 +13734,7 @@ export function RoomPageLiveKit({
         releaseTabPresence();
       }
       await closePictureInPicture().catch(() => { });
+      mobilePiPAvatarCache.clear();
     }
   };
 
@@ -14183,7 +14174,16 @@ export function RoomPageLiveKit({
       r.on(RoomEvent.TrackPublished as any, refreshRemoteAudioState as any);
       r.on(RoomEvent.TrackUnpublished as any, refresh as any);
       r.on(RoomEvent.TrackSubscriptionFailed as any, refresh as any);
-      r.on(RoomEvent.ActiveSpeakersChanged, refresh);
+      // Speaker updates must not rebuild tracks/screens or reapply every volume.
+      // Functional updates reconcile with the latest tiles, including queued full
+      // rebuilds. Ignore obsolete rooms and recheck at React updater execution.
+      r.on(RoomEvent.ActiveSpeakersChanged, () => {
+        if (roomRef.current !== r || connectAttemptIdRef.current !== attemptId) return;
+        const activeIds = new Set(r.activeSpeakers.map(participant =>
+          participant === r.localParticipant ? "local" : participant.sid));
+        setTiles(current => roomRef.current === r && connectAttemptIdRef.current === attemptId
+          ? updateTileSpeakingState(current, activeIds) : current);
+      });
       r.on(RoomEvent.LocalTrackPublished as any, refresh as any);
       r.on(RoomEvent.LocalTrackUnpublished as any, refresh as any);
       r.on(
