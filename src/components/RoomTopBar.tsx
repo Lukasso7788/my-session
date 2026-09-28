@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { SessionStageBar } from "./SessionStageBar";
+import { resolveStageVisual, SessionStageBar } from "./SessionStageBar";
 import { Icon, ParticipantsSmartIcon, type RoomTheme } from "./VideoControls";
 
 type HostProfile = {
@@ -11,6 +11,7 @@ type HostProfile = {
 
 type Stage = {
     name: string;
+    kind?: string;
     duration: number;
     color: string;
     type: string;
@@ -201,7 +202,10 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         fullStageLabel.length <= 8
             ? fullStageLabel
             : `${fullStageLabel.slice(0, 7)}…`;
-    const stageColor = String(currentStage?.color || "#5B8DEF");
+    // Use the same canonical color as the timeline (including legacy check-ins).
+    const stageColor = currentStage
+        ? resolveStageVisual(currentStage).color
+        : "#5B8DEF";
 
     const stageTextColor = (() => {
         const hex = stageColor.trim().replace(/^#/, "");

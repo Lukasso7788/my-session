@@ -587,3 +587,10 @@ test `scripts/room-timeline-model.test.mjs` covers check-in, break, and focus
 renames in both scheduled and infinite payload round trips. Production `npx vite
 build` and `git diff --check` passed. File-wide ESLint has a large pre-existing
 error baseline in `RoomPageLiveKit.tsx`; no full lint cleanup attempted.
+
+Follow-up, 2026-09-29: `RoomTopBar.tsx` rendered the current-stage chip from
+raw `currentStage.color`, whereas the timeline rendered through
+`SessionStageBar.resolveStageVisual()`. That resolver intentionally forces
+check-in to the intentions light-blue color even if an old schedule stores a
+wrong blue. The chip now uses the same resolver, so its background matches the
+timeline for typed check-in blocks and does not diverge on legacy colors.
