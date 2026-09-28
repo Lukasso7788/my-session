@@ -57,3 +57,22 @@ test('infinite payload round trip retains the existing anchor and phase semantic
     assert.equal(getTimelineTotalMinutes(restored), 62);
     assert.ok(Array.isArray(timelineBlocksToSchedulePayload(blocks)));
 });
+
+test('renaming a typed block changes only its display title', () => {
+    for (const preserveInfinite of [false, true]) {
+        const blocks = [
+            { id: 'check', kind: 'checkin', title: 'Share your progress', minutes: 2 },
+            { id: 'break', kind: 'break', title: 'Get some water', minutes: 10 },
+            { id: 'focus', kind: 'focus', title: 'Chapter three', minutes: 25 },
+        ];
+        const payload = timelineBlocksToSchedulePayload(blocks, { preserveInfinite });
+        const saved = preserveInfinite ? payload.timer.phases : payload;
+        assert.deepEqual(saved.map(block => [block.kind, block.type, block.name]), [
+            ['checkin', 'checkin', 'Share your progress'],
+            ['break', 'break', 'Get some water'],
+            ['focus', 'focus', 'Chapter three'],
+        ]);
+        const restored = timelineBlocksFromSchedule(payload);
+        assert.deepEqual(restored.map(block => [block.kind, block.title]), blocks.map(block => [block.kind, block.title]));
+    }
+});

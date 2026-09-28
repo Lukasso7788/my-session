@@ -771,6 +771,7 @@ type SessionRow = {
 
 type Stage = {
   name: string;
+  kind?: string;
   duration: number;
   color: string;
   type: "intro" | "intentions" | "focus" | "break" | "outro" | string;
@@ -1044,13 +1045,9 @@ function inferStageTypeFromLabel(raw: string): Stage["type"] {
     return "focus";
   return "focus";
 }
-function isCheckInLikeLabel(raw: string): boolean {
-  const k = normalizeKey(raw);
-  return k.includes("checkin");
-}
 function normalizeInfinitePhases(
   anyPhases: unknown,
-): { name: string; seconds: number }[] {
+): { name: string; seconds: number; kind?: string; color?: string }[] {
   if (!anyPhases) return [];
 
   const toSeconds = (raw: unknown): number => {
@@ -1085,10 +1082,12 @@ function normalizeInfinitePhases(
     return anyPhases
       .map((p) => {
         const name = isRecord(p)
-          ? str((p as any).name || (p as any).key || (p as any).type)
+          ? str((p as any).name || (p as any).title || (p as any).key || (p as any).type)
           : "";
         const seconds = toSeconds(p);
-        return { name, seconds };
+        const kind = isRecord(p) ? str((p as any).kind || (p as any).type) : "";
+        const color = isRecord(p) ? str((p as any).color) : "";
+        return { name, seconds, kind, color };
       })
       .filter((x) => x.seconds > 0);
   }
@@ -1103,7 +1102,9 @@ function normalizeInfinitePhases(
               ? Number(v) * 60
               : Number(v)
             : toSeconds(v);
-        return { name, seconds };
+        const kind = isRecord(v) ? str((v as any).kind || (v as any).type || k) : k;
+        const color = isRecord(v) ? str((v as any).color) : "";
+        return { name, seconds, kind, color };
       })
       .filter((x) => x.seconds > 0);
   }
@@ -7511,7 +7512,7 @@ export function RoomPageLiveKit({
             str((blk as any).key) ||
             "Stage";
 
-          const rawType = str((blk as any).type) || str((blk as any).category);
+          const rawType = str((blk as any).kind) || str((blk as any).type) || str((blk as any).category);
           const inferredType: Stage["type"] = rawType
             ? inferStageTypeFromLabel(rawType)
             : inferStageTypeFromLabel(rawName);
@@ -7546,6 +7547,7 @@ export function RoomPageLiveKit({
             str((blk as any).color) || STAGE_COLORS[inferredType] || "#F63135";
           return {
             name: rawName,
+            kind: str((blk as any).kind) || str((blk as any).type) || undefined,
             duration: displayMinutes,
             color,
             type: inferredType,
@@ -7585,30 +7587,18 @@ export function RoomPageLiveKit({
 
       const formatted: Stage[] = phases.map((p) => {
         const rawPhaseName = String(p.name || "");
-        const type = phaseToStageType(rawPhaseName);
+        const type = phaseToStageType(p.kind || rawPhaseName);
 
-        const displayName2 =
-          type === "focus"
-            ? "Focus"
-            : type === "intentions"
-              ? isCheckInLikeLabel(rawPhaseName)
-                ? "Check-in"
-                : "Tasks"
-              : type === "break"
-                ? "Break"
-                : type === "intro"
-                  ? "Intro"
-                  : type === "outro"
-                    ? "Outro"
-                    : rawPhaseName || "Stage";
+        const displayName2 = rawPhaseName || "Stage";
 
         const seconds = Number(p.seconds) || 0;
         const minutes = Math.max(1, Math.round(seconds / 60));
 
         return {
           name: displayName2,
+          kind: p.kind || undefined,
           duration: minutes,
-          color: STAGE_COLORS[type] || "#F63135",
+          color: p.color || STAGE_COLORS[type] || "#F63135",
           type,
           durationSeconds: seconds,
         };
@@ -7712,7 +7702,7 @@ export function RoomPageLiveKit({
               "Stage";
 
             const rawType =
-              str((blk as any).type) || str((blk as any).category);
+              str((blk as any).kind) || str((blk as any).type) || str((blk as any).category);
             const inferredType: Stage["type"] = rawType
               ? inferStageTypeFromLabel(rawType)
               : inferStageTypeFromLabel(rawName);
@@ -7749,6 +7739,7 @@ export function RoomPageLiveKit({
               "#F63135";
             return {
               name: rawName,
+              kind: str((blk as any).kind) || str((blk as any).type) || undefined,
               duration: displayMinutes,
               color,
               type: inferredType,
@@ -7789,30 +7780,18 @@ export function RoomPageLiveKit({
 
         const formatted: Stage[] = phases.map((p) => {
           const rawPhaseName = String(p.name || "");
-          const type = phaseToStageType(rawPhaseName);
+          const type = phaseToStageType(p.kind || rawPhaseName);
 
-          const displayName2 =
-            type === "focus"
-              ? "Focus"
-              : type === "intentions"
-                ? isCheckInLikeLabel(rawPhaseName)
-                  ? "Check-in"
-                  : "Tasks"
-                : type === "break"
-                  ? "Break"
-                  : type === "intro"
-                    ? "Intro"
-                    : type === "outro"
-                      ? "Outro"
-                      : rawPhaseName || "Stage";
+          const displayName2 = rawPhaseName || "Stage";
 
           const seconds = Number(p.seconds) || 0;
           const minutes = Math.max(1, Math.round(seconds / 60));
 
           return {
             name: displayName2,
+            kind: p.kind || undefined,
             duration: minutes,
-            color: STAGE_COLORS[type] || "#F63135",
+            color: p.color || STAGE_COLORS[type] || "#F63135",
             type,
             durationSeconds: seconds,
           };

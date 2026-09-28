@@ -558,3 +558,32 @@ Chrome total tab memory and CPU. Require stable retention after repeated teardow
 Do not ship always-on database telemetry or load test production with fake users.
 Preserve admission/grace, host leases, crash detection, camera/mic, all music,
 screen share, PiP, tasks/chat reliability and authentication throughout.
+
+## 2026-09-29 — Room timeline block identity after renaming
+
+Architecture: `src/components/RoomTimelineEditor.tsx` edits `RoomTimelineBlock`
+records (`kind` is the semantic identity, `title` is user-facing text). The
+serializer in `src/lib/roomTimelineModel.ts` persists both `kind` and `type`
+alongside the title/name for scheduled arrays and infinite/free-flow phases.
+`src/pages/RoomPageLiveKit.tsx` reads those schedules into room `Stage` objects,
+which feed `src/components/RoomTopBar.tsx` -> `SessionStageBar.tsx` and the room
+stage-transition sound timer. `SessionStageBar` already prefers `stage.kind`
+over the display name when it is present; check-in maps to the intentions color
+and its sound uses the intentions category. Legacy schedules without a typed
+block continue to infer from title.
+
+Root cause: both scheduled-array loaders ignored persisted `kind` and used only
+`type`/`category`; both infinite-phase loaders called a normalizer that discarded
+`kind`, then inferred stage type from `name`. The normalizers also replaced
+custom phase titles with generic labels. Once a name no longer contained a
+recognizable keyword, fallback was focus, causing the wrong state-bar color and
+focus gong. A renamed break could also lose break-end audio behavior.
+
+Fix: room stage construction now prefers stored `kind`, preserves it on `Stage`
+for the bar, and uses it for sound category. Infinite-phase normalization retains
+`kind`, `color`, and `name` separately; the original title remains visible.
+No database schema, video behavior, polling, or subscription changes. Regression
+test `scripts/room-timeline-model.test.mjs` covers check-in, break, and focus
+renames in both scheduled and infinite payload round trips. Production `npx vite
+build` and `git diff --check` passed. File-wide ESLint has a large pre-existing
+error baseline in `RoomPageLiveKit.tsx`; no full lint cleanup attempted.
