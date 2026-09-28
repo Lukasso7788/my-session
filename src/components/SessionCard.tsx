@@ -11,6 +11,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock, Eye, EyeOff, Pin, PinOff, Camera, MessageSquareOff } from "lucide-react";
 import { SessionStageBar } from "./SessionStageBar";
 import { supabase } from "../lib/supabase";
+import { isFreeFlowSchedule } from "../lib/freeFlowSession";
 import {
     loadEntitlementState,
     isPersonalPaywallForced,
@@ -4319,14 +4320,17 @@ export default function SessionCard({
     const baseResolvedType =
         nameToTypeMap[session.title] || inferredType || session.type || "Deep work";
 
+    const scheduleObj = tryParseJson<any>(session?.schedule);
     const custom = isCustomStudioSession(session);
-    const resolvedType = custom ? "Custom session" : baseResolvedType;
+    const freeFlow = isInfinite && isFreeFlowSchedule(scheduleObj);
+    const resolvedType = freeFlow ? "Free Flow" : custom ? "Custom session" : baseResolvedType;
 
     const typeMap: Record<string, { color: string; bg: string; icon: string }> = {
         "Deep work": { color: "#3B82F6", bg: "#E4EDFF", icon: "/icons/deepwork.svg" },
         Pomodoro: { color: "#EF4444", bg: "#FFE4E4", icon: "/icons/pomodoro.svg" },
         "Short sprints": { color: "#22C55E", bg: "#E5FFE9", icon: "/icons/sprints.svg" },
         "Custom session": { color: "#6366F1", bg: "#EEF2FF", icon: "/icons/custom.svg" },
+        "Free Flow": { color: "#6366F1", bg: "#EEF2FF", icon: "/icons/custom.svg" },
     };
 
     const t = typeMap[resolvedType] || {
@@ -4340,6 +4344,7 @@ export default function SessionCard({
         Pomodoro: "#F65252",
         "Short sprints": "#65D46C",
         "Custom session": "#6366F1",
+        "Free Flow": "#6366F1",
     };
     const joinHoverBg = JOIN_HOVER_BG[resolvedType] || "#111827";
 
@@ -4813,7 +4818,6 @@ export default function SessionCard({
 
     const description = resolvedDescription;
 
-    const scheduleObj = tryParseJson<any>(session?.schedule);
     const cycleSeconds =
         Number((scheduleObj as any)?.timer?.cycleSeconds) ||
         Number((scheduleObj as any)?.timer?.cycle_seconds) ||

@@ -12,8 +12,9 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   C:\Users\misha\.codex\worktrees\monthly-attendance\my-session.
   Local branch: codex/session-milestone-tree-badges. Its name is historical; reuse
   it rather than create another checkout purely for naming.
-- Base for the current laptop-auth fix: 858092fd14c34b18f058ffc0c646ae94ff72a2e0,
-  matching origin/main when work began. Earlier relevant commits: 6e8f04a (Plunk direct
+- Base for the current Free Flow badge change: 98faee10d7f1ba863fbb18f88b37efe1752ea0a6,
+  matching origin/main when work began. Recent commits: de9715b (OAuth refresh
+  storm fix), 98faee1 (remove session-card music indicator). Earlier: 6e8f04a (Plunk direct
   transport/admin preview), ab831cf (Tasks warm reopening), 68acc34
   (reliable chat names/avatars), b376843 (room performance).
 - C:\projects\my-session is a different old/dirty checkout with nested work.
@@ -464,6 +465,32 @@ clock/browser, reload, open another tab, revisit after one token lifetime, and
 watch /auth/v1/token rate, 429s, signed-in header, timezone gate and profile.
 If still failing, collect redacted browser time/clock-offset, /token status
 sequence and callback console/network failures; do not ask the user for tokens.
+
+## Current continuation: Free Flow badge on session cards
+
+SessionCard previously chose "Custom session" whenever `is_custom`, studio
+format, or `created_via=studio` was present. Free Flow infinite rooms can carry
+that custom marker, so they showed a generic badge. Free Flow is instead
+identified by persisted `schedule.variant="free_flow"` or
+`schedule.free_flow=true`, the same markers used by SessionsPage and
+RoomPageLiveKit. Room titles are user-editable, so title text is not reliable.
+
+src/components/SessionCard.tsx parses the schedule with its existing
+`tryParseJson` helper (including legacy JSON strings), before resolving the
+card type. An infinite session whose parsed schedule matches
+src/lib/freeFlowSession.ts gets `resolvedType="Free Flow"` before the ordinary
+custom check. The new typeMap/hover entries reuse the exact Custom session
+purple colors and `/icons/custom.svg`; only the visible type text changes.
+The parsed schedule variable is reused later for timeline rendering, avoiding
+a second parse. Non-Free-Flow custom and preset cards retain their prior type.
+No room/audio/video/booking logic, Supabase query, schema or permissions change.
+scripts/free-flow-session.test.mjs covers both persisted markers and ordinary
+custom/preset negatives. Verification: 65/65 script tests pass, including the
+two new classifier cases; `npm run build` and all five SEO HTML checks pass;
+the app TypeScript check still reports the same 251 pre-existing diagnostics;
+focused lint on the new helper/test passes and `git diff --check` is clean.
+No live authenticated card was inspected. After deploy, visually inspect a
+Free Flow infinite card and an ordinary custom card.
 
 ## Optimization backlog (implemented items noted; remaining items are concepts)
 
