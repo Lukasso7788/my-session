@@ -10914,9 +10914,18 @@ export function RoomPageLiveKit({
 
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: { displaySurface: 'browser' },
-        audio: canSuppressLocalTabPlayback
-          ? { suppressLocalAudioPlayback: true }
-          : true,
+        audio: {
+          // Voice processing removes musical detail and pumps the volume.
+          // Use preferences (not exact constraints) for browser compatibility.
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          channelCount: { ideal: 2 },
+          sampleRate: { ideal: 48_000 },
+          ...(canSuppressLocalTabPlayback
+            ? { suppressLocalAudioPlayback: true }
+            : {}),
+        },
         preferCurrentTab: false,
         selfBrowserSurface: 'exclude',
         surfaceSwitching: 'exclude',
@@ -10929,9 +10938,9 @@ export function RoomPageLiveKit({
       }
 
       // Keep the captured display stream alive because Chromium ties tab-audio
-      // capture to that session, but publish only a processed audio track. The
-      // gain node makes the existing room-music volume slider affect shared tab
-      // music too, without ever creating a screen-share tile.
+      // capture to that session, but publish only its original audio track.
+      // Room volume is applied locally by each listener, without creating a
+      // screen-share tile or attenuating the signal before encoding.
       sharedTabMusicStreamRef.current = stream;
 
       // Preserve the browser tab capture all the way to the WebRTC sender.
@@ -10983,13 +10992,14 @@ export function RoomPageLiveKit({
         {
           source: Track.Source.ScreenShareAudio,
           name: SHARED_TAB_MUSIC_TRACK_NAME,
-          // Keep enough Opus headroom for full-range stereo music instead of
-          // inheriting the room's lower voice-oriented/default audio budget.
-          audioPreset: { maxBitrate: 192_000, priority: "high" },
+          // LiveKit/Opus's maximum supported stereo bitrate. This is a ceiling;
+          // WebRTC can still adapt to the available network bandwidth.
+          // https://docs.livekit.io/transport/media/advanced/#hi-fi-audio
+          audioPreset: { maxBitrate: 510_000, priority: "high" },
           forceStereo: true,
           dtx: false,
           red: false,
-        } as any,
+        },
       )) as LocalTrackPublication;
 
       sharedTabMusicPublicationRef.current = publication;
@@ -11015,10 +11025,8 @@ export function RoomPageLiveKit({
           message || 'Could not share audio from that tab. Choose a Chrome tab and enable Share tab audio.',
         );
       }
-      const stream = sharedTabMusicStreamRef.current;
-      sharedTabMusicStreamRef.current = null;
-      stream?.getTracks().forEach((track) => track.stop());
-      setSharingTabMusic(false);
+      // Also release the local monitor if capture succeeded but publishing failed.
+      await stopSharedTabMusic();
     } finally {
       setTabMusicShareBusy(false);
     }
