@@ -180,7 +180,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 if (signOutTimer !== null) window.clearTimeout(signOutTimer);
 
                 if (currentSession) {
-                    adoptSession(currentSession);
+                    if (
+                        event === "TOKEN_REFRESHED" &&
+                        currentUserRef.current?.id === currentSession.user.id
+                    ) {
+                        // Supabase has already persisted the new token. Keep it
+                        // current without reloading the same profile (whose
+                        // authenticated query can call getSession again).
+                        setSession(currentSession);
+                        setLoading(false);
+                    } else {
+                        adoptSession(currentSession);
+                    }
                 } else {
                     // Never call another auth method while Supabase is still
                     // dispatching onAuthStateChange; it shares the auth lock.

@@ -12,8 +12,8 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   C:\Users\misha\.codex\worktrees\monthly-attendance\my-session.
   Local branch: codex/session-milestone-tree-badges. Its name is historical; reuse
   it rather than create another checkout purely for naming.
-- Base for the current panel-only pass: f2b44702c1608d99a3d99f6a091e759605e5dcf6,
-  previously pushed to main. Earlier relevant commits: 6e8f04a (Plunk direct
+- Base for the current laptop-auth fix: 858092fd14c34b18f058ffc0c646ae94ff72a2e0,
+  matching origin/main when work began. Earlier relevant commits: 6e8f04a (Plunk direct
   transport/admin preview), ab831cf (Tasks warm reopening), 68acc34
   (reliable chat names/avatars), b376843 (room performance).
 - C:\projects\my-session is a different old/dirty checkout with nested work.
@@ -444,6 +444,85 @@ If the Realtime channel is restricted by project-specific authorization, this
 UI-only badge will remain absent rather than break playback; inspect channel
 status/policies before changing authorization. Presence is not a substitute for
 server-authoritative media telemetry.
+
+## Current continuation: laptop-specific Discord OAuth refresh storm
+
+Issue reported by Dory: Discord login works on her phone but the laptop briefly
+shows a signed-in avatar, then returns to an anonymous header or the callback's
+"Sign-in needs another try" UI. The provided dated screenshots show the login
+form, timezone gate, anonymous /sessions page and callback error, not browser
+network/console details. The older timezone screenshot is not evidence that the
+timezone gate still blocks the account today.
+
+Read-only production evidence from the September 21 attempt (about 16:27 Kyiv):
+Discord OAuth completed and /user returned HTTP 200, followed by 44 auth /token
+refresh calls in roughly one minute (most in only a few seconds) and two HTTP
+429 responses. The auth account and saved timezone exist. This demonstrates a
+refresh storm and rate limiting after a successful identity exchange; it does
+not by itself prove why that particular laptop began refreshing. A skewed
+Windows clock, browser storage state or tab interplay remain possible triggers.
+No private account IDs, emails, tokens, IPs or raw logs are stored here.
+
+Auth flow: src/lib/supabase.ts constructs one browser Supabase client with
+storageKey "mysession-auth", persistent localStorage, PKCE/redirect detection and
+automatic refresh. src/pages/LoginPage.tsx starts Discord OAuth. Supabase
+exchanges the redirect before src/pages/AuthCallback.tsx calls getSession,
+adopts the session through src/context/AuthContext.tsx and navigates to /sessions;
+profile hydration/referral are best-effort background work. AuthContext also
+handles INITIAL_SESSION/SIGNED_IN/SIGNED_OUT/TOKEN_REFRESHED and reads the
+profiles row. src/components/AppBootstrapGate.tsx suppresses its own auth read
+on callback routes but checks access control elsewhere. ProfileCompletionGate
+may then ask for required timezone/real name and sync profile metadata.
+
+The installed @supabase/auth-js checks the absolute expires_at against device
+Date.now() (with a 90-second margin) when loading a session. A laptop clock
+far ahead can therefore make a fresh server token look expired and make every
+getSession refresh again. Previously src/lib/supabase.ts also performed a
+recurring-task auth getSession on every TOKEN_REFRESHED event, and AuthContext
+reloaded the profile on every such event. Both amplified a refresh storm and
+could lead to rate limiting and the callback error. No auth settings, provider,
+database RLS, profile schema, or authentication server were changed.
+
+Implementation:
+- New src/lib/authSessionStorage.ts wraps ONLY the Supabase auth storage key.
+  If server absolute expiry and local receipt time + expires_in differ by more
+  than 30 seconds, it stores a locally scheduled expiry with a bounded early
+  refresh margin (up to 60 seconds). Access token, refresh token, JWT claims and
+  server authorization remain untouched. Same-token re-save preserves the prior
+  local expiry, so metadata updates cannot prolong a token. Correct clocks,
+  PKCE code-verifier keys, malformed values and non-session storage retain the
+  SDK's normal behavior. This guards against skew in either direction but is
+  not a replacement for a correct system clock.
+- src/lib/supabase.ts now retains the user ID from auth events and materializes
+  recurring tasks after INITIAL_SESSION/SIGNED_IN, plus the existing visible,
+  focus and hourly checks. TOKEN_REFRESHED no longer issues getSession or a
+  new materialization attempt. The per-user/day marker and in-flight guard
+  remain. SIGNED_OUT clears the remembered user ID.
+- src/context/AuthContext.tsx now updates the session token on same-user
+  TOKEN_REFRESHED without another profiles SELECT. New account/other auth
+  events, explicit profile reload, metadata/profile updates and sign-out
+  reconciliation keep their established behavior. The avatar/name fallback
+  remains immediate on login. Reducing same-user profile reload also avoids
+  needlessly retriggering ProfileCompletionGate via changed user metadata
+  object identity.
+- Regression tests: scripts/auth-session-storage.test.mjs covers normal clock,
+  both directions of skew, same-token re-save, malformed storage/PKCE, and a
+  fake-network test against the installed GoTrueClient proving ten getSession
+  calls require only one refresh. scripts/test-auth-races.mjs covers 40
+  TOKEN_REFRESHED events without profile/auth reads and recurring-task boot,
+  focus and logout behavior.
+
+Validation at this stage: 20 focused auth tests and 68 tests across scripts
+passed; production npm run build including SEO checks passed. The global app
+TypeScript check and focused ESLint retain pre-existing diagnostics outside
+the changed logic; see the task's final verification for exact counts. No DB
+migration or environment variable is needed. The live laptop/browser outcome
+cannot be confirmed until the matching frontend deploy is live and Dory retries.
+After deploy, verify Discord OAuth on the affected laptop, repeat on a normal
+clock/browser, reload, open another tab, revisit after one token lifetime, and
+watch /auth/v1/token rate, 429s, signed-in header, timezone gate and profile.
+If still failing, collect redacted browser time/clock-offset, /token status
+sequence and callback console/network failures; do not ask the user for tokens.
 
 ## Optimization backlog (implemented items noted; remaining items are concepts)
 

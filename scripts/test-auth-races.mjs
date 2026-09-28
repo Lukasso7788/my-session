@@ -16,7 +16,7 @@ const response = (value) => ({ data: { session: value }, error: null });
 
 function harness(path, callback = false) {
   const states = [], effects = [], timers = new Map(), reads = [], navigations = [], adopted = [];
-  let listener, nextTimer = 0, setSessionCalls = 0;
+  let listener, nextTimer = 0, setSessionCalls = 0, profileLoads = 0;
   const react = {
     createContext: () => ({ Provider: "provider" }),
     useRef: (current) => ({ current }),
@@ -39,7 +39,7 @@ function harness(path, callback = false) {
     signOut: async () => ({ error: null }),
   };
   const query = { select() { return this; }, eq() { return this; },
-    single: async () => ({ data: null, error: { message: "Profile temporarily unavailable" } }),
+    single: async () => { profileLoads++; return { data: null, error: { message: "Profile temporarily unavailable" } }; },
     maybeSingle: async () => ({ data: { id: "dory", full_name: "Dory", avatar_url: "avatar" }, error: null }),
   };
   const modules = {
@@ -71,6 +71,7 @@ function harness(path, callback = false) {
   return {
     states, reads, auth, navigations, adopted, timers,
     get setSessionCalls() { return setSessionCalls; },
+    get profileLoads() { return profileLoads; },
     get context() { return rendered; },
     emit: (event, value = null) => listener(event, value),
     tick: () => { const pending = [...timers.values()]; timers.clear(); pending.forEach((fn) => fn()); },
@@ -95,6 +96,18 @@ test("old session read cannot replace a newer account or token refresh", async (
   h.emit("TOKEN_REFRESHED", session("new-account"));
   h.reads[0].resolve(response(session("old-account"))); await flush();
   assert.equal(h.states[0]?.id, "new-account");
+});
+test("TOKEN_REFRESHED updates the token without a profile/getSession feedback loop", async () => {
+  const h = provider(); h.emit("SIGNED_IN", session()); await flush();
+  assert.equal(h.profileLoads, 1);
+  for (let i = 0; i < 40; i++) {
+    h.emit("TOKEN_REFRESHED", { ...session(), access_token: `refreshed-${i}` });
+  }
+  await flush();
+  assert.equal(h.profileLoads, 1);
+  assert.equal(h.reads.length, 0);
+  assert.equal(h.states[1]?.access_token, "refreshed-39");
+  assert.equal(h.states[0]?.id, "dory");
 });
 test("real SIGNED_OUT clears user, session and profile even after null INITIAL_SESSION", async () => {
   const h = provider(); h.emit("SIGNED_IN", session()); h.emit("SIGNED_OUT");
@@ -139,4 +152,66 @@ test("StrictMode effect replay ignores obsolete callback completion", async () =
 test("slow OAuth exposes recovery UI and may still finish once SDK succeeds", async () => {
   const h = callback(); h.tick(); assert.match(h.states[0], /couldn't finish/);
   h.reads[0].resolve(response(session())); await flush(); assert.equal(h.navigations.length, 1);
+});
+
+function recurringTaskHarness() {
+  const timers = [], storage = new Map(), listeners = new Map();
+  let listener, getSessionCalls = 0, rpcCalls = 0;
+  const client = {
+    auth: {
+      getSession: () => { getSessionCalls++; throw Error("Recurring tasks must not read auth during an auth event"); },
+      onAuthStateChange: (fn) => { listener = fn; return { data: { subscription: { unsubscribe() {} } } }; },
+    },
+    rpc: async () => { rpcCalls++; return { data: 1, error: null }; },
+  };
+  const browser = {
+    localStorage: {
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => storage.set(key, value),
+    },
+    setTimeout: (fn) => { timers.push(fn); return timers.length; },
+    setInterval: () => 1,
+    addEventListener: (event, fn) => listeners.set(event, fn),
+    dispatchEvent() {},
+  };
+  const document = { visibilityState: "visible", addEventListener() {} };
+  const modules = {
+    "@supabase/supabase-js": { createClient: () => client },
+    "./mobileRoomControls": { installMobileRoomControls() {} },
+    "./supabaseFetchOptimizer": { optimizedSupabaseFetch() {} },
+    "./authSessionStorage": { createClockSafeAuthStorage: (storage) => storage },
+  };
+  const source = readFileSync("src/lib/supabase.ts", "utf8").replaceAll("import.meta.env", "({})");
+  const js = ts.transpileModule(source, { compilerOptions: {
+    target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS,
+  } }).outputText;
+  new Function("require", "exports", "window", "document", "localStorage", "CustomEvent", js)(
+    (id) => { assert.ok(modules[id], `Unexpected import: ${id}`); return modules[id]; },
+    {}, browser, document, browser.localStorage, class CustomEvent {},
+  );
+  return {
+    emit: (event, value = null) => listener(event, value),
+    tick: () => { const pending = timers.splice(0); pending.forEach((fn) => fn()); },
+    focus: () => listeners.get("focus")?.(),
+    clearDailyMarker: () => storage.clear(),
+    get getSessionCalls() { return getSessionCalls; },
+    get rpcCalls() { return rpcCalls; },
+  };
+}
+
+test("recurring task bootstrap uses auth-event identity and ignores refresh bursts", async () => {
+  const h = recurringTaskHarness();
+  h.emit("INITIAL_SESSION", session()); h.tick(); await flush();
+  assert.equal(h.rpcCalls, 1);
+  for (let i = 0; i < 40; i++) h.emit("TOKEN_REFRESHED", session());
+  h.tick(); await flush();
+  assert.equal(h.getSessionCalls, 0);
+  assert.equal(h.rpcCalls, 1);
+  h.clearDailyMarker(); h.focus(); await flush();
+  assert.equal(h.rpcCalls, 2);
+  h.emit("SIGNED_OUT"); h.tick(); await flush();
+  h.clearDailyMarker(); h.focus(); await flush();
+  assert.equal(h.rpcCalls, 2);
+  h.emit("SIGNED_IN", session("another-user")); h.tick(); await flush();
+  assert.equal(h.rpcCalls, 3);
 });
