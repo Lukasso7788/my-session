@@ -471,9 +471,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (role.isHost || role.isModerator) grant.roomAdmin = true;
 
     if (microphoneLocked) {
+      // The room policy locks microphones, not browser-tab music. Keep tab
+      // audio available even before a participant becomes a temporary host.
       grant.canPublishSources = [
         TrackSource.CAMERA,
         TrackSource.SCREEN_SHARE,
+        TrackSource.SCREEN_SHARE_AUDIO,
       ];
     }
 
