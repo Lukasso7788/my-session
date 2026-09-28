@@ -62,10 +62,6 @@ import {
   RoomSoundscapeEngine,
   type RoomSoundscapeId,
 } from "../lib/roomSoundscapes";
-import {
-  advertiseSharedMusic,
-  sharedRoomMusicActive,
-} from "../lib/roomMusicPresence";
 import PaywallModal from "../components/PaywallModal";
 import ActiveBanModal from "../components/ActiveBanModal";
 
@@ -8634,18 +8630,6 @@ export function RoomPageLiveKit({
   );
   const firefoxSafeFx = useMemo(() => isFirefoxLike(), []);
   const [connected, setConnected] = useState(false);
-  const advertisingSharedMusic = sharedRoomMusicActive(
-    connected,
-    activeSoundscapeId,
-    soundscapePlaying,
-    sharingTabMusic,
-    remoteSharedTabMusicActive,
-  );
-  useEffect(() => {
-    if (!advertisingSharedMusic || !sessionId) return;
-    // Only this music transition affects the channel; clock/volume do not.
-    return advertiseSharedMusic(supabase, sessionId);
-  }, [advertisingSharedMusic, sessionId]);
   const [voiceUiStatus, setVoiceUiStatus] =
     useState<VoiceUiStatus>("idle");
   const [voiceUiMode, setVoiceUiMode] = useState<VoiceUiMode>(() => {

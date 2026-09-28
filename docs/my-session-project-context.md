@@ -361,89 +361,30 @@ with the matching build assets. Real-device, slow-network, multiuser SFU and lon
 heap/native-media retention benchmarks remain follow-up measurement work.
 Git log/completion response record the final commit/push identity for this pass.
 
-## Current continuation: session-card shared-music indicator
+## Current continuation: remove session-card music indicator
 
-Requested 2026-09-28: show an animated playing-music icon on a session card
-while music is actually shared in that room. This pass changes card presentation
-and a small presence signal, NOT video, capture, audio playback, room admission,
-host leases or database schema. The "For me" personal track is intentionally
-excluded. Shared room soundscapes (including custom uploads) and shared tab
-audio are included. Remote subscribed tab audio counts even when muted for one
-listener, because it is still transmitted to the room.
+The session-card shared-music badge added in commit 858092f was removed at the
+user's request. This removal includes the badge and CSS, the `musicPlaying`
+SessionCard prop, room-side Realtime Presence publisher, listing-side Presence
+listener/hash mapping/state, and dedicated helper/test/browser fixture files.
+The SessionsPage `sessions-active-hosts` channel still subscribes to
+`infinite_room_host_leases` Postgres changes and calls `supabase.removeChannel`
+on cleanup. Room soundscape and shared-tab music playback/transport remain
+unchanged. No database migration, authorization change or new environment
+variable is involved. The former implementation remains recoverable from
+Git history but should not be treated as active architecture.
 
-Prior root cause: room soundtrack state travels as LiveKit Data packets on
-mysession_room_soundtrack_v1 and local React state inside RoomPageLiveKit; the
-Sessions listing has no LiveKit connection and therefore cannot know it is
-playing. There was no appropriate stored music-state column in the existing
-sessions/card query. This implementation avoids a new write-heavy Postgres
-status/heartbeat and additional SELECTs or per-card Realtime channels.
-
-src/lib/roomMusicPresence.ts uses Supabase Realtime Presence on the existing
-sessions-active-hosts topic. A room publishes only during a connected,
-shared-playing interval, one track per participant, no periodic updates; the
-publisher sets presence.enabled=false so it does not download the global state.
-The Presence key is SHA-256 of the normalized session UUID, and the payload
-contains only {playing:true}; raw private/hidden session IDs and user IDs are
-not sent in the global Presence payload. On pause, track end/disconnect,
-navigation or tab crash, channel removal/network presence expiry stops the
-signal. A delayed WebCrypto/subscription callback cannot re-track after
-cleanup. Supabase reconnection re-tracks on SUBSCRIBED. The signal is advisory
-UI state; Presence availability and a real LiveKit connection still determine
-when the badge can appear. A missed Presence signal never blocks audio.
-Reference: https://supabase.com/docs/guides/realtime/presence
-
-SessionsPage extends its EXISTING host-lease Realtime channel with one
-presence-sync listener. It computes keys asynchronously for the currently
-visible session IDs after the base cards render, maps opaque active keys back
-only to those visible sessions, and updates a deduped Set. It neither refetches
-sessions on Presence sync nor creates 120 channels. Old async key results and
-old subscription status callbacks are guarded; channel cleanup uses
-supabase.removeChannel. Offline/error/closed statuses clear stale badges.
-SessionCard receives optional musicPlaying prop, unchanged for other callers.
-SessionMusicIndicator renders three green CSS equalizer bars next to the title,
-with accessible text/tooltip and reduced-motion fallback. CSS lives in
-src/index.css. No new environment variables or Supabase migration.
-
-Files: src/lib/roomMusicPresence.ts,
-src/pages/{RoomPageLiveKit,SessionsPage}.tsx,
-src/components/{SessionCard,SessionMusicIndicator}.tsx, src/index.css,
-scripts/room-music-presence.test.mjs,
-scripts/{session-music-browser.mjs,fixtures/session-music-browser-check.js},
-and this handoff. Source changes to RoomPageLiveKit add only a Presence effect
-reading existing music/connection booleans; video functions/tracks remain
-unchanged. The existing full project architecture above remains applicable.
-
-Validation:
-- 48/48 unit/regression tests after rebasing on origin/main at b8145fe
-  (five new for personal-vs-shared, hashed keys, aggregation,
-  reconnect/cleanup and late async cancellation). The two upstream commits
-  changed shared-tab audio capture/permissions, not this badge's music signal.
-- TypeScript app: existing 251 diagnostics, zero new. General `npx tsc
-  --noEmit` still exits on the two pre-existing tsconfig project-reference
-  errors. Focused ESLint after rebase across music/card/list/room reports 742
-  errors and 30 warnings in legacy files; the two new modules report 0/0.
-  Before rebase, comparison with the then-baseline found no new diagnostics.
-  Existing baseline errors are not represented as a clean global typecheck/lint.
-- npm run build including all five SEO batch-1 raw-HTML checks passed after
-  that rebase. The build reports existing stale Browserslist data and large
-  chunks as non-failing warnings.
-- Actual SessionCard in an isolated Vite browser fixture with mock data/client:
-  9/9 assertions for initial absence, start/pause, title placement, three bars,
-  animation CSS, accessible tooltip and no runtime errors. A screenshot in the
-  Windows temp directory illustrates the active badge; it is NOT a production
-  session or proof of live cross-device Presence delivery.
-- git diff --check passed before rebase; final commit/push identity and clean
-  status are tracked by the final completion response.
-
-Deployment: release the matching frontend bundle through main. No SQL step.
-After deployment, manually verify two real browsers/accounts: shared soundtrack
-start/pause, shared-tab track start/end, page opened after music starts (initial
-Presence sync), multiple listeners/one leaving, abrupt host disconnection,
-private/infinite and scheduled cards, and Supabase Realtime reconnection.
-If the Realtime channel is restricted by project-specific authorization, this
-UI-only badge will remain absent rather than break playback; inspect channel
-status/policies before changing authorization. Presence is not a substitute for
-server-authoritative media telemetry.
+Validation: the changed production source files match pre-indicator commit
+b8145fe exactly (`git diff b8145fe --` on those paths is empty); the remaining
+63 script tests pass, including independent music-permission and soundscape
+tests; `npm run build` and all five SEO HTML checks pass; `git diff --check`
+passes. App TypeScript still reports the same 251 pre-existing diagnostics.
+The Supabase skill's read-only SQL check confirmed the existing
+`public.infinite_room_host_leases` table remains present; no schema was changed.
+No authenticated two-person live-room/music test was run. After deployment,
+verify card rendering without a music badge, host-lease updates in Sessions,
+and room music playback. Deleting music-indicator-specific tests is not a
+regression in the independent soundscape/audio tests.
 
 ## Current continuation: laptop-specific Discord OAuth refresh storm
 
