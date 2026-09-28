@@ -10,6 +10,7 @@ import { Link, useNavigate } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock, Eye, EyeOff, Pin, PinOff, Camera, MessageSquareOff } from "lucide-react";
 import { SessionStageBar } from "./SessionStageBar";
+import SessionMusicIndicator from "./SessionMusicIndicator";
 import { supabase } from "../lib/supabase";
 import {
     loadEntitlementState,
@@ -48,6 +49,7 @@ type BookSessionOptions = {
 interface SessionCardProps {
     session: any;
     userId?: string;
+    musicPlaying?: boolean;
 
     onBook: (sessionId: string, opts?: BookSessionOptions) => boolean | Promise<boolean>;
     onCancelBooking: (sessionId: string) => void;
@@ -3927,6 +3929,7 @@ function EditSessionStudioModal(props: {
 export default function SessionCard({
     session,
     userId,
+    musicPlaying = false,
     onBook,
     onCancelBooking,
     onJoin,
@@ -4996,6 +4999,7 @@ export default function SessionCard({
                                     )}
                                     <span className="min-w-0 break-words">{session.title}</span>
                                 </h3>
+                                {musicPlaying && <SessionMusicIndicator />}
 
                             </div>
 

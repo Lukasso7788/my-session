@@ -4,6 +4,12 @@ import { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } fro
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
+import {
+  SESSION_LIVE_STATUS_CHANNEL,
+  musicSessionIdsFromPresence,
+  roomMusicPresenceKey,
+  sameSessionIds,
+} from "../lib/roomMusicPresence";
 import ActiveBanModal from "../components/ActiveBanModal";
 import SupportMySessionModal from "../components/SupportMySessionModal";
 import HostSessionPromptModal, { type HostPromptKind } from "../components/HostSessionPromptModal";
@@ -509,6 +515,36 @@ export function SessionsPage() {
   const [searchParams] = useSearchParams();
 
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
+  const [musicSessionIds, setMusicSessionIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const musicKeysRef = useRef<Map<string, string>>(new Map());
+  const musicChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const visibleSessionIds = sessions.map((session) => String(session.id || "")).filter(Boolean).join(",");
+  const syncMusicPresence = useCallback(() => {
+    const channel = musicChannelRef.current;
+    const next = channel
+      ? musicSessionIdsFromPresence(channel.presenceState(), musicKeysRef.current)
+      : new Set<string>();
+    setMusicSessionIds((previous) => sameSessionIds(previous, next) ? previous : next);
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    const ids = visibleSessionIds ? visibleSessionIds.split(",") : [];
+    void Promise.all(ids.map(async (id) => [await roomMusicPresenceKey(id), id] as const))
+      .then((entries) => {
+        if (disposed) return;
+        musicKeysRef.current = new Map(entries);
+        syncMusicPresence();
+      })
+      .catch(() => {
+        if (disposed) return;
+        musicKeysRef.current = new Map();
+        syncMusicPresence();
+      });
+    return () => { disposed = true; };
+  }, [visibleSessionIds, syncMusicPresence]);
   const [isLoading, setIsLoading] = useState(true);
   const [sessionsLoadError, setSessionsLoadError] = useState<string | null>(null);
 
@@ -1658,7 +1694,7 @@ export function SessionsPage() {
 
   useEffect(() => {
     const channel = supabase
-      .channel("sessions-active-hosts")
+      .channel(SESSION_LIVE_STATUS_CHANNEL)
       .on(
         "postgres_changes",
         {
@@ -1693,12 +1729,22 @@ export function SessionsPage() {
           void fetchSessions();
         }
       )
-      .subscribe();
+      .on("presence", { event: "sync" }, syncMusicPresence)
+      .subscribe((status) => {
+        if (musicChannelRef.current !== channel) return;
+        if (status === "SUBSCRIBED") {
+          syncMusicPresence();
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          setMusicSessionIds((previous) => previous.size ? new Set() : previous);
+        }
+      });
+    musicChannelRef.current = channel;
 
     return () => {
+      if (musicChannelRef.current === channel) musicChannelRef.current = null;
       void supabase.removeChannel(channel);
     };
-  }, [fetchSessions]);
+  }, [fetchSessions, syncMusicPresence]);
 
   useEffect(() => {
     modal.setOnCreatedCallback(fetchSessions);
@@ -2448,6 +2494,7 @@ export function SessionsPage() {
     <SessionCard
       key={s.id}
       session={s}
+      musicPlaying={musicSessionIds.has(String(s.id))}
       userId={user?.id}
       currentUser={
         user?.id

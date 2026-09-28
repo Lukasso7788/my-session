@@ -194,3 +194,25 @@ body {
 .ms-screen-share-tile:fullscreen video {
   object-fit: contain !important;
 }
+
+@keyframes sessionMusicEqualizer {
+  0%, 100% { transform: scaleY(0.35); }
+  45% { transform: scaleY(1); }
+}
+
+.ms-session-music-bar {
+  display: block;
+  width: 2px;
+  height: 13px;
+  border-radius: 999px;
+  background: currentColor;
+  transform-origin: center;
+  animation: sessionMusicEqualizer 900ms ease-in-out infinite;
+}
+
+.ms-session-music-bar--two { animation-delay: -300ms; }
+.ms-session-music-bar--three { animation-delay: -600ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ms-session-music-bar { animation: none; transform: scaleY(0.65); }
+}
