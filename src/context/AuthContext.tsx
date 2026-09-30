@@ -39,11 +39,13 @@ async function captureProfileCountry(session: Session) {
     try {
         if (window.sessionStorage.getItem(storageKey) === "1") return;
 
-        const response = await fetch("/api/profile/location", {
+        const response = await fetch("/api/livekit/admin", {
             method: "POST",
             headers: {
+                "Content-Type": "application/json",
                 Authorization: `Bearer ${session.access_token}`,
             },
+            body: JSON.stringify({ action: "capture_profile_country" }),
         });
 
         if (response.ok) {
