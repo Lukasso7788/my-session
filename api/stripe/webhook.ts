@@ -1,6 +1,14 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import {
+  AFFILIATE_TERMS_VERSION,
+  LEGACY_AFFILIATE_TERMS_VERSION,
+  calculateCommissionReversal,
+  calculatePartnerCommission,
+  hasSuccessfulPaidAmount,
+  isWithinRevenueShareWindow,
+} from "../_lib/affiliateCommission.js";
 
 export const config = {
   api: {
@@ -96,122 +104,392 @@ async function upsertEntitlement(params: {
   return payload;
 }
 
-async function rewardReferrerForFirstPayment(params: {
+type AffiliatePlan = PaidPlan | "india_upi_monthly";
+
+function normalizeAffiliatePlan(plan: string | undefined | null): AffiliatePlan | null {
+  if (plan === "india_upi_monthly") return "india_upi_monthly";
+  if (plan === "pro_monthly") return "pro_monthly";
+  if (plan === "pro_yearly") return "pro_yearly";
+  if (plan === "lifetime") return "lifetime";
+  return null;
+}
+
+function stripeObjectId(value: any): string {
+  if (typeof value === "string") return value;
+  return String(value?.id || "").trim();
+}
+
+function stripeAmountToDecimal(amountMinor: unknown): number {
+  const amount = Number(amountMinor);
+  if (!Number.isFinite(amount)) return 0;
+  return Math.round((amount / 100 + Number.EPSILON) * 100) / 100;
+}
+
+async function resolveInvoicePlan(invoice: any, fallbackPlan: string | null | undefined): Promise<AffiliatePlan | null> {
+  const directPlan = normalizeAffiliatePlan(
+    invoice?.metadata?.plan ||
+      invoice?.metadata?.entitlement_plan ||
+      invoice?.parent?.subscription_details?.metadata?.plan,
+  );
+  if (directPlan) return directPlan;
+
+  const subscriptionId =
+    stripeObjectId(invoice?.subscription) ||
+    stripeObjectId(invoice?.parent?.subscription_details?.subscription);
+
+  if (subscriptionId) {
+    try {
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      const subscriptionPlan = normalizeAffiliatePlan(
+        subscription.metadata?.plan || subscription.metadata?.entitlement_plan,
+      );
+      if (subscriptionPlan) return subscriptionPlan;
+    } catch (error) {
+      console.error("Stripe webhook: affiliate subscription metadata lookup failed", {
+        subscriptionId,
+        invoiceId: invoice?.id,
+        error,
+      });
+    }
+  }
+
+  return normalizeAffiliatePlan(fallbackPlan);
+}
+
+async function resolveInvoicePaymentIntentId(invoice: any): Promise<string> {
+  const direct = stripeObjectId(invoice?.payment_intent);
+  if (direct) return direct;
+
+  const payments = Array.isArray(invoice?.payments?.data) ? invoice.payments.data : [];
+  for (const payment of payments) {
+    const candidate =
+      stripeObjectId(payment?.payment?.payment_intent) ||
+      stripeObjectId(payment?.payment_intent);
+    if (candidate) return candidate;
+  }
+
+  try {
+    const expanded = await stripe.invoices.retrieve(String(invoice.id || ""), {
+      expand: ["payment_intent"],
+    } as any);
+    const expandedDirect = stripeObjectId((expanded as any)?.payment_intent);
+    if (expandedDirect) return expandedDirect;
+
+    const expandedPayments = Array.isArray((expanded as any)?.payments?.data)
+      ? (expanded as any).payments.data
+      : [];
+    for (const payment of expandedPayments) {
+      const candidate =
+        stripeObjectId(payment?.payment?.payment_intent) ||
+        stripeObjectId(payment?.payment_intent);
+      if (candidate) return candidate;
+    }
+  } catch (error) {
+    console.error("Stripe webhook: affiliate payment intent lookup failed", {
+      invoiceId: invoice?.id,
+      error,
+    });
+  }
+
+  return "";
+}
+
+async function resolvePaidAmountUsd(params: {
+  amountMinor: unknown;
+  currency: string | null | undefined;
+  paymentIntentId?: string;
+}): Promise<number> {
+  const currency = String(params.currency || "").trim().toLowerCase();
+  const amountMinor = Number(params.amountMinor || 0);
+  if (!Number.isFinite(amountMinor) || amountMinor <= 0) return 0;
+
+  if (currency === "usd") return stripeAmountToDecimal(amountMinor);
+
+  const paymentIntentId = String(params.paymentIntentId || "").trim();
+  if (!paymentIntentId) {
+    throw new Error(`affiliate_fx_payment_intent_missing:${currency}`);
+  }
+
+  const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId, {
+    expand: ["latest_charge.balance_transaction"],
+  } as any);
+  const charge = (paymentIntent as any)?.latest_charge;
+  const balanceTransaction =
+    charge && typeof charge !== "string" ? charge.balance_transaction : null;
+
+  if (
+    balanceTransaction &&
+    typeof balanceTransaction !== "string" &&
+    String(balanceTransaction.currency || "").toLowerCase() === "usd"
+  ) {
+    return stripeAmountToDecimal(Math.abs(Number(balanceTransaction.amount || 0)));
+  }
+
+  const chargeId = stripeObjectId(charge);
+  if (chargeId) {
+    const fullCharge = await stripe.charges.retrieve(chargeId, {
+      expand: ["balance_transaction"],
+    } as any);
+    const chargeBalanceTransaction = (fullCharge as any)?.balance_transaction;
+
+    if (
+      chargeBalanceTransaction &&
+      typeof chargeBalanceTransaction !== "string" &&
+      String(chargeBalanceTransaction.currency || "").toLowerCase() === "usd"
+    ) {
+      return stripeAmountToDecimal(
+        Math.abs(Number(chargeBalanceTransaction.amount || 0)),
+      );
+    }
+
+    const balanceTransactionId = stripeObjectId(chargeBalanceTransaction);
+    if (balanceTransactionId) {
+      const transaction = await stripe.balanceTransactions.retrieve(balanceTransactionId);
+      if (String(transaction.currency || "").toLowerCase() === "usd") {
+        return stripeAmountToDecimal(Math.abs(Number(transaction.amount || 0)));
+      }
+    }
+  }
+
+  throw new Error(`affiliate_fx_usd_settlement_missing:${currency}`);
+}
+
+async function activePartnerProfile(referrerUserId: string) {
+  const { data, error } = await supabaseAdmin
+    .from("partner_profiles")
+    .select("status, tier")
+    .eq("user_id", referrerUserId)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  const status = String(data?.status || "").trim().toLowerCase();
+  if (!["active", "approved"].includes(status)) return null;
+  return data;
+}
+
+async function rewardReferrerForPaidPayment(params: {
   referredUserId: string;
-  stripeCheckoutSessionId: string;
-  stripeSubscriptionId?: string;
-  stripeCustomerId?: string;
+  sourcePaymentKey: string;
+  plan: AffiliatePlan;
+  amountUsd: number;
+  paidAt: string;
+  providerInvoiceRef?: string;
+  providerPaymentRef?: string;
 }) {
-  const { referredUserId, stripeCheckoutSessionId, stripeSubscriptionId, stripeCustomerId } = params;
-  const nowIso = new Date().toISOString();
+  const {
+    referredUserId,
+    sourcePaymentKey,
+    plan,
+    amountUsd,
+    paidAt,
+    providerInvoiceRef,
+    providerPaymentRef,
+  } = params;
+
+  if (!hasSuccessfulPaidAmount(amountUsd)) return;
 
   const { data: referral, error: referralError } = await supabaseAdmin
     .from("referrals")
-    .select("id, referrer_user_id, referred_user_id, status, first_paid_at")
+    .select(
+      "id, referrer_user_id, referred_user_id, status, first_paid_at, affiliate_terms_version",
+    )
     .eq("referred_user_id", referredUserId)
     .maybeSingle();
 
-  if (referralError) {
-    console.error("Stripe webhook: referral lookup failed", {
-      referredUserId,
-      stripeCheckoutSessionId,
-      error: referralError,
-    });
-    throw referralError;
-  }
+  if (referralError) throw referralError;
+  if (!referral?.id || !referral?.referrer_user_id) return;
 
-  if (!referral?.id || !referral?.referrer_user_id) {
-    console.log("Stripe webhook: no referral found for paid user, skipping affiliate reward", {
-      referredUserId,
-      stripeCheckoutSessionId,
-      stripeSubscriptionId,
-      stripeCustomerId,
-    });
+  const termsVersion = String(
+    referral.affiliate_terms_version || LEGACY_AFFILIATE_TERMS_VERSION,
+  );
+
+  if (termsVersion === LEGACY_AFFILIATE_TERMS_VERSION) {
+    const nowIso = new Date().toISOString();
+    const { error: legacyInsertError } = await supabaseAdmin
+      .from("reward_ledger")
+      .insert({
+        user_id: referral.referrer_user_id,
+        related_user_id: referredUserId,
+        referral_id: referral.id,
+        type: "first_payment_bonus",
+        amount_usd: 5,
+        currency: "usd",
+        status: "available",
+        available_at: nowIso,
+        created_at: nowIso,
+        source_payment_key: sourcePaymentKey,
+        payment_provider: "stripe",
+        provider_invoice_ref: providerInvoiceRef || null,
+        provider_payment_ref: providerPaymentRef || null,
+        gross_payment_usd: amountUsd,
+        commission_rate: null,
+      });
+
+    if (legacyInsertError && legacyInsertError.code !== "23505") {
+      throw legacyInsertError;
+    }
+
+    await supabaseAdmin
+      .from("referrals")
+      .update({
+        status: "paid",
+        first_paid_at: referral.first_paid_at || paidAt,
+      })
+      .eq("id", referral.id);
+
     return;
   }
 
-  const { data: existingReward, error: existingRewardError } = await supabaseAdmin
+  if (termsVersion !== AFFILIATE_TERMS_VERSION) return;
+  if (!(await activePartnerProfile(referral.referrer_user_id))) return;
+
+  const firstPaidAt = String(referral.first_paid_at || paidAt);
+  if (!isWithinRevenueShareWindow(firstPaidAt, paidAt)) return;
+
+  const { data: rewardRows, error: rewardRowsError } = await supabaseAdmin
     .from("reward_ledger")
-    .select("id")
+    .select("amount_usd, type")
     .eq("referral_id", referral.id)
-    .eq("related_user_id", referredUserId)
-    .eq("type", "first_payment_bonus")
-    .maybeSingle();
+    .in("type", ["partner_revenue_share", "partner_revenue_share_reversal"]);
 
-  if (existingRewardError) {
-    console.error("Stripe webhook: existing affiliate reward lookup failed", {
-      referredUserId,
-      referralId: referral.id,
-      error: existingRewardError,
-    });
-    throw existingRewardError;
-  }
+  if (rewardRowsError) throw rewardRowsError;
 
-  if (existingReward?.id) {
-    console.log("Stripe webhook: affiliate reward already exists, skipping duplicate", {
-      referredUserId,
-      referrerUserId: referral.referrer_user_id,
-      referralId: referral.id,
-      rewardId: existingReward.id,
-    });
+  const alreadyEarnedUsd = (rewardRows || []).reduce(
+    (sum: number, row: any) => sum + Number(row.amount_usd || 0),
+    0,
+  );
 
-    return;
-  }
+  const commissionUsd = calculatePartnerCommission({
+    plan,
+    amountUsd,
+    alreadyEarnedUsd,
+  });
 
+  if (commissionUsd <= 0) return;
+
+  const nowIso = new Date().toISOString();
   const { error: rewardInsertError } = await supabaseAdmin
     .from("reward_ledger")
     .insert({
       user_id: referral.referrer_user_id,
       related_user_id: referredUserId,
       referral_id: referral.id,
-      type: "first_payment_bonus",
-      amount_usd: 5,
+      type: "partner_revenue_share",
+      amount_usd: commissionUsd,
       currency: "usd",
       status: "available",
       available_at: nowIso,
       created_at: nowIso,
+      source_payment_key: sourcePaymentKey,
+      payment_provider: "stripe",
+      provider_invoice_ref: providerInvoiceRef || null,
+      provider_payment_ref: providerPaymentRef || null,
+      gross_payment_usd: amountUsd,
+      commission_rate: 0.5,
     });
 
   if (rewardInsertError) {
-    console.error("Stripe webhook: affiliate reward insert failed", {
-      referredUserId,
-      referrerUserId: referral.referrer_user_id,
-      referralId: referral.id,
-      stripeCheckoutSessionId,
-      stripeSubscriptionId,
-      stripeCustomerId,
-      error: rewardInsertError,
-    });
+    if (rewardInsertError.code === "23505") return;
     throw rewardInsertError;
   }
 
-  const { error: referralUpdateError } = await supabaseAdmin
+  await supabaseAdmin
     .from("referrals")
     .update({
       status: "paid",
-      first_paid_at: referral.first_paid_at || nowIso,
+      first_paid_at: referral.first_paid_at || paidAt,
     })
     .eq("id", referral.id);
 
-  if (referralUpdateError) {
-    console.error("Stripe webhook: referral paid status update failed", {
-      referredUserId,
-      referrerUserId: referral.referrer_user_id,
-      referralId: referral.id,
-      error: referralUpdateError,
-    });
-    throw referralUpdateError;
-  }
-
-  console.log("Stripe webhook affiliate reward created", {
+  console.log("Stripe webhook affiliate revenue share created", {
     referredUserId,
     referrerUserId: referral.referrer_user_id,
     referralId: referral.id,
-    amountUsd: 5,
-    stripeCheckoutSessionId,
-    stripeSubscriptionId,
-    stripeCustomerId,
+    sourcePaymentKey,
+    plan,
+    amountUsd,
+    commissionUsd,
+    firstPaidAt,
   });
+}
+
+async function reversePartnerCommission(params: {
+  sourcePaymentKey: string;
+  paymentIntentId?: string;
+  chargeId?: string;
+  grossAmountMinor: number;
+  reversedAmountMinor: number;
+}) {
+  const paymentIntentId = String(params.paymentIntentId || "").trim();
+  const chargeId = String(params.chargeId || "").trim();
+  if (!paymentIntentId && !chargeId) return;
+  if (params.grossAmountMinor <= 0 || params.reversedAmountMinor <= 0) return;
+
+  let query = supabaseAdmin
+    .from("reward_ledger")
+    .select("id, user_id, related_user_id, referral_id, amount_usd, provider_payment_ref")
+    .eq("type", "partner_revenue_share");
+
+  if (paymentIntentId && chargeId) {
+    query = query.in("provider_payment_ref", [paymentIntentId, chargeId]);
+  } else {
+    query = query.eq("provider_payment_ref", paymentIntentId || chargeId);
+  }
+
+  const { data: originals, error: originalsError } = await query;
+  if (originalsError) throw originalsError;
+
+  for (const original of originals || []) {
+    const { data: reversals, error: reversalsError } = await supabaseAdmin
+      .from("reward_ledger")
+      .select("amount_usd")
+      .eq("reversal_of_reward_id", original.id)
+      .eq("type", "partner_revenue_share_reversal");
+
+    if (reversalsError) throw reversalsError;
+
+    const alreadyReversedUsd = Math.abs(
+      (reversals || []).reduce(
+        (sum: number, row: any) => sum + Math.min(0, Number(row.amount_usd || 0)),
+        0,
+      ),
+    );
+
+    const reversalUsd = calculateCommissionReversal({
+      commissionAmountUsd: Number(original.amount_usd || 0),
+      grossPaymentAmount: params.grossAmountMinor,
+      refundedPaymentAmount: params.reversedAmountMinor,
+      alreadyReversedUsd,
+    });
+
+    if (reversalUsd >= 0) continue;
+
+    const nowIso = new Date().toISOString();
+    const { error: reversalInsertError } = await supabaseAdmin
+      .from("reward_ledger")
+      .insert({
+        user_id: original.user_id,
+        related_user_id: original.related_user_id,
+        referral_id: original.referral_id,
+        type: "partner_revenue_share_reversal",
+        amount_usd: reversalUsd,
+        currency: "usd",
+        status: "available",
+        available_at: nowIso,
+        created_at: nowIso,
+        source_payment_key: `${params.sourcePaymentKey}:${original.id}`,
+        payment_provider: "stripe",
+        provider_payment_ref: paymentIntentId || chargeId,
+        gross_payment_usd: null,
+        commission_rate: 0.5,
+        reversal_of_reward_id: original.id,
+      });
+
+    if (reversalInsertError && reversalInsertError.code !== "23505") {
+      throw reversalInsertError;
+    }
+  }
 }
 
 async function markHostSupportPaymentAvailable(session: any) {
@@ -394,12 +672,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         stripeSubscriptionId,
       });
 
-      await rewardReferrerForFirstPayment({
-        referredUserId: metadataUserId,
-        stripeCheckoutSessionId: session.id,
-        stripeSubscriptionId,
-        stripeCustomerId,
-      });
+      if (
+        metadataPlan === "lifetime" &&
+        String(session.payment_status || "").toLowerCase() === "paid" &&
+        Number(session.amount_total || 0) > 0
+      ) {
+        const paidAt = new Date(Number(event.created || Math.floor(Date.now() / 1000)) * 1000).toISOString();
+        const amountUsd = await resolvePaidAmountUsd({
+          amountMinor: session.amount_total,
+          currency: session.currency,
+          paymentIntentId: stripeObjectId(session.payment_intent),
+        });
+
+        await rewardReferrerForPaidPayment({
+          referredUserId: metadataUserId,
+          sourcePaymentKey: `stripe:checkout:${session.id}`,
+          plan: "lifetime",
+          amountUsd,
+          paidAt,
+          providerPaymentRef: stripeObjectId(session.payment_intent) || session.id,
+        });
+      }
 
       await enqueueStripeLifecycleEvent({
         userId: metadataUserId,
@@ -423,6 +716,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const invoice = event.data.object as any;
       const entitlement = await findEntitlementByStripeObject(invoice);
       if (entitlement?.user_id) {
+        if (event.type === "invoice.paid" && Number(invoice.amount_paid || 0) > 0) {
+          const paymentIntentId = await resolveInvoicePaymentIntentId(invoice);
+          const affiliatePlan = await resolveInvoicePlan(invoice, entitlement.plan);
+          const paidAtSeconds =
+            Number(invoice?.status_transitions?.paid_at || 0) ||
+            Number(event.created || Math.floor(Date.now() / 1000));
+          const paidAt = new Date(paidAtSeconds * 1000).toISOString();
+
+          if (affiliatePlan) {
+            const amountUsd = await resolvePaidAmountUsd({
+              amountMinor: invoice.amount_paid,
+              currency: invoice.currency,
+              paymentIntentId,
+            });
+
+            await rewardReferrerForPaidPayment({
+              referredUserId: entitlement.user_id,
+              sourcePaymentKey: `stripe:invoice:${invoice.id}`,
+              plan: affiliatePlan,
+              amountUsd,
+              paidAt,
+              providerInvoiceRef: String(invoice.id || ""),
+              providerPaymentRef: paymentIntentId || String(invoice.id || ""),
+            });
+          }
+        }
+
         await enqueueStripeLifecycleEvent({
           userId: entitlement.user_id,
           eventType: event.type === "invoice.payment_failed" ? "payment_failed" : "payment_recovered",
@@ -430,6 +750,44 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           properties: { plan: entitlement.plan || "free", invoice_id: invoice.id },
         });
       }
+    }
+
+    if (event.type === "charge.refunded") {
+      const charge = event.data.object as any;
+      await reversePartnerCommission({
+        sourcePaymentKey: `stripe:refund:${charge.id}:${Number(charge.amount_refunded || 0)}`,
+        paymentIntentId: stripeObjectId(charge.payment_intent),
+        chargeId: String(charge.id || ""),
+        grossAmountMinor: Number(charge.amount || 0),
+        reversedAmountMinor: Number(charge.amount_refunded || 0),
+      });
+    }
+
+    if (event.type === "charge.dispute.created") {
+      const dispute = event.data.object as any;
+      const chargeId = stripeObjectId(dispute.charge);
+      let paymentIntentId = "";
+
+      if (chargeId) {
+        try {
+          const charge = await stripe.charges.retrieve(chargeId);
+          paymentIntentId = stripeObjectId((charge as any).payment_intent);
+        } catch (error) {
+          console.error("Stripe webhook: dispute charge lookup failed", {
+            disputeId: dispute.id,
+            chargeId,
+            error,
+          });
+        }
+      }
+
+      await reversePartnerCommission({
+        sourcePaymentKey: `stripe:dispute:${dispute.id}`,
+        paymentIntentId,
+        chargeId,
+        grossAmountMinor: Number(dispute.amount || 0),
+        reversedAmountMinor: Number(dispute.amount || 0),
+      });
     }
 
     if (event.type === "customer.subscription.deleted") {
