@@ -31,6 +31,31 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+async function captureProfileCountry(session: Session) {
+    if (typeof window === "undefined" || !session?.user?.id || !session.access_token) return;
+
+    const storageKey = `mysession_country_captured:${session.user.id}`;
+
+    try {
+        if (window.sessionStorage.getItem(storageKey) === "1") return;
+
+        const response = await fetch("/api/livekit/admin", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ action: "capture_profile_country" }),
+        });
+
+        if (response.ok) {
+            window.sessionStorage.setItem(storageKey, "1");
+        }
+    } catch (error) {
+        console.warn("[Auth] Country capture warning:", error);
+    }
+}
+
 function profileFromAuthMetadata(user: User): Profile {
     const metadata = user.user_metadata || {};
     const fullName = String(
@@ -108,6 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         currentUserRef.current = nextUser;
         setLoading(false);
         void loadProfile(nextUser);
+        void captureProfileCountry(nextSession);
     }, [loadProfile]);
 
     // 🌟 ВОССТАНОВЛЕНИЕ СЕССИИ + LISTENER

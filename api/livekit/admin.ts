@@ -40,7 +40,7 @@ type RoomMediaAdminAction =
   | "prepare_room_soundtrack_upload"
   | "upload_room_soundtrack";
 
-type GrowthAction = "send_friend_invite";
+type GrowthAction = "send_friend_invite" | "capture_profile_country";
 
 type AccessControlAction =
   | "session_bootstrap"
@@ -2218,6 +2218,41 @@ async function handleSenderAdminAction(params: {
   });
 }
 
+
+async function handleProfileCountryCapture(params: {
+  req: VercelRequest;
+  res: VercelResponse;
+  sb: SupabaseClient;
+  accessToken: string;
+}) {
+  const { req, res, sb, accessToken } = params;
+
+  const { data, error } = await sb.auth.getUser(accessToken);
+  if (error || !data.user?.id) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+
+  const rawCountry = String(req.headers["x-vercel-ip-country"] || "").trim().toUpperCase();
+  const countryCode = /^[A-Z]{2}$/.test(rawCountry) ? rawCountry : "";
+
+  if (!countryCode) {
+    return res.status(200).json({ ok: true, captured: false });
+  }
+
+  const { error: updateError } = await sb
+    .from("profiles")
+    .update({
+      country_code: countryCode,
+      country_detected_at: new Date().toISOString(),
+      location_source: "vercel_ip_country",
+    })
+    .eq("id", data.user.id);
+
+  if (updateError) throw updateError;
+
+  return res.status(200).json({ ok: true, captured: true });
+}
+
 function setCors(res: VercelResponse, req: VercelRequest) {
   const origin = String(req.headers.origin || "*");
   res.setHeader("Cache-Control", "no-store, max-age=0");
@@ -2664,6 +2699,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(401).json({
         error: "auth_required",
         hint: "Send Authorization: Bearer <supabase_access_token>",
+      });
+    }
+
+    if (rawGrowthAction === "capture_profile_country") {
+      return await handleProfileCountryCapture({
+        req,
+        res,
+        sb,
+        accessToken,
       });
     }
 

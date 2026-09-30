@@ -202,6 +202,54 @@ type MonthlyAttendanceAggregateRow = {
   attendee_ids: string[] | null;
 };
 
+type UsageDailyPoint = {
+  date: string;
+  uniqueAttendees: number;
+  visits: number;
+  attendedSessions: number;
+  memberHours: number;
+  attendeeIds: string[];
+};
+
+type UsageHourlyPoint = {
+  hour: number;
+  avgPeople: number;
+  peakPeople: number;
+  activeWindows: number;
+  emptyWindows: number;
+  avgActiveSessions: number;
+};
+
+type UsageGeoPoint = {
+  countryCode?: string;
+  region?: string;
+  users: number;
+};
+
+type UsageAnalytics = {
+  summary: {
+    unique_attendees_today: number;
+    unique_attendees_7d: number;
+    unique_attendees_30d: number;
+    visits_today: number;
+    visits_7d: number;
+    visits_30d: number;
+    attended_sessions_today: number;
+    attended_sessions_7d: number;
+    attended_sessions_30d: number;
+    member_hours_7d: number;
+    host_presence_hours_7d: number;
+    scheduled_hours_7d: number;
+    tracked_from: string | null;
+    total_profiles: number;
+    profiles_with_country: number;
+  };
+  daily: UsageDailyPoint[];
+  hourly: UsageHourlyPoint[];
+  countries: UsageGeoPoint[];
+  timezoneRegions: UsageGeoPoint[];
+};
+
 type AdminRecordMetric = {
   id: string;
   label: string;
@@ -216,6 +264,30 @@ const EMPTY_ACTIVITY: AdminActivityData = {
   sessions: [],
   bookings: [],
   attendance: [],
+};
+
+const EMPTY_USAGE_ANALYTICS: UsageAnalytics = {
+  summary: {
+    unique_attendees_today: 0,
+    unique_attendees_7d: 0,
+    unique_attendees_30d: 0,
+    visits_today: 0,
+    visits_7d: 0,
+    visits_30d: 0,
+    attended_sessions_today: 0,
+    attended_sessions_7d: 0,
+    attended_sessions_30d: 0,
+    member_hours_7d: 0,
+    host_presence_hours_7d: 0,
+    scheduled_hours_7d: 0,
+    tracked_from: null,
+    total_profiles: 0,
+    profiles_with_country: 0,
+  },
+  daily: [],
+  hourly: [],
+  countries: [],
+  timezoneRegions: [],
 };
 
 function emptyProfile(id = ""): ProfileSummary {
@@ -1412,6 +1484,170 @@ function ActivityExplorer({ activity }: { activity: AdminActivityData }) {
   );
 }
 
+
+function UsageAnalyticsSection({ data }: { data: UsageAnalytics }) {
+  const busiest = [...data.hourly].sort((a, b) => b.avgPeople - a.avgPeople).slice(0, 5);
+  const quietest = [...data.hourly].sort((a, b) => a.avgPeople - b.avgPeople).slice(0, 5);
+  const maxAverage = Math.max(1, ...data.hourly.map((point) => point.avgPeople));
+  const totalProfiles = Math.max(1, Number(data.summary.total_profiles || 0));
+  const countryCoverage = Number(data.summary.profiles_with_country || 0) / totalProfiles * 100;
+
+  const formatHour = (hour: number) =>
+    `${String(hour).padStart(2, "0")}:00 UTC`;
+
+  return (
+    <section className="mt-8 space-y-5">
+      <div className="rounded-[28px] border border-black/10 bg-[#F7F8FA] p-5 sm:p-7">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-[12px] font-bold uppercase tracking-[0.13em] text-[#667085]">
+              Usage analytics
+            </div>
+            <h2 className="mt-2 text-[26px] font-bold tracking-[-0.02em]">
+              When MySession is alive — and when it is quiet
+            </h2>
+            <p className="mt-2 max-w-3xl text-[13px] leading-6 text-[#667085]">
+              Attendance is now read from durable visit/day history, so a returning member no longer moves yesterday's attendance into today.
+              Hourly load is shown in UTC so every day is comparable.
+            </p>
+          </div>
+          {data.summary.tracked_from ? (
+            <div className="text-[12px] font-semibold text-[#667085]">
+              Durable history tracked from {formatDateTime(data.summary.tracked_from)}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[
+            ["Scheduled hosting · 7d", `${formatNumber(data.summary.scheduled_hours_7d, 1)} h`],
+            ["Host presence · 7d", `${formatNumber(data.summary.host_presence_hours_7d, 1)} h`],
+            ["Member hours · 7d", `${formatNumber(data.summary.member_hours_7d, 1)} h`],
+            ["Attendance visits · 7d", formatNumber(data.summary.visits_7d)],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-2xl border border-black/[0.07] bg-white p-4">
+              <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#777]">{label}</div>
+              <div className="mt-2 text-[26px] font-bold">{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-6">
+          <div className="grid grid-cols-6 gap-1 sm:grid-cols-12 lg:grid-cols-24">
+            {data.hourly.map((point) => {
+              const intensity = Math.max(0.08, point.avgPeople / maxAverage);
+              return (
+                <div
+                  key={point.hour}
+                  className="group relative flex min-h-24 flex-col justify-end overflow-hidden rounded-xl border border-black/[0.06] bg-white px-2 py-2"
+                  title={`${formatHour(point.hour)} · avg ${formatNumber(point.avgPeople, 2)} people · peak ${formatNumber(point.peakPeople, 2)} · ${point.emptyWindows} empty hours`}
+                >
+                  <div
+                    className="absolute inset-x-0 bottom-0 bg-[#335DC5]"
+                    style={{ height: `${Math.round(intensity * 82)}%`, opacity: 0.16 + intensity * 0.54 }}
+                  />
+                  <div className="relative text-[10px] font-semibold text-[#667085]">
+                    {String(point.hour).padStart(2, "0")}
+                  </div>
+                  <div className="relative mt-1 text-[13px] font-bold">
+                    {formatNumber(point.avgPeople, 1)}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-2 text-[11px] text-[#8A94A6]">
+            Average concurrent presence by UTC hour across the selected 30-day window.
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-2xl bg-white p-5">
+            <div className="text-[13px] font-bold">Most loaded hours</div>
+            <div className="mt-3 space-y-2">
+              {busiest.map((point) => (
+                <div key={point.hour} className="flex items-center justify-between rounded-xl bg-[#F5F7FB] px-3 py-2">
+                  <span className="text-[13px] font-semibold">{formatHour(point.hour)}</span>
+                  <span className="text-[12px] text-[#667085]">
+                    avg {formatNumber(point.avgPeople, 2)} · peak {formatNumber(point.peakPeople, 2)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-white p-5">
+            <div className="text-[13px] font-bold">Least loaded hours</div>
+            <div className="mt-3 space-y-2">
+              {quietest.map((point) => (
+                <div key={point.hour} className="flex items-center justify-between rounded-xl bg-[#F5F7FB] px-3 py-2">
+                  <span className="text-[13px] font-semibold">{formatHour(point.hour)}</span>
+                  <span className="text-[12px] text-[#667085]">
+                    avg {formatNumber(point.avgPeople, 2)} · {point.emptyWindows} empty windows
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-[28px] border border-black/10 bg-white p-5 sm:p-7">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="text-[12px] font-bold uppercase tracking-[0.13em] text-[#667085]">
+              Member geography
+            </div>
+            <h2 className="mt-2 text-[26px] font-bold tracking-[-0.02em]">
+              Where our members work from
+            </h2>
+            <p className="mt-2 text-[14px] text-[#667085]">
+              Wherever you are, you're in good company.
+            </p>
+          </div>
+          <div className="text-[12px] font-semibold text-[#667085]">
+            Country coverage: {formatPercent(countryCoverage)}
+          </div>
+        </div>
+
+        {data.countries.length ? (
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {data.countries.slice(0, 16).map((point) => (
+              <div key={point.countryCode} className="rounded-2xl bg-[#F6F7F9] px-4 py-3">
+                <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#8A94A6]">
+                  Country
+                </div>
+                <div className="mt-1 flex items-end justify-between gap-3">
+                  <div className="text-[18px] font-bold">{point.countryCode || "—"}</div>
+                  <div className="text-[13px] font-semibold text-[#667085]">{point.users}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-5 rounded-2xl border border-dashed border-black/10 bg-[#FAFAFA] px-4 py-5 text-[13px] text-[#667085]">
+            Country capture starts automatically on authenticated requests after this release. Historical profiles are not guessed.
+          </div>
+        )}
+
+        <div className="mt-6">
+          <div className="text-[13px] font-bold">Timezone-region fallback</div>
+          <p className="mt-1 text-[12px] leading-5 text-[#8A94A6]">
+            Existing users without captured country are grouped by their saved IANA timezone. UTC stays “Unknown” rather than being assigned to a country.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {data.timezoneRegions.slice(0, 12).map((point) => (
+              <span key={point.region} className="rounded-full border border-black/[0.07] bg-[#F8F9FA] px-3 py-2 text-[12px] font-semibold">
+                {point.region || "Unknown"} · {point.users}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function AdminPage() {
   const navigate = useNavigate();
 
@@ -1447,6 +1683,7 @@ export default function AdminPage() {
   const [monthlyAttendance, setMonthlyAttendance] = useState<MonthlyAttendancePoint[]>([]);
   const [recordMetrics, setRecordMetrics] = useState<AdminRecordMetric[]>([]);
   const [activity, setActivity] = useState<AdminActivityData>(EMPTY_ACTIVITY);
+  const [usageAnalytics, setUsageAnalytics] = useState<UsageAnalytics>(EMPTY_USAGE_ANALYTICS);
   const [error, setError] = useState("");
   const [drilldown, setDrilldown] = useState<DrilldownState | null>(null);
 
@@ -1656,6 +1893,7 @@ export default function AdminPage() {
         sessionsHostedChartResult,
         paymentsChartResult,
         monthlyAttendanceResult,
+        usageAnalyticsResult,
       ] = await Promise.all([
         safeCount("profiles", "created_at", todayIso),
         safeCount("profiles", "created_at", weekIso),
@@ -1716,9 +1954,13 @@ export default function AdminPage() {
           p_start_month: `${oldestMonth}-01`,
           p_end_month: nextMonth.toISOString().slice(0, 10),
         }),
+        supabase.rpc("admin_usage_analytics", { p_days: 30 }),
       ]);
 
       if (monthlyAttendanceResult.error) throw monthlyAttendanceResult.error;
+      if (usageAnalyticsResult.error) throw usageAnalyticsResult.error;
+      const usageData = (usageAnalyticsResult.data || EMPTY_USAGE_ANALYTICS) as UsageAnalytics;
+      setUsageAnalytics(usageData);
       const activityData = await buildAdminActivity(attendanceRows, bookingRows, monthIso);
       const monthlyAttendanceData = buildMonthlyAttendance(
         (monthlyAttendanceResult.data as MonthlyAttendanceAggregateRow[]) || [],
@@ -2012,6 +2254,26 @@ export default function AdminPage() {
         );
       });
 
+      // Replace volatile session_attendance day buckets with durable history.
+      // session_attendance is intentionally reused by live presence; using it
+      // directly made yesterday's person disappear when joined_at moved.
+      const durableDailyByDate = new Map(
+        (usageData.daily || []).map((point) => [String(point.date), point])
+      );
+      days.forEach((day) => {
+        const durable = durableDailyByDate.get(day.key);
+        if (!durable) return;
+        attendanceRecordsByDay.set(day.key, Number(durable.visits || 0));
+        uniqueAttendeesByDay.set(
+          day.key,
+          new Set((durable.attendeeIds || []).map(String).filter(Boolean))
+        );
+        attendedSessionsByDay.set(
+          day.key,
+          new Set(Array.from({ length: Number(durable.attendedSessions || 0) }, (_, index) => `durable-${index}`))
+        );
+      });
+
       setChartData(
         days.map((day) => {
           const uniqueAttendees = uniqueAttendeesByDay.get(day.key)?.size || 0;
@@ -2050,17 +2312,17 @@ export default function AdminPage() {
         sessionsHostedWeek,
         sessionsHostedMonth,
 
-        attendanceRecordsToday,
-        attendanceRecordsWeek,
-        attendanceRecordsMonth,
+        attendanceRecordsToday: Number(usageData.summary?.visits_today || attendanceRecordsToday),
+        attendanceRecordsWeek: Number(usageData.summary?.visits_7d || attendanceRecordsWeek),
+        attendanceRecordsMonth: Number(usageData.summary?.visits_30d || attendanceRecordsMonth),
 
-        uniqueAttendeesToday,
-        uniqueAttendeesWeek,
-        uniqueAttendeesMonth,
+        uniqueAttendeesToday: Number(usageData.summary?.unique_attendees_today || uniqueAttendeesToday),
+        uniqueAttendeesWeek: Number(usageData.summary?.unique_attendees_7d || uniqueAttendeesWeek),
+        uniqueAttendeesMonth: Number(usageData.summary?.unique_attendees_30d || uniqueAttendeesMonth),
 
-        attendedSessionsToday,
-        attendedSessionsWeek,
-        attendedSessionsMonth,
+        attendedSessionsToday: Number(usageData.summary?.attended_sessions_today || attendedSessionsToday),
+        attendedSessionsWeek: Number(usageData.summary?.attended_sessions_7d || attendedSessionsWeek),
+        attendedSessionsMonth: Number(usageData.summary?.attended_sessions_30d || attendedSessionsMonth),
 
         uniqueBookedUsersToday,
         uniqueBookedUsersWeek,
@@ -2408,9 +2670,15 @@ export default function AdminPage() {
           ...profileToRow(booking.user),
           secondary: `${booking.user.email || booking.user.id} · ${booking.sessionTitle}`,
         })));
+      } else if (dataKey === "uniqueAttendees") {
+        const durablePoint = usageAnalytics.daily.find(
+          (day) => String(day.date) === point.dateKey
+        );
+        const ids = (durablePoint?.attendeeIds || []).map(String).filter(Boolean);
+        const profiles = await loadProfilesByIds(ids);
+        rows = ids.map((id) => profileToRow(profiles.get(id) || emptyProfile(id)));
       } else if (
         dataKey === "attendanceRecords" ||
-        dataKey === "uniqueAttendees" ||
         dataKey === "avgAttendeesPerSession"
       ) {
         const attendance = activity.attendance.filter((entry) => dayMatches(entry.occurredAt));
@@ -2604,7 +2872,7 @@ export default function AdminPage() {
             </h1>
 
             <p className="mt-2 max-w-3xl text-[14px] leading-6 text-[#666]">
-              Attendance uses <b>session_attendance</b>. Unique attendees are distinct user-like IDs from attendance rows.
+              Attendance uses durable visit/day history captured from live presence. Returning members no longer overwrite previous-day analytics.
             </p>
           </div>
 
@@ -2717,7 +2985,8 @@ export default function AdminPage() {
               <MetricCard label="Sessions created 30d" value={stats.sessionsCreatedMonth} hint="Rows created in sessions table in 30 days." data={chartData} dataKey="sessionsCreated" color="#7C3AED" />
               <MetricCard label="Sessions hosted 30d" value={stats.sessionsHostedMonth} hint="Sessions started in the last 30 days." data={chartData} dataKey="sessionsHosted" color="#059669" />
             </section>
-            <RecordsSection records={recordMetrics} onOpen={(record) => void openRecordMetric(record)} />
+            <UsageAnalyticsSection data={usageAnalytics} />
+                        <RecordsSection records={recordMetrics} onOpen={(record) => void openRecordMetric(record)} />
             <MonthlyAttendanceChart data={monthlyAttendance} onMonthClick={(point) => void openMonthlyAttendance(point)} />
             <ActivityExplorer activity={activity} />
 
