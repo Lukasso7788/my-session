@@ -12,6 +12,7 @@ type PartnerProfile = {
     tier: PartnerTier | string;
     status: PartnerStatus | string;
     subscribed_user_reward_usd?: number | null;
+    revenue_share_percent?: number | null;
     revenue_share_label?: string | null;
     revenue_share_months?: number | null;
     special_launch_reward_label?: string | null;
@@ -26,10 +27,12 @@ type ReferralRow = {
     registered_at: string | null;
     activated_at: string | null;
     first_paid_at: string | null;
+    affiliate_terms_version?: string | null;
 };
 
 type RewardRow = {
     id: string;
+    referral_id?: string | null;
     type: string;
     amount_usd: number | null;
     status: string | null;
@@ -60,8 +63,53 @@ const AFFILIATE_REWARD_TYPES = [
     "affiliate_paid",
     "partner_paid",
     "partner_revenue_share",
+    "partner_revenue_share_reversal",
     "manual_adjustment",
 ];
+
+const CURRENT_AFFILIATE_TERMS_VERSION = "partner_50pct_6mo_v1";
+const AFFILIATE_REVENUE_SHARE_PERCENT = 50;
+const AFFILIATE_REVENUE_SHARE_MONTHS = 6;
+const AFFILIATE_MAX_PER_MEMBER_USD = 30;
+
+function addUtcMonths(value: string, months: number) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+
+    const targetMonthIndex = date.getUTCMonth() + months;
+    const targetYear = date.getUTCFullYear() + Math.floor(targetMonthIndex / 12);
+    const targetMonth = ((targetMonthIndex % 12) + 12) % 12;
+    const targetDay = Math.min(
+        date.getUTCDate(),
+        new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate()
+    );
+
+    return new Date(Date.UTC(
+        targetYear,
+        targetMonth,
+        targetDay,
+        date.getUTCHours(),
+        date.getUTCMinutes(),
+        date.getUTCSeconds(),
+        date.getUTCMilliseconds()
+    ));
+}
+
+function revenueShareMonthsRemaining(firstPaidAt: string | null) {
+    if (!firstPaidAt) return AFFILIATE_REVENUE_SHARE_MONTHS;
+
+    const end = addUtcMonths(firstPaidAt, AFFILIATE_REVENUE_SHARE_MONTHS);
+    if (!end) return 0;
+
+    const remainingMs = end.getTime() - Date.now();
+    if (remainingMs <= 0) return 0;
+
+    const averageMonthMs = (365.2425 / 12) * 24 * 60 * 60 * 1000;
+    return Math.min(
+        AFFILIATE_REVENUE_SHARE_MONTHS,
+        Math.max(1, Math.ceil(remainingMs / averageMonthMs))
+    );
+}
 
 function formatMoney(value: number) {
     const safe = Number.isFinite(value) ? value : 0;
@@ -140,7 +188,7 @@ async function loadPartnerProfile(userId: string) {
     const { data, error } = await supabase
         .from("partner_profiles")
         .select(
-            "id, user_id, tier, status, subscribed_user_reward_usd, revenue_share_label, revenue_share_months, special_launch_reward_label, application_note, approved_at, notes"
+            "id, user_id, tier, status, subscribed_user_reward_usd, revenue_share_percent, revenue_share_label, revenue_share_months, special_launch_reward_label, application_note, approved_at, notes"
         )
         .eq("user_id", userId)
         .maybeSingle();
@@ -152,7 +200,7 @@ async function loadPartnerProfile(userId: string) {
 async function loadRewards(userId: string) {
     const byUserId = await supabase
         .from("reward_ledger")
-        .select("id, type, amount_usd, status, created_at, available_at")
+        .select("id, referral_id, type, amount_usd, status, created_at, available_at")
         .eq("user_id", userId)
         .order("created_at", { ascending: false });
 
@@ -162,7 +210,7 @@ async function loadRewards(userId: string) {
 
     const byReferrerUserId = await supabase
         .from("reward_ledger")
-        .select("id, type, amount_usd, status, created_at, available_at")
+        .select("id, referral_id, type, amount_usd, status, created_at, available_at")
         .eq("referrer_user_id", userId)
         .order("created_at", { ascending: false });
 
@@ -213,7 +261,6 @@ export default function AffiliatePage() {
     const status = normalizeStatus(rawStatus);
     const tier = String(partnerProfile?.tier || "none").toLowerCase();
     const isActive = status === "active";
-    const affiliateRewardAmount = 5;
 
     const referralLink = useMemo(() => {
         if (!referralCode) return "";
@@ -284,7 +331,7 @@ export default function AffiliatePage() {
 
                 supabase
                     .from("referrals")
-                    .select("id, status, registered_at, activated_at, first_paid_at")
+                    .select("id, status, registered_at, activated_at, first_paid_at, affiliate_terms_version")
                     .eq("referrer_user_id", user.id)
                     .order("registered_at", { ascending: false }),
 
@@ -367,9 +414,10 @@ export default function AffiliatePage() {
                         tier: "partner",
                         status: "pending",
                         application_note: note || null,
-                        subscribed_user_reward_usd: 5,
-                        revenue_share_label: "$5 per subscribed user",
-                        revenue_share_months: 0,
+                        subscribed_user_reward_usd: 0,
+                        revenue_share_percent: AFFILIATE_REVENUE_SHARE_PERCENT,
+                        revenue_share_label: "50% for first 6 months (up to $30)",
+                        revenue_share_months: AFFILIATE_REVENUE_SHARE_MONTHS,
                         updated_at: now,
                     })
                     .eq("user_id", userId);
@@ -381,9 +429,10 @@ export default function AffiliatePage() {
                     tier: "partner",
                     status: "pending",
                     application_note: note || null,
-                    subscribed_user_reward_usd: 5,
-                    revenue_share_label: "$5 per subscribed user",
-                    revenue_share_months: 0,
+                    subscribed_user_reward_usd: 0,
+                    revenue_share_percent: AFFILIATE_REVENUE_SHARE_PERCENT,
+                    revenue_share_label: "50% for first 6 months (up to $30)",
+                    revenue_share_months: AFFILIATE_REVENUE_SHARE_MONTHS,
                     created_at: now,
                     updated_at: now,
                 });
@@ -494,7 +543,7 @@ export default function AffiliatePage() {
                                 Turn your audience into trackable revenue.
                             </h1>
                             <p className="mt-5 max-w-xl text-[16px] leading-7 text-white/70">
-                                Share MySession with people who will use it. Earn a cash reward when each referred member makes their first successful payment.
+                                Share MySession with people who will use it. Earn 50% of every subscription payment from members you refer for their first 6 months. That's up to $30 per paying member.
                             </p>
                             <div className="mt-6 flex flex-wrap gap-2 text-[12px] font-semibold text-white/80">
                                 <span className="rounded-full bg-white/10 px-3 py-2">Trackable partner link</span>
@@ -504,20 +553,20 @@ export default function AffiliatePage() {
                         </div>
 
                         <div className="rounded-[26px] border border-white/10 bg-white/[0.07] p-5 backdrop-blur sm:p-6">
-                            <div className="text-[12px] font-bold uppercase tracking-[0.14em] text-[#AFC3FF]">Current standard reward</div>
+                            <div className="text-[12px] font-bold uppercase tracking-[0.14em] text-[#AFC3FF]">Standard revenue share</div>
                             <div className="mt-2 flex items-end gap-3">
-                                <div className="text-[58px] font-bold leading-none tracking-[-0.05em]">{formatMoney(affiliateRewardAmount)}</div>
-                                <div className="pb-1 text-[13px] leading-5 text-white/55">one-time<br />per new paying member</div>
+                                <div className="text-[58px] font-bold leading-none tracking-[-0.05em]">50%</div>
+                                <div className="pb-1 text-[13px] leading-5 text-white/55">of every paid subscription charge<br />for the first 6 months</div>
                             </div>
                             <div className="mt-6 grid grid-cols-3 gap-2">
                                 {[1, 5, 10].map((count) => (
                                     <div key={count} className="rounded-2xl bg-white/10 p-3 text-center">
-                                        <div className="text-[11px] text-white/55">{count} {count === 1 ? "member" : "members"}</div>
-                                        <div className="mt-1 text-[18px] font-bold">{formatMoney(affiliateRewardAmount * count)}</div>
+                                        <div className="text-[11px] text-white/55">{count} {count === 1 ? "member" : "members"} max</div>
+                                        <div className="mt-1 text-[18px] font-bold">{formatMoney(AFFILIATE_MAX_PER_MEMBER_USD * count)}</div>
                                     </div>
                                 ))}
                             </div>
-                            <p className="mt-4 text-[12px] leading-5 text-white/50">This is a one-time first-payment reward, not a monthly recurring commission.</p>
+                            <p className="mt-4 text-[12px] leading-5 text-white/50">Earn 50% of every subscription payment from members you refer for their first 6 months. That's up to $30 per paying member.</p>
                         </div>
                     </div>
                 </section>
@@ -544,7 +593,7 @@ export default function AffiliatePage() {
 
                                     <h2 className="mt-4 text-[26px] font-bold tracking-[-0.02em]">Your affiliate dashboard</h2>
                                     <p className="mt-2 max-w-xl text-[14px] leading-6 text-[#68738A]">
-                                        Share your partner link. When a referred user makes their first successful payment, your balance receives {formatMoney(affiliateRewardAmount)}.
+                                        Share your partner link. Earn 50% of every successful subscription payment from each referred member during their first 6 paid months, up to $30 per member.
                                     </p>
                                 </div>
 
@@ -578,7 +627,7 @@ export default function AffiliatePage() {
                                 ["Registered referrals", stats.registered],
                                 ["Activated referrals", stats.activated],
                                 ["Subscribed referrals", stats.paid],
-                                ["Available payout balance", formatMoney(stats.availableRewards)],
+                                ["Payable balance", formatMoney(stats.availableRewards)],
                                 ["Pending rewards", formatMoney(stats.pendingRewards)],
                                 ["Paid out", formatMoney(stats.paidOutRewards)],
                                 ["Total affiliate rewards", formatMoney(stats.totalRewards)],
@@ -602,8 +651,8 @@ export default function AffiliatePage() {
                                 <div className="mt-5 grid gap-3 sm:grid-cols-3">
                                     {[
                                         ["01", "Share", "Use your trackable partner link."],
-                                        ["02", "Convert", "A referred member makes a first payment."],
-                                        ["03", "Earn", `${formatMoney(affiliateRewardAmount)} becomes available.`],
+                                        ["02", "Convert", "A referred member makes a successful paid charge after any free trial."],
+                                        ["03", "Earn", "Receive 50% of qualifying payments for 6 months, up to $30 per paying member."],
                                     ].map(([number, title, body]) => (
                                         <div key={number} className="rounded-2xl bg-[#F4F6FA] p-4">
                                             <div className="text-[11px] font-bold text-[#335DC5]">{number}</div>
@@ -674,6 +723,24 @@ export default function AffiliatePage() {
                                             : referral.activated_at
                                                 ? "activated"
                                                 : String(referral.status || "registered").toLowerCase();
+                                        const referralRewards = affiliateRewards.filter(
+                                            (reward) => reward.referral_id === referral.id
+                                        );
+                                        const referralEarnings = referralRewards.reduce(
+                                            (sum, reward) => sum + Number(reward.amount_usd || 0),
+                                            0
+                                        );
+                                        const referralPending = referralRewards
+                                            .filter((reward) => String(reward.status || "").toLowerCase() === "pending")
+                                            .reduce((sum, reward) => sum + Number(reward.amount_usd || 0), 0);
+                                        const referralPayable = referralRewards
+                                            .filter((reward) => String(reward.status || "").toLowerCase() === "available")
+                                            .reduce((sum, reward) => sum + Number(reward.amount_usd || 0), 0);
+                                        const usesCurrentTerms =
+                                            referral.affiliate_terms_version === CURRENT_AFFILIATE_TERMS_VERSION;
+                                        const monthsRemaining = usesCurrentTerms
+                                            ? revenueShareMonthsRemaining(referral.first_paid_at)
+                                            : null;
 
                                         return (
                                             <div
@@ -689,7 +756,7 @@ export default function AffiliatePage() {
                                                     </div>
                                                 </div>
 
-                                                <div className="flex flex-wrap items-center gap-2">
+                                                <div className="flex flex-wrap items-center justify-end gap-2">
                                                     <span className={`rounded-full px-3 py-1 text-[12px] font-bold ${getReferralStatusBadgeClass(referralStatus)}`}>
                                                         {referralStatus}
                                                     </span>
@@ -698,6 +765,22 @@ export default function AffiliatePage() {
                                                             Paid {formatDate(referral.first_paid_at)}
                                                         </span>
                                                     ) : null}
+                                                    <span className="rounded-full bg-[#F4F6FA] px-3 py-1 text-[12px] font-semibold text-[#53617A]">
+                                                        Earned {formatMoney(referralEarnings)}
+                                                    </span>
+                                                    <span className="rounded-full bg-amber-50 px-3 py-1 text-[12px] font-semibold text-amber-700">
+                                                        Pending {formatMoney(referralPending)}
+                                                    </span>
+                                                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-[12px] font-semibold text-emerald-700">
+                                                        Payable {formatMoney(referralPayable)}
+                                                    </span>
+                                                    <span className="rounded-full bg-blue-50 px-3 py-1 text-[12px] font-semibold text-blue-700">
+                                                        {usesCurrentTerms
+                                                            ? referral.first_paid_at
+                                                                ? `${monthsRemaining} month${monthsRemaining === 1 ? "" : "s"} remaining`
+                                                                : "6 months start at first paid charge"
+                                                            : "Legacy $5 terms"}
+                                                    </span>
                                                 </div>
                                             </div>
                                         );
@@ -764,7 +847,8 @@ export default function AffiliatePage() {
                                     Default approved partner for creators, hosts, and community owners.
                                 </p>
                                 <ul className="mt-4 space-y-2 text-[14px] text-[#444]">
-                                    <li>• $5 per subscribed user</li>
+                                    <li>• 50% of payments for the first 6 months</li>
+                                    <li>• Up to $30 per paying member</li>
                                     <li>• Manual payouts</li>
                                     <li>• Partner dashboard</li>
                                 </ul>
@@ -779,7 +863,8 @@ export default function AffiliatePage() {
                                     For partners with proven activation or active community access.
                                 </p>
                                 <ul className="mt-4 space-y-2 text-[14px] text-[#333]">
-                                    <li>• $5 per subscribed user</li>
+                                    <li>• 50% of payments for the first 6 months</li>
+                                    <li>• Up to $30 per paying member</li>
                                     <li>• Priority support</li>
                                     <li>• Custom landing page later</li>
                                     <li>• Co-branded sessions later</li>
@@ -795,8 +880,9 @@ export default function AffiliatePage() {
                                     For large communities, recurring collaborations, and proven audience access.
                                 </p>
                                 <ul className="mt-4 space-y-2 text-[14px] text-[#333]">
-                                    <li>• $5+ per subscribed user</li>
-                                    <li>• Custom partnership structure</li>
+                                    <li>• 50% of payments for the first 6 months by default</li>
+                                    <li>• Up to $30 per paying member</li>
+                                    <li>• Custom campaigns or partnership structure by agreement</li>
                                     <li>• Co-branded onboarding</li>
                                     <li>• Optional special launch deal</li>
                                 </ul>
