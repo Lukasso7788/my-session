@@ -11,10 +11,12 @@ import AnalyticsProvider from "./components/AnalyticsProvider";
 import ProfileCompletionGate from "./components/ProfileCompletionGate";
 import InAppBrowserMediaGate from "./components/InAppBrowserMediaGate";
 import { initializeAnalytics } from "./lib/analytics";
+import { installDynamicImportRecovery } from "./lib/dynamicImportRecovery";
 
 const isStandaloneVectorizer = window.location.pathname.replace(/\/$/, "") === "/vectorizer";
 const IconVectorizerPage = lazy(() => import("./pages/IconVectorizerPage"));
 
+installDynamicImportRecovery();
 initializeAnalytics();
 
 createRoot(document.getElementById("root")!).render(
