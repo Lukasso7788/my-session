@@ -22,7 +22,7 @@ create table if not exists public.attendance_visit_history (
   id bigint generated always as identity primary key,
   source_attendance_id uuid not null,
   session_id uuid not null references public.sessions(id) on delete cascade,
-  user_id uuid not null references public.profiles(id) on delete cascade,
+  user_id uuid not null,
   joined_at timestamptz not null,
   left_at timestamptz,
   last_seen_at timestamptz,
@@ -48,7 +48,7 @@ grant usage, select on sequence public.attendance_visit_history_id_seq to servic
 
 create table if not exists public.attendance_daily_users (
   attendance_date date not null,
-  user_id uuid not null references public.profiles(id) on delete cascade,
+  user_id uuid not null,
   first_seen_at timestamptz not null,
   last_seen_at timestamptz not null,
   created_at timestamptz not null default now(),
