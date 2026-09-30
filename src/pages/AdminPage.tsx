@@ -1485,166 +1485,145 @@ function ActivityExplorer({ activity }: { activity: AdminActivityData }) {
 }
 
 
-function UsageAnalyticsSection({ data }: { data: UsageAnalytics }) {
-  const busiest = [...data.hourly].sort((a, b) => b.avgPeople - a.avgPeople).slice(0, 5);
-  const quietest = [...data.hourly].sort((a, b) => a.avgPeople - b.avgPeople).slice(0, 5);
+function UsageAnalyticsCards({ data }: { data: UsageAnalytics }) {
+  const busiest = [...data.hourly].sort((a, b) => b.avgPeople - a.avgPeople)[0];
+  const quietest = [...data.hourly].sort((a, b) => a.avgPeople - b.avgPeople)[0];
   const maxAverage = Math.max(1, ...data.hourly.map((point) => point.avgPeople));
   const totalProfiles = Math.max(1, Number(data.summary.total_profiles || 0));
   const countryCoverage = Number(data.summary.profiles_with_country || 0) / totalProfiles * 100;
+  const topCountries = data.countries.slice(0, 5);
+  const maxCountryUsers = Math.max(1, ...topCountries.map((point) => Number(point.users || 0)));
+  const topRegions = data.timezoneRegions
+    .filter((point) => String(point.region || "") !== "Unknown")
+    .slice(0, 4);
 
-  const formatHour = (hour: number) =>
-    `${String(hour).padStart(2, "0")}:00 UTC`;
+  const formatHour = (hour?: number) =>
+    typeof hour === "number" ? `${String(hour).padStart(2, "0")}:00 UTC` : "—";
 
   return (
-    <section className="mt-8 space-y-5">
-      <div className="rounded-[28px] border border-black/10 bg-[#F7F8FA] p-5 sm:p-7">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="text-[12px] font-bold uppercase tracking-[0.13em] text-[#667085]">
-              Usage analytics
+    <>
+      <div className="rounded-[24px] border border-black/[0.07] bg-gradient-to-b from-white to-[#F7F8F8] p-5">
+        <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
+          Hosted hours · 7d
+        </div>
+        <div className="mt-2 text-[30px] font-bold text-[#2F2F2F]">
+          {formatNumber(data.summary.scheduled_hours_7d, 1)} h
+        </div>
+        <p className="mt-1 text-[12px] leading-5 text-[#777]">
+          Scheduled session time in the last 7 days.
+        </p>
+
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="rounded-xl bg-white px-3 py-2.5">
+            <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#8A94A6]">
+              Host presence
             </div>
-            <h2 className="mt-2 text-[26px] font-bold tracking-[-0.02em]">
-              When MySession is alive — and when it is quiet
-            </h2>
-            <p className="mt-2 max-w-3xl text-[13px] leading-6 text-[#667085]">
-              Attendance is now read from durable visit/day history, so a returning member no longer moves yesterday's attendance into today.
-              Hourly load is shown in UTC so every day is comparable.
-            </p>
+            <div className="mt-1 text-[17px] font-bold">
+              {formatNumber(data.summary.host_presence_hours_7d, 1)} h
+            </div>
           </div>
-          {data.summary.tracked_from ? (
-            <div className="text-[12px] font-semibold text-[#667085]">
-              Durable history tracked from {formatDateTime(data.summary.tracked_from)}
+          <div className="rounded-xl bg-white px-3 py-2.5">
+            <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#8A94A6]">
+              Member hours
             </div>
-          ) : null}
+            <div className="mt-1 text-[17px] font-bold">
+              {formatNumber(data.summary.member_hours_7d, 1)} h
+            </div>
+          </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {[
-            ["Scheduled hosting · 7d", `${formatNumber(data.summary.scheduled_hours_7d, 1)} h`],
-            ["Host presence · 7d", `${formatNumber(data.summary.host_presence_hours_7d, 1)} h`],
-            ["Member hours · 7d", `${formatNumber(data.summary.member_hours_7d, 1)} h`],
-            ["Attendance visits · 7d", formatNumber(data.summary.visits_7d)],
-          ].map(([label, value]) => (
-            <div key={label} className="rounded-2xl border border-black/[0.07] bg-white p-4">
-              <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#777]">{label}</div>
-              <div className="mt-2 text-[26px] font-bold">{value}</div>
+        <div className="mt-3 text-[10px] text-[#999]">
+          Durable attendance history · {formatNumber(data.summary.visits_7d)} visits
+        </div>
+      </div>
+
+      <div className="rounded-[24px] border border-black/[0.07] bg-gradient-to-b from-white to-[#F7F8F8] p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
+              Hourly load · 30d
             </div>
-          ))}
+            <div className="mt-2 text-[18px] font-bold text-[#2F2F2F]">
+              Peak {formatHour(busiest?.hour)}
+            </div>
+          </div>
+          <div className="text-right text-[11px] text-[#777]">
+            <div>avg {formatNumber(busiest?.avgPeople || 0, 1)}</div>
+            <div>quiet {formatHour(quietest?.hour)}</div>
+          </div>
         </div>
 
-        <div className="mt-6">
-          <div className="grid grid-cols-6 gap-1 sm:grid-cols-12 lg:grid-cols-24">
-            {data.hourly.map((point) => {
-              const intensity = Math.max(0.08, point.avgPeople / maxAverage);
+        <div className="mt-4 flex h-20 items-end gap-[3px]">
+          {data.hourly.map((point) => {
+            const ratio = Math.max(0.04, Number(point.avgPeople || 0) / maxAverage);
+            return (
+              <div
+                key={point.hour}
+                className="min-w-0 flex-1 rounded-t-sm bg-[#335DC5]/55 transition-opacity hover:bg-[#335DC5]"
+                style={{ height: `${Math.max(4, Math.round(ratio * 100))}%` }}
+                title={`${formatHour(point.hour)} · avg ${formatNumber(point.avgPeople, 2)} · peak ${formatNumber(point.peakPeople, 2)} · ${point.emptyWindows} empty windows`}
+              />
+            );
+          })}
+        </div>
+        <div className="mt-2 flex justify-between text-[10px] text-[#999]">
+          <span>00</span><span>06</span><span>12</span><span>18</span><span>23 UTC</span>
+        </div>
+      </div>
+
+      <div className="rounded-[24px] border border-black/[0.07] bg-gradient-to-b from-white to-[#F7F8F8] p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
+              Member geography
+            </div>
+            <div className="mt-2 text-[18px] font-bold text-[#2F2F2F]">
+              Where our members work from
+            </div>
+          </div>
+          <div className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-[#667085]">
+            {formatPercent(countryCoverage)} captured
+          </div>
+        </div>
+
+        {topCountries.length ? (
+          <div className="mt-4 space-y-2">
+            {topCountries.map((point) => {
+              const width = Math.max(6, Math.round(Number(point.users || 0) / maxCountryUsers * 100));
               return (
-                <div
-                  key={point.hour}
-                  className="group relative flex min-h-24 flex-col justify-end overflow-hidden rounded-xl border border-black/[0.06] bg-white px-2 py-2"
-                  title={`${formatHour(point.hour)} · avg ${formatNumber(point.avgPeople, 2)} people · peak ${formatNumber(point.peakPeople, 2)} · ${point.emptyWindows} empty hours`}
-                >
-                  <div
-                    className="absolute inset-x-0 bottom-0 bg-[#335DC5]"
-                    style={{ height: `${Math.round(intensity * 82)}%`, opacity: 0.16 + intensity * 0.54 }}
-                  />
-                  <div className="relative text-[10px] font-semibold text-[#667085]">
-                    {String(point.hour).padStart(2, "0")}
+                <div key={point.countryCode}>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-bold">{point.countryCode || "—"}</span>
+                    <span className="text-[#777]">{point.users}</span>
                   </div>
-                  <div className="relative mt-1 text-[13px] font-bold">
-                    {formatNumber(point.avgPeople, 1)}
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-black/[0.05]">
+                    <div className="h-full rounded-full bg-[#18A867]/65" style={{ width: `${width}%` }} />
                   </div>
                 </div>
               );
             })}
           </div>
-          <div className="mt-2 text-[11px] text-[#8A94A6]">
-            Average concurrent presence by UTC hour across the selected 30-day window.
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-4 lg:grid-cols-2">
-          <div className="rounded-2xl bg-white p-5">
-            <div className="text-[13px] font-bold">Most loaded hours</div>
-            <div className="mt-3 space-y-2">
-              {busiest.map((point) => (
-                <div key={point.hour} className="flex items-center justify-between rounded-xl bg-[#F5F7FB] px-3 py-2">
-                  <span className="text-[13px] font-semibold">{formatHour(point.hour)}</span>
-                  <span className="text-[12px] text-[#667085]">
-                    avg {formatNumber(point.avgPeople, 2)} · peak {formatNumber(point.peakPeople, 2)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl bg-white p-5">
-            <div className="text-[13px] font-bold">Least loaded hours</div>
-            <div className="mt-3 space-y-2">
-              {quietest.map((point) => (
-                <div key={point.hour} className="flex items-center justify-between rounded-xl bg-[#F5F7FB] px-3 py-2">
-                  <span className="text-[13px] font-semibold">{formatHour(point.hour)}</span>
-                  <span className="text-[12px] text-[#667085]">
-                    avg {formatNumber(point.avgPeople, 2)} · {point.emptyWindows} empty windows
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-[28px] border border-black/10 bg-white p-5 sm:p-7">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="text-[12px] font-bold uppercase tracking-[0.13em] text-[#667085]">
-              Member geography
-            </div>
-            <h2 className="mt-2 text-[26px] font-bold tracking-[-0.02em]">
-              Where our members work from
-            </h2>
-            <p className="mt-2 text-[14px] text-[#667085]">
-              Wherever you are, you're in good company.
-            </p>
-          </div>
-          <div className="text-[12px] font-semibold text-[#667085]">
-            Country coverage: {formatPercent(countryCoverage)}
-          </div>
-        </div>
-
-        {data.countries.length ? (
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {data.countries.slice(0, 16).map((point) => (
-              <div key={point.countryCode} className="rounded-2xl bg-[#F6F7F9] px-4 py-3">
-                <div className="text-[11px] font-bold uppercase tracking-[0.1em] text-[#8A94A6]">
-                  Country
-                </div>
-                <div className="mt-1 flex items-end justify-between gap-3">
-                  <div className="text-[18px] font-bold">{point.countryCode || "—"}</div>
-                  <div className="text-[13px] font-semibold text-[#667085]">{point.users}</div>
-                </div>
-              </div>
-            ))}
-          </div>
         ) : (
-          <div className="mt-5 rounded-2xl border border-dashed border-black/10 bg-[#FAFAFA] px-4 py-5 text-[13px] text-[#667085]">
-            Country capture starts automatically on authenticated requests after this release. Historical profiles are not guessed.
+          <div className="mt-4 text-[12px] leading-5 text-[#777]">
+            Country capture is filling in as members return.
           </div>
         )}
 
-        <div className="mt-6">
-          <div className="text-[13px] font-bold">Timezone-region fallback</div>
-          <p className="mt-1 text-[12px] leading-5 text-[#8A94A6]">
-            Existing users without captured country are grouped by their saved IANA timezone. UTC stays “Unknown” rather than being assigned to a country.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {data.timezoneRegions.slice(0, 12).map((point) => (
-              <span key={point.region} className="rounded-full border border-black/[0.07] bg-[#F8F9FA] px-3 py-2 text-[12px] font-semibold">
-                {point.region || "Unknown"} · {point.users}
+        {topRegions.length ? (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {topRegions.map((point) => (
+              <span key={point.region} className="rounded-full bg-white px-2 py-1 text-[10px] font-semibold text-[#667085]">
+                {point.region} · {point.users}
               </span>
             ))}
           </div>
+        ) : null}
+
+        <div className="mt-3 text-[10px] text-[#999]">
+          Wherever you are, you're in good company.
         </div>
       </div>
-    </section>
+    </>
   );
 }
 
@@ -2968,11 +2947,11 @@ export default function AdminPage() {
               <MetricCard label="Sessions hosted today" value={stats.sessionsHostedToday} hint="Sessions whose start_time already happened today." data={chartData} dataKey="sessionsHosted" color="#059669" />
               <MetricCard label="Active hosts 7d" value={stats.activeHostsWeek} hint="Unique hosts who created sessions in 7 days." data={chartData} dataKey="activeHosts" color="#EA580C" />
 
-              <MetricCard label="Unique attendees today" value={stats.uniqueAttendeesToday} hint="Distinct user IDs from session_attendance today." data={chartData} dataKey="uniqueAttendees" color="#BE123C" />
-              <MetricCard label="Attendance records today" value={stats.attendanceRecordsToday} hint="All session_attendance rows today." data={chartData} dataKey="attendanceRecords" color="#DC2626" />
-              <MetricCard label="Attended sessions today" value={stats.attendedSessionsToday} hint="Distinct session IDs from session_attendance today." data={chartData} dataKey="attendedSessions" color="#4338CA" />
+              <MetricCard label="Unique attendees today" value={stats.uniqueAttendeesToday} hint="Distinct people from durable attendance history today." data={chartData} dataKey="uniqueAttendees" color="#BE123C" />
+              <MetricCard label="Attendance records today" value={stats.attendanceRecordsToday} hint="Durable attendance visits recorded today." data={chartData} dataKey="attendanceRecords" color="#DC2626" />
+              <MetricCard label="Attended sessions today" value={stats.attendedSessionsToday} hint="Distinct sessions from durable attendance history today." data={chartData} dataKey="attendedSessions" color="#4338CA" />
 
-              <MetricCard label="Unique attendees 7d" value={stats.uniqueAttendeesWeek} hint="Distinct users from session_attendance in 7 days." data={chartData} dataKey="uniqueAttendees" color="#BE123C" />
+              <MetricCard label="Unique attendees 7d" value={stats.uniqueAttendeesWeek} hint="Distinct people from durable attendance history in 7 days." data={chartData} dataKey="uniqueAttendees" color="#BE123C" />
               <MetricCard label="Unique attendance 30d" value={stats.uniqueAttendeesMonth} hint="Distinct people with attendance during the last 30 days." data={chartData} dataKey="uniqueAttendees" color="#16803B" />
               <MetricCard label="Booked users 7d" value={stats.uniqueBookedUsersWeek} hint="Distinct users from session_bookings in 7 days." data={chartData} dataKey="bookedUsers" color="#0891B2" />
               <MetricCard label="Booked → attended 7d" value={formatPercent(stats.bookedToAttendedConversionWeek)} hint="Unique attendees divided by booked users." data={chartData} dataKey="avgAttendeesPerSession" color="#C2410C" percent />
@@ -2984,8 +2963,8 @@ export default function AdminPage() {
               <MetricCard label="Open payout requests" value={stats.openPayoutRequests} hint="Requested or processing payout requests." data={chartData} dataKey="openPayoutRequests" color="#0F766E" />
               <MetricCard label="Sessions created 30d" value={stats.sessionsCreatedMonth} hint="Rows created in sessions table in 30 days." data={chartData} dataKey="sessionsCreated" color="#7C3AED" />
               <MetricCard label="Sessions hosted 30d" value={stats.sessionsHostedMonth} hint="Sessions started in the last 30 days." data={chartData} dataKey="sessionsHosted" color="#059669" />
+              <UsageAnalyticsCards data={usageAnalytics} />
             </section>
-            <UsageAnalyticsSection data={usageAnalytics} />
                         <RecordsSection records={recordMetrics} onOpen={(record) => void openRecordMetric(record)} />
             <MonthlyAttendanceChart data={monthlyAttendance} onMonthClick={(point) => void openMonthlyAttendance(point)} />
             <ActivityExplorer activity={activity} />
