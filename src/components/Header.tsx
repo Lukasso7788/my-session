@@ -364,6 +364,14 @@ export default function Header() {
                         <button onClick={() => navigate("/tasks")} className="hover:text-[#2F2F2F]">
                             Tasks
                         </button>
+
+                        <button onClick={() => navigate("/hosts")} className="hover:text-[#2F2F2F]">
+                            Hosts
+                        </button>
+
+                        <button onClick={() => navigate("/leaderboard")} className="hover:text-[#2F2F2F]">
+                            Leaderboard
+                        </button>
                     </nav>
 
                     <div className="flex-1 flex justify-start lg:justify-center">
@@ -594,6 +602,26 @@ export default function Header() {
                                     className="text-left"
                                 >
                                     Tasks
+                                </button>
+
+                                <button
+                                    onClick={() => {
+                                        navigate("/hosts");
+                                        setMobileMenu(false);
+                                    }}
+                                    className="text-left"
+                                >
+                                    Hosts
+                                </button>
+
+                                <button
+                                    onClick={() => {
+                                        navigate("/leaderboard");
+                                        setMobileMenu(false);
+                                    }}
+                                    className="text-left"
+                                >
+                                    Leaderboard
                                 </button>
 
                                 <button
