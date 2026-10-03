@@ -515,6 +515,8 @@ export function SessionsPage() {
   const [searchParams] = useSearchParams();
 
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
+  const [switcherLiveCounts, setSwitcherLiveCounts] = useState({ group: 0, infinite: 0 });
+  const liveCountsGenerationRef = useRef(0);
   const [musicSessionIds, setMusicSessionIds] = useState<Set<string>>(() => new Set());
   const musicKeysRef = useRef<Map<string, string>>(new Map());
   const musicChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -1192,43 +1194,41 @@ export function SessionsPage() {
     };
   }, [user?.id]);
 
-  const fetchLiveCounts = useCallback(async (sessionIds: string[]) => {
-    const ids = (sessionIds || []).filter(
-      (x): x is string => typeof x === "string" && x.length > 0
-    );
-
-    if (!ids.length) return;
+  const fetchLiveCounts = useCallback(async (groupIds: string[], infiniteIds: string[]) => {
+    const generation = ++liveCountsGenerationRef.current;
 
     try {
-      const { data, error } = await supabase.rpc("get_live_counts", {
-        p_session_ids: ids,
+      const { data, error } = await supabase.rpc("get_live_counts_with_unique", {
+        p_group_session_ids: groupIds,
+        p_infinite_session_ids: infiniteIds,
         p_ttl_seconds: 90,
       });
 
       if (error) throw error;
-
-      const map = new Map<string, number>();
-
-      for (const row of (data || []) as any[]) {
-        if (row?.session_id) {
-          map.set(String(row.session_id), Number(row.live_count) || 0);
-        }
-      }
+      if (generation !== liveCountsGenerationRef.current) return;
+      const counts = (data || {}) as {
+        room_counts?: Record<string, number>;
+        group?: number;
+        infinite?: number;
+      };
+      const roomCounts = counts.room_counts || {};
 
       if (DEBUG) {
-        console.log(
-          "[DEBUG Sessions] live_count map:",
-          Object.fromEntries(map.entries())
-        );
+        console.log("[DEBUG Sessions] live counts:", counts);
       }
 
+      setSwitcherLiveCounts({
+        group: Math.max(0, Number(counts.group) || 0),
+        infinite: Math.max(0, Number(counts.infinite) || 0),
+      });
       setSessions((prev) =>
         prev.map((s) => ({
           ...s,
-          live_count: map.get(String(s.id)) ?? s.live_count ?? 0,
+          live_count: Math.max(0, Number(roomCounts[String(s.id)]) || 0),
         }))
       );
     } catch (e) {
+      // Leave the last confirmed values visible during a transient RPC failure.
       if (DEBUG) console.warn("[DEBUG Sessions] live counts error:", e);
     }
   }, []);
@@ -1635,7 +1635,6 @@ export function SessionsPage() {
       void loadPublicBookings();
       void loadHostProfiles();
       void loadInfiniteRoomHosts();
-      void fetchLiveCounts(ids);
     } catch (error) {
       if (!isCurrentRequest()) return;
 
@@ -1659,7 +1658,7 @@ export function SessionsPage() {
 
       setIsLoading(false);
     }
-  }, [fetchLiveCounts]);
+  }, []);
 
   useEffect(() => {
     void fetchSessions();
@@ -1807,30 +1806,6 @@ export function SessionsPage() {
     return () => { cancelled = true; };
   }, [musicVisibleIds]);
 
-  useEffect(() => {
-    if (!sessionIds.length) return;
-
-    const run = () => {
-      if (document.visibilityState !== "visible") return;
-      void fetchLiveCounts(sessionIds);
-    };
-
-    const t = window.setInterval(run, 90_000);
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        run();
-      }
-    };
-
-    document.addEventListener("visibilitychange", onVisibilityChange);
-
-    return () => {
-      window.clearInterval(t);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
-  }, [sessionIds, fetchLiveCounts]);
-
   const isExpired = (s: SessionWithRelations) => {
     const type = resolveSessionType(s);
 
@@ -1859,18 +1834,41 @@ export function SessionsPage() {
     });
   }, [activeSessions, isSuperAdmin, user?.id]);
 
-  // Reuse each card's already-fetched live_count. Count only sessions visible
-  // to this visitor, so private/hidden rooms are not leaked in public badges.
-  const switcherLiveCounts = useMemo(() => {
-    const totals = { group: 0, infinite: 0 };
+  // Query the same visible rooms as the cards, once on load/visibility and
+  // every 90s. The RPC deduplicates user IDs across rooms of each format.
+  const liveCountRoomIds = useMemo(() => {
+    const group: string[] = [];
+    const infinite: string[] = [];
     for (const session of privacyFilteredSessions) {
       const type = resolveSessionType(session);
       if (type === "group" || type === "infinite") {
-        totals[type] += Math.max(0, Number(session.live_count) || 0);
+        const id = String(session.id || "").trim();
+        if (id) (type === "group" ? group : infinite).push(id);
       }
     }
-    return totals;
+    return { group, infinite };
   }, [privacyFilteredSessions]);
+  const liveCountRoomIdsKey = JSON.stringify([liveCountRoomIds.group, liveCountRoomIds.infinite]);
+  useEffect(() => {
+    const [groupIds, infiniteIds] = JSON.parse(liveCountRoomIdsKey) as [string[], string[]];
+    if (!groupIds.length && !infiniteIds.length) {
+      setSwitcherLiveCounts({ group: 0, infinite: 0 });
+      return;
+    }
+
+    const run = () => {
+      if (document.visibilityState === "visible") void fetchLiveCounts(groupIds, infiniteIds);
+    };
+    run();
+    const timer = window.setInterval(run, 90_000);
+    document.addEventListener("visibilitychange", run);
+    const generationRef = liveCountsGenerationRef;
+    return () => {
+      ++generationRef.current;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", run);
+    };
+  }, [fetchLiveCounts, liveCountRoomIdsKey]);
 
   const typeFilteredSessions = useMemo(() => {
     return privacyFilteredSessions.filter(

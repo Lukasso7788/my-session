@@ -54,6 +54,7 @@ test("publisher tracks on subscribe/reconnect and cleans up on stop", async () =
   await waitFor(() => calls.some(([kind]) => kind === "channel"));
   assert.equal(calls[0][1], SESSION_LIVE_STATUS_CHANNEL);
   assert.equal(calls[0][2].config.presence.key, await roomMusicPresenceKey(room));
+  assert.equal(calls[0][2].config.presence.enabled, true);
   channel.onStatus("SUBSCRIBED");
   channel.onStatus("SUBSCRIBED");
   assert.equal(calls.filter(([kind]) => kind === "track").length, 2);

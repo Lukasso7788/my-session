@@ -52,7 +52,9 @@ export function advertiseSharedMusic(
   void roomMusicPresenceKey(sessionId).then((key) => {
     if (disposed) return;
     const next = client.channel(SESSION_LIVE_STATUS_CHANNEL, {
-      config: { presence: { key, enabled: false } },
+      // This publisher has no presence event handler, so realtime-js will
+      // otherwise subscribe with Presence disabled even if track() is called.
+      config: { presence: { key, enabled: true } },
     });
     channel = next;
     next.subscribe((status) => {

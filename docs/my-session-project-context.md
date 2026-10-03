@@ -713,3 +713,58 @@ The parent pill retains its group-level accessible summary. No timers,
 database reads, session settings, or LiveKit behavior were changed. Browser
 QA confirmed a camera tooltip on hover and `display: block` on keyboard
 focus; screenshots/remaining context are in `design-qa.md`.
+
+## 2026-10-04 — Deduplicated LIVE people and restored music presence
+
+This supersedes the earlier description that the session-type LIVE badges sum
+card `live_count` values. That sum counted a single user in multiple rooms
+multiple times (production read-only aggregate showed six room attendances but
+only three unique people in public infinite rooms at one observation).
+
+`supabase/migrations/20261003213654_unique_live_switcher_counts.sql` adds
+`public.get_live_counts_with_unique(uuid[], uuid[], integer)`. It uses the
+same `session_attendance.last_seen_at > now() - 90 seconds` definition as the
+existing `get_live_counts` RPC. In one call it returns JSON with per-room
+counts for cards and `count(distinct user_id)` for the visible Group and
+Infinite room sets. No attendance schema, heartbeat cadence, or old RPC is
+changed. The function returns only aggregates, not individual IDs, and is
+executable by `anon` and `authenticated` like the old count RPC. Its ttl is
+bounded. Applied to production Supabase project `cxqgzcjsjyszcbcbdusp`
+before the frontend push; migration history version is `20261003213654`.
+Read-only verification returned three unique Infinite users across six live
+room attendances, matching an independent `count(distinct user_id)` query.
+Supabase Security Advisor flags this public `SECURITY DEFINER` aggregate RPC
+for both `anon` and `authenticated`, as it does the pre-existing
+`get_live_counts` RPC. This is intentional for public occupancy counts and
+does not expose user IDs or rows; changing it to invoker would hide all
+anonymous attendance under current RLS. Review if public count visibility
+requirements change: https://supabase.com/docs/guides/database/database-linter?lint=0028_anon_security_definer_function_executable .
+
+`src/pages/SessionsPage.tsx` collects room IDs only after its active and
+privacy/hidden filters, then calls this RPC once on initial list render,
+every 90 seconds while visible, and on return from a hidden tab. Thus it
+replaces the old count read rather than adding another read. The per-card
+counts remain room-specific; the switcher now shows unique people per type.
+An incrementing generation ref discards stale overlapping count responses.
+No identity data is exposed to the browser. Room list, auth and admission
+flows are unchanged.
+
+`src/lib/roomMusicPresence.ts` now sets `config.presence.enabled=true`
+on the shared-music advertiser. The installed `realtime-js` subscribes with
+Presence disabled by default when a channel has no Presence event handler;
+the previous explicit `false` prevented `track({playing:true})` from
+publishing a usable signal. The advertiser still runs only
+while a connected shared room soundtrack or tab audio is actually playing;
+it cleans up on stop/unmount and retracks after reconnect. The existing
+Sessions page channel and `SessionMusicIndicator` animation are unchanged.
+`scripts/room-music-presence.test.mjs` now guards against disabling Presence
+again. A live room with shared audio is still needed for end-to-end visual
+confirmation; the read-only listing preview cannot start someone else's
+music. No DB music writes or new music channels were added.
+
+Validation: `node --experimental-strip-types --test
+scripts/room-music-presence.test.mjs scripts/session-card-indicators.test.mjs`
+passed 7/7, `npm run build` passed, `git diff --check` passed. Focused ESLint
+has 29 pre-existing `SessionsPage.tsx` errors (`any` and unused state), with
+no new warnings; `npm run typecheck` remains blocked by baseline TS6306/TS6310
+project-reference configuration in `tsconfig.json` / `tsconfig.node.json`.
