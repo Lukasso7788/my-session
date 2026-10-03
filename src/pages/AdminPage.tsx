@@ -202,6 +202,14 @@ type MonthlyAttendanceAggregateRow = {
   attendee_ids: string[] | null;
 };
 
+type DailyAttendanceAggregateRow = {
+  attendance_date: string;
+  unique_attendees: number;
+  attendance_records: number;
+  attended_sessions: number;
+  attendee_ids: string[] | null;
+};
+
 type UsageDailyPoint = {
   date: string;
   uniqueAttendees: number;
@@ -1872,6 +1880,7 @@ export default function AdminPage() {
         sessionsHostedChartResult,
         paymentsChartResult,
         monthlyAttendanceResult,
+        dailyAttendanceResult,
         usageAnalyticsResult,
       ] = await Promise.all([
         safeCount("profiles", "created_at", todayIso),
@@ -1933,10 +1942,15 @@ export default function AdminPage() {
           p_start_month: `${oldestMonth}-01`,
           p_end_month: nextMonth.toISOString().slice(0, 10),
         }),
+        supabase.rpc("admin_daily_attendance_history", {
+          p_start_date: `${oldestMonth}-01`,
+          p_end_date: nextMonth.toISOString().slice(0, 10),
+        }),
         supabase.rpc("admin_usage_analytics", { p_days: 30 }),
       ]);
 
       if (monthlyAttendanceResult.error) throw monthlyAttendanceResult.error;
+      if (dailyAttendanceResult.error) throw dailyAttendanceResult.error;
       if (usageAnalyticsResult.error) throw usageAnalyticsResult.error;
       const usageData = (usageAnalyticsResult.data || EMPTY_USAGE_ANALYTICS) as UsageAnalytics;
       setUsageAnalytics(usageData);
@@ -1985,11 +1999,29 @@ export default function AdminPage() {
         );
       };
 
-      const attendanceDay = peakPeopleByDay(
-        attendanceHistoryRows,
-        getAttendanceUserId,
+      const dailyAttendanceRows =
+        ((dailyAttendanceResult.data as DailyAttendanceAggregateRow[]) || []).map((row) => ({
+          attendanceDate: String(row.attendance_date || ""),
+          uniqueAttendees: Number(row.unique_attendees || 0),
+          attendanceRecords: Number(row.attendance_records || 0),
+          attendedSessions: Number(row.attended_sessions || 0),
+          attendeeIds: Array.isArray(row.attendee_ids) ? row.attendee_ids.map(String) : [],
+        }));
+
+      const attendanceDay = dailyAttendanceRows.reduce(
+        (best, row) =>
+          row.uniqueAttendees > best.value
+            ? { period: row.attendanceDate, value: row.uniqueAttendees, personIds: row.attendeeIds }
+            : best,
+        { period: "", value: 0, personIds: [] as string[] },
       );
-      const attendanceRecordDay = peakRowsByDay(attendanceHistoryRows);
+      const attendanceRecordDay = dailyAttendanceRows.reduce(
+        (best, row) =>
+          row.attendanceRecords > best.value
+            ? { period: row.attendanceDate, value: row.attendanceRecords, personIds: row.attendeeIds }
+            : best,
+        { period: "", value: 0, personIds: [] as string[] },
+      );
       const bookingDay = peakPeopleByDay(
         bookingHistoryRows,
         getBookingUserId,
@@ -2038,10 +2070,7 @@ export default function AdminPage() {
           value: attendanceRecordDay.value,
           period: attendanceRecordDay.period,
           description: "Largest number of attendance records produced in one day.",
-          personIds: attendanceHistoryRows
-            .filter((row) => toLocalDateKey(getRowTimestamp(row)) === attendanceRecordDay.period)
-            .map(getAttendanceUserId)
-            .filter(Boolean),
+          personIds: attendanceRecordDay.personIds,
           accent: "#7C3AED",
         },
         {
