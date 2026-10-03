@@ -768,3 +768,24 @@ passed 7/7, `npm run build` passed, `git diff --check` passed. Focused ESLint
 has 29 pre-existing `SessionsPage.tsx` errors (`any` and unused state), with
 no new warnings; `npm run typecheck` remains blocked by baseline TS6306/TS6310
 project-reference configuration in `tsconfig.json` / `tsconfig.node.json`.
+
+## 2026-10-04 — Type-colored OR slash and white Group LIVE label
+
+`src/components/SessionRoomPolicyIndicator.tsx` renders camera/screen-share
+requirements through `getSessionCardPolicyState` and the parent card's theme
+palette (`color`/`background`). For the alternative camera-or-screen-share
+rule, the visible `/` now uses `color` instead of hard-coded indigo and the
+three elements sit in a 2px-gap sub-group. Its Inter 16px bold typography,
+accessible group/icon labels and hover/focus tooltips remain unchanged.
+Non-alternative camera/screen/chat indicators retain their old spacing.
+
+`src/components/SessionTypeSwitcher.tsx` keeps Group LIVE's green background,
+white 1px border, right-edge placement and positive-count visibility, but
+renders its icon and label white like the Infinite badge. This is purely
+presentational: attendance, counting, session policies, Realtime music, and
+room behavior are unchanged. The source assets are the already-shipped camera,
+screen-share and group SVG masks. The user's small indigo pill screenshot is
+a spacing/color reference; it does not replace the existing type-themed pill.
+Validation: focused indicator tests passed 2/2, focused component ESLint passed,
+production Vite build passed, and the Group LIVE badge was visually checked in
+the local `/sessions?tab=infinite` browser preview. No music code was changed.

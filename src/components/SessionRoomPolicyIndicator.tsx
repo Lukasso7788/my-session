@@ -37,6 +37,8 @@ function PolicyIcon({ asset, label, color }: { asset: string; label: string; col
 export default function SessionRoomPolicyIndicator({ policies, color, background }: Props) {
   const { camera, screen, chat, either, label, count } = getSessionCardPolicyState(policies);
   if (count === 0) return null;
+  const cameraIcon = camera && <PolicyIcon asset="/icons/camera-on-dark.svg" label={either ? "Camera option — camera or screen share required" : "Camera required"} color={color} />;
+  const screenIcon = screen && <PolicyIcon asset="/icons/screen-share-dark.svg" label={either ? "Screen share option — camera or screen share required" : "Screen share required"} color={color} />;
 
   return (
     <span
@@ -45,9 +47,15 @@ export default function SessionRoomPolicyIndicator({ policies, color, background
       className="relative inline-flex h-[26px] shrink-0 items-center gap-[6px] rounded-full border px-[9px] hover:z-50 focus-within:z-50"
       style={{ color, backgroundColor: background, borderColor: color }}
     >
-      {camera && <PolicyIcon asset="/icons/camera-on-dark.svg" label={either ? "Camera option — camera or screen share required" : "Camera required"} color={color} />}
-      {either && <span aria-hidden="true" className="font-inter text-[16px] font-bold leading-none text-[#6366F1]">/</span>}
-      {screen && <PolicyIcon asset="/icons/screen-share-dark.svg" label={either ? "Screen share option — camera or screen share required" : "Screen share required"} color={color} />}
+      {either ? (
+        <span className="inline-flex items-center gap-[2px]">
+          {cameraIcon}
+          <span aria-hidden="true" className="font-inter text-[16px] font-bold leading-none" style={{ color }}>/</span>
+          {screenIcon}
+        </span>
+      ) : (
+        <>{cameraIcon}{screenIcon}</>
+      )}
       {chat && <PolicyIcon asset="/icons/session-no-chat.svg" label="Public chat disabled" color={color} />}
     </span>
   );

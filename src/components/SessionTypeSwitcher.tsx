@@ -130,15 +130,15 @@ export function SessionTypeSwitcher({ value, onChange, liveCounts, className = "
               <span
                 aria-hidden="true"
                 className={[
-                  "pointer-events-none absolute -top-3 right-0 z-20 inline-flex h-6 items-center gap-1 rounded-full border border-white px-2.5 text-[12px] font-semibold leading-none whitespace-nowrap",
-                  t.id === "group" ? "bg-[#57D264] text-[#2F2F2F]" : "bg-[#EF4444] text-white",
+                  "pointer-events-none absolute -top-3 right-0 z-20 inline-flex h-6 items-center gap-1 rounded-full border border-white px-2.5 text-[12px] font-semibold leading-none text-white whitespace-nowrap",
+                  t.id === "group" ? "bg-[#57D264]" : "bg-[#EF4444]",
                 ].join(" ")}
               >
                 <span
                   aria-hidden="true"
                   className="h-[15px] w-[15px] shrink-0"
                   style={{
-                    backgroundColor: t.id === "group" ? "#2F2F2F" : "#FFFFFF",
+                    backgroundColor: "#FFFFFF",
                     mask: "url('/icons/group-active.svg') center / contain no-repeat",
                     WebkitMask: "url('/icons/group-active.svg') center / contain no-repeat",
                   }}
