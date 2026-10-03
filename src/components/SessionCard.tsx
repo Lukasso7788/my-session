@@ -21,6 +21,8 @@ import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "./PaywallModal";
 import type { SessionStage } from "../SessionConfig";
 import { readSessionRoomPolicies, withRoomPolicies } from "../lib/roomPolicies";
+import SessionRoomPolicyIndicator from "./SessionRoomPolicyIndicator";
+import SessionMusicIndicator from "./SessionMusicIndicator";
 
 let roomPagePrefetchPromise: Promise<unknown> | null = null;
 function prefetchRoomPage() {
@@ -48,6 +50,7 @@ type BookSessionOptions = {
 
 interface SessionCardProps {
     session: any;
+    musicPlaying?: boolean;
     userId?: string;
 
     onBook: (sessionId: string, opts?: BookSessionOptions) => boolean | Promise<boolean>;
@@ -3927,6 +3930,7 @@ function EditSessionStudioModal(props: {
 
 export default function SessionCard({
     session,
+    musicPlaying = false,
     userId,
     onBook,
     onCancelBooking,
@@ -5001,6 +5005,8 @@ export default function SessionCard({
                                     <span className="min-w-0 break-words">{session.title}</span>
                                 </h3>
 
+                                <SessionRoomPolicyIndicator policies={cardRoomPolicies} color={t.color} background={t.bg} />
+
                             </div>
 
                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] sm:text-[12px] text-[#606060]">
@@ -5063,6 +5069,7 @@ export default function SessionCard({
                                         <IconInfo size={15} />
                                         <span>Details</span>
                                     </button>
+                                    {musicPlaying && <SessionMusicIndicator color={t.color} />}
                                 </div>
                             </div>
                         </div>

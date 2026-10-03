@@ -24,6 +24,12 @@ import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
 import { ListChecks, UserPlus } from "lucide-react";
 import { captureProductEvent } from "../lib/analytics";
+import {
+  musicSessionIdsFromPresence,
+  roomMusicPresenceKey,
+  sameSessionIds,
+  SESSION_LIVE_STATUS_CHANNEL,
+} from "../lib/roomMusicPresence";
 
 const OneOnOnePage = lazy(() => import("./OneOnOnePage"));
 const SessionsTasksSidebar = lazy(() => import("../components/SessionsTasksSidebar"));
@@ -509,6 +515,9 @@ export function SessionsPage() {
   const [searchParams] = useSearchParams();
 
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
+  const [musicSessionIds, setMusicSessionIds] = useState<Set<string>>(() => new Set());
+  const musicKeysRef = useRef<Map<string, string>>(new Map());
+  const musicChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [sessionsLoadError, setSessionsLoadError] = useState<string | null>(null);
 
@@ -1657,8 +1666,14 @@ export function SessionsPage() {
   }, [fetchSessions]);
 
   useEffect(() => {
+    const syncMusicPresence = () => {
+      const presence = musicChannelRef.current?.presenceState() || {};
+      const next = musicSessionIdsFromPresence(presence, musicKeysRef.current);
+      setMusicSessionIds((current) => sameSessionIds(current, next) ? current : next);
+    };
     const channel = supabase
-      .channel("sessions-active-hosts")
+      .channel(SESSION_LIVE_STATUS_CHANNEL)
+      .on("presence", { event: "sync" }, syncMusicPresence)
       .on(
         "postgres_changes",
         {
@@ -1693,9 +1708,17 @@ export function SessionsPage() {
           void fetchSessions();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") syncMusicPresence();
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setMusicSessionIds((current) => current.size ? new Set() : current);
+        }
+      });
+
+    musicChannelRef.current = channel;
 
     return () => {
+      musicChannelRef.current = null;
       void supabase.removeChannel(channel);
     };
   }, [fetchSessions]);
@@ -1766,6 +1789,24 @@ export function SessionsPage() {
     [sessions]
   );
 
+  const musicVisibleIds = sessionIds.join("|");
+  useEffect(() => {
+    let cancelled = false;
+    const ids = musicVisibleIds ? musicVisibleIds.split("|") : [];
+    void Promise.all(ids.map(async (id) => [await roomMusicPresenceKey(id), id] as const))
+      .then((pairs) => {
+        if (cancelled) return;
+        musicKeysRef.current = new Map(pairs);
+        const presence = musicChannelRef.current?.presenceState() || {};
+        const next = musicSessionIdsFromPresence(presence, musicKeysRef.current);
+        setMusicSessionIds((current) => sameSessionIds(current, next) ? current : next);
+      })
+      .catch(() => {
+        // If WebCrypto is unavailable, cards simply omit the live badge.
+      });
+    return () => { cancelled = true; };
+  }, [musicVisibleIds]);
+
   useEffect(() => {
     if (!sessionIds.length) return;
 
@@ -1817,6 +1858,19 @@ export function SessionsPage() {
       return isSuperAdmin || (!!user?.id && String(session.host_id || "") === String(user.id));
     });
   }, [activeSessions, isSuperAdmin, user?.id]);
+
+  // Reuse each card's already-fetched live_count. Count only sessions visible
+  // to this visitor, so private/hidden rooms are not leaked in public badges.
+  const switcherLiveCounts = useMemo(() => {
+    const totals = { group: 0, infinite: 0 };
+    for (const session of privacyFilteredSessions) {
+      const type = resolveSessionType(session);
+      if (type === "group" || type === "infinite") {
+        totals[type] += Math.max(0, Number(session.live_count) || 0);
+      }
+    }
+    return totals;
+  }, [privacyFilteredSessions]);
 
   const typeFilteredSessions = useMemo(() => {
     return privacyFilteredSessions.filter(
@@ -2448,6 +2502,7 @@ export function SessionsPage() {
     <SessionCard
       key={s.id}
       session={s}
+      musicPlaying={musicSessionIds.has(String(s.id))}
       userId={user?.id}
       currentUser={
         user?.id
@@ -2498,6 +2553,7 @@ export function SessionsPage() {
           <div className="relative w-full flex justify-center mb-[55px]">
             <SessionTypeSwitcher
               value={sessionTypeTab}
+              liveCounts={switcherLiveCounts}
               onChange={(v) => {
                 setSessionTypeTab(v);
                 navigate(`/sessions?tab=${v}`);

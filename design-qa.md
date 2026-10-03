@@ -1,4 +1,4 @@
-# Design QA — My Tasks plus states
+# Previous design QA — My Tasks plus states
 
 **Source visual truth**
 
@@ -54,3 +54,44 @@
 - Recheck the 12 px plus icon's optical centering after a browser capture becomes available.
 
 final result: blocked
+
+---
+
+# Session indicators — design QA
+
+Status: passed for available read-only states; unobserved live states noted below.
+
+Reference: `C:\Users\misha\OneDrive\Рабочий стол\7 Focus Hub — список комнат.png`
+and `C:\Users\misha\OneDrive\Рабочий стол\session format switcher.png`.
+Implementation preview: `C:\Users\misha\AppData\Local\Temp\mysession-session-indicators-1920.png`
+and `C:\Users\misha\AppData\Local\Temp\mysession-switcher-live-1920.png`
+at `http://127.0.0.1:4173/sessions` (1920×947, unauthenticated, read-only).
+Mobile capture: `C:\Users\misha\AppData\Local\Temp\mysession-switcher-live-mobile.png`
+at 375×812, with Group selected and Infinite still showing its live count.
+
+1. Composition: policy pill sits immediately after the card title; LIVE pill
+   overlaps the switcher's top edge as in the references. No other card layout
+   was changed. The existing switcher remains compact rather than scaling to
+   the large isolated reference crop.
+2. Color: card policy pills reuse existing session badge palettes; group LIVE
+   is green/dark, infinite LIVE is Pomodoro red/white, both with white 1px
+   border. The observed Short Sprints camera pill is correctly green.
+3. Iconography: camera and screen-share reuse bottom-control SVG shapes; no
+   chat and music disc/notes use the three user-supplied SVGs. All icons have
+   accessible context through pill/button labels.
+4. Behavior: no policy gives no pill; 1–3 enabled policies yield 1–3 icons;
+   zero live participants yields no LIVE badge. Existing live count data showed
+   Infinite populated and Group empty, and only Infinite showed a badge.
+5. Motion/responsiveness: disc rotation and two staggered fading note sprites
+   run only when the live music badge is mounted. `prefers-reduced-motion`
+   makes the disc static and hides notes. The existing mobile tab label rules
+   remain unchanged. No new DB polling or video changes.
+
+Remaining production check: a read-only preview could not demonstrate an
+actually playing shared-music room or a card with all three policy flags. The
+presence logic and cleanup are covered by focused tests; the exact live
+multi-icon/music visual should be confirmed with a real room after deploy.
+
+final result: passed for the observed desktop/mobile states; live music and
+three-policy combinations are covered by logic tests but await production
+visual confirmation.

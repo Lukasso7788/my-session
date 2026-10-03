@@ -194,3 +194,48 @@ body {
 .ms-screen-share-tile:fullscreen video {
   object-fit: contain !important;
 }
+
+/* The session-card music signal exists only while shared audio is live. */
+.ms-session-music-disc {
+  animation: ms-session-disc-spin 3.2s linear infinite;
+}
+
+.ms-session-music-note {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  opacity: 0;
+  pointer-events: none;
+  mask: url('/icons/session-music-notes.svg') center / contain no-repeat;
+  -webkit-mask: url('/icons/session-music-notes.svg') center / contain no-repeat;
+  animation: ms-session-note-float 2.4s ease-out infinite;
+}
+
+.ms-session-music-note--one {
+  top: -4px;
+  right: -4px;
+}
+
+.ms-session-music-note--two {
+  bottom: 0;
+  right: -7px;
+  width: 7px;
+  height: 7px;
+  animation-delay: 1.2s;
+}
+
+@keyframes ms-session-disc-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes ms-session-note-float {
+  0%, 15%, 100% { opacity: 0; transform: translateY(3px) scale(.75); }
+  35%, 55% { opacity: .85; }
+  80% { opacity: 0; transform: translateY(-8px) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ms-session-music-disc,
+  .ms-session-music-note { animation: none; }
+  .ms-session-music-note { display: none; }
+}

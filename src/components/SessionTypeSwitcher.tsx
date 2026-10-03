@@ -29,10 +29,11 @@ type TabId = (typeof tabs)[number]["id"];
 type Props = {
   value: TabId;
   onChange: (next: TabId) => void;
+  liveCounts?: Partial<Record<"group" | "infinite", number>>;
   className?: string;
 };
 
-export function SessionTypeSwitcher({ value, onChange, className = "" }: Props) {
+export function SessionTypeSwitcher({ value, onChange, liveCounts, className = "" }: Props) {
   // ✅ NEW: measure real button geometry instead of calc() in translateX
   const rootRef = useRef<HTMLDivElement | null>(null);
   const btnRefs = useRef<Record<TabId, HTMLButtonElement | null>>({
@@ -76,7 +77,7 @@ export function SessionTypeSwitcher({ value, onChange, className = "" }: Props) 
         "relative bg-white border border-borderGray rounded-full",
         "px-3 py-2",
         "flex items-center",
-        "h-[64px]",
+        "h-[72px]",
         "w-full md:w-fit",
         "overflow-hidden",
         className,
@@ -85,7 +86,7 @@ export function SessionTypeSwitcher({ value, onChange, className = "" }: Props) 
     >
       {/* ✅ FIXED SLIDER: uses real left/width of active button */}
       <div
-        className="absolute top-2 bottom-2 bg-brandBlack rounded-full duration-300 ease-in-out"
+        className="absolute top-3 bottom-3 bg-brandBlack rounded-full duration-300 ease-in-out"
         style={{
           left: slider?.left ?? 0,
           width: slider?.width ?? 0,
@@ -97,6 +98,7 @@ export function SessionTypeSwitcher({ value, onChange, className = "" }: Props) 
 
       {tabs.map((t) => {
         const isActive = value === t.id;
+        const liveCount = t.id === "one-on-one" ? 0 : Math.max(0, Math.trunc(Number(liveCounts?.[t.id]) || 0));
 
         return (
           <button
@@ -105,6 +107,7 @@ export function SessionTypeSwitcher({ value, onChange, className = "" }: Props) 
               btnRefs.current[t.id] = el;
             }}
             onClick={() => onChange(t.id)}
+            aria-label={liveCount > 0 ? `${t.label}, ${liveCount} people live` : undefined}
             className={[
               "relative z-10",
               "flex items-center justify-center gap-2",
@@ -123,6 +126,26 @@ export function SessionTypeSwitcher({ value, onChange, className = "" }: Props) 
             ].join(" ")}
             type="button"
           >
+            {liveCount > 0 && (
+              <span
+                aria-hidden="true"
+                className={[
+                  "pointer-events-none absolute -top-3 left-1/2 z-20 inline-flex h-6 -translate-x-1/2 items-center gap-1 rounded-full border border-white px-2.5 text-[12px] font-semibold leading-none whitespace-nowrap",
+                  t.id === "group" ? "bg-[#57D264] text-[#2F2F2F]" : "bg-[#EF4444] text-white",
+                ].join(" ")}
+              >
+                <span
+                  aria-hidden="true"
+                  className="h-[15px] w-[15px] shrink-0"
+                  style={{
+                    backgroundColor: t.id === "group" ? "#2F2F2F" : "#FFFFFF",
+                    mask: "url('/icons/group-active.svg') center / contain no-repeat",
+                    WebkitMask: "url('/icons/group-active.svg') center / contain no-repeat",
+                  }}
+                />
+                {liveCount} LIVE
+              </span>
+            )}
             <img src={isActive ? t.iconActive : t.iconInactive} className="w-6 h-6 shrink-0" alt="" />
 
             {/* Text rules:

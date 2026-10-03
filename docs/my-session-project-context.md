@@ -1,6 +1,6 @@
 # MySession — project architecture and continuation context
 
-Updated: 2026-10-03. This is a project-wide navigation/architecture handoff based on
+Updated: 2026-10-04. This is a project-wide navigation/architecture handoff based on
 the checked-out source, not a claim that every module or production service was
 audited. Never put secret values, tokens, user exports or private logs in this file.
 
@@ -10,15 +10,13 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   the remote default branch). Do not force-push or rewrite shared history.
 - Active implementation checkout:
   C:\Users\misha\.codex\worktrees\monthly-attendance\my-session.
-  Local branch: codex/plunk-email-marketing, based on origin/main commit
-  3aa00f6780a32ce85ef84eadb0c05c95279f5e8b (2026-10-03 fetch).
+  Local branch: codex/hosts-leaderboard, based on origin/main commit
+  2d8e7be (as checked before this change). This branch tracks origin/main.
   Recheck both branch and remote main before committing or pushing.
-- Current task: complete the Plunk email cutover and marketing-consent foundation.
-  Earlier 6e8f04a migrated direct admin email to Plunk; the new work adds a
-  cutover-aware lifecycle outbox processor and operator setup runbook. See
-  docs/plunk-email-rollout.md. This is staged/off until environment variables,
-  workflows, and SQL migration are validated. No mass campaign is authorized
-  against a historical or non-opted-in audience.
+- Current task: session-card room-policy/music indicators and live occupancy
+  badges above the Group/Infinite switcher, then commit and push to main.
+  Earlier Plunk work and operational runbook remain documented in
+  docs/plunk-email-rollout.md. No mass campaign is authorized by this task.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
   Do not reset, delete or overwrite it. This active checkout is outside current
   writable roots, so commands/patches require approved filesystem escalation.
@@ -621,3 +619,65 @@ raw `currentStage.color`, whereas the timeline rendered through
 check-in to the intentions light-blue color even if an old schedule stores a
 wrong blue. The chip now uses the same resolver, so its background matches the
 timeline for typed check-in blocks and does not diverge on legacy colors.
+
+## 2026-10-04 — Session-card signals and session-type occupancy badges
+
+User-provided design references: `7 Focus Hub — список комнат.png` for compact
+room-policy pills and a rotating music disc; `session format switcher.png` for
+LIVE counts. Supplied `Frame 259.svg`, `music indicator.svg`, and `music.svg`
+were copied as project assets under `public/icons/session-*.svg`; the existing
+bottom-control camera/screen-share SVGs are CSS-masked to match each card type.
+
+Data and rendering architecture:
+
+- `src/pages/SessionsPage.tsx` loads base sessions, then optional
+  `camera_required`, `screen_share_required`, and `public_chat_disabled`
+  enrichment. The persisted `schedule.room_policies` remains the fallback and
+  also contains `camera_or_screen_share_required`. No new policy query was
+  added. `src/lib/roomPolicies.ts` is the single policy reader.
+- `src/components/SessionCard.tsx` renders
+  `SessionRoomPolicyIndicator` after the title. `src/lib/sessionCardIndicators.ts`
+  derives and labels the icon state; it draws only enabled flags:
+  camera, screen share, and public chat off. The alternative camera-or-screen
+  rule is explicitly labelled `or`; hard requirements supersede contradictory
+  legacy alternative data. 0 flags means no pill. The existing card type
+  palette is reused: Deep Work blue, Pomodoro red, Short Sprints green,
+  Custom/Free Flow indigo. No session settings are changed by the indicator.
+- Shared music is room-local LiveKit state, not a session DB column.
+  `RoomPageLiveKit.tsx` advertises on `sessions-active-hosts` Supabase
+  Realtime Presence only while connected and actually publishing a shared
+  room soundtrack (host/moderator) or tab music. Personal music and passive
+  listeners do not publish. The publisher removes its channel on stop,
+  disconnect or unmount. Reconnect retracks after SUBSCRIBED. The public key
+  is SHA-256 of the normalized session UUID, not the UUID itself.
+- `SessionsPage.tsx` listens to Presence on its existing host-lease Realtime
+  channel; it creates no extra listing channel, DB row, read, or timer. It
+  maps only current session IDs to opaque keys and passes a boolean to each
+  `SessionCard`. On Presence sync, cards add/remove `SessionMusicIndicator`.
+  The disc spins and type-colored notes from the supplied asset fade/float;
+  reduced-motion
+  users get a static disc. Presence is best-effort; a network failure hides
+  the cosmetic badge but does not affect audio.
+- `SessionsPage.tsx` already fetches `get_live_counts` for the listed sessions
+  initially and approximately every 90 seconds while visible. New
+  `switcherLiveCounts` sums positive `live_count` over active sessions after
+  the existing privacy/hidden filter, by `resolveSessionType`. This counts
+  people in visible Group/Infinite rooms regardless of the selected tab/date;
+  it does not disclose hidden/private occupancy to unauthorized visitors.
+  `SessionTypeSwitcher.tsx` renders a green Group or red Infinite badge only
+  when its total is greater than zero, with a white 1px border. The red badge
+  uses white icon/text, green uses dark icon/text. One-on-one is unchanged.
+  The count is only as fresh as existing live counts; no new polling/read.
+
+No schema migration, server endpoint, video pipeline, room admission,
+task/chat/music playback, or auth behavior changed. Tests for Presence state,
+publisher cleanup/reconnect, opaque keys and non-publisher cases are in
+`scripts/room-music-presence.test.mjs`; 0–3 policy combinations/OR semantics
+are covered by `scripts/session-card-indicators.test.mjs`. Run
+`node --experimental-strip-types --test scripts/room-music-presence.test.mjs
+scripts/session-card-indicators.test.mjs`, `npm run build`, focused ESLint,
+and `git diff --check`. Browser QA: open `http://127.0.0.1:4173/sessions` with
+the local Vite server; it uses production Supabase for read-only data. Do not
+edit room settings or join rooms solely for QA. A live shared-music playback
+and 2/3-policy card must still be confirmed after deployment because neither
+scenario existed in the read-only preview at verification time.

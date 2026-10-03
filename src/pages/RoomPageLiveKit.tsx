@@ -43,6 +43,7 @@ import { invalidateHostLeaseCache } from "../lib/supabaseFetchOptimizer";
 import { withTimeout } from "../lib/promiseTimeout";
 import { readSessionRoomPolicies, withRoomPolicies, type RoomPolicies } from "../lib/roomPolicies";
 import { captureProductEvent } from "../lib/analytics";
+import { advertiseSharedMusic, sharedRoomMusicActive } from "../lib/roomMusicPresence";
 import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
 import { formatTimeZoneCityLabel, isValidTimeZone } from "../lib/timezones";
@@ -10821,6 +10822,20 @@ export function RoomPageLiveKit({
   const canUploadRoomSoundtrack = isHost || isSelfModerator;
 
   const canShareTabMusic = connected && (isHost || isTemporaryRoomHost);
+
+  const advertisingSharedMusic = sharedRoomMusicActive(
+    connected,
+    activeSoundscapeId,
+    soundscapePlaying,
+    canControlRoomSoundtrack,
+    sharingTabMusic,
+  );
+  useEffect(() => {
+    if (!sessionId || !advertisingSharedMusic) return;
+    // Ephemeral Realtime Presence only while the room is publishing shared
+    // audio. No database writes, polling, or subscriber-side advertisements.
+    return advertiseSharedMusic(supabase, sessionId);
+  }, [sessionId, advertisingSharedMusic]);
 
   const stopSharedTabMusic = async () => {
     const activeRoom = roomRef.current;
