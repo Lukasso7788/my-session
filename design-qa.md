@@ -124,3 +124,30 @@ No actionable P0/P1/P2 mismatch was found. The only prior iteration was the
 8px `or` implementation, replaced with the 16px slash and recaptured.
 
 final result: passed
+
+---
+
+# 2026-10-04 — LIVE corner placement and policy tooltips QA
+
+Source: user's previous `session format switcher.png` and the follow-up
+instruction to anchor LIVE at each button's upper-right edge; existing
+session-card indicator design from `7 Focus Hub — список комнат.png`.
+Implementation: `C:\Users\misha\AppData\Local\Temp\mysession-live-corner-tooltip-desktop.png`
+at 1920×947 and `C:\Users\misha\AppData\Local\Temp\mysession-live-corner-mobile.png`
+at 375×812 (CSS pixels, browser density 1), from local `/sessions` preview.
+
+Full-view comparison: the red LIVE pill touches the right edge of the
+Infinite button at both sizes. It remains inside the switcher and does not
+hide the tab label/icon. Focused comparison: the camera-required tooltip
+appears above its green icon without covering the card title. An icon
+receiving keyboard focus shows its tooltip immediately (`display: block`).
+
+Required fidelity surfaces: Inter typography and existing switcher sizes
+are preserved; alignment changes only the pill anchor; prior green/red
+tokens and 1px white LIVE border remain; no source icons or raster assets
+changed; the three tooltip labels describe the specific rule, with
+alternative camera/screen-share phrased accurately. No actionable P0/P1/P2
+issue remains. These are the first captures after the requested change;
+no visual rework iteration was needed.
+
+final result: passed

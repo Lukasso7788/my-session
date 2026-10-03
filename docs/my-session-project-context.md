@@ -695,3 +695,21 @@ Visual QA used a temporary instance of the actual component in the existing
 `/ui-playground` route; that fixture was removed afterward. Browser computed
 styles confirmed `Inter, system-ui, sans-serif`, `16px`, `700`, and
 `rgb(99, 102, 241)`. Screenshot evidence is in `design-qa.md`.
+
+## 2026-10-04 — LIVE badge alignment and immediate policy tooltips
+
+`src/components/SessionTypeSwitcher.tsx` now anchors each nonzero Group or
+Infinite `LIVE` pill with `right-0` at the top of its own button, rather than
+centering it. Existing occupancy data, colors, zero-hiding, button labels,
+click targets, and room-type switching are unchanged. Desktop and 375px
+mobile previews confirm the pill remains inside the switcher.
+
+`src/components/SessionRoomPolicyIndicator.tsx` replaces the pill's delayed
+native `title` with an individual CSS-only tooltip per camera, screen-share,
+and no-chat icon. The visible tooltip appears immediately on hover or keyboard
+focus; each icon has its own accessible label. In an OR policy, labels say the
+camera and screen-share icons are alternatives, not two hard requirements.
+The parent pill retains its group-level accessible summary. No timers,
+database reads, session settings, or LiveKit behavior were changed. Browser
+QA confirmed a camera tooltip on hover and `display: block` on keyboard
+focus; screenshots/remaining context are in `design-qa.md`.
