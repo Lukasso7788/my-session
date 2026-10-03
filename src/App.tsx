@@ -59,6 +59,8 @@ const BlogAdminPage = lazy(() => import("./pages/BlogAdminPage"));
 const SessionCardsPlayground = lazy(() => import("./SessionCardsPlayground"));
 const IconVectorizerPage = lazy(() => import("./pages/IconVectorizerPage"));
 const OneOnOnePage = lazy(() => import("./pages/OneOnOnePage"));
+const HostsPage = lazy(() => import("./pages/HostsPage"));
+const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage"));
 const MOBILE_ROOM_LEASE_PREFIX = "mysession_mobile_room_lease:";
 
 function clearRoomEntryRecoveryLease(sessionId: string) {
@@ -116,6 +118,8 @@ export default function App() {
           <Route path="/one-on-one" element={<Navigate to="/sessions?tab=one-on-one" replace />} />
 
           <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/hosts" element={<HostsPage />} />
+          <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/pricing/success" element={<PricingSuccessPage />} />
           <Route path="/updates" element={<UpdatesPage />} />
