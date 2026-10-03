@@ -789,3 +789,40 @@ a spacing/color reference; it does not replace the existing type-themed pill.
 Validation: focused indicator tests passed 2/2, focused component ESLint passed,
 production Vite build passed, and the Group LIVE badge was visually checked in
 the local `/sessions?tab=infinite` browser preview. No music code was changed.
+
+## 2026-10-04 — Community attendance counts and temporary header visibility
+
+`src/components/Header.tsx` no longer renders Hosts and Leaderboard links in
+desktop or mobile navigation. The `/hosts` and `/leaderboard` routes in
+`src/App.tsx`, page-to-page links, and their pages remain intact for direct
+access while the community views are being refined.
+
+The source of truth for lifetime **attended** sessions is
+`profiles.attended_sessions_count`, maintained by the recount triggers in
+`supabase/migrations/20260920161100_repair_infinite_daily_attendance_count.sql`.
+That counter equals distinct regular sessions plus one
+`infinite_room_daily_attendance` row per room/user/local day. The original
+`community_user_leaderboard` RPC counted distinct `session_id` values from
+`attendance_visit_history`, collapsing repeated infinite-room days. In
+production on 2026-10-04, the same profile showed 608 canonical attended
+sessions (407 regular + 201 infinite daily visits) but only 431 in the old
+leaderboard. The new RPC ranks by the maintained profile count and keeps
+`attendance_visit_history` for focus hours and last-seen timestamps. It also
+includes people with a canonical count whose visits predate the history table.
+
+`community_hosts` still measures **public sessions hosted**, not attendance;
+these metrics are intentionally distinct. It excludes hidden/private/infinite
+rooms as before. The new return column `attended_sessions` supplies the same
+profile counter for host cards, which now label both numbers separately. The
+RPC return shape change is transactional in
+`supabase/migrations/20261003233259_align_community_session_counts.sql`; it
+drops/recreates `community_hosts(integer)` after a production dependency check
+showed no database dependents, then re-grants the same public RPC access.
+No attendance rows or room behavior are changed. The header links can be
+restored later without re-enabling any data collection.
+The migration was applied to production under version `20261003233259`;
+subsequent read-only checks showed both community RPCs and the profile counter
+equal at the time of the query, while the public hosted-room count remained a
+separate smaller metric. The active lifetime counter can change as attendance
+records are edited/deleted, so example totals are observations, not fixtures.
+The frontend still requires its normal Vercel deployment after the push.

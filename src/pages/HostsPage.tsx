@@ -10,6 +10,7 @@ type HostRow = {
   bio: string | null;
   country_code: string | null;
   hosted_sessions: number;
+  attended_sessions: number;
   focus_rate: number | null;
   focus_feedback_count: number;
   last_hosted_at: string | null;
@@ -117,7 +118,7 @@ export default function HostsPage() {
                     )}
                     <span className="min-w-0">
                       <span className="block truncate text-[13px] font-bold">{host.full_name}</span>
-                      <span className="block text-[11px] text-[#766F69]">{host.hosted_sessions} sessions</span>
+                      <span className="block text-[11px] text-[#766F69]">{host.attended_sessions} attended · {host.hosted_sessions} public hosted</span>
                     </span>
                   </button>
                 ))}
@@ -156,7 +157,7 @@ export default function HostsPage() {
                     <div className="truncate text-[16px] font-bold">{host.full_name}</div>
                     <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-[#726A63]">
                       {host.country_code ? <span>{host.country_code}</span> : null}
-                      <span>{host.hosted_sessions} hosted</span>
+                      <span>{host.hosted_sessions} public hosted</span>
                     </div>
                   </div>
                 </div>
@@ -165,10 +166,16 @@ export default function HostsPage() {
                   {host.bio || "Shows up, hosts sessions, and helps keep the room moving."}
                 </p>
 
-                <div className="mt-4 grid grid-cols-2 gap-2">
+                <div className="mt-4 grid grid-cols-3 gap-2">
                   <div className="rounded-2xl bg-[#F6F3EF] p-3">
                     <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#8C8177]">
-                      <Users className="h-3.5 w-3.5" /> Sessions
+                      <Users className="h-3.5 w-3.5 shrink-0" /> Attended
+                    </div>
+                    <div className="mt-1 text-[19px] font-bold">{host.attended_sessions}</div>
+                  </div>
+                  <div className="rounded-2xl bg-[#F6F3EF] p-3">
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#8C8177]">
+                      <CalendarDays className="h-3.5 w-3.5 shrink-0" /> Hosted
                     </div>
                     <div className="mt-1 text-[19px] font-bold">{host.hosted_sessions}</div>
                   </div>
