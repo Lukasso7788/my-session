@@ -50,6 +50,7 @@ as $function$
       count(*)::bigint as focus_feedback_count
     from public.session_feedback f
     where f.host_id is not null
+      and f.user_id is distinct from f.host_id
       and f.rating is not null
       and f.rating between 0 and 100
     group by f.host_id
