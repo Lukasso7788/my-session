@@ -1,13 +1,14 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createHash, randomBytes, randomUUID } from "crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "crypto";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { missingPlunkEnvironment, sendPlunkEmail } from "../_lib/plunk.js";
 import {
-  SENDER_EVENT_TYPES,
-  emitSenderTestSuite,
-  processSenderOutbox,
-} from "../_lib/sender.js";
+  PLUNK_LIFECYCLE_EVENT_TYPES,
+  emitPlunkTestSuite,
+  plunkLifecycleStatus,
+  processPlunkOutbox,
+} from "../_lib/plunkLifecycle.js";
 
 type LiveKitAdminAction =
   | "mute_track"
@@ -2135,19 +2136,53 @@ async function handleSenderLifecycleCronAction(params: {
     return res.status(401).json({ error: "cron_unauthorized" });
   }
 
+  const status = plunkLifecycleStatus();
   let evaluation: unknown = null;
-  if (evaluate) {
-    const { data, error } = await sb.rpc("evaluate_sender_lifecycle_events");
+  if (evaluate && status.enabled && env("PLUNK_LIFECYCLE_EVALUATOR_ENABLED") === "true") {
+    const { data, error } = await sb.rpc("evaluate_plunk_lifecycle_events", {
+      p_cutover_at: status.cutoverAt,
+    });
     if (error) throw error;
     evaluation = data;
   }
 
-  const delivery = await processSenderOutbox(
+  const delivery = await processPlunkOutbox(
     sb,
     Number(getQueryParam(req, "limit") || 50),
   );
 
   return res.status(200).json({ ok: true, evaluation, delivery });
+}
+
+async function handlePlunkUnsubscribeWebhook(params: {
+  req: VercelRequest;
+  res: VercelResponse;
+  sb: SupabaseClient;
+}) {
+  const { req, res, sb } = params;
+  const expected = env("PLUNK_WEBHOOK_SECRET");
+  const supplied = String(req.headers["x-plunk-webhook-secret"] || "");
+  const expectedBytes = Buffer.from(expected);
+  const suppliedBytes = Buffer.from(supplied);
+  if (!expected || expectedBytes.length !== suppliedBytes.length ||
+      !timingSafeEqual(expectedBytes, suppliedBytes)) {
+    return res.status(401).json({ error: "plunk_webhook_unauthorized" });
+  }
+  // Configure this URL only on Plunk's contact.unsubscribed workflow. No
+  // subscribed webhook is accepted: a resubscribe needs in-app consent.
+  const payload = parseBody(req) as Body & { contact?: { email?: unknown; subscribed?: unknown } };
+  const email = String(payload.contact?.email || "").trim().toLowerCase();
+  if (payload.contact?.subscribed !== false) {
+    return res.status(400).json({ error: "unsubscribed_contact_required" });
+  }
+  if (!/^\S+@\S+\.\S+$/.test(email) || email.length > 320) {
+    return res.status(400).json({ error: "valid_contact_email_required" });
+  }
+  const { data, error } = await sb.rpc("record_plunk_marketing_unsubscribe", {
+    p_email: email,
+  });
+  if (error) throw error;
+  return res.status(200).json({ ok: true, updated: data === true });
 }
 
 async function handleSenderAdminAction(params: {
@@ -2162,27 +2197,28 @@ async function handleSenderAdminAction(params: {
 
   if (action === "sender_test_all") {
     const email = String(body.senderTestEmail || "").trim().toLowerCase();
-    if (!/^\S+@\S+\.\S+$/.test(email)) {
-      return res.status(400).json({ error: "valid_sender_test_email_required" });
+    const testEmail = env("PLUNK_TEST_EMAIL") || "lukasus7788@gmail.com";
+    if (email !== testEmail.toLowerCase()) {
+      return res.status(400).json({ error: "plunk_test_recipient_not_allowed" });
     }
     if (body.senderTestConfirmation !== "SEND_ALL_TEST_EMAILS") {
       return res.status(400).json({ error: "sender_test_confirmation_required" });
     }
 
-    const test = await emitSenderTestSuite({ email });
+    const test = await emitPlunkTestSuite(email);
     return res.status(200).json({
       ok: !test.disabled && test.failed === 0,
       test,
-      supportedEventTypes: SENDER_EVENT_TYPES,
+      supportedEventTypes: PLUNK_LIFECYCLE_EVENT_TYPES,
     });
   }
 
   if (action === "sender_outbox_process") {
-    const delivery = await processSenderOutbox(sb, 100);
+    const delivery = await processPlunkOutbox(sb, 100);
     return res.status(200).json({
       ok: !delivery.disabled && delivery.failed === 0,
       delivery,
-      supportedEventTypes: SENDER_EVENT_TYPES,
+      supportedEventTypes: PLUNK_LIFECYCLE_EVENT_TYPES,
     });
   }
 
@@ -2191,6 +2227,8 @@ async function handleSenderAdminAction(params: {
     if (!looksLikeUuid(id)) {
       return res.status(400).json({ error: "sender_event_id_required" });
     }
+    const cutoverAt = plunkLifecycleStatus().cutoverAt;
+    if (!cutoverAt) return res.status(409).json({ error: "plunk_lifecycle_not_enabled" });
 
     const { error } = await sb
       .from("email_event_outbox")
@@ -2201,6 +2239,7 @@ async function handleSenderAdminAction(params: {
         claimed_at: null,
       })
       .eq("id", id)
+      .gte("created_at", cutoverAt)
       .in("status", ["failed", "dead"]);
     if (error) throw error;
   }
@@ -2212,9 +2251,18 @@ async function handleSenderAdminAction(params: {
     .limit(200);
   if (error) throw error;
 
+  const { count: marketingOptInCount, error: countError } = await sb
+    .from("email_automation_preferences")
+    .select("user_id", { count: "exact", head: true })
+    .eq("marketing_email_enabled", true);
+  if (countError) throw countError;
+
   return res.status(200).json({
     events: data || [],
-    supportedEventTypes: SENDER_EVENT_TYPES,
+    supportedEventTypes: PLUNK_LIFECYCLE_EVENT_TYPES,
+    lifecycle: plunkLifecycleStatus(),
+    marketingOptInCount: marketingOptInCount || 0,
+    testRecipient: env("PLUNK_TEST_EMAIL") || "lukasus7788@gmail.com",
   });
 }
 
@@ -2651,6 +2699,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const isSenderLifecycleCron =
       req.method === "POST" &&
       (senderCronAction === "evaluate" || senderCronAction === "process");
+    const isPlunkUnsubscribeWebhook = req.method === "POST" &&
+      getQueryParam(req, "plunkWebhook") === "unsubscribed";
 
     if (req.method !== "POST" && !isDailyEmailCron) {
       res.setHeader("Allow", "GET, POST, OPTIONS");
@@ -2676,6 +2726,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const sb = getSupabaseAdminClient(supabaseUrl, serviceKey);
+
+    if (isPlunkUnsubscribeWebhook) {
+      return await handlePlunkUnsubscribeWebhook({ req, res, sb });
+    }
 
     if (isDailyEmailCron) {
       return await handleDailyScheduleSavedAudienceCronAction({

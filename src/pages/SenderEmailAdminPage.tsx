@@ -29,11 +29,16 @@ type TestResult = {
 type SenderResponse = {
   events?: EventRow[];
   supportedEventTypes?: string[];
+  testRecipient?: string;
+  marketingOptInCount?: number;
+  lifecycle?: { enabled: boolean; reason: string | null; cutoverAt: string | null };
   delivery?: {
     disabled: boolean;
+    reason?: string | null;
     claimed: number;
     sent: number;
     failed: number;
+    cancelled?: number;
   };
   test?: TestResult;
   error?: string;
@@ -45,6 +50,8 @@ export default function SenderEmailAdminPage() {
   const [rows, setRows] = useState<EventRow[]>([]);
   const [eventTypes, setEventTypes] = useState<string[]>([]);
   const [testEmail, setTestEmail] = useState("");
+  const [marketingOptInCount, setMarketingOptInCount] = useState(0);
+  const [lifecycle, setLifecycle] = useState<SenderResponse["lifecycle"]>();
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -56,7 +63,7 @@ export default function SenderEmailAdminPage() {
     async (action: string, extra: Record<string, unknown> = {}) => {
       const { data } = await supabase.auth.getSession();
       if (!data.session?.access_token) {
-        navigate("/login?next=/admin/sender-email");
+        navigate("/login?next=/admin/plunk-email");
         throw new Error("Please sign in first.");
       }
 
@@ -72,7 +79,7 @@ export default function SenderEmailAdminPage() {
       });
       const payload = (await response.json()) as SenderResponse;
       if (!response.ok) {
-        const summary = payload.error || "Sender admin request failed.";
+        const summary = payload.error || "Plunk admin request failed.";
         throw new Error(
           payload.details && payload.details !== summary
             ? `${summary}: ${payload.details}`
@@ -83,6 +90,9 @@ export default function SenderEmailAdminPage() {
       if (payload.supportedEventTypes) {
         setEventTypes(payload.supportedEventTypes);
       }
+      if (payload.testRecipient) setTestEmail(payload.testRecipient);
+      if (payload.marketingOptInCount != null) setMarketingOptInCount(payload.marketingOptInCount);
+      if (payload.lifecycle) setLifecycle(payload.lifecycle);
       return payload;
     },
     [navigate],
@@ -120,8 +130,8 @@ export default function SenderEmailAdminPage() {
       const delivery = payload.delivery;
       setMessage(
         delivery?.disabled
-          ? "Sender integration is disabled. Set SENDER_INTEGRATION_ENABLED=true before testing."
-          : `Processed ${delivery?.claimed || 0}: ${delivery?.sent || 0} sent, ${delivery?.failed || 0} failed.`,
+          ? `Plunk lifecycle delivery is off (${delivery?.reason || "not configured"}). Tests can still run. Do not enable production before templates and cutover are checked.`
+          : `Processed ${delivery?.claimed || 0}: ${delivery?.sent || 0} accepted, ${delivery?.failed || 0} failed, ${delivery?.cancelled || 0} cancelled.`,
       );
       await load();
     } catch (caught) {
@@ -139,7 +149,7 @@ export default function SenderEmailAdminPage() {
     }
 
     const confirmed = window.confirm(
-      `Send ${eventTypes.length || "all"} Sender test events to ${email}? This can trigger one email per published Sender automation.`,
+      `Send ${eventTypes.length || "all"} Plunk test events to ${email}? This can trigger one email per enabled Plunk workflow.`,
     );
     if (!confirmed) return;
 
@@ -152,11 +162,11 @@ export default function SenderEmailAdminPage() {
         senderTestEmail: email,
         senderTestConfirmation: "SEND_ALL_TEST_EMAILS",
       });
-      if (!payload.test) throw new Error("Sender returned no test result.");
+      if (!payload.test) throw new Error("Plunk returned no test result.");
       setTestResult(payload.test);
       setMessage(
         payload.test.disabled
-          ? "Sender integration is disabled. No events were sent."
+          ? `Plunk test is unavailable (${payload.test.reason || "not configured"}). No events were sent.`
           : `Test suite finished: ${payload.test.sent} accepted, ${payload.test.failed} failed.`,
       );
     } catch (caught) {
@@ -174,10 +184,10 @@ export default function SenderEmailAdminPage() {
             <div className="text-xs font-bold uppercase tracking-[0.16em] text-[#4AAE55]">
               MySession Admin
             </div>
-            <h1 className="mt-2 text-3xl font-bold">Sender lifecycle email</h1>
+            <h1 className="mt-2 text-3xl font-bold">Plunk email automation</h1>
             <p className="mt-2 text-sm text-black/55">
-              Test every automation and inspect the delivery outbox without
-              exposing production recipient data.
+              Test Plunk workflows and inspect the delivery outbox without
+              exposing production recipient data. Old Sender events are never replayed.
             </p>
           </div>
           <div className="flex gap-2">
@@ -208,11 +218,11 @@ export default function SenderEmailAdminPage() {
               <div className="text-xs font-bold uppercase tracking-[0.14em] text-[#4AAE55]">
                 Automation test suite
               </div>
-              <h2 className="mt-2 text-xl font-bold">Trigger every Sender event</h2>
+              <h2 className="mt-2 text-xl font-bold">Trigger every Plunk event</h2>
               <p className="mt-2 text-sm leading-6 text-black/55">
-                Use a dedicated test inbox. The run creates or updates that
-                subscriber in Sender and can generate one email for every
-                published automation below.
+                Tests go only to the server-approved inbox and can generate one
+                email for every enabled Plunk workflow below. Production delivery
+                remains separate and off until cutover is configured.
               </p>
             </div>
             <span className="rounded-full bg-[#ECF8EE] px-3 py-1.5 text-xs font-semibold text-[#31843B]">
@@ -224,8 +234,8 @@ export default function SenderEmailAdminPage() {
             <input
               type="email"
               value={testEmail}
-              onChange={(event) => setTestEmail(event.target.value)}
-              placeholder="test@example.com"
+              readOnly
+              aria-label="Approved Plunk test inbox"
               className="min-w-0 flex-1 rounded-2xl border border-black/10 px-4 py-3 text-sm outline-none focus:border-[#57C964]"
             />
             <button
@@ -284,13 +294,19 @@ export default function SenderEmailAdminPage() {
           <div>
             <h2 className="text-xl font-bold">Delivery outbox</h2>
             <p className="mt-1 text-sm text-black/50">
-              Manually process pending items or retry failed deliveries.
+              Only post-cutover, non-expired events are eligible. Existing Sender
+              backlog stays untouched.
+            </p>
+            <p className="mt-2 text-xs text-black/50">
+              Lifecycle: {lifecycle?.enabled ? "on" : `off (${lifecycle?.reason || "not configured"})`}
+              {lifecycle?.cutoverAt ? ` · Cutover ${new Date(lifecycle.cutoverAt).toLocaleString()}` : ""}
+              {` · Explicit marketing opt-ins: ${marketingOptInCount}`}
             </p>
           </div>
           <button
             type="button"
             onClick={() => void processOutbox()}
-            disabled={processing}
+            disabled={processing || !lifecycle?.enabled}
             className="rounded-full border border-black/15 bg-white px-4 py-2 text-sm font-semibold disabled:opacity-50"
           >
             {processing ? "Processing…" : "Process pending"}

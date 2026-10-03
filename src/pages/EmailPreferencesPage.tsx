@@ -94,7 +94,7 @@ export default function EmailPreferencesPage() {
         <div className="mt-5 rounded-[28px] border border-black/10 bg-white p-6 shadow-sm sm:p-8">
           <div className="text-[12px] font-bold uppercase tracking-[0.16em] text-[#4AAE55]">Email settings</div>
           <h1 className="mt-2 text-3xl font-bold">Choose what reaches your inbox</h1>
-          <p className="mt-2 text-sm leading-6 text-black/60">These controls apply to MySession lifecycle and marketing automation in Sender. Authentication and security emails remain enabled.</p>
+          <p className="mt-2 text-sm leading-6 text-black/60">Choose your MySession email preferences. Product and marketing emails are off until you explicitly opt in; Plunk handles delivery and unsubscribe links. Authentication and security emails remain enabled.</p>
           {loading ? <div className="mt-8 text-sm text-black/50">Loading preferences…</div> : (
             <div className="mt-8 space-y-3">
               {options.map((option) => (

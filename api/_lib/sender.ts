@@ -199,7 +199,7 @@ export async function emitSenderEvent(params: {
   return { skipped: false };
 }
 
-function senderTestProperties(type: SenderEventType, suiteId: string) {
+export function senderTestProperties(type: SenderEventType, suiteId: string) {
   const now = Date.now();
   const iso = (offsetMs: number) => new Date(now + offsetMs).toISOString();
 

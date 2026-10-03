@@ -135,6 +135,7 @@ export default function App() {
             element={<DailyScheduleEmailAdminPage />}
           />
           <Route path="/admin/sender-email" element={<SenderEmailAdminPage />} />
+          <Route path="/admin/plunk-email" element={<SenderEmailAdminPage />} />
           <Route path="/admin/blog" element={<BlogAdminPage />} />
 
           <Route

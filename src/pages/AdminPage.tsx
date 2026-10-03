@@ -2926,10 +2926,10 @@ export default function AdminPage() {
             </Link>
 
             <Link
-              to="/admin/sender-email"
+              to="/admin/plunk-email"
               className="rounded-full border border-[#57C964] px-5 py-2.5 text-[14px] font-semibold text-[#2F2F2F] hover:bg-[#57C964] hover:text-white"
             >
-              Sender lifecycle
+              Plunk email
             </Link>
 
             <Link

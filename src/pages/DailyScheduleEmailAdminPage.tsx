@@ -454,7 +454,7 @@ export default function DailyScheduleEmailAdminPage() {
     }
 
     if (ids.length > 100) {
-      setError("Free Resend safety: saved daily audience can be max 100 people.");
+      setError("Saved daily audience can be max 100 people.");
       return;
     }
 

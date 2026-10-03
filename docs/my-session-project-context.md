@@ -1,6 +1,6 @@
 # MySession — project architecture and continuation context
 
-Updated: 2026-09-28. This is a project-wide navigation/architecture handoff based on
+Updated: 2026-10-03. This is a project-wide navigation/architecture handoff based on
 the checked-out source, not a claim that every module or production service was
 audited. Never put secret values, tokens, user exports or private logs in this file.
 
@@ -10,13 +10,15 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   the remote default branch). Do not force-push or rewrite shared history.
 - Active implementation checkout:
   C:\Users\misha\.codex\worktrees\monthly-attendance\my-session.
-  Local branch: codex/session-milestone-tree-badges. Its name is historical; reuse
-  it rather than create another checkout purely for naming.
-- Base for the current Free Flow badge change: 98faee10d7f1ba863fbb18f88b37efe1752ea0a6,
-  matching origin/main when work began. Recent commits: de9715b (OAuth refresh
-  storm fix), 98faee1 (remove session-card music indicator). Earlier: 6e8f04a (Plunk direct
-  transport/admin preview), ab831cf (Tasks warm reopening), 68acc34
-  (reliable chat names/avatars), b376843 (room performance).
+  Local branch: codex/plunk-email-marketing, based on origin/main commit
+  3aa00f6780a32ce85ef84eadb0c05c95279f5e8b (2026-10-03 fetch).
+  Recheck both branch and remote main before committing or pushing.
+- Current task: complete the Plunk email cutover and marketing-consent foundation.
+  Earlier 6e8f04a migrated direct admin email to Plunk; the new work adds a
+  cutover-aware lifecycle outbox processor and operator setup runbook. See
+  docs/plunk-email-rollout.md. This is staged/off until environment variables,
+  workflows, and SQL migration are validated. No mass campaign is authorized
+  against a historical or non-opted-in audience.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
   Do not reset, delete or overwrite it. This active checkout is outside current
   writable roots, so commands/patches require approved filesystem escalation.
@@ -79,8 +81,10 @@ Never treat a local Vite-only UI success as live endpoint verification.
 - api/billing/{create,confirm}-checkout-session.ts and api/stripe/webhook.ts:
   Stripe checkout/confirmation/webhook boundary. Never trust client entitlement.
 - api/push: Web Push dispatch boundary; private VAPID/dispatch keys stay server-side.
-- api/_lib/sender.ts: Sender lifecycle event integration and outbox processing.
-- api/_lib/plunk.ts: direct email transport, separate from Sender lifecycle.
+- api/_lib/sender.ts: legacy Sender lifecycle transport retained for audit/rollback;
+  its event names/sanitizer/test fixtures are reused by the Plunk cutover module.
+- api/_lib/plunk.ts: direct transactional email transport via self-hosted Plunk.
+- api/_lib/plunkLifecycle.ts: staged lifecycle event/consent sync through Plunk.
 
 Supabase project ref supplied by user: cxqgzcjsjyszcbcbdusp. Verify actual deployed
 schema/environment before DB work. SQL history/tests are in supabase/migrations
@@ -89,7 +93,7 @@ bookings, attendance and daily attendance history, infinite_room_host_leases,
 chat messages/reactions, intentions/panel tasks/focus plans, notifications,
 email preferences/send ledgers and email_event_outbox. Current migrations are the
 schema authority, not this overview. RLS/admission must not be weakened. Never
-authorize against editable user_metadata. No schema changes in the current panel pass.
+authorize against editable user_metadata.
 
 Presence/host behavior: attendance heartbeat and crash detection are separate
 from UI timers; the user has a 90-second alive-window requirement historically.
@@ -97,6 +101,8 @@ Infinite-room leases have ownership, heartbeat, expiry, takeover and realtime
 reconciliation. Day/month attendance history must not be overwritten by a later
 visit. See docs/infinite-daily-attendance.md and migration/tests before changing.
 Do not disable these heartbeats to save browser work or globally raise work_mem.
+The 2026-10-03 Plunk task adds a new migration; application deployment does not
+automatically apply SQL migrations.
 
 ## Other services and companion projects
 
@@ -116,7 +122,7 @@ Do not disable these heartbeats to save browser work or globally raise work_mem.
 - Analytics/Sentry/Stripe/OpenAI-related features already exist. Discover existing
   endpoint and environment conventions before adding providers or packages.
 
-## Email architecture (latest shipped integration)
+## Email architecture and staged lifecycle migration
 
 6e8f04a migrated only admin.ts direct friend-invite/daily-schedule sends to Plunk:
 admin.ts -> api/_lib/plunk.ts -> self-hosted POST /v1/send -> SES -> recipient.
@@ -126,8 +132,29 @@ Do not create VITE_PLUNK secrets. Stable Idempotency-Key, HTTP OK AND success:tr
 sanitized errors; legacy resendId/resend_id fields retained for compatibility.
 Admin has a fixed-recipient test to lukasus7788@gmail.com with HTML preview, SHA256
 stale-preview check and retry-stable UUID. It does not alter daily audience/ledger.
-Sender lifecycle/outbox and Supabase Auth emails remain untouched. No live inbox
-delivery was verified in that task. See docs/plunk-phase1-handoff.md for details.
+The 2026-10-03 continuation replaces the admin.ts lifecycle delivery calls with
+api/_lib/plunkLifecycle.ts, but delivery remains OFF unless
+PLUNK_LIFECYCLE_ENABLED=true, SENDER_INTEGRATION_ENABLED=false, all Plunk keys
+are present, and a UTC PLUNK_LIFECYCLE_CUTOVER_AT has passed. The existing
+email_event_outbox and event names are retained. The new SQL claim RPC sees
+only post-cutover rows; old Sender backlog is never replayed. A separate
+cutover-aware evaluator avoids historical inactivity/stalled-signup blasts.
+The Cloudflare cron retains legacy `senderAction`/SENDER_LIFECYCLE_URL names but
+calls the new Plunk handler; evaluate is further gated by
+PLUNK_LIFECYCLE_EVALUATOR_ENABLED=true. Event acceptance by `/v1/track` is not
+proof of a delivered email: enabled Plunk workflows and SES must be checked.
+
+Marketing consent lives in public.email_automation_preferences and defaults to
+false. An explicit toggle enqueues a preference event; the handler updates a
+Plunk contact's `subscribed` bit only for such a transition. Other lifecycle
+events first ensure a missing contact is unsubscribed, because `/v1/track`
+otherwise auto-subscribes new contacts. Plunk hosted unsubscribe can sync back
+through a secret-authenticated webhook and service-role-only SQL function.
+Campaigns must use a marketing/opted-in segment, never transactional `ALL`.
+At inspection there were zero explicit opt-ins and 648 pending historical
+outbox events; these numbers are a point-in-time observation, not live state.
+Supabase Auth/security mail stays outside Plunk. See
+docs/plunk-phase1-handoff.md and docs/plunk-email-rollout.md.
 
 ## Public HTML/build architecture
 

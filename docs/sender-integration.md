@@ -1,5 +1,10 @@
 # Sender lifecycle email integration
 
+> Historical setup/rollback reference only. The staged Plunk cutover is
+> documented in [plunk-email-rollout.md](plunk-email-rollout.md). Do not follow
+> the activation steps below for a new production launch: doing so could
+> process the old Sender outbox backlog.
+
 ## Architecture
 
 MySession owns facts and eligibility. Sender owns email templates, delays, conditions, delivery, opens/clicks and unsubscribe handling.
