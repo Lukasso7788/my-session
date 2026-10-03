@@ -108,7 +108,7 @@ as $function$
   with activity as (
     select
       h.user_id,
-      count(*)::bigint as sessions_count,
+      count(distinct h.session_id)::bigint as sessions_count,
       round((
         sum(
           greatest(
