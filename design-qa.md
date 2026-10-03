@@ -95,3 +95,32 @@ multi-icon/music visual should be confirmed with a real room after deploy.
 final result: passed for the observed desktop/mobile states; live music and
 three-policy combinations are covered by logic tests but await production
 visual confirmation.
+
+---
+
+# 2026-10-04 — OR badge separator visual QA
+
+Source visual truth: `C:\Users\misha\OneDrive\Рабочий стол\or.png`
+(158×52px indigo capsule) plus user specification: slash in Inter Bold 16,
+indigo. The screenshot contains no slash; typography is specified in text.
+Implementation screenshot:
+`C:\Users\misha\AppData\Local\Temp\mysession-or-slash-20261004.png`
+(375×812 CSS viewport, browser density 1). The actual component was rendered
+temporarily in existing `/ui-playground`; the fixture was then removed.
+
+Full-view comparison: the existing card pill remains rounded and compact;
+no adjacent card UI changed. Focused region comparison: inside the pale
+indigo pill the camera and screen-share icons remain flanking a visible `/`.
+Browser computed typography/color: `Inter, system-ui, sans-serif`, `16px`,
+`700`, `rgb(99, 102, 241)` (#6366F1). The reference's solid-indigo fill is
+treated as a color cue; preserving the existing pale type-colored card pill
+avoids an unrelated design change.
+
+Fidelity surfaces: typography matches the explicit specification; spacing
+and layout keep the existing capsule and icon rhythm; slash color is the
+requested indigo; no image asset was replaced or degraded; the accessible
+copy remains "Camera or screen share required" while visible copy is `/`.
+No actionable P0/P1/P2 mismatch was found. The only prior iteration was the
+8px `or` implementation, replaced with the 16px slash and recaptured.
+
+final result: passed

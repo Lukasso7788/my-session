@@ -27,7 +27,7 @@ export default function SessionRoomPolicyIndicator({ policies, color, background
       style={{ color, backgroundColor: background, borderColor: color }}
     >
       {camera && <span aria-hidden="true" className="h-[16px] w-[17px]" style={iconStyle("/icons/camera-on-dark.svg")} />}
-      {either && <span aria-hidden="true" className="text-[8px] font-bold leading-none">or</span>}
+      {either && <span aria-hidden="true" className="font-inter text-[16px] font-bold leading-none text-[#6366F1]">/</span>}
       {screen && <span aria-hidden="true" className="h-[16px] w-[17px]" style={iconStyle("/icons/screen-share-dark.svg")} />}
       {chat && <span aria-hidden="true" className="h-[17px] w-[18px]" style={iconStyle("/icons/session-no-chat.svg")} />}
     </span>

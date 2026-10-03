@@ -681,3 +681,17 @@ the local Vite server; it uses production Supabase for read-only data. Do not
 edit room settings or join rooms solely for QA. A live shared-music playback
 and 2/3-policy card must still be confirmed after deployment because neither
 scenario existed in the read-only preview at verification time.
+
+## 2026-10-04 — OR badge separator refinement
+
+The `camera_or_screen_share_required` policy still keeps its accessible
+"Camera or screen share required" label and two existing media icons. Only
+the visible separator in `src/components/SessionRoomPolicyIndicator.tsx`
+changed from tiny `or` to `/`, using the existing Tailwind Inter font family,
+700 weight, 16px size, and indigo `#6366F1`. No data, policy, LiveKit,
+Presence, or session-switcher behavior changed. The user-supplied `or.png`
+is an indigo pill color/shape reference, not a source of extra UI assets.
+Visual QA used a temporary instance of the actual component in the existing
+`/ui-playground` route; that fixture was removed afterward. Browser computed
+styles confirmed `Inter, system-ui, sans-serif`, `16px`, `700`, and
+`rgb(99, 102, 241)`. Screenshot evidence is in `design-qa.md`.
