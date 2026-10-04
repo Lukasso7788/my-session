@@ -843,3 +843,13 @@ rendered both SVGs; `scripts/room-soundscape-artwork.test.mjs` guards unique,
 available 480×150 artwork for every built-in track. Music regression tests
 passed 6/6 and the production build passed. The three existing `no-empty`
 lint errors in `roomSoundscapes.ts` are unrelated empty catch blocks.
+
+## 2026-10-04 — Downtown Flow skyline refinement
+
+`public/images/room-music/downtown-flow.svg` now uses a New York-inspired
+Manhattan silhouette instead of the earlier generic two-sided streetscape:
+layered buildings, two stepped/tapered towers with spires, a dusk sun and
+subtle movement lines at street level. It keeps the same 480×150 viewBox,
+rounded clipping, asset path and pastel palette. The playlist catalog and
+audio playback are unchanged. The SVG was visually rendered in the local
+browser before commit; the existing artwork regression test guards its path.

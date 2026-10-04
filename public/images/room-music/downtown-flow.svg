@@ -1,15 +1,26 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Downtown Flow artwork">
-  <rect width="480" height="150" rx="22" fill="#E3E7F1"/>
-  <circle cx="256" cy="40" r="35" fill="#F0DDD4"/>
-  <path d="M0 101V63h26V48h33v18h26V38h29v25h24v38zm327 0V62h22V46h32v18h21V31h31v36h47v34z" fill="#C5CEE1"/>
-  <path d="M0 118V76h35V62h30v56zm69 0V52h25V37h28v81zm272 0V58h27V44h31v74zm64 0V71h30V53h45v65z" fill="#9FAFCA"/>
-  <path d="M0 113h154l50-18h72l50 18h154v37H0z" fill="#B7C3D8"/>
-  <path d="m204 95-61 55h194l-61-55z" fill="#D2D9E7"/>
-  <path d="M239 106v12m0 12v20" stroke="#F9F5EE" stroke-linecap="round" stroke-width="3"/>
-  <g fill="#F5F1EA" opacity=".75">
-    <rect x="14" y="85" width="5" height="7" rx="1"/><rect x="29" y="85" width="5" height="7" rx="1"/>
-    <rect x="79" y="69" width="5" height="7" rx="1"/><rect x="95" y="69" width="5" height="7" rx="1"/>
-    <rect x="352" y="75" width="5" height="7" rx="1"/><rect x="370" y="75" width="5" height="7" rx="1"/>
-    <rect x="417" y="85" width="5" height="7" rx="1"/><rect x="435" y="85" width="5" height="7" rx="1"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Downtown Flow New York skyline artwork">
+  <defs><clipPath id="downtown-flow-frame"><rect width="480" height="150" rx="22"/></clipPath></defs>
+  <g clip-path="url(#downtown-flow-frame)">
+    <rect width="480" height="150" fill="#DFE6F1"/>
+    <circle cx="287" cy="37" r="39" fill="#F2DBD5"/>
+    <path d="M0 115V79h18V66h20v21h17V61h22v54h17V74h25V56h21v59h20V81h19v34h56V72h27v43h23V62h21v53h31V77h22v38h28V57h25v58h22V73h22v42z" fill="#B9C8DC"/>
+    <path d="M0 127V82h28v45h8V71h24v56h12V90h20v37h8V62h32v65h10V78h27v49h12V95h25v32h24V74h28v53h20V87h25v40h22V71h24v56h10V88h22v39h21V75h31v52h12V88h26v39z" fill="#95A9C5"/>
+    <path d="M154 127V73h11V63h29v10h10v54z" fill="#778FAF"/>
+    <path d="M166 63V56h8v-8h11v8h8v7z" fill="#778FAF"/>
+    <path d="M179 48V29" fill="none" stroke="#778FAF" stroke-linecap="round" stroke-width="3"/>
+    <path d="M313 127V75l12-9 7-25h27l7 25 12 9v52z" fill="#718AAA"/>
+    <path d="M334 41V35h23v6z" fill="#718AAA"/>
+    <path d="M345 35V16" fill="none" stroke="#718AAA" stroke-linecap="round" stroke-width="3"/>
+    <path d="M405 127V65h9V54h25v11h10v62z" fill="#7E96B4"/>
+    <path d="M0 127h480v23H0z" fill="#AABBD2"/>
+    <path d="M0 136c80-4 139 5 213 0 91-7 153 5 267-2" fill="none" stroke="#DCE4EE" stroke-linecap="round" stroke-width="3"/>
+    <path d="M72 144h68m93-2h41m89 2h61" fill="none" stroke="#EDE6E4" stroke-linecap="round" stroke-width="3" opacity=".75"/>
+    <g fill="#E9EDF3" opacity=".7">
+      <rect x="44" y="82" width="3" height="5" rx="1"/><rect x="53" y="82" width="3" height="5" rx="1"/>
+      <rect x="108" y="77" width="3" height="5" rx="1"/><rect x="119" y="77" width="3" height="5" rx="1"/>
+      <rect x="169" y="86" width="3" height="5" rx="1"/><rect x="184" y="86" width="3" height="5" rx="1"/>
+      <rect x="337" y="82" width="3" height="5" rx="1"/><rect x="351" y="82" width="3" height="5" rx="1"/>
+      <rect x="416" y="78" width="3" height="5" rx="1"/><rect x="430" y="78" width="3" height="5" rx="1"/>
+    </g>
   </g>
 </svg>
