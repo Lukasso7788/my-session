@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Downtown Flow artwork">
+  <rect width="480" height="150" rx="22" fill="#E3E7F1"/>
+  <circle cx="256" cy="40" r="35" fill="#F0DDD4"/>
+  <path d="M0 101V63h26V48h33v18h26V38h29v25h24v38zm327 0V62h22V46h32v18h21V31h31v36h47v34z" fill="#C5CEE1"/>
+  <path d="M0 118V76h35V62h30v56zm69 0V52h25V37h28v81zm272 0V58h27V44h31v74zm64 0V71h30V53h45v65z" fill="#9FAFCA"/>
+  <path d="M0 113h154l50-18h72l50 18h154v37H0z" fill="#B7C3D8"/>
+  <path d="m204 95-61 55h194l-61-55z" fill="#D2D9E7"/>
+  <path d="M239 106v12m0 12v20" stroke="#F9F5EE" stroke-linecap="round" stroke-width="3"/>
+  <g fill="#F5F1EA" opacity=".75">
+    <rect x="14" y="85" width="5" height="7" rx="1"/><rect x="29" y="85" width="5" height="7" rx="1"/>
+    <rect x="79" y="69" width="5" height="7" rx="1"/><rect x="95" y="69" width="5" height="7" rx="1"/>
+    <rect x="352" y="75" width="5" height="7" rx="1"/><rect x="370" y="75" width="5" height="7" rx="1"/>
+    <rect x="417" y="85" width="5" height="7" rx="1"/><rect x="435" y="85" width="5" height="7" rx="1"/>
+  </g>
+</svg>

@@ -68,7 +68,7 @@ export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
     description: "Deep low-frequency noise for steady focus",
     file: "/sounds/brown-noise.mp3",
     icon: "/icons/music-brown-noise.svg",
-    artwork: "/images/room-music/flow-relax.svg",
+    artwork: "/images/room-music/brown-noise.svg",
     durationSeconds: 420,
   },
   {
@@ -77,7 +77,7 @@ export const ROOM_SOUNDSCAPE_OPTIONS: Array<{
     description: "Upbeat progressive trance for a focused city-walk flow",
     file: "/sounds/trance-track.mp3",
     icon: "/icons/walk.svg",
-    artwork: "/images/room-music/ambient-focus.svg",
+    artwork: "/images/room-music/downtown-flow.svg",
     durationSeconds: 428,
   },
 ];

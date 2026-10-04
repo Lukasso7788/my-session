@@ -826,3 +826,20 @@ equal at the time of the query, while the public hosted-room count remained a
 separate smaller metric. The active lifetime counter can change as attendance
 records are edited/deleted, so example totals are observations, not fixtures.
 The frontend still requires its normal Vercel deployment after the push.
+
+## 2026-10-04 — Missing Music Panel vector artwork
+
+`src/lib/roomSoundscapes.ts` is the single playlist catalog used by
+`src/pages/livekit/RoomSoundscapePanel.tsx` for track labels, audio paths,
+icons, durations, and the large illustrated player background. Brown Noise
+and Downtown Flow previously reused `flow-relax.svg` and `ambient-focus.svg`
+respectively. They now point to dedicated 480×150 SVG assets in
+`public/images/room-music/`: `brown-noise.svg` (warm layered sound waves) and
+`downtown-flow.svg` (muted city skyline and forward road). The assets follow
+the existing pastel, simple-shape cover style and require no extra runtime
+library or image download. The audio paths, playback engine, room music
+sharing, playlist order, and track controls are unchanged. Browser checks
+rendered both SVGs; `scripts/room-soundscape-artwork.test.mjs` guards unique,
+available 480×150 artwork for every built-in track. Music regression tests
+passed 6/6 and the production build passed. The three existing `no-empty`
+lint errors in `roomSoundscapes.ts` are unrelated empty catch blocks.

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Brown Noise artwork">
+  <defs><clipPath id="brown-noise-frame"><rect width="480" height="150" rx="22"/></clipPath></defs>
+  <g clip-path="url(#brown-noise-frame)">
+  <rect width="480" height="150" rx="22" fill="#EDE5DC"/>
+  <circle cx="418" cy="25" r="67" fill="#E2D4C6"/>
+  <circle cx="61" cy="126" r="79" fill="#E5D7C8"/>
+  <path d="M0 71c74-19 128 15 203-6 78-23 153 13 277-18v103H0z" fill="#D8C3B0"/>
+  <path d="M0 94c78-20 139 17 222-7 84-24 147 16 258-12v75H0z" fill="#CBB099"/>
+  <path d="M0 119c77-18 139 15 219-7 88-24 163 16 261-7v45H0z" fill="#AD8C75" opacity=".76"/>
+  <path d="M-8 48c76-20 132 16 211-6 75-21 155 12 285-16" fill="none" stroke="#B89D87" stroke-linecap="round" stroke-width="3" opacity=".68"/>
+  <path d="M-8 105c78-19 139 17 222-7 84-24 149 16 274-13" fill="none" stroke="#F5EDE4" stroke-linecap="round" stroke-width="3" opacity=".66"/>
+  </g>
+</svg>
