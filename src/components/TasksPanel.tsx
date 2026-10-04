@@ -725,8 +725,8 @@ export function TasksPanel({
   const navigate = useNavigate();
   const rawSessionId = (sessionIdProp || idOrSlugFromUrl || "").trim();
 
-  const panelTheme: RoomTheme = "light";
-  const isLight = true;
+  const panelTheme: RoomTheme = theme;
+  const isLight = panelTheme === "light";
 
   const [initialSnapshot] = useState(() =>
     TASKS_PANEL_CACHE.read(tasksPanelCacheKey(rawSessionId, currentUserId)));
@@ -1296,31 +1296,31 @@ export function TasksPanel({
     [persistTaskTimers, taskTimerStorageKey],
   );
 
-  const titleText = "text-black/95";
-  const mutedText = "text-black/55";
-  const divider = "bg-[#D8D0D0]";
+  const titleText = isLight ? "text-black/95" : "text-[#F4F5F6]";
+  const mutedText = isLight ? "text-black/55" : "text-[#B5BCC6]";
+  const divider = isLight ? "bg-[#D8D0D0]" : "bg-[#464D54]";
 
-  const panelBg = "bg-[#F3F1F1] text-black";
-  const headerBg = "bg-[#F7F5F5]";
-  const headerBorder = "border-[#D8D0D0]";
+  const panelBg = isLight ? "bg-[#F3F1F1] text-black" : "bg-[#1B1D20] text-[#F4F5F6]";
+  const headerBg = isLight ? "bg-[#F7F5F5]" : "bg-[#25292E]";
+  const headerBorder = isLight ? "border-[#D8D0D0]" : "border-[#464D54]";
 
   const inputCls = `
-      h-12 bg-[#F7F5F5] border border-[#CFC6C6] rounded-[18px]
-      px-4 text-[14px] text-black/85 placeholder:text-black/35
+      h-12 border rounded-[18px]
+      px-4 text-[14px] ${isLight ? "bg-[#F7F5F5] border-[#CFC6C6] text-black/85 placeholder:text-black/35" : "bg-[#292D32] border-[#4C5259] text-[#F4F5F6] placeholder:text-[#ABB3BE]"}
       outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
       font-inter
     `;
 
   const myCardCls =
-    "group relative min-h-11 border-b border-[#D8D0D0]/70 px-1.5 py-2 bg-transparent hover:bg-black/[0.035] transition";
+    `group relative min-h-11 border-b px-1.5 py-2 bg-transparent transition ${isLight ? "border-[#D8D0D0]/70 hover:bg-black/[0.035]" : "border-[#464D54] hover:bg-white/[0.06]"}`;
 
   const teamCardCls =
-    "group relative min-h-11 border-b border-[#D8D0D0]/70 px-1.5 py-2 bg-transparent hover:bg-black/[0.035] transition";
+    `group relative min-h-11 border-b px-1.5 py-2 bg-transparent transition ${isLight ? "border-[#D8D0D0]/70 hover:bg-black/[0.035]" : "border-[#464D54] hover:bg-white/[0.06]"}`;
 
   const ghostBtn =
-    "border border-[#CFC6C6] bg-transparent hover:bg-[#ECEAEA] text-black/75";
+    isLight ? "border border-[#CFC6C6] bg-transparent hover:bg-[#ECEAEA] text-black/75" : "border border-[#4C5259] bg-transparent hover:bg-[#353B42] text-[#E3E7EB]";
 
-  const primaryBtn = "bg-[#252525] hover:bg-[#303030] text-white font-semibold";
+  const primaryBtn = isLight ? "bg-[#252525] hover:bg-[#303030] text-white font-semibold" : "bg-[#81DB86] hover:bg-[#9AE99E] text-[#102816] font-semibold";
 
   const stopRoomBubbling = useCallback((e: any) => {
     e?.stopPropagation?.();
@@ -3654,8 +3654,8 @@ export function TasksPanel({
     );
   }
 
-  const timerPillCls = "bg-[#F3F1F1] border border-[#CFC6C6] text-black/80";
-  const headerTitle = "text-black/90";
+  const timerPillCls = isLight ? "bg-[#F3F1F1] border border-[#CFC6C6] text-black/80" : "bg-[#30353A] border border-[#4C5259] text-[#E3E7EB]";
+  const headerTitle = isLight ? "text-black/90" : "text-[#F4F5F6]";
   const timerTextCls =
     `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
 
@@ -3782,7 +3782,7 @@ export function TasksPanel({
       const modalBg = isLight ? "bg-[#F3F3F3]" : "bg-[#1B1B1B]";
       const modalBorder = isLight ? "border-[#CFCFCF]" : "border-[#2B2B2B]";
       const modalTitle = isLight ? "text-black/85" : "text-white/85";
-      const modalSub = isLight ? "text-black/50" : "text-white/45";
+      const modalSub = isLight ? "text-black/50" : "text-[#B5BCC6]";
       const rowBg = isLight
         ? "bg-[#FAFAFA] hover:bg-[#F3F3F3]"
         : "bg-[#242424] hover:bg-[#2B2B2B]";
@@ -3938,7 +3938,7 @@ export function TasksPanel({
                         >
                           <Search
                             size={16}
-                            className={isLight ? "text-black/40" : "text-white/45"}
+                            className={isLight ? "text-black/40" : "text-[#B5BCC6]"}
                           />
                         </button>
 
@@ -4012,7 +4012,7 @@ export function TasksPanel({
                                     it.completed
                                       ? isLight
                                         ? "text-black/45 line-through"
-                                        : "text-white/50 line-through"
+                                        : "text-[#B5BCC6] line-through"
                                       : isLight
                                         ? "text-black/80"
                                         : "text-white/80",
@@ -4704,7 +4704,7 @@ export function TasksPanel({
               onClick={() => void handleAddPanelTask()}
               className={[
                 "h-12 shrink-0 px-4 rounded-[18px] font-semibold text-[14px] font-inter transition",
-                "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white",
+                isLight ? "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white" : "bg-[#81DB86] hover:bg-[#9AE99E] text-[#102816]",
               ].join(" ")}
               type="button"
               title={`Add ${newTaskVisibility} task`}

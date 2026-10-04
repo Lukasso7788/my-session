@@ -99,6 +99,7 @@ import {
 import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 import { FX_BG_PRESETS } from "./livekit/backgroundPresets";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
+import "./livekit/roomSidePanelTheme.css";
 import {
   isPublishedColorCorrectionIdentity,
   publishedColorCorrectionSignature,
@@ -5637,6 +5638,27 @@ export function RoomPageLiveKit({
     }
   });
   const isLight = theme === "light";
+
+  // Side panels are a personal, per-browser preference, independent of the
+  // room canvas theme and never written to shared room/session state.
+  const [sidePanelTheme, setSidePanelTheme] = useState<RoomTheme>(() => {
+    try {
+      return localStorage.getItem("mysession_room_side_panel_theme_v1") === "dark"
+        ? "dark"
+        : "light";
+    } catch {
+      return "light";
+    }
+  });
+  const sidePanelIsLight = sidePanelTheme === "light";
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mysession_room_side_panel_theme_v1", sidePanelTheme);
+    } catch {
+      // Storage may be unavailable in private or embedded browsers.
+    }
+  }, [sidePanelTheme]);
 
   useEffect(() => {
     try {
@@ -19280,7 +19302,9 @@ export function RoomPageLiveKit({
   const pageBg = isLight
     ? "bg-[#F3F1F1] text-[#1F1F1F]"
     : "bg-[#1B1B1B] text-white";
-  const panelBg = "bg-[#F3F1F1] border border-[#D8D0D0]";
+  const panelBg = sidePanelIsLight
+    ? "bg-[#F3F1F1] border border-[#D8D0D0]"
+    : "bg-[#1B1D20] border border-[#393D42]";
   const bottomBarBg = isLight
     ? "bg-[#F3F1F1] border border-[#D8D0D0]"
     : "bg-[#1B1B1B] border border-[#252525]";
@@ -19327,23 +19351,24 @@ export function RoomPageLiveKit({
 
   const RightPanelBody = (
     <div
-      className={`rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg} ${theme === "dark" ? "dark" : ""}`}
-      data-theme={theme}
-      style={{ colorScheme: theme }}
+      className={`ms-room-side-panel rounded-2xl shadow-lg overflow-hidden min-h-0 h-full flex flex-col ${panelBg} ${sidePanelIsLight ? "" : "dark"}`}
+      data-theme={sidePanelTheme}
+      data-panel-theme={sidePanelTheme}
+      style={{ colorScheme: sidePanelTheme }}
     >
       {rightTab === "participants" && (
         <div className="h-full min-h-0 flex flex-col">
           <div
-            className={`${roomPanelHeaderClass} border-b flex items-center justify-between border-[#D8D0D0] bg-[#F3F1F1]`}
+            className={`${roomPanelHeaderClass} border-b flex items-center justify-between ${sidePanelIsLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#393D42] bg-[#222529]"}`}
           >
             <div className="flex items-center gap-2 min-w-0">
               <span
-                className="text-black/85 font-inter font-semibold truncate"
+                className={`font-inter font-semibold truncate ${sidePanelIsLight ? "text-black/85" : "text-[#F4F5F6]"}`}
               >
                 Participants
               </span>
               <span
-                className="text-black/50 text-sm"
+                className={`text-sm ${sidePanelIsLight ? "text-black/50" : "text-[#B5BCC6]"}`}
               >
                 ({participantsCount})
               </span>
@@ -19351,9 +19376,9 @@ export function RoomPageLiveKit({
             <div className="flex items-center gap-2">
               <button
                 onClick={openEditName}
-                className={`px-3 h-9 rounded-xl text-[12px] font-semibold border transition ${true
+                className={`px-3 h-9 rounded-xl text-[12px] font-semibold border transition ${sidePanelIsLight
                   ? "bg-[#1B1B1B] border-[#1B1B1B] hover:bg-[#242424] text-white"
-                  : "bg-[#1B1B1B] border-[#1B1B1B] hover:bg-[#242424] text-white"
+                  : "bg-[#81DB86] border-[#81DB86] hover:bg-[#9AE99E] text-[#102816]"
                   }`}
                 title="Edit my name"
               >
@@ -19362,9 +19387,9 @@ export function RoomPageLiveKit({
 
               <button
                 onClick={() => openRightTab(null)}
-                className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${true
+                className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${sidePanelIsLight
                   ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
-                  : "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
+                  : "bg-[#353A3F] hover:bg-[#444A50] text-[#D4D9DF]"
                   }`}
                 title="Close"
               >
@@ -19375,25 +19400,25 @@ export function RoomPageLiveKit({
 
           <div className="p-4">
             <div
-              className={`rounded-xl px-3 py-2 ${true
-                ? "bg-[#E6E6E6] border border-[#CFCFCF]"
-                : "bg-[#E6E6E6] border border-[#CFCFCF]"
+              className={`rounded-xl px-3 py-2 border ${sidePanelIsLight
+                ? "bg-[#E6E6E6] border-[#CFCFCF]"
+                : "bg-[#292D32] border-[#4C5259]"
                 }`}
             >
               <input
                 value={participantsSearch}
                 onChange={(e) => setParticipantsSearch(e.target.value)}
                 placeholder="Search participants..."
-                className={`w-full bg-transparent outline-none text-[13px] placeholder:opacity-60 ${true
+                className={`w-full bg-transparent outline-none text-[13px] ${sidePanelIsLight
                   ? "text-black/80 placeholder:text-black/40"
-                  : "text-black/80 placeholder:text-black/40"
+                  : "text-[#F4F5F6] placeholder:text-[#ABB3BE]"
                   }`}
               />
             </div>
 
             {rolesError ? (
               <div
-                className={`mt-2 text-[12px] ${"text-red-600"}`}
+                className={`mt-2 text-[12px] ${sidePanelIsLight ? "text-red-600" : "text-red-300"}`}
               >
                 {rolesError}
               </div>
@@ -19442,15 +19467,18 @@ export function RoomPageLiveKit({
                 return (
                   <div
                     key={p.id}
-                    className={`px-3 py-2 rounded-xl transition ${true ? "hover:bg-[#E8E8E8]" : "hover:bg-[#E8E8E8]"
-                      }`}
+                    className={`px-3 py-2 rounded-xl transition ${sidePanelIsLight ? "hover:bg-[#E8E8E8]" : "hover:bg-[#30363B]"}`}
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         <div
                           className={`relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border text-[14px] font-semibold ${p.isLocal
-                            ? "border-[#81DB86]/70 bg-[#81DB86]/20 text-[#245F2A] ring-2 ring-[#81DB86]/20"
-                            : "border-[#C9D8CB] bg-[#E5EEE6] text-[#356B3A]"
+                            ? sidePanelIsLight
+                              ? "border-[#81DB86]/70 bg-[#81DB86]/20 text-[#245F2A] ring-2 ring-[#81DB86]/20"
+                              : "border-[#81DB86]/70 bg-[#81DB86]/20 text-[#A7F0AC] ring-2 ring-[#81DB86]/20"
+                            : sidePanelIsLight
+                              ? "border-[#C9D8CB] bg-[#E5EEE6] text-[#356B3A]"
+                              : "border-[#4D6752] bg-[#283A2D] text-[#B8E9BE]"
                             }`}
                         >
                           <span aria-hidden="true">
@@ -19473,8 +19501,7 @@ export function RoomPageLiveKit({
 
                         <div className="min-w-0">
                           <div
-                            className={`text-[13px] font-medium truncate ${true ? "text-black/85" : "text-black/85"
-                              }`}
+                            className={`text-[13px] font-medium truncate ${sidePanelIsLight ? "text-black/85" : "text-[#F4F5F6]"}`}
                           >
                             <div className="min-w-0 flex items-center gap-2">
                               <span className="truncate">{p.label}</span>
@@ -19486,14 +19513,14 @@ export function RoomPageLiveKit({
                               ) : null}
 
                               {isHidden ? (
-                                <span className="inline-flex shrink-0 items-center rounded-full border border-black/15 bg-black/[0.04] px-1.5 py-[2px] text-[9px] font-medium leading-none text-[#2F2F2F]">
+                                <span className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-[2px] text-[9px] font-medium leading-none ${sidePanelIsLight ? "border-black/15 bg-black/[0.04] text-[#2F2F2F]" : "border-[#68727C] bg-[#343B42] text-[#E3E7EB]"}`}>
                                   Hidden
                                 </span>
                               ) : null}
 
                             </div>
                           </div>
-                          <div className="truncate text-[11px] text-black/55">
+                          <div className={`truncate text-[11px] ${sidePanelIsLight ? "text-black/55" : "text-[#B5BCC6]"}`}>
                             {roleText}
                           </div>
                         </div>
@@ -19513,7 +19540,7 @@ export function RoomPageLiveKit({
                                 );
                                 setScreenSharePinned(!isThisPinnedScreen);
                               }}
-                              className="flex h-8 w-8 items-center justify-center rounded-lg text-[#2F2F2F] transition-colors hover:bg-black/[0.06]"
+                              className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${sidePanelIsLight ? "text-[#2F2F2F] hover:bg-black/[0.06]" : "text-[#E3E7EB] hover:bg-white/10"}`}
                               title={
                                 screenSharePinned &&
                                   activeScreenShareTile?.id === p.id
@@ -19535,7 +19562,7 @@ export function RoomPageLiveKit({
                                 }
                                 alt=""
                                 aria-hidden="true"
-                                className="h-4 w-4"
+                                className={`h-4 w-4 ${sidePanelIsLight ? "" : "ms-panel-people-action-icon"}`}
                               />
                             </button>
                           </>
@@ -19545,7 +19572,7 @@ export function RoomPageLiveKit({
                           <>
                             <button
                               onClick={() => togglePin(p.id)}
-                              className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/[0.06] ${isPinned ? "text-[#2F2F2F]" : "text-black/55 hover:text-[#2F2F2F]"}`}
+                              className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${sidePanelIsLight ? "hover:bg-black/[0.06]" : "hover:bg-white/10"} ${sidePanelIsLight ? (isPinned ? "text-[#2F2F2F]" : "text-black/55 hover:text-[#2F2F2F]") : "text-[#E3E7EB]"}`}
                               title={isPinned ? "Unpin" : "Pin"}
                               aria-label={isPinned ? `Unpin ${p.label}` : `Pin ${p.label}`}
                               type="button"
@@ -19558,13 +19585,13 @@ export function RoomPageLiveKit({
                                 }
                                 alt=""
                                 aria-hidden="true"
-                                className="h-4 w-4"
+                                className={`h-4 w-4 ${sidePanelIsLight ? "" : "ms-panel-people-action-icon"}`}
                               />
                             </button>
 
                             <button
                               onClick={() => toggleHide(p.id)}
-                              className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/[0.06]"
+                              className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors ${sidePanelIsLight ? "hover:bg-black/[0.06]" : "hover:bg-white/10"}`}
                               title={isHidden ? "Unhide" : "Hide"}
                               aria-label={isHidden ? `Show ${p.label}` : `Hide ${p.label}`}
                               type="button"
@@ -19573,7 +19600,7 @@ export function RoomPageLiveKit({
                                 src={isHidden ? "/icons/participant-show.svg" : "/icons/participant-hide.svg"}
                                 alt=""
                                 aria-hidden="true"
-                                className="h-[17px] w-[17px]"
+                                className={`h-[17px] w-[17px] ${sidePanelIsLight ? "" : "ms-panel-people-action-icon"}`}
                               />
                             </button>
                           </>
@@ -19587,7 +19614,7 @@ export function RoomPageLiveKit({
           </div>
 
           <div
-            className={`p-4 border-t ${true ? "border-[#CFCFCF]" : "border-[#CFCFCF]"}`}
+            className={`p-4 border-t ${sidePanelIsLight ? "border-[#CFCFCF]" : "border-[#393D42]"}`}
           >
             <button
               onClick={() => {
@@ -19599,9 +19626,9 @@ export function RoomPageLiveKit({
                   alert("Could not copy link");
                 }
               }}
-              className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${isLight
+              className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${sidePanelIsLight
                 ? "bg-[#1B1B1B] hover:bg-[#242424] text-white"
-                : "bg-[#1B1B1B] hover:bg-[#242424] text-white"
+                : "bg-[#81DB86] hover:bg-[#9AE99E] text-[#102816]"
                 }`}
             >
               <span className="text-lg">⎘</span>
@@ -19612,11 +19639,11 @@ export function RoomPageLiveKit({
       )}
 
       {rightPanelOpen && rightTab === "chat" && (
-        <div className="ms-chat-panel-scrollbars flex flex-col h-full">
+        <div data-side-panel-section="chat" className="ms-chat-panel-scrollbars flex flex-col h-full">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-[#D8D0D0] bg-[#F3F1F1] min-h-[52px]">
             <div className="flex items-center gap-2 shrink-0 mr-1">
               <img
-                src="/icons/chat-light.svg"
+                src={sidePanelIsLight ? "/icons/chat-light.svg" : "/icons/chat-dark.svg"}
                 alt="Chat"
                 className="w-4 h-4 shrink-0"
                 draggable={false}
@@ -19637,8 +19664,8 @@ export function RoomPageLiveKit({
                 className={
                   "relative h-8 px-3 rounded-full text-xs font-medium transition border shrink-0 " +
                   (chatViewMode === "general"
-                    ? "bg-[#1B1B1B] border-[#1B1B1B] text-white"
-                    : "bg-transparent border-[#CFCFCF] text-black/65 hover:bg-[#E8E8E8]")
+                    ? sidePanelIsLight ? "bg-[#1B1B1B] border-[#1B1B1B] text-white" : "bg-[#81DB86] border-[#81DB86] text-[#102816]"
+                    : sidePanelIsLight ? "bg-transparent border-[#CFCFCF] text-black/65 hover:bg-[#E8E8E8]" : "bg-transparent border-[#59616A] text-[#D0D6DD] hover:bg-[#353B42]")
                 }
               >
                 <span className="inline-flex items-center gap-1.5">
@@ -19665,8 +19692,8 @@ export function RoomPageLiveKit({
                 className={
                   "relative h-8 px-3 rounded-full text-xs font-medium transition border shrink-0 " +
                   (chatViewMode === "host"
-                    ? "bg-[#1B1B1B] border-[#1B1B1B] text-white"
-                    : "bg-transparent border-[#CFCFCF] text-black/65 hover:bg-[#E8E8E8]")
+                    ? sidePanelIsLight ? "bg-[#1B1B1B] border-[#1B1B1B] text-white" : "bg-[#81DB86] border-[#81DB86] text-[#102816]"
+                    : sidePanelIsLight ? "bg-transparent border-[#CFCFCF] text-black/65 hover:bg-[#E8E8E8]" : "bg-transparent border-[#59616A] text-[#D0D6DD] hover:bg-[#353B42]")
                 }
               >
                 <span className="inline-flex items-center gap-1.5">
@@ -19707,7 +19734,7 @@ export function RoomPageLiveKit({
                     onClick={() => setHostDmDropdownOpen((v) => !v)}
                     className={
                       "flex h-8 w-[136px] min-w-0 max-w-[136px] items-center justify-between gap-2 rounded-full border px-3 text-xs font-normal outline-none transition sm:w-[148px] sm:max-w-[148px] xl:w-[160px] xl:max-w-[160px] " +
-                      (isLight
+                      (sidePanelIsLight
                         ? "border-[#D8D0D0] bg-[#F7F5F5] text-black/80 hover:border-[#C9C1C1] hover:bg-white"
                         : "border-[#2B2B2B] bg-[#242424] text-white/85 hover:border-[#3A3A3A] hover:bg-[#2A2A2A]")
                     }
@@ -19730,7 +19757,7 @@ export function RoomPageLiveKit({
                         "shrink-0 transition-transform duration-200 " +
                         (hostDmDropdownOpen ? "rotate-180" : "rotate-0") +
                         " " +
-                        (isLight ? "text-black/50" : "text-white/55")
+                        (sidePanelIsLight ? "text-black/50" : "text-white/55")
                       }
                       aria-hidden="true"
                     >
@@ -19756,7 +19783,7 @@ export function RoomPageLiveKit({
                       role="listbox"
                       className={
                         "absolute right-0 top-[calc(100%+6px)] z-[90] w-[190px] origin-top-right overflow-hidden rounded-2xl border p-1 shadow-[0_10px_24px_rgba(0,0,0,0.12)] sm:w-[204px] " +
-                        (isLight
+                        (sidePanelIsLight
                           ? "border-[#D8D0D0]/80 bg-[#F7F5F5] text-black"
                           : "border-[#2B2B2B] bg-[#242424] text-white")
                       }
@@ -19777,10 +19804,10 @@ export function RoomPageLiveKit({
                         className={
                           "flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-normal transition " +
                           (!selectedHostChatPeerId
-                            ? isLight
+                            ? sidePanelIsLight
                               ? "bg-white text-black shadow-[0_1px_4px_rgba(0,0,0,0.04)]"
                               : "bg-[#1B1B1B] text-white"
-                            : isLight
+                            : sidePanelIsLight
                               ? "text-black/70 hover:bg-white"
                               : "text-white/70 hover:bg-[#2E2E2E]")
                         }
@@ -19809,10 +19836,10 @@ export function RoomPageLiveKit({
                             className={
                               "mt-1 flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-xs font-normal transition " +
                               (selected
-                                ? isLight
+                                ? sidePanelIsLight
                                   ? "bg-white text-black shadow-[0_1px_4px_rgba(0,0,0,0.04)]"
                                   : "bg-[#1B1B1B] text-white"
-                                : isLight
+                                : sidePanelIsLight
                                   ? "text-black/70 hover:bg-white"
                                   : "text-white/70 hover:bg-[#2E2E2E]")
                             }
@@ -19864,7 +19891,7 @@ export function RoomPageLiveKit({
                         }}
                         className={
                           "h-8 max-w-[115px] rounded-full border px-2.5 text-[11px] font-semibold transition flex items-center gap-1.5 shrink-0 " +
-                          (isLight
+                          (sidePanelIsLight
                             ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
                             : "border-red-500/25 bg-red-500/10 text-red-200 hover:bg-red-500/15")
                         }
@@ -19901,7 +19928,7 @@ export function RoomPageLiveKit({
           <ChatPanel
             sessionId={sessionId}
             currentUserId={authUserId}
-            theme={theme}
+            theme={sidePanelTheme}
             showHeader={false}
             onClose={() => {
               setRightPanelOpen(false);
@@ -19928,6 +19955,7 @@ export function RoomPageLiveKit({
           </div>
         }>
         <RoomSoundscapePanel
+          theme={sidePanelTheme}
           listeningMode={soundscapeListeningMode}
           activeId={
             soundscapeListeningMode === "room"
@@ -20049,7 +20077,7 @@ export function RoomPageLiveKit({
       )}
 
       {rightTab === "tasks" && (
-        <div className="ms-tasks-panel-scrollbars h-full min-h-0 flex flex-col">
+        <div data-side-panel-section="tasks" className="ms-tasks-panel-scrollbars h-full min-h-0 flex flex-col">
           <div className="px-5 py-4 border-b border-[#D8D0D0] bg-[#F3F1F1] flex items-center justify-between">
             <div
               className="text-black/85 font-inter font-semibold"
@@ -20071,8 +20099,8 @@ export function RoomPageLiveKit({
             >
               <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
                 <div
-                  data-theme="light"
-                  style={{ colorScheme: "light" }}
+                  data-theme={sidePanelTheme}
+                  style={{ colorScheme: sidePanelTheme }}
                   className="h-full min-h-0"
                 >
                   {session?.id && connected ? (
@@ -20080,7 +20108,7 @@ export function RoomPageLiveKit({
                     <TasksPanel
                       key={`tasks-${session.id}`}
                       currentUserId={authUserId}
-                      theme="light"
+                      theme={sidePanelTheme}
                       sessionId={session.id}
                       oneOnOneMode={isOneOnOneRoom}
                       timerText={remainingTime || "--:--"}
@@ -21820,6 +21848,8 @@ export function RoomPageLiveKit({
         {settingsOpen && <RoomSettingsModalLiveKit
           open={settingsOpen}
           theme={theme}
+          sidePanelTheme={sidePanelTheme}
+          onChangeSidePanelTheme={setSidePanelTheme}
           hideBackgroundFx={shouldDisableBackgroundFx}
           showHostRoomPolicies={isHost}
           cameraRequired={roomPolicies.cameraRequired}

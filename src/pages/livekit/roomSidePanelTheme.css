@@ -1,0 +1,163 @@
+/* The room's side-panel preference is separate from the video-canvas theme.
+   Chat and Tasks still contain legacy light utility classes; remap only their
+   neutral surfaces here, never the room, avatars, artwork or accent buttons. */
+.ms-room-side-panel[data-panel-theme="dark"] {
+  color: #f4f5f6;
+}
+
+.ms-room-side-panel[data-panel-theme="dark"] .ms-panel-people-action-icon {
+  filter: brightness(0) invert(1);
+  opacity: 0.9;
+}
+
+.ms-room-side-panel[data-panel-theme="dark"] :is(.ms-chat-panel-scrollbars, .ms-tasks-panel-scrollbars) {
+  scrollbar-color: #59616a transparent;
+}
+
+.ms-room-side-panel[data-panel-theme="dark"] :is(.ms-chat-panel-scrollbars, .ms-tasks-panel-scrollbars) ::-webkit-scrollbar-thumb {
+  background: #59616a;
+}
+
+:is(
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="chat"],
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="tasks"]
+) :is(
+  [class~="bg-[#F3F1F1]"],
+  [class~="bg-[#F7F5F5]"],
+  [class~="bg-[#F3F3F3]"],
+  [class~="bg-[#F4F3F3]"],
+  [class~="bg-[#FAFAFA]"],
+  [class~="bg-white"]
+) {
+  background-color: #25292e !important;
+}
+
+:is(
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="chat"],
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="tasks"]
+) :is(
+  [class~="bg-[#ECEAEA]"],
+  [class~="bg-[#E6E6E6]"],
+  [class~="bg-[#DCDCDC]"],
+  [class~="bg-[#E8E8E8]"],
+  [class~="bg-[#F0F0F0]"],
+  [class~="bg-[#F1F1F1]"],
+  [class~="bg-[#EEECEC]"],
+  [class~="bg-[#E3E0E0]"],
+  [class~="bg-[#EAF8EC]"]
+) {
+  background-color: #30353a !important;
+}
+
+:is(
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="chat"],
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="tasks"]
+) :is(
+  [class*="border-[#D8D0D0]"],
+  [class*="border-[#CFC6C6]"],
+  [class*="border-[#CFCFCF]"],
+  [class*="border-[#C9C9C9]"],
+  [class*="border-[#BEB7B7]"],
+  [class*="border-black/15"],
+  [class*="border-black/[0.1]"],
+  [class*="border-black/[0.08]"]
+) {
+  border-color: #4c5259 !important;
+}
+
+:is(
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="chat"],
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="tasks"]
+) :is(
+  [class~="text-black"],
+  [class*="text-black/80"],
+  [class*="text-black/85"],
+  [class*="text-black/90"],
+  [class*="text-black/95"],
+  [class~="text-[#2F2F2F]"]
+):not([class~="bg-[#81DB86]"]):not([class~="bg-[#9AE99E]"]) {
+  color: #f4f5f6 !important;
+}
+
+:is(
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="chat"],
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="tasks"]
+) :is(
+  [class*="text-black/60"],
+  [class*="text-black/65"],
+  [class*="text-black/70"],
+  [class*="text-black/75"]
+) {
+  color: #d0d6dd !important;
+}
+
+:is(
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="chat"],
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="tasks"]
+) :is(
+  [class*="text-black/25"],
+  [class*="text-black/35"],
+  [class*="text-black/40"],
+  [class*="text-black/45"],
+  [class*="text-black/50"],
+  [class*="text-black/55"],
+  [class*="text-[#2F2F2F]/"]
+) {
+  color: #b5bcc6 !important;
+}
+
+:is(
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="chat"],
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="tasks"]
+) :is(
+  [class*="text-[#246B2A]"],
+  [class*="text-[#2F7E38]"],
+  [class*="text-[#2F7F3D]"],
+  [class*="text-[#2F8F3B]"],
+  [class*="text-[#58AE62]"]
+) {
+  color: #9ae99e !important;
+}
+
+:is(
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="chat"],
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="tasks"]
+) :is(
+  [class*="text-[#B83D3D]"],
+  [class*="text-[#D94141]"],
+  [class*="text-red-700"]
+) {
+  color: #ffb5b8 !important;
+}
+
+:is(
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="chat"],
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="tasks"]
+) :is(input, textarea)::placeholder {
+  color: #aeb6bf !important;
+  opacity: 1;
+}
+
+:is(
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="chat"],
+  .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="tasks"]
+) :is([class*="hover:bg-[#ECEAEA]"], [class*="hover:bg-[#E8E8E8]"], [class*="hover:bg-[#F3F1F1]"]):hover {
+  background-color: #3b4248 !important;
+}
+
+.ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-webkit-slider-runnable-track {
+  background: linear-gradient(to right, #81db86 0, #81db86 var(--ms-slider-progress, 0%), #545c64 var(--ms-slider-progress, 0%), #545c64 100%);
+}
+
+.ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-webkit-slider-thumb,
+.ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-moz-range-progress {
+  background: #81db86;
+}
+
+.ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-moz-range-track {
+  background: #545c64;
+}
+
+.ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-moz-range-thumb {
+  background: #81db86;
+}

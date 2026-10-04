@@ -9,17 +9,17 @@ audited. Never put secret values, tokens, user exports or private logs in this f
 - Repository: Lukasso7788/my-session. Deployment branch is main (not necessarily
   the remote default branch). Do not force-push or rewrite shared history.
 - Active implementation checkout:
-  C:\Users\misha\.codex\worktrees\monthly-attendance\my-session.
-  Local branch: codex/hosts-leaderboard, based on origin/main commit
-  2d8e7be (as checked before this change). This branch tracks origin/main.
-  Recheck both branch and remote main before committing or pushing.
-- Current task: session-card room-policy/music indicators and live occupancy
-  badges above the Group/Infinite switcher, then commit and push to main.
+  C:\Users\misha\.codex\worktrees\session-indicator-colors\my-session.
+  This managed worktree is at a detached HEAD; commit this feature here and
+  push HEAD:main only after checking origin/main for new commits.
+- Current task: personal dark mode for the room's People, Chat, Tasks and Music
+  side panels, controlled by the first toggle in room Settings. The section
+  below records implementation and verification details for continuation.
   Earlier Plunk work and operational runbook remain documented in
   docs/plunk-email-rollout.md. No mass campaign is authorized by this task.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
-  Do not reset, delete or overwrite it. This active checkout is outside current
-  writable roots, so commands/patches require approved filesystem escalation.
+  Do not reset, delete or overwrite it. The active managed worktree also has
+  unrelated generated sitemap changes; leave those unstaged.
 - User requests full project architectural/technical context in a file for every
   code task. Keep this file and feature-specific handoffs current and link them.
 - Latest explicit restriction: do NOT change video behavior during performance
@@ -853,3 +853,34 @@ subtle movement lines at street level. It keeps the same 480×150 viewBox,
 rounded clipping, asset path and pastel palette. The playlist catalog and
 audio playback are unchanged. The SVG was visually rendered in the local
 browser before commit; the existing artwork regression test guards its path.
+
+## 2026-10-04 — Personal dark theme for LiveKit room side panels
+
+The active room route (`src/pages/RoomPageLiveKit.tsx`) owns the right-side
+People, Chat, Tasks and Music tabs. The video canvas still uses the existing
+independent `room_theme` preference. Side panels now use a second, personal
+`RoomTheme` state, initialized as light for backwards compatibility and stored
+under `mysession_room_side_panel_theme_v1` in browser `localStorage`. The
+setting is not written to Supabase, room metadata, LiveKit or Realtime; one
+participant cannot change another participant's view. Changing the toggle
+updates the mounted panel without changing its key, cache or subscriptions.
+
+`src/pages/livekit/RoomSettingsModalLiveKit.tsx` shows the single "Dark side
+panels" ToggleRow first in Settings, above host-only policies and video layout.
+`RoomPageLiveKit.tsx` passes the preference into the side-panel wrapper and
+into ChatPanel, TasksPanel and RoomSoundscapePanel. The People tab has explicit
+dark surfaces, text and inverted monochrome action icons. Music has explicit
+dark artwork controls, playlist surfaces, icons and slider colors. Chat and
+Tasks have theme-aware main controls and icons plus a scoped neutral-palette
+remap in `src/pages/livekit/roomSidePanelTheme.css` for remaining legacy light
+utilities. The remap applies only beneath the dark room side-panel Chat/Tasks
+sections; bright status/action colors, avatars and music artwork are excluded.
+PiP chat remains light, as it is outside the right-side panel.
+
+Visual QA used a temporary local Vite fixture (removed before commit) with
+the real ChatPanel, TasksPanel, RoomSoundscapePanel and Settings modal. Dark
+and light desktop states, dark populated Chat/Tasks samples, the music panel
+at 430px viewport, and toggle propagation to all four tabs were checked.
+`scripts/room-side-panel-contrast.test.mjs` asserts WCAG AA 4.5:1 minimum for
+the dark palette's key text/icon combinations. No Supabase query, policy,
+schema or subscription changes were made for this feature.

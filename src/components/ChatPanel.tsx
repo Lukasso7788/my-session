@@ -549,21 +549,21 @@ function MessageCardInner({
         return entries;
     }, [displayedReactions, myReactions]);
 
-    const metaNameCls = "text-black/55";
-    const metaTimeCls = "text-black/35";
-    const actionBtnCls = "text-black/45 hover:text-[#2FA84F]";
-    const dangerBtnCls = "text-black/40 hover:text-red-700";
-    const menuCls = "bg-[#F3F1F1] border border-[#D8D0D0]";
+    const metaNameCls = isLight ? "text-black/55" : "text-[#C6CDD5]";
+    const metaTimeCls = isLight ? "text-black/35" : "text-[#AEB6BF]";
+    const actionBtnCls = isLight ? "text-black/45 hover:text-[#2FA84F]" : "text-[#C6CDD5] hover:text-[#81DB86]";
+    const dangerBtnCls = isLight ? "text-black/40 hover:text-red-700" : "text-[#C6CDD5] hover:text-red-300";
+    const menuCls = isLight ? "bg-[#F3F1F1] border border-[#D8D0D0]" : "bg-[#292D32] border border-[#4C5259]";
 
     const bubbleCls =
         "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
         (mine
             ? isLight
                 ? "bg-[#81DB86]/15 border-[#81DB86]/50 text-black/85"
-                : "bg-[#81DB86]/15 border-[#81DB86]/45 text-black/90"
+                : "bg-[#81DB86]/15 border-[#81DB86]/45 text-[#EAF8EC]"
             : isLight
                 ? "bg-[#ECEAEA] border-[#D8D0D0] text-black/80"
-                : "bg-[#F7F5F5] border-[#D8D0D0] text-black/85") +
+                : "bg-[#2A2E33] border-[#464D54] text-[#F4F5F6]") +
         (highlighted
             ? isLight
                 ? " ring-2 ring-[#6B7280]/55"
@@ -572,21 +572,21 @@ function MessageCardInner({
 
     const quoteBoxCls = isLight
         ? "bg-[#F7F5F5] border border-[#D8D0D0] text-black/70 hover:bg-[#F1F1F1]/90"
-        : "bg-black/25 border border-[#D8D0D0] text-black/70 hover:bg-[#F7F5F5]";
+        : "bg-[#23272B] border border-[#464D54] text-[#D9DEE4] hover:bg-[#30363B]";
 
     const reactionPillBase = isLight
         ? "px-2 py-1 rounded-xl bg-[#ECEAEA] border border-[#D8D0D0] text-[12px] text-black/70 flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#E3E1E1] hover:border-[#BEB7B7] hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]/75"
-        : "px-2 py-1 rounded-xl bg-[#F7F5F5] border border-[#D8D0D0] text-[12px] text-black/80 flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-white hover:border-[#BEB7B7] hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]/75";
+        : "px-2 py-1 rounded-xl bg-[#30363B] border border-[#515961] text-[12px] text-[#E3E7EB] flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#3B4248] hover:border-[#81DB86]/50 hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]/75";
 
     const reactionPillMine = isLight
         ? "bg-[#81DB86]/18 ring-2 ring-[#81DB86]/70 border-[#81DB86]/70 text-[#246B2A]"
-        : "bg-[#81DB86]/18 ring-2 ring-[#81DB86]/70 border-[#81DB86]/55 text-black/85";
+        : "bg-[#81DB86]/18 ring-2 ring-[#81DB86]/70 border-[#81DB86]/55 text-[#EAF8EC]";
 
-    const reactionCountCls = "text-black/50";
+    const reactionCountCls = isLight ? "text-black/50" : "text-[#C6CDD5]";
 
     const inputCls = isLight
         ? "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]"
-        : "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#F7F5F5] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]";
+        : "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#292D32] border border-[#4C5259] text-[#F4F5F6] placeholder:text-[#ABB3BE] focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]";
 
     const { quote, quoteMessageId, main } = useMemo(
         () => parseReplyBody(msg.body),
@@ -877,7 +877,7 @@ function MessageCardInner({
                                             </div>
                                             <div className="max-h-[360px] overflow-hidden">
                                                 <EmojiPickerPopover
-                                                    theme="light"
+                                                    theme={isLight ? "light" : "dark"}
                                                     onPick={(native) => {
                                                         onToggleReaction(msg.id, native);
                                                         setOpenReactions(false);
@@ -1016,12 +1016,12 @@ function MessageCardInner({
                             <div
                                 className={
                                     "mt-2 overflow-hidden rounded-2xl border border-[#D8D0D0] shadow-xl " +
-                                    (isLight ? "bg-[#F3F1F1]" : "bg-[#F7F5F5]")
+                                    (isLight ? "bg-[#F3F1F1]" : "bg-[#292D32]")
                                 }
                                 onMouseDown={(e) => e.stopPropagation()}
                             >
                                 <EmojiPickerPopover
-                                    theme="light"
+                                    theme={isLight ? "light" : "dark"}
                                     onPick={insertEmojiToEdit}
                                 />
                             </div>
@@ -1030,7 +1030,7 @@ function MessageCardInner({
                         <div
                             className={
                                 "mt-1 text-[11px] " +
-                                (isLight ? "text-black/40" : "text-black/35")
+                                (isLight ? "text-black/40" : "text-[#B5BCC6]")
                             }
                         >
                             Enter — save • Shift+Enter — new line • Esc — cancel
@@ -1152,7 +1152,7 @@ export function ChatPanel({
     renderDocument?: Document | null;
     renderWindow?: Window | null;
 }) {
-    const isLight = true;
+    const isLight = theme === "light";
     const chatDocument = renderDocument || document;
     const chatWindow = renderWindow || window;
 
@@ -1735,23 +1735,26 @@ export function ChatPanel({
         setUnseenNew(0);
     }, [onBecameVisible, sessionId, activeMode, activeDirectPeerId]);
 
-    const headerBorder = "border-[#D8D0D0]";
-    const titleText = "text-black/85";
-    const subText = "text-black/50";
-    const headerCloseBtnCls = "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60";
-    const replyBoxCls = "bg-[#ECEAEA] border-[#D8D0D0]";
-    const replyingLabel = "text-[11px] text-[#81DB86]/90 font-medium";
-    const replyingText = "text-black/55";
-    const cancelBtnCls = "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60";
-    const hintText = "text-black/40";
+    const headerBorder = isLight ? "border-[#D8D0D0]" : "border-[#464D54]";
+    const titleText = isLight ? "text-black/85" : "text-[#F4F5F6]";
+    const subText = isLight ? "text-black/50" : "text-[#B5BCC6]";
+    const headerCloseBtnCls = isLight ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60" : "bg-[#353B42] hover:bg-[#444B53] text-[#D9DEE4]";
+    const replyBoxCls = isLight ? "bg-[#ECEAEA] border-[#D8D0D0]" : "bg-[#292D32] border-[#4C5259]";
+    const replyingLabel = `text-[11px] font-medium ${isLight ? "text-[#3FB455]" : "text-[#9AE99E]"}`;
+    const replyingText = isLight ? "text-black/55" : "text-[#C6CDD5]";
+    const cancelBtnCls = isLight ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60" : "bg-[#353B42] hover:bg-[#444B53] text-[#D9DEE4]";
+    const hintText = isLight ? "text-black/40" : "text-[#B5BCC6]";
     const sendBtnActive = "bg-[#81DB86] hover:bg-[#72CF78] text-black";
-    const sendBtnDisabled = "bg-[#DCDCDC] text-black/35";
+    const sendBtnDisabled = isLight ? "bg-[#DCDCDC] text-black/35" : "bg-[#353B42] text-[#AEB6BF]";
     const composerInputCls =
-        "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]";
+        "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86] " +
+        (isLight ? "bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35" : "bg-[#292D32] border border-[#4C5259] text-[#F4F5F6] placeholder:text-[#ABB3BE]");
     const composerEmojiBtnCls =
-        "w-11 h-11 rounded-xl flex items-center justify-center transition border bg-[#F3F1F1] border-[#D8D0D0] text-black/60 hover:bg-[#E8E8E8] hover:text-black/80";
+        "w-11 h-11 rounded-xl flex items-center justify-center transition border " +
+        (isLight ? "bg-[#F3F1F1] border-[#D8D0D0] text-black/60 hover:bg-[#E8E8E8] hover:text-black/80" : "bg-[#292D32] border-[#4C5259] text-[#D9DEE4] hover:bg-[#353B42] hover:text-white");
     const portalBoxCls =
-        "rounded-2xl border border-[#D8D0D0] bg-[#F3F1F1] shadow-2xl overflow-hidden";
+        "rounded-2xl border shadow-2xl overflow-hidden " +
+        (isLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#4C5259] bg-[#292D32]");
 
     useEffect(() => {
         let cancelled = false;
@@ -3142,12 +3145,12 @@ export function ChatPanel({
         : "";
     const modalBg = isLight
         ? "bg-[#F3F1F1] border border-[#D8D0D0]"
-        : "bg-[#F3F1F1] border border-[#D8D0D0]";
-    const modalTextPrimary = isLight ? "text-black/85" : "text-black/90";
-    const modalTextSecondary = isLight ? "text-black/55" : "text-black/55";
+        : "bg-[#25292E] border border-[#4C5259]";
+    const modalTextPrimary = isLight ? "text-black/85" : "text-[#F4F5F6]";
+    const modalTextSecondary = isLight ? "text-black/55" : "text-[#B5BCC6]";
     const modalBtn = isLight
         ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] border border-[#D8D0D0] text-black/70"
-        : "bg-[#F7F5F5] hover:bg-[#303030] border border-[#D8D0D0] text-black/75";
+        : "bg-[#353B42] hover:bg-[#444B53] border border-[#4C5259] text-[#E3E7EB]";
     const modalPrimaryBtn = "bg-[#81DB86] hover:bg-[#72CF78] text-black";
     const canToggleInModal =
         !!reactionDetails.open &&
@@ -3185,7 +3188,7 @@ export function ChatPanel({
                             className="overflow-hidden"
                         >
                             <EmojiPickerPopover
-                                theme="light"
+                                theme={theme}
                                 onPick={insertEmojiToComposer}
                             />
                         </div>
@@ -3446,7 +3449,7 @@ export function ChatPanel({
                 {loading && (
                     <div
                         className={
-                            (isLight ? "text-black/45" : "text-white/40") + " text-sm italic"
+                            (isLight ? "text-black/45" : "text-[#B5BCC6]") + " text-sm italic"
                         }
                     >
                         Loading…
@@ -3466,7 +3469,7 @@ export function ChatPanel({
                 {!loading && visibleMessages.length === 0 && (
                     <div
                         className={
-                            (isLight ? "text-black/45" : "text-white/40") + " text-sm italic"
+                            (isLight ? "text-black/45" : "text-[#B5BCC6]") + " text-sm italic"
                         }
                     >
                         {activeMode === "general"
@@ -3531,7 +3534,7 @@ export function ChatPanel({
                             "pointer-events-auto px-4 py-2 rounded-full shadow-xl text-[12px] font-semibold border transition " +
                             (isLight
                                 ? "bg-[#F1F1F1]/95 border-[#D8D0D0] text-black/80 hover:bg-[#F3F1F1]"
-                                : "bg-[#F7F5F5]/95 border-[#D8D0D0] text-black/85 hover:bg-[#F7F5F5]")
+                                : "bg-[#353B42]/95 border-[#4C5259] text-[#F4F5F6] hover:bg-[#444B53]")
                         }
                         onClick={() => {
                             atBottomRef.current = true;
@@ -3548,7 +3551,7 @@ export function ChatPanel({
 
             <div className={"p-4 border-t " + headerBorder}>
                 {generalChatLocked && (
-                    <div className={"mb-3 rounded-xl px-3 py-2 text-[12px] leading-5 " + (isLight ? "bg-[#F0F0F0] text-black/60" : "bg-white/[0.06] text-white/60")}>
+                    <div className={"mb-3 rounded-xl px-3 py-2 text-[12px] leading-5 " + (isLight ? "bg-[#F0F0F0] text-black/60" : "bg-white/[0.06] text-[#D0D6DD]")}>
                         Public chat is disabled by the host. Use DMs to message the host privately.
                     </div>
                 )}
@@ -3592,7 +3595,7 @@ export function ChatPanel({
                     >
                         <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                                <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#3FB455]">
+                                <div className={`text-[11px] font-semibold uppercase tracking-[0.06em] ${isLight ? "text-[#3FB455]" : "text-[#9AE99E]"}`}>
                                     Voice message preview
                                 </div>
                                 <div className="mt-1 text-[12px] leading-4 opacity-75">

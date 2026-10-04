@@ -1020,6 +1020,8 @@ function SoundTestSection(props: {
 export function RoomSettingsModalLiveKit({
     open,
     theme,
+    sidePanelTheme = "light",
+    onChangeSidePanelTheme,
     mode,
     blurStrength,
     onBlurStrengthChange,
@@ -1098,6 +1100,8 @@ export function RoomSettingsModalLiveKit({
 }: {
     open: boolean;
     theme: RoomTheme;
+    sidePanelTheme?: RoomTheme;
+    onChangeSidePanelTheme?: (theme: RoomTheme) => void;
     mode: FxMode;
     blurStrength: number;
     onBlurStrengthChange: (v: number) => void;
@@ -1366,6 +1370,16 @@ export function RoomSettingsModalLiveKit({
                 </div>
 
                 <div className="ms-room-settings-scrollbar custom-scrollbar px-5 sm:px-6 py-4 sm:py-5 flex-1 overflow-y-auto overscroll-contain">
+
+                    {onChangeSidePanelTheme ? <div className={`mb-5 rounded-2xl p-4 ${sectionCls}`}>
+                        <ToggleRow
+                            label="Dark side panels"
+                            description="Use dark colors for People, Chat, Tasks and Music. Only your view changes; this is saved on this browser."
+                            checked={sidePanelTheme === "dark"}
+                            onChange={(enabled) => onChangeSidePanelTheme?.(enabled ? "dark" : "light")}
+                            isLight={isLight}
+                        />
+                    </div> : null}
 
                     {showHostRoomPolicies ? (
                         <div className={`mb-5 rounded-2xl p-4 ${sectionCls}`}>
