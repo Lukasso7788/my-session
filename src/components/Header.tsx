@@ -296,6 +296,8 @@ export default function Header() {
         modal.open();
     };
 
+    // Hosts and Leaderboard stay routable, but are intentionally absent from
+    // both header menus while the community pages are being refined.
     return (
         <>
             <header className="border-b border-borderGray bg-white sticky top-0 z-30">

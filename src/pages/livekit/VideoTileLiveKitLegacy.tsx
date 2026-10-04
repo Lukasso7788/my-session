@@ -450,6 +450,9 @@ function VideoTileInner({
         : "bg-[#81DB86]/80 text-[#F3F3F3] border-[#2B2B2B]";
 
     const hasCameraOn = !!videoTrack;
+    // With the camera off, the tile can show the public task list without
+    // requiring hover. Camera-on tiles keep the compact hover-to-expand view.
+    const tasksExpanded = showAllTasks || !hasCameraOn;
     const heldSpeaking = useHeldSpeaking(!micMuted && isSpeaking);
     const speakingFrameClass = heldSpeaking
         ? isLight
@@ -923,7 +926,7 @@ function VideoTileInner({
                     className={[
                         "pointer-events-none absolute inset-0 z-[13] flex min-h-0 w-full flex-col justify-end overflow-hidden px-3 transition-all duration-300 ease-out",
                         isCompact ? "pb-[2.5rem]" : "pb-[3rem]",
-                        showAllTasks
+                        tasksExpanded
                             ? "bg-gradient-to-t from-black/90 via-black/72 to-black/20 opacity-100"
                             : "group-hover:bg-gradient-to-t group-hover:from-black/90 group-hover:via-black/72 group-hover:to-black/20",
                     ].join(" ")}
@@ -932,7 +935,7 @@ function VideoTileInner({
                     <div
                         className={[
                             "flex min-h-0 w-full flex-col overflow-hidden font-inter text-white transition-all duration-300 ease-out",
-                            showAllTasks
+                            tasksExpanded
                                 ? "max-h-[60%]"
                                 : "max-h-[1.4rem] group-hover:max-h-[60%]",
                         ].join(" ")}
@@ -945,7 +948,7 @@ function VideoTileInner({
                             ) : (
                                 <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#81DB86] shadow-[0_0_0_2px_rgba(129,219,134,0.16)]" />
                             )}
-                            <span className={`min-w-0 font-medium ${safeTaskList[0].completed ? "text-white/65 line-through" : ""} ${showAllTasks ? "whitespace-normal" : "truncate group-hover:whitespace-normal group-hover:overflow-visible"}`}>
+                            <span className={`min-w-0 font-medium ${safeTaskList[0].completed ? "text-white/65 line-through" : ""} ${tasksExpanded ? "whitespace-normal" : "truncate group-hover:whitespace-normal group-hover:overflow-visible"}`}>
                                 {safeTaskList[0].text}
                             </span>
                         </div>
@@ -957,7 +960,7 @@ function VideoTileInner({
                                     "[scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.32)_transparent]",
                                     "[&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/30",
                                     isCompact ? "text-[10px] leading-4" : "text-[11px] leading-4",
-                                    showAllTasks
+                                    tasksExpanded
                                         ? "pointer-events-auto opacity-100"
                                         : "pointer-events-none translate-y-1 opacity-0 group-hover:pointer-events-auto group-hover:translate-y-0 group-hover:opacity-100",
                                 ].join(" ")}

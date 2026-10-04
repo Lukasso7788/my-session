@@ -853,3 +853,30 @@ subtle movement lines at street level. It keeps the same 480×150 viewBox,
 rounded clipping, asset path and pastel palette. The playlist catalog and
 audio playback are unchanged. The SVG was visually rendered in the local
 browser before commit; the existing artwork regression test guards its path.
+
+## 2026-10-04 — Camera-off tile tasks and community header guard
+
+`src/pages/RoomPageLiveKit.tsx` builds local and remote camera tiles with
+`videoTrack` only while the camera publication has a live, unmuted track.
+`src/pages/livekit/VideoTileLiveKitLegacy.tsx` uses that same prop to show the
+avatar-off state. Its public task overlay now expands by default when the
+camera is off, using the existing `showAllTasks` visual and scroll behavior;
+when the camera is on, the compact first-task strip still expands on hover.
+Explicit `showAllTasks`, the accountability wall, disabled overlays on
+full-screen screen shares, PiP and LiveKit track handling remain unchanged.
+No polling, database reads, or media behavior were added.
+
+`src/components/Header.tsx` already omitted Hosts and Leaderboard from both
+desktop and mobile menus in commit `23ae08a`; `src/App.tsx` still exposes their
+direct routes. This turn adds an explicit code comment and a small regression
+test (`scripts/header-community-navigation.test.mjs`) so the menu omission is
+clear and guarded. A previously opened local preview may need a reload to
+reflect the current bundle.
+
+Verification: `npm run build` and the header regression test passed. In a
+fresh local preview with the public Supabase client configuration, both the
+desktop header and opened mobile menu omitted Hosts and Leaderboard. The
+camera-off task rule follows the existing tile `videoTrack` lifecycle; a
+signed-in, multi-participant live-room visual test was not available locally.
+The existing 18 legacy tile ESLint errors were confirmed unchanged against
+the pre-edit file.
