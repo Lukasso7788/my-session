@@ -1023,7 +1023,7 @@ function VideoTileInner({
                                         key={`${tileId}-wall-task-${index}-${task.text}`}
                                         className={`flex min-w-0 items-center gap-2 font-inter text-[11px] font-normal leading-4 ${task.completed ? (isLight ? "text-black/45" : "text-white/45") : (isLight ? "text-black/85" : "text-white/90")}`}
                                     >
-                                        <span className={`inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-[2px] border ${task.completed ? "border-[#81DB86] bg-[#5286F6] text-white" : (isLight ? "border-black/55 bg-white/20" : "border-white/60 bg-black/10")}`}>
+                                        <span className={`inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-[2px] border ${task.completed ? "border-[#5286F6] bg-[#5286F6] text-white" : (isLight ? "border-black/55 bg-white/20" : "border-white/60 bg-black/10")}`}>
                                             {task.completed ? <Check size={8} strokeWidth={3} /> : null}
                                         </span>
                                         <span className={`min-w-0 break-words ${task.completed ? "line-through" : ""}`}>
