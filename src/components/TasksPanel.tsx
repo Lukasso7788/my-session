@@ -301,7 +301,7 @@ function AnimatedTodoCheck({
     >
       <svg className="block" width={size} height={size} viewBox="0 0 24 24" fill="none">
         {completed ? (
-          <circle cx="12" cy="12" r="8" stroke="#81DB86" strokeWidth="1.5" opacity="0">
+          <circle cx="12" cy="12" r="8" stroke="#5286F6" strokeWidth="1.5" opacity="0">
             <animate attributeName="r" values="8;11" dur="0.38s" fill="freeze" />
             <animate attributeName="opacity" values="0.45;0" dur="0.38s" fill="freeze" />
           </circle>
@@ -310,8 +310,8 @@ function AnimatedTodoCheck({
           cx="12"
           cy="12"
           r="9"
-          fill={completed ? "#81DB86" : "transparent"}
-          stroke={completed ? "#81DB86" : "currentColor"}
+          fill={completed ? "#5286F6" : "transparent"}
+          stroke={completed ? "#5286F6" : "currentColor"}
           strokeWidth="1.7"
           style={{ transition: "fill 180ms ease, stroke 180ms ease" }}
         />
@@ -1330,7 +1330,7 @@ export function TasksPanel({
   const inputCls = `
       h-12 border rounded-[18px]
       px-4 text-[14px] ${isLight ? "bg-[#F7F5F5] border-[#CFC6C6] text-black/85 placeholder:text-black/35" : "bg-[#292929] border-[#484848] text-[#F4F5F6] placeholder:text-[#ABB3BE]"}
-      outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
+      outline-none focus:ring-1 focus:ring-[#5286F6] focus:border-[#5286F6]
       font-inter
     `;
 
@@ -1343,7 +1343,7 @@ export function TasksPanel({
   const ghostBtn =
     isLight ? "border border-[#CFC6C6] bg-transparent hover:bg-[#ECEAEA] text-black/75" : "border border-[#484848] bg-transparent hover:bg-[#353535] text-[#E3E7EB]";
 
-  const primaryBtn = isLight ? "bg-[#252525] hover:bg-[#303030] text-white font-semibold" : "bg-[#81DB86] hover:bg-[#9AE99E] text-[#102816] font-semibold";
+  const primaryBtn = isLight ? "bg-[#252525] hover:bg-[#303030] text-white font-semibold" : "bg-[#5286F6] hover:bg-[#6B98FA] text-[#FFFFFF] font-semibold";
 
   const stopRoomBubbling = useCallback((e: any) => {
     e?.stopPropagation?.();
@@ -3584,7 +3584,7 @@ export function TasksPanel({
             className={[
               "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-bold tabular-nums",
               running
-                ? "border-[#81DB86] bg-[#81DB86]/15 text-[#81DB86]"
+                ? "border-[#5286F6] bg-[#5286F6]/15 text-[#5286F6]"
                 : "border-[#CFC6C6] bg-[#F3F1F1] text-black/60",
             ].join(" ")}
             title="Time spent on this task"
@@ -3602,7 +3602,7 @@ export function TasksPanel({
                   buttonBase,
                   running
                     ? "border-[#F65252]/50 bg-[#F65252]/10 text-[#F65252] hover:bg-[#F65252]/15"
-                    : "border-[#81DB86] bg-[#81DB86]/15 text-[#81DB86] hover:bg-[#81DB86]/25",
+                    : "border-[#5286F6] bg-[#5286F6]/15 text-[#5286F6] hover:bg-[#5286F6]/25",
                 ].join(" ")}
                 title={running ? "Pause timer" : "Start timer"}
               >
@@ -3622,7 +3622,7 @@ export function TasksPanel({
                     })
                   }
                   className={`${buttonBase} ${saved
-                    ? "border-[#81DB86] bg-[#81DB86]/15 text-[#81DB86]"
+                    ? "border-[#5286F6] bg-[#5286F6]/15 text-[#5286F6]"
                     : "border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
                     }`}
                   title="Save this time measurement to Tasks"
@@ -3740,7 +3740,7 @@ export function TasksPanel({
                   setSelectedPlanId(event.target.value);
                   setSaveTaskToPlanFeedback("");
                 }}
-                className="mt-2 h-12 w-full rounded-2xl border border-black/[0.1] bg-white px-4 text-[13px] font-semibold text-[#2F2F2F] outline-none transition focus:border-[#81DB86] focus:ring-1 focus:ring-[#81DB86]"
+                className="mt-2 h-12 w-full rounded-2xl border border-black/[0.1] bg-white px-4 text-[13px] font-semibold text-[#2F2F2F] outline-none transition focus:border-[#5286F6] focus:ring-1 focus:ring-[#5286F6]"
               >
                 {plans.map((plan) => (
                   <option key={plan.id} value={plan.id}>{plan.title}</option>
@@ -3766,7 +3766,7 @@ export function TasksPanel({
                   saveTaskToPlanFeedback.startsWith("Please") ||
                   saveTaskToPlanFeedback.startsWith("Choose")
                   ? "bg-[#F65252]/[0.08] text-[#B83D3D]"
-                  : "bg-[#81DB86]/15 text-[#2F7E38]",
+                  : "bg-[#5286F6]/15 text-[#2F7E38]",
               ].join(" ")}>
                 {saveTaskToPlanFeedback}
               </div>
@@ -3817,7 +3817,7 @@ export function TasksPanel({
             isLight ? "border-[#DDE7DD] bg-white" : "border-[#344537] bg-[#222A23]",
           ].join(" ")}
         >
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#81DB86]/30 bg-[#81DB86]/15 text-[#58AE62]">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[#5286F6]/30 bg-[#5286F6]/15 text-[#58AE62]">
             <ListPlus size={22} strokeWidth={1.8} aria-hidden="true" />
           </div>
           <h3 className={["mt-4 text-[14px] font-bold leading-5", modalTitle].join(" ")}>
@@ -3831,7 +3831,7 @@ export function TasksPanel({
           <button
             type="button"
             onClick={() => window.open("/tasks", "_blank", "noopener,noreferrer")}
-            className="mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#81DB86] px-4 text-[12px] font-bold text-[#18351D] transition hover:bg-[#9AE99E] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86] focus-visible:ring-offset-2"
+            className="mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#5286F6] px-4 text-[12px] font-bold text-[#18351D] transition hover:bg-[#6B98FA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6] focus-visible:ring-offset-2"
           >
             <Plus size={15} strokeWidth={2.4} aria-hidden="true" />
             Add your first task
@@ -3842,7 +3842,7 @@ export function TasksPanel({
               void loadPlans();
               if (selectedPlanId) void loadPlanItems(selectedPlanId);
             }}
-            className={["mt-3 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]", modalSub].join(" ")}
+            className={["mt-3 inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-medium transition hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]", modalSub].join(" ")}
           >
             <RefreshCw size={12} aria-hidden="true" />
             Refresh after adding
@@ -3907,7 +3907,7 @@ export function TasksPanel({
               ) : plansLoadError ? (
                 <div className={["rounded-2xl border p-5 text-center", rowBorder, modalTitle].join(" ")}>
                   <p className="text-[13px] font-semibold">Couldn't load your task lists.</p>
-                  <button type="button" onClick={() => void loadPlans()} className="mt-3 rounded-xl bg-[#81DB86] px-4 py-2 text-[12px] font-bold text-[#18351D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]">
+                  <button type="button" onClick={() => void loadPlans()} className="mt-3 rounded-xl bg-[#5286F6] px-4 py-2 text-[12px] font-bold text-[#18351D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]">
                     Try again
                   </button>
                 </div>
@@ -3922,8 +3922,8 @@ export function TasksPanel({
                         onChange={(e) => setSelectedPlanId(e.target.value)}
                         className={
                           isLight
-                            ? "min-w-0 flex-1 h-11 px-3 rounded-xl border border-[#CFCFCF] bg-[#F3F3F3] text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-[#81DB86]"
-                            : "min-w-0 flex-1 h-11 px-3 rounded-xl border border-[#2B2B2B] bg-[#242424] text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-[#81DB86]"
+                            ? "min-w-0 flex-1 h-11 px-3 rounded-xl border border-[#CFCFCF] bg-[#F3F3F3] text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-[#5286F6]"
+                            : "min-w-0 flex-1 h-11 px-3 rounded-xl border border-[#2B2B2B] bg-[#242424] text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-[#5286F6]"
                         }
                       >
                         {plans.map((p) => (
@@ -3994,7 +3994,7 @@ export function TasksPanel({
                   ) : planItemsLoadError ? (
                     <div className={["rounded-2xl border p-5 text-center", rowBorder, modalTitle].join(" ")}>
                       <p className="text-[13px] font-semibold">Couldn't load tasks from this list.</p>
-                      <button type="button" onClick={() => void loadPlanItems(selectedPlanId)} className="mt-3 rounded-xl bg-[#81DB86] px-4 py-2 text-[12px] font-bold text-[#18351D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]">
+                      <button type="button" onClick={() => void loadPlanItems(selectedPlanId)} className="mt-3 rounded-xl bg-[#5286F6] px-4 py-2 text-[12px] font-bold text-[#18351D] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]">
                         Try again
                       </button>
                     </div>
@@ -4533,7 +4533,7 @@ export function TasksPanel({
               {pictureInPictureSupported && onOpenPictureInPicture ? (
                 <IconButton
                   theme={panelTheme}
-                  className="border border-[#81DB86] bg-[#81DB86]/10 text-[#81DB86] hover:bg-[#81DB86]/15"
+                  className="border border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
                   title={
                     pictureInPictureOpen
                       ? "Close Picture-in-Picture video"
@@ -4549,7 +4549,7 @@ export function TasksPanel({
                     theme={panelTheme}
                     className="w-4 h-4"
                     alt="Picture-in-Picture"
-                    tint="#81DB86"
+                    tint="#5286F6"
                   />
                 </IconButton>
               ) : null}
@@ -4716,7 +4716,7 @@ export function TasksPanel({
               className={[
                 "h-12 w-12 shrink-0 rounded-[18px] border transition inline-flex items-center justify-center",
                 taskTimersEnabled
-                  ? "border-[#81DB86] bg-[#81DB86]/10 text-[#81DB86] hover:bg-[#81DB86]/15"
+                  ? "border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
                   : "border-[#CFC6C6] bg-[#F7F5F5] text-black/45 hover:bg-[#ECEAEA]",
               ].join(" ")}
               title={taskTimersEnabled ? "Disable Timer" : "Enable Timer"}
@@ -4730,7 +4730,7 @@ export function TasksPanel({
               onClick={() => void handleAddPanelTask()}
               className={[
                 "h-12 shrink-0 px-4 rounded-[18px] font-semibold text-[14px] font-inter transition",
-                isLight ? "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white" : "bg-[#81DB86] hover:bg-[#9AE99E] text-[#102816]",
+                isLight ? "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white" : "bg-[#5286F6] hover:bg-[#6B98FA] text-[#FFFFFF]",
               ].join(" ")}
               type="button"
               title={`Add ${newTaskVisibility} task`}
@@ -4759,7 +4759,7 @@ export function TasksPanel({
                 const editInputCls = `
                     w-full bg-[#F3F3F3] border border-[#C9C9C9] rounded-xl
                     px-3 py-2 text-[13px] text-black/85
-                    outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
+                    outline-none focus:ring-1 focus:ring-[#5286F6] focus:border-[#5286F6]
                     font-inter
                   `;
 
@@ -4932,7 +4932,7 @@ export function TasksPanel({
                                 "relative z-20 h-8 w-8 shrink-0 rounded-lg border text-[13px] font-semibold transition inline-flex items-center justify-center",
                                 normalizeTaskVisibility(i.visibility) ===
                                   "public"
-                                  ? "border-[#81DB86] bg-[#81DB86]/15 text-[#81DB86] hover:bg-[#81DB86]/25"
+                                  ? "border-[#5286F6] bg-[#5286F6]/15 text-[#5286F6] hover:bg-[#5286F6]/25"
                                   : "border-[#CFC6C6] bg-[#F3F1F1] text-black/55 hover:bg-[#ECEAEA]",
                               ].join(" ")}
                             >
@@ -5049,7 +5049,7 @@ export function TasksPanel({
             className={[
               "h-9 shrink-0 rounded-2xl border px-3 text-[12px] font-bold transition inline-flex items-center gap-2 font-inter",
               hideTeamTasks
-                ? "border-[#81DB86] bg-[#81DB86]/10 text-[#2F8F3B] hover:bg-[#81DB86]/15"
+                ? "border-[#5286F6] bg-[#5286F6]/10 text-[#2F8F3B] hover:bg-[#5286F6]/15"
                 : "border-[#CFC6C6] bg-[#F7F5F5] text-black/65 hover:bg-[#ECEAEA]",
             ].join(" ")}
             title={
@@ -5135,7 +5135,7 @@ export function TasksPanel({
                         className={[
                           "h-8 w-8 rounded-full border text-[12px] font-medium inline-flex items-center justify-center shrink-0",
                           item.completed
-                            ? "border-[#81DB86] text-[#81DB86] bg-[#81DB86]/10"
+                            ? "border-[#5286F6] text-[#5286F6] bg-[#5286F6]/10"
                             : "border-[#5286F6] text-[#5286F6] bg-[#5286F6]/10",
                         ].join(" ")}
                         title={statusText}
