@@ -345,6 +345,7 @@ function PanelSmartIcon({
   theme,
   className = "w-4 h-4",
   alt,
+  tint,
 }: {
   name:
   | "focus-plan"
@@ -356,6 +357,7 @@ function PanelSmartIcon({
   theme: RoomTheme;
   className?: string;
   alt?: string;
+  tint?: string;
 }) {
   const themedSrc = `/icons/${name}-${theme}.svg`;
   const neutralSrc = `/icons/${name}.svg`;
@@ -364,6 +366,27 @@ function PanelSmartIcon({
   useEffect(() => {
     setSrc(themedSrc);
   }, [themedSrc]);
+
+  if (tint) {
+    return (
+      <span
+        role="img"
+        aria-label={alt || name}
+        className={"inline-block shrink-0 " + className}
+        style={{
+          backgroundColor: tint,
+          WebkitMaskImage: `url("${src}")`,
+          WebkitMaskRepeat: "no-repeat",
+          WebkitMaskPosition: "center",
+          WebkitMaskSize: "contain",
+          maskImage: `url("${src}")`,
+          maskRepeat: "no-repeat",
+          maskPosition: "center",
+          maskSize: "contain",
+        }}
+      />
+    );
+  }
 
   return (
     <img
@@ -1298,27 +1321,27 @@ export function TasksPanel({
 
   const titleText = isLight ? "text-black/95" : "text-[#F4F5F6]";
   const mutedText = isLight ? "text-black/55" : "text-[#B5BCC6]";
-  const divider = isLight ? "bg-[#D8D0D0]" : "bg-[#464D54]";
+  const divider = isLight ? "bg-[#D8D0D0]" : "bg-[#464646]";
 
-  const panelBg = isLight ? "bg-[#F3F1F1] text-black" : "bg-[#1B1D20] text-[#F4F5F6]";
-  const headerBg = isLight ? "bg-[#F7F5F5]" : "bg-[#25292E]";
-  const headerBorder = isLight ? "border-[#D8D0D0]" : "border-[#464D54]";
+  const panelBg = isLight ? "bg-[#F3F1F1] text-black" : "bg-[#1B1B1B] text-[#F4F5F6]";
+  const headerBg = isLight ? "bg-[#F7F5F5]" : "bg-[#252525]";
+  const headerBorder = isLight ? "border-[#D8D0D0]" : "border-[#464646]";
 
   const inputCls = `
       h-12 border rounded-[18px]
-      px-4 text-[14px] ${isLight ? "bg-[#F7F5F5] border-[#CFC6C6] text-black/85 placeholder:text-black/35" : "bg-[#292D32] border-[#4C5259] text-[#F4F5F6] placeholder:text-[#ABB3BE]"}
+      px-4 text-[14px] ${isLight ? "bg-[#F7F5F5] border-[#CFC6C6] text-black/85 placeholder:text-black/35" : "bg-[#292929] border-[#484848] text-[#F4F5F6] placeholder:text-[#ABB3BE]"}
       outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
       font-inter
     `;
 
   const myCardCls =
-    `group relative min-h-11 border-b px-1.5 py-2 bg-transparent transition ${isLight ? "border-[#D8D0D0]/70 hover:bg-black/[0.035]" : "border-[#464D54] hover:bg-white/[0.06]"}`;
+    `group relative min-h-11 border-b px-1.5 py-2 bg-transparent transition ${isLight ? "border-[#D8D0D0]/70 hover:bg-black/[0.035]" : "border-[#464646] hover:bg-white/[0.06]"}`;
 
   const teamCardCls =
-    `group relative min-h-11 border-b px-1.5 py-2 bg-transparent transition ${isLight ? "border-[#D8D0D0]/70 hover:bg-black/[0.035]" : "border-[#464D54] hover:bg-white/[0.06]"}`;
+    `group relative min-h-11 border-b px-1.5 py-2 bg-transparent transition ${isLight ? "border-[#D8D0D0]/70 hover:bg-black/[0.035]" : "border-[#464646] hover:bg-white/[0.06]"}`;
 
   const ghostBtn =
-    isLight ? "border border-[#CFC6C6] bg-transparent hover:bg-[#ECEAEA] text-black/75" : "border border-[#4C5259] bg-transparent hover:bg-[#353B42] text-[#E3E7EB]";
+    isLight ? "border border-[#CFC6C6] bg-transparent hover:bg-[#ECEAEA] text-black/75" : "border border-[#484848] bg-transparent hover:bg-[#353535] text-[#E3E7EB]";
 
   const primaryBtn = isLight ? "bg-[#252525] hover:bg-[#303030] text-white font-semibold" : "bg-[#81DB86] hover:bg-[#9AE99E] text-[#102816] font-semibold";
 
@@ -3654,7 +3677,7 @@ export function TasksPanel({
     );
   }
 
-  const timerPillCls = isLight ? "bg-[#F3F1F1] border border-[#CFC6C6] text-black/80" : "bg-[#30353A] border border-[#4C5259] text-[#E3E7EB]";
+  const timerPillCls = isLight ? "bg-[#F3F1F1] border border-[#CFC6C6] text-black/80" : "bg-[#303030] border border-[#484848] text-[#E3E7EB]";
   const headerTitle = isLight ? "text-black/90" : "text-[#F4F5F6]";
   const timerTextCls =
     `tabular-nums text-[12px] ${timerTextClassName || ""} font-inter font-normal`.trim();
@@ -4503,6 +4526,7 @@ export function TasksPanel({
                   theme={panelTheme}
                   className="w-4 h-4"
                   alt="Tasks"
+                  tint="#5286F6"
                 />
               </IconButton>
 
@@ -4525,6 +4549,7 @@ export function TasksPanel({
                     theme={panelTheme}
                     className="w-4 h-4"
                     alt="Picture-in-Picture"
+                    tint="#81DB86"
                   />
                 </IconButton>
               ) : null}
@@ -4546,6 +4571,7 @@ export function TasksPanel({
                   theme={panelTheme}
                   className="w-4 h-4"
                   alt="Pin"
+                  tint="#F65252"
                 />
               </IconButton>
             </div>
@@ -4564,7 +4590,7 @@ export function TasksPanel({
                 <button
                   type="button"
                   onClick={openImportModal}
-                  className="inline-flex h-[17px] w-[18px] shrink-0 items-center justify-center rounded-[8px] border border-[#2F2F2F] bg-white p-0 text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/40"
+                  className="ms-task-add-from-tasks inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[7px] border border-[#2F2F2F] bg-white p-0 text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/40"
                   title="Add tasks from Tasks page"
                   aria-label="Add tasks from Tasks page"
                 >
