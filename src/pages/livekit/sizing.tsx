@@ -284,8 +284,8 @@ export function GridLayoutSizing<T extends { id: string }>(props: {
     const mobileOrTablet =
         mobileOrTabletOverride ??
         isMobileOrTabletLikeSize(containerWidth, containerHeight);
-    const paddingPx = containerWidth && containerWidth < 520 ? 6 : 10;
-    const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
+    const paddingPx = 4;
+    const gapPx = 4;
 
     const cols = useMemo(() => {
         const forcedCols = resolveForcedCols({
@@ -393,8 +393,8 @@ export function P2PLayoutSizing<T extends { id: string }>(props: {
 }) {
     const { items, containerWidth, containerHeight, stack = false, renderItem } = props;
 
-    const paddingPx = containerWidth && containerWidth < 520 ? 6 : 10;
-    const gapPx = containerWidth && containerWidth < 520 ? 6 : 10;
+    const paddingPx = 4;
+    const gapPx = 4;
 
     const count = items.length;
     const mobile = isMobileLikeSize(containerWidth, containerHeight);
@@ -462,8 +462,8 @@ export function MobileFillLayoutSizing<T extends { id: string }>(props: {
 
     const count = items.length || 1;
     const mode = normalizeMobileMode(layoutPreset || mobileMode);
-    const paddingPx = containerWidth && containerWidth < 520 ? 6 : 8;
-    const gapPx = containerWidth && containerWidth < 520 ? 6 : 8;
+    const paddingPx = 4;
+    const gapPx = 4;
 
     const landscape = isLandscape(containerWidth, containerHeight);
 
@@ -547,8 +547,8 @@ export function MobileStackLayoutSizing<T extends { id: string }>(props: {
 
     const count = items.length || 1;
     const resolvedMode = normalizeMobileMode(layoutPreset || mode);
-    const paddingPx = containerWidth && containerWidth < 520 ? 6 : 8;
-    const gapPx = containerWidth && containerWidth < 520 ? 6 : 8;
+    const paddingPx = 4;
+    const gapPx = 4;
 
     const landscape = isLandscape(containerWidth, containerHeight);
 
@@ -639,8 +639,8 @@ export function MobileOneColumnListLayoutSizing<T extends { id: string }>(props:
 }) {
     const { items, containerWidth, paddingBottomPx = 12, renderItem } = props;
 
-    const paddingPx = containerWidth && containerWidth < 520 ? 6 : 8;
-    const gapPx = 8;
+    const paddingPx = 4;
+    const gapPx = 4;
 
     return (
         <div
@@ -671,8 +671,8 @@ export function MobileHorizontalStripLayoutSizing<T extends { id: string }>(prop
 }) {
     const { items, containerWidth, containerHeight, paddingBottomPx = 12, renderItem } = props;
 
-    const paddingPx = containerWidth && containerWidth < 520 ? 6 : 8;
-    const gapPx = 8;
+    const paddingPx = 4;
+    const gapPx = 4;
 
     const availH = Math.max(0, (containerHeight || 0) - paddingPx * 2 - paddingBottomPx);
     const tileW = Math.max(180, Math.min(360, availH > 0 ? availH * (16 / 9) : 240));
