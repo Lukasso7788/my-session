@@ -78,14 +78,14 @@ export function LiveKitRightPanel(props: {
         >
             {rightTab === "participants" && (
                 <div className="h-full min-h-0 flex flex-col">
-                    <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+                    <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-[#3F3F3F]"}`}>
                         <div className="flex items-center gap-2">
                             <span className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Participants</span>
                             <span className={`${isLight ? "text-black/50" : "text-white/55"} text-sm`}>({participantsCount})</span>
                         </div>
                         <button
                             onClick={onClose}
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#2B2B2B] hover:bg-[#363636] text-white/80"
                                 }`}
                             title="Close"
                         >
@@ -94,7 +94,7 @@ export function LiveKitRightPanel(props: {
                     </div>
 
                     <div className="p-4">
-                        <div className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#0B1220]/70 border border-white/10"}`}>
+                        <div className={`rounded-xl px-3 py-2 ${isLight ? "bg-black/5 border border-black/10" : "bg-[#252525] border border-[#484848]"}`}>
                             <input
                                 value={participantsSearch}
                                 onChange={(e) => setParticipantsSearch(e.target.value)}
@@ -185,7 +185,7 @@ export function LiveKitRightPanel(props: {
                         </div>
                     </div>
 
-                    <div className={`p-3 border-t ${isLight ? "border-black/10" : "border-white/5"}`}>
+                    <div className={`p-3 border-t ${isLight ? "border-black/10" : "border-[#3F3F3F]"}`}>
                         <button
                             onClick={() => { }}
                             disabled={rolesLoading}
@@ -201,11 +201,11 @@ export function LiveKitRightPanel(props: {
 
             {rightTab === "chat" && (
                 <div className="h-full min-h-0 flex flex-col">
-                    <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+                    <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-[#3F3F3F]"}`}>
                         <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Chat</div>
                         <button
                             onClick={onClose}
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#2B2B2B] hover:bg-[#363636] text-white/80"
                                 }`}
                             title="Close"
                         >
@@ -214,7 +214,7 @@ export function LiveKitRightPanel(props: {
                     </div>
 
                     <div className="flex-1 min-h-0 p-3 overflow-hidden">
-                        <div className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
+                        <div className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white border border-black/10" : "bg-[#202020] border border-[#484848]"}`}>
                             <div className="h-full min-h-0 flex flex-col overflow-hidden [&>*]:h-full [&>*]:min-h-0">
                                 {sessionId ? (
                                     <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
@@ -239,11 +239,11 @@ export function LiveKitRightPanel(props: {
 
             {rightTab === "intentions" && (
                 <div className="h-full min-h-0 flex flex-col">
-                    <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-white/5"}`}>
+                    <div className={`px-4 py-3 border-b flex items-center justify-between ${isLight ? "border-black/10" : "border-[#3F3F3F]"}`}>
                         <div className={`${isLight ? "text-black/80" : "text-white/85"} font-inter font-semibold`}>Intentions</div>
                         <button
                             onClick={onClose}
-                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#111827] hover:bg-[#1f2937] text-white/80"
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${isLight ? "bg-black/5 hover:bg-black/10 text-black/60" : "bg-[#2B2B2B] hover:bg-[#363636] text-white/80"
                                 }`}
                             title="Close"
                         >
@@ -252,7 +252,7 @@ export function LiveKitRightPanel(props: {
                     </div>
 
                     <div className="flex-1 min-h-0 overflow-hidden p-3">
-                        <div className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white border border-black/10" : "bg-[#020617] border border-white/10"}`}>
+                        <div className={`h-full min-h-0 overflow-hidden rounded-xl ${isLight ? "bg-white border border-black/10" : "bg-[#202020] border border-[#484848]"}`}>
                             <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
                                 <div data-theme={theme} style={{ colorScheme: theme }} className={theme === "dark" ? "dark h-full min-h-0" : "h-full min-h-0"}>
                                     <IntentionsPanel key={`intentions-${sessionId}-${theme}`} theme={theme} sessionId={sessionId} timerText={timerText || "--:--"} />
