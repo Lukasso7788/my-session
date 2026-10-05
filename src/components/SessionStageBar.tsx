@@ -13,6 +13,8 @@ interface Props {
   theme?: RoomTheme;
   showLegend?: boolean;
   size?: "default" | "card";
+  showHoverDetails?: boolean;
+  hoverDetailsPlacement?: "top" | "bottom";
 }
 
 function clamp(n: number, a: number, b: number) {
@@ -332,6 +334,8 @@ export function SessionStageBar({
   theme = "dark",
   showLegend = false,
   size = "default",
+  showHoverDetails = false,
+  hoverDetailsPlacement = "top",
 }: Props) {
   const [elapsed, setElapsed] = useState(0);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
@@ -432,9 +436,13 @@ export function SessionStageBar({
       : "border border-[#2B2B2B] bg-[#252525] text-white shadow-[0_16px_36px_rgba(0,0,0,0.62)] backdrop-blur-xl";
 
   const tooltipArrowClass =
-    theme === "light"
-      ? "border-r border-b border-[#D8D0D0] bg-[#F7F5F5]"
-      : "border-r border-b border-[#2B2B2B] bg-[#252525]";
+    hoverDetailsPlacement === "bottom"
+      ? theme === "light"
+        ? "border-l border-t border-[#D8D0D0] bg-[#F7F5F5]"
+        : "border-l border-t border-[#2B2B2B] bg-[#252525]"
+      : theme === "light"
+        ? "border-r border-b border-[#D8D0D0] bg-[#F7F5F5]"
+        : "border-r border-b border-[#2B2B2B] bg-[#252525]";
 
   const markerLeftPercent = clamp(cycleProgress * 100, 0.5, 99.5);
   const isCardSize = size === "card";
@@ -518,7 +526,7 @@ export function SessionStageBar({
           return (
             <div
               key={(stage as any)?.id || `${index}-${displayName}`}
-              className="relative h-full cursor-pointer transition-all duration-300"
+              className={`relative h-full transition-all duration-300 ${showHoverDetails ? "cursor-pointer" : ""}`}
               style={{
                 width: `${width}%`,
                 ...stageColorStyle(bg),
@@ -526,10 +534,12 @@ export function SessionStageBar({
                 ...borderRadiusStyle,
               }}
               onMouseEnter={() => {
+                if (!showHoverDetails && !onHoverStage) return;
                 setHoveredStageIndex(index);
                 onHoverStage?.(hoverStage);
               }}
               onMouseLeave={() => {
+                if (!showHoverDetails && !onHoverStage) return;
                 setHoveredStageIndex((prev) => (prev === index ? null : prev));
                 onHoverStage?.(null);
               }}
@@ -542,8 +552,13 @@ export function SessionStageBar({
                 }}
               />
 
-              {isHovered && (
-                <div className="pointer-events-none absolute bottom-full left-1/2 z-[9999] mb-3 flex -translate-x-1/2">
+              {showHoverDetails && isHovered && (
+                <div
+                  className={[
+                    "pointer-events-none absolute left-1/2 z-[9999] flex -translate-x-1/2",
+                    hoverDetailsPlacement === "bottom" ? "top-full mt-3" : "bottom-full mb-3",
+                  ].join(" ")}
+                >
                   <div className={`relative min-w-[150px] rounded-xl px-3 py-2 ${tooltipCardClass}`}>
                     <div className="flex items-start gap-2">
                       <div
@@ -563,7 +578,12 @@ export function SessionStageBar({
                     </div>
 
                     <div
-                      className={`absolute left-1/2 top-full h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 ${tooltipArrowClass}`}
+                      className={[
+                        `absolute left-1/2 h-2.5 w-2.5 -translate-x-1/2 rotate-45 ${tooltipArrowClass}`,
+                        hoverDetailsPlacement === "bottom"
+                          ? "bottom-full translate-y-1/2"
+                          : "top-full -translate-y-1/2",
+                      ].join(" ")}
                     />
                   </div>
                 </div>
