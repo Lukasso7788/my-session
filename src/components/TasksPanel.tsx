@@ -4533,7 +4533,7 @@ export function TasksPanel({
               {pictureInPictureSupported && onOpenPictureInPicture ? (
                 <IconButton
                   theme={panelTheme}
-                  className="border border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
+                  className="border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C] hover:bg-[#65D46C]/15"
                   title={
                     pictureInPictureOpen
                       ? "Close Picture-in-Picture video"
@@ -4549,7 +4549,7 @@ export function TasksPanel({
                     theme={panelTheme}
                     className="w-4 h-4"
                     alt="Picture-in-Picture"
-                    tint="#5286F6"
+                    tint="#65D46C"
                   />
                 </IconButton>
               ) : null}
