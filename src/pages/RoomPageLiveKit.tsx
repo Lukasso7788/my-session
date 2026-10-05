@@ -6377,7 +6377,7 @@ export function RoomPageLiveKit({
   const roomPanelPaddingClass = roomUiScale === "md" ? "p-3" : "p-4";
 
   const roomPanelHeaderClass =
-    roomUiScale === "md" ? "px-2.5 py-2" : "px-3 py-2";
+    roomUiScale === "md" ? "px-2.5 py-1.5 min-h-[42px]" : "px-3 py-1.5 min-h-[44px]";
 
   const roomPanelTitleClass =
     roomUiScale === "md" ? "text-[12px]" : "text-[13px]";
@@ -19304,7 +19304,7 @@ export function RoomPageLiveKit({
     : "bg-[#1B1B1B] text-white";
   const panelBg = sidePanelIsLight
     ? "bg-[#F3F1F1] border border-[#D8D0D0]"
-    : "bg-[#1B1D20] border border-[#393D42]";
+    : "bg-[#1B1B1B] border border-[#2B2B2B]";
   const bottomBarBg = isLight
     ? "bg-[#F3F1F1] border border-[#D8D0D0]"
     : "bg-[#1B1B1B] border border-[#252525]";
@@ -19359,7 +19359,7 @@ export function RoomPageLiveKit({
       {rightTab === "participants" && (
         <div className="h-full min-h-0 flex flex-col">
           <div
-            className={`${roomPanelHeaderClass} border-b flex items-center justify-between ${sidePanelIsLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#393D42] bg-[#222529]"}`}
+            className={`${roomPanelHeaderClass} border-b flex items-center justify-between ${sidePanelIsLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#343434] bg-[#232323]"}`}
           >
             <div className="flex items-center gap-2 min-w-0">
               <span
@@ -19376,7 +19376,7 @@ export function RoomPageLiveKit({
             <div className="flex items-center gap-2">
               <button
                 onClick={openEditName}
-                className={`px-3 h-9 rounded-xl text-[12px] font-semibold border transition ${sidePanelIsLight
+                className={`px-3 h-8 rounded-[10px] text-[11px] font-semibold border transition ${sidePanelIsLight
                   ? "bg-[#1B1B1B] border-[#1B1B1B] hover:bg-[#242424] text-white"
                   : "bg-[#5286F6] border-[#5286F6] hover:bg-[#6B98FA] text-[#FFFFFF]"
                   }`}
@@ -19387,7 +19387,7 @@ export function RoomPageLiveKit({
 
               <button
                 onClick={() => openRightTab(null)}
-                className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${sidePanelIsLight
+                className={`w-8 h-8 rounded-[10px] flex items-center justify-center transition ${sidePanelIsLight
                   ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
                   : "bg-[#353A3F] hover:bg-[#444A50] text-[#D4D9DF]"
                   }`}
@@ -19402,7 +19402,7 @@ export function RoomPageLiveKit({
             <div
               className={`rounded-xl px-3 py-2 border ${sidePanelIsLight
                 ? "bg-[#E6E6E6] border-[#CFCFCF]"
-                : "bg-[#292D32] border-[#4C5259]"
+                : "bg-[#292929] border-[#484848]"
                 }`}
             >
               <input
@@ -19467,7 +19467,7 @@ export function RoomPageLiveKit({
                 return (
                   <div
                     key={p.id}
-                    className={`px-3 py-2 rounded-xl transition ${sidePanelIsLight ? "hover:bg-[#E8E8E8]" : "hover:bg-[#30363B]"}`}
+                    className={`px-3 py-2 rounded-xl transition ${sidePanelIsLight ? "hover:bg-[#E8E8E8]" : "hover:bg-[#303030]"}`}
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
@@ -19614,7 +19614,7 @@ export function RoomPageLiveKit({
           </div>
 
           <div
-            className={`p-4 border-t ${sidePanelIsLight ? "border-[#CFCFCF]" : "border-[#393D42]"}`}
+            className={`p-4 border-t ${sidePanelIsLight ? "border-[#CFCFCF]" : "border-[#343434]"}`}
           >
             <button
               onClick={() => {
@@ -19640,7 +19640,7 @@ export function RoomPageLiveKit({
 
       {rightPanelOpen && rightTab === "chat" && (
         <div data-side-panel-section="chat" className="ms-chat-panel-scrollbars flex flex-col h-full">
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-[#D8D0D0] bg-[#F3F1F1] min-h-[52px]">
+          <div className={`flex min-h-[44px] items-center gap-2 border-b px-3 py-1.5 ${sidePanelIsLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#343434] bg-[#232323]"}`}>
             <div className="flex items-center gap-2 shrink-0 mr-1">
               <img
                 src={sidePanelIsLight ? "/icons/chat-light.svg" : "/icons/chat-dark.svg"}
@@ -19649,9 +19649,7 @@ export function RoomPageLiveKit({
                 draggable={false}
               />
               <span
-                className={
-                  "text-[13px] font-semibold shrink-0 text-black/85"
-                }
+                className={`shrink-0 text-[12px] font-semibold ${sidePanelIsLight ? "text-black/85" : "text-[#F4F5F6]"}`}
               >
                 Chat
               </span>
@@ -20078,24 +20076,30 @@ export function RoomPageLiveKit({
 
       {rightTab === "tasks" && (
         <div data-side-panel-section="tasks" className="ms-tasks-panel-scrollbars h-full min-h-0 flex flex-col">
-          <div className="px-5 py-4 border-b border-[#D8D0D0] bg-[#F3F1F1] flex items-center justify-between">
-            <div
-              className="text-black/85 font-inter font-semibold"
-            >
-              Tasks
+          <div className={`flex min-h-[44px] items-center justify-between border-b px-3 py-1.5 ${sidePanelIsLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#343434] bg-[#232323]"}`}>
+            <div className="flex min-w-0 items-center gap-2">
+              <img
+                src={sidePanelIsLight ? "/icons/tasks-light.svg" : "/icons/tasks-dark.svg"}
+                alt=""
+                className="h-4 w-4 shrink-0"
+                draggable={false}
+              />
+              <div className={`font-inter text-[12px] font-semibold ${sidePanelIsLight ? "text-black/85" : "text-[#F4F5F6]"}`}>
+                Tasks
+              </div>
             </div>
             <button
               onClick={() => openRightTab(null)}
-              className="w-9 h-9 rounded-xl flex items-center justify-center transition bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
+              className={`flex h-8 w-8 items-center justify-center rounded-[10px] transition ${sidePanelIsLight ? "bg-[#E6E6E6] text-black/60 hover:bg-[#DCDCDC]" : "bg-[#303030] text-[#D4D9DF] hover:bg-[#3A3A3A]"}`}
               title="Close"
             >
               ✕
             </button>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-hidden p-4">
+          <div className="flex-1 min-h-0 overflow-hidden p-3">
             <div
-              className="h-full min-h-0 overflow-hidden rounded-xl bg-[#F3F1F1] border border-[#D8D0D0]"
+              className={`h-full min-h-0 overflow-hidden rounded-xl border ${sidePanelIsLight ? "bg-[#F3F1F1] border-[#D8D0D0]" : "bg-[#1F1F1F] border-[#343434]"}`}
             >
               <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
                 <div
@@ -20104,7 +20108,7 @@ export function RoomPageLiveKit({
                   className="h-full min-h-0"
                 >
                   {session?.id && connected ? (
-                    <React.Suspense fallback={<div className="p-4 text-sm text-black/60">Loading tasks…</div>}>
+                    <React.Suspense fallback={<div className={`p-4 text-sm ${sidePanelIsLight ? "text-black/60" : "text-white/60"}`}>Loading tasks…</div>}>
                     <TasksPanel
                       key={`tasks-${session.id}`}
                       currentUserId={authUserId}
