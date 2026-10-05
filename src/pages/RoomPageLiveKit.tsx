@@ -41,7 +41,7 @@ import { updateTileSpeakingState } from "../lib/roomSpeakingState";
 import { createPiPAvatarCache } from "../lib/pipAvatarCache";
 import { invalidateHostLeaseCache } from "../lib/supabaseFetchOptimizer";
 import { withTimeout } from "../lib/promiseTimeout";
-import { readSessionRoomPolicies, withRoomPolicies, type RoomPolicies } from "../lib/roomPolicies";
+import { readSessionRoomPolicies, shouldEnforceMediaPolicyForRole, withRoomPolicies, type RoomPolicies } from "../lib/roomPolicies";
 import { captureProductEvent } from "../lib/analytics";
 import { advertiseSharedMusic, sharedRoomMusicActive } from "../lib/roomMusicPresence";
 import { USAGE_TRACKING_ENABLED } from "../lib/flags";
@@ -8304,7 +8304,7 @@ export function RoomPageLiveKit({
             new Date().toISOString(),
         },
       );
-      const nextSchedule = isFreeFlowRoom
+      const timelineSchedule = isFreeFlowRoom
         ? {
             ...generatedSchedule,
             kind: "infinite_room",
@@ -8318,6 +8318,12 @@ export function RoomPageLiveKit({
               : {}),
           }
         : generatedSchedule;
+      const nextSchedule = {
+        ...timelineSchedule,
+        ...(isRecord(previousFreeFlowSchedule.room_policies)
+          ? { room_policies: previousFreeFlowSchedule.room_policies }
+          : {}),
+      };
 
       const nextDurationMinutes = getTimelineTotalMinutes(timelineDraftBlocks);
       const actualTimelineDescription = `Free Flow timeline: ${timelineDraftBlocks
@@ -14955,8 +14961,7 @@ export function RoomPageLiveKit({
     if (
       !connected ||
       !roomPolicies.cameraRequired ||
-      isHost ||
-      isSelfModerator ||
+      !shouldEnforceMediaPolicyForRole(roomPolicies, isHost || isSelfModerator) ||
       camOn ||
       kickRedirecting
     ) {
@@ -15026,6 +15031,7 @@ export function RoomPageLiveKit({
     isSelfModerator,
     kickRedirecting,
     roomPolicies.cameraRequired,
+    roomPolicies.mediaRequirementsApplyToStaff,
   ]);
 
   useEffect(() => {
@@ -15037,8 +15043,7 @@ export function RoomPageLiveKit({
     if (
       !connected ||
       (!roomPolicies.screenShareRequired && !roomPolicies.cameraOrScreenShareRequired) ||
-      isHost ||
-      isSelfModerator ||
+      !shouldEnforceMediaPolicyForRole(roomPolicies, isHost || isSelfModerator) ||
       screenShareOn ||
       (roomPolicies.cameraOrScreenShareRequired && camOn) ||
       kickRedirecting
@@ -15115,6 +15120,7 @@ export function RoomPageLiveKit({
     kickRedirecting,
     roomPolicies.screenShareRequired,
     roomPolicies.cameraOrScreenShareRequired,
+    roomPolicies.mediaRequirementsApplyToStaff,
     camOn,
     screenShareOn,
   ]);
@@ -21873,6 +21879,7 @@ export function RoomPageLiveKit({
           cameraRequired={roomPolicies.cameraRequired}
           screenShareRequired={roomPolicies.screenShareRequired === true}
           cameraOrScreenShareRequired={roomPolicies.cameraOrScreenShareRequired === true}
+          mediaRequirementsApplyToStaff={roomPolicies.mediaRequirementsApplyToStaff === true}
           publicChatDisabled={roomPolicies.publicChatDisabled}
           onChangeCameraRequired={(value) => {
             void updateRoomPolicies({
@@ -21894,6 +21901,12 @@ export function RoomPageLiveKit({
               cameraOrScreenShareRequired: value,
               cameraRequired: value ? false : roomPolicies.cameraRequired,
               screenShareRequired: value ? false : roomPolicies.screenShareRequired,
+            });
+          }}
+          onChangeMediaRequirementsApplyToStaff={(value) => {
+            void updateRoomPolicies({
+              ...roomPolicies,
+              mediaRequirementsApplyToStaff: value,
             });
           }}
           onChangePublicChatDisabled={(value) => {

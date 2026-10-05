@@ -3,6 +3,7 @@ export type RoomPolicies = {
   publicChatDisabled: boolean;
   screenShareRequired?: boolean;
   cameraOrScreenShareRequired?: boolean;
+  mediaRequirementsApplyToStaff?: boolean;
   microphoneLocked?: boolean;
 };
 
@@ -11,8 +12,16 @@ export const DEFAULT_ROOM_POLICIES: RoomPolicies = {
   publicChatDisabled: false,
   screenShareRequired: false,
   cameraOrScreenShareRequired: false,
+  mediaRequirementsApplyToStaff: false,
   microphoneLocked: false,
 };
+
+export function shouldEnforceMediaPolicyForRole(
+  policies: RoomPolicies,
+  isHostOrModerator: boolean,
+): boolean {
+  return !isHostOrModerator || policies.mediaRequirementsApplyToStaff === true;
+}
 
 function parseSchedule(raw: unknown): unknown {
   if (typeof raw !== "string") return raw;
@@ -39,6 +48,7 @@ export function readRoomPolicies(schedule: unknown): RoomPolicies {
     publicChatDisabled: raw.public_chat_disabled === true,
     screenShareRequired: raw.screen_share_required === true,
     cameraOrScreenShareRequired: raw.camera_or_screen_share_required === true,
+    mediaRequirementsApplyToStaff: raw.media_requirements_apply_to_staff === true,
     microphoneLocked: raw.microphone_locked === true,
   };
 }
@@ -71,6 +81,7 @@ export function readSessionRoomPolicies(
         ? session.screen_share_required
         : legacy.screenShareRequired === true,
     cameraOrScreenShareRequired: legacy.cameraOrScreenShareRequired === true,
+    mediaRequirementsApplyToStaff: legacy.mediaRequirementsApplyToStaff === true,
     microphoneLocked:
       typeof session?.microphone_locked === "boolean"
         ? session.microphone_locked
@@ -88,6 +99,7 @@ export function withRoomPolicies(
     public_chat_disabled: policies.publicChatDisabled === true,
     screen_share_required: policies.screenShareRequired === true,
     camera_or_screen_share_required: policies.cameraOrScreenShareRequired === true,
+    media_requirements_apply_to_staff: policies.mediaRequirementsApplyToStaff === true,
     microphone_locked: policies.microphoneLocked === true,
   };
 

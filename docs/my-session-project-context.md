@@ -1,6 +1,6 @@
 # MySession — project architecture and continuation context
 
-Updated: 2026-10-05. This is a project-wide navigation/architecture handoff based on
+Updated: 2026-10-06. This is a project-wide navigation/architecture handoff based on
 the checked-out source, not a claim that every module or production service was
 audited. Never put secret values, tokens, user exports or private logs in this file.
 
@@ -12,9 +12,9 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   C:\Users\misha\.codex\worktrees\tasks-pip-accent\my-session.
   This managed worktree is at a detached HEAD; commit this feature here and
   push HEAD:main only after checking origin/main for new commits.
-- Current task: refine the four always-visible background effect choices in
-  the production LiveKit pre-join row to use larger icon-only buttons. The
-  final section records implementation and verification.
+- Current task: add an opt-in room policy that applies camera/screen-share
+  participation requirements to hosts, moderators and admins. The final
+  section records implementation and verification.
   Earlier Plunk work and operational runbook remain documented in
   docs/plunk-email-rollout.md. No mass campaign is authorized by this task.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
@@ -1141,3 +1141,48 @@ are no database, Supabase, LiveKit track, or deployment-configuration changes.
 Preserve existing generated sitemap XML diffs and older untracked screenshots;
 they are not part of this change. Commit/push only production files, test,
 and this context document after verification.
+
+## 2026-10-06 — Opt-in staff enforcement for media participation rules
+
+Production data path: `src/lib/roomPolicies.ts` maps `RoomPolicies` to/from
+`sessions.schedule.room_policies` (JSONB). New boolean key
+`media_requirements_apply_to_staff` defaults to false for existing rooms, so
+the previous staff exemption remains until the host opts in. There is no new
+dedicated sessions column or migration. The existing dedicated columns for
+camera/screen/public-chat remain authoritative where present. The new key
+affects only camera and screen-share participation checks, not chat or
+microphone policies. `shouldEnforceMediaPolicyForRole` centralizes the role
+exemption decision and is covered by a direct Node test.
+
+Configuration paths: `src/components/CreateSessionModal.tsx` includes the
+new toggle in room rules and writes it with the initial schedule;
+`src/components/SessionCard.tsx` reloads it for the edit dialog and writes it
+back when saving; `src/pages/livekit/RoomSettingsModalLiveKit.tsx` shows the
+toggle under Host room policies. `src/pages/RoomPageLiveKit.tsx` passes the
+value/callback to the settings modal, saves through the existing optimistic
+`updateRoomPolicies` Supabase `sessions` update, and reloads remote changes
+through the existing `livekit-session-sync` Realtime listener. Only the host
+can mutate these policies in the live room; role permissions are unchanged.
+
+Runtime: `RoomPageLiveKit.tsx` has separate camera and screen/either
+enforcement effects. Both used to return early for `isHost ||
+isSelfModerator`; `isSelfModerator` already includes temporary hosts and
+super-admins. With the new flag on, staff follow the same existing two
+reminders (20s, then 70s) and disconnect 30s after the second reminder
+if the required medium stays off. The effects still cancel timers on policy,
+role, media-state, connection, or component changes. No capture, publish,
+track, background-tab, or video-quality behavior changes.
+The room timeline editor reconstructs `schedule` when blocks change, so its
+save path now copies the existing `room_policies` object into the generated
+schedule. This preserves the new JSONB-only setting and older policy keys
+when the host edits timeline blocks.
+
+Regression: `node --experimental-strip-types --test
+scripts/room-media-policy.test.mjs` covers old-room defaults, JSONB
+round-trip, staff/participant eligibility and unchanged media rules. The
+production build passed. Root `npm run typecheck` remains blocked by
+pre-existing TS6306/TS6310 project-reference configuration; direct app
+typecheck and ESLint surface numerous unrelated pre-existing errors. Do not
+stage generated sitemap changes, preview fixtures or QA screenshots from
+this worktree. Before push, fetch and verify origin/main still matches the
+base commit; push the focused commit as HEAD:main, never force-push.
