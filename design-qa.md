@@ -175,3 +175,15 @@ Comparison history: The first implementation placed four buttons inside a collap
 Interaction checks: the local fixture selects Custom image, shows a saved thumbnail and selected state, and exposes upload/replace/clear controls. The real camera processor and IndexedDB persistence cannot be exercised by this mock capture; they are wired through the production room callbacks and require a manual authenticated room smoke test. No browser console inspection was available in this headless visual pass.
 
 final result: passed
+
+---
+
+# Icon-only Background effects follow-up
+
+Source: the user's follow-up request to remove visible button captions and enlarge the same four supplied SVGs. Rendered evidence: `prejoin-background-icon-only-qa.png` (default dark row) and `prejoin-background-icon-only-custom-qa.png` (Custom selected with saved slots expanded), both captured at 1440×900 in the local preview with device scale factor 1. The earlier screenshot is a previous iteration, not the final button treatment.
+
+Findings: no P0/P1/P2 differences in the requested region. The four 24px vector icons remain in one compact row; the blue active treatment clearly identifies the selected effect. Captions are no longer rendered. Names remain available through button `aria-label` and hover `title`, while Custom reveals saved slots below. The modal footer stays visible and expanded content scrolls behind it. Inter typography, dark palette, spacing rhythm and unchanged camera mock are consistent with the preceding QA pass. No new image asset was introduced.
+
+The local preview cannot prove actual camera processing or IndexedDB persistence; production keeps the established callbacks and store. No real-room visual or console check was performed in this pass.
+
+final result: passed

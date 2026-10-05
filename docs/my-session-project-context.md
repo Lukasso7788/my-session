@@ -12,10 +12,9 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   C:\Users\misha\.codex\worktrees\tasks-pip-accent\my-session.
   This managed worktree is at a detached HEAD; commit this feature here and
   push HEAD:main only after checking origin/main for new commits.
-- Current task: add four always-visible background effect choices directly
-  in the production LiveKit pre-join Background effects row, using the user's
-  SVG icons, and expose the same locally saved custom backgrounds as in-room.
-  The final section records implementation and verification.
+- Current task: refine the four always-visible background effect choices in
+  the production LiveKit pre-join row to use larger icon-only buttons. The
+  final section records implementation and verification.
   Earlier Plunk work and operational runbook remain documented in
   docs/plunk-email-rollout.md. No mass campaign is authorized by this task.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
@@ -1048,3 +1047,26 @@ fails on existing tsconfig project-reference configuration and direct app
 typecheck/lint have existing unrelated diagnostics. Check exact output before
 attributing failures to this feature. No migration, Supabase write, email,
 video capture policy or deployment environment change is required.
+
+## Icon-only pre-join follow-up (2026-10-05)
+
+The user requested no visible captions on the four Background effects
+buttons and larger icons. Keep the order None, Blur, Image, Custom and keep
+the row visible without opening a disclosure. `BackgroundChoiceIcon` now
+renders the supplied SVG mask at 24×24 px inside 40×40 px buttons (44×44 on
+desktop). The category names remain on `aria-label` and native `title` for
+accessibility and hover, while the active state remains visible through the
+blue button styling. The current effect status is screen-reader-only; errors
+and selected effect controls still expand below the row. Clicking Custom
+reveals the same three persisted local slots and applies a previously saved
+image when one exists. Do not create a separate custom-image store.
+
+The only production component changed in this follow-up is
+`src/pages/livekit/PreJoinModalLiveKit.tsx`; the matching static regression
+assertions are in `scripts/prejoin-and-stage-layering.test.mjs`. The prior
+room callbacks, IndexedDB storage, image size limit, and media track behavior
+remain unchanged. The untracked `prejoin-preview.html` and
+`src/prejoin-preview.tsx` files are local preview fixtures and must not be
+included in the commit. The user's request explicitly includes commit and
+push to `main`; check `origin/main` before pushing, do not commit unrelated
+generated sitemap XML files or local screenshots. No schema change is needed.

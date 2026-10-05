@@ -38,7 +38,7 @@ function BackgroundChoiceIcon({ choice }: { choice: BackgroundChoice }) {
   return (
     <span
       aria-hidden="true"
-      className="inline-block h-[16px] w-[16px] shrink-0 bg-current"
+      className="inline-block h-6 w-6 shrink-0 bg-current"
       style={{
         WebkitMask: `url('${backgroundChoiceIcons[choice]}') center / contain no-repeat`,
         mask: `url('${backgroundChoiceIcons[choice]}') center / contain no-repeat`,
@@ -310,7 +310,7 @@ export function PreJoinModal({
   const inputCls = isLight ? "text-[#20242D] placeholder:text-[#969EAC]" : "text-white placeholder:text-white/40";
   const btnGhost = isLight ? "border border-[#DEE4EE] bg-white text-[#374153] hover:border-[#A9BDE8] hover:bg-[#F7F9FE]" : "border border-white/[0.10] bg-white/[0.055] text-white/85 hover:border-white/20 hover:bg-white/[0.09]";
   const btnPrimary = "bg-[#5286F6] text-white shadow-[0_12px_30px_rgba(82,134,246,0.25)] hover:bg-[#3E75ED] hover:shadow-[0_14px_34px_rgba(82,134,246,0.34)]";
-  const fxBtnBase = "flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-center text-[11px] font-semibold leading-tight focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6] disabled:cursor-not-allowed disabled:opacity-60";
+  const fxBtnBase = "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:h-11 sm:w-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6] disabled:cursor-not-allowed disabled:opacity-60";
   const fxBtnSelected = isLight
     ? "border border-[#5286F6]/50 bg-[#5286F6]/15 text-[#2459BE] hover:bg-[#5286F6]/20"
     : "border border-[#5286F6]/50 bg-[#5286F6]/20 text-[#C4D6FF] hover:bg-[#5286F6]/25";
@@ -512,14 +512,14 @@ export function PreJoinModal({
 
               {!hideBackgroundFx ? (
                 <div className={`rounded-[20px] ${inputWrap}`}>
-                  <div className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center">
-                    <div className="flex shrink-0 items-center justify-between gap-2 sm:w-[112px] sm:flex-col sm:items-start sm:gap-0">
+                  <div className="flex items-center justify-between gap-2 px-3 py-2.5">
+                    <div className="min-w-0">
                       <span className="text-[12px] font-semibold leading-tight">Background effects</span>
-                      <span className={`text-[10px] ${labelCls}`} role="status">
+                      <span className="sr-only" role="status">
                         {fxApplying ? "Applying…" : localFxMessage || fxStatusText || (videoFxMode === "off" ? "Off" : videoFxMode === "blur" ? "Blur" : "Image")}
                       </span>
                     </div>
-                    <div className="grid min-w-0 flex-1 grid-cols-4 gap-1.5" role="group" aria-label="Background effect choices">
+                    <div className="flex shrink-0 items-center gap-1.5" role="group" aria-label="Background effect choices">
                     {(["off", "blur", "image", "custom"] as BackgroundChoice[]).map((choice) => {
                       const label = choice === "off" ? "No backgrounds" : choice === "blur" ? "Blur" : choice === "image" ? "Image" : "Custom image";
                       return (
@@ -545,12 +545,12 @@ export function PreJoinModal({
                             }
                           }}
                           className={`${fxBtnBase} ${visibleBackgroundChoice === choice ? fxBtnSelected : fxBtnIdle}`}
+                          aria-label={label}
                           aria-pressed={activeBackgroundChoice === choice}
                           aria-expanded={choice === "image" || choice === "custom" ? visibleBackgroundChoice === choice : undefined}
                           title={fxBlockedReason || label}
                         >
                           <BackgroundChoiceIcon choice={choice} />
-                          <span>{label}</span>
                         </button>
                       );
                     })}
