@@ -914,7 +914,7 @@ function VideoTileInner({
                 />
             </div>
 
-            {!accountabilityWall && showBottomShade ? (
+            {!accountabilityWall && showBottomShade && hasCameraOn ? (
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[11] h-[30%] bg-gradient-to-t from-black/80 via-black/38 to-transparent" />
             ) : null}
 
@@ -923,15 +923,17 @@ function VideoTileInner({
                     className={[
                         "pointer-events-none absolute inset-0 z-[13] flex min-h-0 w-full flex-col justify-end overflow-hidden px-3 transition-all duration-300 ease-out",
                         isCompact ? "pb-[2.5rem]" : "pb-[3rem]",
-                        showAllTasks
-                            ? "bg-gradient-to-t from-black/90 via-black/72 to-black/20 opacity-100"
-                            : "group-hover:bg-gradient-to-t group-hover:from-black/90 group-hover:via-black/72 group-hover:to-black/20",
+                        !hasCameraOn
+                            ? ""
+                            : showAllTasks
+                                ? "bg-gradient-to-t from-black/90 via-black/72 to-black/20 opacity-100"
+                                : "group-hover:bg-gradient-to-t group-hover:from-black/90 group-hover:via-black/72 group-hover:to-black/20",
                     ].join(" ")}
                     title={safeTaskList.map((task) => task.text).join("\n")}
                 >
                     <div
                         className={[
-                            "flex min-h-0 w-full flex-col overflow-hidden font-inter text-white transition-all duration-300 ease-out",
+                            `flex min-h-0 w-full flex-col overflow-hidden font-inter transition-all duration-300 ease-out ${!hasCameraOn && isLight ? "text-[#242424]" : "text-white"}`,
                             showAllTasks
                                 ? "max-h-[60%]"
                                 : "max-h-[1.4rem] group-hover:max-h-[60%]",
@@ -939,13 +941,13 @@ function VideoTileInner({
                     >
                         <div className={`flex min-w-0 shrink-0 items-center gap-2 ${isCompact ? "text-[11px] leading-4" : "text-[12px] leading-[1.15rem]"}`}>
                             {safeTaskList[0].completed ? (
-                                <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#81DB86] text-black">
+                                <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#ADD3FF] text-[#17283D]">
                                     <Check size={9} strokeWidth={3} />
                                 </span>
                             ) : (
-                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#81DB86] shadow-[0_0_0_2px_rgba(129,219,134,0.16)]" />
+                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#ADD3FF] shadow-[0_0_0_2px_rgba(173,211,255,0.16)]" />
                             )}
-                            <span className={`min-w-0 font-medium ${safeTaskList[0].completed ? "text-white/65 line-through" : ""} ${showAllTasks ? "whitespace-normal" : "truncate group-hover:whitespace-normal group-hover:overflow-visible"}`}>
+                            <span className={`min-w-0 font-medium ${safeTaskList[0].completed ? (!hasCameraOn && isLight ? "text-black/55 line-through" : "text-white/65 line-through") : ""} ${showAllTasks ? "whitespace-normal" : "truncate group-hover:whitespace-normal group-hover:overflow-visible"}`}>
                                 {safeTaskList[0].text}
                             </span>
                         </div>
@@ -953,9 +955,8 @@ function VideoTileInner({
                         {safeTaskList.length > 1 ? (
                             <div
                                 className={[
-                                    "mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain border-t border-white/20 pt-2 pr-1 text-white/90 transition-all duration-300 ease-out",
-                                    "[scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.32)_transparent]",
-                                    "[&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/30",
+                                    `mt-2 min-h-0 flex-1 space-y-1.5 overflow-y-auto overscroll-contain border-t pt-2 pr-1 transition-all duration-300 ease-out ${!hasCameraOn && isLight ? "border-black/15 text-black/80 [scrollbar-color:rgba(0,0,0,0.28)_transparent] [&::-webkit-scrollbar-thumb]:bg-black/25" : "border-white/20 text-white/90 [scrollbar-color:rgba(255,255,255,0.32)_transparent] [&::-webkit-scrollbar-thumb]:bg-white/30"}`,
+                                    "[scrollbar-width:thin] [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full",
                                     isCompact ? "text-[10px] leading-4" : "text-[11px] leading-4",
                                     showAllTasks
                                         ? "pointer-events-auto opacity-100"
@@ -965,13 +966,13 @@ function VideoTileInner({
                                 {safeTaskList.slice(1).map((task, index) => (
                                     <div key={`${task.text}-${index}`} className="flex items-center gap-2">
                                         {task.completed ? (
-                                            <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#81DB86] text-black">
+                                            <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#ADD3FF] text-[#17283D]">
                                                 <Check size={9} strokeWidth={3} />
                                             </span>
                                         ) : (
-                                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-white/55" />
+                                            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${!hasCameraOn && isLight ? "bg-black/45" : "bg-white/55"}`} />
                                         )}
-                                        <span className={`min-w-0 break-words font-normal ${task.completed ? "text-white/60 line-through" : ""}`}>
+                                        <span className={`min-w-0 break-words font-normal ${task.completed ? (!hasCameraOn && isLight ? "text-black/55 line-through" : "text-white/60 line-through") : ""}`}>
                                             {task.text}
                                         </span>
                                     </div>
@@ -1023,7 +1024,7 @@ function VideoTileInner({
                                         key={`${tileId}-wall-task-${index}-${task.text}`}
                                         className={`flex min-w-0 items-center gap-2 font-inter text-[11px] font-normal leading-4 ${task.completed ? (isLight ? "text-black/45" : "text-white/45") : (isLight ? "text-black/85" : "text-white/90")}`}
                                     >
-                                        <span className={`inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-[2px] border ${task.completed ? "border-[#81DB86] bg-[#81DB86] text-black" : (isLight ? "border-black/55 bg-white/20" : "border-white/60 bg-black/10")}`}>
+                                        <span className={`inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-[2px] border ${task.completed ? "border-[#ADD3FF] bg-[#ADD3FF] text-[#17283D]" : (isLight ? "border-black/55 bg-white/20" : "border-white/60 bg-black/10")}`}>
                                             {task.completed ? <Check size={8} strokeWidth={3} /> : null}
                                         </span>
                                         <span className={`min-w-0 break-words ${task.completed ? "line-through" : ""}`}>
@@ -1041,12 +1042,12 @@ function VideoTileInner({
                 </div>
             ) : (
                 <div
-                    className={`pointer-events-none absolute z-[14] flex min-w-0 items-end justify-between gap-[0.5rem] text-white ${isCompact ? "inset-x-[0.55rem] bottom-[0.45rem]" : "inset-x-[0.75rem] bottom-[0.65rem]"}`}
+                    className={`pointer-events-none absolute z-[14] flex min-w-0 items-end justify-between gap-[0.5rem] ${!hasCameraOn && isLight ? "text-[#242424]" : "text-white"} ${isCompact ? "inset-x-[0.55rem] bottom-[0.45rem]" : "inset-x-[0.75rem] bottom-[0.65rem]"}`}
                 >
                     <div className="min-w-0 max-w-[calc(100%_-_2.5rem)]">
                         <div className="flex min-w-0 items-center gap-[0.4rem]">
                             <span
-                                className={`min-w-0 truncate font-inter ${isCompact ? "text-[10px]" : "text-[12px]"} font-semibold leading-none text-white drop-shadow-md`}
+                                className={`min-w-0 truncate font-inter ${isCompact ? "text-[10px]" : "text-[12px]"} font-semibold leading-none ${!hasCameraOn && isLight ? "text-[#242424]" : "text-white drop-shadow-md"}`}
                             >
                                 {label || "User"}
                             </span>
@@ -1066,7 +1067,7 @@ function VideoTileInner({
 
                         {participantTimeZone ? (
                             <ParticipantTimeLabel
-                                className={`mt-1 truncate font-inter ${isCompact ? "text-[9px]" : "text-[10px]"} font-normal leading-none text-white/70 drop-shadow-md`}
+                                className={`mt-1 truncate font-inter ${isCompact ? "text-[9px]" : "text-[10px]"} font-normal leading-none ${!hasCameraOn && isLight ? "text-black/60" : "text-white/70 drop-shadow-md"}`}
                                 timeZone={participantTimeZone.trim()}
                             />
                         ) : null}
