@@ -1,4 +1,3 @@
-import React from "react";
 import {
     ArrowLeft,
     ArrowRight,
@@ -123,6 +122,7 @@ export default function JoinGateModal({
         ? "border-[#D8D0D0] bg-[#F3F1F1]"
         : "border-[#343434] bg-[#1B1B1B]";
     const muted = isLight ? "text-black/55" : "text-white/55";
+    const accentText = isLight ? "text-[#2451AB]" : "text-[#AFC6FF]";
     const secondaryButton = isLight
         ? "border-[#D8D0D0] bg-[#F3F1F1] text-black/75 hover:bg-[#E7E7E7]"
         : "border-[#343434] bg-[#2B2B2B] text-white/80 hover:bg-[#343434]";
@@ -182,7 +182,7 @@ export default function JoinGateModal({
                                         </div>
                                     </div>
 
-                                    <div className={`hidden rounded-2xl bg-[#5286F6]/15 p-3 sm:block ${isLight ? "text-[#36733B]" : "text-[#A9EDAD]"}`}>
+                                    <div className={`hidden rounded-2xl bg-[#5286F6]/15 p-3 sm:block ${accentText}`}>
                                         <CalendarClock size={22} />
                                     </div>
                                 </div>
@@ -222,7 +222,7 @@ export default function JoinGateModal({
                                     disabled={bookingBusy || bookingDone}
                                     className={`mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl px-5 text-[14px] font-bold transition disabled:cursor-default ${
                                         bookingDone
-                                            ? "border border-[#5286F6]/50 bg-[#5286F6]/15 text-[#4B9A51]"
+                                            ? `border border-[#5286F6]/50 bg-[#5286F6]/15 ${accentText}`
                                             : "bg-[#5286F6] text-black hover:bg-[#5286F6] active:scale-[0.99] disabled:opacity-65"
                                     }`}
                                 >
@@ -296,7 +296,7 @@ export default function JoinGateModal({
                                         <button
                                             type="button"
                                             onClick={onBack}
-                                            className="mt-3 inline-flex items-center gap-2 text-[12px] font-bold text-[#4B9A51] hover:opacity-75"
+                                            className={`mt-3 inline-flex items-center gap-2 text-[12px] font-bold hover:opacity-75 ${accentText}`}
                                         >
                                             Browse sessions <ArrowRight size={14} />
                                         </button>

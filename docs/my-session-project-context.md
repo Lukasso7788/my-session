@@ -12,14 +12,14 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   C:\Users\misha\.codex\worktrees\tasks-pip-accent\my-session.
   This managed worktree is at a detached HEAD; commit this feature here and
   push HEAD:main only after checking origin/main for new commits.
-- Current task: restore the Short Sprints green for the video PiP button in
-  the Tasks side panel and make its dark header Tasks icon visible. The section
-  below records implementation and verification details for continuation.
+- Current task: recolor the scheduled-room join gate's remaining green accents
+  and place room timeline hover details below the bar, while session-card
+  details remain above. The final section records implementation and checks.
   Earlier Plunk work and operational runbook remain documented in
   docs/plunk-email-rollout.md. No mass campaign is authorized by this task.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
-  Do not reset, delete or overwrite it. The active managed worktree also has
-  unrelated generated sitemap changes; leave those unstaged.
+  Do not reset, delete or overwrite it. Inspect active worktree status before
+  staging; never stage unrelated generated files.
 - User requests full project architectural/technical context in a file for every
   code task. Keep this file and feature-specific handoffs current and link them.
 - Latest explicit restriction: do NOT change video behavior during performance
@@ -919,3 +919,46 @@ both themes remains valuable but is not required to establish the missing
 asset root cause. Commit and push to `main` after checking origin/main;
 verify the remote SHA afterward. This context file is intentionally broad
 so the next chat can resume without relying on conversation history.
+
+## 2026-10-05 — Scheduled-room gate accents and stage tooltip placement
+
+The screenshot in this task shows the booked/early-arrival screen for a
+scheduled room. `src/components/JoinGateModal.tsx` renders this gate; the
+production LiveKit room page supplies its current theme and navigation and
+booking callbacks. Three green remnants were present on the dark/light gate:
+the calendar icon, the disabled/confirmed “You're booked” CTA text, and the
+“Browse sessions” link. A theme-aware blue `accentText` now colors only those
+elements (`#2451AB` in light theme, `#AFC6FF` in dark theme), keeping handlers,
+booking timing, text, border/background, and the existing MySession blue intact.
+The green strokes on the user screenshot are not a reason to alter the room's
+Short Sprints accent or the Tasks panel PiP green; those are separate contracts.
+
+`src/components/SessionStageBar.tsx` is shared by the in-room
+`src/components/RoomTopBar.tsx` and listing/detail
+`src/components/SessionCard.tsx`. Its progress/stage identity logic is
+unchanged. An optional `tooltipPlacement: "top" | "bottom"` prop defaults to
+`"top"`, preserving card tooltips above the timeline. RoomTopBar passes
+`tooltipPlacement="bottom"` at both desktop and mobile stage bar call sites,
+putting stage name/duration below the room timeline. The tooltip arrow flips
+with the placement. No video, media, LiveKit, Supabase, or session state
+behavior changes were made.
+
+`scripts/room-stage-tooltip-placement.test.mjs` guards the room/card placement
+contract and the removal of the three green gate accents. Validate with
+`node --test scripts/room-stage-tooltip-placement.test.mjs`, `npx vite build`,
+and `git diff --check`. The implementation was also visually checked in a
+temporary Vite fixture (removed afterward): desktop room tooltip below,
+session-card tooltip above, light and dark join gates, and mobile room tooltip
+below without clipping; browser errors were empty. The screenshot fixture is
+not part of the production diff. `npm run typecheck` is blocked by the
+repository's existing tsconfig project-reference configuration (TS6306/TS6310).
+`npx tsc -p tsconfig.app.json --noEmit` also reports numerous pre-existing
+app-wide diagnostics; a targeted check of the edited files found only an
+unused React import in JoinGateModal, which was removed. Focused ESLint still
+reports existing `no-explicit-any` errors in RoomTopBar and SessionStageBar;
+these unrelated typing refactors were left untouched. This task was left local without a commit or
+push in the implementation turn. The user subsequently requested commit and
+push; `origin/main` was fetched and confirmed equal to the starting HEAD
+`d9dbb7b` before staging. Stage only the five intentional task files, push the
+new commit to `main`, and verify the remote SHA. No database migration is
+required.
