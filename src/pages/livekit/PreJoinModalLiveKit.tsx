@@ -280,7 +280,7 @@ export function PreJoinModal({
   const inputWrap = isLight ? "border border-[#DED8D8] bg-white/75 shadow-sm" : "border border-white/[0.08] bg-white/[0.045] shadow-sm";
   const inputCls = isLight ? "text-black placeholder:text-black/35" : "text-white placeholder:text-white/40";
   const btnGhost = isLight ? "border border-[#D8D1D1] bg-white/80 text-black/75 hover:border-[#BEB6B6] hover:bg-white" : "border border-white/[0.09] bg-white/[0.055] text-white/80 hover:border-white/20 hover:bg-white/[0.09]";
-  const btnPrimary = "bg-[#5286F6] text-white shadow-[0_10px_30px_rgba(82,134,246,0.22)] hover:bg-[#6B98FA] hover:shadow-[0_12px_34px_rgba(82,134,246,0.30)]";
+  const btnPrimary = "!bg-[#5286F6] text-white shadow-[0_10px_30px_rgba(82,134,246,0.22)] hover:!bg-[#6B98FA] hover:shadow-[0_12px_34px_rgba(82,134,246,0.30)]";
   const fxBtnBase = "h-10 rounded-2xl px-4 text-[13px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60";
   const fxBtnSelected = isLight ? "bg-[#252525] text-white hover:bg-[#303030]" : "bg-[#F3F1F1] text-[#252525] hover:bg-[#ECEAEA]";
   const fxBtnIdle = btnGhost;
@@ -292,7 +292,7 @@ export function PreJoinModal({
     ? { color: "#111111", backgroundColor: "#F7F5F5" }
     : { color: "#ffffff", backgroundColor: "#252525" };
   const mediaToggleBase = "inline-flex h-11 items-center justify-center gap-2 rounded-2xl border px-4 text-[13px] font-semibold transition";
-  const mediaToggleOn = isLight ? "border-[#5286F6]/35 bg-[#EAF1FF] text-[#2F5FBD] hover:bg-[#DFEAFF]" : "border-[#5286F6]/45 bg-[#5286F6]/14 text-[#AFC6FF] hover:bg-[#5286F6]/22";
+  const mediaToggleOn = isLight ? "border-[#5286F6]/45 bg-[#EAF1FF] text-[#2F5FBD] hover:bg-[#DFEAFF]" : "border-[#5286F6]/55 bg-[#5286F6]/16 text-[#8EB1FF] hover:bg-[#5286F6]/24";
   const mediaToggleOff = isLight ? "border-[#F65252]/35 bg-[#F65252]/10 text-[#C73535] hover:bg-[#F65252]/15" : "border-[#F65252]/40 bg-[#F65252]/15 text-[#FCA5A5] hover:bg-[#F65252]/22";
 
   const playFallbackTestSound = async () => {
@@ -729,7 +729,7 @@ export function PreJoinModal({
 
         <div className={`flex items-center justify-between gap-3 border-t px-5 py-4 sm:px-7 sm:py-5 ${border} ${isLight ? "bg-white/55" : "bg-black/10"}`}>
           <div className={`hidden items-center gap-2 text-[12px] sm:flex ${labelCls}`}>
-            <span className={`h-2 w-2 rounded-full ${value.videoEnabled || value.audioEnabled ? "bg-[#5286F6] shadow-[0_0_0_4px_rgba(129,219,134,0.12)]" : "bg-white/25"}`} />
+            <span className={`h-2 w-2 rounded-full ${value.videoEnabled || value.audioEnabled ? "bg-[#5286F6] shadow-[0_0_0_4px_rgba(82,134,246,0.14)]" : "bg-white/25"}`} />
             Your setup is saved for the next room
           </div>
 
