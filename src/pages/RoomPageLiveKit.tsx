@@ -21369,7 +21369,7 @@ export function RoomPageLiveKit({
           />
 
           <div
-            className="relative grid grid-rows-1 gap-2 sm:gap-3 flex-1 min-h-0 h-full"
+            className="relative z-0 grid grid-rows-1 gap-2 sm:gap-3 flex-1 min-h-0 h-full"
             style={{
               gridTemplateColumns: isLgUp
                 ? roomGridTemplateColumns

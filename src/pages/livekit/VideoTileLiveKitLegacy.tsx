@@ -939,11 +939,11 @@ function VideoTileInner({
                     >
                         <div className={`flex min-w-0 shrink-0 items-center gap-2 ${isCompact ? "text-[11px] leading-4" : "text-[12px] leading-[1.15rem]"}`}>
                             {safeTaskList[0].completed ? (
-                                <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#81DB86] text-black">
+                                <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#5286F6] text-white">
                                     <Check size={9} strokeWidth={3} />
                                 </span>
                             ) : (
-                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#81DB86] shadow-[0_0_0_2px_rgba(129,219,134,0.16)]" />
+                                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#5286F6] shadow-[0_0_0_2px_rgba(82,134,246,0.18)]" />
                             )}
                             <span className={`min-w-0 font-medium ${safeTaskList[0].completed ? "text-white/65 line-through" : ""} ${showAllTasks ? "whitespace-normal" : "truncate group-hover:whitespace-normal group-hover:overflow-visible"}`}>
                                 {safeTaskList[0].text}
@@ -965,7 +965,7 @@ function VideoTileInner({
                                 {safeTaskList.slice(1).map((task, index) => (
                                     <div key={`${task.text}-${index}`} className="flex items-center gap-2">
                                         {task.completed ? (
-                                            <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#81DB86] text-black">
+                                            <span className="inline-flex h-3 w-3 shrink-0 items-center justify-center rounded-[3px] bg-[#5286F6] text-white">
                                                 <Check size={9} strokeWidth={3} />
                                             </span>
                                         ) : (
@@ -1023,7 +1023,7 @@ function VideoTileInner({
                                         key={`${tileId}-wall-task-${index}-${task.text}`}
                                         className={`flex min-w-0 items-center gap-2 font-inter text-[11px] font-normal leading-4 ${task.completed ? (isLight ? "text-black/45" : "text-white/45") : (isLight ? "text-black/85" : "text-white/90")}`}
                                     >
-                                        <span className={`inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-[2px] border ${task.completed ? "border-[#81DB86] bg-[#81DB86] text-black" : (isLight ? "border-black/55 bg-white/20" : "border-white/60 bg-black/10")}`}>
+                                        <span className={`inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center rounded-[2px] border ${task.completed ? "border-[#5286F6] bg-[#5286F6] text-white" : (isLight ? "border-black/55 bg-white/20" : "border-white/60 bg-black/10")}`}>
                                             {task.completed ? <Check size={8} strokeWidth={3} /> : null}
                                         </span>
                                         <span className={`min-w-0 break-words ${task.completed ? "line-through" : ""}`}>
