@@ -12,9 +12,9 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   C:\Users\misha\.codex\worktrees\tasks-pip-accent\my-session.
   This managed worktree is at a detached HEAD; commit this feature here and
   push HEAD:main only after checking origin/main for new commits.
-- Current task: recolor the scheduled-room join gate's remaining green accents
-  and place room timeline hover details below the bar, while session-card
-  details remain above. The final section records implementation and checks.
+- Current task: redesign the production LiveKit pre-join modal, remove its
+  remaining green camera/CTA hover colors, and ensure room timeline tooltips
+  paint above the video grid. The final section records implementation.
   Earlier Plunk work and operational runbook remain documented in
   docs/plunk-email-rollout.md. No mass campaign is authorized by this task.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
@@ -962,3 +962,51 @@ push; `origin/main` was fetched and confirmed equal to the starting HEAD
 `d9dbb7b` before staging. Stage only the five intentional task files, push the
 new commit to `main`, and verify the remote SHA. No database migration is
 required.
+
+## 2026-10-05 — Pre-join redesign and room tooltip stacking fix
+
+The production room imports `PreJoinModal` from
+`src/pages/livekit/PreJoinModalLiveKit.tsx` (not the older
+`src/components/PreJoinModal.tsx`). `src/pages/RoomPageLiveKit.tsx` owns
+device enumeration, prepared preview tracks, video effect application,
+join/cancel, audio gesture, and persistent media preferences, then passes
+values and callbacks into this modal. Do not change LiveKit video behavior or
+the pre-join preview track lifecycle during future visual revisions.
+
+The pre-join now uses a clearer two-column desktop layout: large live camera
+preview on the left with microphone/camera toggles directly below it, and
+display name plus microphone/camera/speaker selection on the right. Speaker
+test and device refresh stay visible. Audio processing and background effects
+are native keyboard-accessible disclosures; all prior controls, callbacks,
+presets, upload/reset/reapply, status and error text remain available. Presets
+must stay available when FX mode is off: users need to choose an image before
+the room's `applyPrejoinVideoFx("bg", url)` can succeed. Mobile collapses to
+one column; the footer CTA remains visible. Both light and dark themes use
+MySession blue `#5286F6` for active media toggles and the Join button, with
+blue hover and icon/text colors instead of the old green tokens. The component
+has dialog semantics and explicit labels for name and device selects.
+
+The user screenshot of a room showed a stage tooltip being covered by the
+video grid even though the tooltip itself had `z-[9999]`. `RoomTopBar` had an
+isolated stacking context at auto z-index; the following video grid was
+painted on top of it. Its root now has `relative isolate z-[60]`, while the
+following grid in RoomPageLiveKit has `relative isolate z-0`. This elevates
+the whole bar and its below-bar tooltip above videos/side panels without
+raising it above fixed room UI overlays at z-80/90+. Keep the existing
+`tooltipPlacement="bottom"` in both room bars and top default for session
+cards. Do not solve this by increasing only the tooltip child's z-index.
+
+`scripts/prejoin-and-stage-layering.test.mjs` guards the production import,
+unique media toggles, blue hover contract, and stacking layers. Run it with
+`scripts/room-stage-tooltip-placement.test.mjs`, then run Vite build and
+`git diff --check`. The app-wide typecheck and component ESLint still have
+pre-existing diagnostics described above; do not treat them as caused by
+this layout change. `prejoin-preview.html` and `src/prejoin-preview.tsx` are
+local-only Vite preview fixtures with mock devices and no real room join;
+they are intentionally not included in the production commit. While the
+local server is running, `/prejoin-preview.html` shows dark mode and
+`?theme=light` shows light mode. Headless Chrome screenshots were used to
+visually check both desktop themes and a 500px narrow view. The latest user
+explicitly requested commit and push for the production fixes; fetch and
+verify `origin/main` before pushing, and stage only production files, the
+test, and this handoff. No schema or deployment secret changes are needed.

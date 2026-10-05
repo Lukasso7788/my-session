@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { LocalVideoTrack } from "livekit-client";
+import { ArrowRight, Check, ChevronDown, X } from "lucide-react";
 
 type RoomTheme = "dark" | "light";
 type FxMode = "off" | "blur" | "bg";
@@ -271,29 +272,31 @@ export function PreJoinModal({
     "fixed inset-0 z-[2147483647] flex items-stretch justify-center px-0 py-0 sm:items-center sm:px-3 sm:py-6 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]";
 
   const card = [
-    "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-[0_18px_48px_rgba(0,0,0,0.26)] sm:max-h-[92dvh] sm:max-w-[1040px] sm:rounded-[30px]",
-    isLight ? "border-white/80 bg-[#F6F4F4] text-black" : "border-white/[0.09] bg-[#181818] text-white",
+    "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-[0_28px_90px_rgba(0,0,0,0.36)] sm:max-h-[92dvh] sm:max-w-[1080px] sm:rounded-[28px]",
+    isLight ? "border-white/80 bg-[#F7F8FB] text-[#20242D]" : "border-white/[0.10] bg-[#191C23] text-white",
   ].join(" ");
 
-  const border = isLight ? "border-[#DDD7D7]" : "border-white/[0.08]";
-  const labelCls = isLight ? "text-black/60" : "text-white/65";
-  const inputWrap = isLight ? "border border-[#DED8D8] bg-white/75 shadow-sm" : "border border-white/[0.08] bg-white/[0.045] shadow-sm";
-  const inputCls = isLight ? "text-black placeholder:text-black/35" : "text-white placeholder:text-white/40";
-  const btnGhost = isLight ? "border border-[#D8D1D1] bg-white/80 text-black/75 hover:border-[#BEB6B6] hover:bg-white" : "border border-white/[0.09] bg-white/[0.055] text-white/80 hover:border-white/20 hover:bg-white/[0.09]";
-  const btnPrimary = "bg-[#5286F6] text-[#102012] shadow-[0_10px_30px_rgba(129,219,134,0.22)] hover:bg-[#91E496] hover:shadow-[0_12px_34px_rgba(129,219,134,0.30)]";
+  const border = isLight ? "border-[#E4E8F0]" : "border-white/[0.09]";
+  const labelCls = isLight ? "text-[#667080]" : "text-[#AAB4C4]";
+  const inputWrap = isLight ? "border border-[#E1E6EF] bg-white shadow-sm" : "border border-white/[0.09] bg-white/[0.045]";
+  const inputCls = isLight ? "text-[#20242D] placeholder:text-[#969EAC]" : "text-white placeholder:text-white/40";
+  const btnGhost = isLight ? "border border-[#DEE4EE] bg-white text-[#374153] hover:border-[#A9BDE8] hover:bg-[#F7F9FE]" : "border border-white/[0.10] bg-white/[0.055] text-white/85 hover:border-white/20 hover:bg-white/[0.09]";
+  const btnPrimary = "bg-[#5286F6] text-white shadow-[0_12px_30px_rgba(82,134,246,0.25)] hover:bg-[#3E75ED] hover:shadow-[0_14px_34px_rgba(82,134,246,0.34)]";
   const fxBtnBase = "h-10 rounded-2xl px-4 text-[13px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60";
-  const fxBtnSelected = isLight ? "bg-[#252525] text-white hover:bg-[#303030]" : "bg-[#F3F1F1] text-[#252525] hover:bg-[#ECEAEA]";
+  const fxBtnSelected = isLight
+    ? "border border-[#5286F6]/50 bg-[#5286F6]/15 text-[#2459BE] hover:bg-[#5286F6]/20"
+    : "border border-[#5286F6]/50 bg-[#5286F6]/20 text-[#C4D6FF] hover:bg-[#5286F6]/25";
   const fxBtnIdle = btnGhost;
   const selectCls = [
     "h-11 w-full rounded-2xl px-3 text-[13px] outline-none transition focus:ring-2 focus:ring-[#5286F6]/30",
-    isLight ? "border border-[#D8D1D1] bg-white text-black" : "border border-white/[0.09] bg-[#222222] text-white",
+    isLight ? "border border-[#DEE4EE] bg-white text-[#20242D]" : "border border-white/[0.10] bg-[#252A34] text-white",
   ].join(" ");
   const optionStyle: React.CSSProperties = isLight
     ? { color: "#111111", backgroundColor: "#F7F5F5" }
     : { color: "#ffffff", backgroundColor: "#252525" };
-  const mediaToggleBase = "inline-flex h-11 items-center justify-center gap-2 rounded-2xl border px-4 text-[13px] font-semibold transition";
-  const mediaToggleOn = isLight ? "border-[#9DE4A1] bg-[#E9F9EA] text-[#205B25] hover:bg-[#DFF5E1]" : "border-[#5286F6]/35 bg-[#5286F6]/12 text-[#B8F2BC] hover:bg-[#5286F6]/18";
-  const mediaToggleOff = isLight ? "border-[#F65252]/35 bg-[#F65252]/10 text-[#C73535] hover:bg-[#F65252]/15" : "border-[#F65252]/40 bg-[#F65252]/15 text-[#FCA5A5] hover:bg-[#F65252]/22";
+  const mediaToggleBase = "inline-flex h-12 min-w-0 flex-1 items-center justify-center gap-2.5 rounded-2xl border px-3 text-[13px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6]";
+  const mediaToggleOn = isLight ? "border-[#A9C4FC] bg-[#EAF1FF] text-[#2459BE] hover:bg-[#DDE9FF]" : "border-[#5286F6]/45 bg-[#5286F6]/18 text-[#C4D6FF] hover:bg-[#5286F6]/25";
+  const mediaToggleOff = isLight ? "border-[#DEE4EE] bg-white text-[#5D6879] hover:bg-[#F1F4F9]" : "border-white/[0.12] bg-white/[0.06] text-[#C1C9D5] hover:bg-white/[0.10]";
 
   const playFallbackTestSound = async () => {
     try {
@@ -356,13 +359,16 @@ export function PreJoinModal({
     <div
       className={overlay}
       data-theme={theme}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="prejoin-title"
       style={{
         colorScheme: theme,
         zIndex: 2147483647,
       }}
     >
       <div
-        className="absolute inset-0 z-0 bg-black/70 backdrop-blur-md"
+        className="absolute inset-0 z-0 bg-black/70 backdrop-blur-[10px]"
         onClick={onCancel}
       />
 
@@ -370,42 +376,40 @@ export function PreJoinModal({
         className={`${card} z-10`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className={`relative overflow-hidden border-b px-5 py-4 sm:px-7 sm:py-5 ${border}`}>
+        <div className={`relative shrink-0 overflow-hidden border-b px-5 py-4 sm:px-7 sm:py-5 ${border}`}>
           <div className="pointer-events-none absolute -right-20 -top-28 h-56 w-56 rounded-full bg-[#5286F6]/10 blur-3xl" />
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3.5">
-              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${isLight ? "border-[#BEEFC1] bg-[#E8F9E9] text-[#25722B]" : "border-[#5286F6]/20 bg-[#5286F6]/10 text-[#5286F6]"}`}>
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${isLight ? "border-[#C9D9FB] bg-[#EAF1FF] text-[#336BD8]" : "border-[#5286F6]/25 bg-[#5286F6]/15 text-[#9AB9FF]"}`}>
                 <PreJoinModalIcon className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <div className="font-inter text-[18px] font-semibold tracking-[-0.02em]">Ready to focus?</div>
-                  <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.16em] ${isLight ? "border-[#BEEFC1] bg-[#E8F9E9] text-[#3E8C43]" : "border-[#5286F6]/20 bg-[#5286F6]/10 text-[#5286F6]"}`}>Room check</span>
-                </div>
-                <div className={`mt-0.5 text-[12px] ${labelCls}`}>
-                  Check your look and sound before entering the room.
-                </div>
+                <h2 id="prejoin-title" className="font-inter text-[18px] font-semibold tracking-[-0.025em] sm:text-[20px]">Before you join</h2>
+                <p className={`mt-0.5 text-[12px] ${labelCls}`}>Check your camera and sound before entering.</p>
               </div>
             </div>
 
             <button
               onClick={onCancel}
-              className={`flex h-10 w-10 items-center justify-center rounded-2xl transition ${btnGhost}`}
-              title="Close"
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg transition ${btnGhost}`}
+              aria-label="Close pre-join"
               type="button"
             >
-              ✕
+              <X size={18} aria-hidden="true" />
             </button>
           </div>
         </div>
 
         <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-7 sm:py-6">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[400px,1fr]">
-            <div className="flex flex-col gap-4">
-              <div className={`overflow-hidden rounded-[26px] border ${inputWrap}`}>
-                <div className="flex items-center justify-between px-4 py-3">
-                  <div className={`text-[12px] font-semibold ${labelCls}`}>{previewHint}</div>
-                  <div className={`text-[11px] ${labelCls}`}>
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.12fr)_minmax(340px,0.88fr)] lg:gap-7">
+            <div className="flex min-w-0 flex-col gap-4">
+              <div className={`overflow-hidden rounded-[24px] border ${isLight ? "border-[#DDE4EE] bg-white" : "border-white/[0.10] bg-[#222630]"}`}>
+                <div className="relative aspect-video overflow-hidden bg-[#10151F]">
+                  <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-white/15 bg-[#111723]/75 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur-sm">
+                    <span className={`h-1.5 w-1.5 rounded-full ${value.videoEnabled && previewVideoTrack ? "bg-[#5286F6]" : "bg-white/45"}`} />
+                    {previewHint}
+                  </div>
+                  <div className="pointer-events-none absolute right-4 top-4 z-10 rounded-full border border-white/15 bg-[#111723]/75 px-3 py-1.5 text-[11px] text-white/80 backdrop-blur-sm">
                     {value.videoEnabled
                       ? hideBackgroundFx
                         ? "Clean"
@@ -416,22 +420,43 @@ export function PreJoinModal({
                             : "Clean"
                       : "Off"}
                   </div>
-                </div>
-                <div className="relative aspect-video overflow-hidden bg-black">
                   {value.videoEnabled ? (
                     <>
                       <div ref={previewHostRef} className="absolute inset-0 h-full w-full" />
                       {!previewVideoTrack ? (
-                        <div className={`absolute inset-0 flex items-center justify-center text-[12px] ${labelCls}`}>
-                          Allow camera permissions to see preview
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center text-white/80">
+                          <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 bg-white/[0.07] text-[#AFC6FF]"><PreJoinMediaIcon source="camera-on-dark" className="h-7 w-7" /></span>
+                          <span className="text-[13px] font-medium">Allow camera access to see your preview</span>
                         </div>
                       ) : null}
                     </>
                   ) : (
-                    <div className={`absolute inset-0 flex items-center justify-center text-[12px] ${labelCls}`}>
-                      Video disabled
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center text-white/75">
+                      <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 bg-white/[0.07] text-white/70"><PreJoinMediaIcon source="camera-off" className="h-7 w-7" /></span>
+                      <span className="text-[13px] font-medium">Your camera is off</span>
                     </div>
                   )}
+                </div>
+                <div className="flex gap-2.5 p-3 sm:gap-3 sm:p-4">
+                  <button
+                    type="button"
+                    aria-pressed={value.audioEnabled}
+                    onClick={() => onChange({ ...value, audioEnabled: !value.audioEnabled })}
+                    className={`${mediaToggleBase} ${value.audioEnabled ? mediaToggleOn : mediaToggleOff}`}
+                  >
+                    <PreJoinMediaIcon source={value.audioEnabled ? "mic-on" : "mic-off"} />
+                    <span className="truncate">Microphone {value.audioEnabled ? "on" : "off"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    aria-pressed={value.videoEnabled}
+                    onClick={() => onChange({ ...value, videoEnabled: !value.videoEnabled })}
+                    className={`${mediaToggleBase} ${value.videoEnabled ? mediaToggleOn : mediaToggleOff}`}
+                  >
+                    <PreJoinMediaIcon source={value.videoEnabled ? "camera-on-dark" : "camera-off"} />
+                    <span className="truncate">Camera {value.videoEnabled ? "on" : "off"}</span>
+                  </button>
                 </div>
               </div>
 
@@ -449,13 +474,15 @@ export function PreJoinModal({
               ) : null}
 
               {!hideBackgroundFx ? (
-                <div className={`rounded-3xl p-4 ${inputWrap}`}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className={`text-[12px] font-semibold ${labelCls}`}>Background effects</div>
-                    <div className={`text-[11px] ${labelCls}`}>
-                      {fxApplying ? "Applying…" : localFxMessage || fxStatusText || ""}
-                    </div>
-                  </div>
+                <details className={`group rounded-[20px] ${inputWrap}`}>
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5286F6] [&::-webkit-details-marker]:hidden">
+                    <span className="text-[13px] font-semibold">Background effects</span>
+                    <span className={`flex items-center gap-2 text-[11px] ${labelCls}`}>
+                      {fxApplying ? "Applying…" : localFxMessage || fxStatusText || (videoFxMode === "off" ? "Off" : videoFxMode === "blur" ? "Blur" : "Image")}
+                      <ChevronDown size={16} aria-hidden="true" className="transition-transform group-open:rotate-180" />
+                    </span>
+                  </summary>
+                  <div className={`border-t px-4 pb-4 ${border}`}>
 
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     {(["off", "blur", "bg"] as FxMode[]).map((mode) => (
@@ -538,8 +565,8 @@ export function PreJoinModal({
                               />
                               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/[0.04]" />
                               {selected ? (
-                                <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#5286F6] text-[11px] font-bold text-[#102012] shadow-sm">
-                                  ✓
+                                <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#5286F6] text-[11px] font-bold text-white shadow-sm">
+                                  <Check size={12} aria-hidden="true" />
                                 </span>
                               ) : null}
                             </div>
@@ -605,15 +632,22 @@ export function PreJoinModal({
                       <div className={`mt-2 truncate text-[10px] ${labelCls}`}>Custom image selected</div>
                     ) : null}
                   </div>
-                </div>
+                  </div>
+                </details>
               ) : null}
             </div>
 
-            <div className="flex flex-col gap-4">
+            <div className="flex min-w-0 flex-col gap-5">
+              <div>
+                <div className="text-[15px] font-semibold tracking-[-0.01em]">Your setup</div>
+                <p className={`mt-1 text-[12px] ${labelCls}`}>Choose how you'll enter the room.</p>
+              </div>
+
               <div className="flex flex-col gap-2">
-                <div className={`text-[12px] ${labelCls}`}>Display name</div>
+                <label htmlFor="prejoin-display-name" className="text-[12px] font-semibold">Display name</label>
                 <div className={`rounded-2xl px-4 py-3 ${inputWrap}`}>
                   <input
+                    id="prejoin-display-name"
                     value={value.displayName}
                     onChange={(e) => onChange({ ...value, displayName: e.target.value })}
                     placeholder="Your name…"
@@ -622,10 +656,15 @@ export function PreJoinModal({
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className={`border-t pt-5 ${border}`}>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="text-[13px] font-semibold">Devices</div>
+                  <span className={`text-[11px] ${labelCls}`}>Choose your preferred input & output</span>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="flex flex-col gap-2">
-                  <div className={`text-[12px] ${labelCls}`}>Microphone</div>
-                  <select value={value.audioInputId} onChange={(e) => onChange({ ...value, audioInputId: e.target.value })} className={selectCls}>
+                  <label htmlFor="prejoin-microphone" className="text-[12px] font-medium">Microphone</label>
+                  <select id="prejoin-microphone" value={value.audioInputId} onChange={(e) => onChange({ ...value, audioInputId: e.target.value })} className={selectCls}>
                     <option value="" style={optionStyle}>Default</option>
                     {devices.audioInputs.map((d, i) => (
                       <option key={d.deviceId || `mic-${i}`} value={d.deviceId} style={optionStyle}>
@@ -636,8 +675,8 @@ export function PreJoinModal({
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <div className={`text-[12px] ${labelCls}`}>Camera</div>
-                  <select value={value.videoInputId} onChange={(e) => onChange({ ...value, videoInputId: e.target.value })} className={selectCls}>
+                  <label htmlFor="prejoin-camera" className="text-[12px] font-medium">Camera</label>
+                  <select id="prejoin-camera" value={value.videoInputId} onChange={(e) => onChange({ ...value, videoInputId: e.target.value })} className={selectCls}>
                     <option value="" style={optionStyle}>Default</option>
                     {devices.videoInputs.map((d, i) => (
                       <option key={d.deviceId || `cam-${i}`} value={d.deviceId} style={optionStyle}>
@@ -648,8 +687,8 @@ export function PreJoinModal({
                 </div>
 
                 <div className="flex flex-col gap-2 sm:col-span-2">
-                  <div className={`text-[12px] ${labelCls}`}>Speaker</div>
-                  <select value={value.audioOutputId} onChange={(e) => onChange({ ...value, audioOutputId: e.target.value })} className={selectCls}>
+                  <label htmlFor="prejoin-speaker" className="text-[12px] font-medium">Speaker</label>
+                  <select id="prejoin-speaker" value={value.audioOutputId} onChange={(e) => onChange({ ...value, audioOutputId: e.target.value })} className={selectCls}>
                     <option value="default" style={optionStyle}>Default</option>
                     {devices.audioOutputs.map((d, i) => (
                       <option key={d.deviceId || `speaker-${i}`} value={d.deviceId} style={optionStyle}>
@@ -658,90 +697,58 @@ export function PreJoinModal({
                     ))}
                   </select>
                 </div>
-              </div>
-
-              <div className={`rounded-2xl p-4 ${inputWrap}`}>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <button
-                    type="button"
-                    onClick={() => onChange({ ...value, audioEnabled: !value.audioEnabled })}
-                    className={`${mediaToggleBase} ${value.audioEnabled ? mediaToggleOn : mediaToggleOff}`}
-                  >
-                    <PreJoinMediaIcon source={value.audioEnabled ? "mic-on" : "mic-off"} />
-                    <span>{value.audioEnabled ? "Microphone on" : "Microphone off"}</span>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button onClick={handleTestSpeaker} className={`h-10 rounded-xl px-3.5 text-[12px] font-semibold transition ${btnGhost}`} type="button">
+                    Test sound
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={() => onChange({ ...value, videoEnabled: !value.videoEnabled })}
-                    className={`${mediaToggleBase} ${value.videoEnabled ? mediaToggleOn : mediaToggleOff}`}
-                  >
-                    <PreJoinMediaIcon source={value.videoEnabled ? "camera-on-dark" : "camera-off"} />
-                    <span>{value.videoEnabled ? "Camera on" : "Camera off"}</span>
+                  <button onClick={onRefreshDevices} className={`h-10 rounded-xl px-3.5 text-[12px] font-semibold transition ${btnGhost}`} type="button">
+                    Refresh devices
                   </button>
-
-                  <label className="flex items-center gap-2 text-[13px]">
-                    <input type="checkbox" checked={value.echoCancellation} onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })} />
-                    <span className={labelCls}>Echo cancellation</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 text-[13px]">
-                    <input type="checkbox" checked={value.noiseSuppression} onChange={(e) => onChange({ ...value, noiseSuppression: e.target.checked })} />
-                    <span className={labelCls}>Noise suppression</span>
-                  </label>
-
-                  <label className="flex items-center gap-2 text-[13px] sm:col-span-2">
-                    <input type="checkbox" checked={value.autoGainControl} onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })} />
-                    <span className={labelCls}>Auto gain control</span>
-                  </label>
-
-                  <div className={`text-[11px] leading-4 sm:col-span-2 ${labelCls}`}>
-                    Voice sounds quiet or clipped? Turn Noise suppression off first. Your choices are saved for the next room.
-                  </div>
-                </div>
-
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button onClick={onRefreshDevices} className={`h-10 rounded-2xl px-4 text-[13px] font-semibold ${btnGhost}`} type="button">
-                      Refresh devices
-                    </button>
-
-                    <button onClick={handleTestSpeaker} className={`h-10 rounded-2xl px-4 text-[13px] font-semibold ${btnGhost}`} type="button">
-                      Test sound
-                    </button>
-                  </div>
-
-                  <div className={`text-[12px] ${labelCls}`}>Tip: allow mic/camera to see device names</div>
                 </div>
               </div>
 
-              <div className={`rounded-2xl p-4 ${isLight ? "border border-[#5286F6]/20 bg-[#5286F6]/8" : "border border-[#2B2B2B] bg-[#252525]"}`}>
-                <div className={`text-[12px] font-semibold ${isLight ? "text-[#2459B8]" : "text-white/80"}`}>
-                  Quick sanity check
+              <details className={`group border-t pt-4 ${border}`}>
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[13px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5286F6] [&::-webkit-details-marker]:hidden">
+                  Audio processing
+                  <ChevronDown size={16} aria-hidden="true" className={`transition-transform group-open:rotate-180 ${labelCls}`} />
+                </summary>
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="flex items-center gap-2 text-[12px]">
+                    <input className="accent-[#5286F6]" type="checkbox" checked={value.echoCancellation} onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })} />
+                    <span>Echo cancellation</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-[12px]">
+                    <input className="accent-[#5286F6]" type="checkbox" checked={value.noiseSuppression} onChange={(e) => onChange({ ...value, noiseSuppression: e.target.checked })} />
+                    <span>Noise suppression</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-[12px] sm:col-span-2">
+                    <input className="accent-[#5286F6]" type="checkbox" checked={value.autoGainControl} onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })} />
+                    <span>Auto gain control</span>
+                  </label>
                 </div>
-                <div className={`mt-1 text-[12px] ${isLight ? "text-[#2459B8]/75" : "text-white/65"}`}>
-                  If preview is blank — allow camera permissions in the browser.
-                </div>
-              </div>
+                <p className={`mt-3 text-[11px] leading-4 ${labelCls}`}>Voice quiet or clipped? Try turning noise suppression off.</p>
+              </details>
+              <p className={`text-[11px] leading-4 ${labelCls}`}>Allow camera and microphone access in your browser to see device names and preview.</p>
             </div>
           </div>
         </div>
 
-        <div className={`flex items-center justify-between gap-3 border-t px-5 py-4 sm:px-7 sm:py-5 ${border} ${isLight ? "bg-white/55" : "bg-black/10"}`}>
+        <div className={`flex shrink-0 items-center justify-between gap-3 border-t px-5 py-4 sm:px-7 sm:py-5 ${border} ${isLight ? "bg-white/80" : "bg-[#1C2029]"}`}>
           <div className={`hidden items-center gap-2 text-[12px] sm:flex ${labelCls}`}>
-            <span className={`h-2 w-2 rounded-full ${value.videoEnabled || value.audioEnabled ? "bg-[#5286F6] shadow-[0_0_0_4px_rgba(129,219,134,0.12)]" : "bg-white/25"}`} />
-            Your setup is saved for the next room
+            <span className="h-2 w-2 rounded-full bg-[#5286F6] shadow-[0_0_0_4px_rgba(82,134,246,0.14)]" />
+            Your choices are saved for next time
           </div>
 
-          <div className="ml-auto flex items-center gap-3">
-          <button onClick={onCancel} className={`h-11 rounded-2xl px-5 text-[13px] font-semibold transition ${btnGhost}`} type="button">
-            Cancel
-          </button>
+          <div className="ml-auto flex w-full items-center gap-2.5 sm:w-auto sm:gap-3">
+            <button onClick={onCancel} className={`h-11 rounded-xl px-4 text-[13px] font-semibold transition sm:px-5 ${btnGhost}`} type="button">
+              Cancel
+            </button>
 
-          <button onClick={handleJoin} disabled={fxApplying} className={`inline-flex h-11 items-center gap-2 rounded-2xl px-6 text-[13px] font-semibold transition duration-200 ${btnPrimary} disabled:opacity-70`} type="button">
-            <span>{fxApplying ? "Applying background…" : "Join room"}</span>
-            {!fxApplying ? <span aria-hidden="true">→</span> : null}
-          </button>
+            <button onClick={handleJoin} disabled={fxApplying} className={`inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl px-6 text-[13px] font-semibold transition duration-200 sm:flex-none ${btnPrimary} disabled:opacity-70`} type="button">
+              <span>{fxApplying ? "Applying background…" : "Join room"}</span>
+              {!fxApplying ? <ArrowRight size={16} aria-hidden="true" /> : null}
+            </button>
           </div>
         </div>
 
