@@ -61,8 +61,8 @@ function ToggleRow(props: {
                     "relative shrink-0 w-[42px] h-[24px] rounded-full transition border disabled:opacity-50",
                     checked
                         ? isLight
-                            ? "bg-[#81DB86] border-[#81DB86]"
-                            : "bg-[#81DB86] border-[#81DB86]"
+                            ? "bg-[#5286F6] border-[#5286F6]"
+                            : "bg-[#5286F6] border-[#5286F6]"
                         : isLight
                             ? "bg-[#F3F1F1] border-[#D8D0D0]"
                             : "bg-[#3F3F46] border-[#3F3F46]",
@@ -108,7 +108,7 @@ function CompactToggleTile(props: {
                 onClick={() => onChange(!checked)}
                 className={[
                     "relative shrink-0 w-[42px] h-[24px] rounded-full transition border disabled:opacity-50",
-                    checked ? "bg-[#81DB86] border-[#81DB86]" : isLight ? "bg-[#EAE7E7] border-[#D8D0D0]" : "bg-[#3F3F46] border-[#3F3F46]",
+                    checked ? "bg-[#5286F6] border-[#5286F6]" : isLight ? "bg-[#EAE7E7] border-[#D8D0D0]" : "bg-[#3F3F46] border-[#3F3F46]",
                 ].join(" ")}
                 aria-pressed={checked}
                 title={label}
@@ -350,7 +350,7 @@ function RecoveryGuideModal(props: {
                                     <div
                                         className={[
                                             "mt-0.5 w-6 h-6 rounded-full shrink-0 flex items-center justify-center text-[12px] font-bold",
-                                            isLight ? "bg-[#5286F6] text-white" : "bg-[#81DB86] text-[#0D2610]",
+                                            isLight ? "bg-[#5286F6] text-white" : "bg-[#5286F6] text-[#0D2610]",
                                         ].join(" ")}
                                     >
                                         {index + 1}
@@ -1451,7 +1451,7 @@ export function RoomSettingsModalLiveKit({
                             </button>
                             <button
                                 onClick={onClose}
-                                className="h-9 rounded-xl bg-[#81DB86] px-4 text-[11px] font-bold text-[#112314] hover:brightness-95"
+                                className="h-9 rounded-xl bg-[#5286F6] px-4 text-[11px] font-bold text-[#112314] hover:brightness-95"
                                 type="button"
                             >
                                 Done
