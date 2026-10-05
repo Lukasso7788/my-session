@@ -5206,7 +5206,7 @@ function AccountabilityWall({
   const mutedText = isLight ? "text-black/55" : "text-white/55";
   const taskIconSrc = isLight
     ? "/icons/tasks-light.svg"
-    : "/icons/tasks-dark.svg";
+    : "/icons/tasks.svg";
 
   const syncOwnWallTaskToPanelTasks = async (args: {
     userId: string;
@@ -20079,7 +20079,7 @@ export function RoomPageLiveKit({
           <div className={`flex min-h-[44px] items-center justify-between border-b px-3 py-1.5 ${sidePanelIsLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#343434] bg-[#232323]"}`}>
             <div className="flex min-w-0 items-center gap-2">
               <img
-                src={sidePanelIsLight ? "/icons/tasks-light.svg" : "/icons/tasks-dark.svg"}
+                src={sidePanelIsLight ? "/icons/tasks-light.svg" : "/icons/tasks.svg"}
                 alt=""
                 className="h-4 w-4 shrink-0"
                 draggable={false}

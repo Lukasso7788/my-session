@@ -1,6 +1,6 @@
 # MySession — project architecture and continuation context
 
-Updated: 2026-10-04. This is a project-wide navigation/architecture handoff based on
+Updated: 2026-10-05. This is a project-wide navigation/architecture handoff based on
 the checked-out source, not a claim that every module or production service was
 audited. Never put secret values, tokens, user exports or private logs in this file.
 
@@ -9,11 +9,11 @@ audited. Never put secret values, tokens, user exports or private logs in this f
 - Repository: Lukasso7788/my-session. Deployment branch is main (not necessarily
   the remote default branch). Do not force-push or rewrite shared history.
 - Active implementation checkout:
-  C:\Users\misha\.codex\worktrees\session-indicator-colors\my-session.
+  C:\Users\misha\.codex\worktrees\tasks-pip-accent\my-session.
   This managed worktree is at a detached HEAD; commit this feature here and
   push HEAD:main only after checking origin/main for new commits.
-- Current task: personal dark mode for the room's People, Chat, Tasks and Music
-  side panels, controlled by the first toggle in room Settings. The section
+- Current task: restore the Short Sprints green for the video PiP button in
+  the Tasks side panel and make its dark header Tasks icon visible. The section
   below records implementation and verification details for continuation.
   Earlier Plunk work and operational runbook remain documented in
   docs/plunk-email-rollout.md. No mass campaign is authorized by this task.
@@ -884,3 +884,38 @@ at 430px viewport, and toggle propagation to all four tabs were checked.
 `scripts/room-side-panel-contrast.test.mjs` asserts WCAG AA 4.5:1 minimum for
 the dark palette's key text/icon combinations. No Supabase query, policy,
 schema or subscription changes were made for this feature.
+
+## 2026-10-05 — Tasks panel PiP green and dark header icon regression
+
+The production room route is `src/pages/RoomPageLiveKit.tsx`; its right-side
+Tasks header uses `/icons/tasks-light.svg` for light theme and previously
+requested `/icons/tasks-dark.svg` for dark theme. The latter file does not
+exist in `public/icons`, so the browser renders a broken/empty icon. The
+existing `/icons/tasks.svg` is the same Tasks target artwork filled white and
+is suitable for the dark `#232323` header. Both production references in
+RoomPageLiveKit now use `/icons/tasks.svg` in dark mode, including the shared
+task icon for accountability wall. The stale
+`src/components/RoomPageLiveKit.updated-chat-dm-dropdown.tsx` still contains
+an old path; it is not the routed production room component and was not
+modified in this focused patch.
+
+`src/components/TasksPanel.tsx` renders the inner Tasks panel header. Its
+video Picture-in-Picture control calls the existing
+`onOpenPictureInPicture` callback supplied by RoomPageLiveKit. Commit
+`9deb6ee` had recolored its border, translucent background, hover state,
+text and icon mask tint from the Short Sprints green `#81DB86` to blue
+`#5286F6` as part of a broad accent update. This patch restores `#81DB86`
+only for that PiP button and its icon in both side-panel themes. The adjacent
+Sync with Tasks button and all other blue accents remain untouched. No PiP,
+LiveKit, Supabase, task data, or right-tab behavior changes are made.
+
+`scripts/tasks-panel-visual-regression.test.mjs` guards the PiP green and
+ensures the referenced Tasks icon assets exist with visible fills. Validate
+with `node --test scripts/tasks-panel-visual-regression.test.mjs`,
+`npx vite build`, and `git diff --check`. If future UI design changes the
+markup, adjust the static regression test to assert the new intentional
+contract rather than deleting it silently. A signed-in room screenshot in
+both themes remains valuable but is not required to establish the missing
+asset root cause. Commit and push to `main` after checking origin/main;
+verify the remote SHA afterward. This context file is intentionally broad
+so the next chat can resume without relying on conversation history.
