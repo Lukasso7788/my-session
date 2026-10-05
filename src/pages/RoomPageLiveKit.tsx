@@ -19306,8 +19306,8 @@ export function RoomPageLiveKit({
     ? "bg-[#F3F1F1] border border-[#D8D0D0]"
     : "bg-[#1B1B1B] border border-[#2B2B2B]";
   const bottomBarBg = isLight
-    ? "bg-[#F3F1F1] border border-[#D8D0D0]"
-    : "bg-[#1B1B1B] border border-[#252525]";
+    ? "bg-[#F3F1F1]"
+    : "bg-[#1B1B1B]";
   const voiceUiStatusLabel =
     !voiceUiEnabled
       ? "Voice UI off"
@@ -21342,7 +21342,7 @@ export function RoomPageLiveKit({
             ) : null}
           </>
         ) : null}
-        <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(80px+env(safe-area-inset-bottom))] sm:pb-[calc(90px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
+        <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(68px+env(safe-area-inset-bottom))] sm:pb-[calc(72px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
           <RoomTopBar
             theme={theme}
             sessionTitle={String(session?.title || "Session")}

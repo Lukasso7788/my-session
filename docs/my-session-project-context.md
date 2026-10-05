@@ -1096,3 +1096,48 @@ and direct lint reports 14 existing issues on unchanged lines of the
 component. Dark- and light-theme preview screenshots with focused buttons
 confirmed tooltip placement, contrast, and no clipping. Recheck remote
 status before pushing this follow-up to `main`.
+
+## Neutral pre-join shell, compact room controls, and long room titles (2026-10-05)
+
+The production pre-join is `src/pages/livekit/PreJoinModalLiveKit.tsx`, mounted
+only by `src/pages/RoomPageLiveKit.tsx` (not the older component in
+`src/components/PreJoinModal.tsx`). Its previous redesign tinted the entire
+surface navy/blue. This follow-up makes the modal follow the room's neutral
+palette: light `#F3F1F1`, dark `#1B1B1B`, neutral gray cards/inputs/footer and
+borders. Blue `#5286F6` remains for active/hover/focus states, camera/mic on
+states, and Join. Background-effect behavior and media capture are unchanged.
+
+The room shell is orchestrated by `RoomPageLiveKit.tsx`. It passes a
+`bottomBarBg` surface to `src/pages/livekit/LiveKitBottomBar.tsx`, which wraps
+`LiveKitBottomBarLegacy.tsx`. The visible bar layout is in the legacy file.
+Its outer border, heavy shadow, rounded container and backdrop blur were
+removed, but individual controls retain their 40px/44px hit targets. The
+outer bar is now 60px mobile and 64px desktop, plus 4px and safe-area inset
+at the bottom. The room content reserves 68px mobile/72px desktop, down from
+80px/90px, so video tiles and side panels gain vertical space. Keep the
+reserved room height in sync with the fixed bar height and safe-area padding.
+
+`src/components/RoomTopBar.tsx` owns room-only session title and timeline
+layout; session cards use a separate component. Long room titles are now
+bounded to 280px on desktop and flex within the available header width at
+smaller widths. A `ResizeObserver` measures actual ellipsis overflow and is
+cleaned up; a resize listener is only a fallback. Only truncated titles show
+a CSS-only, no-delay tooltip with the complete name on hover or keyboard
+focus. Header wrappers use `min-w-0` to prevent intrinsic title width from
+stretching the entire room; below the `lg` breakpoint, timer/host/theme
+controls move to the existing second row, keeping the title and participant
+badge inside the viewport. The top row has a raised stacking context so its
+tooltip is above those controls and the timeline. This does not change stage
+timing, media behavior, or room data flow.
+
+The regression file is `scripts/prejoin-and-stage-layering.test.mjs`. A local
+untracked `room-shell-preview.html`/`src/room-shell-preview.tsx` QA fixture
+renders the real top/bottom controls with mock room data; do not stage it.
+The pre-existing `prejoin-preview.html`/`src/prejoin-preview.tsx` remain local
+QA fixtures. Source comparison is the user-provided room screenshot
+`codex-clipboard-564fa91f-86a5-486d-9b4c-f331db11146f.png`; neutral modal
+and long-title screenshots were checked at desktop and narrow widths. There
+are no database, Supabase, LiveKit track, or deployment-configuration changes.
+Preserve existing generated sitemap XML diffs and older untracked screenshots;
+they are not part of this change. Commit/push only production files, test,
+and this context document after verification.

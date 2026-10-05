@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { resolveStageVisual, SessionStageBar } from "./SessionStageBar";
 import { Icon, ParticipantsSmartIcon, type RoomTheme } from "./VideoControls";
 
@@ -100,6 +100,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
     } = props;
 
     const isLight = theme === "light";
+    const titleRef = useRef<HTMLParagraphElement | null>(null);
+    const [titleTruncated, setTitleTruncated] = useState(false);
     const [mobileMusicState, setMobileMusicState] = useState({
         active: false,
         muted: false,
@@ -119,6 +121,20 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         window.dispatchEvent(new Event("mysession:request-soundscape-state"));
         return () => window.removeEventListener("mysession:soundscape-state", handleState);
     }, []);
+
+    useEffect(() => {
+        const title = titleRef.current;
+        if (!title) return;
+        const measure = () => setTitleTruncated(title.scrollWidth > title.clientWidth + 1);
+        measure();
+        const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+        if (observer) observer.observe(title);
+        else window.addEventListener("resize", measure);
+        return () => {
+            observer?.disconnect();
+            if (!observer) window.removeEventListener("resize", measure);
+        };
+    }, [sessionTitle]);
 
     const topBarBg = isLight
         ? "bg-[#F3F1F1]/95 border border-[#CFCFCF]"
@@ -327,18 +343,30 @@ export default function RoomTopBar(props: RoomTopBarProps) {
             // The room tooltip extends below this bar. Lift the whole stacking
             // context above the later video grid; its own z-index cannot escape
             // this isolated parent, but fixed room overlays remain above z-60.
-            className={`relative isolate z-[60] flex w-full rounded-2xl overflow-visible ${topBarBg}`}
+            className={`relative isolate z-[60] flex min-w-0 w-full rounded-2xl overflow-visible ${topBarBg}`}
         >
-            <div className="flex-1 px-4 py-2.5 sm:px-5 sm:py-3 lg:py-2 overflow-visible">
+            <div className="min-w-0 flex-1 px-4 py-2.5 sm:px-5 sm:py-3 lg:py-2 overflow-visible">
                 <div className="flex flex-col gap-2 max-[480px]:gap-2 overflow-visible">
-                    <div className="relative z-10 flex items-center justify-between gap-3">
-                        <div className="min-w-0 shrink-0 lg:max-w-[320px]">
+                    <div className="relative z-40 flex min-w-0 items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1 lg:max-w-[280px] lg:flex-none">
                             <div className="flex items-center gap-2 min-w-0">
-                                <p
-                                    className={`min-w-0 font-inter font-semibold text-[16px] sm:text-[18px] truncate ${strongText}`}
+                                <div
+                                    className="group relative z-40 min-w-0 flex-1 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6]"
+                                    tabIndex={titleTruncated ? 0 : undefined}
+                                    aria-label={titleTruncated ? sessionTitle || "Session" : undefined}
                                 >
-                                    {sessionTitle || "Session"}
-                                </p>
+                                    <p ref={titleRef} className={`truncate font-inter font-semibold text-[16px] sm:text-[18px] ${strongText}`}>
+                                        {sessionTitle || "Session"}
+                                    </p>
+                                    {titleTruncated && (
+                                        <span
+                                            aria-hidden="true"
+                                            className={`pointer-events-none invisible absolute left-0 top-full z-[80] mt-2 w-max max-w-[min(420px,80vw)] whitespace-normal break-words rounded-xl border px-3 py-2 text-left font-inter text-[12px] font-medium leading-5 opacity-0 shadow-xl group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 ${isLight ? "border-[#D8D0D0] bg-white text-[#2F2F2F]" : "border-[#343434] bg-[#242424] text-white"}`}
+                                        >
+                                            {sessionTitle || "Session"}
+                                        </span>
+                                    )}
+                                </div>
 
                                 <span
                                     className={[
@@ -386,7 +414,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                             </div>
                         )}
 
-                        <div className="relative z-10 hidden min-[481px]:flex items-center gap-2 shrink-0">
+                        <div className="relative z-10 hidden lg:flex items-center gap-2 shrink-0">
                             {renderTimer()}
 
                             <button
@@ -436,7 +464,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                         </div>
                     </div>
 
-                    <div className="relative z-10 min-[481px]:hidden flex flex-wrap items-center justify-start gap-2">
+                    <div className="relative z-10 flex lg:hidden flex-wrap items-center justify-start gap-2">
                         {renderTimer()}
 
                         <button

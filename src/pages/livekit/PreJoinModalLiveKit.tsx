@@ -301,32 +301,32 @@ export function PreJoinModal({
 
   const card = [
     "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-[0_28px_90px_rgba(0,0,0,0.36)] sm:max-h-[92dvh] sm:max-w-[1080px] sm:rounded-[28px]",
-    isLight ? "border-white/80 bg-[#F7F8FB] text-[#20242D]" : "border-white/[0.10] bg-[#191C23] text-white",
+    isLight ? "border-[#D8D0D0] bg-[#F3F1F1] text-[#20242D]" : "border-[#2B2B2B] bg-[#1B1B1B] text-white",
   ].join(" ");
 
-  const border = isLight ? "border-[#E4E8F0]" : "border-white/[0.09]";
-  const labelCls = isLight ? "text-[#667080]" : "text-[#AAB4C4]";
-  const inputWrap = isLight ? "border border-[#E1E6EF] bg-white shadow-sm" : "border border-white/[0.09] bg-white/[0.045]";
-  const inputCls = isLight ? "text-[#20242D] placeholder:text-[#969EAC]" : "text-white placeholder:text-white/40";
-  const btnGhost = isLight ? "border border-[#DEE4EE] bg-white text-[#374153] hover:border-[#A9BDE8] hover:bg-[#F7F9FE]" : "border border-white/[0.10] bg-white/[0.055] text-white/85 hover:border-white/20 hover:bg-white/[0.09]";
+  const border = isLight ? "border-[#D8D0D0]" : "border-[#343434]";
+  const labelCls = isLight ? "text-[#686868]" : "text-[#B8B8B8]";
+  const inputWrap = isLight ? "border border-[#D8D0D0] bg-white shadow-sm" : "border border-[#343434] bg-[#242424]";
+  const inputCls = isLight ? "text-[#20242D] placeholder:text-[#909090]" : "text-white placeholder:text-white/40";
+  const btnGhost = isLight ? "border border-[#D8D0D0] bg-white text-[#2F2F2F] hover:border-[#A9C4FC] hover:bg-[#F3F1F1]" : "border border-[#343434] bg-[#242424] text-white/85 hover:border-[#5286F6]/45 hover:bg-[#2F2F2F]";
   const btnPrimary = "bg-[#5286F6] text-white shadow-[0_12px_30px_rgba(82,134,246,0.25)] hover:bg-[#3E75ED] hover:shadow-[0_14px_34px_rgba(82,134,246,0.34)]";
   const fxBtnBase = "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:h-11 sm:w-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6] disabled:cursor-not-allowed disabled:opacity-60";
   const fxBtnSelected = isLight
     ? "border border-[#5286F6]/50 bg-[#5286F6]/15 text-[#2459BE] hover:bg-[#5286F6]/20"
     : "border border-[#5286F6]/50 bg-[#5286F6]/20 text-[#C4D6FF] hover:bg-[#5286F6]/25";
   const fxBtnIdle = isLight
-    ? "border border-[#DEE4EE] bg-white text-[#374153] hover:border-[#5286F6]/50 hover:bg-[#5286F6]/10 hover:text-[#2459BE]"
-    : "border border-white/[0.10] bg-white/[0.055] text-white/85 hover:border-[#5286F6]/50 hover:bg-[#5286F6]/15 hover:text-[#C4D6FF]";
+    ? "border border-[#D8D0D0] bg-white text-[#2F2F2F] hover:border-[#5286F6]/50 hover:bg-[#5286F6]/10 hover:text-[#2459BE]"
+    : "border border-[#343434] bg-[#2F2F2F] text-white/85 hover:border-[#5286F6]/50 hover:bg-[#5286F6]/15 hover:text-[#C4D6FF]";
   const selectCls = [
     "h-11 w-full rounded-2xl px-3 text-[13px] outline-none transition focus:ring-2 focus:ring-[#5286F6]/30",
-    isLight ? "border border-[#DEE4EE] bg-white text-[#20242D]" : "border border-white/[0.10] bg-[#252A34] text-white",
+    isLight ? "border border-[#D8D0D0] bg-white text-[#20242D]" : "border border-[#343434] bg-[#242424] text-white",
   ].join(" ");
   const optionStyle: React.CSSProperties = isLight
-    ? { color: "#111111", backgroundColor: "#F7F5F5" }
-    : { color: "#ffffff", backgroundColor: "#252525" };
+    ? { color: "#111111", backgroundColor: "#F3F1F1" }
+    : { color: "#ffffff", backgroundColor: "#242424" };
   const mediaToggleBase = "inline-flex h-12 min-w-0 flex-1 items-center justify-center gap-2.5 rounded-2xl border px-3 text-[13px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6]";
   const mediaToggleOn = isLight ? "border-[#A9C4FC] bg-[#EAF1FF] text-[#2459BE] hover:bg-[#DDE9FF]" : "border-[#5286F6]/45 bg-[#5286F6]/18 text-[#C4D6FF] hover:bg-[#5286F6]/25";
-  const mediaToggleOff = isLight ? "border-[#DEE4EE] bg-white text-[#5D6879] hover:bg-[#F1F4F9]" : "border-white/[0.12] bg-white/[0.06] text-[#C1C9D5] hover:bg-white/[0.10]";
+  const mediaToggleOff = isLight ? "border-[#D8D0D0] bg-white text-[#5E5E5E] hover:bg-[#F3F1F1]" : "border-[#343434] bg-[#2F2F2F] text-[#C8C8C8] hover:bg-[#383838]";
 
   const playFallbackTestSound = async () => {
     try {
@@ -416,7 +416,6 @@ export function PreJoinModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className={`relative shrink-0 overflow-hidden border-b px-5 py-4 sm:px-7 sm:py-5 ${border}`}>
-          <div className="pointer-events-none absolute -right-20 -top-28 h-56 w-56 rounded-full bg-[#5286F6]/10 blur-3xl" />
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3.5">
               <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${isLight ? "border-[#C9D9FB] bg-[#EAF1FF] text-[#336BD8]" : "border-[#5286F6]/25 bg-[#5286F6]/15 text-[#9AB9FF]"}`}>
@@ -442,13 +441,13 @@ export function PreJoinModal({
         <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-7 sm:py-6">
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.12fr)_minmax(340px,0.88fr)] lg:gap-7">
             <div className="flex min-w-0 flex-col gap-4">
-              <div className={`overflow-hidden rounded-[24px] border ${isLight ? "border-[#DDE4EE] bg-white" : "border-white/[0.10] bg-[#222630]"}`}>
-                <div className="relative aspect-video overflow-hidden bg-[#10151F]">
-                  <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-white/15 bg-[#111723]/75 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur-sm">
+              <div className={`overflow-hidden rounded-[24px] border ${isLight ? "border-[#D8D0D0] bg-white" : "border-[#343434] bg-[#242424]"}`}>
+                <div className="relative aspect-video overflow-hidden bg-[#1B1B1B]">
+                  <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-white/15 bg-[#1B1B1B]/75 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur-sm">
                     <span className={`h-1.5 w-1.5 rounded-full ${value.videoEnabled && previewVideoTrack ? "bg-[#5286F6]" : "bg-white/45"}`} />
                     {previewHint}
                   </div>
-                  <div className="pointer-events-none absolute right-4 top-4 z-10 rounded-full border border-white/15 bg-[#111723]/75 px-3 py-1.5 text-[11px] text-white/80 backdrop-blur-sm">
+                  <div className="pointer-events-none absolute right-4 top-4 z-10 rounded-full border border-white/15 bg-[#1B1B1B]/75 px-3 py-1.5 text-[11px] text-white/80 backdrop-blur-sm">
                     {value.videoEnabled
                       ? hideBackgroundFx
                         ? "Clean"
@@ -555,7 +554,7 @@ export function PreJoinModal({
                             </button>
                             <span
                               aria-hidden="true"
-                              className={`pointer-events-none invisible absolute bottom-full left-1/2 z-[70] mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold opacity-0 shadow-lg peer-hover:visible peer-hover:opacity-100 peer-focus-visible:visible peer-focus-visible:opacity-100 ${isLight ? "border-[#D8E1F0] bg-white text-[#20242D] shadow-black/10" : "border-white/15 bg-[#111723] text-white shadow-black/50"}`}
+                              className={`pointer-events-none invisible absolute bottom-full left-1/2 z-[70] mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold opacity-0 shadow-lg peer-hover:visible peer-hover:opacity-100 peer-focus-visible:visible peer-focus-visible:opacity-100 ${isLight ? "border-[#D8D0D0] bg-white text-[#20242D] shadow-black/10" : "border-[#343434] bg-[#242424] text-white shadow-black/50"}`}
                             >
                               {fxBlockedReason || label}
                             </span>
@@ -700,7 +699,7 @@ export function PreJoinModal({
                                   onSetBgImageUrl(slot.dataUrl);
                                   void Promise.resolve(onApplyVideoFx("bg", slot.dataUrl));
                                 }}
-                                className={`relative block h-[72px] w-full overflow-hidden text-left disabled:cursor-default ${isLight ? "bg-[#EFF2F7]" : "bg-[#252A34]"}`}
+                                className={`relative block h-[72px] w-full overflow-hidden text-left disabled:cursor-default ${isLight ? "bg-[#F3F1F1]" : "bg-[#242424]"}`}
                                 aria-label={`Use ${slot.label} background`}
                                 aria-pressed={selected}
                               >
@@ -828,7 +827,7 @@ export function PreJoinModal({
           </div>
         </div>
 
-        <div className={`flex shrink-0 items-center justify-between gap-3 border-t px-5 py-4 sm:px-7 sm:py-5 ${border} ${isLight ? "bg-white/80" : "bg-[#1C2029]"}`}>
+        <div className={`flex shrink-0 items-center justify-between gap-3 border-t px-5 py-4 sm:px-7 sm:py-5 ${border} ${isLight ? "bg-[#F3F1F1]" : "bg-[#202020]"}`}>
           <div className={`hidden items-center gap-2 text-[12px] sm:flex ${labelCls}`}>
             <span className="h-2 w-2 rounded-full bg-[#5286F6] shadow-[0_0_0_4px_rgba(82,134,246,0.14)]" />
             Your choices are saved for next time

@@ -9,6 +9,7 @@ const prejoin = readFileSync(join(root, "src/pages/livekit/PreJoinModalLiveKit.t
 const room = readFileSync(join(root, "src/pages/RoomPageLiveKit.tsx"), "utf8");
 const topBar = readFileSync(join(root, "src/components/RoomTopBar.tsx"), "utf8");
 const stageBar = readFileSync(join(root, "src/components/SessionStageBar.tsx"), "utf8");
+const bottomBar = readFileSync(join(root, "src/pages/livekit/LiveKitBottomBarLegacy.tsx"), "utf8");
 
 test("production pre-join keeps one camera and mic toggle with blue on/hover states", () => {
   assert.match(room, /from "\.\/livekit\/PreJoinModalLiveKit"/);
@@ -50,4 +51,35 @@ test("pre-join background choices use supplied icons and the room's saved custom
   assert.match(room, /onUploadCustomBackground=\{async \(slotId, file\)/);
   assert.match(room, /readImageFileAsDataUrl\(file\)/);
   assert.match(room, /saveCustomBackgroundSlots\(customBackgroundSlots\)/);
+});
+
+test("pre-join surfaces match the neutral room palette while blue stays an accent", () => {
+  assert.match(prejoin, /bg-\[#F3F1F1\] text-\[#20242D\]/);
+  assert.match(prejoin, /bg-\[#1B1B1B\] text-white/);
+  assert.match(prejoin, /const btnPrimary = "bg-\[#5286F6\]/);
+  assert.doesNotMatch(prejoin, /bg-\[#191C23\]|bg-\[#1C2029\]|bg-\[#222630\]/);
+});
+
+test("room shell gives space back to media and panels without shrinking controls", () => {
+  assert.match(room, /pb-\[calc\(68px\+env\(safe-area-inset-bottom\)\)\]/);
+  assert.match(room, /sm:pb-\[calc\(72px\+env\(safe-area-inset-bottom\)\)\]/);
+  assert.match(bottomBar, /h-\[60px\] sm:h-\[64px\] grid/);
+  assert.match(bottomBar, /const centerControlClass = "h-10 w-10.*md:h-11 md:w-11"/);
+  const bottomBarSurface = room.match(/const bottomBarBg = isLight[\s\S]*?;/)?.[0] || "";
+  assert.match(bottomBarSurface, /bg-\[#F3F1F1\]/);
+  assert.match(bottomBarSurface, /bg-\[#1B1B1B\]/);
+  assert.doesNotMatch(bottomBarSurface, /\bborder\b/);
+});
+
+test("long room titles cannot squeeze the timeline and reveal the full name instantly", () => {
+  assert.match(topBar, /min-w-0 flex-1 px-4/);
+  assert.match(topBar, /lg:max-w-\[280px\]/);
+  assert.match(topBar, /hidden lg:flex items-center/);
+  assert.match(topBar, /flex lg:hidden flex-wrap/);
+  assert.match(topBar, /title\.scrollWidth > title\.clientWidth \+ 1/);
+  assert.match(topBar, /observer\?\.disconnect\(\)/);
+  assert.match(topBar, /\{titleTruncated && \(/);
+  assert.match(topBar, /w-max max-w-\[min\(420px,80vw\)\]/);
+  assert.match(topBar, /group-hover:visible group-hover:opacity-100 group-focus-within:visible/);
+  assert.match(topBar, /\{sessionTitle \|\| "Session"\}/);
 });

@@ -517,9 +517,9 @@ export function LiveKitBottomBar(props: {
 
     return (
         <div className="fixed inset-x-0 bottom-0 z-50">
-            <div className="w-full px-2 sm:px-4 pb-[calc(8px+env(safe-area-inset-bottom))]">
+            <div className="w-full px-2 sm:px-4 pb-[calc(4px+env(safe-area-inset-bottom))]">
                 <div
-                    className={`h-[64px] sm:h-[74px] rounded-2xl shadow-2xl backdrop-blur grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}
+                    className={`h-[60px] sm:h-[64px] grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}
                 >
                     <div className="flex items-center gap-2" ref={moreMenuRef}>
                         <div className="md:hidden relative">
