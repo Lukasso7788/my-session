@@ -377,6 +377,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                         progressStyle="tick"
                                         tickEveryMs={1000}
                                         theme={theme}
+                                        showHoverDetails
+                                        hoverDetailsPlacement="bottom"
                                     />
                                 </div>
                             </div>
