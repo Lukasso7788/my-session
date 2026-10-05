@@ -280,19 +280,19 @@ export function PreJoinModal({
   const inputWrap = isLight ? "border border-[#DED8D8] bg-white/75 shadow-sm" : "border border-white/[0.08] bg-white/[0.045] shadow-sm";
   const inputCls = isLight ? "text-black placeholder:text-black/35" : "text-white placeholder:text-white/40";
   const btnGhost = isLight ? "border border-[#D8D1D1] bg-white/80 text-black/75 hover:border-[#BEB6B6] hover:bg-white" : "border border-white/[0.09] bg-white/[0.055] text-white/80 hover:border-white/20 hover:bg-white/[0.09]";
-  const btnPrimary = "bg-[#81DB86] text-[#102012] shadow-[0_10px_30px_rgba(129,219,134,0.22)] hover:bg-[#91E496] hover:shadow-[0_12px_34px_rgba(129,219,134,0.30)]";
+  const btnPrimary = "bg-[#5286F6] text-[#102012] shadow-[0_10px_30px_rgba(129,219,134,0.22)] hover:bg-[#91E496] hover:shadow-[0_12px_34px_rgba(129,219,134,0.30)]";
   const fxBtnBase = "h-10 rounded-2xl px-4 text-[13px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60";
   const fxBtnSelected = isLight ? "bg-[#252525] text-white hover:bg-[#303030]" : "bg-[#F3F1F1] text-[#252525] hover:bg-[#ECEAEA]";
   const fxBtnIdle = btnGhost;
   const selectCls = [
-    "h-11 w-full rounded-2xl px-3 text-[13px] outline-none transition focus:ring-2 focus:ring-[#81DB86]/30",
+    "h-11 w-full rounded-2xl px-3 text-[13px] outline-none transition focus:ring-2 focus:ring-[#5286F6]/30",
     isLight ? "border border-[#D8D1D1] bg-white text-black" : "border border-white/[0.09] bg-[#222222] text-white",
   ].join(" ");
   const optionStyle: React.CSSProperties = isLight
     ? { color: "#111111", backgroundColor: "#F7F5F5" }
     : { color: "#ffffff", backgroundColor: "#252525" };
   const mediaToggleBase = "inline-flex h-11 items-center justify-center gap-2 rounded-2xl border px-4 text-[13px] font-semibold transition";
-  const mediaToggleOn = isLight ? "border-[#9DE4A1] bg-[#E9F9EA] text-[#205B25] hover:bg-[#DFF5E1]" : "border-[#81DB86]/35 bg-[#81DB86]/12 text-[#B8F2BC] hover:bg-[#81DB86]/18";
+  const mediaToggleOn = isLight ? "border-[#9DE4A1] bg-[#E9F9EA] text-[#205B25] hover:bg-[#DFF5E1]" : "border-[#5286F6]/35 bg-[#5286F6]/12 text-[#B8F2BC] hover:bg-[#5286F6]/18";
   const mediaToggleOff = isLight ? "border-[#F65252]/35 bg-[#F65252]/10 text-[#C73535] hover:bg-[#F65252]/15" : "border-[#F65252]/40 bg-[#F65252]/15 text-[#FCA5A5] hover:bg-[#F65252]/22";
 
   const playFallbackTestSound = async () => {
@@ -371,16 +371,16 @@ export function PreJoinModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className={`relative overflow-hidden border-b px-5 py-4 sm:px-7 sm:py-5 ${border}`}>
-          <div className="pointer-events-none absolute -right-20 -top-28 h-56 w-56 rounded-full bg-[#81DB86]/10 blur-3xl" />
+          <div className="pointer-events-none absolute -right-20 -top-28 h-56 w-56 rounded-full bg-[#5286F6]/10 blur-3xl" />
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3.5">
-              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${isLight ? "border-[#BEEFC1] bg-[#E8F9E9] text-[#25722B]" : "border-[#81DB86]/20 bg-[#81DB86]/10 text-[#81DB86]"}`}>
+              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${isLight ? "border-[#BEEFC1] bg-[#E8F9E9] text-[#25722B]" : "border-[#5286F6]/20 bg-[#5286F6]/10 text-[#5286F6]"}`}>
                 <PreJoinModalIcon className="h-5 w-5" />
               </div>
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2.5">
                   <div className="font-inter text-[18px] font-semibold tracking-[-0.02em]">Ready to focus?</div>
-                  <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.16em] ${isLight ? "border-[#BEEFC1] bg-[#E8F9E9] text-[#3E8C43]" : "border-[#81DB86]/20 bg-[#81DB86]/10 text-[#81DB86]"}`}>Room check</span>
+                  <span className={`rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.16em] ${isLight ? "border-[#BEEFC1] bg-[#E8F9E9] text-[#3E8C43]" : "border-[#5286F6]/20 bg-[#5286F6]/10 text-[#5286F6]"}`}>Room check</span>
                 </div>
                 <div className={`mt-0.5 text-[12px] ${labelCls}`}>
                   Check your look and sound before entering the room.
@@ -521,7 +521,7 @@ export function PreJoinModal({
                             className={`group overflow-hidden rounded-2xl border text-left transition duration-200 ${selected
                               ? isLight
                                 ? "border-[#5286F6] ring-2 ring-[#5286F6]/20"
-                                : "border-[#81DB86] ring-2 ring-[#81DB86]/20"
+                                : "border-[#5286F6] ring-2 ring-[#5286F6]/20"
                               : isLight
                                 ? "border-[#CFC6C6] hover:border-[#AFA6A6]"
                                 : "border-[#2B2B2B] hover:border-[#4A4A4A]"
@@ -538,7 +538,7 @@ export function PreJoinModal({
                               />
                               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-white/[0.04]" />
                               {selected ? (
-                                <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#81DB86] text-[11px] font-bold text-[#102012] shadow-sm">
+                                <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#5286F6] text-[11px] font-bold text-[#102012] shadow-sm">
                                   ✓
                                 </span>
                               ) : null}
@@ -729,7 +729,7 @@ export function PreJoinModal({
 
         <div className={`flex items-center justify-between gap-3 border-t px-5 py-4 sm:px-7 sm:py-5 ${border} ${isLight ? "bg-white/55" : "bg-black/10"}`}>
           <div className={`hidden items-center gap-2 text-[12px] sm:flex ${labelCls}`}>
-            <span className={`h-2 w-2 rounded-full ${value.videoEnabled || value.audioEnabled ? "bg-[#81DB86] shadow-[0_0_0_4px_rgba(129,219,134,0.12)]" : "bg-white/25"}`} />
+            <span className={`h-2 w-2 rounded-full ${value.videoEnabled || value.audioEnabled ? "bg-[#5286F6] shadow-[0_0_0_4px_rgba(129,219,134,0.12)]" : "bg-white/25"}`} />
             Your setup is saved for the next room
           </div>
 
