@@ -840,7 +840,7 @@ export default function PreJoinModal({
 
                         <button
                             onClick={onClickJoin}
-                            className="h-11 px-5 rounded-xl font-semibold text-[13px] bg-emerald-500 hover:bg-emerald-600 text-[#02140B]"
+                            className="h-11 px-5 rounded-xl font-semibold text-[13px] bg-[#5286F6] hover:bg-[#6B98FA] text-white transition-colors"
                             type="button"
                         >
                             Join room
