@@ -165,7 +165,7 @@ export function RoomSoundscapePanel({
                 onClick={() => onListeningModeChange(mode)}
                 className={`h-9 rounded-[10px] text-[11px] font-medium transition ${
                   listeningMode === mode
-                    ? isDark ? "bg-[#81DB86] text-[#102816]" : "bg-[#2F2F2F] text-white"
+                    ? isDark ? "bg-[#5286F6] text-[#FFFFFF]" : "bg-[#2F2F2F] text-white"
                     : isDark ? "text-[#CBD2DA] hover:text-white" : "text-[#2F2F2F]/60 hover:text-[#2F2F2F]"
                 }`}
               >
@@ -303,7 +303,7 @@ export function RoomSoundscapePanel({
                 className={`flex h-10 w-full items-center justify-center gap-2 rounded-xl text-[10px] font-semibold transition disabled:cursor-wait disabled:opacity-55 ${
                   sharingTabMusic
                     ? isDark ? "bg-[#4A292B] text-[#FFB5B8] hover:bg-[#5B3033]" : "bg-[#FFF0F0] text-[#B54444] hover:bg-[#FFE7E7]"
-                    : isDark ? "bg-[#81DB86] text-[#102816] hover:bg-[#9AE99E]" : "bg-[#2F2F2F] text-white hover:bg-[#252525]"
+                    : isDark ? "bg-[#5286F6] text-[#FFFFFF] hover:bg-[#6B98FA]" : "bg-[#2F2F2F] text-white hover:bg-[#252525]"
                 }`}
               >
                 <RadioTower className="h-3.5 w-3.5" strokeWidth={1.8} />
