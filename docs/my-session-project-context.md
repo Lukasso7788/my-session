@@ -1070,3 +1070,29 @@ remain unchanged. The untracked `prejoin-preview.html` and
 included in the commit. The user's request explicitly includes commit and
 push to `main`; check `origin/main` before pushing, do not commit unrelated
 generated sitemap XML files or local screenshots. No schema change is needed.
+
+## Instant background-choice hover feedback (2026-10-05)
+
+Follow-up to the icon-only pre-join design: the four `Background effects`
+buttons now show an immediate custom tooltip on pointer hover and keyboard
+focus-visible. At rest the row remains icons-only; each button retains its accessible
+`aria-label` and active `aria-pressed` state. The delayed browser-native
+`title` was removed. The tooltip shows the effect name, or the existing
+blocked reason when video effects are unavailable, and has no animation
+delay. Idle buttons also get an immediate blue hover treatment in light and
+dark themes. Pointer clicks do not leave a focus-only tooltip behind after
+the pointer moves away. This changes presentation only: click behavior, saved custom
+image slots, media processing, camera lifecycle, and join flow are unchanged.
+
+Production file: `src/pages/livekit/PreJoinModalLiveKit.tsx`; static regression
+guard: `scripts/prejoin-and-stage-layering.test.mjs`. Local-only preview
+fixture `src/prejoin-preview.tsx` accepts `?focus=Blur` to show the keyboard
+tooltip during visual QA and remains untracked. Keep unrelated generated
+sitemap XML files and preview screenshots out of the commit. The user added
+instant hovers to the preceding pre-join task, which included commit and
+push. The production build and five focused tests pass. App-wide typecheck
+still fails on pre-existing tsconfig project references (TS6306/TS6310),
+and direct lint reports 14 existing issues on unchanged lines of the
+component. Dark- and light-theme preview screenshots with focused buttons
+confirmed tooltip placement, contrast, and no clipping. Recheck remote
+status before pushing this follow-up to `main`.

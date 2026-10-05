@@ -314,7 +314,9 @@ export function PreJoinModal({
   const fxBtnSelected = isLight
     ? "border border-[#5286F6]/50 bg-[#5286F6]/15 text-[#2459BE] hover:bg-[#5286F6]/20"
     : "border border-[#5286F6]/50 bg-[#5286F6]/20 text-[#C4D6FF] hover:bg-[#5286F6]/25";
-  const fxBtnIdle = btnGhost;
+  const fxBtnIdle = isLight
+    ? "border border-[#DEE4EE] bg-white text-[#374153] hover:border-[#5286F6]/50 hover:bg-[#5286F6]/10 hover:text-[#2459BE]"
+    : "border border-white/[0.10] bg-white/[0.055] text-white/85 hover:border-[#5286F6]/50 hover:bg-[#5286F6]/15 hover:text-[#C4D6FF]";
   const selectCls = [
     "h-11 w-full rounded-2xl px-3 text-[13px] outline-none transition focus:ring-2 focus:ring-[#5286F6]/30",
     isLight ? "border border-[#DEE4EE] bg-white text-[#20242D]" : "border border-white/[0.10] bg-[#252A34] text-white",
@@ -520,40 +522,46 @@ export function PreJoinModal({
                       </span>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5" role="group" aria-label="Background effect choices">
-                    {(["off", "blur", "image", "custom"] as BackgroundChoice[]).map((choice) => {
-                      const label = choice === "off" ? "No backgrounds" : choice === "blur" ? "Blur" : choice === "image" ? "Image" : "Custom image";
-                      return (
-                        <button
-                          key={choice}
-                          type="button"
-                          disabled={!!fxBlockedReason || fxApplying}
-                          onClick={() => {
-                            setLocalFxMessage("");
-                            if (choice === "off" || choice === "blur") {
-                              setExpandedBackgroundChoice(null);
-                              void Promise.resolve(onApplyVideoFx(choice));
-                            } else {
-                              setExpandedBackgroundChoice(choice);
-                              // Apply an existing image immediately; never request "bg" without a valid URL.
-                              const imageUrl = choice === "image"
-                                ? selectedPreset?.url || fxBgPresets[0]?.url
-                                : savedBackground?.dataUrl || customBackgroundSlots.find((slot) => !!slot.dataUrl)?.dataUrl;
-                              if (imageUrl) {
-                                onSetBgImageUrl(imageUrl);
-                                void Promise.resolve(onApplyVideoFx("bg", imageUrl));
-                              }
-                            }
-                          }}
-                          className={`${fxBtnBase} ${visibleBackgroundChoice === choice ? fxBtnSelected : fxBtnIdle}`}
-                          aria-label={label}
-                          aria-pressed={activeBackgroundChoice === choice}
-                          aria-expanded={choice === "image" || choice === "custom" ? visibleBackgroundChoice === choice : undefined}
-                          title={fxBlockedReason || label}
-                        >
-                          <BackgroundChoiceIcon choice={choice} />
-                        </button>
-                      );
-                    })}
+                      {(["off", "blur", "image", "custom"] as BackgroundChoice[]).map((choice) => {
+                        const label = choice === "off" ? "No backgrounds" : choice === "blur" ? "Blur" : choice === "image" ? "Image" : "Custom image";
+                        return (
+                          <div key={choice} className="relative">
+                            <button
+                              type="button"
+                              disabled={!!fxBlockedReason || fxApplying}
+                              onClick={() => {
+                                setLocalFxMessage("");
+                                if (choice === "off" || choice === "blur") {
+                                  setExpandedBackgroundChoice(null);
+                                  void Promise.resolve(onApplyVideoFx(choice));
+                                } else {
+                                  setExpandedBackgroundChoice(choice);
+                                  // Apply an existing image immediately; never request "bg" without a valid URL.
+                                  const imageUrl = choice === "image"
+                                    ? selectedPreset?.url || fxBgPresets[0]?.url
+                                    : savedBackground?.dataUrl || customBackgroundSlots.find((slot) => !!slot.dataUrl)?.dataUrl;
+                                  if (imageUrl) {
+                                    onSetBgImageUrl(imageUrl);
+                                    void Promise.resolve(onApplyVideoFx("bg", imageUrl));
+                                  }
+                                }
+                              }}
+                              className={`peer ${fxBtnBase} ${visibleBackgroundChoice === choice ? fxBtnSelected : fxBtnIdle}`}
+                              aria-label={label}
+                              aria-pressed={activeBackgroundChoice === choice}
+                              aria-expanded={choice === "image" || choice === "custom" ? visibleBackgroundChoice === choice : undefined}
+                            >
+                              <BackgroundChoiceIcon choice={choice} />
+                            </button>
+                            <span
+                              aria-hidden="true"
+                              className={`pointer-events-none invisible absolute bottom-full left-1/2 z-[70] mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold opacity-0 shadow-lg peer-hover:visible peer-hover:opacity-100 peer-focus-visible:visible peer-focus-visible:opacity-100 ${isLight ? "border-[#D8E1F0] bg-white text-[#20242D] shadow-black/10" : "border-white/15 bg-[#111723] text-white shadow-black/50"}`}
+                            >
+                              {fxBlockedReason || label}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 

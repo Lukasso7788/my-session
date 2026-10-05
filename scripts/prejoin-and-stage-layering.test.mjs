@@ -38,6 +38,9 @@ test("pre-join background choices use supplied icons and the room's saved custom
   assert.match(prejoin, /className="inline-block h-6 w-6 shrink-0 bg-current"/);
   assert.match(prejoin, /aria-label=\{label\}/);
   assert.doesNotMatch(prejoin, /<span>\{label\}<\/span>/);
+  assert.doesNotMatch(prejoin, /title=\{fxBlockedReason \|\| label\}/);
+  assert.match(prejoin, /peer-hover:visible peer-hover:opacity-100 peer-focus-visible:visible peer-focus-visible:opacity-100/);
+  assert.match(prejoin, /\{fxBlockedReason \|\| label\}/);
   assert.ok(prejoin.indexOf('role="group" aria-label="Background effect choices"') < prejoin.indexOf('(visibleBackgroundChoice !== "off"'));
   assert.doesNotMatch(prejoin, /<details className=\{`group rounded-\[20px\] \$\{inputWrap\}`\}>/);
   assert.match(prejoin, /"No backgrounds"/);
