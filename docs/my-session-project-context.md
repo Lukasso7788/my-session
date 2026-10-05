@@ -12,9 +12,10 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   C:\Users\misha\.codex\worktrees\tasks-pip-accent\my-session.
   This managed worktree is at a detached HEAD; commit this feature here and
   push HEAD:main only after checking origin/main for new commits.
-- Current task: redesign the production LiveKit pre-join modal, remove its
-  remaining green camera/CTA hover colors, and ensure room timeline tooltips
-  paint above the video grid. The final section records implementation.
+- Current task: add four always-visible background effect choices directly
+  in the production LiveKit pre-join Background effects row, using the user's
+  SVG icons, and expose the same locally saved custom backgrounds as in-room.
+  The final section records implementation and verification.
   Earlier Plunk work and operational runbook remain documented in
   docs/plunk-email-rollout.md. No mass campaign is authorized by this task.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
@@ -1010,3 +1011,40 @@ visually check both desktop themes and a 500px narrow view. The latest user
 explicitly requested commit and push for the production fixes; fetch and
 verify `origin/main` before pushing, and stage only production files, the
 test, and this handoff. No schema or deployment secret changes are needed.
+
+## Pre-join background choice follow-up (2026-10-05)
+
+The user corrected the first interpretation: the four effect buttons must
+be visible directly in the compact Background effects row, not hidden behind
+the disclosure. The row now contains icon-and-label controls for No
+backgrounds, Blur, Image, and Custom image. Clicking Off or Blur applies
+immediately. Clicking Image opens built-in presets and applies the previously
+selected preset or first available preset; clicking Custom opens the saved
+slot grid and applies the selected/first saved slot if one exists. If no
+custom image exists, the grid offers Upload without passing an empty URL to
+the processor. Only the additional slider/preset/slot controls expand below
+the row. The room preview/media lifecycle and join handlers are unchanged.
+
+`PreJoinModalLiveKit.tsx` owns this presentation and accepts the existing
+`customBackgroundSlots` state from `RoomPageLiveKit.tsx`. That page owns
+`applyPrejoinVideoFx`, the 8 MB validation and FileReader conversion, and
+the shared `setCustomBackgroundSlots` state. Its existing load/save effects
+read and write three `CustomBackgroundSlot` entries to IndexedDB database
+`mysession-room-backgrounds`, object store `settings`, key
+`custom-background-slots-v1`. In-room background selection uses the same
+state; do not create a parallel pre-join localStorage list. The icon assets
+are copied unchanged from the user's SVGs into `public/icons/` as
+`prejoin-background-{none,blur,image,custom}.svg`, rendered as currentColor
+CSS masks for theme contrast. Mobile/tablet still hide background FX via
+`hideBackgroundFx`; this change does not alter that policy.
+
+Regression guard: `scripts/prejoin-and-stage-layering.test.mjs`. The local
+preview fixture (untracked) accepts `?backgrounds=Custom%20image` to show
+the expanded saved-slot state, but is not production code and must not be
+staged. Source reference screenshot is the user-provided
+`codex-clipboard-ab1509d5-f988-4d35-a7fd-1e986f04c010.png` and visual QA
+details are in `design-qa.md`. Build passes; app-wide `npm run typecheck`
+fails on existing tsconfig project-reference configuration and direct app
+typecheck/lint have existing unrelated diagnostics. Check exact output before
+attributing failures to this feature. No migration, Supabase write, email,
+video capture policy or deployment environment change is required.

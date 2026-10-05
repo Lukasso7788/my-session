@@ -151,3 +151,27 @@ issue remains. These are the first captures after the requested change;
 no visual rework iteration was needed.
 
 final result: passed
+
+---
+
+# Pre-join background effects — design QA
+
+Source visual truth: `C:\Users\misha\AppData\Local\Temp\codex-clipboard-ab1509d5-f988-4d35-a7fd-1e986f04c010.png` (user screenshot). It shows the existing dark pre-join modal with a compact Background effects row; the new four-button state was specified in conversation rather than depicted in the screenshot.
+
+Implementation captures: `prejoin-background-final-qa.png` (default), `prejoin-background-inline-custom-qa.png` (Custom image expanded), `prejoin-background-light-qa.png` (light theme), and `prejoin-background-mobile-qa.png` (narrow view). Full-view side-by-side evidence: `prejoin-background-final-comparison-qa.png`. Focused region: the Background effects row and saved-slot grid in the desktop captures; no separate crop was needed because these controls are legible at the captured size.
+
+Viewport and normalization: source 1919×944 pixels; final dark default captured with Chrome `--window-size=1919,945`, yielding 1919×944 pixels. The comparison placed both at original pixel density with no resize; mock preview lacks the source's real camera video, account name and device labels, so those content differences are excluded from this scoped comparison. Additional desktop states were captured at 1440×900 CSS pixels, and the narrow state at 500×900. Device scale factor is 1.
+
+State: Background effects options visible immediately; only the extra controls for Blur, Image or Custom image appear after selection. The custom capture uses one mock saved slot; production slots are loaded from the room's IndexedDB store.
+
+## Findings
+
+No actionable P0/P1/P2 visual differences remain for the requested Background effects control. The revised row stays compact, matches the existing dark MySession modal style and keeps all four supplied icons and labels visible. The Image and Custom image areas expand below the row without covering the Join footer; the modal body scrolls. Light-theme icons and text remain legible, and the four controls fit the 500px layout without horizontal overflow.
+
+Fonts/typography: existing Inter hierarchy remains; 11px compact button labels are readable in desktop and narrow captures. Spacing/layout: background row aligns with the preview card and adjacent setup panel; only selected effect details add height. Colors/tokens: existing blue active/focus treatment works in dark and light themes. Image/asset fidelity: the four user SVGs are reused unchanged as CSS masks, preserving source shapes with theme-appropriate foreground colors; the live camera in the source cannot be reproduced by the mock preview. Copy/content: requested labels are exactly No backgrounds, Blur, Image, Custom image.
+
+Comparison history: The first implementation placed four buttons inside a collapsed disclosure. The user clarified they must be visible in the Background effects row; that P1 mismatch was fixed by moving them into the always-visible row. The final dark, light, custom-expanded and 500px captures above show the correction. No further visual fix was required.
+
+Interaction checks: the local fixture selects Custom image, shows a saved thumbnail and selected state, and exposes upload/replace/clear controls. The real camera processor and IndexedDB persistence cannot be exercised by this mock capture; they are wired through the production room callbacks and require a manual authenticated room smoke test. No browser console inspection was available in this headless visual pass.
+
+final result: passed

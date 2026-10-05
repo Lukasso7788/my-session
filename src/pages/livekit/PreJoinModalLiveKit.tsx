@@ -24,6 +24,28 @@ type PreJoinSettings = {
 };
 
 type BgPreset = { id: string; label: string; url: string };
+type CustomBackgroundSlot = { id: string; label: string; dataUrl: string };
+type BackgroundChoice = "off" | "blur" | "image" | "custom";
+
+const backgroundChoiceIcons: Record<BackgroundChoice, string> = {
+  off: "/icons/prejoin-background-none.svg",
+  blur: "/icons/prejoin-background-blur.svg",
+  image: "/icons/prejoin-background-image.svg",
+  custom: "/icons/prejoin-background-custom.svg",
+};
+
+function BackgroundChoiceIcon({ choice }: { choice: BackgroundChoice }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-block h-[16px] w-[16px] shrink-0 bg-current"
+      style={{
+        WebkitMask: `url('${backgroundChoiceIcons[choice]}') center / contain no-repeat`,
+        mask: `url('${backgroundChoiceIcons[choice]}') center / contain no-repeat`,
+      }}
+    />
+  );
+}
 
 type PreJoinModalProps = {
   open: boolean;
@@ -45,10 +67,12 @@ type PreJoinModalProps = {
   fxError: string;
   fxStatusText: string;
   fxBgPresets: BgPreset[];
+  customBackgroundSlots?: CustomBackgroundSlot[];
   onApplyVideoFx: (mode: FxMode, backgroundUrl?: string) => Promise<void> | void;
+  onUploadCustomBackground?: (slotId: string, file: File) => Promise<void> | void;
+  onClearCustomBackground?: (slotId: string) => Promise<void> | void;
   onBlurStrengthChange: (next: number) => void;
   onSetBgImageUrl: (url: string) => void;
-  onUploadBg: (file: File) => string | void;
   onResetBg: () => void;
   deviceError?: string;
   hideBackgroundFx?: boolean;
@@ -110,10 +134,12 @@ export function PreJoinModal({
   fxError,
   fxStatusText,
   fxBgPresets,
+  customBackgroundSlots = [],
   onApplyVideoFx,
+  onUploadCustomBackground,
+  onClearCustomBackground,
   onBlurStrengthChange,
   onSetBgImageUrl,
-  onUploadBg,
   onResetBg,
   deviceError = "",
   hideBackgroundFx = false,
@@ -122,9 +148,11 @@ export function PreJoinModal({
   const previewHostRef = useRef<HTMLDivElement | null>(null);
   const attachedPreviewElRef = useRef<HTMLElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const uploadSlotRef = useRef<string | null>(null);
   const testAudioRef = useRef<HTMLAudioElement | null>(null);
   const [blurDraft, setBlurDraft] = useState<number>(blurStrength);
   const [localFxMessage, setLocalFxMessage] = useState("");
+  const [expandedBackgroundChoice, setExpandedBackgroundChoice] = useState<"image" | "custom" | null>(null);
 
   useEffect(() => {
     setBlurDraft(blurStrength);
@@ -282,7 +310,7 @@ export function PreJoinModal({
   const inputCls = isLight ? "text-[#20242D] placeholder:text-[#969EAC]" : "text-white placeholder:text-white/40";
   const btnGhost = isLight ? "border border-[#DEE4EE] bg-white text-[#374153] hover:border-[#A9BDE8] hover:bg-[#F7F9FE]" : "border border-white/[0.10] bg-white/[0.055] text-white/85 hover:border-white/20 hover:bg-white/[0.09]";
   const btnPrimary = "bg-[#5286F6] text-white shadow-[0_12px_30px_rgba(82,134,246,0.25)] hover:bg-[#3E75ED] hover:shadow-[0_14px_34px_rgba(82,134,246,0.34)]";
-  const fxBtnBase = "h-10 rounded-2xl px-4 text-[13px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60";
+  const fxBtnBase = "flex min-h-11 min-w-0 items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-center text-[11px] font-semibold leading-tight focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6] disabled:cursor-not-allowed disabled:opacity-60";
   const fxBtnSelected = isLight
     ? "border border-[#5286F6]/50 bg-[#5286F6]/15 text-[#2459BE] hover:bg-[#5286F6]/20"
     : "border border-[#5286F6]/50 bg-[#5286F6]/20 text-[#C4D6FF] hover:bg-[#5286F6]/25";
@@ -349,9 +377,18 @@ export function PreJoinModal({
   };
 
   const handleUploadClick = () => {
-    if (!value.videoEnabled || fxApplying) return;
+    if (!value.videoEnabled || fxApplying || !uploadSlotRef.current) return;
     fileInputRef.current?.click();
   };
+
+  const savedBackground = customBackgroundSlots.find((slot) => !!slot.dataUrl && slot.dataUrl === bgImageUrl);
+  const selectedPreset = fxBgPresets.find((preset) => preset.url === bgImageUrl);
+  const activeBackgroundChoice: BackgroundChoice = videoFxMode === "off"
+    ? "off"
+    : videoFxMode === "blur"
+      ? "blur"
+      : savedBackground ? "custom" : "image";
+  const visibleBackgroundChoice = expandedBackgroundChoice || activeBackgroundChoice;
 
   if (!open) return null;
 
@@ -474,38 +511,58 @@ export function PreJoinModal({
               ) : null}
 
               {!hideBackgroundFx ? (
-                <details className={`group rounded-[20px] ${inputWrap}`}>
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5286F6] [&::-webkit-details-marker]:hidden">
-                    <span className="text-[13px] font-semibold">Background effects</span>
-                    <span className={`flex items-center gap-2 text-[11px] ${labelCls}`}>
-                      {fxApplying ? "Applying…" : localFxMessage || fxStatusText || (videoFxMode === "off" ? "Off" : videoFxMode === "blur" ? "Blur" : "Image")}
-                      <ChevronDown size={16} aria-hidden="true" className="transition-transform group-open:rotate-180" />
-                    </span>
-                  </summary>
-                  <div className={`border-t px-4 pb-4 ${border}`}>
-
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {(["off", "blur", "bg"] as FxMode[]).map((mode) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        disabled={!!fxBlockedReason || fxApplying}
-                        onClick={() => {
-                          setLocalFxMessage("");
-                          void Promise.resolve(onApplyVideoFx(mode));
-                        }}
-                        className={`${fxBtnBase} ${videoFxMode === mode ? fxBtnSelected : fxBtnIdle}`}
-                        title={fxBlockedReason || `Apply ${mode}`}
-                      >
-                        {mode === "off" ? "Off" : mode === "blur" ? "Blur" : "Background"}
-                      </button>
-                    ))}
+                <div className={`rounded-[20px] ${inputWrap}`}>
+                  <div className="flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center">
+                    <div className="flex shrink-0 items-center justify-between gap-2 sm:w-[112px] sm:flex-col sm:items-start sm:gap-0">
+                      <span className="text-[12px] font-semibold leading-tight">Background effects</span>
+                      <span className={`text-[10px] ${labelCls}`} role="status">
+                        {fxApplying ? "Applying…" : localFxMessage || fxStatusText || (videoFxMode === "off" ? "Off" : videoFxMode === "blur" ? "Blur" : "Image")}
+                      </span>
+                    </div>
+                    <div className="grid min-w-0 flex-1 grid-cols-4 gap-1.5" role="group" aria-label="Background effect choices">
+                    {(["off", "blur", "image", "custom"] as BackgroundChoice[]).map((choice) => {
+                      const label = choice === "off" ? "No backgrounds" : choice === "blur" ? "Blur" : choice === "image" ? "Image" : "Custom image";
+                      return (
+                        <button
+                          key={choice}
+                          type="button"
+                          disabled={!!fxBlockedReason || fxApplying}
+                          onClick={() => {
+                            setLocalFxMessage("");
+                            if (choice === "off" || choice === "blur") {
+                              setExpandedBackgroundChoice(null);
+                              void Promise.resolve(onApplyVideoFx(choice));
+                            } else {
+                              setExpandedBackgroundChoice(choice);
+                              // Apply an existing image immediately; never request "bg" without a valid URL.
+                              const imageUrl = choice === "image"
+                                ? selectedPreset?.url || fxBgPresets[0]?.url
+                                : savedBackground?.dataUrl || customBackgroundSlots.find((slot) => !!slot.dataUrl)?.dataUrl;
+                              if (imageUrl) {
+                                onSetBgImageUrl(imageUrl);
+                                void Promise.resolve(onApplyVideoFx("bg", imageUrl));
+                              }
+                            }
+                          }}
+                          className={`${fxBtnBase} ${visibleBackgroundChoice === choice ? fxBtnSelected : fxBtnIdle}`}
+                          aria-pressed={activeBackgroundChoice === choice}
+                          aria-expanded={choice === "image" || choice === "custom" ? visibleBackgroundChoice === choice : undefined}
+                          title={fxBlockedReason || label}
+                        >
+                          <BackgroundChoiceIcon choice={choice} />
+                          <span>{label}</span>
+                        </button>
+                      );
+                    })}
+                    </div>
                   </div>
+
+                  {(visibleBackgroundChoice !== "off" || fxBlockedReason || fxError) ? <div className={`border-t px-4 pb-4 ${border}`}>
 
                   {fxBlockedReason ? <div className={`mt-2 text-[11px] ${labelCls}`}>{fxBlockedReason}</div> : null}
                   {fxError ? <div className={`mt-3 text-[12px] ${isLight ? "text-[#C73535]" : "text-[#FCA5A5]"}`}>{fxError}</div> : null}
 
-                  {videoFxMode === "blur" ? (
+                  {visibleBackgroundChoice === "blur" ? (
                     <div className="mt-4">
                       <div className="flex items-center justify-between">
                         <div className={`text-[12px] ${labelCls}`}>Blur strength</div>
@@ -528,12 +585,12 @@ export function PreJoinModal({
                     </div>
                   ) : null}
 
-                  <div className="mt-4">
-                    <div className={`text-[12px] ${labelCls}`}>Background image</div>
+                  {visibleBackgroundChoice === "image" ? <div className="mt-4">
+                    <div className={`text-[12px] ${labelCls}`}>Choose a background image</div>
 
                     <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                       {fxBgPresets?.map((p) => {
-                        const selected = bgImageUrl === p.url;
+                        const selected = videoFxMode === "bg" && bgImageUrl === p.url;
 
                         return (
                           <button
@@ -580,47 +637,19 @@ export function PreJoinModal({
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (!f) return;
-
-                          const selectedUrl = onUploadBg(f);
-                          setLocalFxMessage("Image selected. Applying background…");
-                          void Promise.resolve(onApplyVideoFx("bg", selectedUrl || undefined));
-
-                          try {
-                            e.currentTarget.value = "";
-                          } catch { }
-                        }}
-                      />
-
-                      <button
-                        type="button"
-                        disabled={!value.videoEnabled || fxApplying}
-                        onClick={handleUploadClick}
-                        className={`h-10 rounded-2xl px-4 text-[13px] font-semibold ${btnGhost}`}
-                      >
-                        Upload image
-                      </button>
-
                       <button
                         type="button"
                         disabled={!value.videoEnabled || fxApplying}
                         onClick={onResetBg}
                         className={`h-10 rounded-2xl px-4 text-[13px] font-semibold ${btnGhost}`}
                       >
-                        Reset
+                        Reset image
                       </button>
 
                       <button
                         type="button"
-                        disabled={!value.videoEnabled || fxApplying}
-                        onClick={() => onApplyVideoFx("bg")}
+                        disabled={!value.videoEnabled || fxApplying || !selectedPreset}
+                        onClick={() => void Promise.resolve(onApplyVideoFx("bg", selectedPreset?.url))}
                         className={`h-10 rounded-2xl px-4 text-[13px] font-semibold ${btnGhost}`}
                         title="Re-apply background now"
                       >
@@ -628,12 +657,69 @@ export function PreJoinModal({
                       </button>
                     </div>
 
-                    {bgImageUrl && !fxBgPresets.some((preset) => preset.url === bgImageUrl) ? (
-                      <div className={`mt-2 truncate text-[10px] ${labelCls}`}>Custom image selected</div>
-                    ) : null}
-                  </div>
-                  </div>
-                </details>
+                  </div> : null}
+
+                  {visibleBackgroundChoice === "custom" ? (
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`text-[12px] ${labelCls}`}>Saved on this device</span>
+                        <span className={`text-[11px] ${labelCls}`}>Up to 8 MB per image</span>
+                      </div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="sr-only"
+                        tabIndex={-1}
+                        aria-label="Upload a custom background image"
+                        onChange={(event) => {
+                          const file = event.currentTarget.files?.[0];
+                          const slotId = uploadSlotRef.current;
+                          if (file && slotId) void Promise.resolve(onUploadCustomBackground?.(slotId, file));
+                          event.currentTarget.value = "";
+                        }}
+                      />
+                      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        {customBackgroundSlots.map((slot) => {
+                          const selected = videoFxMode === "bg" && !!slot.dataUrl && bgImageUrl === slot.dataUrl;
+                          return (
+                            <div key={slot.id} className={`overflow-hidden rounded-2xl border ${selected ? "border-[#5286F6] ring-2 ring-[#5286F6]/20" : isLight ? "border-[#DEE4EE] bg-white" : "border-white/[0.10] bg-white/[0.04]"}`}>
+                              <button
+                                type="button"
+                                disabled={!slot.dataUrl || fxApplying || !!fxBlockedReason}
+                                onClick={() => {
+                                  if (!slot.dataUrl) return;
+                                  onSetBgImageUrl(slot.dataUrl);
+                                  void Promise.resolve(onApplyVideoFx("bg", slot.dataUrl));
+                                }}
+                                className={`relative block h-[72px] w-full overflow-hidden text-left disabled:cursor-default ${isLight ? "bg-[#EFF2F7]" : "bg-[#252A34]"}`}
+                                aria-label={`Use ${slot.label} background`}
+                                aria-pressed={selected}
+                              >
+                                {slot.dataUrl ? <img src={slot.dataUrl} alt="" className="h-full w-full object-cover" /> : <span className={`flex h-full items-center justify-center text-[11px] ${labelCls}`}>Empty slot</span>}
+                                {selected ? <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#5286F6] text-white"><Check size={12} aria-hidden="true" /></span> : null}
+                              </button>
+                              <div className="flex items-center justify-between gap-1.5 px-2 py-2">
+                                <span className="truncate text-[11px] font-semibold">{slot.label}</span>
+                                <div className="flex shrink-0 gap-1">
+                                  <button
+                                    type="button"
+                                    disabled={!value.videoEnabled || fxApplying || !onUploadCustomBackground}
+                                    onClick={() => { uploadSlotRef.current = slot.id; handleUploadClick(); }}
+                                    className={`rounded-lg px-2 py-1 text-[10px] font-semibold ${btnGhost}`}
+                                    aria-label={`${slot.dataUrl ? "Replace" : "Upload"} ${slot.label}`}
+                                  >{slot.dataUrl ? "Replace" : "Upload"}</button>
+                                  {slot.dataUrl ? <button type="button" disabled={fxApplying || !onClearCustomBackground} onClick={() => void Promise.resolve(onClearCustomBackground?.(slot.id))} className={`rounded-lg px-2 py-1 text-[10px] ${btnGhost}`} aria-label={`Clear ${slot.label}`}>Clear</button> : null}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                  </div> : null}
+                </div>
               ) : null}
             </div>
 

@@ -25,3 +25,23 @@ test("room stage tooltips have an unclipped stacking context above the video gri
   assert.equal([...topBar.matchAll(/tooltipPlacement="bottom"/g)].length, 2);
   assert.match(stageBar, /tooltipPlacement = "top"/);
 });
+
+test("pre-join background choices use supplied icons and the room's saved custom slots", () => {
+  for (const name of ["none", "blur", "image", "custom"]) {
+    const icon = readFileSync(join(root, `public/icons/prejoin-background-${name}.svg`), "utf8");
+    assert.match(icon, /<svg\b/);
+    assert.match(prejoin, new RegExp(`prejoin-background-${name}\\.svg`));
+  }
+  assert.match(prejoin, /<div className=\{`rounded-\[20px\] \$\{inputWrap\}`\}>/);
+  assert.match(prejoin, /flex flex-col gap-2 px-3 py-2\.5 sm:flex-row sm:items-center/);
+  assert.match(prejoin, /grid min-w-0 flex-1 grid-cols-4 gap-1\.5/);
+  assert.ok(prejoin.indexOf('role="group" aria-label="Background effect choices"') < prejoin.indexOf('(visibleBackgroundChoice !== "off"'));
+  assert.doesNotMatch(prejoin, /<details className=\{`group rounded-\[20px\] \$\{inputWrap\}`\}>/);
+  assert.match(prejoin, /"No backgrounds"/);
+  assert.match(prejoin, /"Custom image"/);
+  assert.match(prejoin, /customBackgroundSlots\.map\(\(slot\)/);
+  assert.match(room, /customBackgroundSlots=\{customBackgroundSlots\}/);
+  assert.match(room, /onUploadCustomBackground=\{async \(slotId, file\)/);
+  assert.match(room, /readImageFileAsDataUrl\(file\)/);
+  assert.match(room, /saveCustomBackgroundSlots\(customBackgroundSlots\)/);
+});

@@ -20880,24 +20880,37 @@ export function RoomPageLiveKit({
         fxError={fxError}
         fxStatusText={fxStatusText}
         fxBgPresets={FX_BG_PRESETS}
+        customBackgroundSlots={customBackgroundSlots}
         onApplyVideoFx={applyPrejoinVideoFx}
-        onBlurStrengthChange={setBlurStrength}
-        onSetBgImageUrl={setBgImageUrl}
-        onUploadBg={(file: File) => {
+        onUploadCustomBackground={async (slotId, file) => {
+          if (file.size > CUSTOM_BACKGROUND_MAX_FILE_BYTES) {
+            setFxError("Custom backgrounds must be 8 MB or smaller");
+            return;
+          }
           try {
-            if (uploadedBgUrlRef.current) {
-              URL.revokeObjectURL(uploadedBgUrlRef.current);
-              uploadedBgUrlRef.current = null;
-            }
-            const url = URL.createObjectURL(file);
-            uploadedBgUrlRef.current = url;
-            setBgImageUrl(url);
-            return url;
-          } catch (e) {
-            console.error("upload bg failed", e);
-            setFxError("Failed to load selected image");
+            const dataUrl = await readImageFileAsDataUrl(file);
+            setCustomBackgroundSlots((current) =>
+              current.map((slot) => slot.id === slotId ? { ...slot, dataUrl } : slot),
+            );
+            setBgImageUrl(dataUrl);
+            await applyPrejoinVideoFx("bg", dataUrl);
+          } catch (error) {
+            console.error("pre-join custom background upload failed", error);
+            setFxError("Failed to save selected background");
           }
         }}
+        onClearCustomBackground={async (slotId) => {
+          const slot = customBackgroundSlotsRef.current.find((item) => item.id === slotId);
+          setCustomBackgroundSlots((current) =>
+            current.map((item) => item.id === slotId ? { ...item, dataUrl: "" } : item),
+          );
+          if (slot?.dataUrl && bgImageUrl === slot.dataUrl) {
+            setBgImageUrl(DEFAULT_BG_DATA_URL);
+            await applyPrejoinVideoFx("off");
+          }
+        }}
+        onBlurStrengthChange={setBlurStrength}
+        onSetBgImageUrl={setBgImageUrl}
         onResetBg={() => {
           if (uploadedBgUrlRef.current) {
             try {
@@ -20906,6 +20919,7 @@ export function RoomPageLiveKit({
             uploadedBgUrlRef.current = null;
           }
           setBgImageUrl(DEFAULT_BG_DATA_URL);
+          void applyPrejoinVideoFx("bg", DEFAULT_BG_DATA_URL);
         }}
       />
 
