@@ -324,7 +324,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
 
     return (
         <div
-            className={`relative isolate flex w-full rounded-2xl overflow-visible ${topBarBg}`}
+            className={`relative z-[80] isolate flex w-full rounded-2xl overflow-visible ${topBarBg}`}
         >
             <div className="flex-1 px-4 py-2.5 sm:px-5 sm:py-3 lg:py-2 overflow-visible">
                 <div className="flex flex-col gap-2 max-[480px]:gap-2 overflow-visible">
@@ -351,8 +351,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                         </div>
 
                         {showStageBar && (
-                            <div className="relative z-30 hidden min-w-[220px] flex-1 overflow-visible lg:block">
-                                <div className="group relative z-30 overflow-visible">
+                            <div className="relative z-[90] hidden min-w-[220px] flex-1 overflow-visible lg:block">
+                                <div className="group relative z-[90] overflow-visible">
                                     {showEditTimeline && (
                                         <button
                                             type="button"
