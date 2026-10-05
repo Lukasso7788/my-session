@@ -11,11 +11,11 @@
 }
 
 .ms-room-side-panel[data-panel-theme="dark"] :is(.ms-chat-panel-scrollbars, .ms-tasks-panel-scrollbars) {
-  scrollbar-color: #59616a transparent;
+  scrollbar-color: #555555 transparent;
 }
 
 .ms-room-side-panel[data-panel-theme="dark"] :is(.ms-chat-panel-scrollbars, .ms-tasks-panel-scrollbars) ::-webkit-scrollbar-thumb {
-  background: #59616a;
+  background: #555555;
 }
 
 :is(
@@ -29,7 +29,7 @@
   [class~="bg-[#FAFAFA]"],
   [class~="bg-white"]
 ) {
-  background-color: #25292e !important;
+  background-color: #252525 !important;
 }
 
 :is(
@@ -46,7 +46,7 @@
   [class~="bg-[#E3E0E0]"],
   [class~="bg-[#EAF8EC]"]
 ) {
-  background-color: #30353a !important;
+  background-color: #303030 !important;
 }
 
 :is(
@@ -62,7 +62,7 @@
   [class*="border-black/[0.1]"],
   [class*="border-black/[0.08]"]
 ) {
-  border-color: #4c5259 !important;
+  border-color: #484848 !important;
 }
 
 :is(
@@ -75,7 +75,7 @@
   [class*="text-black/90"],
   [class*="text-black/95"],
   [class~="text-[#2F2F2F]"]
-):not([class~="bg-[#81DB86]"]):not([class~="bg-[#9AE99E]"]) {
+):not([class~="bg-[#5286F6]"]):not([class~="bg-[#6B98FA]"]) {
   color: #f4f5f6 !important;
 }
 
@@ -88,7 +88,7 @@
   [class*="text-black/70"],
   [class*="text-black/75"]
 ) {
-  color: #d0d6dd !important;
+  color: #d4d4d4 !important;
 }
 
 :is(
@@ -103,7 +103,7 @@
   [class*="text-black/55"],
   [class*="text-[#2F2F2F]/"]
 ) {
-  color: #b5bcc6 !important;
+  color: #b8b8b8 !important;
 }
 
 :is(
@@ -116,7 +116,7 @@
   [class*="text-[#2F8F3B]"],
   [class*="text-[#58AE62]"]
 ) {
-  color: #9ae99e !important;
+  color: #6b98fa !important;
 }
 
 :is(
@@ -134,7 +134,7 @@
   .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="chat"],
   .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="tasks"]
 ) :is(input, textarea)::placeholder {
-  color: #aeb6bf !important;
+  color: #b3b3b3 !important;
   opacity: 1;
 }
 
@@ -142,22 +142,34 @@
   .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="chat"],
   .ms-room-side-panel[data-panel-theme="dark"] [data-side-panel-section="tasks"]
 ) :is([class*="hover:bg-[#ECEAEA]"], [class*="hover:bg-[#E8E8E8]"], [class*="hover:bg-[#F3F1F1]"]):hover {
-  background-color: #3b4248 !important;
+  background-color: #3a3a3a !important;
 }
 
 .ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-webkit-slider-runnable-track {
-  background: linear-gradient(to right, #81db86 0, #81db86 var(--ms-slider-progress, 0%), #545c64 var(--ms-slider-progress, 0%), #545c64 100%);
+  background: linear-gradient(to right, #5286f6 0, #5286f6 var(--ms-slider-progress, 0%), #505050 var(--ms-slider-progress, 0%), #505050 100%);
 }
 
 .ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-webkit-slider-thumb,
 .ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-moz-range-progress {
-  background: #81db86;
+  background: #5286f6;
 }
 
 .ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-moz-range-track {
-  background: #545c64;
+  background: #505050;
 }
 
 .ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-moz-range-thumb {
-  background: #81db86;
+  background: #5286f6;
+}
+
+
+.ms-room-side-panel[data-panel-theme="dark"] .ms-task-add-from-tasks {
+  background-color: #ffffff !important;
+  border-color: #2f2f2f !important;
+  color: #2f2f2f !important;
+}
+
+.ms-room-side-panel[data-panel-theme="dark"] .ms-task-add-from-tasks:hover {
+  background-color: #2f2f2f !important;
+  color: #ffffff !important;
 }

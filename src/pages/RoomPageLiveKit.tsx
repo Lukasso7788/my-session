@@ -1139,11 +1139,11 @@ function phaseToStageType(phaseName: string): Stage["type"] {
 }
 
 const STAGE_COLORS: Record<string, string> = {
-  intro: "#81DB86",
+  intro: "#5286F6",
   intentions: "#ADD3FF",
   focus: "#5286F6",
   break: "#F65252",
-  outro: "#81DB86",
+  outro: "#5286F6",
 };
 
 function getTemplateFirst(
@@ -4677,7 +4677,7 @@ function RoomAuthModal({
           <div
             className={`mt-4 rounded-2xl border px-4 py-3 text-[13px] leading-5 ${isLight
               ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-emerald-500/20 bg-[#81DB86]/10 text-emerald-200"
+              : "border-emerald-500/20 bg-[#5286F6]/10 text-emerald-200"
               }`}
           >
             {message}
@@ -6377,7 +6377,7 @@ export function RoomPageLiveKit({
   const roomPanelPaddingClass = roomUiScale === "md" ? "p-3" : "p-4";
 
   const roomPanelHeaderClass =
-    roomUiScale === "md" ? "px-2.5 py-2" : "px-3 py-2";
+    roomUiScale === "md" ? "px-2.5 py-1.5 min-h-[42px]" : "px-3 py-1.5 min-h-[44px]";
 
   const roomPanelTitleClass =
     roomUiScale === "md" ? "text-[12px]" : "text-[13px]";
@@ -18332,7 +18332,7 @@ export function RoomPageLiveKit({
     const micBadgeWrapCls = isLight
       ? micMuted
         ? "bg-black/8"
-        : "bg-[#81DB86]/12"
+        : "bg-[#5286F6]/12"
       : micMuted
         ? "bg-[#242424]"
         : "bg-emerald-400/18";
@@ -19304,7 +19304,7 @@ export function RoomPageLiveKit({
     : "bg-[#1B1B1B] text-white";
   const panelBg = sidePanelIsLight
     ? "bg-[#F3F1F1] border border-[#D8D0D0]"
-    : "bg-[#1B1D20] border border-[#393D42]";
+    : "bg-[#1B1B1B] border border-[#2B2B2B]";
   const bottomBarBg = isLight
     ? "bg-[#F3F1F1] border border-[#D8D0D0]"
     : "bg-[#1B1B1B] border border-[#252525]";
@@ -19359,7 +19359,7 @@ export function RoomPageLiveKit({
       {rightTab === "participants" && (
         <div className="h-full min-h-0 flex flex-col">
           <div
-            className={`${roomPanelHeaderClass} border-b flex items-center justify-between ${sidePanelIsLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#393D42] bg-[#222529]"}`}
+            className={`${roomPanelHeaderClass} border-b flex items-center justify-between ${sidePanelIsLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#343434] bg-[#232323]"}`}
           >
             <div className="flex items-center gap-2 min-w-0">
               <span
@@ -19376,9 +19376,9 @@ export function RoomPageLiveKit({
             <div className="flex items-center gap-2">
               <button
                 onClick={openEditName}
-                className={`px-3 h-9 rounded-xl text-[12px] font-semibold border transition ${sidePanelIsLight
+                className={`px-3 h-8 rounded-[10px] text-[11px] font-semibold border transition ${sidePanelIsLight
                   ? "bg-[#1B1B1B] border-[#1B1B1B] hover:bg-[#242424] text-white"
-                  : "bg-[#81DB86] border-[#81DB86] hover:bg-[#9AE99E] text-[#102816]"
+                  : "bg-[#5286F6] border-[#5286F6] hover:bg-[#6B98FA] text-[#FFFFFF]"
                   }`}
                 title="Edit my name"
               >
@@ -19387,7 +19387,7 @@ export function RoomPageLiveKit({
 
               <button
                 onClick={() => openRightTab(null)}
-                className={`w-9 h-9 rounded-xl flex items-center justify-center transition ${sidePanelIsLight
+                className={`w-8 h-8 rounded-[10px] flex items-center justify-center transition ${sidePanelIsLight
                   ? "bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
                   : "bg-[#353A3F] hover:bg-[#444A50] text-[#D4D9DF]"
                   }`}
@@ -19402,7 +19402,7 @@ export function RoomPageLiveKit({
             <div
               className={`rounded-xl px-3 py-2 border ${sidePanelIsLight
                 ? "bg-[#E6E6E6] border-[#CFCFCF]"
-                : "bg-[#292D32] border-[#4C5259]"
+                : "bg-[#292929] border-[#484848]"
                 }`}
             >
               <input
@@ -19467,15 +19467,15 @@ export function RoomPageLiveKit({
                 return (
                   <div
                     key={p.id}
-                    className={`px-3 py-2 rounded-xl transition ${sidePanelIsLight ? "hover:bg-[#E8E8E8]" : "hover:bg-[#30363B]"}`}
+                    className={`px-3 py-2 rounded-xl transition ${sidePanelIsLight ? "hover:bg-[#E8E8E8]" : "hover:bg-[#303030]"}`}
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         <div
                           className={`relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border text-[14px] font-semibold ${p.isLocal
                             ? sidePanelIsLight
-                              ? "border-[#81DB86]/70 bg-[#81DB86]/20 text-[#245F2A] ring-2 ring-[#81DB86]/20"
-                              : "border-[#81DB86]/70 bg-[#81DB86]/20 text-[#A7F0AC] ring-2 ring-[#81DB86]/20"
+                              ? "border-[#5286F6]/70 bg-[#5286F6]/20 text-[#245F2A] ring-2 ring-[#5286F6]/20"
+                              : "border-[#5286F6]/70 bg-[#5286F6]/20 text-[#A7F0AC] ring-2 ring-[#5286F6]/20"
                             : sidePanelIsLight
                               ? "border-[#C9D8CB] bg-[#E5EEE6] text-[#356B3A]"
                               : "border-[#4D6752] bg-[#283A2D] text-[#B8E9BE]"
@@ -19614,7 +19614,7 @@ export function RoomPageLiveKit({
           </div>
 
           <div
-            className={`p-4 border-t ${sidePanelIsLight ? "border-[#CFCFCF]" : "border-[#393D42]"}`}
+            className={`p-4 border-t ${sidePanelIsLight ? "border-[#CFCFCF]" : "border-[#343434]"}`}
           >
             <button
               onClick={() => {
@@ -19628,7 +19628,7 @@ export function RoomPageLiveKit({
               }}
               className={`w-full h-12 rounded-xl font-semibold flex items-center justify-center gap-2 ${sidePanelIsLight
                 ? "bg-[#1B1B1B] hover:bg-[#242424] text-white"
-                : "bg-[#81DB86] hover:bg-[#9AE99E] text-[#102816]"
+                : "bg-[#5286F6] hover:bg-[#6B98FA] text-[#FFFFFF]"
                 }`}
             >
               <span className="text-lg">⎘</span>
@@ -19640,7 +19640,7 @@ export function RoomPageLiveKit({
 
       {rightPanelOpen && rightTab === "chat" && (
         <div data-side-panel-section="chat" className="ms-chat-panel-scrollbars flex flex-col h-full">
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-[#D8D0D0] bg-[#F3F1F1] min-h-[52px]">
+          <div className={`flex min-h-[44px] items-center gap-2 border-b px-3 py-1.5 ${sidePanelIsLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#343434] bg-[#232323]"}`}>
             <div className="flex items-center gap-2 shrink-0 mr-1">
               <img
                 src={sidePanelIsLight ? "/icons/chat-light.svg" : "/icons/chat-dark.svg"}
@@ -19649,9 +19649,7 @@ export function RoomPageLiveKit({
                 draggable={false}
               />
               <span
-                className={
-                  "text-[13px] font-semibold shrink-0 text-black/85"
-                }
+                className={`shrink-0 text-[12px] font-semibold ${sidePanelIsLight ? "text-black/85" : "text-[#F4F5F6]"}`}
               >
                 Chat
               </span>
@@ -19664,7 +19662,7 @@ export function RoomPageLiveKit({
                 className={
                   "relative h-8 px-3 rounded-full text-xs font-medium transition border shrink-0 " +
                   (chatViewMode === "general"
-                    ? sidePanelIsLight ? "bg-[#1B1B1B] border-[#1B1B1B] text-white" : "bg-[#81DB86] border-[#81DB86] text-[#102816]"
+                    ? sidePanelIsLight ? "bg-[#1B1B1B] border-[#1B1B1B] text-white" : "bg-[#5286F6] border-[#5286F6] text-[#FFFFFF]"
                     : sidePanelIsLight ? "bg-transparent border-[#CFCFCF] text-black/65 hover:bg-[#E8E8E8]" : "bg-transparent border-[#59616A] text-[#D0D6DD] hover:bg-[#353B42]")
                 }
               >
@@ -19692,7 +19690,7 @@ export function RoomPageLiveKit({
                 className={
                   "relative h-8 px-3 rounded-full text-xs font-medium transition border shrink-0 " +
                   (chatViewMode === "host"
-                    ? sidePanelIsLight ? "bg-[#1B1B1B] border-[#1B1B1B] text-white" : "bg-[#81DB86] border-[#81DB86] text-[#102816]"
+                    ? sidePanelIsLight ? "bg-[#1B1B1B] border-[#1B1B1B] text-white" : "bg-[#5286F6] border-[#5286F6] text-[#FFFFFF]"
                     : sidePanelIsLight ? "bg-transparent border-[#CFCFCF] text-black/65 hover:bg-[#E8E8E8]" : "bg-transparent border-[#59616A] text-[#D0D6DD] hover:bg-[#353B42]")
                 }
               >
@@ -20078,24 +20076,30 @@ export function RoomPageLiveKit({
 
       {rightTab === "tasks" && (
         <div data-side-panel-section="tasks" className="ms-tasks-panel-scrollbars h-full min-h-0 flex flex-col">
-          <div className="px-5 py-4 border-b border-[#D8D0D0] bg-[#F3F1F1] flex items-center justify-between">
-            <div
-              className="text-black/85 font-inter font-semibold"
-            >
-              Tasks
+          <div className={`flex min-h-[44px] items-center justify-between border-b px-3 py-1.5 ${sidePanelIsLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#343434] bg-[#232323]"}`}>
+            <div className="flex min-w-0 items-center gap-2">
+              <img
+                src={sidePanelIsLight ? "/icons/tasks-light.svg" : "/icons/tasks-dark.svg"}
+                alt=""
+                className="h-4 w-4 shrink-0"
+                draggable={false}
+              />
+              <div className={`font-inter text-[12px] font-semibold ${sidePanelIsLight ? "text-black/85" : "text-[#F4F5F6]"}`}>
+                Tasks
+              </div>
             </div>
             <button
               onClick={() => openRightTab(null)}
-              className="w-9 h-9 rounded-xl flex items-center justify-center transition bg-[#E6E6E6] hover:bg-[#DCDCDC] text-black/60"
+              className={`flex h-8 w-8 items-center justify-center rounded-[10px] transition ${sidePanelIsLight ? "bg-[#E6E6E6] text-black/60 hover:bg-[#DCDCDC]" : "bg-[#303030] text-[#D4D9DF] hover:bg-[#3A3A3A]"}`}
               title="Close"
             >
               ✕
             </button>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-hidden p-4">
+          <div className="flex-1 min-h-0 overflow-hidden p-3">
             <div
-              className="h-full min-h-0 overflow-hidden rounded-xl bg-[#F3F1F1] border border-[#D8D0D0]"
+              className={`h-full min-h-0 overflow-hidden rounded-xl border ${sidePanelIsLight ? "bg-[#F3F1F1] border-[#D8D0D0]" : "bg-[#1F1F1F] border-[#343434]"}`}
             >
               <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
                 <div
@@ -20104,7 +20108,7 @@ export function RoomPageLiveKit({
                   className="h-full min-h-0"
                 >
                   {session?.id && connected ? (
-                    <React.Suspense fallback={<div className="p-4 text-sm text-black/60">Loading tasks…</div>}>
+                    <React.Suspense fallback={<div className={`p-4 text-sm ${sidePanelIsLight ? "text-black/60" : "text-white/60"}`}>Loading tasks…</div>}>
                     <TasksPanel
                       key={`tasks-${session.id}`}
                       currentUserId={authUserId}
@@ -20312,7 +20316,7 @@ export function RoomPageLiveKit({
               }`}
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#81DB86]/15 text-[#81DB86]">
+                <div className="flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#5286F6]/15 text-[#5286F6]">
                   <Clock3 size={20} />
                 </div>
                 <div>
@@ -20342,7 +20346,7 @@ export function RoomPageLiveKit({
                   isLight ? "lg:border-[#D8D0D0]" : "lg:border-[#343434]"
                 }`}
               >
-                <div className="inline-flex items-center gap-2 rounded-full border border-[#81DB86]/25 bg-[#81DB86]/10 px-3 py-1.5 text-[11px] font-semibold text-[#81DB86]">
+                <div className="inline-flex items-center gap-2 rounded-full border border-[#5286F6]/25 bg-[#5286F6]/10 px-3 py-1.5 text-[11px] font-semibold text-[#5286F6]">
                   <Check size={13} /> Finished
                 </div>
 
@@ -20373,7 +20377,7 @@ export function RoomPageLiveKit({
                           className="h-10 w-10 shrink-0 rounded-full object-cover"
                         />
                       ) : (
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#81DB86] text-[13px] font-bold text-black">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#5286F6] text-[13px] font-bold text-black">
                           {endedHostName.slice(0, 1).toUpperCase()}
                         </div>
                       )}
@@ -20399,7 +20403,7 @@ export function RoomPageLiveKit({
                 <button
                   type="button"
                   onClick={() => navigate("/sessions", { replace: true })}
-                  className="mt-5 inline-flex h-11 items-center gap-2 rounded-full bg-[#81DB86] px-5 text-[13px] font-bold text-black transition hover:bg-[#72CF78]"
+                  className="mt-5 inline-flex h-11 items-center gap-2 rounded-full bg-[#5286F6] px-5 text-[13px] font-bold text-black transition hover:bg-[#5286F6]"
                 >
                   View all sessions <ArrowRight size={15} />
                 </button>
@@ -20458,7 +20462,7 @@ export function RoomPageLiveKit({
                                 className="h-9 w-9 shrink-0 rounded-full object-cover"
                               />
                             ) : (
-                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#81DB86] text-[12px] font-bold text-black">
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#5286F6] text-[12px] font-bold text-black">
                                 {recommendation.hostName.slice(0, 1).toUpperCase()}
                               </div>
                             )}
@@ -20476,7 +20480,7 @@ export function RoomPageLiveKit({
                             <button
                               type="button"
                               onClick={() => navigate(`/room-livekit/${recommendation.id}`)}
-                              className="h-10 rounded-xl bg-[#81DB86] px-3 text-[12px] font-bold text-black transition hover:bg-[#72CF78]"
+                              className="h-10 rounded-xl bg-[#5286F6] px-3 text-[12px] font-bold text-black transition hover:bg-[#5286F6]"
                             >
                               Join
                             </button>
@@ -20488,7 +20492,7 @@ export function RoomPageLiveKit({
                               disabled={bookingBusy || isBooked || isFull}
                               className={`flex h-10 items-center justify-center gap-1.5 rounded-xl border px-3 text-[12px] font-semibold transition disabled:cursor-default ${
                                 isBooked
-                                  ? "border-[#81DB86]/40 bg-[#81DB86]/10 text-[#81DB86]"
+                                  ? "border-[#5286F6]/40 bg-[#5286F6]/10 text-[#5286F6]"
                                   : isLight
                                     ? "border-black/10 bg-black/[0.03] hover:bg-black/[0.07] disabled:opacity-45"
                                     : "border-white/10 bg-white/[0.04] hover:bg-white/[0.08] disabled:opacity-45"
@@ -21023,7 +21027,7 @@ export function RoomPageLiveKit({
                         await applyVideoFx("bg", preset.url);
                         setVoiceUiLastCommand(`${preset.label} background applied`);
                       }}
-                      className={`overflow-hidden rounded-2xl border text-left transition hover:-translate-y-0.5 disabled:opacity-50 ${selected ? "border-[#81DB86] ring-2 ring-[#81DB86]/30" : isLight ? "border-black/10 bg-white" : "border-white/10 bg-white/[0.04]"}`}
+                      className={`overflow-hidden rounded-2xl border text-left transition hover:-translate-y-0.5 disabled:opacity-50 ${selected ? "border-[#5286F6] ring-2 ring-[#5286F6]/30" : isLight ? "border-black/10 bg-white" : "border-white/10 bg-white/[0.04]"}`}
                     >
                       <img src={preset.url} alt="" className="aspect-video w-full object-cover" />
                       <span className="block px-2 py-2 text-[11px] font-semibold">{preset.label}</span>
@@ -21050,7 +21054,7 @@ export function RoomPageLiveKit({
                     return (
                       <div
                         key={slot.id}
-                        className={`overflow-hidden rounded-2xl border transition ${selected ? "border-[#81DB86] ring-2 ring-[#81DB86]/25" : isLight ? "border-black/10 bg-white" : "border-white/10 bg-white/[0.04]"}`}
+                        className={`overflow-hidden rounded-2xl border transition ${selected ? "border-[#5286F6] ring-2 ring-[#5286F6]/25" : isLight ? "border-black/10 bg-white" : "border-white/10 bg-white/[0.04]"}`}
                       >
                         <button
                           type="button"
@@ -21071,7 +21075,7 @@ export function RoomPageLiveKit({
                             </span>
                           )}
                           {selected ? (
-                            <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#81DB86] text-[11px] text-black">✓</span>
+                            <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#5286F6] text-[11px] text-black">✓</span>
                           ) : null}
                         </button>
 
@@ -21135,7 +21139,7 @@ export function RoomPageLiveKit({
                     setVoiceUiLastCommand("Blur applied");
                     closeVoiceFxPopup();
                   }}
-                  className={`h-10 rounded-xl text-[12px] font-semibold transition disabled:opacity-50 ${videoFxMode === "blur" ? "bg-[#81DB86] text-black" : isLight ? "bg-black text-white hover:bg-black/80" : "bg-white text-black hover:bg-white/85"}`}
+                  className={`h-10 rounded-xl text-[12px] font-semibold transition disabled:opacity-50 ${videoFxMode === "blur" ? "bg-[#5286F6] text-black" : isLight ? "bg-black text-white hover:bg-black/80" : "bg-white text-black hover:bg-white/85"}`}
                 >
                   {fxApplying ? "Applying…" : "Apply Blur"}
                 </button>
@@ -21150,7 +21154,7 @@ export function RoomPageLiveKit({
                       voiceFxUploadInputRef.current?.click();
                     }
                   }}
-                  className={`flex h-10 cursor-pointer items-center justify-center rounded-xl text-[12px] font-semibold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#81DB86]/40 ${voiceFxUploadRequested ? "animate-pulse bg-[#81DB86] text-black ring-4 ring-[#81DB86]/30" : isLight ? "border border-black/10 bg-white hover:bg-black/5" : "border border-white/10 bg-white/[0.05] hover:bg-white/10"}`}
+                  className={`flex h-10 cursor-pointer items-center justify-center rounded-xl text-[12px] font-semibold transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#5286F6]/40 ${voiceFxUploadRequested ? "animate-pulse bg-[#5286F6] text-black ring-4 ring-[#5286F6]/30" : isLight ? "border border-black/10 bg-white hover:bg-black/5" : "border border-white/10 bg-white/[0.05] hover:bg-white/10"}`}
                 >
                   Upload Image
                 </button>
@@ -21182,7 +21186,7 @@ export function RoomPageLiveKit({
                     step={1}
                     value={blurStrength}
                     aria-label="Blur strength"
-                    className="mt-3 w-full accent-[#81DB86]"
+                    className="mt-3 w-full accent-[#5286F6]"
                     onChange={(event) => setBlurStrength(Number(event.target.value))}
                     onPointerUp={(event) => {
                       const value = Number((event.currentTarget as HTMLInputElement).value);
@@ -21418,7 +21422,7 @@ export function RoomPageLiveKit({
                         : "border-[#2B2B2B] bg-[#1B1B1B] text-white",
                     ].join(" ")}
                   >
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#81DB86]/15 text-[24px]">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-[#5286F6]/15 text-[24px]">
                       🟢
                     </div>
 

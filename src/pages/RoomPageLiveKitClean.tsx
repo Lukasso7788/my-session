@@ -975,7 +975,7 @@ function CleanControls({
           className={[
             "inline-flex h-11 w-11 min-w-11 items-center justify-center rounded-[14px] border p-0 shadow-none transition",
             chatOpen
-              ? "border-[#81DB86]/35 bg-[#81DB86]/15 text-[#B7F2BA]"
+              ? "border-[#5286F6]/35 bg-[#5286F6]/15 text-[#B7F2BA]"
               : "border-white/10 bg-white/[0.06] text-white hover:bg-white/[0.1]",
           ].join(" ")}
         >
@@ -991,7 +991,7 @@ function CleanControls({
           className={[
             "inline-flex h-11 min-w-11 items-center justify-center gap-2 rounded-[14px] border px-3 text-xs font-bold shadow-none transition",
             pipActive
-              ? "border-[#81DB86]/35 bg-[#81DB86]/15 text-[#B7F2BA]"
+              ? "border-[#5286F6]/35 bg-[#5286F6]/15 text-[#B7F2BA]"
               : "border-white/10 bg-white/[0.06] text-white hover:bg-white/[0.1]",
             pipBusy ? "cursor-wait opacity-60" : "",
           ].join(" ")}

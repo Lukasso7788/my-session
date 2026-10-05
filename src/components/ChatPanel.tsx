@@ -93,8 +93,8 @@ const REACTION_EMOJIS = [
     "🎉",
 ] as const;
 
-const BRAND_GREEN = "#81DB86";
-const BRAND_GREEN_HOVER = "#72CF78";
+const BRAND_GREEN = "#5286F6";
+const BRAND_GREEN_HOVER = "#5286F6";
 const BRAND_GREEN_SOFT = "rgba(129,219,134,0.14)";
 const BRAND_GREEN_BORDER = "rgba(129,219,134,0.48)";
 
@@ -551,42 +551,42 @@ function MessageCardInner({
 
     const metaNameCls = isLight ? "text-black/55" : "text-[#C6CDD5]";
     const metaTimeCls = isLight ? "text-black/35" : "text-[#AEB6BF]";
-    const actionBtnCls = isLight ? "text-black/45 hover:text-[#2FA84F]" : "text-[#C6CDD5] hover:text-[#81DB86]";
+    const actionBtnCls = isLight ? "text-black/45 hover:text-[#2FA84F]" : "text-[#C6CDD5] hover:text-[#5286F6]";
     const dangerBtnCls = isLight ? "text-black/40 hover:text-red-700" : "text-[#C6CDD5] hover:text-red-300";
-    const menuCls = isLight ? "bg-[#F3F1F1] border border-[#D8D0D0]" : "bg-[#292D32] border border-[#4C5259]";
+    const menuCls = isLight ? "bg-[#F3F1F1] border border-[#D8D0D0]" : "bg-[#292929] border border-[#484848] text-[#F4F5F6]";
 
     const bubbleCls =
         "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
         (mine
             ? isLight
-                ? "bg-[#81DB86]/15 border-[#81DB86]/50 text-black/85"
-                : "bg-[#81DB86]/15 border-[#81DB86]/45 text-[#EAF8EC]"
+                ? "bg-[#5286F6]/15 border-[#5286F6]/50 text-black/85"
+                : "bg-[#5286F6]/15 border-[#5286F6]/45 text-[#EAF8EC]"
             : isLight
                 ? "bg-[#ECEAEA] border-[#D8D0D0] text-black/80"
-                : "bg-[#2A2E33] border-[#464D54] text-[#F4F5F6]") +
+                : "bg-[#2A2A2A] border-[#464646] text-[#F4F5F6]") +
         (highlighted
             ? isLight
                 ? " ring-2 ring-[#6B7280]/55"
-                : " ring-2 ring-[#81DB86]/70"
+                : " ring-2 ring-[#5286F6]/70"
             : "");
 
     const quoteBoxCls = isLight
         ? "bg-[#F7F5F5] border border-[#D8D0D0] text-black/70 hover:bg-[#F1F1F1]/90"
-        : "bg-[#23272B] border border-[#464D54] text-[#D9DEE4] hover:bg-[#30363B]";
+        : "bg-[#242424] border border-[#464646] text-[#D9DEE4] hover:bg-[#30363B]";
 
     const reactionPillBase = isLight
-        ? "px-2 py-1 rounded-xl bg-[#ECEAEA] border border-[#D8D0D0] text-[12px] text-black/70 flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#E3E1E1] hover:border-[#BEB7B7] hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]/75"
-        : "px-2 py-1 rounded-xl bg-[#30363B] border border-[#515961] text-[12px] text-[#E3E7EB] flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#3B4248] hover:border-[#81DB86]/50 hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#81DB86]/75";
+        ? "px-2 py-1 rounded-xl bg-[#ECEAEA] border border-[#D8D0D0] text-[12px] text-black/70 flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#E3E1E1] hover:border-[#BEB7B7] hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/75"
+        : "px-2 py-1 rounded-xl bg-[#30363B] border border-[#515961] text-[12px] text-[#E3E7EB] flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#3B4248] hover:border-[#5286F6]/50 hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/75";
 
     const reactionPillMine = isLight
-        ? "bg-[#81DB86]/18 ring-2 ring-[#81DB86]/70 border-[#81DB86]/70 text-[#246B2A]"
-        : "bg-[#81DB86]/18 ring-2 ring-[#81DB86]/70 border-[#81DB86]/55 text-[#EAF8EC]";
+        ? "bg-[#5286F6]/18 ring-2 ring-[#5286F6]/70 border-[#5286F6]/70 text-[#246B2A]"
+        : "bg-[#5286F6]/18 ring-2 ring-[#5286F6]/70 border-[#5286F6]/55 text-[#EAF8EC]";
 
     const reactionCountCls = isLight ? "text-black/50" : "text-[#C6CDD5]";
 
     const inputCls = isLight
-        ? "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]"
-        : "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#292D32] border border-[#4C5259] text-[#F4F5F6] placeholder:text-[#ABB3BE] focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]";
+        ? "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#5286F6] focus:border-[#5286F6]"
+        : "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#292D32] border border-[#4C5259] text-[#F4F5F6] placeholder:text-[#ABB3BE] focus:ring-1 focus:ring-[#5286F6] focus:border-[#5286F6]";
 
     const { quote, quoteMessageId, main } = useMemo(
         () => parseReplyBody(msg.body),
@@ -676,7 +676,7 @@ function MessageCardInner({
                             <button
                                 ref={readReceiptButtonRef}
                                 type="button"
-                                className="inline-flex items-center gap-1 text-[#81DB86] transition hover:opacity-80"
+                                className="inline-flex items-center gap-1 text-[#5286F6] transition hover:opacity-80"
                                 title={
                                     readers.length === 1
                                         ? `Read by ${readers[0]?.fullName || "Participant"}`
@@ -772,7 +772,7 @@ function MessageCardInner({
                                                         <CheckCheck
                                                             size={17}
                                                             strokeWidth={2.2}
-                                                            className="shrink-0 text-[#81DB86]"
+                                                            className="shrink-0 text-[#5286F6]"
                                                         />
                                                     </div>
                                                 ))}
@@ -844,8 +844,8 @@ function MessageCardInner({
                                             }}
                                             onMouseDown={(e) => e.stopPropagation()}
                                         >
-                                            <div className="px-2.5 pt-2 pb-2 border-b border-[#D8D0D0]">
-                                                <div className="mb-1.5 text-[11px] font-semibold text-black/55">
+                                            <div className={`px-2.5 pt-2 pb-2 border-b ${isLight ? "border-[#D8D0D0]" : "border-[#484848]"}`}>
+                                                <div className={`mb-1.5 text-[11px] font-semibold ${isLight ? "text-black/55" : "text-[#D9DEE4]"}`}>
                                                     Quick reactions
                                                 </div>
                                                 <div className="flex flex-wrap gap-1.5">
@@ -861,8 +861,8 @@ function MessageCardInner({
                                                                 className={
                                                                     "h-8 w-8 rounded-xl hover:scale-[1.05] transition leading-none flex items-center justify-center " +
                                                                     (isMine
-                                                                        ? "bg-[#81DB86]/18 ring-1 ring-[#81DB86]/65"
-                                                                        : "hover:bg-[#E8E8E8]")
+                                                                        ? "bg-[#5286F6]/18 ring-1 ring-[#5286F6]/65"
+                                                                        : isLight ? "hover:bg-[#E8E8E8]" : "hover:bg-[#3A3A3A]")
                                                                 }
                                                                 title={isMine ? `Remove ${e}` : e}
                                                                 type="button"
@@ -1003,7 +1003,7 @@ function MessageCardInner({
                                 className={
                                     "px-3 h-9 rounded-xl text-sm font-semibold inline-flex items-center gap-2 " +
                                     (savingEdit ? "opacity-70 cursor-not-allowed " : "") +
-                                    "bg-[#81DB86] hover:bg-[#72CF78] text-black"
+                                    "bg-[#5286F6] hover:bg-[#5286F6] text-black"
                                 }
                                 disabled={savingEdit || !draft.trim()}
                                 title="Save"
@@ -1739,22 +1739,22 @@ export function ChatPanel({
     const titleText = isLight ? "text-black/85" : "text-[#F4F5F6]";
     const subText = isLight ? "text-black/50" : "text-[#B5BCC6]";
     const headerCloseBtnCls = isLight ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60" : "bg-[#353B42] hover:bg-[#444B53] text-[#D9DEE4]";
-    const replyBoxCls = isLight ? "bg-[#ECEAEA] border-[#D8D0D0]" : "bg-[#292D32] border-[#4C5259]";
-    const replyingLabel = `text-[11px] font-medium ${isLight ? "text-[#3FB455]" : "text-[#9AE99E]"}`;
+    const replyBoxCls = isLight ? "bg-[#ECEAEA] border-[#D8D0D0]" : "bg-[#292929] border-[#484848]";
+    const replyingLabel = `text-[11px] font-medium ${isLight ? "text-[#3FB455]" : "text-[#6B98FA]"}`;
     const replyingText = isLight ? "text-black/55" : "text-[#C6CDD5]";
     const cancelBtnCls = isLight ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60" : "bg-[#353B42] hover:bg-[#444B53] text-[#D9DEE4]";
     const hintText = isLight ? "text-black/40" : "text-[#B5BCC6]";
-    const sendBtnActive = "bg-[#81DB86] hover:bg-[#72CF78] text-black";
+    const sendBtnActive = "bg-[#5286F6] hover:bg-[#5286F6] text-black";
     const sendBtnDisabled = isLight ? "bg-[#DCDCDC] text-black/35" : "bg-[#353B42] text-[#AEB6BF]";
     const composerInputCls =
-        "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86] " +
+        "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none focus:ring-1 focus:ring-[#5286F6] focus:border-[#5286F6] " +
         (isLight ? "bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35" : "bg-[#292D32] border border-[#4C5259] text-[#F4F5F6] placeholder:text-[#ABB3BE]");
     const composerEmojiBtnCls =
         "w-11 h-11 rounded-xl flex items-center justify-center transition border " +
-        (isLight ? "bg-[#F3F1F1] border-[#D8D0D0] text-black/60 hover:bg-[#E8E8E8] hover:text-black/80" : "bg-[#292D32] border-[#4C5259] text-[#D9DEE4] hover:bg-[#353B42] hover:text-white");
+        (isLight ? "bg-[#F3F1F1] border-[#D8D0D0] text-black/60 hover:bg-[#E8E8E8] hover:text-black/80" : "bg-[#292929] border-[#484848] text-[#D9DEE4] hover:bg-[#353B42] hover:text-white");
     const portalBoxCls =
         "rounded-2xl border shadow-2xl overflow-hidden " +
-        (isLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#4C5259] bg-[#292D32]");
+        (isLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#484848] bg-[#292929] text-[#F4F5F6]");
 
     useEffect(() => {
         let cancelled = false;
@@ -3150,8 +3150,8 @@ export function ChatPanel({
     const modalTextSecondary = isLight ? "text-black/55" : "text-[#B5BCC6]";
     const modalBtn = isLight
         ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] border border-[#D8D0D0] text-black/70"
-        : "bg-[#353B42] hover:bg-[#444B53] border border-[#4C5259] text-[#E3E7EB]";
-    const modalPrimaryBtn = "bg-[#81DB86] hover:bg-[#72CF78] text-black";
+        : "bg-[#353535] hover:bg-[#444444] border border-[#484848] text-[#E3E7EB]";
+    const modalPrimaryBtn = "bg-[#5286F6] hover:bg-[#5286F6] text-black";
     const canToggleInModal =
         !!reactionDetails.open &&
         !!reactionDetails.messageId &&
@@ -3281,7 +3281,7 @@ export function ChatPanel({
                                             "px-3 h-9 rounded-xl text-[13px] font-semibold border transition " +
                                             (myReactedInModal
                                                 ? modalBtn
-                                                : modalPrimaryBtn + " border-[#81DB86]/50")
+                                                : modalPrimaryBtn + " border-[#5286F6]/50")
                                         }
                                         onClick={async () => {
                                             await toggleReaction(
@@ -3589,13 +3589,13 @@ export function ChatPanel({
                         className={
                             "mb-2 rounded-xl border px-3 py-2 " +
                             (isLight
-                                ? "border-[#81DB86]/60 bg-[#81DB86]/10 text-black/80"
-                                : "border-[#81DB86]/45 bg-[#81DB86]/10 text-white/85")
+                                ? "border-[#5286F6]/60 bg-[#5286F6]/10 text-black/80"
+                                : "border-[#5286F6]/45 bg-[#5286F6]/10 text-white/85")
                         }
                     >
                         <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                                <div className={`text-[11px] font-semibold uppercase tracking-[0.06em] ${isLight ? "text-[#3FB455]" : "text-[#9AE99E]"}`}>
+                                <div className={`text-[11px] font-semibold uppercase tracking-[0.06em] ${isLight ? "text-[#3FB455]" : "text-[#6B98FA]"}`}>
                                     Voice message preview
                                 </div>
                                 <div className="mt-1 text-[12px] leading-4 opacity-75">
@@ -3621,7 +3621,7 @@ export function ChatPanel({
                                 <button
                                     type="button"
                                     onClick={() => void send()}
-                                    className="h-8 rounded-lg bg-[#81DB86] px-3 text-[11px] font-semibold text-black transition hover:bg-[#72CF78]"
+                                    className="h-8 rounded-lg bg-[#5286F6] px-3 text-[11px] font-semibold text-black transition hover:bg-[#5286F6]"
                                 >
                                     Confirm
                                 </button>
@@ -3680,7 +3680,7 @@ export function ChatPanel({
                             (text.trim() &&
                                 !generalChatLocked &&
                                 !(activeMode === "direct" && isHost && !activeDirectPeerId)
-                                ? sendBtnActive + " border-[#81DB86]/50"
+                                ? sendBtnActive + " border-[#5286F6]/50"
                                 : sendBtnDisabled + " border-transparent cursor-not-allowed")
                         }
                         type="button"

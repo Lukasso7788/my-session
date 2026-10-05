@@ -5685,7 +5685,7 @@ export default function SessionCard({
                                                     <Link
                                                         to={`/profile/${booking.id}`}
                                                         onClick={() => setIsBookersModalOpen(false)}
-                                                        className={`block rounded-[20px] border px-4 py-3 transition hover:-translate-y-0.5 hover:shadow-sm ${isCurrentUser ? "border-[#81DB86] bg-[#F3FBF3]" : "border-[#E5E7EB] bg-white hover:border-[#BFD8C1]"}`}
+                                                        className={`block rounded-[20px] border px-4 py-3 transition hover:-translate-y-0.5 hover:shadow-sm ${isCurrentUser ? "border-[#5286F6] bg-[#F3FBF3]" : "border-[#E5E7EB] bg-white hover:border-[#BFD8C1]"}`}
                                                     >
                                                         <div className="flex items-start gap-3">
                                                             <AvatarCircle user={booking} size={38} isLive={isLive} showLiveDot={true} />

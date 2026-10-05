@@ -26,7 +26,7 @@ function formatTrackTime(rawSeconds: number) {
 
 function TrackIcon({ src, label, dark }: { src: string; label: string; dark: boolean }) {
   return (
-    <span className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[11px] ${dark ? "bg-[#353B42]" : "bg-[#F0EEEE]"}`}>
+    <span className={`flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[11px] ${dark ? "bg-[#353535]" : "bg-[#F0EEEE]"}`}>
       <img
         src={src}
         alt=""
@@ -134,21 +134,21 @@ export function RoomSoundscapePanel({
   };
 
   return (
-    <div className={`flex h-full min-h-0 flex-col ${isDark ? "bg-[#1B1D20] text-[#F4F5F6]" : "bg-[#F8F7F7] text-[#2F2F2F]"}`}>
-      <header className={`flex min-h-[48px] items-center justify-between gap-3 px-4 py-2.5 ${isDark ? "bg-[#222529]" : "bg-[#F8F7F7]"}`}>
+    <div className={`flex h-full min-h-0 flex-col ${isDark ? "bg-[#1B1B1B] text-[#F4F5F6]" : "bg-[#F8F7F7] text-[#2F2F2F]"}`}>
+      <header className={`flex min-h-[44px] items-center justify-between gap-3 px-3 py-1.5 ${isDark ? "bg-[#232323]" : "bg-[#F8F7F7]"}`}>
         <div className="flex min-w-0 items-center gap-2">
           <img
             src={isDark ? "/icons/soundscape-dark.svg" : "/icons/soundscape-light.svg"}
             alt=""
-            className="h-4 w-4 object-contain"
+            className="h-3.5 w-3.5 object-contain"
             draggable={false}
           />
-          <span className={`truncate text-[13px] font-medium ${isDark ? "text-[#F4F5F6]" : "text-[#2F2F2F]"}`}>Music</span>
+          <span className={`truncate text-[12px] font-semibold ${isDark ? "text-[#F4F5F6]" : "text-[#2F2F2F]"}`}>Music</span>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className={`flex h-8 w-8 items-center justify-center rounded-[10px] transition ${isDark ? "text-[#CBD2DA] hover:bg-[#353B42] hover:text-white" : "text-[#2F2F2F]/50 hover:bg-[#ECEAEA] hover:text-[#2F2F2F]"}`}
+          className={`flex h-8 w-8 items-center justify-center rounded-[10px] transition ${isDark ? "text-[#CBD2DA] hover:bg-[#353535] hover:text-white" : "text-[#2F2F2F]/50 hover:bg-[#ECEAEA] hover:text-[#2F2F2F]"}`}
           aria-label="Close music panel"
         >
           <X className="h-4 w-4" strokeWidth={1.8} />
@@ -157,7 +157,7 @@ export function RoomSoundscapePanel({
 
       <div className="ms-chat-panel-scrollbars min-h-0 flex-1 overflow-y-auto">
         <div className="px-4 pt-2">
-          <div className={`grid grid-cols-2 rounded-[13px] p-1 ${isDark ? "bg-[#30353A]" : "bg-[#ECEAEA]"}`}>
+          <div className={`grid grid-cols-2 rounded-[13px] p-1 ${isDark ? "bg-[#303030]" : "bg-[#ECEAEA]"}`}>
             {(["room", "personal"] as const).map((mode) => (
               <button
                 key={mode}
@@ -165,7 +165,7 @@ export function RoomSoundscapePanel({
                 onClick={() => onListeningModeChange(mode)}
                 className={`h-9 rounded-[10px] text-[11px] font-medium transition ${
                   listeningMode === mode
-                    ? isDark ? "bg-[#81DB86] text-[#102816]" : "bg-[#2F2F2F] text-white"
+                    ? isDark ? "bg-[#5286F6] text-[#FFFFFF]" : "bg-[#2F2F2F] text-white"
                     : isDark ? "text-[#CBD2DA] hover:text-white" : "text-[#2F2F2F]/60 hover:text-[#2F2F2F]"
                 }`}
               >
@@ -193,7 +193,7 @@ export function RoomSoundscapePanel({
             {activeOption?.description || (activeId ? "Uploaded room audio" : "Select from the playlist")}
           </div>
 
-          <div className={`relative mt-4 overflow-hidden rounded-[18px] ${isDark ? "bg-[#30353A]" : "bg-[#ECEAEA]"}`}>
+          <div className={`relative mt-4 overflow-hidden rounded-[18px] ${isDark ? "bg-[#303030]" : "bg-[#ECEAEA]"}`}>
             <img
               src={activeOption?.artwork || "/images/room-music/ambient-focus.svg"}
               alt=""
@@ -260,7 +260,7 @@ export function RoomSoundscapePanel({
             </div>
           </div>
 
-          <div className={`mt-3 flex items-center gap-2.5 rounded-xl px-3 py-2 ${isDark ? "bg-[#30353A]" : "bg-[#F0EEEE]"}`}>
+          <div className={`mt-3 flex items-center gap-2.5 rounded-xl px-3 py-2 ${isDark ? "bg-[#303030]" : "bg-[#F0EEEE]"}`}>
             <Volume2 className={`h-3.5 w-3.5 shrink-0 ${isDark ? "text-[#D8DDE3]" : "text-[#2F2F2F]/55"}`} strokeWidth={1.8} />
             <input
               type="range"
@@ -283,7 +283,7 @@ export function RoomSoundscapePanel({
             className={`mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-xl text-[11px] font-medium transition disabled:opacity-35 ${
               personalMuted
                 ? isDark ? "bg-[#3A5541] text-[#D9F9DC] hover:bg-[#44664D]" : "bg-[#2F2F2F] text-white hover:bg-[#252525]"
-                : isDark ? "bg-[#30353A] text-[#E3E7EB] hover:bg-[#3C4248]" : "bg-[#ECEAEA] text-[#555] hover:bg-[#E3E0E0]"
+                : isDark ? "bg-[#303030] text-[#E3E7EB] hover:bg-[#3C3C3C]" : "bg-[#ECEAEA] text-[#555] hover:bg-[#E3E0E0]"
             }`}
           >
             {personalMuted ? (
@@ -295,7 +295,7 @@ export function RoomSoundscapePanel({
           </button>
 
           {canShareTabMusic ? (
-            <div className={`mt-3 rounded-[14px] border p-2.5 text-left ${isDark ? "border-[#485058] bg-[#25292E]" : "border-[#DEDADA] bg-white"}`}>
+            <div className={`mt-3 rounded-[14px] border p-2.5 text-left ${isDark ? "border-[#484848] bg-[#252525]" : "border-[#DEDADA] bg-white"}`}>
               <button
                 type="button"
                 disabled={tabMusicShareBusy}
@@ -303,7 +303,7 @@ export function RoomSoundscapePanel({
                 className={`flex h-10 w-full items-center justify-center gap-2 rounded-xl text-[10px] font-semibold transition disabled:cursor-wait disabled:opacity-55 ${
                   sharingTabMusic
                     ? isDark ? "bg-[#4A292B] text-[#FFB5B8] hover:bg-[#5B3033]" : "bg-[#FFF0F0] text-[#B54444] hover:bg-[#FFE7E7]"
-                    : isDark ? "bg-[#81DB86] text-[#102816] hover:bg-[#9AE99E]" : "bg-[#2F2F2F] text-white hover:bg-[#252525]"
+                    : isDark ? "bg-[#5286F6] text-[#FFFFFF] hover:bg-[#6B98FA]" : "bg-[#2F2F2F] text-white hover:bg-[#252525]"
                 }`}
               >
                 <RadioTower className="h-3.5 w-3.5" strokeWidth={1.8} />
@@ -325,7 +325,7 @@ export function RoomSoundscapePanel({
           ) : null}
         </section>
 
-        <section className={`mx-2 mb-2 rounded-[18px] px-2 pb-3 pt-3 ${isDark ? "bg-[#25292E]" : "bg-white"}`}>
+        <section className={`mx-2 mb-2 rounded-[18px] px-2 pb-3 pt-3 ${isDark ? "bg-[#252525]" : "bg-white"}`}>
           <div className="mb-2 flex items-center justify-between px-1">
             <div className={`text-[11px] font-semibold uppercase tracking-[0.12em] ${isDark ? "text-[#E3E7EB]" : "text-[#2F2F2F]/55"}`}>Playlist</div>
             <span className={`${isDark ? "text-[10px] text-[#B5BCC6]" : "text-[9px] text-[#2F2F2F]/35"}`}>{ROOM_SOUNDSCAPE_OPTIONS.length} tracks</span>
@@ -341,7 +341,7 @@ export function RoomSoundscapePanel({
                   disabled={!canControl || busy}
                   onClick={() => onSelect(option.id)}
                   className={`group flex w-full items-center gap-3 rounded-[13px] px-2 py-2 text-left transition disabled:cursor-default ${
-                    selected ? isDark ? "bg-[#353F39]" : "bg-[#EDEBEB]" : isDark ? "hover:bg-[#30353A]" : "hover:bg-[#F5F3F3]"
+                    selected ? isDark ? "bg-[#353F39]" : "bg-[#EDEBEB]" : isDark ? "hover:bg-[#303030]" : "hover:bg-[#F5F3F3]"
                   } ${!canControl ? "opacity-65" : ""}`}
                 >
                   <span className={`w-5 shrink-0 text-center tabular-nums ${isDark ? "text-[10px] text-[#AEB6BF]" : "text-[9px] text-[#2F2F2F]/30"}`}>
@@ -378,7 +378,7 @@ export function RoomSoundscapePanel({
                 type="button"
                 disabled={uploading || busy}
                 onClick={() => fileInputRef.current?.click()}
-                className={`flex h-10 w-full items-center justify-center gap-2 rounded-xl text-[10px] font-semibold transition disabled:opacity-40 ${isDark ? "bg-[#353B42] text-[#F4F5F6] hover:bg-[#444B53]" : "bg-[#ECEAEA] text-[#2F2F2F] hover:bg-[#E2DFDF]"}`}
+                className={`flex h-10 w-full items-center justify-center gap-2 rounded-xl text-[10px] font-semibold transition disabled:opacity-40 ${isDark ? "bg-[#353535] text-[#F4F5F6] hover:bg-[#444B53]" : "bg-[#ECEAEA] text-[#2F2F2F] hover:bg-[#E2DFDF]"}`}
               >
                 <Upload className="h-3.5 w-3.5" strokeWidth={1.8} />
                 {uploading ? "Uploading…" : "Upload room track · max 30 MB"}

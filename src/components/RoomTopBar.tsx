@@ -326,10 +326,10 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         <div
             className={`relative isolate flex w-full rounded-2xl overflow-visible ${topBarBg}`}
         >
-            <div className="flex-1 px-4 sm:px-6 py-3 sm:py-4 overflow-visible">
+            <div className="flex-1 px-4 py-2.5 sm:px-5 sm:py-3 lg:py-2 overflow-visible">
                 <div className="flex flex-col gap-2 max-[480px]:gap-2 overflow-visible">
                     <div className="relative z-10 flex items-center justify-between gap-3">
-                        <div className="min-w-0">
+                        <div className="min-w-0 shrink-0 lg:max-w-[320px]">
                             <div className="flex items-center gap-2 min-w-0">
                                 <p
                                     className={`min-w-0 font-inter font-semibold text-[16px] sm:text-[18px] truncate ${strongText}`}
@@ -349,6 +349,38 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                 </span>
                             </div>
                         </div>
+
+                        {showStageBar && (
+                            <div className="relative z-30 hidden min-w-[220px] flex-1 overflow-visible lg:block">
+                                <div className="group relative z-30 overflow-visible">
+                                    {showEditTimeline && (
+                                        <button
+                                            type="button"
+                                            onClick={onEditTimeline}
+                                            className={[
+                                                "absolute right-0 -top-7 z-20 rounded-lg px-2 py-1 text-[10px] font-semibold border shadow-lg transition",
+                                                "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
+                                                isLight
+                                                    ? "bg-[#F2F3F5] border-[#CFCFCF] text-black/75 hover:bg-[#E1E3E6]"
+                                                    : "bg-[#1B1B1B] border-[#2B2B2B] text-white/85 hover:bg-[#242424]",
+                                            ].join(" ")}
+                                            title="Edit timeline"
+                                        >
+                                            Edit
+                                        </button>
+                                    )}
+                                    <SessionStageBar
+                                        stages={stages as any}
+                                        startTime={stagebarStartTime}
+                                        cycleSeconds={stagebarCycleSeconds}
+                                        onHoverStage={onHoverStage as any}
+                                        progressStyle="tick"
+                                        tickEveryMs={1000}
+                                        theme={theme}
+                                    />
+                                </div>
+                            </div>
+                        )}
 
                         <div className="relative z-10 hidden min-[481px]:flex items-center gap-2 shrink-0">
                             {renderTimer()}
@@ -445,7 +477,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                     </div>
 
                     {showStageBar && (
-                        <div className="relative z-30 mt-1 max-[480px]:mt-1 w-full overflow-visible pt-1">
+                        <div className="relative z-30 mt-1 w-full overflow-visible pt-1 lg:hidden">
                             <div className="group relative z-30 overflow-visible">
                                 {showEditTimeline && (
                                     <button
