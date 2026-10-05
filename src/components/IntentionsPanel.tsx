@@ -405,7 +405,7 @@ export function TasksPanel({
   const inputCls = `
       h-12 bg-[#F7F5F5] border border-[#CFC6C6] rounded-[18px]
       px-4 text-[14px] text-black/85 placeholder:text-black/35
-      outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
+      outline-none focus:ring-1 focus:ring-[#5286F6] focus:border-[#5286F6]
       font-inter
     `;
 
@@ -1611,8 +1611,8 @@ export function TasksPanel({
                       onChange={(e) => setSelectedPlanId(e.target.value)}
                       className={
                         isLight
-                          ? "w-full h-11 px-3 rounded-xl border border-[#CFCFCF] bg-[#F3F3F3] text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-[#81DB86]"
-                          : "w-full h-11 px-3 rounded-xl border border-[#2B2B2B] bg-[#242424] text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-[#81DB86]"
+                          ? "w-full h-11 px-3 rounded-xl border border-[#CFCFCF] bg-[#F3F3F3] text-[13px] font-semibold text-black/85 outline-none focus:ring-1 focus:ring-[#5286F6]"
+                          : "w-full h-11 px-3 rounded-xl border border-[#2B2B2B] bg-[#242424] text-[13px] font-semibold text-white/85 outline-none focus:ring-1 focus:ring-[#5286F6]"
                       }
                     >
                       {plans.map((p) => (
@@ -1914,7 +1914,7 @@ export function TasksPanel({
               {pictureInPictureSupported && onOpenPictureInPicture ? (
                 <IconButton
                   theme={panelTheme}
-                  className="border border-[#81DB86] bg-[#81DB86]/10 text-[#2FA84F] hover:bg-[#81DB86]/15"
+                  className="border border-[#5286F6] bg-[#5286F6]/10 text-[#2FA84F] hover:bg-[#5286F6]/15"
                   title={
                     pictureInPictureOpen
                       ? "Close Picture-in-Picture video"
@@ -2033,7 +2033,7 @@ export function TasksPanel({
                 const editInputCls = `
                     w-full bg-[#F3F3F3] border border-[#C9C9C9] rounded-xl
                     px-3 py-2 text-[13px] text-black/85
-                    outline-none focus:ring-1 focus:ring-[#81DB86] focus:border-[#81DB86]
+                    outline-none focus:ring-1 focus:ring-[#5286F6] focus:border-[#5286F6]
                     font-inter
                   `;
 
@@ -2050,7 +2050,7 @@ export function TasksPanel({
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="shrink-0">
                         {i.completed ? (
-                          <CheckCircle size={18} className="text-[#81DB86]" />
+                          <CheckCircle size={18} className="text-[#5286F6]" />
                         ) : (
                           <Circle size={18} className={circleCls} />
                         )}
@@ -2101,7 +2101,7 @@ export function TasksPanel({
                                 "h-9 w-9 shrink-0 rounded-full border text-[13px] font-semibold transition inline-flex items-center justify-center",
                                 normalizeTaskVisibility(i.visibility) ===
                                   "public"
-                                  ? "border-[#81DB86] bg-[#81DB86]/15 text-[#248A3D] hover:bg-[#81DB86]/25"
+                                  ? "border-[#5286F6] bg-[#5286F6]/15 text-[#248A3D] hover:bg-[#5286F6]/25"
                                   : "border-[#CFC6C6] bg-[#F3F1F1] text-black/55 hover:bg-[#ECEAEA]",
                               ].join(" ")}
                             >
@@ -2236,7 +2236,7 @@ export function TasksPanel({
                         className={[
                           "h-8 w-8 rounded-full border text-[12px] font-medium inline-flex items-center justify-center shrink-0",
                           item.completed
-                            ? "border-[#81DB86] text-[#2FA84F] bg-[#81DB86]/10"
+                            ? "border-[#5286F6] text-[#2FA84F] bg-[#5286F6]/10"
                             : "border-[#5286F6] text-[#5286F6] bg-[#5286F6]/10",
                         ].join(" ")}
                         title={statusText}
