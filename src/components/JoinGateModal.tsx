@@ -82,7 +82,7 @@ function HostAvatar({ name, avatarUrl }: { name: string; avatarUrl?: string | nu
     }
 
     return (
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#81DB86] text-[12px] font-bold text-black">
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#5286F6] text-[12px] font-bold text-black">
             {initials}
         </div>
     );
@@ -137,7 +137,7 @@ export default function JoinGateModal({
                 <div className={`w-full overflow-hidden rounded-[28px] border shadow-2xl ${panel}`}>
                     <div className={`flex items-center justify-between gap-4 border-b px-5 py-4 sm:px-7 ${isLight ? "border-[#D8D0D0]" : "border-[#343434]"}`}>
                         <div className="flex items-center gap-3">
-                            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#81DB86] text-[17px] font-black text-black">
+                            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#5286F6] text-[17px] font-black text-black">
                                 M
                             </div>
                             <div>
@@ -149,7 +149,7 @@ export default function JoinGateModal({
                         </div>
 
                         <div className={`hidden items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold sm:flex ${inset}`}>
-                            <span className="h-2 w-2 animate-pulse rounded-full bg-[#81DB86]" />
+                            <span className="h-2 w-2 animate-pulse rounded-full bg-[#5286F6]" />
                             Join window opens soon
                         </div>
                     </div>
@@ -182,7 +182,7 @@ export default function JoinGateModal({
                                         </div>
                                     </div>
 
-                                    <div className={`hidden rounded-2xl bg-[#81DB86]/15 p-3 sm:block ${isLight ? "text-[#36733B]" : "text-[#A9EDAD]"}`}>
+                                    <div className={`hidden rounded-2xl bg-[#5286F6]/15 p-3 sm:block ${isLight ? "text-[#36733B]" : "text-[#A9EDAD]"}`}>
                                         <CalendarClock size={22} />
                                     </div>
                                 </div>
@@ -208,7 +208,7 @@ export default function JoinGateModal({
                                     </div>
                                     <div className={`mt-2 h-2 overflow-hidden rounded-full ${isLight ? "bg-black/10" : "bg-white/10"}`}>
                                         <div
-                                            className="h-full rounded-full bg-[#81DB86] transition-[width] duration-500"
+                                            className="h-full rounded-full bg-[#5286F6] transition-[width] duration-500"
                                             style={{ width: `${occupancyPct}%` }}
                                         />
                                     </div>
@@ -222,8 +222,8 @@ export default function JoinGateModal({
                                     disabled={bookingBusy || bookingDone}
                                     className={`mt-5 flex h-12 w-full items-center justify-center gap-2 rounded-2xl px-5 text-[14px] font-bold transition disabled:cursor-default ${
                                         bookingDone
-                                            ? "border border-[#81DB86]/50 bg-[#81DB86]/15 text-[#4B9A51]"
-                                            : "bg-[#81DB86] text-black hover:bg-[#72CF78] active:scale-[0.99] disabled:opacity-65"
+                                            ? "border border-[#5286F6]/50 bg-[#5286F6]/15 text-[#4B9A51]"
+                                            : "bg-[#5286F6] text-black hover:bg-[#5286F6] active:scale-[0.99] disabled:opacity-65"
                                     }`}
                                 >
                                     {bookingDone ? <Check size={17} /> : <CalendarClock size={17} />}
