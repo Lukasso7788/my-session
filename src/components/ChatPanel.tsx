@@ -551,7 +551,7 @@ function MessageCardInner({
 
     const metaNameCls = isLight ? "text-black/55" : "text-[#C6CDD5]";
     const metaTimeCls = isLight ? "text-black/35" : "text-[#AEB6BF]";
-    const actionBtnCls = isLight ? "text-black/45 hover:text-[#2FA84F]" : "text-[#C6CDD5] hover:text-[#5286F6]";
+    const actionBtnCls = isLight ? "text-black/45 hover:text-[#5286F6]" : "text-[#C6CDD5] hover:text-[#5286F6]";
     const dangerBtnCls = isLight ? "text-black/40 hover:text-red-700" : "text-[#C6CDD5] hover:text-red-300";
     const menuCls = isLight ? "bg-[#F3F1F1] border border-[#D8D0D0]" : "bg-[#292929] border border-[#484848] text-[#F4F5F6]";
 
@@ -974,8 +974,8 @@ function MessageCardInner({
                                 onClick={() => setEditEmojiOpen((current) => !current)}
                                 className={
                                     isLight
-                                        ? "grid h-9 w-9 place-items-center rounded-xl bg-[#ECEAEA] text-black/60 transition hover:bg-[#DCDCDC] hover:text-[#2FA84F]"
-                                        : "grid h-9 w-9 place-items-center rounded-xl bg-[#F7F5F5] text-black/65 transition hover:bg-[#303030] hover:text-[#2FA84F]"
+                                        ? "grid h-9 w-9 place-items-center rounded-xl bg-[#ECEAEA] text-black/60 transition hover:bg-[#DCDCDC] hover:text-[#5286F6]"
+                                        : "grid h-9 w-9 place-items-center rounded-xl bg-[#F7F5F5] text-black/65 transition hover:bg-[#303030] hover:text-[#5286F6]"
                                 }
                                 disabled={savingEdit}
                                 title="Add emoji"
