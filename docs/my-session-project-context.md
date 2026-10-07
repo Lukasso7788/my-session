@@ -1,6 +1,6 @@
 # MySession — project architecture and continuation context
 
-Updated: 2026-10-06. This is a project-wide navigation/architecture handoff based on
+Updated: 2026-10-07. This is a project-wide navigation/architecture handoff based on
 the checked-out source, not a claim that every module or production service was
 audited. Never put secret values, tokens, user exports or private logs in this file.
 
@@ -12,9 +12,9 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   C:\Users\misha\.codex\worktrees\tasks-pip-accent\my-session.
   This managed worktree is at a detached HEAD; commit this feature here and
   push HEAD:main only after checking origin/main for new commits.
-- Current task: add an opt-in room policy that applies camera/screen-share
-  participation requirements to hosts, moderators and admins. The final
-  section records implementation and verification.
+- Current task: correct Chat Panel light-theme Reply/React and quote accents,
+  plus pinned-task text contrast in the dark Tasks Panel. The final section
+  records the focused implementation and verification.
   Earlier Plunk work and operational runbook remain documented in
   docs/plunk-email-rollout.md. No mass campaign is authorized by this task.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
@@ -1186,3 +1186,37 @@ typecheck and ESLint surface numerous unrelated pre-existing errors. Do not
 stage generated sitemap changes, preview fixtures or QA screenshots from
 this worktree. Before push, fetch and verify origin/main still matches the
 base commit; push the focused commit as HEAD:main, never force-push.
+
+## 2026-10-07 — Room side-panel chat accents and pinned-task contrast
+
+`src/pages/RoomPageLiveKit.tsx` stores the room side-panel theme separately
+from the room/video canvas theme and passes `sidePanelTheme` to lazy-loaded
+`ChatPanel` and `TasksPanel`. `src/pages/livekit/roomSidePanelTheme.css`
+provides broad dark-theme neutral-color remaps for legacy classes, but
+individual controls still need explicit theme-aware colors to avoid stale
+green accents and black task text. This change touches only those UI classes;
+there are no data, Supabase, LiveKit, or room-behavior changes.
+
+In `src/components/ChatPanel.tsx`, `MessageCardInner` shares `actionBtnCls`
+across Reply/React (and the message Edit action). Its light-theme hover now
+uses MySession blue `#5286F6`. The composer `replyingLabel` uses readable
+blue `#315DCB` in light mode, and the current user's reaction pill text uses
+the same blue instead of a leftover green. Dark-theme values are unchanged.
+In `src/components/TasksPanel.tsx`, the task-row label now chooses explicit
+light/dark text colors for active and completed tasks, chooses a matching
+hover color, and gives the inline pinned-task icon a light color in dark mode.
+Pin/unpin state, ordering, storage, and handlers are unchanged.
+
+Verification: `npm run build` passed (including SEO prerender/verification).
+Targeted ESLint on both components reports 92 errors and 4 warnings in
+pre-existing lines (unused legacy constants, explicit `any`, empty blocks,
+and hook dependencies); none point to the changed lines. The React component
+checklist found no new hooks, subscriptions, data fetching, or accessibility
+changes, so no broad component refactor is warranted for this color fix.
+
+This task should stage only those two components and this context file.
+Existing sitemap XML modifications and untracked pre-join/room preview
+fixtures and screenshots in this managed worktree belong to other work and
+must remain untouched. `npm run typecheck` has pre-existing TS6306/TS6310
+project-reference failures. Fetch `origin/main` and push only if the remote
+is still compatible; never force-push.

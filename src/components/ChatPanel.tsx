@@ -551,7 +551,7 @@ function MessageCardInner({
 
     const metaNameCls = isLight ? "text-black/55" : "text-[#C6CDD5]";
     const metaTimeCls = isLight ? "text-black/35" : "text-[#AEB6BF]";
-    const actionBtnCls = isLight ? "text-black/45 hover:text-[#2FA84F]" : "text-[#C6CDD5] hover:text-[#5286F6]";
+    const actionBtnCls = isLight ? "text-black/45 hover:text-[#5286F6]" : "text-[#C6CDD5] hover:text-[#5286F6]";
     const dangerBtnCls = isLight ? "text-black/40 hover:text-red-700" : "text-[#C6CDD5] hover:text-red-300";
     const menuCls = isLight ? "bg-[#F3F1F1] border border-[#D8D0D0]" : "bg-[#292929] border border-[#484848] text-[#F4F5F6]";
 
@@ -579,7 +579,7 @@ function MessageCardInner({
         : "px-2 py-1 rounded-xl bg-[#30363B] border border-[#515961] text-[12px] text-[#E3E7EB] flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#3B4248] hover:border-[#5286F6]/50 hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/75";
 
     const reactionPillMine = isLight
-        ? "bg-[#5286F6]/18 ring-2 ring-[#5286F6]/70 border-[#5286F6]/70 text-[#246B2A]"
+        ? "bg-[#5286F6]/18 ring-2 ring-[#5286F6]/70 border-[#5286F6]/70 text-[#315DCB]"
         : "bg-[#5286F6]/18 ring-2 ring-[#5286F6]/70 border-[#5286F6]/55 text-[#EAF8EC]";
 
     const reactionCountCls = isLight ? "text-black/50" : "text-[#C6CDD5]";
@@ -1740,7 +1740,7 @@ export function ChatPanel({
     const subText = isLight ? "text-black/50" : "text-[#B5BCC6]";
     const headerCloseBtnCls = isLight ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60" : "bg-[#353B42] hover:bg-[#444B53] text-[#D9DEE4]";
     const replyBoxCls = isLight ? "bg-[#ECEAEA] border-[#D8D0D0]" : "bg-[#292929] border-[#484848]";
-    const replyingLabel = `text-[11px] font-medium ${isLight ? "text-[#3FB455]" : "text-[#6B98FA]"}`;
+    const replyingLabel = `text-[11px] font-medium ${isLight ? "text-[#315DCB]" : "text-[#6B98FA]"}`;
     const replyingText = isLight ? "text-black/55" : "text-[#C6CDD5]";
     const cancelBtnCls = isLight ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60" : "bg-[#353B42] hover:bg-[#444B53] text-[#D9DEE4]";
     const hintText = isLight ? "text-black/40" : "text-[#B5BCC6]";

@@ -4753,8 +4753,8 @@ export function TasksPanel({
                 const isEditing = editingId === i.id;
                 const isPersistedTask = UUID_RE.test(String(i.id || ""));
 
-                const textDoneCls = "text-black/45 line-through";
-                const textActiveCls = "text-black/80";
+                const textDoneCls = isLight ? "text-black/45 line-through" : "text-[#B8B8B8] line-through";
+                const textActiveCls = isLight ? "text-black/80" : "text-[#F4F5F6]";
 
                 const editInputCls = `
                     w-full bg-[#F3F3F3] border border-[#C9C9C9] rounded-xl
@@ -4890,14 +4890,14 @@ export function TasksPanel({
                             onMouseEnter={(event) => showAiSuggestionPreview(event, i)}
                             onMouseLeave={() => closeAiSuggestionPreview(140)}
                             className={
-                              "block w-full max-h-[18px] overflow-hidden whitespace-normal break-words text-left text-[13px] leading-[18px] font-inter transition-[max-height,color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[max-height] group-hover:max-h-[288px] group-focus-within:max-h-[288px] hover:text-black " +
+                              `block w-full max-h-[18px] overflow-hidden whitespace-normal break-words text-left text-[13px] leading-[18px] font-inter transition-[max-height,color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[max-height] group-hover:max-h-[288px] group-focus-within:max-h-[288px] ${isLight ? "hover:text-black" : "hover:text-white"} ` +
                               (i.completed ? textDoneCls : textActiveCls)
                             }
                             title={getPersistedTaskAiSuggestion(i) ? "Open saved AI suggestion" : `Get AI suggestions for: ${i.text}`}
                           >
                             <span className="inline-flex items-start gap-1.5">
                               {pinnedTaskIds.includes(i.id) ? (
-                                <Pin size={12} className="mt-[2px] shrink-0 text-[#2F2F2F]" aria-hidden="true" />
+                                <Pin size={12} className={`mt-[2px] shrink-0 ${isLight ? "text-[#2F2F2F]" : "text-[#F4F5F6]"}`} aria-hidden="true" />
                               ) : null}
                               <span>{i.text}</span>
                             </span>
