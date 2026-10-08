@@ -27,7 +27,7 @@ const options: Array<{ key: keyof Preferences; title: string; description: strin
   { key: "session_reminders_enabled", title: "Session reminders", description: "Booking confirmations, upcoming-session reminders, and gentle no-show recovery." },
   { key: "weekly_recap_enabled", title: "Weekly focus recap", description: "Your sessions, focused minutes, and progress from the previous week." },
   { key: "reactivation_email_enabled", title: "Reactivation emails", description: "Occasional suggestions after 7, 14, or 30 days away." },
-  { key: "marketing_email_enabled", title: "Product and marketing emails", description: "Feature announcements, referral invitations, offers, and host opportunities. Off by default." },
+  { key: "marketing_email_enabled", title: "Product and marketing emails", description: "Daily session schedule (including Infinite Room host times), feature announcements, referral invitations, offers, and host opportunities. Off by default; you can unsubscribe from the daily schedule separately." },
 ];
 
 export default function EmailPreferencesPage() {

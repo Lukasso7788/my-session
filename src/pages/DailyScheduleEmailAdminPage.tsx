@@ -21,6 +21,14 @@ type PreviewSession = {
   } | null;
 };
 
+type HostingSlot = {
+  sessionId: string;
+  sessionTitle: string;
+  hostName: string;
+  bookedStartTime: string;
+  bookedEndTime: string;
+};
+
 type AdminEmailUser = {
   userId: string;
   email: string;
@@ -29,6 +37,7 @@ type AdminEmailUser = {
   createdAt: string | null;
   emailConfirmed: boolean;
   enabled: boolean;
+  marketingEnabled: boolean;
   lastSentAt: string | null;
   priorityOverride: number;
 };
@@ -100,7 +109,8 @@ export default function DailyScheduleEmailAdminPage() {
   const [usersLoading, setUsersLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [testSending, setTestSending] = useState(false);
-  const [plunkPreview, setPlunkPreview] = useState<{ recipient: string; subject: string; html: string; previewHash: string; missing: string[]; scheduleDate: string } | null>(null);
+  const [plunkPreview, setPlunkPreview] = useState<{ recipient: string; subject: string; html: string; previewHash: string; missing: string[]; scheduleDate: string; infiniteHostingSlots: HostingSlot[]; sampleHostSlot: boolean } | null>(null);
+  const [includeSampleHostSlot, setIncludeSampleHostSlot] = useState(false);
   const [plunkBusy, setPlunkBusy] = useState(false);
   const [plunkMessage, setPlunkMessage] = useState("");
   const plunkLock = useRef(false);
@@ -121,6 +131,7 @@ export default function DailyScheduleEmailAdminPage() {
   const [audienceMessage, setAudienceMessage] = useState("");
 
   const sessions = useMemo<PreviewSession[]>(() => preview?.sessions || [], [preview]);
+  const infiniteHostingSlots = useMemo<HostingSlot[]>(() => preview?.infiniteHostingSlots || [], [preview]);
   const selected = useMemo<PreviewRecipient[]>(() => preview?.selected || [], [preview]);
 
   const selectedIdSet = useMemo(() => new Set(selectedRecipientIds), [selectedRecipientIds]);
@@ -174,7 +185,7 @@ export default function DailyScheduleEmailAdminPage() {
     });
   }, [allUsers, userSearch, showOnly, sortBy, selectedIdSet]);
 
-  const unsubscribedCount = useMemo(
+  const notEligibleCount = useMemo(
     () => allUsers.filter((u) => !u.enabled).length,
     [allUsers]
   );
@@ -199,6 +210,7 @@ export default function DailyScheduleEmailAdminPage() {
       limitOverride?: number;
       testRequestId?: string;
       testPreviewHash?: string;
+      includeSampleHostSlot?: boolean;
     }
   ) => {
     const { data } = await supabase.auth.getSession();
@@ -229,6 +241,7 @@ export default function DailyScheduleEmailAdminPage() {
         audienceName: "default",
         testRequestId: options?.testRequestId,
         testPreviewHash: options?.testPreviewHash,
+        includeSampleHostSlot: options?.includeSampleHostSlot,
       }),
     });
 
@@ -266,13 +279,14 @@ export default function DailyScheduleEmailAdminPage() {
         if (!plunkPreview || plunkPreview.scheduleDate !== scheduleDate) throw new Error("Preview this date first.");
         const result = await callEndpoint("plunk_test_send", {
           testRequestId: plunkRequestId.current, testPreviewHash: plunkPreview.previewHash,
+          includeSampleHostSlot: plunkPreview.sampleHostSlot,
         });
         if (result?.accepted) {
           setPlunkMessage(`Plunk accepted the test for ${result.recipient}. Check your inbox and spam folder.`);
           setPlunkPreview(null);
         }
       } else {
-        const result = await callEndpoint("plunk_test_preview");
+        const result = await callEndpoint("plunk_test_preview", { includeSampleHostSlot });
         if (result) {
           plunkRequestId.current = crypto.randomUUID();
           setPlunkPreview(result);
@@ -531,7 +545,7 @@ export default function DailyScheduleEmailAdminPage() {
         ? normalizeSelectedIds(selectedRecipientIds)
         : [];
 
-    const targetLabel = ids.length > 0 ? `${ids.length} selected people` : `auto top ${limit} people`;
+    const targetLabel = ids.length > 0 ? `${ids.length} selected opted-in people` : `auto top ${limit} opted-in people`;
 
     const ok = window.confirm(
       `Send daily schedule email to ${targetLabel} for ${scheduleDate}?`
@@ -577,7 +591,7 @@ export default function DailyScheduleEmailAdminPage() {
             </div>
             <h1 className="mt-2 text-[34px] font-bold">Daily schedule email</h1>
             <p className="mt-2 max-w-3xl text-[14px] leading-6 text-[#666]">
-              Preview auto top 100, load all registered users, select recipients manually, or send a test to yourself.
+              Preview the opted-in audience, inspect today’s sessions and Infinite Room host intervals, or send a fixed-inbox Plunk test.
             </p>
           </div>
 
@@ -643,10 +657,15 @@ export default function DailyScheduleEmailAdminPage() {
               {sending ? "Sending..." : effectiveSendLabel}
             </button>
           </div>
+          <p className="mt-3 text-[12px] text-[#666]">Automatic delivery includes confirmed accounts only when Product and marketing emails is on and daily schedule emails have not been unsubscribed. The old saved audience is for manual selection; cron now uses the live opt-in list.</p>
 
           <section id="plunk-test" className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5">
             <h2 className="text-lg font-semibold">Plunk · Upcoming sessions test</h2>
             <p className="mt-1 text-sm">To: lukasus7788@gmail.com · Uses the selected schedule date. No audience or daily send history is changed.</p>
+            <label className="mt-3 flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={includeSampleHostSlot} onChange={(event) => { setIncludeSampleHostSlot(event.target.checked); setPlunkPreview(null); }} />
+              Add a sample Infinite Room hosting interval if none is booked (test email only)
+            </label>
             <div className="mt-3 flex flex-wrap gap-3">
               <button type="button" disabled={plunkBusy} onClick={() => void runPlunkTest(false)} className="rounded-full border border-[#2F2F2F] bg-white px-5 py-2 disabled:opacity-50">{plunkBusy ? "Working…" : "Preview email"}</button>
               <button type="button" disabled={plunkBusy || !plunkPreview || plunkPreview.scheduleDate !== scheduleDate || !!plunkPreview.missing.length} onClick={() => void runPlunkTest(true)} className="rounded-full bg-[#2F2F2F] px-5 py-2 text-white disabled:opacity-50">Send test via Plunk</button>
@@ -654,6 +673,7 @@ export default function DailyScheduleEmailAdminPage() {
             {plunkMessage && <p role="status" className="mt-3 text-sm">{plunkMessage}</p>}
             {plunkPreview && <>
               {!!plunkPreview.missing.length && <p role="alert" className="mt-3 text-sm">Missing server configuration: {plunkPreview.missing.join(", ")}</p>}
+              <p className="mt-2 text-sm">Infinite Room host slots: {plunkPreview.infiniteHostingSlots.length}{plunkPreview.sampleHostSlot ? " · sample data, not a real booking" : " · real bookings"}</p>
               <p className="my-3 text-sm font-semibold">{plunkPreview.subject}</p>
               <iframe title="Plunk upcoming sessions email preview" sandbox="" srcDoc={plunkPreview.html} className="h-[600px] w-full rounded-xl border bg-white" />
             </>}
@@ -681,11 +701,11 @@ export default function DailyScheduleEmailAdminPage() {
             </button>
 
             <button type="button" disabled={audienceSaving || selectedRecipientIds.length === 0 || selectedRecipientIds.length > 100} onClick={() => void saveSelectedAsDailyAudience()} className="rounded-full border border-blue-600 bg-blue-50 px-4 py-2 text-[13px] font-semibold text-blue-800 hover:bg-blue-100 disabled:opacity-60">
-              {audienceSaving ? "Saving audience..." : "Save as daily audience"}
+              {audienceSaving ? "Saving audience..." : "Save manual audience"}
             </button>
 
             <button type="button" disabled={audienceLoading} onClick={() => void loadSavedDailyAudience()} className="rounded-full border border-blue-600 bg-white px-4 py-2 text-[13px] font-semibold text-blue-800 hover:bg-blue-50 disabled:opacity-60">
-              {audienceLoading ? "Loading audience..." : "Load saved audience"}
+              {audienceLoading ? "Loading audience..." : "Load manual audience"}
             </button>
 
             <button type="button" disabled={loading || selectedRecipientIds.length === 0} onClick={() => void loadManualPreview()} className="rounded-full border border-black/10 bg-white px-4 py-2 text-[13px] font-semibold hover:bg-black/[0.04] disabled:opacity-60">
@@ -733,7 +753,7 @@ export default function DailyScheduleEmailAdminPage() {
             <div>
               <h2 className="text-[22px] font-bold">All registered users</h2>
               <p className="mt-1 text-[13px] text-[#666]">
-                Active recipients stay in the working list. Unsubscribed people are kept in a separate view and are never selected for sending.
+                Only explicit marketing opt-ins who have not unsubscribed from the daily email can receive this digest. Everyone else stays visible for review, never for sending.
               </p>
             </div>
 
@@ -754,7 +774,7 @@ export default function DailyScheduleEmailAdminPage() {
                 <option value="never_sent">Never sent</option>
                 <option value="selected">Selected only</option>
                 <option value="unconfirmed">Unconfirmed email</option>
-                <option value="unsubscribed">Unsubscribed ({unsubscribedCount})</option>
+                <option value="unsubscribed">Not opted in / unsubscribed ({notEligibleCount})</option>
                 <option value="all">All users</option>
               </select>
 
@@ -835,9 +855,13 @@ export default function DailyScheduleEmailAdminPage() {
                         </div>
 
                         <div className="mt-2 flex flex-wrap gap-1.5">
-                          {!u.enabled ? (
+                          {!u.marketingEnabled ? (
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${checked ? "bg-white/15 text-white" : "bg-amber-100 text-amber-800"}`}>
+                              marketing off
+                            </span>
+                          ) : !u.enabled ? (
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${checked ? "bg-white/15 text-white" : "bg-red-100 text-red-700"}`}>
-                              unsubscribed
+                              daily unsubscribed
                             </span>
                           ) : null}
 
@@ -891,6 +915,15 @@ export default function DailyScheduleEmailAdminPage() {
                     </div>
                   ))
                 )}
+              </div>
+              <h3 className="mt-6 text-[16px] font-bold">Infinite Room hosts · {infiniteHostingSlots.length}</h3>
+              <div className="mt-3 space-y-2">
+                {infiniteHostingSlots.length === 0 ? <p className="text-[13px] text-[#666]">No host intervals booked for this date.</p> : infiniteHostingSlots.map((slot) => (
+                  <div key={`${slot.sessionId}:${slot.bookedStartTime}:${slot.hostName}`} className="rounded-2xl border border-black/10 bg-gray-50 px-4 py-3 text-[13px]">
+                    <strong>{slot.hostName}</strong> · {slot.sessionTitle}<br />
+                    <span className="text-[#666]">{formatTime(slot.bookedStartTime)} – {formatTime(slot.bookedEndTime)}</span>
+                  </div>
+                ))}
               </div>
             </section>
 

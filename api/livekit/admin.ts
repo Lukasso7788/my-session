@@ -3,6 +3,8 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "crypto";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { missingPlunkEnvironment, sendPlunkEmail } from "../_lib/plunk.js";
+import { canReceiveDailyDigest, isLocalMorning, isPlausibleEmail } from "../_lib/dailyScheduleAudience.js";
+import { dateKeyInTimeZone, hostSlotOverlapsLocalDate, renderInfiniteHostingSlots, sampleInfiniteHostingSlot, type DailyHostingSlot } from "../_lib/dailyScheduleHosting.js";
 import {
   PLUNK_LIFECYCLE_EVENT_TYPES,
   emitPlunkTestSuite,
@@ -29,7 +31,8 @@ type EmailAdminAction =
   | "daily_schedule_all_users"
   | "daily_schedule_saved_audience_get"
   | "daily_schedule_saved_audience_set"
-  | "daily_schedule_send_saved_audience";
+  | "daily_schedule_send_saved_audience"
+  | "daily_schedule_send_opted_in";
 
 type SenderAdminAction =
   | "sender_outbox_list"
@@ -84,6 +87,8 @@ type Body = {
   audienceName?: string;
   testRequestId?: string;
   testPreviewHash?: string;
+  includeSampleHostSlot?: boolean;
+  localMorningOnly?: boolean;
 
   // Sender lifecycle email actions
   senderEventId?: string;
@@ -151,13 +156,14 @@ type DailyScheduleSessionRow = {
   } | null;
 };
 
-type InfiniteHostingSlot = {
-  sessionId: string;
-  sessionTitle: string;
-  hostUserId: string;
-  hostName: string;
-  bookedStartTime: string;
-  bookedEndTime: string;
+type InfiniteHostingSlot = DailyHostingSlot;
+
+type HostBookingRow = {
+  id: string;
+  session_id: string;
+  user_id: string;
+  booked_start_time: string;
+  booked_end_time: string;
 };
 
 type RecipientCandidate = {
@@ -165,6 +171,7 @@ type RecipientCandidate = {
   email: string;
   name: string;
   timeZone: string | null;
+  scheduleDate: string;
   score: number;
   reasons: string[];
   lastSentAt: string | null;
@@ -181,6 +188,7 @@ type AdminEmailUser = {
   createdAt: string | null;
   emailConfirmed: boolean;
   enabled: boolean;
+  marketingEnabled: boolean;
   lastSentAt: string | null;
   priorityOverride: number;
   unsubscribeToken: string;
@@ -378,6 +386,7 @@ function normalizeEmailAction(raw: unknown): EmailAdminAction | "" {
   if (a === "daily_schedule_saved_audience_get") return "daily_schedule_saved_audience_get";
   if (a === "daily_schedule_saved_audience_set") return "daily_schedule_saved_audience_set";
   if (a === "daily_schedule_send_saved_audience") return "daily_schedule_send_saved_audience";
+  if (a === "daily_schedule_send_opted_in") return "daily_schedule_send_opted_in";
 
   return "";
 }
@@ -899,22 +908,21 @@ function getAppUrl() {
 }
 
 function ymd(date: Date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return date.toISOString().slice(0, 10);
 }
 
 function parseScheduleDate(raw: any) {
   const s = String(raw || "").trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const parsed = new Date(`${s}T00:00:00.000Z`);
+    if (!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === s) return s;
+  }
   return ymd(new Date());
 }
 
 function dayBounds(scheduleDate: string) {
-  const start = new Date(`${scheduleDate}T00:00:00`);
-  const end = new Date(`${scheduleDate}T00:00:00`);
-  end.setDate(end.getDate() + 1);
+  const start = new Date(`${scheduleDate}T00:00:00.000Z`);
+  const end = new Date(start.getTime() + 86_400_000);
 
   return {
     startIso: start.toISOString(),
@@ -942,14 +950,16 @@ function normalizeTimeZone(raw: unknown): string | null {
   }
 }
 
-function getRecipientTimeZone(user: { user_metadata?: Record<string, unknown> } | null | undefined): string | null {
+function getRecipientTimeZone(user: { user_metadata?: Record<string, unknown> } | null | undefined, profile?: { timezone?: string | null } | null): string | null {
   const metadata = user?.user_metadata || {};
-  return normalizeTimeZone(
+  const metadataZone = normalizeTimeZone(
     metadata.timezone ||
     metadata.time_zone ||
     metadata.timeZone ||
     metadata.tz
   );
+  const profileZone = normalizeTimeZone(profile?.timezone);
+  return profileZone && profileZone !== "UTC" ? profileZone : metadataZone || profileZone || "UTC";
 }
 
 function formatEmailTime(raw?: string | null, timeZone = "UTC") {
@@ -977,13 +987,14 @@ function formatRegionalEmailTimes(raw?: string | null) {
 }
 
 function formatDateForSubject(scheduleDate: string) {
-  const d = new Date(`${scheduleDate}T12:00:00`);
+  const d = new Date(`${scheduleDate}T12:00:00.000Z`);
   if (Number.isNaN(d.getTime())) return scheduleDate;
 
   return new Intl.DateTimeFormat("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
+    timeZone: "UTC",
   }).format(d);
 }
 
@@ -1197,17 +1208,23 @@ async function loadInfiniteHostingSlots(params: {
   endIso: string;
 }) {
   const { sb, startIso, endIso } = params;
-  const { data: bookingRows, error: bookingsError } = await sb
-    .from("session_bookings")
-    .select("session_id,user_id,booked_start_time,booked_end_time,booking_role")
-    .eq("booking_role", "host")
-    .lt("booked_start_time", endIso)
-    .gt("booked_end_time", startIso)
-    .order("booked_start_time", { ascending: true });
+  const bookingRows: HostBookingRow[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await sb
+      .from("session_bookings")
+      .select("id,session_id,user_id,booked_start_time,booked_end_time,booking_role")
+      .eq("booking_role", "host")
+      .lt("booked_start_time", endIso)
+      .gt("booked_end_time", startIso)
+      .order("booked_start_time", { ascending: true })
+      .order("id", { ascending: true })
+      .range(offset, offset + 999);
+    if (error) throw error;
+    bookingRows.push(...((data || []) as HostBookingRow[]));
+    if (!data || data.length < 1000) break;
+  }
 
-  if (bookingsError) throw bookingsError;
-
-  const sessionIds = Array.from(new Set((bookingRows || []).map((row: any) => String(row.session_id || "")).filter(Boolean)));
+  const sessionIds = Array.from(new Set(bookingRows.map((row) => String(row.session_id || "")).filter(Boolean)));
   if (sessionIds.length === 0) return [] as InfiniteHostingSlot[];
 
   const { data: sessionRows, error: sessionsError } = await sb
@@ -1223,13 +1240,14 @@ async function loadInfiniteHostingSlots(params: {
       .map((session) => [String(session.id), session])
   );
 
-  const userIds = Array.from(new Set((bookingRows || []).map((row: any) => String(row.user_id || "")).filter(Boolean)));
-  const { data: profileRows } = userIds.length
+  const userIds = Array.from(new Set(bookingRows.map((row) => String(row.user_id || "")).filter(Boolean)));
+  const { data: profileRows, error: profilesError } = userIds.length
     ? await sb.from("profiles").select("id,full_name").in("id", userIds)
-    : { data: [] as any[] };
+    : { data: [] as any[], error: null };
+  if (profilesError) throw profilesError;
   const profilesById = new Map((profileRows || []).map((profile: any) => [String(profile.id), profile]));
 
-  return (bookingRows || []).flatMap((row: any) => {
+  return bookingRows.flatMap((row) => {
     const session = sessionsById.get(String(row.session_id || ""));
     const start = String(row.booked_start_time || "");
     const end = String(row.booked_end_time || "");
@@ -1259,6 +1277,7 @@ function buildDailyScheduleEmail(params: {
   const groups = groupEmailSessionsByHost(params.sessions);
   const hostingSlots = params.infiniteHostingSlots;
   const primaryTimeZone = params.recipientTimeZone || "UTC";
+  const hostingContent = renderInfiniteHostingSlots(hostingSlots, primaryTimeZone, appUrl);
   const timeZoneIntro = params.recipientTimeZone
     ? `Times are shown in your timezone (${params.recipientTimeZone}), followed by key regions.`
     : "Times are shown in UTC, followed by US, European, Indian, and Australian times.";
@@ -1274,9 +1293,7 @@ function buildDailyScheduleEmail(params: {
       return `${group.hostName} is hosting:\n${lines.join("\n")}`;
     })
     .join("\n\n");
-  const infiniteHostsText = hostingSlots.length
-    ? `Hosts in 24/7 rooms:\n${hostingSlots.map((slot) => `- ${formatEmailTime(slot.bookedStartTime, primaryTimeZone)} — ${slot.hostName} in ${slot.sessionTitle}\n  ${formatRegionalEmailTimes(slot.bookedStartTime)}`).join("\n")}`
-    : "";
+  const infiniteHostsText = hostingContent.text;
   const sessionListText = [scheduledSessionsText, infiniteHostsText].filter(Boolean).join("\n\n")
     || "No scheduled sessions today yet. Check the sessions page for updates.";
 
@@ -1300,6 +1317,8 @@ Consider creating your own session — it helps more people find a time that wor
 You can create a session by clicking the "Create a session" button in the top right corner.
 
 ${appUrl}/sessions
+
+You receive this because you enabled Product and marketing emails in MySession.
 
 Unsubscribe from daily schedule emails:
 ${unsubscribeUrl}
@@ -1338,15 +1357,7 @@ ${unsubscribeUrl}
         })
         .join("");
 
-  const htmlHostingSlots = hostingSlots.length
-    ? `<div style="margin:22px 0;padding:18px;border-radius:18px;background:#eff8f0;">
-        <div style="font-weight:700;font-size:16px;margin-bottom:8px;">Hosts in 24/7 rooms:</div>
-        <ul style="padding-left:20px;margin:0;">${hostingSlots.map((slot) => {
-          const link = `${appUrl}/room-livekit/${encodeURIComponent(slot.sessionId)}`;
-          return `<li style="margin:8px 0;"><strong>${escapeHtml(formatEmailTime(slot.bookedStartTime, primaryTimeZone))}</strong><span style="color:#555;"> — </span><strong>${escapeHtml(slot.hostName)}</strong> in <a href="${link}" style="color:#111827;text-decoration:underline;">${escapeHtml(slot.sessionTitle)}</a><div style="margin-top:3px;color:#6b7280;font-size:12px;line-height:1.45;">${escapeHtml(formatRegionalEmailTimes(slot.bookedStartTime))}</div></li>`;
-        }).join("")}</ul>
-      </div>`
-    : "";
+  const htmlHostingSlots = hostingContent.html;
 
   const html = `
     <div style="font-family:Inter,Arial,sans-serif;line-height:1.55;color:#111827;max-width:640px;margin:0 auto;padding:24px;">
@@ -1393,7 +1404,7 @@ ${unsubscribeUrl}
 
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:26px 0;" />
       <p style="font-size:12px;color:#777;margin:0;">
-        You’re receiving this because you joined MySession.
+        You’re receiving this because you enabled Product and marketing emails in MySession.
         <br />
         <a href="${unsubscribeUrl}" style="color:#777;text-decoration:underline;">Unsubscribe from daily schedule emails</a>
       </p>
@@ -1715,9 +1726,16 @@ async function handleDailyScheduleAllUsersAction(params: {
   const profilesByUser = new Map<string, any>();
   for (const p of profilesData || []) profilesByUser.set(String(p.id), p);
 
-  const { data: prefsData } = await sb
+  const { data: prefsData, error: prefsError } = await sb
     .from("daily_schedule_email_preferences")
     .select("*");
+  if (prefsError) return res.status(503).json({ error: "daily_preferences_unavailable" });
+  const { data: marketingData, error: marketingError } = await sb
+    .from("email_automation_preferences")
+    .select("user_id")
+    .eq("marketing_email_enabled", true);
+  if (marketingError) return res.status(503).json({ error: "marketing_preferences_unavailable" });
+  const optedInUserIds = new Set((marketingData || []).map((row) => String(row.user_id)));
 
   const prefsByUser = new Map<string, any>();
   for (const p of prefsData || []) prefsByUser.set(String(p.user_id), p);
@@ -1727,7 +1745,7 @@ async function handleDailyScheduleAllUsersAction(params: {
   for (const user of users) {
     const userId = String(user.id || "").trim();
     const email = String(user.email || "").trim().toLowerCase();
-    if (!userId || !email) continue;
+    if (!userId || !isPlausibleEmail(email)) continue;
 
     const profile = profilesByUser.get(userId) || null;
     const pref = prefsByUser.get(userId) || null;
@@ -1746,7 +1764,8 @@ async function handleDailyScheduleAllUsersAction(params: {
       avatarUrl: String(profile?.avatar_url || user.user_metadata?.avatar_url || "").trim() || null,
       createdAt: String(user.created_at || profile?.created_at || "").trim() || null,
       emailConfirmed: Boolean(user.email_confirmed_at || user.confirmed_at),
-      enabled: pref?.enabled !== false,
+      enabled: pref?.enabled !== false && optedInUserIds.has(userId),
+      marketingEnabled: optedInUserIds.has(userId),
       lastSentAt: pref?.last_sent_at || null,
       priorityOverride: Number(pref?.priority_override || 0),
       unsubscribeToken,
@@ -1782,18 +1801,22 @@ async function handleDailyScheduleEmailAction(params: {
 
   const dryRun = action === "daily_schedule_preview";
   const scheduleDate = parseScheduleDate(body.scheduleDate);
+  const localDateMode = Boolean(skipAdminCheck);
+  const runAt = new Date();
   const limit = clampDailyEmailLimit(body.limit);
   const selectedUserIds = Array.isArray(body.selectedUserIds)
     ? body.selectedUserIds.map((x) => String(x || "").trim()).filter(Boolean)
     : [];
 
   const { startIso, endIso } = dayBounds(scheduleDate);
+  const expandedStartIso = new Date(Date.parse(startIso) - 86_400_000).toISOString();
+  const expandedEndIso = new Date(Date.parse(endIso) + 86_400_000).toISOString();
   let infiniteHostingSlots: InfiniteHostingSlot[] = [];
   try {
-    infiniteHostingSlots = await loadInfiniteHostingSlots({ sb, startIso, endIso });
+    infiniteHostingSlots = await loadInfiniteHostingSlots({ sb, startIso: expandedStartIso, endIso: expandedEndIso });
   } catch (error) {
-    // Keep daily delivery working during the first deploy before the SQL migration is applied.
-    console.warn("daily schedule: infinite hosting slots unavailable", error);
+    console.error("[daily-email] infinite hosting slots unavailable", error);
+    return res.status(503).json({ error: "infinite_host_schedule_unavailable" });
   }
 
   const { data: sessionsData, error: sessionsError } = await sb
@@ -1811,8 +1834,8 @@ async function handleDailyScheduleEmailAction(params: {
       is_private,
       host_profile:profiles!sessions_host_id_fkey(id, full_name, avatar_url)
     `)
-    .gte("start_time", startIso)
-    .lt("start_time", endIso)
+    .gte("start_time", expandedStartIso)
+    .lt("start_time", expandedEndIso)
     .or("is_private.is.null,is_private.eq.false")
     .order("start_time", { ascending: true });
 
@@ -1820,18 +1843,31 @@ async function handleDailyScheduleEmailAction(params: {
     return res.status(500).json({ error: "sessions_load_failed", details: sessionsError });
   }
 
-  const sessions = ((sessionsData || []) as DailyScheduleSessionRow[]).filter(
+  const allSessions = ((sessionsData || []) as DailyScheduleSessionRow[]).filter(
     (session) => session?.is_private !== true && !isInfiniteScheduleSession(session)
   );
-  const sessionIds = sessions.map((s) => String(s.id)).filter(Boolean);
+  const sessionsForDate = (date: string, timeZone: string) => allSessions.filter((session) =>
+    session.start_time && dateKeyInTimeZone(session.start_time, timeZone) === date
+  );
+  const hostingSlotsForDate = (date: string, timeZone: string) => infiniteHostingSlots.filter((slot) =>
+    hostSlotOverlapsLocalDate(slot, date, timeZone)
+  );
+  const sessions = sessionsForDate(scheduleDate, "UTC");
+  const previewHostingSlots = hostingSlotsForDate(scheduleDate, "UTC");
+  const sessionIds = allSessions.map((s) => String(s.id)).filter(Boolean);
 
   // Isolated admin test: no audience scan, unsubscribe creation or delivery-ledger writes.
   if (action === "plunk_test_preview" || action === "plunk_test_send") {
     const recipient = "lukasus7788@gmail.com";
+    const testSessions = sessionsForDate(scheduleDate, "Europe/Kyiv");
+    const realTestSlots = hostingSlotsForDate(scheduleDate, "Europe/Kyiv");
+    const testHostingSlots = body.includeSampleHostSlot && realTestSlots.length === 0
+      ? [sampleInfiniteHostingSlot(scheduleDate)]
+      : realTestSlots;
     const email = buildDailyScheduleEmail({
       scheduleDate,
-      sessions,
-      infiniteHostingSlots,
+      sessions: testSessions,
+      infiniteHostingSlots: testHostingSlots,
       recipientName: "Yaroslav",
       recipientTimeZone: "Europe/Kyiv",
       unsubscribeToken: "",
@@ -1839,12 +1875,14 @@ async function handleDailyScheduleEmailAction(params: {
     const subject = `[TEST] ${email.subject}`;
     const html = email.html
       .replace(`${getAppUrl()}/email/unsubscribe?token=`, `${getAppUrl()}/settings`)
-      .replace("Unsubscribe from daily schedule emails", "Test preview — no subscription changed");
+      .replace("Unsubscribe from daily schedule emails", "Test preview — no subscription changed")
+      .replace("You’re receiving this because you enabled Product and marketing emails in MySession.", "Admin test only — this does not change any subscription.");
     const previewHash = createHash("sha256").update(subject + html).digest("hex");
     const missing = missingPlunkEnvironment();
     if (action === "plunk_test_preview") {
       return res.status(200).json({ ok: true, provider: "Plunk", recipient, subject, html,
-        previewHash, missing, scheduleDate, sessionsCount: sessions.length });
+        previewHash, missing, scheduleDate, sessionsCount: testSessions.length,
+        infiniteHostingSlots: testHostingSlots, sampleHostSlot: testHostingSlots !== realTestSlots });
     }
     if (missing.length) return res.status(503).json({ error: "missing_plunk_env", required: missing });
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(body.testRequestId || ""))) {
@@ -1871,31 +1909,41 @@ async function handleDailyScheduleEmailAction(params: {
     ...infiniteHostingSlots.map((slot) => slot.hostUserId),
   ]);
 
-  const { data: prefsData } = await sb
+  const { data: prefsData, error: prefsError } = await sb
     .from("daily_schedule_email_preferences")
     .select("*");
+  if (prefsError) return res.status(503).json({ error: "daily_preferences_unavailable" });
+  const { data: marketingData, error: marketingError } = await sb
+    .from("email_automation_preferences")
+    .select("user_id")
+    .eq("marketing_email_enabled", true);
+  if (marketingError) return res.status(503).json({ error: "marketing_preferences_unavailable" });
+  const optedInUserIds = new Set((marketingData || []).map((row) => String(row.user_id)));
 
   const prefsByUser = new Map<string, any>();
   for (const p of prefsData || []) prefsByUser.set(String(p.user_id), p);
 
-  const { data: sendsToday } = await sb
+  const { data: sendsToday, error: sendsError } = await sb
     .from("daily_schedule_email_sends")
-    .select("user_id,email,status")
-    .eq("schedule_date", scheduleDate)
-    .eq("status", "sent");
+    .select("user_id,email,schedule_date,status")
+    .gte("schedule_date", expandedStartIso.slice(0, 10))
+    .lt("schedule_date", expandedEndIso.slice(0, 10))
+    .in("status", ["sent", "failed"]);
+  if (sendsError) return res.status(503).json({ error: "daily_send_history_unavailable" });
 
-  const sentTodayUserIds = new Set<string>((sendsToday || []).map((s: any) => String(s.user_id || "")));
-  const sentTodayEmails = new Set<string>((sendsToday || []).map((s: any) => String(s.email || "").toLowerCase()));
+  const sentTodayUserIds = new Set<string>((sendsToday || []).map((s: any) => `${s.schedule_date}:${String(s.user_id || "")}`));
+  const sentTodayEmails = new Set<string>((sendsToday || []).map((s: any) => `${s.schedule_date}:${String(s.email || "").toLowerCase()}`));
 
   const users = await listAllAuthUsers(sb);
   const userIds = users.map((u) => String(u.id)).filter(Boolean);
 
-  const { data: profilesData } = userIds.length
+  const { data: profilesData, error: profilesError } = userIds.length
     ? await sb
       .from("profiles")
-      .select("id, full_name, avatar_url, email, created_at")
+      .select("id, full_name, avatar_url, email, created_at, timezone")
       .in("id", userIds)
-    : { data: [] as any[] };
+    : { data: [] as any[], error: null };
+  if (profilesError) return res.status(503).json({ error: "recipient_profiles_unavailable" });
 
   const profilesByUser = new Map<string, any>();
   for (const p of profilesData || []) profilesByUser.set(String(p.id), p);
@@ -1905,13 +1953,23 @@ async function handleDailyScheduleEmailAction(params: {
   for (const user of users) {
     const userId = String(user.id || "").trim();
     const email = String(user.email || "").trim().toLowerCase();
-    if (!userId || !email) continue;
+    if (!userId) continue;
 
     if (selectedUserIds.length && !selectedUserIds.includes(userId)) continue;
 
     const profile = profilesByUser.get(userId) || null;
     const pref = prefsByUser.get(userId) || null;
-    const sentToday = sentTodayUserIds.has(userId) || sentTodayEmails.has(email);
+    const timeZone = getRecipientTimeZone(user, profile) || "UTC";
+    if (body.localMorningOnly && !isLocalMorning(runAt, timeZone)) continue;
+    const recipientDate = localDateMode ? dateKeyInTimeZone(runAt, timeZone) : scheduleDate;
+    const sentToday = sentTodayUserIds.has(`${recipientDate}:${userId}`) || sentTodayEmails.has(`${recipientDate}:${email}`);
+    if (!canReceiveDailyDigest({
+      email,
+      emailConfirmed: Boolean(user.email_confirmed_at || user.confirmed_at),
+      marketingEnabled: optedInUserIds.has(userId),
+      dailyEnabled: pref?.enabled !== false,
+      alreadyAttemptedToday: sentToday,
+    })) continue;
 
     const scored = scoreDailyEmailCandidate({
       user,
@@ -1934,7 +1992,8 @@ async function handleDailyScheduleEmailAction(params: {
       userId,
       email,
       name: String(profile?.full_name || user.user_metadata?.full_name || email.split("@")[0] || "there"),
-      timeZone: getRecipientTimeZone(user),
+      timeZone,
+      scheduleDate: recipientDate,
       score: scored.score,
       reasons: scored.reasons,
       lastSentAt: pref?.last_sent_at || null,
@@ -1960,7 +2019,7 @@ async function handleDailyScheduleEmailAction(params: {
       scheduleDate,
       limit,
       sessions,
-      infiniteHostingSlots,
+      infiniteHostingSlots: previewHostingSlots,
       candidatesCount: candidates.length,
       selectedCount: selected.length,
       selected,
@@ -1981,12 +2040,14 @@ async function handleDailyScheduleEmailAction(params: {
 
   for (let i = 0; i < selected.length; i += 1) {
     const recipient = selected[i];
+    const recipientDate = recipient.scheduleDate;
+    const recipientTimeZone = recipient.timeZone || "UTC";
     const email = buildDailyScheduleEmail({
-      scheduleDate,
-      sessions,
-      infiniteHostingSlots,
+      scheduleDate: recipientDate,
+      sessions: sessionsForDate(recipientDate, recipientTimeZone),
+      infiniteHostingSlots: hostingSlotsForDate(recipientDate, recipientTimeZone),
       recipientName: recipient.name,
-      recipientTimeZone: recipient.timeZone,
+      recipientTimeZone,
       unsubscribeToken: recipient.unsubscribeToken,
     });
 
@@ -1998,30 +2059,33 @@ async function handleDailyScheduleEmailAction(params: {
         body: email.html,
         headers: {
           "X-MySession-Email-Type": "daily_schedule",
-          "X-MySession-Schedule-Date": scheduleDate.replaceAll("-", "_"),
+          "X-MySession-Schedule-Date": recipientDate.replaceAll("-", "_"),
         },
-        idempotencyKey: `mysession-daily-schedule-${recipient.userId}-${scheduleDate}`,
+        idempotencyKey: `mysession-daily-schedule-${recipient.userId}-${recipientDate}`,
       });
 
-      await sb.from("daily_schedule_email_sends").insert({
+      const { error: sentLedgerError } = await sb.from("daily_schedule_email_sends").insert({
         user_id: recipient.userId,
         email: recipient.email,
-        schedule_date: scheduleDate,
+        schedule_date: recipientDate,
         status: "sent",
         selected_rank: i + 1,
         resend_id: plunkId,
       });
+      if (sentLedgerError) {
+        console.error("[daily-email] accepted by Plunk but send ledger write failed", { userId: recipient.userId, scheduleDate: recipientDate, error: sentLedgerError });
+        return res.status(503).json({ error: "daily_send_ledger_write_failed", acceptedBeforeFailure: true });
+      }
 
-      await sb
+      const { error: lastSentError } = await sb
         .from("daily_schedule_email_preferences")
-        .upsert({
-          user_id: recipient.userId,
-          email: recipient.email,
-          enabled: true,
-          unsubscribe_token: recipient.unsubscribeToken,
+        .update({
           last_sent_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-        }, { onConflict: "user_id" });
+        })
+        .eq("user_id", recipient.userId)
+        .eq("enabled", true);
+      if (lastSentError) console.error("[daily-email] last_sent_at update failed", { userId: recipient.userId, error: lastSentError });
 
       results.push({
         userId: recipient.userId,
@@ -2032,14 +2096,18 @@ async function handleDailyScheduleEmailAction(params: {
     } catch (e: any) {
       const message = String(e?.message || JSON.stringify(e) || e || "send_failed");
 
-      await sb.from("daily_schedule_email_sends").insert({
+      const { error: failedLedgerError } = await sb.from("daily_schedule_email_sends").insert({
         user_id: recipient.userId,
         email: recipient.email,
-        schedule_date: scheduleDate,
+        schedule_date: recipientDate,
         status: "failed",
         selected_rank: i + 1,
         error: message,
       });
+      if (failedLedgerError) {
+        console.error("[daily-email] failed-send ledger write failed", { userId: recipient.userId, scheduleDate: recipientDate, error: failedLedgerError });
+        return res.status(503).json({ error: "daily_send_ledger_write_failed" });
+      }
 
       results.push({
         userId: recipient.userId,
@@ -2106,6 +2174,10 @@ async function handleDailyScheduleSavedAudienceCronAction(params: {
     .filter(Boolean)
     .slice(0, limit);
 
+  if (selectedUserIds.length === 0) {
+    return res.status(200).json({ ok: true, scheduleDate, selectedCount: 0, sentCount: 0, failedCount: 0 });
+  }
+
   return await handleDailyScheduleEmailAction({
     req,
     res,
@@ -2116,6 +2188,34 @@ async function handleDailyScheduleSavedAudienceCronAction(params: {
       scheduleDate,
       limit,
       selectedUserIds,
+    },
+    action: "daily_schedule_send",
+    skipAdminCheck: true,
+  });
+}
+
+async function handleDailyScheduleOptedInCronAction(params: {
+  req: VercelRequest;
+  res: VercelResponse;
+  sb: SupabaseClient;
+}) {
+  const { req, res, sb } = params;
+  const expectedSecret = env("DAILY_SCHEDULE_CRON_SECRET");
+  const suppliedSecret = String(req.headers["x-cron-secret"] || "").trim();
+  if (!expectedSecret || suppliedSecret !== expectedSecret) {
+    return res.status(401).json({ error: "cron_unauthorized" });
+  }
+
+  return await handleDailyScheduleEmailAction({
+    req,
+    res,
+    sb,
+    accessToken: "",
+    body: {
+      action: "daily_schedule_send",
+      scheduleDate: parseScheduleDate(getQueryParam(req, "scheduleDate")),
+      limit: clampDailyEmailLimit(getQueryParam(req, "limit") || DAILY_EMAIL_DEFAULT_LIMIT),
+      localMorningOnly: true,
     },
     action: "daily_schedule_send",
     skipAdminCheck: true,
@@ -2693,8 +2793,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ? normalizeEmailAction(getQueryParam(req, "cronAction"))
         : "";
 
-    const isDailyEmailCron =
-      req.method === "GET" && cronAction === "daily_schedule_send_saved_audience";
+    const isDailyEmailCron = req.method === "GET" &&
+      (cronAction === "daily_schedule_send_saved_audience" || cronAction === "daily_schedule_send_opted_in");
     const senderCronAction = getQueryParam(req, "senderAction").toLowerCase();
     const isSenderLifecycleCron =
       req.method === "POST" &&
@@ -2732,11 +2832,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (isDailyEmailCron) {
-      return await handleDailyScheduleSavedAudienceCronAction({
-        req,
-        res,
-        sb,
-      });
+      return cronAction === "daily_schedule_send_opted_in"
+        ? await handleDailyScheduleOptedInCronAction({ req, res, sb })
+        : await handleDailyScheduleSavedAudienceCronAction({ req, res, sb });
     }
 
     if (isSenderLifecycleCron) {

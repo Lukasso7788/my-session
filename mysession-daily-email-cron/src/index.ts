@@ -2,7 +2,6 @@ export interface Env {
   MYSESSION_DAILY_EMAIL_CRON_URL: string;
   DAILY_SCHEDULE_CRON_SECRET: string;
   DAILY_SCHEDULE_CRON_LIMIT?: string;
-  DAILY_SCHEDULE_AUDIENCE_NAME?: string;
   SENDER_LIFECYCLE_URL?: string;
   SENDER_CRON_SECRET?: string;
 }
@@ -43,11 +42,7 @@ function buildCronUrl(env: Env) {
   if (!base) throw new Error("MYSESSION_DAILY_EMAIL_CRON_URL_missing");
 
   const url = new URL(base);
-  url.searchParams.set("cronAction", "daily_schedule_send_saved_audience");
-  url.searchParams.set(
-    "audienceName",
-    String(env.DAILY_SCHEDULE_AUDIENCE_NAME || "default").trim() || "default"
-  );
+  url.searchParams.set("cronAction", "daily_schedule_send_opted_in");
   url.searchParams.set(
     "limit",
     String(env.DAILY_SCHEDULE_CRON_LIMIT || "100").trim() || "100"
@@ -63,41 +58,47 @@ async function runDailyScheduleEmailCron(env: Env, trigger: "scheduled" | "manua
   const url = buildCronUrl(env);
   const startedAt = Date.now();
 
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      "x-cron-secret": secret,
-      "user-agent": `mysession-cloudflare-daily-email-cron/${trigger}`,
-      accept: "application/json",
-    },
-  });
+  let sentCount = 0;
+  let failedCount = 0;
+  let batchCount = 0;
+  let remaining = 0;
+  const maxBatches = 30;
 
-  const text = await response.text();
-  let body: unknown = text;
-
-  try {
-    body = JSON.parse(text);
-  } catch {
-    body = text;
+  while (batchCount < maxBatches) {
+    batchCount += 1;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "x-cron-secret": secret,
+        "user-agent": `mysession-cloudflare-daily-email-cron/${trigger}`,
+        accept: "application/json",
+      },
+    });
+    let body: Record<string, unknown> = {};
+    try { body = await response.json() as Record<string, unknown>; } catch { /* Never log raw provider/error bodies. */ }
+    if (!response.ok || body.ok !== true) {
+      return { ok: false, status: response.status, error: String(body.error || "daily_send_failed"),
+        durationMs: Date.now() - startedAt, batchCount, sentCount, failedCount };
+    }
+    const selected = Number(body.selectedCount || 0);
+    sentCount += Number(body.sentCount || 0);
+    failedCount += Number(body.failedCount || 0);
+    remaining = Math.max(0, Number(body.candidatesCount || 0) - selected);
+    if (selected === 0 || remaining === 0) break;
   }
 
-  return {
-    ok: response.ok,
-    status: response.status,
-    statusText: response.statusText,
-    durationMs: Date.now() - startedAt,
-    url,
-    body,
-  };
+  return { ok: remaining === 0 && failedCount === 0, durationMs: Date.now() - startedAt,
+    batchCount, sentCount, failedCount, remaining };
 }
 
 export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    const jobs = event.cron === "0 4 * * *"
+    const jobs = event.cron === "0 * * * *"
       ? [
           runDailyScheduleEmailCron(env, "scheduled").then((result) => console.log("[daily-email-cron] result", result)),
-          runSenderLifecycleCron(env, "scheduled", "evaluate").then((result) => console.log("[sender-lifecycle-evaluate] result", result)),
         ]
+      : event.cron === "0 4 * * *"
+      ? [runSenderLifecycleCron(env, "scheduled", "evaluate").then((result) => console.log("[sender-lifecycle-evaluate] result", result))]
       : [
           runSenderLifecycleCron(env, "scheduled", "process").then((result) => console.log("[sender-outbox-process] result", result)),
         ];

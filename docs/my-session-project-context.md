@@ -12,13 +12,13 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   C:\Users\misha\.codex\worktrees\tasks-pip-accent\my-session.
   This managed worktree is at a detached HEAD; commit this feature here and
   push HEAD:main only after checking origin/main for new commits.
-- Current task: restyle the existing two-state room light mode with a
-  Flow Club-inspired powder-blue/white/indigo palette. The last section
-  records the exact files, CSS scope, contrast and verification. Do not add a
-  third mode or replace the user's supplied sun/moon or room SVG assets.
-  The prior timezone task remains documented in its own section below.
-  Earlier Plunk work and operational runbook remain documented in
-  docs/plunk-email-rollout.md. No mass campaign is authorized by this task.
+- Current task: implement and verify an opt-in daily Plunk schedule digest
+  showing public scheduled sessions and Infinite Room host time ranges. The
+  latest section records exact files, data/consent flow, cron, tests and
+  activation. Previous room palette, timezone and Plunk lifecycle work is
+  documented in sections below and docs/plunk-email-rollout.md. Do not
+  widen the daily audience to non-consenting users or change unrelated room
+  behavior as part of this email task.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
   Do not reset, delete or overwrite it. Inspect active worktree status before
   staging; never stage unrelated generated files.
@@ -1396,3 +1396,94 @@ commands in this document remain applicable. Existing modified sitemap XML
 and temporary preview/QA files in the worktree are unrelated and must remain
 unstaged. Future palette experiments should be done in a separate commit and
 visually approved before replacing this light mode again.
+
+## 2026-10-08 — Daily Plunk schedule digest with Infinite Room host windows
+
+This is the current change's continuation handoff; the project architecture
+above remains applicable. The feature is direct email, **not** a lifecycle
+workflow. The path is Cloudflare cron Worker -> secret-authenticated
+`GET /api/livekit/admin?cronAction=daily_schedule_send_opted_in` -> Supabase
+service-role reads -> `api/_lib/plunk.ts` -> self-hosted Plunk `/v1/send` ->
+SES. Browser code never receives the Plunk or cron secrets. Existing
+Sender-named lifecycle evaluator (04:00 UTC) and process (every 5 minutes)
+remain separate Worker paths. This work does not alter email_event_outbox,
+Plunk lifecycle templates, Sender transport, or Supabase Auth emails.
+
+`api/livekit/admin.ts` reads non-private, non-infinite scheduled sessions from
+`sessions.start_time` and real Infinite Room host reservations from
+`session_bookings` (`booking_role='host'`, overlapping start/end), joined to
+public infinite sessions and `profiles.full_name`. It loads an expanded UTC
+three-day window and filters each recipient to their own IANA calendar date:
+session starts on that date; a host interval overlaps it. Each host row shows
+its complete start–end range and day labels in the recipient's zone plus US
+East/West, Europe, India and Australia. No real hosting reservations means
+an explicit empty-state message. Host-query failure stops the send rather
+than mailing an incomplete schedule. Date/range/escaping logic lives in
+`api/_lib/dailyScheduleHosting.ts` and includes a labelled sample only for
+the fixed-inbox admin test, never a production audience.
+
+Audience eligibility in `api/_lib/dailyScheduleAudience.ts` requires a
+plausible address, confirmed auth email, explicit
+`email_automation_preferences.marketing_email_enabled=true`,
+`daily_schedule_email_preferences.enabled != false`, and no already-sent or
+failed ledger row for that user's local date. Non-default
+`profiles.timezone` takes precedence over Auth metadata; UTC is the fallback.
+The Cloudflare Worker runs the action hourly, but recipients qualify only
+when their local hour is 08 or 09. Once sent, the
+`daily_schedule_email_sends` row prevents another hourly attempt. The Plunk
+Idempotency-Key is stable per user/local date. `last_sent_at` update does
+not upsert `enabled=true`, avoiding re-enabling an opt-out. A partial send
+or ledger failure surfaces as an unsuccessful Worker run. The ledger has no
+unique `(user_id,schedule_date)` constraint, so concurrent overlapping
+invocations remain an edge; do not claim mathematically exactly-once
+delivery. Plunk API acceptance is not proof of mailbox delivery.
+
+`src/pages/DailyScheduleEmailAdminPage.tsx` at `/admin/daily-schedule-email`
+shows sessions, real host intervals, and per-user consent; it provides a
+preview and a fixed-inbox Plunk test to `lukasus7788@gmail.com`. If no host
+is booked, the admin may add a visibly labelled sample host slot to that
+test alone. Its fake room is not linked. Preview hash and stable UUID protect
+against inadvertent duplicate tests, and the test does not touch audience
+or send ledger. Manual admin sends also honor consent. The old saved
+audience API remains for compatibility, but the new Worker uses the live
+opt-in list. `/settings/email` now describes this digest on its marketing
+switch, which is OFF by default; daily unsubscribe remains separate.
+
+At the 2026-10-08 read-only production audit (Supabase
+`cxqgzcjsjyszcbcbdusp`), there were 673 Auth users, 518 daily preferences
+enabled, 49 disabled, **zero explicit marketing opt-ins**, and zero upcoming
+seven-day host reservations. The old saved-audience cron sent about 91/day
+with one Plunk 422/day. This is a snapshot, not migration consent. The new
+safe audience starts at zero until users enable Product and marketing emails
+at `/settings/email`. Never silently treat old default-enabled daily rows as
+marketing consent or bulk-flip the flag; a broad-send decision requires
+separate review and explicit user direction.
+
+Vercel Production variable-name audit found `PLUNK_API_URL`,
+`PLUNK_SECRET_KEY`, `PLUNK_FROM_EMAIL`, `PLUNK_FROM_NAME`,
+`DAILY_SCHEDULE_CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`; no secret values
+were copied. Cloudflare Worker needs its own
+`DAILY_SCHEDULE_CRON_SECRET` and existing
+`MYSESSION_DAILY_EMAIL_CRON_URL`. Keep secrets out of Git and `VITE_*`.
+`mysession-daily-email-cron/wrangler.toml` adds `0 * * * *`, preserving
+`0 4 * * *` and `*/5 * * * *`. Git/Vercel deployment does **not** deploy
+the Cloudflare Worker: with authenticated Cloudflare credentials, run
+`wrangler deploy` from its directory and verify triggers, `/health`, and
+an authenticated `/run` using a header (never URL query secret).
+
+Run `node --test api/_lib/dailyScheduleAudience.test.mjs
+api/_lib/dailyScheduleHosting.test.mjs api/_lib/plunk.test.mjs
+mysession-daily-email-cron/src/index.test.mjs`; compile the server with
+`npx tsc --noEmit --skipLibCheck --module nodenext --moduleResolution
+nodenext --target es2022 --types node api/livekit/admin.ts
+api/_lib/dailyScheduleHosting.ts api/_lib/dailyScheduleAudience.ts`;
+run `npm run build` and `git diff --check`. Root typecheck retains
+pre-existing project-reference/app errors. Do not stage existing generated
+sitemap diffs or untracked prejoin/room-shell QA files. Use the admin
+preview before one live Plunk test, then inspect inbox/provider status.
+
+Rollback: disable the Cloudflare hourly trigger or revert this feature with
+a new commit. Do not force-push, replay the old audience, clear the ledger,
+or turn on Sender lifecycle as a workaround. Inspect Plunk acceptance and
+send history before retrying; idempotency retention is limited. The separate
+lifecycle activation procedure is in `docs/plunk-email-rollout.md`.

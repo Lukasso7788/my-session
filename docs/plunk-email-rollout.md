@@ -176,3 +176,37 @@ References: [Plunk track API](https://docs.useplunk.com/api-reference/public-api
 [campaign targeting](https://docs.useplunk.com/concepts/campaigns),
 [segments](https://docs.useplunk.com/concepts/segments),
 [webhooks](https://docs.useplunk.com/guides/webhooks).
+
+## Daily schedule digest extension — 2026-10-08
+
+This is a separate **direct** `/v1/send` email, not a lifecycle template or
+Plunk marketing campaign. The existing scheduled-session template now also
+shows real Infinite Room host reservations as complete time ranges. The
+server selects only confirmed users who explicitly enabled Product and
+marketing emails and have not disabled the daily digest. The hourly Worker
+chooses each user's 08:00–09:59 local morning and uses a stable per-user/day
+idempotency key plus the Supabase send ledger. An admin-only fixed-inbox
+preview/test can add a labelled sample host interval when no real booking
+exists. It never seeds recipients or production booking rows.
+
+Production audit at implementation time found **zero** marketing opt-ins, so
+deploying the code and Worker should send **zero** live audience emails until
+people voluntarily opt in at `/settings/email`. Old daily preferences default
+enabled and the old saved audience are not proof of marketing consent. Do
+not flip `marketing_email_enabled` in bulk or switch Plunk to a global/ALL
+campaign as a workaround. The existing Plunk lifecycle cutover above has
+independent flags/secrets and remains unchanged.
+
+Activation checklist: deploy the Vercel `main` build; wait for READY; inspect
+`/admin/daily-schedule-email` preview and its audience/host counts; send
+one fixed-inbox Plunk test with the sample host interval if the real count
+is zero, then verify mailbox and Plunk/SES status. Deploy the Cloudflare
+Worker separately with `wrangler deploy` from
+`mysession-daily-email-cron/` and confirm hourly, 04:00 UTC and five-minute
+triggers. Verify Worker `/health`, then authenticated `/run` with
+`x-cron-secret` and confirm zero recipients or an explicitly consented
+recipient; never put the secret in URL or logs. Recheck consent count,
+unsubscribe behavior, bounce rate, Plunk 422 errors and ledger rows daily
+for the first several days. If the Worker cannot be deployed/verified, Git
+push alone has **not** activated the new hourly schedule. See the project
+context file's final section for exact code/test/rollback map.
