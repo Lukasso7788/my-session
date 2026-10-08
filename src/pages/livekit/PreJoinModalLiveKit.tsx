@@ -301,34 +301,34 @@ export function PreJoinModal({
 
   const card = [
     "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-[0_28px_90px_rgba(0,0,0,0.36)] sm:max-h-[92dvh] sm:max-w-[1080px] sm:rounded-[28px]",
-    isLight ? "border-[#BDCCE2] bg-[#F6F8FD] text-[#19264B]" : "border-[#2B2B2B] bg-[#1B1B1B] text-white",
+    isLight ? "border-[#A5ABD2] bg-[#FAFAFA] text-[#091454]" : "border-[#2B2B2B] bg-[#1B1B1B] text-white",
   ].join(" ");
 
-  const border = isLight ? "border-[#BDCCE2]" : "border-[#343434]";
-  const labelCls = isLight ? "text-[#4B5C80]" : "text-[#B8B8B8]";
-  const inputWrap = isLight ? "border border-[#BDCCE2] bg-white shadow-sm" : "border border-[#343434] bg-[#242424]";
-  const inputCls = isLight ? "text-[#19264B] placeholder:text-[#5C6D8E]" : "text-white placeholder:text-white/40";
-  const btnGhost = isLight ? "border border-[#BDCCE2] bg-white text-[#23335C] hover:border-[#858BEF] hover:bg-[#EBF0FA]" : "border border-[#343434] bg-[#242424] text-white/85 hover:border-[#5286F6]/45 hover:bg-[#2F2F2F]";
+  const border = isLight ? "border-[#A5ABD2]" : "border-[#343434]";
+  const labelCls = isLight ? "text-[#404B86]" : "text-[#B8B8B8]";
+  const inputWrap = isLight ? "border border-[#A5ABD2] bg-white shadow-sm" : "border border-[#343434] bg-[#242424]";
+  const inputCls = isLight ? "text-[#091454] placeholder:text-[#515EA8]" : "text-white placeholder:text-white/40";
+  const btnGhost = isLight ? "border border-[#A5ABD2] bg-white text-[#091454] hover:border-[#2844E8] hover:bg-[#EAF3FF]" : "border border-[#343434] bg-[#242424] text-white/85 hover:border-[#5286F6]/45 hover:bg-[#2F2F2F]";
   const btnPrimary = isLight
-    ? "bg-[#575CE5] text-white shadow-[0_12px_30px_rgba(87,92,229,0.22)] hover:bg-[#474CCB]"
+    ? "bg-[#2844E8] text-white shadow-[0_12px_30px_rgba(40,68,232,0.22)] hover:bg-[#152FC7]"
     : "bg-[#5286F6] text-white shadow-[0_12px_30px_rgba(82,134,246,0.25)] hover:bg-[#3E75ED] hover:shadow-[0_14px_34px_rgba(82,134,246,0.34)]";
   const fxBtnBase = "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:h-11 sm:w-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6] disabled:cursor-not-allowed disabled:opacity-60";
   const fxBtnSelected = isLight
-    ? "border border-[#575CE5]/50 bg-[#575CE5]/10 text-[#353AAE] hover:bg-[#575CE5]/15"
+    ? "border border-[#2844E8]/50 bg-[#2844E8]/10 text-[#152FC7] hover:bg-[#2844E8]/15"
     : "border border-[#5286F6]/50 bg-[#5286F6]/20 text-[#C4D6FF] hover:bg-[#5286F6]/25";
   const fxBtnIdle = isLight
-    ? "border border-[#BDCCE2] bg-white text-[#23335C] hover:border-[#575CE5]/50 hover:bg-[#575CE5]/10 hover:text-[#353AAE]"
+    ? "border border-[#A5ABD2] bg-white text-[#091454] hover:border-[#2844E8]/50 hover:bg-[#2844E8]/10 hover:text-[#152FC7]"
     : "border border-[#343434] bg-[#2F2F2F] text-white/85 hover:border-[#5286F6]/50 hover:bg-[#5286F6]/15 hover:text-[#C4D6FF]";
   const selectCls = [
     "h-11 w-full rounded-2xl px-3 text-[13px] outline-none transition focus:ring-2 focus:ring-[#5286F6]/30",
-    isLight ? "border border-[#BDCCE2] bg-white text-[#19264B]" : "border border-[#343434] bg-[#242424] text-white",
+    isLight ? "border border-[#A5ABD2] bg-white text-[#091454]" : "border border-[#343434] bg-[#242424] text-white",
   ].join(" ");
   const optionStyle: React.CSSProperties = isLight
-    ? { color: "#19264B", backgroundColor: "#F6F8FD" }
+    ? { color: "#091454", backgroundColor: "#FAFAFA" }
     : { color: "#ffffff", backgroundColor: "#242424" };
   const mediaToggleBase = "inline-flex h-12 min-w-0 flex-1 items-center justify-center gap-2.5 rounded-2xl border px-3 text-[13px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6]";
-  const mediaToggleOn = isLight ? "border-[#858BEF] bg-[#EBF0FA] text-[#353AAE] hover:bg-[#DCE5F7]" : "border-[#5286F6]/45 bg-[#5286F6]/18 text-[#C4D6FF] hover:bg-[#5286F6]/25";
-  const mediaToggleOff = isLight ? "border-[#BDCCE2] bg-white text-[#4B5C80] hover:bg-[#EBF0FA]" : "border-[#343434] bg-[#2F2F2F] text-[#C8C8C8] hover:bg-[#383838]";
+  const mediaToggleOn = isLight ? "border-[#2844E8] bg-[#EAF3FF] text-[#152FC7] hover:bg-[#D7E0EB]" : "border-[#5286F6]/45 bg-[#5286F6]/18 text-[#C4D6FF] hover:bg-[#5286F6]/25";
+  const mediaToggleOff = isLight ? "border-[#A5ABD2] bg-white text-[#404B86] hover:bg-[#EAF3FF]" : "border-[#343434] bg-[#2F2F2F] text-[#C8C8C8] hover:bg-[#383838]";
 
   const playFallbackTestSound = async () => {
     try {
@@ -829,7 +829,7 @@ export function PreJoinModal({
           </div>
         </div>
 
-        <div className={`flex shrink-0 items-center justify-between gap-3 border-t px-5 py-4 sm:px-7 sm:py-5 ${border} ${isLight ? "bg-[#F6F8FD]" : "bg-[#202020]"}`}>
+        <div className={`flex shrink-0 items-center justify-between gap-3 border-t px-5 py-4 sm:px-7 sm:py-5 ${border} ${isLight ? "bg-[#FAFAFA]" : "bg-[#202020]"}`}>
           <div className={`hidden items-center gap-2 text-[12px] sm:flex ${labelCls}`}>
             <span className="h-2 w-2 rounded-full bg-[#5286F6] shadow-[0_0_0_4px_rgba(82,134,246,0.14)]" />
             Your choices are saved for next time

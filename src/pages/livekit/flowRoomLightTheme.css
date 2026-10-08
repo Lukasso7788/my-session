@@ -1,23 +1,23 @@
-/* Flow Club-inspired *palette*, not a layout or icon replacement. The room
+/* Flow Club app CSS + supplied in-room screenshot palette, not a layout or icon replacement. The room
    canvas theme and the side-panel preference remain independent. Do not put
    media tiles, avatars, artwork, status colors or dark panels in these rules. */
 html[data-theme="light"] .ms-room-page {
-  --ms-room-flow-ink: #19264b;
-  --ms-room-flow-muted: #4b5c80;
-  --ms-room-flow-line: #bdcce2;
-  --ms-room-flow-soft: #ebf0fa;
-  --ms-room-flow-accent: #575ce5;
-  --ms-room-flow-accent-hover: #474ccb;
+  --ms-room-flow-ink: #091454;
+  --ms-room-flow-muted: #404b86;
+  --ms-room-flow-line: #a5abd2;
+  --ms-room-flow-soft: #eaf3ff;
+  --ms-room-flow-accent: #2844e8;
+  --ms-room-flow-accent-hover: #152fc7;
 }
 
 /* Existing -light.svg assets remain exactly as shipped; recolor pixels only.
-   -dark.svg icons on selected indigo controls already render white. */
+   -dark.svg icons on selected blue controls already render white. */
 html[data-theme="light"] .ms-room-page .ms-room-top-bar img[src$="-light.svg"],
 html[data-theme="light"] .ms-room-page .ms-room-top-bar img[src$="/volume.svg"],
 html[data-theme="light"] .ms-room-page .ms-room-top-bar img[src$="/volume-up.svg"],
 html[data-theme="light"] .ms-room-page .ms-room-bottom-controls img[src$="-light.svg"],
 html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="light"] img[src$="-light.svg"] {
-  filter: brightness(0) saturate(100%) invert(18%) sepia(16%) saturate(2211%) hue-rotate(190deg) brightness(94%) contrast(91%);
+  filter: brightness(0) saturate(100%) invert(9%) sepia(77%) saturate(2548%) hue-rotate(218deg) brightness(89%) contrast(108%);
 }
 
 /* Keep the bottom toolbar white against the powder-blue room canvas. */
@@ -56,7 +56,7 @@ html[data-theme="light"] .ms-room-page .ms-room-bottom-controls :is(
 }
 
 html[data-theme="light"] .ms-room-page .ms-room-bottom-controls [class~="text-[#2F2F2F]"] {
-  color: #23335c;
+  color: var(--ms-room-flow-ink);
 }
 
 html[data-theme="light"] .ms-room-page .ms-room-bottom-controls [class~="ring-[#F3F1F1]"] {
@@ -80,7 +80,7 @@ html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="lig
   [class~="bg-[#F4F3F3]"],
   [class~="bg-[#FAFAFA]"]
 ) {
-  background-color: #f6f8fd !important;
+  background-color: #fafafa !important;
 }
 
 html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="light"] :is(
@@ -129,7 +129,7 @@ html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="lig
 }
 
 html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="light"] :is(input, textarea)::placeholder {
-  color: #5c6d8e;
+  color: #515ea8;
   opacity: 1;
 }
 
@@ -177,7 +177,7 @@ html[data-theme="light"] .ms-room-page :is(button, input, textarea, select):focu
   [class~="bg-[#F5F5F5]"],
   [class~="bg-[#F3F1F1]"]
 ) {
-  background-color: #f6f8fd !important;
+  background-color: #fafafa !important;
 }
 
 :is(
@@ -187,7 +187,7 @@ html[data-theme="light"] .ms-room-page :is(button, input, textarea, select):focu
   [class*="border-[#D8D0D0]"],
   [class*="border-[#CFCFCF]"]
 ) {
-  border-color: #bdcce2 !important;
+  border-color: #a5abd2 !important;
 }
 
 :is(
@@ -201,7 +201,7 @@ html[data-theme="light"] .ms-room-page :is(button, input, textarea, select):focu
   [class~="text-black/65"],
   [class~="text-[#686868]"]
 ) {
-  color: #4b5c80 !important;
+  color: #404b86 !important;
 }
 
 .ms-room-settings-modal[data-theme="light"] :is(
@@ -211,7 +211,7 @@ html[data-theme="light"] .ms-room-page :is(button, input, textarea, select):focu
   [class~="text-black/85"]
 ),
 .ms-room-prejoin[data-theme="light"] [class~="text-[#2F2F2F]"] {
-  color: #19264b !important;
+  color: #091454 !important;
 }
 
 :is(
@@ -221,19 +221,19 @@ html[data-theme="light"] .ms-room-page :is(button, input, textarea, select):focu
   [class~="bg-[#1F1F1F]"],
   [class~="bg-[#5286F6]"]
 ) {
-  background-color: #575ce5 !important;
+  background-color: #2844e8 !important;
 }
 
 :is(
   .ms-room-prejoin[data-theme="light"],
   .ms-room-settings-modal[data-theme="light"]
 ) img[src$="-light.svg"] {
-  filter: brightness(0) saturate(100%) invert(18%) sepia(16%) saturate(2211%) hue-rotate(190deg) brightness(94%) contrast(91%);
+  filter: brightness(0) saturate(100%) invert(9%) sepia(77%) saturate(2548%) hue-rotate(218deg) brightness(89%) contrast(108%);
 }
 
 :is(
   .ms-room-prejoin[data-theme="light"],
   .ms-room-settings-modal[data-theme="light"]
 ) :is(button, input, textarea, select):focus-visible {
-  outline-color: #575ce5;
+  outline-color: #2844e8;
 }

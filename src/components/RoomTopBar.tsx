@@ -137,15 +137,15 @@ export default function RoomTopBar(props: RoomTopBarProps) {
     }, [sessionTitle]);
 
     const topBarBg = isLight
-        ? "bg-white/95 border border-[#BDCCE2]"
+        ? "bg-white/95 border border-[#A5ABD2]"
         : "bg-[#1B1B1B] border border-[#252525]";
 
     const chipBg = isLight
-        ? "bg-[#EBF0FA] border border-[#CAD6E9]"
+        ? "bg-[#EAF3FF] border border-[#A5ABD2]"
         : "bg-[#1B1B1B] border border-[#252525]";
 
-    const strongText = isLight ? "text-[#19264B]" : "text-[#F1F1F1]/90";
-    const mutedText = isLight ? "text-[#4B5C80]" : "text-white/80";
+    const strongText = isLight ? "text-[#091454]" : "text-[#F1F1F1]/90";
+    const mutedText = isLight ? "text-[#404B86]" : "text-white/80";
 
     const renderMobileMusicMute = () => (
         <button
@@ -156,7 +156,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                 "lg:hidden flex h-[32px] w-[84px] max-[480px]:w-[78px] shrink-0 items-center justify-center rounded-full border transition",
                 "disabled:cursor-default disabled:opacity-35",
                 isLight
-                    ? "border-[#CAD6E9] bg-[#EBF0FA] text-[#23335C] hover:bg-[#DCE5F7]"
+                    ? "border-[#A5ABD2] bg-[#EAF3FF] text-[#091454] hover:bg-[#D7E0EB]"
                     : "border-[#2B2B2B] bg-white/5 text-white hover:bg-[#F2F3F5]/10",
             ].join(" ")}
             title={mobileMusicState.muted ? "Unmute background music" : "Mute background music"}
@@ -171,7 +171,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         "w-[84px] max-[480px]:w-[78px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
 
     const switchTrackCls = isLight
-        ? "bg-[#EBF0FA] border-[#CAD6E9] hover:bg-[#DCE5F7]"
+        ? "bg-[#EAF3FF] border-[#A5ABD2] hover:bg-[#D7E0EB]"
         : "bg-white/5 border-[#2B2B2B] hover:bg-[#F2F3F5]/10";
 
     const switchThumb =
@@ -266,7 +266,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
 
     const renderInfiniteHostControl = (compact = false) => {
         const surface = isLight
-            ? "border-[#CAD6E9] bg-[#EBF0FA] text-[#23335C] hover:bg-[#DCE5F7]"
+            ? "border-[#A5ABD2] bg-[#EAF3FF] text-[#091454] hover:bg-[#D7E0EB]"
             : "border-[#2B2B2B] bg-[#1B1B1B]/60 text-[#F1F1F1]/85 hover:bg-[#242424]";
         const width = compact ? "w-[142px]" : "w-[190px]";
         const common = `${width} h-9 rounded-xl border px-3 text-[12px] font-inter transition overflow-hidden`;
@@ -361,7 +361,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                     {titleTruncated && (
                                         <span
                                             aria-hidden="true"
-                                            className={`pointer-events-none invisible absolute left-0 top-full z-[80] mt-2 w-max max-w-[min(420px,80vw)] whitespace-normal break-words rounded-xl border px-3 py-2 text-left font-inter text-[12px] font-medium leading-5 opacity-0 shadow-xl group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 ${isLight ? "border-[#BDCCE2] bg-white text-[#19264B]" : "border-[#343434] bg-[#242424] text-white"}`}
+                                            className={`pointer-events-none invisible absolute left-0 top-full z-[80] mt-2 w-max max-w-[min(420px,80vw)] whitespace-normal break-words rounded-xl border px-3 py-2 text-left font-inter text-[12px] font-medium leading-5 opacity-0 shadow-xl group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 ${isLight ? "border-[#A5ABD2] bg-white text-[#091454]" : "border-[#343434] bg-[#242424] text-white"}`}
                                         >
                                             {sessionTitle || "Session"}
                                         </span>
@@ -392,7 +392,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                                 "absolute right-0 -top-7 z-20 rounded-lg px-2 py-1 text-[10px] font-semibold border shadow-lg transition",
                                                 "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
                                                 isLight
-                                                    ? "bg-white border-[#CAD6E9] text-[#23335C] hover:bg-[#EBF0FA]"
+                                                    ? "bg-white border-[#A5ABD2] text-[#091454] hover:bg-[#EAF3FF]"
                                                     : "bg-[#1B1B1B] border-[#2B2B2B] text-white/85 hover:bg-[#242424]",
                                             ].join(" ")}
                                             title="Edit timeline"
@@ -442,7 +442,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                 <button
                                     onClick={onOpenHostProfile}
                                     className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition text-[13px] ${isLight
-                                        ? "border-[#CAD6E9] bg-[#EBF0FA] hover:bg-[#DCE5F7] text-[#23335C]"
+                                        ? "border-[#A5ABD2] bg-[#EAF3FF] hover:bg-[#D7E0EB] text-[#091454]"
                                         : "border-[#2B2B2B] bg-[#1B1B1B]/60 hover:bg-[#242424] text-[#F1F1F1]/85"
                                         }`}
                                     title="Host profile"
@@ -492,7 +492,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                             <button
                                 onClick={onOpenHostProfile}
                                 className={`w-10 h-10 rounded-2xl flex items-center justify-center border transition ${isLight
-                                    ? "border-[#CAD6E9] bg-[#EBF0FA] hover:bg-[#DCE5F7] text-[#23335C]"
+                                    ? "border-[#A5ABD2] bg-[#EAF3FF] hover:bg-[#D7E0EB] text-[#091454]"
                                     : "border-[#2B2B2B] bg-[#1B1B1B]/60 hover:bg-[#242424] text-white/85"
                                     }`}
                                 title={`Host: ${String(hostProfile.full_name || "Host")}`}
@@ -519,7 +519,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                             "absolute right-0 -top-10 z-20 rounded-xl px-3 py-1.5 text-[12px] font-semibold border shadow-lg transition",
                                             "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100",
                                             isLight
-                                                ? "bg-white border-[#CAD6E9] text-[#23335C] hover:bg-[#EBF0FA]"
+                                                ? "bg-white border-[#A5ABD2] text-[#091454] hover:bg-[#EAF3FF]"
                                                 : "bg-[#1B1B1B] border-[#2B2B2B] text-white/85 hover:bg-[#1B1B1B]",
                                         ].join(" ")}
                                         title="Edit timeline"
