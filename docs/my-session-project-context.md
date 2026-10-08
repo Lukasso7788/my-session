@@ -1316,7 +1316,7 @@ fixtures are unrelated and must not be staged. Only timezone files, this
 context file, dependency manifests and test should be committed. Verify
 origin/main before a non-force `HEAD:main` push.
 
-## 2026-10-08 — Flow Club-inspired room light palette (superseded colors)
+## 2026-10-08 — Flow Club-inspired room light palette
 
 Scope: presentation only in the live LiveKit room. The existing `"light" |
 "dark"` room state and `room_theme` localStorage key remain in
@@ -1380,46 +1380,19 @@ Fetch `origin/main`, confirm non-force fast-forward compatibility, commit and
 push `HEAD:main` only if safe. A Vercel deployment should not be reported as
 READY without checking it explicitly.
 
-## 2026-10-08 — Flow Club CSS/screenshot light-palette correction (current)
+## 2026-10-08 — Rollback of the Flow Club CSS palette correction
 
-The preceding light-palette section records the first iteration; its indigo
-values are superseded by this section. The verified source is Flow Club's
-public app stylesheet at
-`https://in.flow.club/static/css/main.e0a66313.css`, inspected through the
-browser CSSOM on the official login page. It exposes `--primary: #091454`,
-`--info: #EAF3FF`, and rules using blue `#2844E8` for active controls and
-`#152FC7` for focus borders. Its `#A5ABD2`, `#404B86` and `#515EA8`
-variants are also in that stylesheet. The logged-in session UI is not public,
-so the supplied Flow Club room screenshot provides the room-specific colors:
-flat canvas pixels are `#D2DDEC`, white sidebar/card surfaces are `#FFFFFF`,
-and the lightly tinted tile is `#FAFAFA`. This is an evidence-based palette
-adaptation to MySession, not a full CSS clone of Flow Club. It does not copy
-their layout, brand icons or assets. Keep their green/red semantic colors out
-of MySession's stage semantics unless separately requested.
-
-Current light-room tokens in `src/pages/livekit/flowRoomLightTheme.css`:
-navy text `#091454`, secondary text `#404B86`, border `#A5ABD2`, pale blue
-`#EAF3FF`, vivid blue selected control `#2844E8`, dark-blue hover
-`#152FC7`. The room/stage canvas is `#D2DDEC`; top/bottom and opted-in light
-side panels remain white. Portaled prejoin/settings surfaces use `#FAFAFA`.
-The former purple `#575CE5` / `#474CCB` selected controls are gone from the
-light room, bottom toolbar, prejoin and settings modal. These values are
-light-only; `"dark"` branches, stage status colors, video/off-camera media,
-room join logic, localStorage preferences and side-panel theme independence
-remain unchanged. Existing `-light.svg` icons are CSS-filter-tinted; the
-`-dark.svg` variants on blue selected controls are still white. No icon file,
-path or theme-switch glyph is replaced.
-
-Primary contrast ratios: white on `#2844E8` is 6.81:1, navy on white is
-16.94:1, `#404B86` on white is 8.18:1 and on the canvas is 5.95:1. The
-regression file `tests/roomFlowLightTheme.test.mjs` checks those pairs, the
-light-theme scope, the absence of the old purple constants in the relevant
-presentation files and the original desktop/mobile sun/moon mapping.
-Verify with `node --test tests/roomFlowLightTheme.test.mjs`, `npm run build`,
-and light/dark viewport inspection. Root `npm run typecheck` may still report
-the pre-existing TS6306/TS6310 project-reference errors noted above; changed
-files need a separate diagnostic review. For release, stage only this palette
-patch and the context/test updates; leave unrelated sitemap XML and temporary
-QA preview assets untouched. Push non-force to `origin/main` only after
-checking fast-forward compatibility. Do not claim deployment readiness without
-checking Vercel explicitly.
+The user requested restoration of the light room appearance from commit
+`655fa85ff21354126fa8be29f5866450fea96146`. The subsequent blue palette
+commit `b92b393a36c6b311b7b8b174f9e8bf5241bbdc4f` is reverted with a new
+commit rather than a force-push or history rewrite. This restores all room,
+top/bottom bar, prejoin, settings, scoped CSS and regression-test colors to
+the earlier light-mode palette described immediately above. In particular,
+the canvas is again `#D7E2F1`, the primary text is `#19264B`, and the active
+light controls are `#575CE5` with `#474CCB` hover. Dark mode, room state,
+handlers, video behavior, side-panel theme preference and SVG icon files were
+not changed by this rollback. The broader architecture and verification
+commands in this document remain applicable. Existing modified sitemap XML
+and temporary preview/QA files in the worktree are unrelated and must remain
+unstaged. Future palette experiments should be done in a separate commit and
+visually approved before replacing this light mode again.

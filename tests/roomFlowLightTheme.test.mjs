@@ -6,8 +6,6 @@ const css = readFileSync(new URL("../src/pages/livekit/flowRoomLightTheme.css", 
 const room = readFileSync(new URL("../src/pages/RoomPageLiveKit.tsx", import.meta.url), "utf8");
 const topBar = readFileSync(new URL("../src/components/RoomTopBar.tsx", import.meta.url), "utf8");
 const bottomBar = readFileSync(new URL("../src/pages/livekit/LiveKitBottomBarLegacy.tsx", import.meta.url), "utf8");
-const prejoin = readFileSync(new URL("../src/pages/livekit/PreJoinModalLiveKit.tsx", import.meta.url), "utf8");
-const settings = readFileSync(new URL("../src/pages/livekit/RoomSettingsModalLiveKit.tsx", import.meta.url), "utf8");
 
 function luminance(hex) {
   const [red, green, blue] = hex.match(/[0-9a-f]{2}/gi).map((part) => {
@@ -33,10 +31,9 @@ test("light-room foreground and control colors meet WCAG AA", () => {
   for (const [foreground, background] of [
     [token("ink"), "#ffffff"],
     [token("muted"), "#ffffff"],
-    [token("muted"), "#d2ddec"],
-    [token("ink"), "#eaf3ff"],
+    [token("muted"), "#d7e2f1"],
+    ["#23335c", "#e8eefa"],
     ["#ffffff", token("accent")],
-    ["#ffffff", token("accent-hover")],
   ]) {
     assert.ok(contrast(foreground, background) >= 4.5, `${foreground} on ${background} is below AA`);
   }
@@ -45,15 +42,7 @@ test("light-room foreground and control colors meet WCAG AA", () => {
 test("palette stays scoped to light room and light side panels", () => {
   assert.match(css, /html\[data-theme="light"\] \.ms-room-page/);
   assert.match(css, /\.ms-room-side-panel\[data-panel-theme="light"\]/);
-  assert.match(room, /bg-\[#D2DDEC\] text-\[#091454\]/);
-  assert.equal(token("accent").toLowerCase(), "#2844e8");
-  assert.equal(token("soft").toLowerCase(), "#eaf3ff");
-});
-
-test("old purple controls are absent from light-room presentation", () => {
-  for (const source of [css, room, topBar, bottomBar, prejoin, settings]) {
-    assert.doesNotMatch(source, /#(?:575ce5|474ccb|353aae|858bef)\b/i);
-  }
+  assert.match(room, /bg-\[#D7E2F1\] text-\[#19264B\]/);
 });
 
 test("the original sun/moon SVG switch is retained on desktop and mobile", () => {

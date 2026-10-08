@@ -305,10 +305,10 @@ export function LiveKitBottomBar(props: {
     }, [mediaMenu]);
 
     const menuSurface = isLight
-        ? "border border-[#A5ABD2] bg-white text-[#091454]"
+        ? "border border-[#BDCCE2] bg-white text-[#19264B]"
         : "border border-white/10 bg-[#222222] text-white";
     const menuItem = isLight
-        ? "hover:bg-[#EAF3FF]"
+        ? "hover:bg-[#EBF0FA]"
         : "hover:bg-white/[0.07]";
     useEffect(() => {
         if (typeof window === "undefined" || !window.matchMedia) return;
@@ -341,7 +341,7 @@ export function LiveKitBottomBar(props: {
     const sideControlClass = "h-10 min-w-10 rounded-2xl flex items-center justify-center gap-2 px-2 transition md:h-11 lg:px-3";
     const sideControlLabelClass = "hidden lg:block text-[11px] font-normal leading-none whitespace-nowrap";
     const activeSideControlClass = isLight
-        ? "bg-[#2844E8] text-white hover:bg-[#152FC7]"
+        ? "bg-[#575CE5] text-white hover:bg-[#474CCB]"
         : "bg-white text-[#2F2F2F] hover:bg-white/90";
     const sideButtonClass = (panel: "participants" | "chat" | "tasks" | "music") =>
         `${sideControlClass} ${activePanel === panel ? activeSideControlClass : ctlBtnBase}`;
@@ -352,7 +352,7 @@ export function LiveKitBottomBar(props: {
         centerControlClass + " " +
         (aiHostOpen
             ? isLight
-                ? "bg-[#2844E8] hover:bg-[#152FC7] text-white"
+                ? "bg-[#575CE5] hover:bg-[#474CCB] text-white"
                 : "bg-[#242424] hover:bg-[#2E2E2E] text-white"
             : ctlBtnBase);
 
@@ -431,7 +431,7 @@ export function LiveKitBottomBar(props: {
         <div
             className={`flex items-center overflow-hidden rounded-2xl ${soundscapeActive
                 ? isLight
-                    ? "bg-[#2844E8] text-white"
+                    ? "bg-[#575CE5] text-white"
                     : "bg-white text-[#2F2F2F]"
                 : ""
             }`}
@@ -501,7 +501,7 @@ export function LiveKitBottomBar(props: {
                     centerControlClass + " " +
                     (pipActive
                         ? isLight
-                            ? "bg-[#2844E8] hover:bg-[#152FC7] text-white"
+                            ? "bg-[#575CE5] hover:bg-[#474CCB] text-white"
                             : "bg-[#242424] hover:bg-[#2E2E2E] text-white"
                         : ctlBtnBase)
                 }

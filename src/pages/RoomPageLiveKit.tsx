@@ -19307,11 +19307,11 @@ export function RoomPageLiveKit({
 
   // UI colors
   const pageBg = isLight
-    ? "bg-[#D2DDEC] text-[#091454]"
+    ? "bg-[#D7E2F1] text-[#19264B]"
     : "bg-[#1B1B1B] text-white";
   const panelBg = sidePanelIsLight
     ? isLight
-      ? "bg-white border border-[#A5ABD2]"
+      ? "bg-white border border-[#BDCCE2]"
       : "bg-[#F3F1F1] border border-[#D8D0D0]"
     : "bg-[#1B1B1B] border border-[#2B2B2B]";
   const bottomBarBg = isLight
@@ -19345,7 +19345,7 @@ export function RoomPageLiveKit({
           : "bg-zinc-400";
 
   const ctlBtnBase = isLight
-    ? "bg-[#EAF3FF] hover:bg-[#D7E0EB] text-[#091454]"
+    ? "bg-[#E8EEFA] hover:bg-[#DCE5F7] text-[#23335C]"
     : "bg-[#242424] hover:bg-[#2E2E2E] text-white/90";
 
   // participants list search
@@ -21405,7 +21405,7 @@ export function RoomPageLiveKit({
                 videoSizerRef(el);
               }}
               className={`ms-video-stage relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight
-                ? "bg-[#D2DDEC] border border-[#A5ABD2]"
+                ? "bg-[#EEF3FA] border border-[#BDCCE2]"
                 : "bg-[#1B1B1B] border border-[#252525]"
                 }`}
             >
