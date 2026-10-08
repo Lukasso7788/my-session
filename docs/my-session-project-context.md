@@ -12,8 +12,10 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   C:\Users\misha\.codex\worktrees\tasks-pip-accent\my-session.
   This managed worktree is at a detached HEAD; commit this feature here and
   push HEAD:main only after checking origin/main for new commits.
-- Current task: restore dark-mode contrast throughout the pinned/floating
-  Tasks Panel. The final section records the root cause and focused fix.
+- Current task: auto-detect the user's browser timezone on the post-login
+  profile-completion gate, and add searchable timezone selection to the gate,
+  profile editor, and email preferences. The final section records the design
+  and regression checks.
   Earlier Plunk work and operational runbook remain documented in
   docs/plunk-email-rollout.md. No mass campaign is authorized by this task.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
@@ -1258,3 +1260,57 @@ Only `TasksPanel.tsx` and this context file should be committed. Preserve
 the unrelated generated sitemap diffs and untracked preview fixtures/QA
 images already in the managed worktree. Fetch `origin/main`, verify a fast-forward push, and
 never force-push.
+
+## 2026-10-08 — Local timezone detection and searchable selection
+
+The post-login `ProfileCompletionGate` in `src/main.tsx` previously detected
+the browser's IANA timezone but always required a manual confirmation click.
+For unconfirmed accounts it now reads a real browser value with
+`getBrowserTimeZone()` (`null` when unavailable/invalid), loads the existing
+profile/entitlement data, and runs the existing Supabase save sequence
+automatically once per user when detection succeeds. It does not request
+geolocation, infer an IP location, or overwrite a timezone already confirmed
+in auth metadata. On save failure it reveals the manual gate with an error;
+the automatic attempt is not retried in a render loop. The existing real-name
+gate remains separate. Auth callback/login/register/password routes remain
+excluded. StrictMode and route/user changes are guarded by cancellation and
+per-user attempt refs.
+
+Timezone precedence before the first confirmation is auth metadata, a
+previously remembered local selection, a non-UTC profile zone, then the
+browser's valid IANA zone. `profiles.timezone` has a database default `UTC`
+(`supabase/migrations/20260908195546_add_timezone_to_profiles.sql`), so an
+unconfirmed profile `UTC` is not treated as a deliberate selection. If the
+browser supplies no valid zone and no explicit saved value exists, the gate's
+field starts blank and requires manual selection (including deliberate UTC).
+After selection, the same zone is persisted to `profiles.timezone`, Supabase
+Auth `user_metadata.timezone` and `timezone_confirmed_at`, the session
+adoption path, email-automation preferences, and best-effort localStorage.
+The profile update now occurs before auth confirmation, so a profile-write
+error cannot set the confirmed marker. No database migration or change to
+Sender/Plunk automation flow is part of this work.
+
+`src/components/TimeZonePicker.tsx` is a reusable accessible typeahead used in
+`ProfileCompletionGate.tsx`, `ProfilePage.tsx`, and
+`EmailPreferencesPage.tsx`. It supports the device-zone shortcut, keyboard
+arrows/Enter/Escape, pointer selection, focus/blur closing, and a bounded
+35-item list. `src/lib/timezoneSearch.ts` builds labels/search terms from
+IANA identifiers and `@vvo/tzdb` 6.198.0 country, continent, city and alias
+records; `Intl.DisplayNames` adds English/Russian/Ukrainian country names.
+This covers catalog cities and timezone aliases, not every possible small
+settlement. The catalog is dynamically imported only after the picker is
+opened; if it cannot load, IANA identifiers remain searchable from Intl.
+The package version is pinned in `package.json` and `package-lock.json`.
+
+Regression tests are in `tests/timezoneSearch.test.mjs`, covering India,
+Cyrillic India, Mumbai/Kolkata/Calcutta, country/continent search, unmatched
+queries, selected ordering, and the unconfirmed-UTC precedence. Run with
+`node --test tests/timezoneSearch.test.mjs`. `npm run build` passed, including
+SEO prerender checks. `npm run typecheck` still fails at existing root
+tsconfig reference TS6306/TS6310; direct app typecheck reports no diagnostic
+in any timezone-changed file. Focused ESLint passes for all changed files
+except `ProfilePage.tsx`, which has 19 pre-existing `no-explicit-any` errors
+outside changed lines. The existing sitemap diffs and untracked preview/QA
+fixtures are unrelated and must not be staged. Only timezone files, this
+context file, dependency manifests and test should be committed. Verify
+origin/main before a non-force `HEAD:main` push.

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import TimeZonePicker from "../components/TimeZonePicker";
 import { supabase } from "../lib/supabase";
+import { getDetectedTimeZone, isValidTimeZone } from "../lib/timezones";
 
 type Preferences = {
   lifecycle_email_enabled: boolean;
@@ -17,7 +19,7 @@ const defaults: Preferences = {
   weekly_recap_enabled: true,
   session_reminders_enabled: true,
   reactivation_email_enabled: true,
-  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+  timezone: getDetectedTimeZone(),
 };
 
 const options: Array<{ key: keyof Preferences; title: string; description: string }> = [
@@ -74,6 +76,10 @@ export default function EmailPreferencesPage() {
   }, []);
 
   async function save() {
+    if (!isValidTimeZone(value.timezone)) {
+      setMessage("Choose a valid timezone before saving.");
+      return;
+    }
     setSaving(true);
     setMessage("");
     try {
@@ -103,11 +109,16 @@ export default function EmailPreferencesPage() {
                   <input type="checkbox" className="mt-1 h-5 w-5 accent-[#57C964]" checked={Boolean(value[option.key])} onChange={(event) => setValue((current) => ({ ...current, [option.key]: event.target.checked }))} />
                 </label>
               ))}
-              <label className="block rounded-2xl border border-black/10 p-4">
-                <span className="text-[15px] font-semibold">Timezone</span>
+              <div className="rounded-2xl border border-black/10 p-4">
+                <label htmlFor="email-preferences-timezone" className="text-[15px] font-semibold">Timezone</label>
                 <p className="mt-1 text-[13px] text-black/55">Used to schedule reminders and recaps at useful local times.</p>
-                <input value={value.timezone} onChange={(event) => setValue((current) => ({ ...current, timezone: event.target.value }))} className="mt-3 w-full rounded-xl border border-black/10 px-4 py-3 text-sm outline-none focus:border-[#57C964]" />
-              </label>
+                <TimeZonePicker
+                  id="email-preferences-timezone"
+                  value={value.timezone}
+                  onChange={(timezone) => setValue((current) => ({ ...current, timezone }))}
+                  className="mt-3"
+                />
+              </div>
             </div>
           )}
           {message ? <p className="mt-4 text-sm text-black/65">{message}</p> : null}

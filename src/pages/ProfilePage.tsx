@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
+import TimeZonePicker from "../components/TimeZonePicker";
 import {
   formatTimeZoneLabel,
   getDetectedTimeZone,
-  getSupportedTimeZones,
   isValidTimeZone,
 } from "../lib/timezones";
 
@@ -169,11 +169,6 @@ export default function ProfilePage() {
   const avatarFallback = useMemo(() => {
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`;
   }, [displayName]);
-
-  const timeZoneOptions = useMemo(
-    () => getSupportedTimeZones(timeZone),
-    [timeZone],
-  );
 
   const hasHostedSessions = sessions.length > 0;
 
@@ -723,24 +718,19 @@ export default function ProfilePage() {
               This name will be saved when you click “Save changes”.
             </p>
 
-            <label className="mt-5 block text-sm font-medium text-[#2F2F2F]">
-              Timezone
-              <select
+            <div className="mt-5">
+              <label htmlFor="profile-edit-timezone" className="block text-sm font-medium text-[#2F2F2F]">Timezone</label>
+              <TimeZonePicker
+                id="profile-edit-timezone"
                 value={timeZone}
-                onChange={(event) => setTimeZone(event.target.value)}
-                className="mt-2 w-full rounded-xl border border-gray-300 px-4 py-3 outline-none transition focus:ring-2 focus:ring-black"
+                onChange={setTimeZone}
+                className="mt-2"
                 disabled={saving}
-              >
-                {timeZoneOptions.map((zone) => (
-                  <option key={zone} value={zone}>
-                    {formatTimeZoneLabel(zone)}
-                  </option>
-                ))}
-              </select>
+              />
               <span className="mt-2 block text-xs font-normal text-gray-500">
                 Used for session times, reminders, and daily attendance.
               </span>
-            </label>
+            </div>
           </div>
         )}
 

@@ -25,12 +25,31 @@ type IntlWithSupportedValues = typeof Intl & {
   supportedValuesOf?: (key: "timeZone") => string[];
 };
 
-export function getDetectedTimeZone(): string {
+export function getBrowserTimeZone(): string | null {
   try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return zone && isValidTimeZone(zone) ? zone : null;
   } catch {
-    return "UTC";
+    return null;
   }
+}
+
+export function getDetectedTimeZone(): string {
+  return getBrowserTimeZone() || "UTC";
+}
+
+// profiles.timezone defaults to UTC in the database. Until it has been
+// confirmed, that value is not evidence that the person selected UTC.
+export function chooseTimeZoneForFirstConfirmation(
+  metadataZone: string,
+  profileZone: string,
+  rememberedZone: string,
+  browserZone: string | null,
+): string {
+  if (isValidTimeZone(metadataZone)) return metadataZone;
+  if (isValidTimeZone(rememberedZone)) return rememberedZone;
+  if (profileZone !== "UTC" && isValidTimeZone(profileZone)) return profileZone;
+  return browserZone || (isValidTimeZone(profileZone) ? profileZone : "UTC");
 }
 
 export function getSupportedTimeZones(current?: string | null): string[] {
