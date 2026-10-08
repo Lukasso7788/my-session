@@ -416,7 +416,7 @@ export function LiveKitBottomBar(props: LegacyProps) {
                 : "bg-white/[0.055] text-white hover:bg-white/[0.09]";
 
     return (
-        <div onClickCapture={handleArrowCapture}>
+        <div className="ms-room-bottom-controls" onClickCapture={handleArrowCapture}>
             <LegacyLiveKitBottomBar
                 {...props}
                 onToggleCam={() => {

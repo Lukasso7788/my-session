@@ -47,6 +47,7 @@ import { advertiseSharedMusic, sharedRoomMusicActive } from "../lib/roomMusicPre
 import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
 import { formatTimeZoneCityLabel, isValidTimeZone } from "../lib/timezones";
+import { parseRoomThemeMode, roomThemeContrastBase, type RoomThemeMode } from "../lib/roomThemeMode";
 import {
   loadEntitlementState,
   isPersonalPaywallForced,
@@ -100,6 +101,7 @@ import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 import { FX_BG_PRESETS } from "./livekit/backgroundPresets";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
 import "./livekit/roomSidePanelTheme.css";
+import "./livekit/autumnRoomTheme.css";
 import {
   isPublishedColorCorrectionIdentity,
   publishedColorCorrectionSignature,
@@ -5629,15 +5631,16 @@ export function RoomPageLiveKit({
     : paywallBlocked;
 
   // theme
-  const [theme, setTheme] = useState<RoomTheme>(() => {
+  const [themeMode, setThemeMode] = useState<RoomThemeMode>(() => {
     try {
-      const v = String(localStorage.getItem("room_theme") || "").toLowerCase();
-      return v === "light" ? "light" : "dark";
+      return parseRoomThemeMode(localStorage.getItem("room_theme"));
     } catch {
       return "dark";
     }
   });
+  const theme: RoomTheme = roomThemeContrastBase(themeMode);
   const isLight = theme === "light";
+  const isAutumn = themeMode === "autumn";
 
   // Side panels are a personal, per-browser preference, independent of the
   // room canvas theme and never written to shared room/session state.
@@ -5662,9 +5665,9 @@ export function RoomPageLiveKit({
 
   useEffect(() => {
     try {
-      localStorage.setItem("room_theme", theme);
+      localStorage.setItem("room_theme", themeMode);
     } catch { }
-  }, [theme]);
+  }, [themeMode]);
 
   useEffect(() => {
     try {
@@ -5675,6 +5678,8 @@ export function RoomPageLiveKit({
       const prevBodyDark = body.classList.contains("dark");
       const prevRootTheme = root.getAttribute("data-theme");
       const prevBodyTheme = body.getAttribute("data-theme");
+      const prevRootRoomTheme = root.getAttribute("data-room-theme");
+      const prevBodyRoomTheme = body.getAttribute("data-room-theme");
       const prevRootColorScheme = (root.style as any).colorScheme;
       const prevBodyColorScheme = (body.style as any).colorScheme;
 
@@ -5685,6 +5690,8 @@ export function RoomPageLiveKit({
 
       root.setAttribute("data-theme", theme);
       body.setAttribute("data-theme", theme);
+      root.setAttribute("data-room-theme", themeMode);
+      body.setAttribute("data-room-theme", themeMode);
 
       (root.style as any).colorScheme = theme;
       (body.style as any).colorScheme = theme;
@@ -5699,13 +5706,19 @@ export function RoomPageLiveKit({
         if (prevBodyTheme === null) body.removeAttribute("data-theme");
         else body.setAttribute("data-theme", prevBodyTheme);
 
+        if (prevRootRoomTheme === null) root.removeAttribute("data-room-theme");
+        else root.setAttribute("data-room-theme", prevRootRoomTheme);
+
+        if (prevBodyRoomTheme === null) body.removeAttribute("data-room-theme");
+        else body.setAttribute("data-room-theme", prevBodyRoomTheme);
+
         (root.style as any).colorScheme = prevRootColorScheme || "";
         (body.style as any).colorScheme = prevBodyColorScheme || "";
       };
     } catch {
       return;
     }
-  }, [theme]);
+  }, [theme, themeMode]);
 
   const [isLgUp, setIsLgUp] = useState<boolean>(() => {
     if (typeof window === "undefined" || !window.matchMedia) return true;
@@ -15464,11 +15477,11 @@ export function RoomPageLiveKit({
         setVoiceUiLastCommand("Direct messages opened");
         break;
       case "theme_light":
-        setTheme("light");
+        setThemeMode("light");
         setVoiceUiLastCommand("Light mode");
         break;
       case "theme_dark":
-        setTheme("dark");
+        setThemeMode("dark");
         setVoiceUiLastCommand("Dark mode");
         break;
       case "participants_open":
@@ -16404,8 +16417,11 @@ export function RoomPageLiveKit({
     pipWindow.document.title = `${String(session?.title || "Session")} · PiP`;
     pipWindow.document.body.innerHTML = "";
     pipWindow.document.documentElement.setAttribute("data-theme", theme);
+    pipWindow.document.documentElement.setAttribute("data-room-theme", themeMode);
     pipWindow.document.body.className =
-      theme === "dark"
+      themeMode === "autumn"
+        ? "m-0 bg-[#F8EADB] text-[#342319] overflow-hidden"
+        : theme === "dark"
         ? "m-0 bg-[#1B1B1B] text-white overflow-hidden"
         : "m-0 bg-[#F3F3F3] text-[#2B2B2B] overflow-hidden";
 
@@ -16429,7 +16445,7 @@ export function RoomPageLiveKit({
     pipWindowRef.current = pipWindow;
     setPipMountEl(mount);
     setPipOpen(true);
-  }, [connected, pipSupported, session?.title, theme]);
+  }, [connected, pipSupported, session?.title, theme, themeMode]);
 
   const openMobilePictureInPicture = useCallback(async () => {
     if (!connected) {
@@ -16578,12 +16594,15 @@ export function RoomPageLiveKit({
 
     try {
       pipWindow.document.documentElement.setAttribute("data-theme", theme);
+      pipWindow.document.documentElement.setAttribute("data-room-theme", themeMode);
       pipWindow.document.body.className =
-        theme === "dark"
+        themeMode === "autumn"
+          ? "m-0 bg-[#F8EADB] text-[#342319] overflow-hidden"
+          : theme === "dark"
           ? "m-0 bg-[#1B1B1B] text-white overflow-hidden"
           : "m-0 bg-[#F3F3F3] text-[#2B2B2B] overflow-hidden";
     } catch { }
-  }, [theme, pipMountEl]);
+  }, [theme, themeMode, pipMountEl]);
 
   useEffect(() => {
     if (connected) return;
@@ -19305,15 +19324,19 @@ export function RoomPageLiveKit({
     : null;
 
   // UI colors
-  const pageBg = isLight
-    ? "bg-[#F3F1F1] text-[#1F1F1F]"
-    : "bg-[#1B1B1B] text-white";
-  const panelBg = sidePanelIsLight
-    ? "bg-[#F3F1F1] border border-[#D8D0D0]"
-    : "bg-[#1B1B1B] border border-[#2B2B2B]";
-  const bottomBarBg = isLight
-    ? "bg-[#F3F1F1]"
-    : "bg-[#1B1B1B]";
+  const pageBg = isAutumn
+    ? "bg-[#F8EADB] text-[#342319]"
+    : isLight ? "bg-[#F3F1F1] text-[#1F1F1F]" : "bg-[#1B1B1B] text-white";
+  const panelBg = isAutumn
+    ? sidePanelIsLight
+      ? "bg-[#FAF0E3] border border-[#C5A487]"
+      : "bg-[#35271F] border border-[#70503B]"
+    : sidePanelIsLight
+      ? "bg-[#F3F1F1] border border-[#D8D0D0]"
+      : "bg-[#1B1B1B] border border-[#2B2B2B]";
+  const bottomBarBg = isAutumn
+    ? "bg-[#F8EADB]"
+    : isLight ? "bg-[#F3F1F1]" : "bg-[#1B1B1B]";
   const voiceUiStatusLabel =
     !voiceUiEnabled
       ? "Voice UI off"
@@ -19341,9 +19364,11 @@ export function RoomPageLiveKit({
           ? "bg-red-400"
           : "bg-zinc-400";
 
-  const ctlBtnBase = isLight
-    ? "bg-[#E7E7E7] hover:bg-[#DCDCDC] text-black/75"
-    : "bg-[#242424] hover:bg-[#2E2E2E] text-white/90";
+  const ctlBtnBase = isAutumn
+    ? "bg-[#F1DDC7] hover:bg-[#EAD1B5] text-[#342319]"
+    : isLight
+      ? "bg-[#E7E7E7] hover:bg-[#DCDCDC] text-black/75"
+      : "bg-[#242424] hover:bg-[#2E2E2E] text-white/90";
 
   // participants list search
   const [participantsSearch, setParticipantsSearch] = useState("");
@@ -20948,7 +20973,7 @@ export function RoomPageLiveKit({
         ) : null}
       </React.Suspense>
 
-      <div className={`ms-room-page h-[100dvh] overflow-hidden ${pageBg}`}>
+      <div className={`ms-room-page h-[100dvh] overflow-hidden ${pageBg}`} data-room-theme={themeMode}>
         <input
           ref={voiceFxUploadInputRef}
           type="file"
@@ -21351,6 +21376,7 @@ export function RoomPageLiveKit({
         <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(68px+env(safe-area-inset-bottom))] sm:pb-[calc(72px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
           <RoomTopBar
             theme={theme}
+            themeMode={themeMode}
             sessionTitle={String(session?.title || "Session")}
             canEditTimeline={canEditRoomTimeline}
             onEditTimeline={canEditRoomTimeline ? openTimelineEditor : undefined}
@@ -21380,9 +21406,7 @@ export function RoomPageLiveKit({
             onStepInAsHost={claimActiveRoomHost}
             onStepDownAsHost={releaseActiveRoomHost}
             onHoverStage={setHoveredStage as any}
-            onToggleTheme={() =>
-              setTheme((t) => (t === "dark" ? "light" : "dark"))
-            }
+            onChangeTheme={setThemeMode}
             onOpenHostProfile={() =>
               setSelectedUser((session?.host_profile as any) || null)
             }
@@ -21401,9 +21425,11 @@ export function RoomPageLiveKit({
                 videoWrapRef.current = el;
                 videoSizerRef(el);
               }}
-              className={`ms-video-stage relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight
-                ? "bg-[#F3F1F1] border border-[#D8D0D0]"
-                : "bg-[#1B1B1B] border border-[#252525]"
+              className={`ms-video-stage relative rounded-2xl overflow-hidden min-h-0 h-full ${isAutumn
+                ? "bg-[#FAF0E3] border border-[#C5A487]"
+                : isLight
+                  ? "bg-[#F3F1F1] border border-[#D8D0D0]"
+                  : "bg-[#1B1B1B] border border-[#252525]"
                 }`}
             >
               {pipOpen && pipMode === "gallery" ? (

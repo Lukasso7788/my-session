@@ -12,10 +12,10 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   C:\Users\misha\.codex\worktrees\tasks-pip-accent\my-session.
   This managed worktree is at a detached HEAD; commit this feature here and
   push HEAD:main only after checking origin/main for new commits.
-- Current task: auto-detect the user's browser timezone on the post-login
-  profile-completion gate, and add searchable timezone selection to the gate,
-  profile editor, and email preferences. The final section records the design
-  and regression checks.
+- Current task: add a LIGHT autumn color theme to the LiveKit room, as the
+  middle choice in the room header's light/autumn/dark control. The final
+  section records the implementation, contrast evidence and verification.
+  The timezone feature described below was committed in the previous task.
   Earlier Plunk work and operational runbook remain documented in
   docs/plunk-email-rollout.md. No mass campaign is authorized by this task.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
@@ -1314,3 +1314,63 @@ outside changed lines. The existing sitemap diffs and untracked preview/QA
 fixtures are unrelated and must not be staged. Only timezone files, this
 context file, dependency manifests and test should be committed. Verify
 origin/main before a non-force `HEAD:main` push.
+
+## 2026-10-08 — Light autumn room theme
+
+The current room route is `src/pages/RoomPageLiveKit.tsx`; it coordinates
+LiveKit transport, media tracks, chat/tasks/music/participants panels, prejoin,
+settings, top/bottom bars and optional document Picture-in-Picture. This task
+changes the visual theme only: no LiveKit capture, publish, subscribe, tab
+visibility, media recovery, video quality, room-state or Supabase paths. The
+existing `room_theme` browser `localStorage` key still stores a per-browser
+preference, now `light`, `autumn` or `dark`. `src/lib/roomThemeMode.ts` parses
+older values safely and maps autumn to the *light* contrast base. Legacy
+children typed with `RoomTheme = "light" | "dark"` keep that contract; the
+actual tri-state mode is exposed through `data-room-theme` on the root, body
+and room page. The existing `data-theme`, `dark` class and colorScheme stay on
+their light/dark base so media components and panels do not need invasive
+changes. The room's desktop document PiP background also follows the autumn
+choice without changing PiP media behavior.
+
+`src/components/RoomTopBar.tsx` renders three individually labeled,
+keyboard-focusable, `aria-pressed` buttons when given `onChangeTheme`; older
+iframe/preview callers with only `onToggleTheme` retain a two-choice control.
+The middle button uses the supplied orange maple-leaf SVG verbatim, copied to
+`public/icons/autumn-leaf.svg`. The new `src/pages/livekit/autumnRoomTheme.css`
+is imported after `roomSidePanelTheme.css` and is scoped to autumn. Its light
+cream/peach/brown tokens style the room shell, top and bottom controls, video
+stage surround, independently light/dark side panels, settings and prejoin
+surfaces. Semantic timeline stage colors (including blue Focus), room media
+statuses, avatar/artwork colors and the independent side-panel dark-mode
+preference are intentionally preserved. CSS hooks added to bottom controls,
+prejoin and settings are presentation-only. Do not reinterpret autumn as a
+dark palette; the user specifically corrected that direction during this task.
+The active Chat/People/Tasks/Music button had an old charcoal `#2F2F2F`
+background and inverse white SVG icons in the light base. A presentation-only
+`ms-room-active-side-control` marker in `LiveKitBottomBarLegacy.tsx` scopes
+autumn-only soft peach backgrounds and warm dark icon ink to those active
+buttons. Other neutral `#2F2F2F` buttons/labels in the bottom bar and light
+side panel are warmed as well; red media-off and blue timeline stage colors
+remain semantic and unchanged. The autumn-only contrast of text on the
+peach active surface is 8.22:1. A second local Chrome mock rendered the real
+bottom bar with Tasks active; its SVG and label were clearly visible.
+
+The `tests/roomThemeMode.test.mjs` test checks old-key parsing, the light
+contrast base and WCAG 2.1 AA normal-text ratios from the actual CSS tokens.
+Measured ratios: main text on light shell 12.70:1, muted text 7.69:1,
+accent 5.67:1, white on rust primary 5.23:1, panel body 13.31:1, and
+inactive switch icon 5.24:1. `node --test tests/roomThemeMode.test.mjs` and
+`npm run build` pass. A temporary Vite mock rendered the real `RoomTopBar`
+and autumn CSS at 1440x900 and 390x844 in headless Chrome; the three-way
+toggle fit both widths and light surfaces/text were visually readable. The
+mock does not prove an authenticated LiveKit session, which remains an
+in-product smoke test. The temporary mock/screenshots were not committed.
+Root `npm run typecheck` is still blocked by the pre-existing referenced
+tsconfig TS6306/TS6310; app-level typecheck emits existing unrelated
+diagnostics in RoomPageLiveKit and other modules. Focused ESLint similarly
+reports existing explicit-any/empty-block warnings outside this feature.
+
+Only theme files, the supplied icon, the regression test and this context
+file should be staged. Preserve generated sitemap diffs and earlier untracked
+prejoin/room preview assets in the managed worktree. Check `origin/main` before
+non-force `HEAD:main` push; no deployment claim without verification.
