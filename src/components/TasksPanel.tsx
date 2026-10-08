@@ -492,6 +492,14 @@ function applyOverlayBaseStyles(doc: Document, isLight: boolean) {
   } catch { }
 }
 
+function applyTasksOverlayTheme(container: HTMLElement, theme: RoomTheme) {
+  container.classList.add("ms-room-side-panel");
+  container.classList.toggle("dark", theme === "dark");
+  container.dataset.theme = theme;
+  container.dataset.panelTheme = theme;
+  container.style.colorScheme = theme;
+}
+
 function safeTrim(x: unknown) {
   return String(x || "").trim();
 }
@@ -3165,6 +3173,7 @@ export function TasksPanel({
         container.style.height = "100vh";
         container.style.width = "100vw";
         container.style.fontFamily = OVERLAY_FONT_FAMILY;
+        applyTasksOverlayTheme(container, panelTheme);
         pipWin.document.body.appendChild(container);
 
         overlayRef.current = { win: pipWin, container, kind: "pip" };
@@ -3190,6 +3199,7 @@ export function TasksPanel({
       container.style.height = "100vh";
       container.style.width = "100vw";
       container.style.fontFamily = OVERLAY_FONT_FAMILY;
+      applyTasksOverlayTheme(container, panelTheme);
       w.document.body.appendChild(container);
 
       overlayRef.current = { win: w, container, kind: "window" };
@@ -3197,7 +3207,14 @@ export function TasksPanel({
 
       w.addEventListener("beforeunload", closeOverlay);
     } catch { }
-  }, [closeOverlay, isLight]);
+  }, [closeOverlay, isLight, panelTheme]);
+
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    if (!overlayOpen || !overlay?.win) return;
+    applyOverlayBaseStyles(overlay.win.document, isLight);
+    applyTasksOverlayTheme(overlay.container, panelTheme);
+  }, [isLight, overlayOpen, panelTheme]);
 
   useEffect(() => {
     return () => {
@@ -4465,7 +4482,8 @@ export function TasksPanel({
 
   const PanelUI = (
     <div
-      className={"h-full flex flex-col min-h-0 font-inter " + panelBg}
+      data-side-panel-section="tasks"
+      className={"ms-tasks-panel-scrollbars h-full flex flex-col min-h-0 font-inter " + panelBg}
       onPointerDown={stopRoomBubbling}
       onMouseDown={stopRoomBubbling}
       onClick={stopRoomBubbling}
@@ -5260,7 +5278,7 @@ export function TasksPanel({
               onClick={closeOverlay}
               className={`
                 mt-4 px-4 py-2 rounded-xl border
-                ${"border-black/15 text-black/80 hover:bg-[#E8E8E8]"}
+                ${isLight ? "border-black/15 text-black/80 hover:bg-[#E8E8E8]" : "border-[#484848] text-[#F4F5F6] hover:bg-[#353535]"}
                 transition inline-flex items-center gap-2 text-[13px] font-semibold font-inter
               `}
             >

@@ -1,6 +1,6 @@
 # MySession — project architecture and continuation context
 
-Updated: 2026-10-07. This is a project-wide navigation/architecture handoff based on
+Updated: 2026-10-08. This is a project-wide navigation/architecture handoff based on
 the checked-out source, not a claim that every module or production service was
 audited. Never put secret values, tokens, user exports or private logs in this file.
 
@@ -12,9 +12,8 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   C:\Users\misha\.codex\worktrees\tasks-pip-accent\my-session.
   This managed worktree is at a detached HEAD; commit this feature here and
   push HEAD:main only after checking origin/main for new commits.
-- Current task: correct Chat Panel light-theme Reply/React and quote accents,
-  plus pinned-task text contrast in the dark Tasks Panel. The final section
-  records the focused implementation and verification.
+- Current task: restore dark-mode contrast throughout the pinned/floating
+  Tasks Panel. The final section records the root cause and focused fix.
   Earlier Plunk work and operational runbook remain documented in
   docs/plunk-email-rollout.md. No mass campaign is authorized by this task.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
@@ -1220,3 +1219,42 @@ fixtures and screenshots in this managed worktree belong to other work and
 must remain untouched. `npm run typecheck` has pre-existing TS6306/TS6310
 project-reference failures. Fetch `origin/main` and push only if the remote
 is still compatible; never force-push.
+
+## 2026-10-08 — Dark-theme inheritance in pinned Tasks overlay
+
+`TasksPanel` is rendered normally inside the `RoomPageLiveKit.tsx` right
+drawer, whose `.ms-room-side-panel[data-panel-theme="dark"]` wrapper and
+`data-side-panel-section="tasks"` child activate the scoped contrast rules
+in `src/pages/livekit/roomSidePanelTheme.css`. Clicking the panel Pin control
+does not pin that DOM in place: `openOverlay` opens a Document Picture-in-
+Picture window (or ordinary popup fallback), copies the main document's
+styles, and portals `PanelUI` to a new container. That new container used to
+lack the theme/section selectors, so copied dark-mode CSS had no matching
+ancestor there. This explains why fixing a few explicit task-row colors in
+the prior task left many labels, menus, inputs and buttons low-contrast only
+in the pinned window.
+
+In `src/components/TasksPanel.tsx`, `applyTasksOverlayTheme` now gives both
+overlay variants the same `ms-room-side-panel`, `dark`, `data-theme` and
+`data-panel-theme` context as the room side panel; `PanelUI` carries the
+`data-side-panel-section="tasks"` marker and scrollbar class. An effect
+updates the detached window's body surface and theme attributes if the
+side-panel preference changes while it is open. The in-room placeholder's
+Unpin button also uses explicit light/dark text and border colors. The
+existing pin/unpin lifecycle, portal target, copied styles and task business
+logic are unchanged. No Supabase schema, API, media, or video behavior changes.
+
+Verification: `npm run build` passed, including route prerender checks.
+Focused ESLint still reports its 58 existing errors and 2 warnings in
+unchanged lines (legacy `any`, empty blocks, and hook dependency warnings);
+the new theme bridge has no lint finding. A temporary local Chrome fixture
+loaded the production CSS bundles under the exact detached-window selector
+chain. Computed dark colors were `#b8b8b8` for helper text, `#d4d4d4` on
+`#252525` for menu items, and `#f4f5f6` on `#252525` for icons and inputs;
+the temporary fixture was deleted after the check. This verifies CSS
+matching and contrast, but the authenticated live room flow was not opened.
+
+Only `TasksPanel.tsx` and this context file should be committed. Preserve
+the unrelated generated sitemap diffs and untracked preview fixtures/QA
+images already in the managed worktree. Fetch `origin/main`, verify a fast-forward push, and
+never force-push.
