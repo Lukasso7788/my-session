@@ -344,7 +344,7 @@ export function LiveKitBottomBar(props: {
         ? "bg-[#2F2F2F] text-white hover:bg-[#111111]"
         : "bg-white text-[#2F2F2F] hover:bg-white/90";
     const sideButtonClass = (panel: "participants" | "chat" | "tasks" | "music") =>
-        `${sideControlClass} ${activePanel === panel ? `${activeSideControlClass} ms-room-active-side-control` : ctlBtnBase}`;
+        `${sideControlClass} ${activePanel === panel ? activeSideControlClass : ctlBtnBase}`;
     const sideIconTheme = (panel: "participants" | "chat" | "tasks" | "music"): RoomTheme =>
         activePanel === panel ? (isLight ? "dark" : "light") : theme;
 

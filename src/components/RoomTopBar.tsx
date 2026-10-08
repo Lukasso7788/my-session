@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Moon, Sun } from "lucide-react";
 import { resolveStageVisual, SessionStageBar } from "./SessionStageBar";
 import { Icon, ParticipantsSmartIcon, type RoomTheme } from "./VideoControls";
-import type { RoomThemeMode } from "../lib/roomThemeMode";
 
 type HostProfile = {
     id: string;
@@ -22,7 +20,6 @@ type Stage = {
 
 type RoomTopBarProps = {
     theme: RoomTheme;
-    themeMode?: RoomThemeMode;
 
     sessionTitle: string;
     participantsCount: number;
@@ -45,8 +42,7 @@ type RoomTopBarProps = {
     onStepInAsHost?: () => void;
     onStepDownAsHost?: () => void;
 
-    onChangeTheme?: (mode: RoomThemeMode) => void;
-    onToggleTheme?: () => void;
+    onToggleTheme: () => void;
     onOpenHostProfile?: () => void;
 
     onHoverStage?: (s: Stage | null) => void;
@@ -78,7 +74,6 @@ function MusicVolumeIcon({
 export default function RoomTopBar(props: RoomTopBarProps) {
     const {
         theme,
-        themeMode = theme,
         sessionTitle,
         participantsCount,
         maxParticipants,
@@ -97,7 +92,6 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         activeRoomHostError = "",
         onStepInAsHost,
         onStepDownAsHost,
-        onChangeTheme,
         onToggleTheme,
         onOpenHostProfile,
         onHoverStage,
@@ -106,7 +100,6 @@ export default function RoomTopBar(props: RoomTopBarProps) {
     } = props;
 
     const isLight = theme === "light";
-    const isAutumn = themeMode === "autumn";
     const titleRef = useRef<HTMLParagraphElement | null>(null);
     const [titleTruncated, setTitleTruncated] = useState(false);
     const [mobileMusicState, setMobileMusicState] = useState({
@@ -143,20 +136,16 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         };
     }, [sessionTitle]);
 
-    const topBarBg = isAutumn
-        ? "bg-[#F8EADB] border border-[#C5A487] shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]"
-        : isLight
-            ? "bg-[#F3F1F1]/95 border border-[#CFCFCF]"
-            : "bg-[#1B1B1B] border border-[#252525]";
+    const topBarBg = isLight
+        ? "bg-[#F3F1F1]/95 border border-[#CFCFCF]"
+        : "bg-[#1B1B1B] border border-[#252525]";
 
-    const chipBg = isAutumn
-        ? "bg-[#F1DDC7] border border-[#C5A487]"
-        : isLight
-            ? "bg-[#E1E3E6] border border-[#CFCFCF]"
-            : "bg-[#1B1B1B] border border-[#252525]";
+    const chipBg = isLight
+        ? "bg-[#E1E3E6] border border-[#CFCFCF]"
+        : "bg-[#1B1B1B] border border-[#252525]";
 
-    const strongText = isAutumn ? "text-[#342319]" : isLight ? "text-black/85" : "text-[#F1F1F1]/90";
-    const mutedText = isAutumn ? "text-[#6A3D2A]" : isLight ? "text-black/65" : "text-white/80";
+    const strongText = isLight ? "text-black/85" : "text-[#F1F1F1]/90";
+    const mutedText = isLight ? "text-black/65" : "text-white/80";
 
     const renderMobileMusicMute = () => (
         <button
@@ -166,9 +155,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
             className={[
                 "lg:hidden flex h-[32px] w-[84px] max-[480px]:w-[78px] shrink-0 items-center justify-center rounded-full border transition",
                 "disabled:cursor-default disabled:opacity-35",
-                isAutumn
-                    ? "border-[#C5A487] bg-[#F1DDC7] text-[#342319] hover:bg-[#EAD1B5]"
-                    : isLight
+                isLight
                     ? "border-[#CFCFCF] bg-[#E1E3E6] text-[#2F2F2F] hover:bg-[#E0E0E0]"
                     : "border-[#2B2B2B] bg-white/5 text-white hover:bg-[#F2F3F5]/10",
             ].join(" ")}
@@ -180,42 +167,17 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         </button>
     );
 
-    const themeSwitchModes: RoomThemeMode[] = onChangeTheme
-        ? ["light", "autumn", "dark"]
-        : ["light", "dark"];
+    const switchTrack =
+        "w-[84px] max-[480px]:w-[78px] h-[32px] rounded-full border relative transition flex items-center px-[3px]";
 
-    const renderThemeSwitch = () => (
-        <div
-            className={`ms-room-theme-switch flex h-[34px] ${onChangeTheme ? "w-[112px]" : "w-[76px]"} shrink-0 items-center justify-between gap-0.5 rounded-full border p-[3px] ${isAutumn
-                ? "border-[#C5A487] bg-[#F1DDC7]"
-                : isLight ? "border-[#CFCFCF] bg-[#E1E3E6]" : "border-[#3D3D3D] bg-white/5"
-                }`}
-            role="group"
-            aria-label="Room color theme"
-        >
-            {themeSwitchModes.map((mode) => (
-                <button
-                    key={mode}
-                    type="button"
-                    onClick={() => {
-                        if (onChangeTheme) onChangeTheme(mode);
-                        else if (mode !== themeMode) onToggleTheme?.();
-                    }}
-                    aria-label={`${mode === "autumn" ? "Autumn" : mode === "light" ? "Light" : "Dark"} mode`}
-                    aria-pressed={themeMode === mode}
-                    title={`${mode === "autumn" ? "Autumn" : mode === "light" ? "Light" : "Dark"} mode`}
-                    className={`flex h-[26px] w-[32px] shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F0A36A] ${themeMode === mode
-                        ? "bg-white text-[#342319] shadow-sm"
-                        : isLight ? "text-[#66574D] hover:bg-black/[0.07]" : "text-[#E7CCB8] hover:bg-white/10"
-                        }`}
-                >
-                    {mode === "autumn" ? (
-                        <img src="/icons/autumn-leaf.svg" alt="" aria-hidden="true" className="h-[19px] w-[19px] object-contain" />
-                    ) : mode === "light" ? <Sun className="h-[17px] w-[17px]" aria-hidden="true" /> : <Moon className="h-[17px] w-[17px]" aria-hidden="true" />}
-                </button>
-            ))}
-        </div>
-    );
+    const switchTrackCls = isLight
+        ? "bg-[#E1E3E6] border-[#CFCFCF] hover:bg-[#E0E0E0]"
+        : "bg-white/5 border-[#2B2B2B] hover:bg-[#F2F3F5]/10";
+
+    const switchThumb =
+        "absolute top-[2px] w-[26px] h-[26px] rounded-full shadow-md transition-transform bg-white flex items-center justify-center";
+
+    const thumbTranslate = isLight ? "translateX(0px)" : "translateX(52px)";
 
     const normalizedSessionTitle = String(sessionTitle || "").trim().toLowerCase();
     const effectiveSilentRoom =
@@ -303,9 +265,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         activeRoomHostProfile && !ownerIsActive ? activeRoomHostProfile : null;
 
     const renderInfiniteHostControl = (compact = false) => {
-        const surface = isAutumn
-            ? "border-[#C5A487] bg-[#F1DDC7] text-[#342319] hover:bg-[#EAD1B5]"
-            : isLight
+        const surface = isLight
             ? "border-[#CFCFCF] bg-[#E1E3E6] text-black/75 hover:bg-[#E0E0E0]"
             : "border-[#2B2B2B] bg-[#1B1B1B]/60 text-[#F1F1F1]/85 hover:bg-[#242424]";
         const width = compact ? "w-[142px]" : "w-[190px]";
@@ -383,7 +343,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
             // The room tooltip extends below this bar. Lift the whole stacking
             // context above the later video grid; its own z-index cannot escape
             // this isolated parent, but fixed room overlays remain above z-60.
-            className={`ms-room-top-bar relative isolate z-[60] flex min-w-0 w-full rounded-2xl overflow-visible ${topBarBg}`}
+            className={`relative isolate z-[60] flex min-w-0 w-full rounded-2xl overflow-visible ${topBarBg}`}
         >
             <div className="min-w-0 flex-1 px-4 py-2.5 sm:px-5 sm:py-3 lg:py-2 overflow-visible">
                 <div className="flex flex-col gap-2 max-[480px]:gap-2 overflow-visible">
@@ -401,7 +361,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                     {titleTruncated && (
                                         <span
                                             aria-hidden="true"
-                                            className={`pointer-events-none invisible absolute left-0 top-full z-[80] mt-2 w-max max-w-[min(420px,80vw)] whitespace-normal break-words rounded-xl border px-3 py-2 text-left font-inter text-[12px] font-medium leading-5 opacity-0 shadow-xl group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 ${isAutumn ? "border-[#C5A487] bg-[#FAF0E3] text-[#342319]" : isLight ? "border-[#D8D0D0] bg-white text-[#2F2F2F]" : "border-[#343434] bg-[#242424] text-white"}`}
+                                            className={`pointer-events-none invisible absolute left-0 top-full z-[80] mt-2 w-max max-w-[min(420px,80vw)] whitespace-normal break-words rounded-xl border px-3 py-2 text-left font-inter text-[12px] font-medium leading-5 opacity-0 shadow-xl group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100 ${isLight ? "border-[#D8D0D0] bg-white text-[#2F2F2F]" : "border-[#343434] bg-[#242424] text-white"}`}
                                         >
                                             {sessionTitle || "Session"}
                                         </span>
@@ -457,7 +417,24 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                         <div className="relative z-10 hidden lg:flex items-center gap-2 shrink-0">
                             {renderTimer()}
 
-                            {renderThemeSwitch()}
+                            <button
+                                onClick={onToggleTheme}
+                                className={`${switchTrack} ${switchTrackCls}`}
+                                title="Toggle theme"
+                                aria-label="Toggle theme"
+                                type="button"
+                            >
+                                <div
+                                    className={switchThumb}
+                                    style={{ transform: thumbTranslate }}
+                                >
+                                    <Icon
+                                        name={isLight ? "theme-sun" : "theme-moon"}
+                                        theme={theme}
+                                        className="w-4 h-4 text-black/80"
+                                    />
+                                </div>
+                            </button>
 
                             {renderMobileMusicMute()}
 
@@ -490,7 +467,24 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                     <div className="relative z-10 flex lg:hidden flex-wrap items-center justify-start gap-2">
                         {renderTimer()}
 
-                        {renderThemeSwitch()}
+                        <button
+                            onClick={onToggleTheme}
+                            className={`${switchTrack} ${switchTrackCls}`}
+                            title="Toggle theme"
+                            aria-label="Toggle theme"
+                            type="button"
+                        >
+                            <div
+                                className={switchThumb}
+                                style={{ transform: thumbTranslate }}
+                            >
+                                <Icon
+                                    name={isLight ? "theme-sun" : "theme-moon"}
+                                    theme={theme}
+                                    className="w-4 h-4 text-black/80"
+                                />
+                            </div>
+                        </button>
 
                         {renderMobileMusicMute()}
 

@@ -396,7 +396,7 @@ export function PreJoinModal({
 
   return (
     <div
-      className={`${overlay} ms-room-prejoin-modal`}
+      className={overlay}
       data-theme={theme}
       role="dialog"
       aria-modal="true"

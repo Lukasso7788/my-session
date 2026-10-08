@@ -1396,7 +1396,7 @@ export function RoomSettingsModalLiveKit({
     const effectivePreviewFilterCss = colorCorrectionEnabled ? (previewVideoFilterCss || "") : "";
 
     return (
-        <div className={`${overlay} ms-room-settings-modal`} data-theme={theme} style={{ colorScheme: theme }}>
+        <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
             <div className={backdrop} onClick={onClose} />
 
             <div className={card.replace("sm:max-w-[1100px]", "sm:max-w-[1180px]")}>
