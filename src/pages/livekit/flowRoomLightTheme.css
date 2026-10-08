@@ -1,0 +1,239 @@
+/* Flow Club-inspired *palette*, not a layout or icon replacement. The room
+   canvas theme and the side-panel preference remain independent. Do not put
+   media tiles, avatars, artwork, status colors or dark panels in these rules. */
+html[data-theme="light"] .ms-room-page {
+  --ms-room-flow-ink: #19264b;
+  --ms-room-flow-muted: #4b5c80;
+  --ms-room-flow-line: #bdcce2;
+  --ms-room-flow-soft: #ebf0fa;
+  --ms-room-flow-accent: #575ce5;
+  --ms-room-flow-accent-hover: #474ccb;
+}
+
+/* Existing -light.svg assets remain exactly as shipped; recolor pixels only.
+   -dark.svg icons on selected indigo controls already render white. */
+html[data-theme="light"] .ms-room-page .ms-room-top-bar img[src$="-light.svg"],
+html[data-theme="light"] .ms-room-page .ms-room-top-bar img[src$="/volume.svg"],
+html[data-theme="light"] .ms-room-page .ms-room-top-bar img[src$="/volume-up.svg"],
+html[data-theme="light"] .ms-room-page .ms-room-bottom-controls img[src$="-light.svg"],
+html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="light"] img[src$="-light.svg"] {
+  filter: brightness(0) saturate(100%) invert(18%) sepia(16%) saturate(2211%) hue-rotate(190deg) brightness(94%) contrast(91%);
+}
+
+/* Keep the bottom toolbar white against the powder-blue room canvas. */
+html[data-theme="light"] .ms-room-page .ms-room-bottom-controls > div {
+  color: var(--ms-room-flow-ink);
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-bottom-controls :is(
+  [class~="bg-[#F3F1F1]"],
+  [class~="bg-[#F7F7F7]"]
+) {
+  background-color: #fff !important;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-bottom-controls :is(
+  [class*="border-[#D8D0D0]"],
+  [class*="border-[#CFCFCF]"]
+) {
+  border-color: var(--ms-room-flow-line) !important;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-bottom-controls :is(
+  [class~="bg-[#2F2F2F]"],
+  [class~="bg-[#1B1B1B]"],
+  [class~="bg-[#5286F6]"]
+) {
+  background-color: var(--ms-room-flow-accent) !important;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-bottom-controls :is(
+  [class~="bg-[#2F2F2F]"],
+  [class~="bg-[#1B1B1B]"],
+  [class~="bg-[#5286F6]"]
+):hover {
+  background-color: var(--ms-room-flow-accent-hover) !important;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-bottom-controls [class~="text-[#2F2F2F]"] {
+  color: #23335c;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-bottom-controls [class~="ring-[#F3F1F1]"] {
+  --tw-ring-color: #fff;
+}
+
+/* Light Chat/Tasks/People/Music are white cards with cool-neutral subgroups.
+   The independent dark side-panel selection is intentionally excluded. */
+html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="light"] {
+  color: var(--ms-room-flow-ink);
+  border-color: var(--ms-room-flow-line);
+  background-color: #fff;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="light"] :is(
+  [class~="bg-[#F3F1F1]"],
+  [class~="bg-[#F7F5F5]"],
+  [class~="bg-[#F8F7F7]"],
+  [class~="bg-[#F8F8F8]"],
+  [class~="bg-[#F3F3F3]"],
+  [class~="bg-[#F4F3F3]"],
+  [class~="bg-[#FAFAFA]"]
+) {
+  background-color: #f6f8fd !important;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="light"] :is(
+  [class~="bg-[#ECEAEA]"],
+  [class~="bg-[#E6E6E6]"],
+  [class~="bg-[#E8E8E8]"],
+  [class~="bg-[#F0F0F0]"],
+  [class~="bg-[#F1F1F1]"],
+  [class~="bg-[#EEECEC]"],
+  [class~="bg-[#E3E0E0]"]
+) {
+  background-color: var(--ms-room-flow-soft) !important;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="light"] :is(
+  [class*="border-[#D8D0D0]"],
+  [class*="border-[#CFC6C6]"],
+  [class*="border-[#CFCFCF]"],
+  [class*="border-[#C9C9C9]"],
+  [class*="border-[#BEB7B7]"]
+) {
+  border-color: var(--ms-room-flow-line) !important;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="light"] :is(
+  [class~="text-[#2F2F2F]"],
+  [class~="text-black/75"],
+  [class~="text-black/80"],
+  [class~="text-black/85"]
+) {
+  color: var(--ms-room-flow-ink) !important;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="light"] :is(
+  [class~="text-black/25"],
+  [class~="text-black/35"],
+  [class~="text-black/40"],
+  [class~="text-black/45"],
+  [class~="text-black/50"],
+  [class~="text-black/55"],
+  [class~="text-black/60"],
+  [class~="text-black/65"],
+  [class~="text-black/70"]
+) {
+  color: var(--ms-room-flow-muted) !important;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="light"] :is(input, textarea)::placeholder {
+  color: #5c6d8e;
+  opacity: 1;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="light"] :is(
+  [class~="bg-[#1B1B1B]"],
+  [class~="bg-[#2F2F2F]"]
+) {
+  background-color: var(--ms-room-flow-accent) !important;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="light"] :is(
+  [class~="bg-[#1B1B1B]"],
+  [class~="bg-[#2F2F2F]"]
+):hover {
+  background-color: var(--ms-room-flow-accent-hover) !important;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-side-panel[data-panel-theme="light"] :is(
+  button[class~="bg-[#1B1B1B]"],
+  button[class~="bg-[#2F2F2F]"]
+) img[src$="-light.svg"] {
+  filter: brightness(0) invert(1);
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-top-bar [class~="bg-[#F7F5F5]"] {
+  background-color: #fff !important;
+  color: var(--ms-room-flow-ink) !important;
+}
+
+html[data-theme="light"] .ms-room-page .ms-room-top-bar [class*="border-[#D8D0D0]"] {
+  border-color: var(--ms-room-flow-line) !important;
+}
+
+html[data-theme="light"] .ms-room-page :is(button, input, textarea, select):focus-visible {
+  outline-color: var(--ms-room-flow-accent);
+}
+
+/* The prejoin and settings dialogs are portaled outside .ms-room-page. Their
+   explicit data-theme protects dark mode and other routes from these rules. */
+.ms-room-prejoin[data-theme="light"] :is(
+  [class~="bg-[#F3F1F1]"],
+  [class~="bg-[#ECE8E8]"]
+),
+.ms-room-settings-modal[data-theme="light"] :is(
+  [class~="bg-[#F5F5F5]"],
+  [class~="bg-[#F3F1F1]"]
+) {
+  background-color: #f6f8fd !important;
+}
+
+:is(
+  .ms-room-prejoin[data-theme="light"],
+  .ms-room-settings-modal[data-theme="light"]
+) :is(
+  [class*="border-[#D8D0D0]"],
+  [class*="border-[#CFCFCF]"]
+) {
+  border-color: #bdcce2 !important;
+}
+
+:is(
+  .ms-room-prejoin[data-theme="light"],
+  .ms-room-settings-modal[data-theme="light"]
+) :is(
+  [class~="text-black/45"],
+  [class~="text-black/50"],
+  [class~="text-black/55"],
+  [class~="text-black/60"],
+  [class~="text-black/65"],
+  [class~="text-[#686868]"]
+) {
+  color: #4b5c80 !important;
+}
+
+.ms-room-settings-modal[data-theme="light"] :is(
+  [class~="text-black/70"],
+  [class~="text-black/75"],
+  [class~="text-black/80"],
+  [class~="text-black/85"]
+),
+.ms-room-prejoin[data-theme="light"] [class~="text-[#2F2F2F]"] {
+  color: #19264b !important;
+}
+
+:is(
+  .ms-room-prejoin[data-theme="light"],
+  .ms-room-settings-modal[data-theme="light"]
+) :is(
+  [class~="bg-[#1F1F1F]"],
+  [class~="bg-[#5286F6]"]
+) {
+  background-color: #575ce5 !important;
+}
+
+:is(
+  .ms-room-prejoin[data-theme="light"],
+  .ms-room-settings-modal[data-theme="light"]
+) img[src$="-light.svg"] {
+  filter: brightness(0) saturate(100%) invert(18%) sepia(16%) saturate(2211%) hue-rotate(190deg) brightness(94%) contrast(91%);
+}
+
+:is(
+  .ms-room-prejoin[data-theme="light"],
+  .ms-room-settings-modal[data-theme="light"]
+) :is(button, input, textarea, select):focus-visible {
+  outline-color: #575ce5;
+}

@@ -12,10 +12,11 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   C:\Users\misha\.codex\worktrees\tasks-pip-accent\my-session.
   This managed worktree is at a detached HEAD; commit this feature here and
   push HEAD:main only after checking origin/main for new commits.
-- Current task: auto-detect the user's browser timezone on the post-login
-  profile-completion gate, and add searchable timezone selection to the gate,
-  profile editor, and email preferences. The final section records the design
-  and regression checks.
+- Current task: restyle the existing two-state room light mode with a
+  Flow Club-inspired powder-blue/white/indigo palette. The last section
+  records the exact files, CSS scope, contrast and verification. Do not add a
+  third mode or replace the user's supplied sun/moon or room SVG assets.
+  The prior timezone task remains documented in its own section below.
   Earlier Plunk work and operational runbook remain documented in
   docs/plunk-email-rollout.md. No mass campaign is authorized by this task.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
@@ -1314,3 +1315,67 @@ outside changed lines. The existing sitemap diffs and untracked preview/QA
 fixtures are unrelated and must not be staged. Only timezone files, this
 context file, dependency manifests and test should be committed. Verify
 origin/main before a non-force `HEAD:main` push.
+
+## 2026-10-08 — Flow Club-inspired room light palette
+
+Scope: presentation only in the live LiveKit room. The existing `"light" |
+"dark"` room state and `room_theme` localStorage key remain in
+`src/pages/RoomPageLiveKit.tsx`; the top-bar sun/moon switch retains the exact
+`Icon name={isLight ? "theme-sun" : "theme-moon"}` mapping on desktop and
+mobile. `src/components/VideoControls.tsx` still resolves icons under
+`public/icons/` and falls back to the unthemed asset. No SVG path or icon
+source file was replaced. Side-panel theme remains a separate
+`mysession_room_side_panel_theme_v1` preference, so a user can keep a dark
+Chat/Tasks/People/Music panel with a light room, or vice versa. Stage colors,
+media-off red, tile artwork/avatar imagery, camera stream handling and room
+admission are not changed.
+
+Visual tokens: canvas `#D7E2F1`, near-white video-stage surround `#EEF3FA`,
+white top/bottom/side-panel surfaces, pale control surface `#E8EEFA`, navy
+primary ink `#19264B`, muted ink `#4B5C80`, cool border `#BDCCE2`, indigo
+selected control `#575CE5` (`#474CCB` hover). The look takes only the light
+color direction from the supplied Flow Club reference; MySession's structure,
+brand controls and icon shapes remain its own. `RoomTopBar.tsx` and
+`LiveKitBottomBarLegacy.tsx` apply explicit light-only classes. `RoomPageLiveKit`
+supplies the room shell, stage surround, control and light-panel colors.
+
+`src/pages/livekit/flowRoomLightTheme.css` is imported after the existing
+`roomSidePanelTheme.css` by `RoomPageLiveKit.tsx`. Its rules are scoped to
+`html[data-theme="light"] .ms-room-page` and, for side-panels, additionally
+to `.ms-room-side-panel[data-panel-theme="light"]`. This is needed because
+legacy Chat/Tasks/People/Music child controls still carry neutral arbitrary
+Tailwind classes. The CSS maps only those neutral surfaces/text/borders and
+uses `filter` to tint the existing `-light.svg` icons navy. Already-white
+`-dark.svg` icons on indigo selected controls stay white. The rules do not
+target actual media tiles, avatars, custom backgrounds, status red/green or
+the independent dark side-panel preference. The light room top-bar tooltip
+also gets the white/navy palette; no stage tooltip placement is changed.
+
+`PreJoinModalLiveKit.tsx` and `RoomSettingsModalLiveKit.tsx` are portaled room
+dialogs, so each has a light-only wrapper marker (`ms-room-prejoin` and
+`ms-room-settings-modal`) for the same palette without relying on a parent
+`.ms-room-page`. Light dialog cards, helper labels, borders, inputs and
+selected controls are updated; their dark branches, existing camera/FX and
+settings handlers, and preview stream logic remain untouched. The prejoin
+camera preview itself remains a dark media viewport until a stream appears.
+If expanding the theme, preserve these portal and side-panel boundaries and
+test both the light and dark branches rather than applying global selectors.
+
+Regression: `tests/roomFlowLightTheme.test.mjs` checks WCAG AA contrast for
+the principal text/surface pairs, light-only CSS scoping and the original
+desktop/mobile sun/moon asset mapping. The measured ratios are 14.79:1 for
+navy on white, 6.68:1 for muted on white, 5.10:1 for muted on canvas and
+5.16:1 for white on indigo. Run `node --test
+tests/roomFlowLightTheme.test.mjs` and `npm run build`. Local Vite/Chrome QA
+used a temporary room-shell fixture (desktop, narrow-screen and dark-mode
+snapshots) plus the existing temporary prejoin fixture; it was not an
+authenticated production-room test. Root `npm run typecheck` still fails on
+pre-existing TS6306/TS6310 project references; direct app typecheck produces
+many pre-existing errors, so inspect changed-line diagnostics separately.
+
+For the release, stage only the light-palette components/CSS, regression
+test and this context file. Existing generated sitemap XML modifications and
+untracked older preview/QA assets in the managed worktree are unrelated.
+Fetch `origin/main`, confirm non-force fast-forward compatibility, commit and
+push `HEAD:main` only if safe. A Vercel deployment should not be reported as
+READY without checking it explicitly.

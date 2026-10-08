@@ -1,0 +1,53 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+
+const css = readFileSync(new URL("../src/pages/livekit/flowRoomLightTheme.css", import.meta.url), "utf8");
+const room = readFileSync(new URL("../src/pages/RoomPageLiveKit.tsx", import.meta.url), "utf8");
+const topBar = readFileSync(new URL("../src/components/RoomTopBar.tsx", import.meta.url), "utf8");
+const bottomBar = readFileSync(new URL("../src/pages/livekit/LiveKitBottomBarLegacy.tsx", import.meta.url), "utf8");
+
+function luminance(hex) {
+  const [red, green, blue] = hex.match(/[0-9a-f]{2}/gi).map((part) => {
+    const value = Number.parseInt(part, 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+}
+
+function contrast(foreground, background) {
+  const a = luminance(foreground);
+  const b = luminance(background);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+function token(name) {
+  const match = css.match(new RegExp(`--ms-room-flow-${name}: (#[0-9a-f]{6})`, "i"));
+  assert.ok(match, `Missing ${name} color token`);
+  return match[1];
+}
+
+test("light-room foreground and control colors meet WCAG AA", () => {
+  for (const [foreground, background] of [
+    [token("ink"), "#ffffff"],
+    [token("muted"), "#ffffff"],
+    [token("muted"), "#d7e2f1"],
+    ["#23335c", "#e8eefa"],
+    ["#ffffff", token("accent")],
+  ]) {
+    assert.ok(contrast(foreground, background) >= 4.5, `${foreground} on ${background} is below AA`);
+  }
+});
+
+test("palette stays scoped to light room and light side panels", () => {
+  assert.match(css, /html\[data-theme="light"\] \.ms-room-page/);
+  assert.match(css, /\.ms-room-side-panel\[data-panel-theme="light"\]/);
+  assert.match(room, /bg-\[#D7E2F1\] text-\[#19264B\]/);
+});
+
+test("the original sun/moon SVG switch is retained on desktop and mobile", () => {
+  assert.equal(topBar.match(/name=\{isLight \? "theme-sun" : "theme-moon"\}/g)?.length, 2);
+  assert.match(bottomBar, /<Icon name="settings" theme=\{theme\}/);
+  assert.match(bottomBar, /activePanel === panel \? \(isLight \? "dark" : "light"\) : theme/);
+  assert.match(css, /img\[src\$="-light\.svg"\]/);
+});

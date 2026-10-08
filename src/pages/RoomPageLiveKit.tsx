@@ -100,6 +100,7 @@ import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 import { FX_BG_PRESETS } from "./livekit/backgroundPresets";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
 import "./livekit/roomSidePanelTheme.css";
+import "./livekit/flowRoomLightTheme.css";
 import {
   isPublishedColorCorrectionIdentity,
   publishedColorCorrectionSignature,
@@ -19306,13 +19307,15 @@ export function RoomPageLiveKit({
 
   // UI colors
   const pageBg = isLight
-    ? "bg-[#F3F1F1] text-[#1F1F1F]"
+    ? "bg-[#D7E2F1] text-[#19264B]"
     : "bg-[#1B1B1B] text-white";
   const panelBg = sidePanelIsLight
-    ? "bg-[#F3F1F1] border border-[#D8D0D0]"
+    ? isLight
+      ? "bg-white border border-[#BDCCE2]"
+      : "bg-[#F3F1F1] border border-[#D8D0D0]"
     : "bg-[#1B1B1B] border border-[#2B2B2B]";
   const bottomBarBg = isLight
-    ? "bg-[#F3F1F1]"
+    ? "bg-white"
     : "bg-[#1B1B1B]";
   const voiceUiStatusLabel =
     !voiceUiEnabled
@@ -19342,7 +19345,7 @@ export function RoomPageLiveKit({
           : "bg-zinc-400";
 
   const ctlBtnBase = isLight
-    ? "bg-[#E7E7E7] hover:bg-[#DCDCDC] text-black/75"
+    ? "bg-[#E8EEFA] hover:bg-[#DCE5F7] text-[#23335C]"
     : "bg-[#242424] hover:bg-[#2E2E2E] text-white/90";
 
   // participants list search
@@ -21402,7 +21405,7 @@ export function RoomPageLiveKit({
                 videoSizerRef(el);
               }}
               className={`ms-video-stage relative rounded-2xl overflow-hidden min-h-0 h-full ${isLight
-                ? "bg-[#F3F1F1] border border-[#D8D0D0]"
+                ? "bg-[#EEF3FA] border border-[#BDCCE2]"
                 : "bg-[#1B1B1B] border border-[#252525]"
                 }`}
             >
