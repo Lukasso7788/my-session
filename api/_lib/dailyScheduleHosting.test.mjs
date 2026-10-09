@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { dateKeyInTimeZone, formatHostingRange, hostSlotOverlapsLocalDate, renderInfiniteHostingSlots, sampleInfiniteHostingSlot } from "./dailyScheduleHosting.ts";
+import { dateKeyInTimeZone, formatHostingRange, hostSlotOverlapsLocalDate, normalizeEmailBaseUrl, renderInfiniteHostingSlots, sampleInfiniteHostingSlot } from "./dailyScheduleHosting.ts";
+
+test("email links have exactly one slash after the configured app origin", () => {
+  const base = normalizeEmailBaseUrl(" https://www.mysession.club/ ");
+  assert.equal(`${base}/sessions`, "https://www.mysession.club/sessions");
+  const slot = { ...sampleInfiniteHostingSlot("2026-10-09"), sessionId: "11111111-1111-4111-8111-111111111111" };
+  const html = renderInfiniteHostingSlots([slot], "Europe/Kyiv", base).html;
+  assert.match(html, /https:\/\/www\.mysession\.club\/room-livekit\/11111111-1111-4111-8111-111111111111/);
+  assert.doesNotMatch(html, /mysession\.club\/\/room-livekit/);
+});
 
 test("host slot includes its full interval and regional time zones", () => {
   const slot = sampleInfiniteHostingSlot("2026-10-08");

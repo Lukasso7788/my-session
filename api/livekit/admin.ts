@@ -4,7 +4,7 @@ import { RoomServiceClient } from "livekit-server-sdk";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { missingPlunkEnvironment, sendPlunkEmail } from "../_lib/plunk.js";
 import { canReceiveDailyDigest, isLocalMorning, isPlausibleEmail } from "../_lib/dailyScheduleAudience.js";
-import { dateKeyInTimeZone, hostSlotOverlapsLocalDate, renderInfiniteHostingSlots, sampleInfiniteHostingSlot, type DailyHostingSlot } from "../_lib/dailyScheduleHosting.js";
+import { dateKeyInTimeZone, hostSlotOverlapsLocalDate, normalizeEmailBaseUrl, renderInfiniteHostingSlots, sampleInfiniteHostingSlot, type DailyHostingSlot } from "../_lib/dailyScheduleHosting.js";
 import {
   PLUNK_LIFECYCLE_EVENT_TYPES,
   emitPlunkTestSuite,
@@ -903,7 +903,7 @@ function clampDailyEmailLimit(raw: any) {
 }
 
 function getAppUrl() {
-  return env("APP_URL") || env("VITE_APP_URL") || "https://www.mysession.club";
+  return normalizeEmailBaseUrl(env("APP_URL") || env("VITE_APP_URL") || "https://www.mysession.club");
 }
 
 function ymd(date: Date) {

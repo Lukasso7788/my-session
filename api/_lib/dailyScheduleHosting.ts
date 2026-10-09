@@ -9,6 +9,10 @@ export type DailyHostingSlot = {
 
 const SAMPLE_SESSION_ID = "00000000-0000-4000-8000-000000000000";
 
+export function normalizeEmailBaseUrl(value: string): string {
+  return value.trim().replace(/\/+$/, "");
+}
+
 export function dateKeyInTimeZone(value: string | Date, timeZone: string): string {
   const date = typeof value === "string" ? new Date(value) : value;
   const parts = new Intl.DateTimeFormat("en-US", {

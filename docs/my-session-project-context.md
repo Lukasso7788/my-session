@@ -1506,9 +1506,15 @@ pushed to `origin/main`. Vercel Production deployment
 `mysession.club` and `www.mysession.club` point to it. The public admin
 page displays the new daily-enabled audience wording; unauthenticated
 `cronAction=daily_schedule_send_all_active` returns HTTP 401. The isolated
-fixed-inbox Plunk test is **not yet completed** because the available
-in-app browser is signed out. Do not claim inbox delivery until an admin
-signs in, sends a test, and confirms receipt/provider status.
+fixed-inbox Plunk test is **not yet completed**. On the next authenticated
+browser visit, the admin test preview succeeded for `lukasus7788@gmail.com`
+and showed one real Infinite Room host reservation overlapping the selected
+day. That preview revealed that configured `APP_URL` has a trailing slash,
+producing `//sessions` and `//room-livekit` links. `getAppUrl()` now uses
+`normalizeEmailBaseUrl` from `api/_lib/dailyScheduleHosting.ts` to strip
+trailing slashes; its regression test covers both session and host links.
+Release this fix and re-preview before sending one test. Do not claim inbox
+delivery until Plunk accepts it and mailbox/provider status is checked.
 
 Cloudflare Worker version `8d5a4ce8-cade-4692-90ad-8f06b6ff1636` was
 deployed with hourly, 04:00 UTC, and five-minute triggers; `/health`
