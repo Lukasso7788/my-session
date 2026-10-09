@@ -1592,3 +1592,23 @@ verify Cloudflare triggers and Vercel READY before calling the change live.
 Do not call the authenticated `/run` route for a status check: it sends real
 mail. Existing missing `SENDER_CRON_SECRET` on Cloudflare remains a separate
 issue and is not solved by this schedule change.
+
+Release verification on 2026-10-09: implementation commit
+`dfd04452727704b0d1d477841513c08abd88b774` was pushed to `main`.
+Cloudflare Worker version `897e1adb-a59e-4d73-84af-c077182c754f`
+was deployed at 100% with `--keep-vars`; deployment output showed all
+three intended cron triggers, and `/health` returned `ok: true`.
+Vercel deployment `dpl_2wRcGwJBrciGUxqcSxGAS22y9uAr` was built from
+that exact Git SHA with target `production`, reached `READY`, and
+acquired `mysession.club` and `www.mysession.club` aliases. The automatic
+Git deployment `dpl_HxBPU8Pn3d74PESiPEDmbi6ojtAe` was only a READY
+preview (`target: null`), so do not mistake Git push alone for production.
+No live digest was replayed during verification; the first new scheduled
+send needs a read-only ledger/Plunk check after 07:00 Kyiv on 2026-10-10.
+Focused server and Worker TypeScript checks, 22 email-related tests,
+site build, Worker dry run and staged diff check passed. Global
+`npm run typecheck` is blocked by pre-existing `tsconfig.node.json`
+project-reference configuration errors TS6306/TS6310. Production
+runtime-error scan from Vercel MCP returned a transient unusable response;
+do not claim it passed. The Worker secret-name listing still showed only
+`DAILY_SCHEDULE_CRON_SECRET`; the Sender secret remains absent.
