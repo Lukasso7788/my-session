@@ -202,7 +202,8 @@ Activation checklist: deploy the Vercel `main` build; wait for READY; inspect
 `/admin/daily-schedule-email` preview and its audience/host counts; send
 one fixed-inbox Plunk test with the sample host interval if the real count
 is zero, then verify mailbox and Plunk/SES status. Deploy the Cloudflare
-Worker separately with `wrangler deploy` from
+Worker separately with `npm run deploy` (which uses
+`wrangler deploy --keep-vars`) from
 `mysession-daily-email-cron/` and confirm hourly, 04:00 UTC and five-minute
 triggers. Verify Worker `/health`, then authenticated `/run` with
 `x-cron-secret` and confirm the daily-enabled audience and individual

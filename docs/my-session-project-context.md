@@ -1477,7 +1477,8 @@ were copied. Cloudflare Worker needs its own
 `mysession-daily-email-cron/wrangler.toml` adds `0 * * * *`, preserving
 `0 4 * * *` and `*/5 * * * *`. Git/Vercel deployment does **not** deploy
 the Cloudflare Worker: with authenticated Cloudflare credentials, run
-`wrangler deploy` from its directory and verify triggers, `/health`, and
+`npm run deploy` from its directory (uses `wrangler deploy --keep-vars`,
+preserving remotely configured Sender variables) and verify triggers, `/health`, and
 an authenticated `/run` using a header (never URL query secret).
 
 Run `node --test api/_lib/dailyScheduleAudience.test.mjs
@@ -1496,3 +1497,34 @@ a new commit. Do not force-push, replay the old audience, clear the ledger,
 or turn on Sender lifecycle as a workaround. Inspect Plunk acceptance and
 send history before retrying; idempotency retention is limited. The separate
 lifecycle activation procedure is in `docs/plunk-email-rollout.md`.
+
+### 2026-10-09 live daily-email rollout status
+
+The audience correction is commit `b4387b8a25f1cae1da541a177575cb4e36eaf0cd`,
+pushed to `origin/main`. Vercel Production deployment
+`dpl_DVPEMtqYs5MgxoqbB7pADcwCJx9U` reached READY and aliases
+`mysession.club` and `www.mysession.club` point to it. The public admin
+page displays the new daily-enabled audience wording; unauthenticated
+`cronAction=daily_schedule_send_all_active` returns HTTP 401. The isolated
+fixed-inbox Plunk test is **not yet completed** because the available
+in-app browser is signed out. Do not claim inbox delivery until an admin
+signs in, sends a test, and confirms receipt/provider status.
+
+Cloudflare Worker version `8d5a4ce8-cade-4692-90ad-8f06b6ff1636` was
+deployed with hourly, 04:00 UTC, and five-minute triggers; `/health`
+responded successfully. During that deploy, Wrangler warned that local
+configuration would remove the Dashboard-defined `SENDER_CRON_SECRET`
+variable and `DAILY_SCHEDULE_AUDIENCE_NAME`. The latter is unused by the
+new all-active daily path. The Sender variable may now be absent, so the
+unrelated Sender cron must be treated as **potentially interrupted**. A
+rollback to the prior Worker version `ce461132-57e0-41d4-ba2b-ee582912ae32`
+followed immediately by a redeploy with `--keep-vars` was blocked by the
+environment's production-action review; do not work around that block.
+Explicit user approval for that version switch is pending. Never print,
+commit, or copy the old secret value; the Wrangler warning itself printed
+the legacy plain variable in CLI output, so rotate it if Sender still uses it.
+Future Worker releases should use `npm run deploy`, whose script includes
+`--keep-vars`. This only prevents future removal; it does not restore an
+already removed variable. Verify both Cron paths after authorized recovery.
+
+The autumn room theme is explicitly paused by the user for this email task.
