@@ -42,7 +42,7 @@ function buildCronUrl(env: Env) {
   if (!base) throw new Error("MYSESSION_DAILY_EMAIL_CRON_URL_missing");
 
   const url = new URL(base);
-  url.searchParams.set("cronAction", "daily_schedule_send_opted_in");
+  url.searchParams.set("cronAction", "daily_schedule_send_all_active");
   url.searchParams.set(
     "limit",
     String(env.DAILY_SCHEDULE_CRON_LIMIT || "100").trim() || "100"

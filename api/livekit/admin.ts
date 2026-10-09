@@ -32,7 +32,7 @@ type EmailAdminAction =
   | "daily_schedule_saved_audience_get"
   | "daily_schedule_saved_audience_set"
   | "daily_schedule_send_saved_audience"
-  | "daily_schedule_send_opted_in";
+  | "daily_schedule_send_all_active";
 
 type SenderAdminAction =
   | "sender_outbox_list"
@@ -188,7 +188,6 @@ type AdminEmailUser = {
   createdAt: string | null;
   emailConfirmed: boolean;
   enabled: boolean;
-  marketingEnabled: boolean;
   lastSentAt: string | null;
   priorityOverride: number;
   unsubscribeToken: string;
@@ -386,7 +385,7 @@ function normalizeEmailAction(raw: unknown): EmailAdminAction | "" {
   if (a === "daily_schedule_saved_audience_get") return "daily_schedule_saved_audience_get";
   if (a === "daily_schedule_saved_audience_set") return "daily_schedule_saved_audience_set";
   if (a === "daily_schedule_send_saved_audience") return "daily_schedule_send_saved_audience";
-  if (a === "daily_schedule_send_opted_in") return "daily_schedule_send_opted_in";
+  if (a === "daily_schedule_send_all_active") return "daily_schedule_send_all_active";
 
   return "";
 }
@@ -1318,7 +1317,7 @@ You can create a session by clicking the "Create a session" button in the top ri
 
 ${appUrl}/sessions
 
-You receive this because you enabled Product and marketing emails in MySession.
+You receive this daily schedule because you have a MySession account.
 
 Unsubscribe from daily schedule emails:
 ${unsubscribeUrl}
@@ -1404,7 +1403,7 @@ ${unsubscribeUrl}
 
       <hr style="border:none;border-top:1px solid #e5e7eb;margin:26px 0;" />
       <p style="font-size:12px;color:#777;margin:0;">
-        You’re receiving this because you enabled Product and marketing emails in MySession.
+        You’re receiving this daily schedule because you have a MySession account.
         <br />
         <a href="${unsubscribeUrl}" style="color:#777;text-decoration:underline;">Unsubscribe from daily schedule emails</a>
       </p>
@@ -1419,7 +1418,7 @@ async function listAllAuthUsers(sb: SupabaseClient) {
   let page = 1;
   const perPage = 1000;
 
-  while (page < 20) {
+  while (page <= 1000) {
     const { data, error } = await (sb.auth.admin as any).listUsers({
       page,
       perPage,
@@ -1434,7 +1433,56 @@ async function listAllAuthUsers(sb: SupabaseClient) {
     page += 1;
   }
 
+  if (page > 1000) throw new Error("auth_user_page_limit_exceeded");
+
   return all;
+}
+
+async function loadDailyEmailPreferences(sb: SupabaseClient) {
+  const rows: any[] = [];
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await sb.from("daily_schedule_email_preferences")
+      .select("*")
+      .order("user_id", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw new Error("daily_preferences_unavailable");
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) return rows;
+  }
+}
+
+async function loadDailySendHistory(sb: SupabaseClient, startDate: string, endDate: string) {
+  const rows: any[] = [];
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await sb.from("daily_schedule_email_sends")
+      .select("user_id,email,schedule_date,status")
+      .gte("schedule_date", startDate)
+      .lt("schedule_date", endDate)
+      .in("status", ["sent", "failed"])
+      .order("id", { ascending: true })
+      .range(offset, offset + pageSize - 1);
+    if (error) throw new Error("daily_send_history_unavailable");
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) return rows;
+  }
+}
+
+async function loadDailyRecipientProfiles(sb: SupabaseClient, userIds: string[], includeTimezone: boolean) {
+  const rows: any[] = [];
+  const columns = includeTimezone
+    ? "id, full_name, avatar_url, email, created_at, timezone"
+    : "id, full_name, avatar_url, email, created_at";
+  // Keep the PostgREST URL bounded as the registered audience grows.
+  for (let offset = 0; offset < userIds.length; offset += 100) {
+    const { data, error } = await sb.from("profiles")
+      .select(columns)
+      .in("id", userIds.slice(offset, offset + 100));
+    if (error) throw new Error("recipient_profiles_unavailable");
+    rows.push(...(data || []));
+  }
+  return rows;
 }
 
 function scoreDailyEmailCandidate(params: {
@@ -1716,26 +1764,12 @@ async function handleDailyScheduleAllUsersAction(params: {
   const users = await listAllAuthUsers(sb);
   const userIds = users.map((u) => String(u.id)).filter(Boolean);
 
-  const { data: profilesData } = userIds.length
-    ? await sb
-      .from("profiles")
-      .select("id, full_name, avatar_url, email, created_at")
-      .in("id", userIds)
-    : { data: [] as any[] };
+  const profilesData = await loadDailyRecipientProfiles(sb, userIds, false);
 
   const profilesByUser = new Map<string, any>();
   for (const p of profilesData || []) profilesByUser.set(String(p.id), p);
 
-  const { data: prefsData, error: prefsError } = await sb
-    .from("daily_schedule_email_preferences")
-    .select("*");
-  if (prefsError) return res.status(503).json({ error: "daily_preferences_unavailable" });
-  const { data: marketingData, error: marketingError } = await sb
-    .from("email_automation_preferences")
-    .select("user_id")
-    .eq("marketing_email_enabled", true);
-  if (marketingError) return res.status(503).json({ error: "marketing_preferences_unavailable" });
-  const optedInUserIds = new Set((marketingData || []).map((row) => String(row.user_id)));
+  const prefsData = await loadDailyEmailPreferences(sb);
 
   const prefsByUser = new Map<string, any>();
   for (const p of prefsData || []) prefsByUser.set(String(p.user_id), p);
@@ -1764,8 +1798,7 @@ async function handleDailyScheduleAllUsersAction(params: {
       avatarUrl: String(profile?.avatar_url || user.user_metadata?.avatar_url || "").trim() || null,
       createdAt: String(user.created_at || profile?.created_at || "").trim() || null,
       emailConfirmed: Boolean(user.email_confirmed_at || user.confirmed_at),
-      enabled: pref?.enabled !== false && optedInUserIds.has(userId),
-      marketingEnabled: optedInUserIds.has(userId),
+      enabled: pref?.enabled !== false,
       lastSentAt: pref?.last_sent_at || null,
       priorityOverride: Number(pref?.priority_override || 0),
       unsubscribeToken,
@@ -1876,7 +1909,7 @@ async function handleDailyScheduleEmailAction(params: {
     const html = email.html
       .replace(`${getAppUrl()}/email/unsubscribe?token=`, `${getAppUrl()}/settings`)
       .replace("Unsubscribe from daily schedule emails", "Test preview — no subscription changed")
-      .replace("You’re receiving this because you enabled Product and marketing emails in MySession.", "Admin test only — this does not change any subscription.");
+      .replace("You’re receiving this daily schedule because you have a MySession account.", "Admin test only — this does not change any subscription.");
     const previewHash = createHash("sha256").update(subject + html).digest("hex");
     const missing = missingPlunkEnvironment();
     if (action === "plunk_test_preview") {
@@ -1909,27 +1942,12 @@ async function handleDailyScheduleEmailAction(params: {
     ...infiniteHostingSlots.map((slot) => slot.hostUserId),
   ]);
 
-  const { data: prefsData, error: prefsError } = await sb
-    .from("daily_schedule_email_preferences")
-    .select("*");
-  if (prefsError) return res.status(503).json({ error: "daily_preferences_unavailable" });
-  const { data: marketingData, error: marketingError } = await sb
-    .from("email_automation_preferences")
-    .select("user_id")
-    .eq("marketing_email_enabled", true);
-  if (marketingError) return res.status(503).json({ error: "marketing_preferences_unavailable" });
-  const optedInUserIds = new Set((marketingData || []).map((row) => String(row.user_id)));
+  const prefsData = await loadDailyEmailPreferences(sb);
 
   const prefsByUser = new Map<string, any>();
   for (const p of prefsData || []) prefsByUser.set(String(p.user_id), p);
 
-  const { data: sendsToday, error: sendsError } = await sb
-    .from("daily_schedule_email_sends")
-    .select("user_id,email,schedule_date,status")
-    .gte("schedule_date", expandedStartIso.slice(0, 10))
-    .lt("schedule_date", expandedEndIso.slice(0, 10))
-    .in("status", ["sent", "failed"]);
-  if (sendsError) return res.status(503).json({ error: "daily_send_history_unavailable" });
+  const sendsToday = await loadDailySendHistory(sb, expandedStartIso.slice(0, 10), expandedEndIso.slice(0, 10));
 
   const sentTodayUserIds = new Set<string>((sendsToday || []).map((s: any) => `${s.schedule_date}:${String(s.user_id || "")}`));
   const sentTodayEmails = new Set<string>((sendsToday || []).map((s: any) => `${s.schedule_date}:${String(s.email || "").toLowerCase()}`));
@@ -1937,13 +1955,7 @@ async function handleDailyScheduleEmailAction(params: {
   const users = await listAllAuthUsers(sb);
   const userIds = users.map((u) => String(u.id)).filter(Boolean);
 
-  const { data: profilesData, error: profilesError } = userIds.length
-    ? await sb
-      .from("profiles")
-      .select("id, full_name, avatar_url, email, created_at, timezone")
-      .in("id", userIds)
-    : { data: [] as any[], error: null };
-  if (profilesError) return res.status(503).json({ error: "recipient_profiles_unavailable" });
+  const profilesData = await loadDailyRecipientProfiles(sb, userIds, true);
 
   const profilesByUser = new Map<string, any>();
   for (const p of profilesData || []) profilesByUser.set(String(p.id), p);
@@ -1965,8 +1977,6 @@ async function handleDailyScheduleEmailAction(params: {
     const sentToday = sentTodayUserIds.has(`${recipientDate}:${userId}`) || sentTodayEmails.has(`${recipientDate}:${email}`);
     if (!canReceiveDailyDigest({
       email,
-      emailConfirmed: Boolean(user.email_confirmed_at || user.confirmed_at),
-      marketingEnabled: optedInUserIds.has(userId),
       dailyEnabled: pref?.enabled !== false,
       alreadyAttemptedToday: sentToday,
     })) continue;
@@ -2194,7 +2204,7 @@ async function handleDailyScheduleSavedAudienceCronAction(params: {
   });
 }
 
-async function handleDailyScheduleOptedInCronAction(params: {
+async function handleDailyScheduleAllActiveCronAction(params: {
   req: VercelRequest;
   res: VercelResponse;
   sb: SupabaseClient;
@@ -2794,7 +2804,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         : "";
 
     const isDailyEmailCron = req.method === "GET" &&
-      (cronAction === "daily_schedule_send_saved_audience" || cronAction === "daily_schedule_send_opted_in");
+      (cronAction === "daily_schedule_send_saved_audience" || cronAction === "daily_schedule_send_all_active");
     const senderCronAction = getQueryParam(req, "senderAction").toLowerCase();
     const isSenderLifecycleCron =
       req.method === "POST" &&
@@ -2832,8 +2842,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (isDailyEmailCron) {
-      return cronAction === "daily_schedule_send_opted_in"
-        ? await handleDailyScheduleOptedInCronAction({ req, res, sb })
+      return cronAction === "daily_schedule_send_all_active"
+        ? await handleDailyScheduleAllActiveCronAction({ req, res, sb })
         : await handleDailyScheduleSavedAudienceCronAction({ req, res, sb });
     }
 
@@ -3199,6 +3209,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         error: "unsubscribe_token_upsert_failed",
         timings: { authMs, resolvedTrackMs, livekitMs, totalMs },
       });
+    }
+
+    if (message === "daily_preferences_unavailable" || message === "daily_send_history_unavailable" || message === "recipient_profiles_unavailable") {
+      return res.status(503).json({ error: message });
     }
 
     if (message === "session_not_found") {

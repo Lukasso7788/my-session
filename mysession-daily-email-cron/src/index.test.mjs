@@ -17,7 +17,7 @@ const env = {
   DAILY_SCHEDULE_CRON_LIMIT: "2",
 };
 
-test("manual trigger batches opted-in recipients without exposing address lists", async () => {
+test("manual trigger batches all daily-enabled recipients without exposing address lists", async () => {
   const calls = [];
   globalThis.fetch = async (url, init) => {
     calls.push({ url, init });
@@ -34,7 +34,7 @@ test("manual trigger batches opted-in recipients without exposing address lists"
   assert.equal(result.batchCount, 2);
   assert.equal(result.sentCount, 3);
   assert.equal(calls.length, 2);
-  assert.match(calls[0].url, /cronAction=daily_schedule_send_opted_in/);
+  assert.match(calls[0].url, /cronAction=daily_schedule_send_all_active/);
   assert.equal(calls[0].init.headers["x-cron-secret"], env.DAILY_SCHEDULE_CRON_SECRET);
   assert.doesNotMatch(JSON.stringify(result), /example@/);
 });

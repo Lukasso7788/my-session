@@ -27,7 +27,7 @@ const options: Array<{ key: keyof Preferences; title: string; description: strin
   { key: "session_reminders_enabled", title: "Session reminders", description: "Booking confirmations, upcoming-session reminders, and gentle no-show recovery." },
   { key: "weekly_recap_enabled", title: "Weekly focus recap", description: "Your sessions, focused minutes, and progress from the previous week." },
   { key: "reactivation_email_enabled", title: "Reactivation emails", description: "Occasional suggestions after 7, 14, or 30 days away." },
-  { key: "marketing_email_enabled", title: "Product and marketing emails", description: "Daily session schedule (including Infinite Room host times), feature announcements, referral invitations, offers, and host opportunities. Off by default; you can unsubscribe from the daily schedule separately." },
+  { key: "marketing_email_enabled", title: "Product and marketing emails", description: "Feature announcements, referral invitations, offers, and host opportunities. Off by default. Your daily session schedule is separate and has its own unsubscribe link." },
 ];
 
 export default function EmailPreferencesPage() {
@@ -100,7 +100,7 @@ export default function EmailPreferencesPage() {
         <div className="mt-5 rounded-[28px] border border-black/10 bg-white p-6 shadow-sm sm:p-8">
           <div className="text-[12px] font-bold uppercase tracking-[0.16em] text-[#4AAE55]">Email settings</div>
           <h1 className="mt-2 text-3xl font-bold">Choose what reaches your inbox</h1>
-          <p className="mt-2 text-sm leading-6 text-black/60">Choose your MySession email preferences. Product and marketing emails are off until you explicitly opt in; Plunk handles delivery and unsubscribe links. Authentication and security emails remain enabled.</p>
+          <p className="mt-2 text-sm leading-6 text-black/60">Choose your MySession email preferences. All registered users receive the daily session schedule unless they unsubscribe using the link in that email. Product and marketing emails stay off until you explicitly opt in. Authentication and security emails remain enabled.</p>
           {loading ? <div className="mt-8 text-sm text-black/50">Loading preferences…</div> : (
             <div className="mt-8 space-y-3">
               {options.map((option) => (

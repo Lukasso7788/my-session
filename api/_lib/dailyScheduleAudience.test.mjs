@@ -17,12 +17,9 @@ test("hourly cron selects recipients in their own morning", () => {
   assert.equal(isLocalMorning(new Date("2026-10-08T05:00:00.000Z"), "Europe/Kyiv"), true);
 });
 
-test("daily digest requires explicit marketing consent and respects daily unsubscribe and send history", () => {
-  const eligible = { email: "reader@example.com", emailConfirmed: true,
-    marketingEnabled: true, dailyEnabled: true, alreadyAttemptedToday: false };
+test("daily digest reaches registered users independently of marketing consent and respects daily opt-out", () => {
+  const eligible = { email: "reader@example.com", dailyEnabled: true, alreadyAttemptedToday: false };
   assert.equal(canReceiveDailyDigest(eligible), true);
-  assert.equal(canReceiveDailyDigest({ ...eligible, marketingEnabled: false }), false);
   assert.equal(canReceiveDailyDigest({ ...eligible, dailyEnabled: false }), false);
-  assert.equal(canReceiveDailyDigest({ ...eligible, emailConfirmed: false }), false);
   assert.equal(canReceiveDailyDigest({ ...eligible, alreadyAttemptedToday: true }), false);
 });

@@ -37,7 +37,6 @@ type AdminEmailUser = {
   createdAt: string | null;
   emailConfirmed: boolean;
   enabled: boolean;
-  marketingEnabled: boolean;
   lastSentAt: string | null;
   priorityOverride: number;
 };
@@ -545,7 +544,7 @@ export default function DailyScheduleEmailAdminPage() {
         ? normalizeSelectedIds(selectedRecipientIds)
         : [];
 
-    const targetLabel = ids.length > 0 ? `${ids.length} selected opted-in people` : `auto top ${limit} opted-in people`;
+    const targetLabel = ids.length > 0 ? `${ids.length} selected daily-enabled people` : `auto top ${limit} daily-enabled people`;
 
     const ok = window.confirm(
       `Send daily schedule email to ${targetLabel} for ${scheduleDate}?`
@@ -591,7 +590,7 @@ export default function DailyScheduleEmailAdminPage() {
             </div>
             <h1 className="mt-2 text-[34px] font-bold">Daily schedule email</h1>
             <p className="mt-2 max-w-3xl text-[14px] leading-6 text-[#666]">
-              Preview the opted-in audience, inspect today’s sessions and Infinite Room host intervals, or send a fixed-inbox Plunk test.
+              Preview the daily-enabled audience, inspect today’s sessions and Infinite Room host intervals, or send a fixed-inbox Plunk test.
             </p>
           </div>
 
@@ -657,7 +656,7 @@ export default function DailyScheduleEmailAdminPage() {
               {sending ? "Sending..." : effectiveSendLabel}
             </button>
           </div>
-          <p className="mt-3 text-[12px] text-[#666]">Automatic delivery includes confirmed accounts only when Product and marketing emails is on and daily schedule emails have not been unsubscribed. The old saved audience is for manual selection; cron now uses the live opt-in list.</p>
+          <p className="mt-3 text-[12px] text-[#666]">Automatic delivery includes all registered users with a valid email who have not unsubscribed from daily schedule emails. Marketing preferences do not affect this digest. The old saved audience is for manual selection; cron uses the live daily-enabled list.</p>
 
           <section id="plunk-test" className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5">
             <h2 className="text-lg font-semibold">Plunk · Upcoming sessions test</h2>
@@ -753,7 +752,7 @@ export default function DailyScheduleEmailAdminPage() {
             <div>
               <h2 className="text-[22px] font-bold">All registered users</h2>
               <p className="mt-1 text-[13px] text-[#666]">
-                Only explicit marketing opt-ins who have not unsubscribed from the daily email can receive this digest. Everyone else stays visible for review, never for sending.
+                Every registered user with a valid email can receive this digest unless they unsubscribed from the daily email. Marketing consent is separate.
               </p>
             </div>
 
@@ -774,7 +773,7 @@ export default function DailyScheduleEmailAdminPage() {
                 <option value="never_sent">Never sent</option>
                 <option value="selected">Selected only</option>
                 <option value="unconfirmed">Unconfirmed email</option>
-                <option value="unsubscribed">Not opted in / unsubscribed ({notEligibleCount})</option>
+                <option value="unsubscribed">Daily unsubscribed ({notEligibleCount})</option>
                 <option value="all">All users</option>
               </select>
 
@@ -855,11 +854,7 @@ export default function DailyScheduleEmailAdminPage() {
                         </div>
 
                         <div className="mt-2 flex flex-wrap gap-1.5">
-                          {!u.marketingEnabled ? (
-                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${checked ? "bg-white/15 text-white" : "bg-amber-100 text-amber-800"}`}>
-                              marketing off
-                            </span>
-                          ) : !u.enabled ? (
+                          {!u.enabled ? (
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${checked ? "bg-white/15 text-white" : "bg-red-100 text-red-700"}`}>
                               daily unsubscribed
                             </span>

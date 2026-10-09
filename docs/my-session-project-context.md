@@ -1402,7 +1402,7 @@ visually approved before replacing this light mode again.
 This is the current change's continuation handoff; the project architecture
 above remains applicable. The feature is direct email, **not** a lifecycle
 workflow. The path is Cloudflare cron Worker -> secret-authenticated
-`GET /api/livekit/admin?cronAction=daily_schedule_send_opted_in` -> Supabase
+`GET /api/livekit/admin?cronAction=daily_schedule_send_all_active` -> Supabase
 service-role reads -> `api/_lib/plunk.ts` -> self-hosted Plunk `/v1/send` ->
 SES. Browser code never receives the Plunk or cron secrets. Existing
 Sender-named lifecycle evaluator (04:00 UTC) and process (every 5 minutes)
@@ -1423,10 +1423,14 @@ than mailing an incomplete schedule. Date/range/escaping logic lives in
 the fixed-inbox admin test, never a production audience.
 
 Audience eligibility in `api/_lib/dailyScheduleAudience.ts` requires a
-plausible address, confirmed auth email, explicit
-`email_automation_preferences.marketing_email_enabled=true`,
+registered Auth user with a plausible address,
 `daily_schedule_email_preferences.enabled != false`, and no already-sent or
-failed ledger row for that user's local date. Non-default
+failed ledger row for that user's local date. The user clarified on
+2026-10-09 that the former Resend 100/day cap was a provider limit, not an
+audience restriction. This daily schedule is sent to all eligible users,
+independent of `email_automation_preferences.marketing_email_enabled` and
+Auth email-confirmation status. Marketing campaigns still require explicit
+marketing consent. Non-default
 `profiles.timezone` takes precedence over Auth metadata; UTC is the fallback.
 The Cloudflare Worker runs the action hourly, but recipients qualify only
 when their local hour is 08 or 09. Once sent, the
@@ -1437,6 +1441,10 @@ or ledger failure surfaces as an unsuccessful Worker run. The ledger has no
 unique `(user_id,schedule_date)` constraint, so concurrent overlapping
 invocations remain an edge; do not claim mathematically exactly-once
 delivery. Plunk API acceptance is not proof of mailbox delivery.
+The preferences and three-day ledger queries are paginated (1000 rows per
+page) so a daily audience above 1000 does not silently lose opt-outs or
+send-history rows and resend duplicates. Auth users are paged, and profile
+lookups use 100-user chunks to keep PostgREST URL length bounded.
 
 `src/pages/DailyScheduleEmailAdminPage.tsx` at `/admin/daily-schedule-email`
 shows sessions, real host intervals, and per-user consent; it provides a
@@ -1444,20 +1452,21 @@ preview and a fixed-inbox Plunk test to `lukasus7788@gmail.com`. If no host
 is booked, the admin may add a visibly labelled sample host slot to that
 test alone. Its fake room is not linked. Preview hash and stable UUID protect
 against inadvertent duplicate tests, and the test does not touch audience
-or send ledger. Manual admin sends also honor consent. The old saved
-audience API remains for compatibility, but the new Worker uses the live
-opt-in list. `/settings/email` now describes this digest on its marketing
-switch, which is OFF by default; daily unsubscribe remains separate.
+or send ledger. Manual admin sends also honor the daily opt-out. The old saved
+audience API remains for compatibility, but the new Worker uses all live
+daily-enabled users. `/settings/email` explains that this digest is separate
+from the marketing switch, which stays OFF by default; daily unsubscribe
+remains a per-email link and RPC.
 
 At the 2026-10-08 read-only production audit (Supabase
 `cxqgzcjsjyszcbcbdusp`), there were 673 Auth users, 518 daily preferences
 enabled, 49 disabled, **zero explicit marketing opt-ins**, and zero upcoming
 seven-day host reservations. The old saved-audience cron sent about 91/day
-with one Plunk 422/day. This is a snapshot, not migration consent. The new
-safe audience starts at zero until users enable Product and marketing emails
-at `/settings/email`. Never silently treat old default-enabled daily rows as
-marketing consent or bulk-flip the flag; a broad-send decision requires
-separate review and explicit user direction.
+with one Plunk 422/day. This is a snapshot. The new daily audience includes
+the 518 daily-enabled preference rows plus registered users without a daily
+preference row, minus invalid addresses and users already attempted for that
+local date. The 49 disabled rows remain excluded. Do not use this decision
+to bulk-flip the marketing flag or expand marketing campaigns.
 
 Vercel Production variable-name audit found `PLUNK_API_URL`,
 `PLUNK_SECRET_KEY`, `PLUNK_FROM_EMAIL`, `PLUNK_FROM_NAME`,

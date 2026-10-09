@@ -5,13 +5,10 @@ export function isPlausibleEmail(raw: string): boolean {
 
 export function canReceiveDailyDigest(input: {
   email: string;
-  emailConfirmed: boolean;
-  marketingEnabled: boolean;
   dailyEnabled: boolean;
   alreadyAttemptedToday: boolean;
 }): boolean {
-  return isPlausibleEmail(input.email) && input.emailConfirmed && input.marketingEnabled
-    && input.dailyEnabled && !input.alreadyAttemptedToday;
+  return isPlausibleEmail(input.email) && input.dailyEnabled && !input.alreadyAttemptedToday;
 }
 
 export function isLocalMorning(value: Date, timeZone: string): boolean {
