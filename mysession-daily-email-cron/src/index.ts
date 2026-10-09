@@ -6,6 +6,15 @@ export interface Env {
   SENDER_CRON_SECRET?: string;
 }
 
+const DAILY_SCHEDULE_CRON = "0 4,5 * * *";
+
+function isSevenAmInKyiv(scheduledTime: number) {
+  const hour = new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit", hourCycle: "h23", timeZone: "Europe/Kyiv",
+  }).format(new Date(scheduledTime));
+  return hour === "07";
+}
+
 async function runSenderLifecycleCron(
   env: Env,
   trigger: "scheduled" | "manual",
@@ -83,7 +92,11 @@ async function runDailyScheduleEmailCron(env: Env, trigger: "scheduled" | "manua
     const selected = Number(body.selectedCount || 0);
     sentCount += Number(body.sentCount || 0);
     failedCount += Number(body.failedCount || 0);
-    remaining = Math.max(0, Number(body.candidatesCount || 0) - selected);
+    // Older API deployments did not return candidatesCount; keep paging until
+    // an empty batch instead of silently stopping after the first 100 users.
+    remaining = body.candidatesCount == null
+      ? (selected > 0 ? 1 : 0)
+      : Math.max(0, Number(body.candidatesCount) - selected);
     if (selected === 0 || remaining === 0) break;
   }
 
@@ -93,15 +106,15 @@ async function runDailyScheduleEmailCron(env: Env, trigger: "scheduled" | "manua
 
 export default {
   async scheduled(event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
-    const jobs = event.cron === "0 * * * *"
-      ? [
-          runDailyScheduleEmailCron(env, "scheduled").then((result) => console.log("[daily-email-cron] result", result)),
-        ]
+    const jobs = event.cron === DAILY_SCHEDULE_CRON
+      ? isSevenAmInKyiv(event.scheduledTime)
+        ? [runDailyScheduleEmailCron(env, "scheduled").then((result) => console.log("[daily-email-cron] result", result))]
+        : []
       : event.cron === "0 4 * * *"
       ? [runSenderLifecycleCron(env, "scheduled", "evaluate").then((result) => console.log("[sender-lifecycle-evaluate] result", result))]
-      : [
+      : event.cron === "*/5 * * * *" ? [
           runSenderLifecycleCron(env, "scheduled", "process").then((result) => console.log("[sender-outbox-process] result", result)),
-        ];
+        ] : [];
 
     ctx.waitUntil(Promise.allSettled(jobs).then((results) => {
       for (const result of results) if (result.status === "rejected") console.error("[cron] failed", result.reason);

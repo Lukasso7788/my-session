@@ -1,6 +1,6 @@
 # MySession — project architecture and continuation context
 
-Updated: 2026-10-08. This is a project-wide navigation/architecture handoff based on
+Updated: 2026-10-09. This is a project-wide navigation/architecture handoff based on
 the checked-out source, not a claim that every module or production service was
 audited. Never put secret values, tokens, user exports or private logs in this file.
 
@@ -8,11 +8,13 @@ audited. Never put secret values, tokens, user exports or private logs in this f
 
 - Repository: Lukasso7788/my-session. Deployment branch is main (not necessarily
   the remote default branch). Do not force-push or rewrite shared history.
-- Active implementation checkout:
-  C:\Users\misha\.codex\worktrees\tasks-pip-accent\my-session.
-  This managed worktree is at a detached HEAD; commit this feature here and
-  push HEAD:main only after checking origin/main for new commits.
-- Current task: implement and verify an opt-in daily Plunk schedule digest
+- Current implementation checkout for the 07:00 Kyiv digest schedule:
+  C:\projects\my-session\.codex-safe-daily-email-7am.
+  It was created from `e673e3317182a7b3ad683ff1deffdac79142fcfc`,
+  which matched `origin/main` on 2026-10-09. Commit only the relevant files
+  and push HEAD:main only after checking origin/main for new commits.
+- Current task: run the daily Plunk schedule digest at 07:00 Europe/Kyiv
+  for the existing eligible audience. The broader feature provides a digest
   showing public scheduled sessions and Infinite Room host time ranges. The
   latest section records exact files, data/consent flow, cron, tests and
   activation. Previous room palette, timezone and Plunk lifecycle work is
@@ -1541,3 +1543,52 @@ Future Worker releases should use `npm run deploy`, whose script includes
 already removed variable. Verify both Cron paths after authorized recovery.
 
 The autumn room theme is explicitly paused by the user for this email task.
+
+### 2026-10-09 fixed 07:00 Kyiv daily-digest change
+
+User-provided read-only send-ledger summary: `2026-10-09` has 454 `sent`
+rows and no `failed` rows in the supplied aggregate; `2026-10-08` and
+`2026-10-07` each have 91 `sent` and 1 `failed`. Here `sent` means Plunk
+accepted the request, not that SES delivered to an inbox. The agent's
+Supabase SQL connector returned a permission error, so this aggregate was
+provided directly by the user, not independently queried. Do not infer
+total audience coverage from the ledger alone.
+
+The daily digest has three distinct layers:
+
+1. `mysession-daily-email-cron/wrangler.toml` sets Cloudflare Cron triggers
+   in UTC. The daily trigger is `0 4,5 * * *`, with the Worker using
+   `Intl.DateTimeFormat` and `Europe/Kyiv` on `event.scheduledTime` to run
+   only when local time is 07:00. The 04:00 UTC run matches Kyiv summer
+   time and the 05:00 UTC run matches winter time. Existing Sender
+   lifecycle `0 4 * * *` and outbox `*/5 * * * *` triggers remain separate.
+2. `mysession-daily-email-cron/src/index.ts` calls the authenticated Vercel
+   `daily_schedule_send_all_active` endpoint in batches of at most 100,
+   repeating while `candidatesCount - selectedCount` is positive (maximum
+   30 batches). If an older API deployment omits `candidatesCount`, it
+   keeps paging until an empty batch. No recipient list or cron secret is
+   logged. Scheduled Worker invocations have a 15-minute wall-time ceiling;
+   monitor run results and remaining recipients after the first 07:00 run.
+3. `api/livekit/admin.ts` still selects all registered users with plausible
+   email except daily-digest opt-outs and users already attempted for the
+   date. For this all-active cron action it uses the Kyiv calendar date as
+   the send-ledger/idempotency date and no longer gates on each recipient's
+   08:00–09:00 local morning. It retains each recipient's timezone for
+   displayed session and Infinite Room host times. The legacy saved-
+   audience cron and manual admin actions retain their previous date mode.
+   The successful send response now includes `candidatesCount` so the
+   Worker can complete all batches in one scheduled invocation. Stable
+   Plunk idempotency key is user ID + digest date; the existing send ledger
+   also prevents duplicate daily attempts. This does not change Sender
+   lifecycle emails, marketing consent, content templates, or room UI.
+
+Tests: `node --test mysession-daily-email-cron/src/index.test.mjs` checks
+summer/winter DST selection and batch continuation, including older API
+responses. Also run focused server TypeScript checking, root build,
+`git diff --check`, and a Worker dry run before release. Deployment order
+matters because the old Worker runs hourly: deploy the Worker schedule (with
+`--keep-vars`) outside its 07:00 window, then push the Vercel API change;
+verify Cloudflare triggers and Vercel READY before calling the change live.
+Do not call the authenticated `/run` route for a status check: it sends real
+mail. Existing missing `SENDER_CRON_SECRET` on Cloudflare remains a separate
+issue and is not solved by this schedule change.

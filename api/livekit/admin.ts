@@ -89,6 +89,7 @@ type Body = {
   testPreviewHash?: string;
   includeSampleHostSlot?: boolean;
   localMorningOnly?: boolean;
+  useRecipientLocalDate?: boolean;
 
   // Sender lifecycle email actions
   senderEventId?: string;
@@ -1834,7 +1835,7 @@ async function handleDailyScheduleEmailAction(params: {
 
   const dryRun = action === "daily_schedule_preview";
   const scheduleDate = parseScheduleDate(body.scheduleDate);
-  const localDateMode = Boolean(skipAdminCheck);
+  const localDateMode = Boolean(skipAdminCheck && body.useRecipientLocalDate !== false);
   const runAt = new Date();
   const limit = clampDailyEmailLimit(body.limit);
   const selectedUserIds = Array.isArray(body.selectedUserIds)
@@ -2134,6 +2135,7 @@ async function handleDailyScheduleEmailAction(params: {
     scheduleDate,
     requestedLimit: limit,
     selectedCount: selected.length,
+    candidatesCount: candidates.length,
     sentCount: results.filter((r) => r.status === "sent").length,
     failedCount: results.filter((r) => r.status === "failed").length,
     results,
@@ -2223,9 +2225,9 @@ async function handleDailyScheduleAllActiveCronAction(params: {
     accessToken: "",
     body: {
       action: "daily_schedule_send",
-      scheduleDate: parseScheduleDate(getQueryParam(req, "scheduleDate")),
+      scheduleDate: dateKeyInTimeZone(new Date(), "Europe/Kyiv"),
       limit: clampDailyEmailLimit(getQueryParam(req, "limit") || DAILY_EMAIL_DEFAULT_LIMIT),
-      localMorningOnly: true,
+      useRecipientLocalDate: false,
     },
     action: "daily_schedule_send",
     skipAdminCheck: true,

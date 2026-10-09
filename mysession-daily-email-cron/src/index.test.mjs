@@ -39,6 +39,43 @@ test("manual trigger batches all daily-enabled recipients without exposing addre
   assert.doesNotMatch(JSON.stringify(result), /example@/);
 });
 
+test("scheduled digest starts once at 07:00 Kyiv through summer and winter time", async () => {
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    calls.push(url);
+    return Response.json({ ok: true, selectedCount: 0, candidatesCount: 0, sentCount: 0, failedCount: 0 });
+  };
+
+  async function invoke(at) {
+    let settled;
+    await worker.scheduled({ cron: "0 4,5 * * *", scheduledTime: Date.parse(at) }, env, {
+      waitUntil(promise) { settled = promise; },
+    });
+    await settled;
+  }
+
+  await invoke("2026-07-01T04:00:00.000Z"); // Kyiv is UTC+3.
+  await invoke("2026-07-01T05:00:00.000Z");
+  await invoke("2026-01-01T04:00:00.000Z");
+  await invoke("2026-01-01T05:00:00.000Z"); // Kyiv is UTC+2.
+  assert.equal(calls.length, 2);
+});
+
+test("continues batching when an older API omits candidatesCount", async () => {
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return Response.json(calls === 1
+      ? { ok: true, selectedCount: 2, sentCount: 2, failedCount: 0 }
+      : { ok: true, selectedCount: 0, sentCount: 0, failedCount: 0 });
+  };
+  const response = await worker.fetch(new Request("https://cron.example.test/run", {
+    headers: { "x-cron-secret": env.DAILY_SCHEDULE_CRON_SECRET },
+  }), env);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).batchCount, 2);
+});
+
 test("manual trigger requires the cron secret", async () => {
   globalThis.fetch = () => { throw new Error("unexpected fetch"); };
   const response = await worker.fetch(new Request("https://cron.example.test/run"), env);
