@@ -1505,16 +1505,23 @@ pushed to `origin/main`. Vercel Production deployment
 `dpl_DVPEMtqYs5MgxoqbB7pADcwCJx9U` reached READY and aliases
 `mysession.club` and `www.mysession.club` point to it. The public admin
 page displays the new daily-enabled audience wording; unauthenticated
-`cronAction=daily_schedule_send_all_active` returns HTTP 401. The isolated
-fixed-inbox Plunk test is **not yet completed**. On the next authenticated
-browser visit, the admin test preview succeeded for `lukasus7788@gmail.com`
-and showed one real Infinite Room host reservation overlapping the selected
-day. That preview revealed that configured `APP_URL` has a trailing slash,
-producing `//sessions` and `//room-livekit` links. `getAppUrl()` now uses
-`normalizeEmailBaseUrl` from `api/_lib/dailyScheduleHosting.ts` to strip
-trailing slashes; its regression test covers both session and host links.
-Release this fix and re-preview before sending one test. Do not claim inbox
-delivery until Plunk accepts it and mailbox/provider status is checked.
+`cronAction=daily_schedule_send_all_active` returns HTTP 401. The first
+authenticated admin preview for `lukasus7788@gmail.com` showed one real
+Infinite Room host reservation overlapping the selected day, and revealed
+that configured `APP_URL` has a trailing slash, producing `//sessions` and
+`//room-livekit` links. Commit `d894ac116f76ddfabe92201d84b6d2bc895eb18e`
+fixes this with `normalizeEmailBaseUrl` in `api/_lib/dailyScheduleHosting.ts`;
+its regression test covers session and host links. Vercel Production
+deployment `dpl_9vVyC6hHvXdQknr8LN99Lnv6dUgq` reached READY with both
+public domain aliases. The refreshed admin preview showed normalized links.
+On 2026-10-09, the admin sent **one** isolated `[TEST] Today on MySession —
+Fri, Oct 9` message via the `plunk_test_send` action. Plunk returned
+`accepted: true`, and Gmail search on the matching recipient account found
+the message in `INBOX` (also `UNREAD`, `CATEGORY_UPDATES`). The test action
+does not update the production daily audience or send ledger. This verifies
+one test email's inbox arrival, **not** bulk deliverability or the hourly
+Worker's authenticated call. Monitor Worker/API responses and daily ledger
+on the next actual scheduled run.
 
 Cloudflare Worker version `8d5a4ce8-cade-4692-90ad-8f06b6ff1636` was
 deployed with hourly, 04:00 UTC, and five-minute triggers; `/health`
