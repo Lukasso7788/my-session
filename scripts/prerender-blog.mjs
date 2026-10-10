@@ -10,16 +10,14 @@ const pages = [
   {
     path: "blog",
     title: "MySession Blog | Body Doubling and Focus Guides",
-    description:
-      "Practical guides to virtual coworking, body doubling, focus sessions, accountability, and building a repeatable work routine.",
+    description: "Body doubling and focus guides you can use today.",
     canonical: "https://mysession.club/blog",
     type: "website",
   },
   {
     path: "blog/best-focusmate-alternatives",
     title: "Focusmate Alternative for Group Focus Rooms | MySession",
-    description:
-      "Looking for a Focusmate alternative? Compare scheduled 1:1 body doubling with MySession group sessions and 24/7 focus rooms.",
+    description: "Compare Focusmate with MySession's group focus rooms.",
     canonical: "https://mysession.club/blog/best-focusmate-alternatives",
     type: "article",
     image:
@@ -32,15 +30,21 @@ const pages = [
 for (const post of editorialManifest) {
   const markdown = await readFile(path.resolve("src/content/blog", post.markdownFile), "utf8");
   if (!markdown.includes("## ")) throw new Error(`Editorial article ${post.slug} has no sections`);
+  const route = post.route || `/blog/${post.slug}`;
   pages.push({
-    path: `blog/${post.slug}`,
+    path: route.slice(1),
     title: post.seoTitle,
     description: post.metaDescription,
-    canonical: `https://mysession.club/blog/${post.slug}`,
+    canonical: `https://mysession.club${route}`,
     type: "article",
     headline: post.title,
     publishedAt: post.publishedAt,
     markdown,
+    image: `https://mysession.club${post.coverImagePath}`,
+    imageAlt: post.coverImageAlt,
+    breadcrumb: route.startsWith("/guides/")
+      ? { name: "Body doubling", path: "/body-doubling" }
+      : { name: "Blog", path: "/blog" },
   });
 }
 
@@ -106,7 +110,13 @@ function renderPage(page) {
 
   if (page.markdown) {
     const articleHtml = marked.parse(page.markdown, { async: false, gfm: true });
-    const visibleContent = `<main class="seo-prerender"><nav aria-label="Breadcrumb"><a href="/">Home</a> / <a href="/blog">Blog</a></nav><article><h1>${escapeAttribute(page.headline)}</h1>${articleHtml}</article></main>`;
+    const coverHtml = page.image
+      ? `<img src="${escapeAttribute(page.image)}" alt="${escapeAttribute(page.imageAlt)}" width="1200" height="630" decoding="async" />`
+      : "";
+    const breadcrumb = page.breadcrumb || { name: "Blog", path: "/blog" };
+    const visibleContent = `<main class="seo-prerender"><nav aria-label="Breadcrumb"><a href="/">Home</a> / <a href="${escapeAttribute(breadcrumb.path)}">${escapeAttribute(breadcrumb.name)}</a></nav><article><h1>${escapeAttribute(page.headline)}</h1>${coverHtml}${articleHtml}</article></main>`;
+    const prerenderStyles = `<style>.seo-prerender{box-sizing:border-box;max-width:860px;margin:auto;padding:24px 16px;font:16px/1.6 Arial,sans-serif;color:#2f2f2f;overflow-wrap:anywhere}.seo-prerender img{display:block;width:100%;height:auto;max-width:100%}.seo-prerender table{display:block;max-width:100%;overflow-x:auto}.seo-prerender a{color:#245c29}</style>`;
+    html = html.replace("</head>", `${prerenderStyles}</head>`);
     const clearBeforePaint = '<script id="seo-prerender-clear">(function(){var root=document.getElementById("root");if(root)root.innerHTML="";})();</script>';
     html = html.replace('<div id="root"></div>', `<div id="root">${visibleContent}</div>${clearBeforePaint}`);
     const structuredData = JSON.stringify({
@@ -115,6 +125,7 @@ function renderPage(page) {
       headline: page.headline,
       description: page.description,
       mainEntityOfPage: page.canonical,
+      image: page.image,
       datePublished: page.publishedAt,
       author: { "@type": "Organization", name: "MySession Editorial" },
       publisher: { "@type": "Organization", name: "MySession", url: "https://mysession.club" },

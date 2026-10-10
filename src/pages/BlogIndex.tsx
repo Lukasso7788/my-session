@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, BookOpen, Clock3 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { bundledBlogPosts, mergePublishedBlogPosts } from "../data/blogEditorial";
+import { bundledBlogPosts, getBlogCoverAlt, getBlogPostRoute, mergePublishedBlogPosts } from "../data/blogEditorial";
 import { starterFocusmatePost } from "../data/blogSeed";
 import { estimateReadingMinutes, listPublishedBlogPosts, type BlogPost } from "../lib/blog";
 import { applyPageSeo, safeJsonLd } from "../lib/pageSeo";
@@ -30,13 +30,12 @@ function PostCard({ post, featured = false }: { post: BlogPost; featured?: boole
         <div className={featured ? "min-h-[260px] md:order-2" : "aspect-[16/9]"}>
           <img
             src={post.cover_image_url}
-            alt={
-              post.slug === starterFocusmatePost.slug
-                ? "Three colleagues working together around laptops and documents at a shared office desk"
-                : `Cover illustration for ${post.title}`
-            }
+            alt={getBlogCoverAlt(post)}
             className="h-full w-full object-cover"
             loading={featured ? "eager" : "lazy"}
+            decoding="async"
+            width={1200}
+            height={630}
           />
         </div>
       ) : featured ? (
@@ -66,7 +65,7 @@ function PostCard({ post, featured = false }: { post: BlogPost; featured?: boole
             featured ? "text-[28px] sm:text-[36px]" : "text-[21px]",
           ].join(" ")}
         >
-          <Link to={`/blog/${post.slug}`} className="outline-none focus-visible:underline">
+          <Link to={getBlogPostRoute(post)} className="outline-none focus-visible:underline">
             {post.title}
           </Link>
         </h2>
@@ -76,7 +75,7 @@ function PostCard({ post, featured = false }: { post: BlogPost; featured?: boole
         <div className="mt-6 flex items-center justify-between gap-3">
           <span className="text-[12px] text-[#888]">{formatPostDate(post.published_at)}</span>
           <Link
-            to={`/blog/${post.slug}`}
+            to={getBlogPostRoute(post)}
             className="inline-flex items-center gap-2 text-[13px] font-medium text-[#2F2F2F] transition group-hover:gap-3"
           >
             Read article <ArrowRight size={15} />
@@ -94,8 +93,7 @@ export default function BlogIndex() {
   useEffect(() => {
     applyPageSeo({
       title: "MySession Blog | Body Doubling and Focus Guides",
-      description:
-        "Practical guides to virtual coworking, body doubling, focus sessions, accountability, and building a repeatable work routine.",
+      description: "Body doubling and focus guides you can use today.",
       canonicalUrl: `${SITE_ORIGIN}/blog`,
     });
   }, []);
@@ -140,7 +138,7 @@ export default function BlogIndex() {
     blogPost: posts.slice(0, 10).map((post) => ({
       "@type": "BlogPosting",
       headline: post.title,
-      url: `${SITE_ORIGIN}/blog/${post.slug}`,
+      url: `${SITE_ORIGIN}${getBlogPostRoute(post)}`,
       datePublished: post.published_at,
     })),
   };

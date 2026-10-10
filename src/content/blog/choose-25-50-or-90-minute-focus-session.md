@@ -36,6 +36,8 @@ A [90-minute focus session](/focus-session-90-minutes) does not require ninety m
 
 If you are unsure, start shorter. Completing a modest block and choosing another one is better than avoiding a long commitment. A [shared focus room](/sessions) can add accountability to any of these lengths without requiring everyone to work on the same task.
 
+For days when even a short block feels difficult to enter, follow the [step-by-step guide to starting a focus session](/blog/how-to-start-a-focus-session-when-stuck).
+
 ## Review the result, not the timer
 
 At check-in, ask whether you made the intended progress and whether the length helped. If you consistently finish early, try a smaller room or a larger outcome. If you always run out of time after finally finding focus, use a longer block. This simple review makes the next choice better than following a fixed rule forever.

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/generate-seo-assets.mjs && vite build && node scripts/prerender-blog.mjs && node scripts/prerender-seo.mjs && node scripts/verify-seo-batch1.mjs && node scripts/verify-sitemap-pages.mjs && node scripts/verify-blog-editorial.mjs",
+    "build": "node scripts/generate-seo-assets.mjs && vite build && node scripts/prerender-blog.mjs && node scripts/prerender-seo.mjs && node scripts/verify-seo-batch1.mjs && node scripts/verify-sitemap-pages.mjs && node scripts/verify-blog-editorial.mjs && node scripts/verify-seo-react-render.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -13,6 +13,7 @@
     "seo:verify:batch1": "node scripts/verify-seo-batch1.mjs",
     "seo:verify:sitemap": "node scripts/verify-sitemap-pages.mjs",
     "seo:verify:blog": "node scripts/verify-blog-editorial.mjs",
+    "seo:verify:react": "node scripts/verify-seo-react-render.mjs",
     "test:affiliate": "node --test tests/affiliateCommission.test.mjs"
   },
   "dependencies": {

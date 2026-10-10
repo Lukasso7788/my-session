@@ -163,7 +163,9 @@ export default function App() {
 
           <Route path="/blog" element={<BlogIndex />} />
 
+          <Route path="/blog/what-is-body-doubling" element={<Navigate to="/guides/what-is-body-doubling" replace />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
+          <Route path="/guides/what-is-body-doubling" element={<BlogPost slugOverride="what-is-body-doubling" />} />
 
           {/* SEO pages */}
           {seoRouteManifest.map((page) => (

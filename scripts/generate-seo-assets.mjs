@@ -29,12 +29,12 @@ const normalizedStatic = staticPages.map(([route, changeFrequency, sitemapPriori
   route, changeFrequency, sitemapPriority, updatedAt: "2026-07-29",
 }));
 const indexable = pages.filter((page) => page.indexable);
-const pageEntries = [...normalizedStatic, ...indexable.filter((page) => ["use-case", "session-format"].includes(page.pageType))];
+const pageEntries = [...normalizedStatic, ...indexable.filter((page) => ["topic-hub", "use-case", "session-format"].includes(page.pageType))];
 const guideEntries = [
   ...indexable.filter((page) => page.pageType === "guide"),
   { route: "/blog/best-focusmate-alternatives", changeFrequency: "monthly", sitemapPriority: 0.8, updatedAt: "2026-07-29" },
   ...editorialPosts.map((post) => ({
-    route: `/blog/${post.slug}`,
+    route: post.route || `/blog/${post.slug}`,
     changeFrequency: "monthly",
     sitemapPriority: 0.7,
     updatedAt: post.publishedAt.slice(0, 10),

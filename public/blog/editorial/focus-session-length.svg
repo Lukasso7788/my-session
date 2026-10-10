@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#eaf1fa"/>
+  <circle cx="84" cy="567" r="195" fill="#d9e7f8"/>
+  <text x="112" y="135" fill="#3865aa" font-family="Arial,sans-serif" font-size="23" font-weight="700" letter-spacing="3">CHOOSE YOUR BLOCK</text>
+  <text x="112" y="206" fill="#243852" font-family="Arial,sans-serif" font-size="51" font-weight="700">How long should you focus?</text>
+  <g font-family="Arial,sans-serif">
+    <rect x="112" y="266" width="976" height="290" rx="32" fill="#fff" stroke="#cfdfef" stroke-width="2"/>
+    <text x="149" y="334" fill="#294b74" font-size="29" font-weight="700">25 min</text>
+    <text x="149" y="414" fill="#294b74" font-size="29" font-weight="700">50 min</text>
+    <text x="149" y="494" fill="#294b74" font-size="29" font-weight="700">90 min</text>
+    <rect x="299" y="302" width="193" height="37" rx="18" fill="#6fa9ef"/>
+    <rect x="299" y="382" width="383" height="37" rx="18" fill="#4d87d1"/>
+    <rect x="299" y="462" width="688" height="37" rx="18" fill="#315fa6"/>
+    <text x="516" y="330" fill="#49627d" font-size="23">Get started</text>
+    <text x="706" y="410" fill="#49627d" font-size="23">Build momentum</text>
+    <text x="793" y="539" fill="#49627d" font-size="23">Protect context</text>
+  </g>
+</svg>

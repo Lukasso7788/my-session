@@ -31,6 +31,8 @@ If you hit a question you cannot answer, write down the exact obstacle. “I do 
 
 For a short assignment or difficult start, try a [25-minute focus session](/focus-session-25-minutes). For a problem set or draft, [50 minutes](/focus-session-50-minutes) may leave enough room to warm up and make progress. Choose the duration for the task, not because one number is universally best.
 
+Our [focus-session length guide](/blog/choose-25-50-or-90-minute-focus-session) compares shorter and longer blocks when you need help deciding.
+
 ## At check-in: report evidence, then choose the next move
 
 The end of the block is a good time to compare the intention with the result. You might say, “I answered eight questions and found two weak topics,” or “I outlined the essay, but the introduction needs another pass.” Both are real progress.

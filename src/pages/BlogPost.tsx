@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, ArrowRight, Clock3 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import MarkdownArticle from "../components/MarkdownArticle";
-import { bundledBlogPosts, getBundledBlogPost, mergePublishedBlogPosts } from "../data/blogEditorial";
+import { bundledBlogPosts, getBlogCoverAlt, getBlogPostRoute, getBundledBlogPost, mergePublishedBlogPosts } from "../data/blogEditorial";
 import { starterFocusmatePost, withStarterFocusmateAssets } from "../data/blogSeed";
 import {
   estimateReadingMinutes,
@@ -13,9 +13,6 @@ import {
 import { applyPageSeo, safeJsonLd } from "../lib/pageSeo";
 
 const SITE_ORIGIN = "https://mysession.club";
-const FOCUSMATE_COVER_ALT =
-  "Three colleagues working together around laptops and documents at a shared office desk";
-
 function absoluteSiteUrl(value?: string | null) {
   if (!value) return undefined;
   try {
@@ -35,8 +32,9 @@ function formatLongDate(value?: string | null) {
     year: "numeric",
   }).format(date);
 }
-export default function BlogPost() {
-  const { slug = "" } = useParams();
+export default function BlogPost({ slugOverride }: { slugOverride?: string }) {
+  const { slug: routeSlug = "" } = useParams();
+  const slug = slugOverride || routeSlug;
   const [post, setPost] = useState<BlogPostRecord | null>(
     getBundledBlogPost(slug),
   );
@@ -82,23 +80,20 @@ export default function BlogPost() {
       applyPageSeo({
         title: "Article not found | MySession",
         description: "This MySession article is not available.",
-        canonicalUrl: `${SITE_ORIGIN}/blog/${slug}`,
+        canonicalUrl: `${SITE_ORIGIN}${slug === "what-is-body-doubling" ? "/guides/what-is-body-doubling" : `/blog/${slug}`}`,
         noIndex: true,
       });
       return;
     }
 
-    const canonicalUrl = post.canonical_url || `${SITE_ORIGIN}/blog/${post.slug}`;
+    const canonicalUrl = post.canonical_url || `${SITE_ORIGIN}${getBlogPostRoute(post)}`;
     applyPageSeo({
       title: post.seo_title || `${post.title} | MySession`,
       description: post.meta_description || post.excerpt,
       canonicalUrl,
       type: "article",
       imageUrl: post.cover_image_url,
-      imageAlt:
-        post.slug === starterFocusmatePost.slug
-          ? FOCUSMATE_COVER_ALT
-          : `Cover image for ${post.title}`,
+      imageAlt: getBlogCoverAlt(post),
       article: {
         publishedAt: post.published_at,
         modifiedAt: post.updated_at,
@@ -130,7 +125,8 @@ export default function BlogPost() {
     );
   }
 
-  const canonicalUrl = post.canonical_url || `${SITE_ORIGIN}/blog/${post.slug}`;
+  const canonicalUrl = post.canonical_url || `${SITE_ORIGIN}${getBlogPostRoute(post)}`;
+  const isBodyDoublingGuide = post.slug === "what-is-body-doubling";
   const articleJsonLd = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
@@ -150,7 +146,7 @@ export default function BlogPost() {
     "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "MySession", item: SITE_ORIGIN },
-      { "@type": "ListItem", position: 2, name: "Blog", item: `${SITE_ORIGIN}/blog` },
+      { "@type": "ListItem", position: 2, name: isBodyDoublingGuide ? "Body doubling" : "Blog", item: `${SITE_ORIGIN}${isBodyDoublingGuide ? "/body-doubling" : "/blog"}` },
       { "@type": "ListItem", position: 3, name: post.title, item: canonicalUrl },
     ],
   };
@@ -161,8 +157,8 @@ export default function BlogPost() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(breadcrumbJsonLd) }} />
 
       <header className="mx-auto max-w-[900px] px-4 pb-8 pt-10 sm:px-6 sm:pt-14">
-        <Link to="/blog" className="inline-flex items-center gap-2 text-[12px] font-medium text-[#777] transition hover:text-[#2F2F2F]">
-          <ArrowLeft size={14} /> MySession Blog
+        <Link to={isBodyDoublingGuide ? "/body-doubling" : "/blog"} className="inline-flex items-center gap-2 text-[12px] font-medium text-[#777] transition hover:text-[#2F2F2F]">
+          <ArrowLeft size={14} /> {isBodyDoublingGuide ? "Body doubling" : "MySession Blog"}
         </Link>
 
         <div className="mt-9 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#5B9D61]">{post.category}</div>
@@ -182,12 +178,11 @@ export default function BlogPost() {
         <div className="mx-auto max-w-[1080px] px-4 sm:px-6">
           <img
             src={post.cover_image_url}
-            alt={
-              post.slug === starterFocusmatePost.slug
-                ? FOCUSMATE_COVER_ALT
-                : `Cover illustration for ${post.title}`
-            }
+            alt={getBlogCoverAlt(post)}
             className="max-h-[560px] w-full rounded-[26px] bg-[#F7F7F7] object-cover"
+            decoding="async"
+            width={1200}
+            height={630}
           />
           {post.slug === starterFocusmatePost.slug ? (
             <p className="mt-2 px-1 text-right text-[11px] text-[#888]">
@@ -234,7 +229,7 @@ export default function BlogPost() {
             <h2 className="text-[24px] font-semibold">Continue reading</h2>
             <div className="mt-6 grid gap-4 md:grid-cols-3">
               {relatedPosts.map((related) => (
-                <Link key={related.id} to={`/blog/${related.slug}`} className="rounded-[18px] bg-white p-5 transition hover:bg-[#EFEFEF]">
+                <Link key={related.id} to={getBlogPostRoute(related)} className="rounded-[18px] bg-white p-5 transition hover:bg-[#EFEFEF]">
                   <div className="text-[11px] uppercase tracking-[0.12em] text-[#888]">{related.category}</div>
                   <div className="mt-3 text-[16px] font-semibold leading-6">{related.title}</div>
                   <div className="mt-4 inline-flex items-center gap-1.5 text-[11px] text-[#777]"><Clock3 size={12} /> {estimateReadingMinutes(related.content_markdown)} min</div>

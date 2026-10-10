@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#f5f0e9"/>
+  <circle cx="1120" cy="70" r="173" fill="#eee0cb"/>
+  <rect x="104" y="86" width="992" height="458" rx="40" fill="#fff" stroke="#eadfce" stroke-width="2"/>
+  <text x="151" y="157" fill="#a26946" font-family="Arial,sans-serif" font-size="23" font-weight="700" letter-spacing="3">REMOTE WORK</text>
+  <text x="151" y="230" fill="#41352e" font-family="Arial,sans-serif" font-size="49" font-weight="700">Accountability without</text>
+  <text x="151" y="290" fill="#41352e" font-family="Arial,sans-serif" font-size="49" font-weight="700">another meeting.</text>
+  <g font-family="Arial,sans-serif" font-size="25" font-weight="700">
+    <rect x="151" y="358" width="269" height="99" rx="25" fill="#f7e8db"/>
+    <rect x="466" y="358" width="269" height="99" rx="25" fill="#eee3fa"/>
+    <rect x="781" y="358" width="269" height="99" rx="25" fill="#e2f1e8"/>
+    <text x="207" y="419" fill="#8f5f40">Clear outcome</text>
+    <text x="526" y="419" fill="#69518e">Focus block</text>
+    <text x="832" y="419" fill="#47755a">Short handoff</text>
+  </g>
+  <path d="M432 407h22m293 0h22" stroke="#8b8078" stroke-width="5" stroke-linecap="round"/>
+</svg>

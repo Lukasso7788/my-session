@@ -126,8 +126,7 @@ export const starterFocusmatePost: BlogPost = {
   author_name: "MySession Editorial",
   cover_image_url: "/blog/focusmate-alternatives/focusmate-alternative-cover.jpg",
   seo_title: "Focusmate Alternative for Group Focus Rooms | MySession",
-  meta_description:
-    "Looking for a Focusmate alternative? Compare scheduled 1:1 body doubling with MySession group sessions and 24/7 focus rooms.",
+  meta_description: "Compare Focusmate with MySession's group focus rooms.",
   focus_keyword: "Focusmate alternative",
   canonical_url: "https://mysession.club/blog/best-focusmate-alternatives",
   featured: true,

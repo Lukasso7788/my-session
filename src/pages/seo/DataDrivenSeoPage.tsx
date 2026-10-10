@@ -5,6 +5,7 @@ import { applyPageSeo, safeJsonLd } from "../../lib/pageSeo";
 import { buildSeoPageStructuredData } from "../../lib/seoStructuredData";
 import {
   getRelatedSeoPages,
+  seoPagesBySlug,
   type SeoPageDefinition,
 } from "../../data/seoPageRegistry";
 
@@ -17,13 +18,22 @@ const ctaLabels: Record<SeoPageDefinition["ctaVariant"], string> = {
 };
 
 const typeLabels: Record<SeoPageDefinition["pageType"], string> = {
+  "topic-hub": "Topic hub",
   guide: "Practical guide",
   "use-case": "Use case",
   comparison: "Platform comparison",
   "session-format": "Session format",
 };
 
-export default function DataDrivenSeoPage({ page }: { page: SeoPageDefinition }) {
+export default function DataDrivenSeoPage({ slug }: { slug: string }) {
+  const page = seoPagesBySlug.get(slug);
+  if (!page) {
+    return <main className="min-h-screen px-5 py-20 text-center">Guide not found.</main>;
+  }
+  return <SeoPageContent page={page} />;
+}
+
+function SeoPageContent({ page }: { page: SeoPageDefinition }) {
   const relatedPages = getRelatedSeoPages(page);
   const canonicalUrl = page.canonicalUrl;
 
@@ -85,6 +95,19 @@ export default function DataDrivenSeoPage({ page }: { page: SeoPageDefinition })
             </div>
           </div>
         </header>
+
+        {page.pageType === "topic-hub" ? (
+          <section className="mt-5 rounded-2xl border border-[#d9eade] bg-white p-5 sm:p-7">
+            <div className="text-xs font-semibold uppercase tracking-wide text-[#2f8f43]">Start with the essentials</div>
+            <h2 className="mt-2 text-xl font-bold">What is body doubling?</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-black/65">
+              Read the complete guide to shared presence, session structure, and a simple first focus block.
+            </p>
+            <Link to="/guides/what-is-body-doubling" className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-[#257c3b] underline underline-offset-4">
+              Read the full body doubling guide <ArrowRight size={15} aria-hidden="true" />
+            </Link>
+          </section>
+        ) : null}
 
         <section aria-label="MySession focus room features" className="mt-5 grid gap-3 sm:grid-cols-3">
           {[

@@ -12,6 +12,8 @@ The purpose is not to prove that you were online. It is to make an independent w
 
 **3. Leave a handoff.** At the end, write what changed and the first action for the next block. A handoff keeps a future session from starting with another round of figuring out where you were.
 
+If the hardest part is beginning the block, try the [ten-minute focus-session on-ramp](/blog/how-to-start-a-focus-session-when-stuck) before you adjust the rest of your routine.
+
 For example: “Reviewed the draft, resolved two comments, waiting for one decision; next, update the summary after the reply arrives.” That tells you more than a green online indicator or a calendar full of meetings.
 
 ## Match the room to the kind of work

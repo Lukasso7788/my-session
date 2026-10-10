@@ -65,6 +65,16 @@ function sanitizeArticleHtml(html: string) {
     }
   }
 
+  for (const table of Array.from(documentNode.body.querySelectorAll("table"))) {
+    const scrollRegion = documentNode.createElement("div");
+    scrollRegion.className = "blog-table-scroll";
+    scrollRegion.setAttribute("role", "region");
+    scrollRegion.setAttribute("aria-label", "Scrollable article table");
+    scrollRegion.setAttribute("tabindex", "0");
+    table.replaceWith(scrollRegion);
+    scrollRegion.append(table);
+  }
+
   return documentNode.body.innerHTML;
 }
 

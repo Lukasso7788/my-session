@@ -2,24 +2,24 @@
   {
     "slug": "body-doubling",
     "route": "/body-doubling",
-    "pageType": "guide",
+    "pageType": "topic-hub",
     "cluster": "body-doubling",
-    "title": "Body Doubling: A Practical Guide | MySession",
-    "metaDescription": "Learn how body doubling works, why shared presence can make starting easier, and how to try structured online focus sessions with MySession.",
-    "h1": "What is body doubling?",
-    "heroDescription": "Body doubling means working while another person is present. You keep ownership of your task; the shared environment makes it easier to begin and stay with it.",
-    "primaryKeyword": "body doubling",
+    "title": "Body Doubling Sessions and Guides | MySession",
+    "metaDescription": "Explore body doubling guides and live focus rooms.",
+    "h1": "Body doubling: sessions and guides",
+    "heroDescription": "Find a live focus room, choose the amount of structure you need, and explore practical guides for studying, remote work, and difficult starts.",
+    "primaryKeyword": "body doubling sessions",
     "secondaryKeywords": ["online body doubling", "virtual body double", "accountability sessions"],
-    "searchIntent": "informational",
+    "searchIntent": "informational-commercial",
     "sections": [
-      {"heading":"How body doubling works","body":["A body double does not complete the task for you or supervise every step. Their presence creates a simple social cue: this is the time and place where both people are working.","Online sessions make that cue available without travel. Participants briefly state an intention, work quietly, and return for a check-in at the end."],"bullets":["Choose one concrete task","Say what you intend to finish","Work in a visible shared room","Check in when the focus block ends"]},
-      {"heading":"Why shared presence can reduce friction","body":["Many difficult tasks are not difficult because of skill. The friction is often starting, returning after distraction, or deciding what to do next. A predictable session removes some of those decisions.","Body doubling is a productivity practice, not medical treatment. Different people respond differently, so the useful test is whether it makes your next work block easier to enter and complete."]},
-      {"heading":"Ways to use body doubling","body":["Use it for studying, administration, creative work, job searching, household planning, or any task that benefits from a clear start and finish."],"bullets":["Scheduled group sessions for a fixed commitment","Always-open rooms when you need to start now","Short 25-minute blocks for a small task","Longer 50- or 90-minute blocks for deeper work"]}
+      {"heading":"Choose a body doubling room","body":["A scheduled session gives you an appointment to show up for. An always-open room lets you begin when the task is in front of you. Both formats make independent work feel less isolated without turning it into another meeting.","Pick a room by start time, length, and participation rules. The right choice is the one you can join and use for a concrete outcome today."],"bullets":["Scheduled group sessions for a fixed commitment","Always-open rooms when you need to start now","Short blocks for an avoided task","Longer blocks for work with expensive context"]},
+      {"heading":"Explore guides for different needs","body":["New to the method? Start with our full explanation of what body doubling is and how an online session works. If the challenge is more specific, use the related guides for ADHD, studying, or procrastination.","You do not need to work on the same subject as other people in the room. Shared presence provides a working rhythm while each person keeps control of their own task."]},
+      {"heading":"Try one focused block","body":["Choose a single outcome you can check at the end, enter a suitable session, and name your first action. When the block ends, record what changed and what you will do next.","Body doubling is a practical focus format, not a medical treatment or a promise that every task will suddenly feel easy. Use the session as one tool for building a repeatable work routine."]}
     ],
     "faqItems": [
-      {"question":"Do I need to talk during a body doubling session?","answer":"No. MySession uses short check-ins around focused work; most of the session can be quiet."},
-      {"question":"Is body doubling only for ADHD?","answer":"No. It is widely associated with ADHD, but anyone who benefits from shared structure can use it."},
-      {"question":"Do I need to share my screen?","answer":"No. You can keep your work private and simply state your intention."}
+      {"question":"Can I join a body doubling room immediately?","answer":"Yes. MySession has always-open rooms as well as scheduled sessions."},
+      {"question":"Do participants need to work on the same task?","answer":"No. Everyone can work independently while sharing a focused time block."},
+      {"question":"Where can I learn how body doubling works?","answer":"Read the detailed What Is Body Doubling guide linked on this page."}
     ],
     "relatedPageSlugs": ["body-doubling-for-adhd","body-doubling-for-studying","virtual-coworking"],
     "ctaVariant": "join",
@@ -27,7 +27,7 @@
     "sitemapPriority": 0.9,
     "changeFrequency": "monthly",
     "createdAt": "2026-07-29",
-    "updatedAt": "2026-07-29"
+    "updatedAt": "2026-10-10"
   },
   {
     "slug":"body-doubling-for-adhd","route":"/body-doubling-for-adhd","pageType":"use-case","cluster":"body-doubling","title":"Body Doubling for ADHD | MySession","metaDescription":"A practical, non-clinical guide to ADHD body doubling: reduce start friction, create gentle accountability, and choose a focus session that fits.","h1":"Body doubling for ADHD","heroDescription":"A shared focus room can provide an external starting cue and gentle accountability when a task feels hard to begin alone.","primaryKeyword":"body doubling for ADHD","secondaryKeywords":["ADHD body double","ADHD focus sessions","online accountability"],"searchIntent":"informational-commercial","sections":[{"heading":"What it can help with","body":["Body doubling can be useful when intention is present but activation is difficult. The other participant is not monitoring you; their presence supplies a stable context for doing the task."],"bullets":["Starting an avoided task","Returning after distraction","Defining a realistic work block","Closing the session with a clear next step"]},{"heading":"A low-pressure way to try it","body":["Pick a task small enough to describe in one sentence. Join a 25- or 50-minute room, state that intention, and avoid expanding the plan during the block.","This is a productivity technique rather than a diagnosis or treatment. Professional care remains important when symptoms affect health or daily functioning."]},{"heading":"Structure without micromanagement","body":["MySession combines intentions, visible tasks, stage cues, chat and optional room sound. These tools create structure while leaving each participant in control of their own work."]}],"faqItems":[{"question":"Is ADHD body doubling therapy?","answer":"No. It is a practical accountability technique and not a substitute for medical or psychological care."},{"question":"What session length should I start with?","answer":"A 25-minute session is a useful low-friction first test. Choose longer blocks when the task already has momentum."}],"relatedPageSlugs":["body-doubling","body-doubling-for-procrastination","focus-session-25-minutes"],"ctaVariant":"try","indexable":true,"sitemapPriority":0.9,"changeFrequency":"monthly","createdAt":"2026-07-29","updatedAt":"2026-07-29"},

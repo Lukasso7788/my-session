@@ -13,10 +13,11 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   It was created from `e673e3317182a7b3ad683ff1deffdac79142fcfc`,
   which matched `origin/main` on 2026-10-09. Commit only the relevant files
   and push HEAD:main only after checking origin/main for new commits.
-- Current task: publish additional bundled SEO blog articles and release the
-  pending sitemap/canonical repair. The latest sections record the article
-  source, React/Supabase fallback, prerender/sitemap pipeline, verification,
-  and release caveats. The separate 07:00 Kyiv Plunk schedule digest is
+- Current task: fix the white screen on `/body-doubling`, make that URL a
+  parent hub with a separate `/guides/what-is-body-doubling` article, and
+  finish the SEO editorial release. The latest sections record the runtime
+  failure, article source, React/Supabase fallback, prerender/sitemap pipeline,
+  verification, and release caveats. The separate 07:00 Kyiv Plunk schedule digest is
   documented later in this file and in docs/plunk-email-rollout.md; do not
   change its audience, scheduling, or consent logic as part of SEO work.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
@@ -1724,3 +1725,87 @@ not green due to pre-existing repository errors, starting with TS6306/TS6310
 from tsconfig references; do not attribute them to the editorial addition.
 After push, verify Vercel deployment status and production HTML/sitemap;
 Google indexing itself remains unverified without Search Console access.
+
+### 2026-10-10 body-doubling runtime repair and parent/child article routes
+
+Production symptom: `https://mysession.club/body-doubling` first displayed
+prerendered content, then went white after client hydration. Browser console
+showed `TypeError: Cannot read properties of undefined (reading
+'relatedPageSlugs')` from the DataDrivenSeoPage JavaScript chunk. The source
+contract was broken: `src/App.tsx` passed `<DataDrivenSeoPage slug={page.slug}
+/>`, while `src/pages/seo/DataDrivenSeoPage.tsx` expected `{ page:
+SeoPageDefinition }`. When the chunk hydrated, `getRelatedSeoPages(undefined)`
+threw. Every data-driven SEO route was vulnerable, not only body doubling.
+The component now accepts `slug`, resolves it against `seoPagesBySlug`, and
+passes a real page to `SeoPageContent`. Hooks remain in the inner component
+so a missing slug can render a fallback without violating hook order. Do not
+change one side of this route contract without the other. A successful Vite
+build alone did **not** expose this runtime error; browser hydration smoke
+testing is mandatory for SEO routes.
+
+The URL hierarchy now distinguishes the hub from its article:
+
+- `/body-doubling` remains canonical and becomes a `topic-hub` in
+  `src/data/seo-pages.json`. It helps users choose a live room or a guide and
+  links to the child. Client JSON-LD and static prerender mark it as a
+  `CollectionPage` rather than an `Article`.
+- `/guides/what-is-body-doubling` is the new distinct foundational article.
+  `src/App.tsx` routes exactly this guide path to the lazy `BlogPost` renderer
+  with a fixed slug (not every blog article at an alternate `/guides/:slug`);
+  the old potential `/blog/what-is-body-doubling` path redirects to the guide.
+  `src/data/blog-editorial-manifest.json` supplies its route override and
+  `src/content/blog/what-is-body-doubling.md` supplies the original article.
+  Existing `/blog/:slug` routes remain valid. The physical `src/content/blog`
+  folder holds bundled editorial articles; `/guides/` is the separate public
+  article URL folder. No redirect removes `/body-doubling`; existing external
+  links to the parent continue to work.
+- `src/data/blogEditorial.ts` imports editorial Markdown only into the lazy
+  blog bundle and supplies the route/cover/alt helpers. Published Supabase
+  `blog_posts` rows still override bundled rows by slug; no database writes,
+  Auth flow, schema, RLS, or API handlers changed. A database row with slug
+  `what-is-body-doubling` would override the bundled article and must be
+  checked if content unexpectedly differs in production.
+- `scripts/generate-seo-assets.mjs` lists the hub in `sitemap-pages.xml`
+  rather than `sitemap-guides.xml`; the child guide is in the guide sitemap.
+  `scripts/prerender-seo.mjs` and `scripts/prerender-blog.mjs` produce distinct
+  route-specific HTML, metadata, visible content and structured data. The
+  guide's prerendered breadcrumb links to its parent. `src/pages/BlogIndex.tsx`
+  uses the route override so its article card does not link to a noncanonical
+  `/blog/what-is-body-doubling` path.
+
+The four prior bundled articles and the new guide now have SEO titles and
+meta descriptions under the user's 60-character cap, one mapped primary
+keyword each, lightweight 1200x630 SVG cover art in
+`public/blog/editorial/`, descriptive alt text, internal links and explicit
+image dimensions. Non-featured blog-card covers lazy-load; article hero
+images are eager to avoid delaying above-the-fold content. Long Markdown
+tables get a horizontally scrollable, keyboard-focusable region on narrow
+screens. Keyword research evidence and limitations are in
+`docs/seo-keyword-research-2026-10-10.md`; no exact search-volume claim is
+made for the selected long-tail phrases.
+
+Validation for this scope: local `npm run build` generated and verified 31
+sitemap URLs, seven blog HTML routes (index + six articles), 24 SEO HTML
+routes, five editorial articles, and the `CollectionPage` hub.
+`scripts/verify-seo-react-render.mjs`, wired into the build and exposed as
+`npm run seo:verify:react`, uses Vite to load the real TSX and renders all
+13 data-driven SEO routes with the actual `{slug}` prop. This guards against
+the route-prop regression that static HTML checks missed. Browser smoke
+on an unsandboxed local Vite preview at `127.0.0.1:4192` showed a populated
+hub and a working click-through to the guide with descriptive image alt and
+the correct backlink. A narrow browser viewport showed no horizontal page
+overflow. Re-run after final edits. `npm run typecheck` is still blocked by
+pre-existing TS6306/TS6310 tsconfig project-reference errors; a direct
+targeted `tsc` invocation for `DataDrivenSeoPage.tsx` and its dependencies
+passed, while a broad invocation also surfaced pre-existing errors in
+`src/lib/blog.ts` and room pages. Report this honestly and use build, focused
+lint, route rendering and browser hydration checks.
+
+Release verification must establish the deployment SHA and READY/alias state
+and test extensionless production URLs for the hub and guide, including
+post-hydration browser rendering, response metadata/canonicals and sitemap
+placement. Until that happens, do not call the live white screen fixed.
+Generated sitemap files can show pre-existing CRLF noise: stage only logical
+changes to `public/sitemap-guides.xml` and `public/sitemap-pages.xml`, not
+the line-ending-only `public/sitemap.xml` or `sitemap-comparisons.xml`. Preserve
+`mysession-daily-email-cron/.wrangler-dry-run/` and the old root checkout.

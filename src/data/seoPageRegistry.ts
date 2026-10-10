@@ -1,6 +1,6 @@
 import rawPages from "./seo-pages.json";
 
-export type SeoPageType = "guide" | "use-case" | "comparison" | "session-format";
+export type SeoPageType = "topic-hub" | "guide" | "use-case" | "comparison" | "session-format";
 export type SeoSearchIntent = "informational" | "commercial" | "informational-commercial" | "commercial-comparison";
 export type SeoChangeFrequency = "weekly" | "monthly" | "yearly";
 

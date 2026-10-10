@@ -239,3 +239,13 @@ body {
   .ms-session-music-note { animation: none; }
   .ms-session-music-note { display: none; }
 }
+/* Long editorial tables stay inside the viewport and remain keyboard-scrollable. */
+.blog-markdown .blog-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.blog-markdown .blog-table-scroll table {
+  min-width: 560px;
+}

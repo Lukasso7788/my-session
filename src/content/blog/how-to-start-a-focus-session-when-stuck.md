@@ -27,6 +27,8 @@ If a room includes an intentions stage, use it to say what you are doing without
 
 A [25-minute session](/focus-session-25-minutes) is often enough for the first pass of an avoided task. A [50-minute session](/focus-session-50-minutes) gives more room when the work requires some setup. A longer block makes sense when you already know the task and need continuity, not when a longer timer would make starting feel heavier.
 
+If you are unsure which block fits, use the [25, 50, or 90-minute focus-session guide](/blog/choose-25-50-or-90-minute-focus-session) to match the length to your task.
+
 The timer is a boundary, not a target for perfect concentration. If you lose your place, return to the next visible action. If you discover that the task was defined badly, use that discovery to resize it rather than abandoning the block.
 
 ## Close with a handoff to your future self

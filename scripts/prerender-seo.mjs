@@ -146,10 +146,13 @@ function renderVisibleContent(page) {
   const related = (page.relatedPageSlugs || [])
     .map((slug) => pageBySlug.get(slug)).filter(Boolean)
     .map((item) => `<li><a href="${escapeHtml(item.route)}">${escapeHtml(item.h1)}</a></li>`).join("");
+  const hubGuide = page.pageType === "topic-hub"
+    ? '<section><h2>What is body doubling?</h2><p>Read the full explanation of shared presence and how to try a focus block.</p><a href="/guides/what-is-body-doubling">Read the full body doubling guide</a></section>'
+    : "";
   return `<main class="seo-prerender">
     <nav aria-label="Breadcrumb"><a href="/">Home</a> / ${escapeHtml(page.h1)}</nav>
     <header><p>${escapeHtml(page.eyebrow || page.pageType)}</p><h1>${escapeHtml(page.h1)}</h1><p>${escapeHtml(page.heroDescription)}</p><a href="/sessions">Browse focus sessions</a></header>
-    ${sections}${faq}
+    ${hubGuide}${sections}${faq}
     <section><h2>Continue exploring</h2><ul>${related}</ul></section>
   </main>`;
 }
@@ -198,7 +201,7 @@ function render(page) {
         }
       : {
           "@context": "https://schema.org",
-          "@type": page.pageType === "guide" ? "Article" : "WebPage",
+          "@type": page.pageType === "topic-hub" ? "CollectionPage" : page.pageType === "guide" ? "Article" : "WebPage",
           headline: page.h1,
           name: page.h1,
           description: page.metaDescription,

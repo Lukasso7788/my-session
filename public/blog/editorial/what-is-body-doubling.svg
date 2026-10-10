@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#eaf3ee"/>
+  <circle cx="1133" cy="73" r="164" fill="#d3e9db"/>
+  <circle cx="51" cy="560" r="177" fill="#d8eadf"/>
+  <text x="96" y="131" fill="#28734d" font-family="Arial,sans-serif" font-size="24" font-weight="700" letter-spacing="3">BODY DOUBLING</text>
+  <text x="96" y="204" fill="#213b2d" font-family="Arial,sans-serif" font-size="52" font-weight="700">Work on your own tasks.</text>
+  <text x="96" y="267" fill="#213b2d" font-family="Arial,sans-serif" font-size="52" font-weight="700">Show up together.</text>
+  <rect x="96" y="316" width="469" height="233" rx="31" fill="#fff" stroke="#c9ddd0" stroke-width="2"/>
+  <rect x="635" y="316" width="469" height="233" rx="31" fill="#fff" stroke="#c9ddd0" stroke-width="2"/>
+  <circle cx="161" cy="379" r="27" fill="#b7dbc3"/>
+  <circle cx="700" cy="379" r="27" fill="#b7dbc3"/>
+  <path d="M130 444h325m-325 35h223m316-35h327m-327 35h246" stroke="#a7cbb4" stroke-width="16" stroke-linecap="round"/>
+  <text x="202" y="388" fill="#2b6543" font-family="Arial,sans-serif" font-size="29" font-weight="700">Your task</text>
+  <text x="741" y="388" fill="#2b6543" font-family="Arial,sans-serif" font-size="29" font-weight="700">Their task</text>
+  <circle cx="600" cy="429" r="28" fill="#3b9362"/>
+  <path d="M589 429h22" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+</svg>

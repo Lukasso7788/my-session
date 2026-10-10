@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#e9f4ef"/>
+  <circle cx="1055" cy="91" r="151" fill="#c9e8db"/>
+  <circle cx="93" cy="575" r="190" fill="#d8eae3"/>
+  <rect x="102" y="93" width="996" height="444" rx="39" fill="#fff" stroke="#c5ded3" stroke-width="2"/>
+  <text x="153" y="163" fill="#31765a" font-family="Arial,sans-serif" font-size="23" font-weight="700" letter-spacing="3">START SMALL</text>
+  <text x="153" y="232" fill="#263d34" font-family="Arial,sans-serif" font-size="48" font-weight="700">A focus session begins</text>
+  <text x="153" y="288" fill="#263d34" font-family="Arial,sans-serif" font-size="48" font-weight="700">with one visible step.</text>
+  <path d="M163 405h864" stroke="#c5ded3" stroke-width="9" stroke-linecap="round"/>
+  <path d="M163 405h317" stroke="#4fa17b" stroke-width="9" stroke-linecap="round"/>
+  <circle cx="163" cy="405" r="21" fill="#2d7658" stroke="#fff" stroke-width="7"/>
+  <circle cx="480" cy="405" r="21" fill="#2d7658" stroke="#fff" stroke-width="7"/>
+  <circle cx="1027" cy="405" r="21" fill="#fff" stroke="#2d7658" stroke-width="6"/>
+  <text x="153" y="464" fill="#476257" font-family="Arial,sans-serif" font-size="24">Name the task</text>
+  <text x="429" y="464" fill="#476257" font-family="Arial,sans-serif" font-size="24">Begin</text>
+  <text x="919" y="464" fill="#476257" font-family="Arial,sans-serif" font-size="24">Check in</text>
+</svg>

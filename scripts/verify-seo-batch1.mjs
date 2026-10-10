@@ -4,7 +4,7 @@ import path from "node:path";
 const origin = "https://mysession.club";
 const routes = [
   ["/", "WebSite"],
-  ["/body-doubling", "Article"],
+  ["/body-doubling", "CollectionPage"],
   ["/how-it-works", "HowTo"],
   ["/body-doubling-for-adhd", "WebPage"],
   ["/body-doubling-for-studying", "WebPage"],

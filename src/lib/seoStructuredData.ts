@@ -11,7 +11,16 @@ export function buildSeoPageStructuredData(page: SeoPageDefinition) {
       { "@type": "ListItem", position: 2, name: page.h1, item: page.canonicalUrl },
     ],
   };
-  const primary = page.pageType === "guide"
+  const primary = page.pageType === "topic-hub"
+    ? {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        name: page.h1,
+        description: page.metaDescription,
+        url: page.canonicalUrl,
+        hasPart: [{ "@type": "Article", name: "What is body doubling?", url: `${SITE_ORIGIN}/guides/what-is-body-doubling` }],
+      }
+    : page.pageType === "guide"
     ? {
         "@context": "https://schema.org",
         "@type": "Article",
