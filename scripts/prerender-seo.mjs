@@ -111,6 +111,20 @@ const corePages = [
   },
 ];
 
+// These public routes are client-rendered, but must not inherit the homepage's
+// title, canonical, or prerendered content from the SPA fallback HTML.
+const staticPublicPages = [
+  { route: "/sessions", title: "Focus Sessions and 24/7 Rooms | MySession", metaDescription: "Browse scheduled group focus sessions, always-open rooms, and one-on-one options on MySession." },
+  { route: "/pricing", title: "Pricing | MySession", metaDescription: "Explore MySession's free and paid plans for focus sessions, always-open rooms, and productivity tools." },
+  { route: "/faq", title: "FAQ | MySession", metaDescription: "Answers to common questions about MySession, live coworking, body doubling, focus sessions, pricing, cameras, and how sessions work." },
+  { route: "/updates", title: "Latest Updates | MySession", metaDescription: "Read the latest MySession product updates and improvements to focus sessions and productivity tools." },
+  { route: "/affiliate", title: "Affiliate Program | MySession", metaDescription: "Learn about the MySession affiliate program for creators, hosts, and community partners." },
+  { route: "/contact", title: "Contact Information | MySession", metaDescription: "Find MySession seller details and support contact information." },
+  { route: "/terms", title: "Terms and Conditions | MySession", metaDescription: "Read the terms and conditions for using the MySession productivity platform." },
+  { route: "/privacy", title: "Privacy Policy | MySession", metaDescription: "Read how MySession collects, uses, and protects information in its privacy policy." },
+  { route: "/refund-policy", title: "Refund Policy | MySession", metaDescription: "Read the MySession refund policy for purchases and refund requests." },
+];
+
 const prerenderPages = [...corePages, ...pages.filter((item) => item.indexable)];
 const pageBySlug = new Map(prerenderPages.map((page) => [page.slug, page]));
 
@@ -140,7 +154,7 @@ function renderVisibleContent(page) {
   </main>`;
 }
 
-function render(page) {
+function renderMetadata(page) {
   const canonical = `https://mysession.club${page.route}`;
   const title = escapeHtml(page.title);
   const description = escapeHtml(page.metaDescription);
@@ -154,6 +168,12 @@ function render(page) {
   html = replaceOrInsert(html, /<meta\s+property="og:type"[\s\S]*?\/?>/i, `<meta property="og:type" content="${page.pageType === "guide" ? "article" : "website"}" />`);
   html = replaceOrInsert(html, /<meta\s+name="twitter:title"[\s\S]*?\/?>/i, `<meta name="twitter:title" content="${title}" />`);
   html = replaceOrInsert(html, /<meta\s+name="twitter:description"[\s\S]*?\/?>/i, `<meta name="twitter:description" content="${description}" />`);
+  return html;
+}
+
+function render(page) {
+  const canonical = `https://mysession.club${page.route}`;
+  let html = renderMetadata(page);
   const jsonLd = page.schemaType === "WebSite"
     ? {
         "@context": "https://schema.org",
@@ -199,4 +219,11 @@ for (const page of prerenderPages) {
   await mkdir(output, { recursive: true });
   await writeFile(path.join(output, "index.html"), render(page), "utf8");
 }
-console.log(`[prerender-seo] Wrote ${prerenderPages.length} route-specific HTML files.`);
+for (const page of staticPublicPages) {
+  const output = path.join(dist, ...page.route.slice(1).split("/"));
+  await mkdir(output, { recursive: true });
+  // Keep the SPA root empty: legal/product content is rendered by its existing
+  // React route, while crawlers receive accurate route-specific head metadata.
+  await writeFile(path.join(output, "index.html"), renderMetadata(page), "utf8");
+}
+console.log(`[prerender-seo] Wrote ${prerenderPages.length + staticPublicPages.length} route-specific HTML files.`);

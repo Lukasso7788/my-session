@@ -3,8 +3,6 @@ import { Navigate, Routes, Route, useParams } from "react-router-dom";
 
 import LandingPage from "./pages/LandingPage";
 import AuthCallback from "./pages/AuthCallback";
-import BlogIndex from "./pages/BlogIndex";
-import BlogPost from "./pages/BlogPost";
 
 import PricingPage from "./pages/PricingPage";
 import PricingSuccessPage from "./pages/PricingSuccessPage";
@@ -36,6 +34,9 @@ import { seoRouteManifest } from "./data/seoRouteManifest";
 import NotFoundPage from "./pages/NotFoundPage";
 
 const DataDrivenSeoPage = lazy(() => import("./pages/seo/DataDrivenSeoPage"));
+// Keep bundled editorial markdown out of the room and landing bundles.
+const BlogIndex = lazy(() => import("./pages/BlogIndex"));
+const BlogPost = lazy(() => import("./pages/BlogPost"));
 // Keep media SDKs, chat and task panels out of the initial landing/Sessions bundle.
 const SessionsPage = lazy(() => import("./pages/SessionsPage"));
 const RoomPageIFrame = lazy(() => import("./pages/RoomPageIFrame"));

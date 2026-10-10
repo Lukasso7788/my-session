@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, BookOpen, Clock3 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { starterFocusmatePost, withStarterFocusmateAssets } from "../data/blogSeed";
+import { bundledBlogPosts, mergePublishedBlogPosts } from "../data/blogEditorial";
+import { starterFocusmatePost } from "../data/blogSeed";
 import { estimateReadingMinutes, listPublishedBlogPosts, type BlogPost } from "../lib/blog";
 import { applyPageSeo, safeJsonLd } from "../lib/pageSeo";
 
@@ -87,7 +88,7 @@ function PostCard({ post, featured = false }: { post: BlogPost; featured?: boole
 }
 
 export default function BlogIndex() {
-  const [posts, setPosts] = useState<BlogPost[]>([starterFocusmatePost]);
+  const [posts, setPosts] = useState<BlogPost[]>(bundledBlogPosts);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -106,18 +107,10 @@ export default function BlogIndex() {
       try {
         const databasePosts = await listPublishedBlogPosts();
         if (cancelled) return;
-        const postsWithEditorialAssets = databasePosts.map(withStarterFocusmateAssets);
-        const hasStarter = postsWithEditorialAssets.some(
-          (post) => post.slug === starterFocusmatePost.slug,
-        );
-        setPosts(
-          hasStarter
-            ? postsWithEditorialAssets
-            : [starterFocusmatePost, ...postsWithEditorialAssets],
-        );
+        setPosts(mergePublishedBlogPosts(databasePosts));
       } catch (error) {
-        console.warn("[blog] published posts unavailable; using bundled article", error);
-        if (!cancelled) setPosts([starterFocusmatePost]);
+        console.warn("[blog] published posts unavailable; using bundled articles", error);
+        if (!cancelled) setPosts(bundledBlogPosts);
       } finally {
         if (!cancelled) setLoading(false);
       }

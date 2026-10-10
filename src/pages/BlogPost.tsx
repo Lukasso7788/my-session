@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, ArrowRight, Clock3 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import MarkdownArticle from "../components/MarkdownArticle";
+import { bundledBlogPosts, getBundledBlogPost, mergePublishedBlogPosts } from "../data/blogEditorial";
 import { starterFocusmatePost, withStarterFocusmateAssets } from "../data/blogSeed";
 import {
   estimateReadingMinutes,
@@ -37,7 +38,7 @@ function formatLongDate(value?: string | null) {
 export default function BlogPost() {
   const { slug = "" } = useParams();
   const [post, setPost] = useState<BlogPostRecord | null>(
-    slug === starterFocusmatePost.slug ? starterFocusmatePost : null,
+    getBundledBlogPost(slug),
   );
   const [relatedPosts, setRelatedPosts] = useState<BlogPostRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +48,7 @@ export default function BlogPost() {
     setLoading(true);
 
     const load = async () => {
+      setPost(getBundledBlogPost(slug));
       try {
         const [databasePost, publishedPosts] = await Promise.all([
           getPublishedBlogPost(slug),
@@ -54,14 +56,14 @@ export default function BlogPost() {
         ]);
         if (cancelled) return;
 
-        const fallback = slug === starterFocusmatePost.slug ? starterFocusmatePost : null;
+        const fallback = getBundledBlogPost(slug);
         setPost(databasePost ? withStarterFocusmateAssets(databasePost) : fallback);
-        setRelatedPosts(publishedPosts.filter((candidate) => candidate.slug !== slug).slice(0, 3));
+        setRelatedPosts(mergePublishedBlogPosts(publishedPosts).filter((candidate) => candidate.slug !== slug).slice(0, 3));
       } catch (error) {
         console.warn("[blog] article load failed", error);
         if (!cancelled) {
-          setPost(slug === starterFocusmatePost.slug ? starterFocusmatePost : null);
-          setRelatedPosts([]);
+          setPost(getBundledBlogPost(slug));
+          setRelatedPosts(bundledBlogPosts.filter((candidate) => candidate.slug !== slug).slice(0, 3));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -75,7 +77,7 @@ export default function BlogPost() {
   }, [slug]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading && !post) return;
     if (!post) {
       applyPageSeo({
         title: "Article not found | MySession",

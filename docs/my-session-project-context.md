@@ -1,6 +1,6 @@
 # MySession — project architecture and continuation context
 
-Updated: 2026-10-09. This is a project-wide navigation/architecture handoff based on
+Updated: 2026-10-10. This is a project-wide navigation/architecture handoff based on
 the checked-out source, not a claim that every module or production service was
 audited. Never put secret values, tokens, user exports or private logs in this file.
 
@@ -13,14 +13,12 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   It was created from `e673e3317182a7b3ad683ff1deffdac79142fcfc`,
   which matched `origin/main` on 2026-10-09. Commit only the relevant files
   and push HEAD:main only after checking origin/main for new commits.
-- Current task: run the daily Plunk schedule digest at 07:00 Europe/Kyiv
-  for the existing eligible audience. The broader feature provides a digest
-  showing public scheduled sessions and Infinite Room host time ranges. The
-  latest section records exact files, data/consent flow, cron, tests and
-  activation. Previous room palette, timezone and Plunk lifecycle work is
-  documented in sections below and docs/plunk-email-rollout.md. Do not
-  widen the daily audience to non-consenting users or change unrelated room
-  behavior as part of this email task.
+- Current task: publish additional bundled SEO blog articles and release the
+  pending sitemap/canonical repair. The latest sections record the article
+  source, React/Supabase fallback, prerender/sitemap pipeline, verification,
+  and release caveats. The separate 07:00 Kyiv Plunk schedule digest is
+  documented later in this file and in docs/plunk-email-rollout.md; do not
+  change its audience, scheduling, or consent logic as part of SEO work.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
   Do not reset, delete or overwrite it. Inspect active worktree status before
   staging; never stage unrelated generated files.
@@ -1612,3 +1610,117 @@ project-reference configuration errors TS6306/TS6310. Production
 runtime-error scan from Vercel MCP returned a transient unusable response;
 do not claim it passed. The Worker secret-name listing still showed only
 `DAILY_SCHEDULE_CRON_SECRET`; the Sender secret remains absent.
+
+### 2026-10-10 sitemap / canonical indexing repair (included in pending SEO release)
+
+User asked why Google Search Console does not index the sitemap/pages and
+authorized necessary code fixes. A sitemap is read/processed, while its page
+URLs are crawled/indexed separately. The GSC Wizard connector is unavailable
+(`payment_required` after trial), so exact Search Console Sitemaps and URL
+Inspection statuses have not been observed. Do not claim Google indexed the
+pages without that evidence. No login, credentials, or GSC write action was
+needed for the confirmed HTML problem.
+
+Read-only production audit before this change (2026-10-10):
+
+- `https://mysession.club/sitemap.xml` and all three child sitemaps returned
+  HTTP 200 with `application/xml`; `robots.txt` returned HTTP 200 and declared
+  the index. The children listed 20 + 3 + 3 = 26 URLs. All 26 URLs returned
+  HTTP 200 and none of the raw responses had `noindex`.
+- Nine listed routes (`/sessions`, `/pricing`, `/faq`, `/updates`, `/affiliate`,
+  `/contact`, `/terms`, `/privacy`, `/refund-policy`) returned the homepage raw
+  HTML: homepage title, canonical `https://mysession.club/`, and homepage
+  prerendered content. The other 17 listed URLs had self-canonicals. This is
+  a real conflicting canonical/content signal, but does not explain a literal
+  GSC `Couldn't fetch` sitemap status.
+- Cause: `scripts/generate-seo-assets.mjs` included those nine routes in
+  `sitemap-pages.xml`, but `scripts/prerender-seo.mjs` had not created HTML
+  for them. `vercel.json` uses filesystem-first routes, then an SPA fallback
+  to `/index.html`. Missing route files received the prerendered homepage.
+
+Current local fix is in `C:\projects\my-session\.codex-safe-daily-email-7am`
+(detached HEAD at `c439e14` before editing; `origin/main` was also `c439e14`
+when checked):
+
+- `scripts/prerender-seo.mjs` writes route-specific HTML shells for the nine
+  public client-rendered pages, each with unique title, description, OG/Twitter
+  metadata and self-canonical. Existing React routes and content remain
+  unchanged. The shell has an empty `#root` instead of incorrect homepage
+  prerendered content; React supplies the real page. If GSC later reports
+  rendering/content problems, investigate full prerender separately rather
+  than inventing legal-policy text.
+- `scripts/verify-sitemap-pages.mjs` checks the built sitemap index and every
+  listed URL for a route-specific file, one self-canonical, non-home title,
+  no `noindex`, duplicates, or noncanonical origins. `package.json` runs it
+  after build and exposes `npm run seo:verify:sitemap`.
+- Initial `npm run build` passed, including the existing five-page SEO
+  verification and new 26-page sitemap check. The editorial addition below
+  raises the sitemap count to 30 and adds a separate blog-content verifier.
+  `npm run typecheck` remains blocked by pre-existing tsconfig reference
+  errors TS6306/TS6310; the combined release now also changes blog TS/TSX.
+- Local Vite preview `/sessions` (no trailing slash) falls back to root HTML,
+  while `/sessions/` and `/sessions/index.html` serve the new file. The same
+  preview behavior affects the existing `/body-doubling-for-adhd` route,
+  which production serves correctly without the slash. This is a preview
+  routing difference, not evidence of Vercel production behavior. Verify
+  the new extensionless routes on Vercel after an authorized release.
+- Do not call the production issue fixed until a READY release and its live
+  extensionless routes are checked. The pre-existing
+  `mysession-daily-email-cron/.wrangler-dry-run/` is unrelated and must not be
+  staged. Only `public/sitemap-guides.xml` changes logically in this task;
+  other generated sitemap files only show local line-ending noise and should
+  not be staged. Do not reset or delete the old, dirty root checkout.
+
+### 2026-10-10 bundled SEO editorial expansion
+
+The user expected more than one SEO blog article. Search of both SEO
+worktrees (`.codex-safe-seo-batch1` and `.codex-safe-seo-remaining`) found no
+uncommitted article drafts; the latter had only generated sitemap line-ending
+changes. Before this work, `src/data/blogSeed.ts` supplied one bundled
+Focusmate article, while `src/data/seo-pages.json` supplied 13 separate SEO
+landing/guide/comparison routes. Those landing pages were not blog articles.
+
+This release adds four original, practical, English-language articles:
+
+- `/blog/how-to-start-a-focus-session-when-stuck`
+- `/blog/body-doubling-study-session-routine`
+- `/blog/remote-work-accountability-without-meetings`
+- `/blog/choose-25-50-or-90-minute-focus-session`
+
+Source of truth is `src/data/blog-editorial-manifest.json` for slugs, titles,
+descriptions, dates and markdown filenames, and `src/content/blog/*.md` for
+full article text. `src/data/blogEditorial.ts` imports each Markdown file as
+Vite `?raw`, builds stable `BlogPost` objects and merges them by slug with
+Supabase `blog_posts` query results. A published database row with the same
+slug has priority; bundled articles remain visible when the database is
+unavailable. This does not write to Supabase, change the table/RLS, create
+admin records or alter the admin editor. Bundled posts cannot be unpublished
+from the admin editor without a code change; an admin post with the same slug
+can override their content.
+
+`src/pages/BlogIndex.tsx` starts with the bundled list and then merges any
+published database posts; `src/pages/BlogPost.tsx` resolves bundled slugs
+immediately and uses the database result if one exists. Related articles use
+the same merged list. `src/App.tsx` lazily loads both blog routes so the new
+Markdown is not downloaded on room/landing entry. The existing React Router
+paths `/blog` and `/blog/:slug` remain unchanged. The article pages still
+render client-side after loading; no new server-side Supabase dependency.
+
+`scripts/generate-seo-assets.mjs` adds four article URLs to
+`public/sitemap-guides.xml`. `scripts/prerender-blog.mjs` writes per-article
+HTML with self-canonical, unique title/description, static visible Markdown
+content, and BlogPosting JSON-LD. As with existing SEO pages, a tiny inline
+script clears the prerendered text before React mounts to avoid a duplicate
+or mismatched content flash. `scripts/verify-sitemap-pages.mjs` checks all
+30 sitemap URLs; `scripts/verify-blog-editorial.mjs` additionally checks
+manifest uniqueness, minimum article depth, no raw HTML, sitemap presence,
+canonical, visible H1, schema, and React handoff. `package.json` runs both
+verifiers during build and exposes `npm run seo:verify:blog`.
+
+Validation in this checkout: `npm run build` passed with 30 sitemap URLs,
+six blog HTML files (index + five articles), and 24 SEO route HTML files.
+`npm run seo:verify:blog` and focused ESLint passed. Global TS checks are
+not green due to pre-existing repository errors, starting with TS6306/TS6310
+from tsconfig references; do not attribute them to the editorial addition.
+After push, verify Vercel deployment status and production HTML/sitemap;
+Google indexing itself remains unverified without Search Console access.

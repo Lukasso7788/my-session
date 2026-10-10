@@ -3,6 +3,7 @@ import path from "node:path";
 
 const origin = "https://mysession.club";
 const pages = JSON.parse(await readFile(path.resolve("src/data/seo-pages.json"), "utf8"));
+const editorialPosts = JSON.parse(await readFile(path.resolve("src/data/blog-editorial-manifest.json"), "utf8"));
 const staticPages = [
   ["/", "weekly", 1],
   ["/sessions", "daily", 0.8],
@@ -32,6 +33,12 @@ const pageEntries = [...normalizedStatic, ...indexable.filter((page) => ["use-ca
 const guideEntries = [
   ...indexable.filter((page) => page.pageType === "guide"),
   { route: "/blog/best-focusmate-alternatives", changeFrequency: "monthly", sitemapPriority: 0.8, updatedAt: "2026-07-29" },
+  ...editorialPosts.map((post) => ({
+    route: `/blog/${post.slug}`,
+    changeFrequency: "monthly",
+    sitemapPriority: 0.7,
+    updatedAt: post.publishedAt.slice(0, 10),
+  })),
 ];
 const comparisonEntries = indexable.filter((page) => page.pageType === "comparison");
 
