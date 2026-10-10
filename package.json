@@ -14,6 +14,8 @@
     "seo:verify:sitemap": "node scripts/verify-sitemap-pages.mjs",
     "seo:verify:blog": "node scripts/verify-blog-editorial.mjs",
     "seo:verify:react": "node scripts/verify-seo-react-render.mjs",
+    "covers:photos": "node scripts/editorial-covers/download-photos.mjs",
+    "covers:render": "node scripts/editorial-covers/render.mjs",
     "test:affiliate": "node --test tests/affiliateCommission.test.mjs"
   },
   "dependencies": {

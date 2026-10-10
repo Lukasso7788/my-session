@@ -25,6 +25,10 @@ audited. Never put secret values, tokens, user exports or private logs in this f
   staging; never stage unrelated generated files.
 - User requests full project architectural/technical context in a file for every
   code task. Keep this file and feature-specific handoffs current and link them.
+- Latest working checkout for the 2026-10-10 SEO photo-cover task is
+  `C:\projects\my-session\.codex-safe-room-side-panels` on
+  `codex/room-side-panels-overlay`; see the final section for its exact asset
+  pipeline and verification. Earlier checkout/task notes above are historical.
 - Latest explicit restriction: do NOT change video behavior during performance
   work. This includes tab/background handling, capture/send/receive quality,
   subscriptions, attachment/recovery, fullscreen and PiP. Discuss any proposed
@@ -2051,3 +2055,56 @@ to `origin/main`, and `git ls-remote origin refs/heads/main` confirmed the
 remote at `7ba6a0dcf50518c5a18288cc962498a5700722ae`. Production was not
 checked in this turn. Three sitemap files with line-ending-only differences
 remain unstaged in the working tree and should not be swept into future work.
+
+## 2026-10-10 photo-composite covers for the five latest SEO articles
+
+Scope: five bundled English editorial posts in
+`src/data/blog-editorial-manifest.json`, including the guide at
+`/guides/what-is-body-doubling` and four `/blog/*` articles. Existing
+Focusmate blog imagery and the `/body-doubling` parent hub were not changed.
+The old five SVG covers remain in `public/blog/editorial` for recoverability,
+but the manifest no longer references them. Every current article cover is a
+1200 x 630 JPEG under `public/blog/editorial/<slug>-cover.jpg`; these same
+paths feed article cards, article hero images and social preview metadata.
+
+Asset generation architecture: `scripts/editorial-covers/sources.json` is the
+single metadata/provenance list: slug, Pexels photo ID, original photo page,
+photographer, descriptive source text and per-cover copy/theme. The five
+source JPGs live in `scripts/editorial-covers/photos`; keeping them local
+makes builds and future regenerations independent of live photo CDNs.
+`npm run covers:photos` redownloads source photos from Pexels only if a source
+needs replacing, and `npm run covers:render` fills the HTML/CSS template in
+`scripts/editorial-covers/cover-template.html`, writes reproducible standalone
+HTML to `scripts/editorial-covers/compositions`, then screenshots those pages
+with headless local Chrome through CDP into the public JPEG paths. The render
+script requires Node with a global WebSocket (Node 22 here) and Chrome at
+`C:\Program Files\Google\Chrome\Application\chrome.exe`, or `CHROME_PATH`.
+It checks photo decoding and font readiness before capture. The template
+references local Inter fonts in `public/fonts`. Source photos were selected
+from Pexels with website/modification use allowed under its license; original
+page and photographer credits are recorded in the source JSON and displayed
+under the hero. Editorial stock photographs are illustrative, not portraits
+of MySession members or endorsements.
+
+Runtime/content integration: `src/data/blogEditorial.ts` merges the bundled
+manifest and Markdown content with published posts and now maps a matching
+cover to its photo credit. `src/pages/BlogPost.tsx` displays linked credit under
+the cover while preserving the older Focusmate photo credit.
+`scripts/prerender-blog.mjs` mirrors the image and credit in route-specific
+HTML for crawlers/no-JS users. `scripts/verify-blog-editorial.mjs` enforces
+image dimensions, JPEG size, provenance, generated composition and the
+prerendered credit/alt/social metadata. The five article Markdown bodies and
+routes, room UI, Supabase, email jobs and sitemap source files were untouched.
+
+Verification for this change: `npm run build` passed (Vite, blog and SEO
+prerender, sitemap verification, 5 editorial-article checks, React SEO render).
+`npx eslint src/data/blogEditorial.ts src/pages/BlogPost.tsx` and
+`git diff --check` passed. Each generated 1200 x 630 JPEG was opened and
+visually checked for cropping, legible text and correct image; files range
+about 62-110 KB. To build in this checkout, export only `VITE_SUPABASE_URL`
+and `VITE_SUPABASE_ANON_KEY` from the root `.env.local` into the process
+environment; do not commit or echo secret values. The unrelated three
+line-ending-only sitemap diffs (`public/sitemap-guides.xml`,
+`public/sitemap-pages.xml`, `public/sitemap.xml`) predate this task; never
+stage them with the covers. After any push, check the exact Vercel SHA and
+production URL before saying the images are live.

@@ -4,6 +4,7 @@ import studyRoutineMarkdown from "../content/blog/body-doubling-study-session-ro
 import startWhenStuckMarkdown from "../content/blog/how-to-start-a-focus-session-when-stuck.md?raw";
 import remoteWorkMarkdown from "../content/blog/remote-work-accountability-without-meetings.md?raw";
 import whatIsBodyDoublingMarkdown from "../content/blog/what-is-body-doubling.md?raw";
+import editorialCoverSources from "../../scripts/editorial-covers/sources.json";
 import editorialManifest from "./blog-editorial-manifest.json";
 import { starterFocusmatePost, withStarterFocusmateAssets } from "./blogSeed";
 
@@ -21,6 +22,18 @@ const coverDetailsBySlug = new Map(
     alt: entry.coverImageAlt,
   }]),
 );
+
+const coverPhotoBySlug = new Map(editorialCoverSources.map((source) => [source.slug, source]));
+
+export function getBlogCoverCredit(post: BlogPost): { name: string; url: string } | null {
+  if (post.slug === starterFocusmatePost.slug && post.cover_image_url === starterFocusmatePost.cover_image_url) {
+    return { name: "Mikhail Nilov", url: "https://www.pexels.com/photo/people-working-on-laptops-7988692/" };
+  }
+  const editorialCover = coverDetailsBySlug.get(post.slug);
+  const source = coverPhotoBySlug.get(post.slug);
+  if (!editorialCover || !source || post.cover_image_url !== editorialCover.path) return null;
+  return { name: source.photographer, url: source.sourcePage };
+}
 
 export function getBlogCoverAlt(post: BlogPost): string {
   if (post.slug === starterFocusmatePost.slug && post.cover_image_url === starterFocusmatePost.cover_image_url) {

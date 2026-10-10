@@ -1,0 +1,62 @@
+[
+  {
+    "slug": "what-is-body-doubling",
+    "photoId": 1181210,
+    "photographer": "Christina Morillo",
+    "sourcePage": "https://www.pexels.com/photo/two-people-working-on-laptops-1181210/",
+    "photoDescription": "Two people work on laptops at the same table",
+    "category": "BODY DOUBLING",
+    "headline": "Focus, together.",
+    "subline": "Your task. Shared momentum.",
+    "number": "01",
+    "theme": "night"
+  },
+  {
+    "slug": "how-to-start-a-focus-session-when-stuck",
+    "photoId": 4442109,
+    "photographer": "Antoni Shkraba",
+    "sourcePage": "https://www.pexels.com/photo/a-woman-writing-on-a-notebook-4442109/",
+    "photoDescription": "A woman writes in a notebook beside her laptop and coffee",
+    "category": "GETTING STARTED",
+    "headline": "Start small. Begin now.",
+    "subline": "One clear step is enough.",
+    "number": "02",
+    "theme": "paper"
+  },
+  {
+    "slug": "body-doubling-study-session-routine",
+    "photoId": 9572688,
+    "photographer": "Tima Miroshnichenko",
+    "sourcePage": "https://www.pexels.com/photo/college-students-studying-in-a-library-9572688/",
+    "photoDescription": "Students study with books and laptops at a library table",
+    "category": "STUDY ROUTINE",
+    "headline": "Study alongside someone.",
+    "subline": "Stay with the work.",
+    "number": "03",
+    "theme": "sky"
+  },
+  {
+    "slug": "remote-work-accountability-without-meetings",
+    "photoId": 36713180,
+    "photographer": "Vitaly Gariev",
+    "sourcePage": "https://www.pexels.com/photo/young-woman-working-remotely-on-laptop-with-headphones-36713180/",
+    "photoDescription": "A woman works remotely at a laptop with headphones",
+    "category": "REMOTE WORK",
+    "headline": "Accountability without another meeting.",
+    "subline": "Make progress, not calendar noise.",
+    "number": "04",
+    "theme": "indigo"
+  },
+  {
+    "slug": "choose-25-50-or-90-minute-focus-session",
+    "photoId": 5899079,
+    "photographer": "Kaboompics",
+    "sourcePage": "https://www.pexels.com/photo/hourglass-on-a-desk-of-a-woman-sitting-in-front-of-her-laptop-5899079/",
+    "photoDescription": "An hourglass sits on a desk while someone works at a laptop",
+    "category": "FOCUS METHODS",
+    "headline": "Find your focus block.",
+    "subline": "25  /  50  /  90 minutes",
+    "number": "05",
+    "theme": "mist"
+  }
+]

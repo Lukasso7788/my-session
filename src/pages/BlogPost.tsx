@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, ArrowRight, Clock3 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import MarkdownArticle from "../components/MarkdownArticle";
-import { bundledBlogPosts, getBlogCoverAlt, getBlogPostRoute, getBundledBlogPost, mergePublishedBlogPosts } from "../data/blogEditorial";
+import { bundledBlogPosts, getBlogCoverAlt, getBlogCoverCredit, getBlogPostRoute, getBundledBlogPost, mergePublishedBlogPosts } from "../data/blogEditorial";
 import { starterFocusmatePost, withStarterFocusmateAssets } from "../data/blogSeed";
 import {
   estimateReadingMinutes,
@@ -40,6 +40,7 @@ export default function BlogPost({ slugOverride }: { slugOverride?: string }) {
   );
   const [relatedPosts, setRelatedPosts] = useState<BlogPostRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const coverCredit = post ? getBlogCoverCredit(post) : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -184,18 +185,18 @@ export default function BlogPost({ slugOverride }: { slugOverride?: string }) {
             width={1200}
             height={630}
           />
-          {post.slug === starterFocusmatePost.slug ? (
+          {coverCredit ? (
             <p className="mt-2 px-1 text-right text-[11px] text-[#888]">
               Photo by{" "}
               <a
-                href="https://www.pexels.com/photo/people-working-on-laptops-7988692/"
+                href={coverCredit.url}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline underline-offset-2"
               >
-                Mikhail Nilov
+                {coverCredit.name}
               </a>{" "}
-              on Pexels · MySession edit
+              on Pexels · {post.slug === starterFocusmatePost.slug ? "MySession edit" : "MySession composition"}
             </p>
           ) : null}
         </div>

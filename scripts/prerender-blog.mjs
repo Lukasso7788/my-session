@@ -6,6 +6,8 @@ import { createServer } from "vite";
 const DIST_DIR = path.resolve("dist");
 const template = await readFile(path.join(DIST_DIR, "index.html"), "utf8");
 const editorialManifest = JSON.parse(await readFile(path.resolve("src/data/blog-editorial-manifest.json"), "utf8"));
+const editorialCoverSources = JSON.parse(await readFile(path.resolve("scripts/editorial-covers/sources.json"), "utf8"));
+const editorialCoverBySlug = new Map(editorialCoverSources.map((source) => [source.slug, source]));
 // Reuse the published starter article rather than maintaining a separate
 // crawler-only copy that can drift from the client-rendered blog page.
 const vite = await createServer({ server: { middlewareMode: true }, appType: "custom" });
@@ -56,6 +58,7 @@ for (const post of editorialManifest) {
     markdown,
     image: `https://mysession.club${post.coverImagePath}`,
     imageAlt: post.coverImageAlt,
+    photoCredit: editorialCoverBySlug.get(post.slug),
     breadcrumb: route.startsWith("/guides/")
       ? { name: "Body doubling", path: "/body-doubling" }
       : { name: "Blog", path: "/blog" },
@@ -125,11 +128,11 @@ function renderPage(page) {
   if (page.markdown) {
     const articleHtml = marked.parse(page.markdown, { async: false, gfm: true });
     const coverHtml = page.image
-      ? `<img src="${escapeAttribute(page.image)}" alt="${escapeAttribute(page.imageAlt)}" width="1200" height="630" decoding="async" />`
+      ? `<figure><img src="${escapeAttribute(page.image)}" alt="${escapeAttribute(page.imageAlt)}" width="1200" height="630" decoding="async" />${page.photoCredit ? `<figcaption>Photo by <a href="${escapeAttribute(page.photoCredit.sourcePage)}">${escapeAttribute(page.photoCredit.photographer)}</a> on Pexels · MySession composition</figcaption>` : ""}</figure>`
       : "";
     const breadcrumb = page.breadcrumb || { name: "Blog", path: "/blog" };
     const visibleContent = `<main class="seo-prerender"><nav aria-label="Breadcrumb"><a href="/">Home</a> / <a href="${escapeAttribute(breadcrumb.path)}">${escapeAttribute(breadcrumb.name)}</a></nav><article><h1>${escapeAttribute(page.headline)}</h1>${coverHtml}${articleHtml}</article></main>`;
-    const prerenderStyles = `<style>.seo-prerender{box-sizing:border-box;max-width:860px;margin:auto;padding:24px 16px;font:16px/1.6 Arial,sans-serif;color:#2f2f2f;overflow-wrap:anywhere}.seo-prerender img{display:block;width:100%;height:auto;max-width:100%}.seo-prerender table{display:block;max-width:100%;overflow-x:auto}.seo-prerender a{color:#2563eb}</style>`;
+    const prerenderStyles = `<style>.seo-prerender{box-sizing:border-box;max-width:860px;margin:auto;padding:24px 16px;font:16px/1.6 Arial,sans-serif;color:#2f2f2f;overflow-wrap:anywhere}.seo-prerender figure{margin:0}.seo-prerender figcaption{font-size:12px;color:#64748b;text-align:right}.seo-prerender img{display:block;width:100%;height:auto;max-width:100%}.seo-prerender table{display:block;max-width:100%;overflow-x:auto}.seo-prerender a{color:#2563eb}</style>`;
     html = html.replace("</head>", `${prerenderStyles}</head>`);
     const clearBeforePaint = '<script id="seo-prerender-clear">(function(){var root=document.getElementById("root");if(root)root.innerHTML="";})();</script>';
     html = html.replace('<div id="root"></div>', `<div id="root">${visibleContent}</div>${clearBeforePaint}`);

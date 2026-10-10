@@ -9,8 +9,8 @@
     "seoTitle": "What Is Body Doubling? How to Try It | MySession",
     "metaDescription": "Learn body doubling and try a shared focus session.",
     "focusKeyword": "what is body doubling",
-    "coverImagePath": "/blog/editorial/what-is-body-doubling.svg",
-    "coverImageAlt": "Two people work on separate tasks during one shared focus block, then check in together",
+    "coverImagePath": "/blog/editorial/what-is-body-doubling-cover.jpg",
+    "coverImageAlt": "Two people typing on laptops at one table beside the words Focus, together",
     "markdownFile": "what-is-body-doubling.md",
     "publishedAt": "2026-10-10T00:00:00.000Z"
   },
@@ -23,8 +23,8 @@
     "seoTitle": "How to Start a Focus Session When Stuck | MySession",
     "metaDescription": "Start a focus session in 10 minutes, even when stuck.",
     "focusKeyword": "how to start a focus session",
-    "coverImagePath": "/blog/editorial/start-focus-session.svg",
-    "coverImageAlt": "A small first task leads into a ten-minute focus session, with a clear finish line",
+    "coverImagePath": "/blog/editorial/how-to-start-a-focus-session-when-stuck-cover.jpg",
+    "coverImageAlt": "Woman writing notes at a cafe desk beside the words Start small. Begin now",
     "markdownFile": "how-to-start-a-focus-session-when-stuck.md",
     "publishedAt": "2026-10-10T00:00:00.000Z"
   },
@@ -37,8 +37,8 @@
     "seoTitle": "Body Doubling Study Routine: A Practical Guide | MySession",
     "metaDescription": "Try a body doubling study routine with a clear check-in.",
     "focusKeyword": "body doubling study routine",
-    "coverImagePath": "/blog/editorial/body-doubling-study.svg",
-    "coverImageAlt": "A study routine moves from one learning goal to a shared work block and a final check-in",
+    "coverImagePath": "/blog/editorial/body-doubling-study-session-routine-cover.jpg",
+    "coverImageAlt": "Three students studying at a library table beside a study-alongside-someone headline",
     "markdownFile": "body-doubling-study-session-routine.md",
     "publishedAt": "2026-10-10T00:00:00.000Z"
   },
@@ -51,8 +51,8 @@
     "seoTitle": "Remote Work Accountability Without Meetings | MySession",
     "metaDescription": "Build remote work accountability without more meetings.",
     "focusKeyword": "remote work accountability",
-    "coverImagePath": "/blog/editorial/remote-work-accountability.svg",
-    "coverImageAlt": "Remote work plan showing an outcome, a shared focus block, and a written handoff",
+    "coverImagePath": "/blog/editorial/remote-work-accountability-without-meetings-cover.jpg",
+    "coverImageAlt": "Woman working on a laptop with headphones beside an accountability-without-meetings headline",
     "markdownFile": "remote-work-accountability-without-meetings.md",
     "publishedAt": "2026-10-10T00:00:00.000Z"
   },
@@ -65,8 +65,8 @@
     "seoTitle": "Focus Session Length: 25, 50 or 90 Minutes | MySession",
     "metaDescription": "Choose a 25, 50 or 90-minute focus session that fits.",
     "focusKeyword": "focus session length",
-    "coverImagePath": "/blog/editorial/focus-session-length.svg",
-    "coverImageAlt": "Three timeline bars compare 25, 50, and 90-minute focus sessions by task size",
+    "coverImagePath": "/blog/editorial/choose-25-50-or-90-minute-focus-session-cover.jpg",
+    "coverImageAlt": "Hourglass on a work desk beside a headline about 25, 50, and 90-minute focus blocks",
     "markdownFile": "choose-25-50-or-90-minute-focus-session.md",
     "publishedAt": "2026-10-10T00:00:00.000Z"
   }
