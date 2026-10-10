@@ -21233,7 +21233,7 @@ export function RoomPageLiveKit({
             </div>
           </div>
         ) : null}
-        {connected && voiceUiEnabled ? (
+        {connected && voiceUiEnabled && !(rightPanelOpen && useOverlayRightPanel) ? (
           <>
             <button
               type="button"
@@ -21351,7 +21351,7 @@ export function RoomPageLiveKit({
             ) : null}
           </>
         ) : null}
-        <div className="h-full w-full px-2 sm:px-3 pt-2 pb-[calc(68px+env(safe-area-inset-bottom))] sm:pb-[calc(72px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
+        <div className="relative isolate h-full w-full px-2 sm:px-3 pt-2 pb-[calc(68px+env(safe-area-inset-bottom))] sm:pb-[calc(72px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
           <RoomTopBar
             theme={theme}
             sessionTitle={String(session?.title || "Session")}
@@ -21562,19 +21562,13 @@ export function RoomPageLiveKit({
                 {RightPanelBody}
               </div>
             )}
-
-            {rightPanelOpen && useOverlayRightPanel && (
-              <div className="absolute inset-0 z-40 min-h-0">
-                <div
-                  className="absolute inset-0 bg-black/40"
-                  onClick={() => openRightTab(null)}
-                />
-                <div className="absolute inset-0 min-h-0">
-                  {RightPanelBody}
-                </div>
-              </div>
-            )}
           </div>
+
+          {rightPanelOpen && useOverlayRightPanel && (
+            <div className="absolute inset-x-2 top-2 bottom-[calc(68px+env(safe-area-inset-bottom))] z-[70] min-h-0 sm:inset-x-3 sm:bottom-[calc(72px+env(safe-area-inset-bottom))]">
+              {RightPanelBody}
+            </div>
+          )}
         </div>
 
         {roomState ? (

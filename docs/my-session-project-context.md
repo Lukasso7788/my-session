@@ -1809,3 +1809,57 @@ Generated sitemap files can show pre-existing CRLF noise: stage only logical
 changes to `public/sitemap-guides.xml` and `public/sitemap-pages.xml`, not
 the line-ending-only `public/sitemap.xml` or `sitemap-comparisons.xml`. Preserve
 `mysession-daily-email-cron/.wrangler-dry-run/` and the old root checkout.
+
+## 2026-10-10 room side-panel full-height overlay
+
+This change was developed in the isolated worktree
+`C:\projects\my-session\.codex-safe-room-side-panels`, branch
+`codex/room-side-panels-overlay`, based on `origin/main` at `e7c5d21`.
+The older root checkout and the detached daily-email/SEO worktree contain
+unrelated user changes; do not reset, stage, or merge those changes into this
+room layout commit. This file contains the wider MySession architecture and
+release context in its earlier sections.
+
+`src/pages/RoomPageLiveKit.tsx` owns the room's fullscreen `ms-room-page`,
+`RoomTopBar`, video-stage grid, common `RightPanelBody`, and fixed
+`LiveKitBottomBar`. `rightTab` selects participants, chat, music or tasks;
+all four render through `RightPanelBody`. Desktop devices (`isLgUp` and not
+tablet) use a second grid column for this panel. Narrow screens and tablets
+set `useOverlayRightPanel`; previously their absolute overlay lived inside
+the video-stage grid, so its top edge began *below* `RoomTopBar` and wasted
+most of the upper room on a phone.
+
+The overlay now renders as a sibling of that grid within the full-height
+relative, isolated room-content wrapper. It is `top-2` and bounded at the
+bottom by `calc(68px + safe-area-inset-bottom)` on narrow screens, or `72px`
+from `sm` upward, matching the room's existing reserved bottom-bar area.
+The entire common `RightPanelBody` fills it; no panel content or handlers
+were changed. `z-[70]` puts the panel above the top bar's `z-[60]`, and the
+outer isolated wrapper leaves the fixed bottom controls (`z-50`) accessible.
+The separate fixed Voice UI button is suppressed while a narrow/tablet
+side-panel overlay is open so it cannot float on top of the panel. Closing
+the panel restores it. Desktop split-panel behavior is unchanged.
+
+Checks: `npm run build` passed and verified all SEO/prerender routes (these
+are unrelated to the room change). The repo's large room component has
+hundreds of pre-existing ESLint findings; compare changed lines only and do
+not fold a cleanup into this layout change. The normal `npm run typecheck`
+also has pre-existing TS project-reference errors; build checks syntax and
+bundling but does not replace a targeted typecheck. Visual QA should open an
+authenticated local room at phone width, select each of the four side panels,
+confirm its top starts next to the viewport's top padding and its bottom ends
+above the working bottom controls, then check a tablet and desktop split
+layout. If authenticated local room access is unavailable, report this gap
+honestly rather than claiming a verified production visual result.
+The local preview at `http://127.0.0.1:4194/room-livekit/4cd0fef1-4630-4bc4-800c-5954949d57e3`
+was opened, but it reached the sign-in gate, so the authenticated panel state
+could not be captured in this run. A direct targeted TypeScript check emitted
+three errors at lines 8559, 8694 and 15373; running the same command against
+the untouched base worktree produced the identical three errors. The focused
+room-file ESLint check emitted 596 pre-existing findings. Neither diagnostic
+reported a new issue on the edited overlay lines.
+
+Local dependencies can be borrowed from the adjacent daily-email worktree
+with an ignored `node_modules` junction; its contents must not be committed.
+`npm run build` can regenerate sitemap files with line-ending noise. Stage
+only this room component and this project-context update when committing.
