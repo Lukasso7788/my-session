@@ -1319,6 +1319,10 @@ origin/main before a non-force `HEAD:main` push.
 
 ## 2026-10-08 — Flow Club-inspired room light palette
 
+Historical design record only. The 2026-10-10 restoration at the end of
+this file supersedes these colors, CSS selectors and test commands; do not
+use the following palette as the current room implementation.
+
 Scope: presentation only in the live LiveKit room. The existing `"light" |
 "dark"` room state and `room_theme` localStorage key remain in
 `src/pages/RoomPageLiveKit.tsx`; the top-bar sun/moon switch retains the exact
@@ -1382,6 +1386,8 @@ push `HEAD:main` only if safe. A Vercel deployment should not be reported as
 READY without checking it explicitly.
 
 ## 2026-10-08 — Rollback of the Flow Club CSS palette correction
+
+Historical intermediate state, also superseded by the 2026-10-10 restoration.
 
 The user requested restoration of the light room appearance from commit
 `655fa85ff21354126fa8be29f5866450fea96146`. The subsequent blue palette
@@ -1863,3 +1869,45 @@ Local dependencies can be borrowed from the adjacent daily-email worktree
 with an ignored `node_modules` junction; its contents must not be committed.
 `npm run build` can regenerate sitemap files with line-ending noise. Stage
 only this room component and this project-context update when committing.
+
+## 2026-10-10 restore original room light mode
+
+The user confirmed that "old light mode" means the MySession **room** theme,
+not the `/body-doubling` editorial page visible in a separate local preview.
+The desired baseline is the neutral gray room appearance immediately before
+commit `655fa85` (`Refresh room light palette with cool blue and indigo`).
+Commit `1032e0b` later reverted a *subsequent* Flow Club palette change but
+left `655fa85`'s powder-blue/indigo foundation in place. This change removes
+that foundation without rolling the whole repository back. The newer
+mobile/tablet full-height side-panel overlay in `0225611` remains intact.
+
+Architecture: `RoomPageLiveKit.tsx` is the room shell and owns the canvas,
+stage, shared side-panel surface and bottom-bar props. `RoomTopBar.tsx`,
+`LiveKitBottomBarLegacy.tsx`, `PreJoinModalLiveKit.tsx`, and
+`RoomSettingsModalLiveKit.tsx` receive the room's `isLight`/`theme` state and
+choose their visual classes locally. `roomSidePanelTheme.css` governs the
+independent dark side-panel preference and must be preserved. The now-removed
+`flowRoomLightTheme.css` was an extra light-only override imported by the room
+page; its CSS recolored the room and side-panel controls. Removing its import
+and file is necessary to restore the prior neutral side-panel colors as well
+as the canvas. `tests/roomLegacyLightTheme.test.mjs` guards the restored
+light palette and original sun/moon icons; the old Flow Club palette test was
+removed because it asserted the superseded appearance.
+
+Restored light values include `#F3F1F1` room canvas/bottom controls,
+`#D8D0D0` room/stage borders, `#E1E3E6` top-bar chips, dark selected
+bottom controls, `#5286F6` pre-join primary action, and the prior neutral
+pre-join/settings surfaces. Dark-mode branches and all room behavior/handlers
+are unchanged. Continue verifying the actual authenticated light room on
+desktop and phone; the previous local visual attempt reached sign-in only.
+Verification on this change: `node --test tests/roomLegacyLightTheme.test.mjs`
+passes (3 tests), `npm run build` passes, and `git diff 655fa85^ --` on the
+four child components is empty. The only room-page difference from that
+pre-palette commit is the later, intentional mobile/tablet side-panel overlay.
+`npm run typecheck` still fails at the pre-existing root tsconfig project
+references with TS6306 and TS6310, before reporting changed-file diagnostics.
+This is an isolated source change in
+`C:\projects\my-session\.codex-safe-room-side-panels`. Do not stage
+generated sitemap CRLF-only changes or touch the separate, uncommitted SEO
+worktree. No commit, push, or production deploy is implicit in a request to
+restore the local theme; only do those on explicit follow-up.

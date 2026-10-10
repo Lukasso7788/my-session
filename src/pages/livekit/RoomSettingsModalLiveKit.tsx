@@ -1332,7 +1332,7 @@ export function RoomSettingsModalLiveKit({
     const isCustomBackground = !!bgImageUrl && !FX_BG_PRESETS.some((p) => p.url === bgImageUrl);
 
     const overlay =
-        "ms-room-settings-modal fixed inset-0 z-[1001] flex items-stretch sm:items-center justify-center " +
+        "fixed inset-0 z-[1001] flex items-stretch sm:items-center justify-center " +
         "px-0 sm:px-3 py-0 sm:py-4 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]";
 
     const backdrop = "absolute inset-0 bg-black/60";
@@ -1340,13 +1340,13 @@ export function RoomSettingsModalLiveKit({
     const card = [
         "relative w-full sm:max-w-[1100px] rounded-none sm:rounded-3xl shadow-2xl overflow-hidden",
         "max-h-[100dvh] sm:max-h-[92vh] flex flex-col",
-        isLight ? "bg-[#F6F8FD] text-[#19264B] border border-[#BDCCE2]" : "bg-[#18181B] text-white border border-[#3F3F46]",
+        isLight ? "bg-[#F5F5F5] text-black border border-[#D8D0D0]" : "bg-[#18181B] text-white border border-[#3F3F46]",
     ].join(" ");
 
-    const sectionCls = isLight ? "bg-white border border-[#BDCCE2]" : "bg-[#27272A] border border-[#3F3F46]";
-    const ghostBtn = isLight ? "border border-[#BDCCE2] bg-[#EBF0FA] hover:bg-[#DCE5F7] text-[#23335C]" : "border border-[#3F3F46] bg-[#3F3F46] hover:bg-[#52525B] text-white/85";
-    const activeBtn = isLight ? "bg-[#575CE5] text-white" : "bg-white text-[#18181B]";
-    const subtleText = isLight ? "text-[#4B5C80]" : "text-white/55";
+    const sectionCls = isLight ? "bg-white border border-[#D8D0D0]" : "bg-[#27272A] border border-[#3F3F46]";
+    const ghostBtn = isLight ? "border border-[#D8D0D0] bg-[#F3F1F1] hover:bg-[#ECEAEA] text-black/80" : "border border-[#3F3F46] bg-[#3F3F46] hover:bg-[#52525B] text-white/85";
+    const activeBtn = isLight ? "bg-[#1F1F1F] text-white" : "bg-white text-[#18181B]";
+    const subtleText = isLight ? "text-black/55" : "text-white/55";
 
     const audioInputOptions = [
         { value: "", label: devices.audioInputs?.length ? "Default microphone" : "No microphones found" },
@@ -1402,7 +1402,7 @@ export function RoomSettingsModalLiveKit({
             <div className={card.replace("sm:max-w-[1100px]", "sm:max-w-[1180px]")}>
                 <div className={[
                     "sticky top-0 z-20 h-[68px] shrink-0 border-b px-4 sm:px-5",
-                    isLight ? "border-[#BDCCE2] bg-white/95" : "border-[#3F3F46] bg-[#18181B]/95",
+                    isLight ? "border-[#D8D0D0] bg-[#F5F5F5]/95" : "border-[#3F3F46] bg-[#18181B]/95",
                     "backdrop-blur-xl",
                 ].join(" ")}>
                     <div className="h-full flex items-center justify-between gap-3">
