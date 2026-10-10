@@ -31,17 +31,76 @@
     "updatedAt": "2026-10-10"
   },
   {
+    "slug": "body-doubling-app",
+    "route": "/body-doubling-app",
+    "pageType": "use-case",
+    "cluster": "body-doubling",
+    "title": "Body Doubling App for Live Focus | MySession",
+    "metaDescription": "Try a browser-based body doubling app with live rooms.",
+    "h1": "A body doubling app for real work",
+    "heroDescription": "MySession is a browser-based place to work alongside real people. Choose a live room, name your task, and use the shared focus block to begin.",
+    "primaryKeyword": "body doubling app",
+    "secondaryKeywords": ["online body doubling app", "virtual body doubling app", "body doubling platform"],
+    "searchIntent": "commercial",
+    "imagePath": "/blog/editorial/body-doubling-app-cover.jpg",
+    "imageAlt": "Hands type beside two open laptops at a desk and the words A room to begin",
+    "sections": [
+      {
+        "heading": "What you do in the app",
+        "body": [
+          "Choose an available room when you want to start now, or select a scheduled group session when a fixed start time helps you show up. Everyone brings their own work: writing, admin, studying, design, or anything else that benefits from a protected interval.",
+          "Inside the room, add a concrete intention and keep your personal tasks visible. The shared timeline shows when the group is focusing, breaking, or checking in. You do not need to coordinate a shared project with the other people there."
+        ]
+      },
+      {
+        "heading": "Live company, not a prerecorded video",
+        "body": [
+          "MySession's body doubling is a live group experience. Other participants are doing their own work at the same time, and the room gives everyone the same start and finish. That is different from playing a study video in the background or using a solo timer.",
+          "The check-in is a chance to say what moved forward, not a test of how much you produced. If the first task took longer than expected, record the next action and choose another block when you are ready."
+        ],
+        "bullets": ["Live group presence", "Personal intentions and task list", "Shared session stages and timer", "Scheduled sessions and always-open rooms"]
+      },
+      {
+        "heading": "Choose the level of structure you need",
+        "body": [
+          "A short 25-minute block can lower the effort of starting an avoided task. A 50-minute session gives a normal work unit room to breathe; a longer block can protect context for demanding projects. Check the room format and rules before joining so the structure matches your task.",
+          "The browser-based room includes camera, microphone, chat, and optional music controls. Some rooms set their own participation rules, so choose one that fits your environment and privacy needs. You can name an outcome without revealing client documents or personal details."
+        ]
+      },
+      {
+        "heading": "Start with one small action",
+        "body": [
+          "You do not need a perfect plan. Open the session list, pick a room, write down the next visible step, and work beside people who are also making progress on their own tasks. If you want the method explained first, read the body doubling guide; if you are ready, join a room."
+        ]
+      }
+    ],
+    "faqItems": [
+      {"question": "Do I have to download an app?", "answer": "No. MySession runs in your browser, so you can open a live room without installing a native mobile app."},
+      {"question": "Is this only for people with ADHD?", "answer": "No. People use body doubling for many kinds of independent work. It is a focus technique, not medical treatment."},
+      {"question": "Will other people see my work?", "answer": "You control what task details you share. Check each room's camera or screen-sharing rules before joining."}
+    ],
+    "relatedPageSlugs": ["body-doubling", "virtual-coworking", "focus-session-25-minutes"],
+    "ctaVariant": "try",
+    "indexable": true,
+    "sitemapPriority": 0.8,
+    "changeFrequency": "monthly",
+    "createdAt": "2026-10-10",
+    "updatedAt": "2026-10-10"
+  },
+  {
     "slug": "body-doubling",
     "route": "/body-doubling",
     "pageType": "topic-hub",
     "cluster": "body-doubling",
-    "title": "Body Doubling Sessions and Guides | MySession",
-    "metaDescription": "Explore body doubling guides and live focus rooms.",
+    "title": "Online Body Doubling Sessions | MySession",
+    "metaDescription": "Explore live body doubling rooms and practical guides.",
     "h1": "Body doubling for the work in front of you",
     "heroDescription": "Open a room, name what you are working on, and get started alongside other people. Everyone works on their own task.",
-    "primaryKeyword": "body doubling sessions",
+    "primaryKeyword": "online body doubling",
     "secondaryKeywords": ["online body doubling", "virtual body double", "accountability sessions"],
     "searchIntent": "informational-commercial",
+    "imagePath": "/blog/editorial/body-doubling-together.jpg",
+    "imageAlt": "Two people quietly working on their own tasks at the same table",
     "sections": [
       {"heading":"What is body doubling?","body":["Body doubling means working on your own task alongside someone else. You do not need to collaborate or work on the same thing. A shared start and a check-in can make a difficult first step feel more manageable."]}
     ],
@@ -50,7 +109,7 @@
       {"question":"Do participants need to work on the same task?","answer":"No. Everyone can work independently while sharing a focused time block."},
       {"question":"Where can I learn how body doubling works?","answer":"Read the detailed What Is Body Doubling guide linked on this page."}
     ],
-    "relatedPageSlugs": ["body-doubling-for-adhd","body-doubling-for-studying","virtual-coworking"],
+    "relatedPageSlugs": ["body-doubling-app","body-doubling-for-adhd","virtual-coworking"],
     "ctaVariant": "join",
     "indexable": true,
     "sitemapPriority": 0.9,
@@ -65,9 +124,107 @@
   {
     "slug":"body-doubling-for-procrastination","route":"/body-doubling-for-procrastination","pageType":"use-case","cluster":"body-doubling","title":"Body Doubling for Procrastination | MySession","metaDescription":"Use body doubling to interrupt procrastination with a small commitment, a visible start, and a focused online work session.","h1":"Body doubling for procrastination","heroDescription":"When waiting to feel motivated is not working, shared presence can make one small next action easier to start.","primaryKeyword":"body doubling for procrastination","secondaryKeywords":["stop procrastinating online","accountability for procrastination","focus room"],"searchIntent":"commercial","sections":[{"heading":"Reduce the size of the start","body":["Procrastination often grows around a vague or emotionally loaded task. Before joining, define an action that can begin immediately: open the document, outline three points, or answer one email."],"bullets":["Shrink the first commitment","Remove one obvious distraction","Tell the room what you will do","Stop or continue deliberately at the check-in"]},{"heading":"Use accountability without shame","body":["A useful focus room makes progress visible without turning missed goals into punishment. If the task was too large, the end check-in helps you resize the next attempt."]},{"heading":"Build repeatable evidence","body":["One session does not need to solve the entire project. Repeated completed starts build evidence that the task is approachable, which is often more useful than waiting for a perfect productive day."]}],"faqItems":[{"question":"What if I do not finish the task?","answer":"Report what moved forward and choose a smaller next action. The session still supplied useful information."},{"question":"Can I join immediately?","answer":"MySession includes always-open focus rooms as well as scheduled sessions."}],"relatedPageSlugs":["body-doubling","body-doubling-for-adhd","focus-session-25-minutes"],"ctaVariant":"start","indexable":true,"sitemapPriority":0.8,"changeFrequency":"monthly","createdAt":"2026-07-29","updatedAt":"2026-07-29"},
   {
-    "slug":"virtual-coworking","route":"/virtual-coworking","pageType":"guide","cluster":"virtual-coworking","title":"Virtual Coworking: How Online Focus Rooms Work | MySession","metaDescription":"See how virtual coworking combines independent work, shared presence, intentions, tasks, and structured focus intervals in an online room.","h1":"Virtual coworking for focused work","heroDescription":"Virtual coworking brings the useful rhythm of a shared workspace online while everyone keeps control of their own schedule and tasks.","primaryKeyword":"virtual coworking","secondaryKeywords":["online coworking","virtual coworking space","online focus room"],"searchIntent":"informational-commercial","sections":[{"heading":"What happens in a virtual coworking room","body":["Participants join from different places, briefly share what they plan to do, and work independently during a timed stage. A check-in closes the loop."],"bullets":["A visible session timeline","Personal tasks and intentions","Optional chat and room music","Clear camera and microphone controls"]},{"heading":"Who it is useful for","body":["Remote workers can regain a sense of workday boundaries. Students can turn revision into a scheduled block. Freelancers and solo founders can create lightweight social structure without adding another meeting."]},{"heading":"Scheduled or always open","body":["Scheduled sessions create a stronger appointment. A 24/7 room removes booking friction when you need to begin immediately. MySession supports both patterns so the format can match the task."]}],"faqItems":[{"question":"Is virtual coworking a meeting?","answer":"Not usually. Participants work independently; conversation is limited so the room protects focus."},{"question":"Can teams use virtual coworking?","answer":"Yes, but individuals can also join public or hosted sessions without bringing a team."}],"relatedPageSlugs":["virtual-coworking-for-remote-workers","virtual-coworking-for-students","body-doubling"],"ctaVariant":"explore","indexable":true,"sitemapPriority":0.9,"changeFrequency":"monthly","createdAt":"2026-07-29","updatedAt":"2026-07-29"},
+    "slug": "virtual-coworking",
+    "route": "/virtual-coworking",
+    "pageType": "guide",
+    "cluster": "virtual-coworking",
+    "title": "Virtual Coworking Rooms for Focus | MySession",
+    "metaDescription": "Join online coworking rooms for independent focused work.",
+    "h1": "Virtual coworking rooms for focused work",
+    "heroDescription": "Join a live online room, set one intention, and work independently alongside other people until the shared focus block ends.",
+    "primaryKeyword": "virtual coworking rooms",
+    "secondaryKeywords": ["online coworking rooms", "virtual coworking space", "online focus room"],
+    "searchIntent": "informational-commercial",
+    "imagePath": "/blog/editorial/virtual-coworking-cover.jpg",
+    "imageAlt": "Overhead view of a laptop video call at a desk beside the words Work apart. Focus together",
+    "sections": [
+      {
+        "heading": "What happens in a virtual coworking room",
+        "body": [
+          "Virtual coworking is independent work with other people present online. In MySession, participants enter a room from wherever they are, share a small intention, and work on different tasks during the same timed stage. A check-in at the end makes the next step easier to see.",
+          "You can keep your task list and the room timeline in view while you work. Chat, camera, microphone, and shared music are available where the room permits them, but the room is designed for doing the work rather than talking through it."
+        ],
+        "bullets": ["A visible session timeline", "Personal tasks and intentions", "Optional chat and room music", "Camera and microphone controls"]
+      },
+      {
+        "heading": "Choose a room for the work you have",
+        "body": [
+          "An always-open room is useful when waiting for a booking would delay the first step. A scheduled group session is useful when the appointment itself helps you commit. Look at the session format and current room rules before joining; a 25-minute block can help you start, while a 50-minute or longer block gives complex work more continuity.",
+          "A freelancer can finish a client draft, a student can work through a problem set, and a remote employee can clear an administrative backlog in the same session. Shared presence does not require a shared project."
+        ]
+      },
+      {
+        "heading": "Coworking or body doubling?",
+        "body": [
+          "The terms overlap. Body doubling describes the focus technique: someone else is present while you do your own task. Virtual coworking describes the online room and group format that makes that presence available. In both cases, the work remains yours.",
+          "If you want a simple explanation of the method, start with the body doubling guide. If you want to compare room formats for a remote workday, continue to the remote-worker page."
+        ]
+      }
+    ],
+    "faqItems": [
+      {"question": "Is virtual coworking a meeting?", "answer": "No. People work independently in a shared focus block; a short intention or check-in is not a status meeting."},
+      {"question": "Can I join a room without a team?", "answer": "Yes. Individuals can join available group rooms or choose a scheduled session."},
+      {"question": "Do I need my camera on?", "answer": "Room policies vary. Check the camera and participation rules on the session card before joining."}
+    ],
+    "relatedPageSlugs": ["virtual-coworking-for-remote-workers", "body-doubling-app", "body-doubling"],
+    "ctaVariant": "explore",
+    "indexable": true,
+    "sitemapPriority": 0.9,
+    "changeFrequency": "monthly",
+    "createdAt": "2026-07-29",
+    "updatedAt": "2026-10-10"
+  },
   {
-    "slug":"virtual-coworking-for-remote-workers","route":"/virtual-coworking-for-remote-workers","pageType":"use-case","cluster":"virtual-coworking","title":"Virtual Coworking for Remote Workers | MySession","metaDescription":"Create clearer workday boundaries with virtual coworking sessions for remote work, independent projects, and focused admin.","h1":"Virtual coworking for remote workers","heroDescription":"Add a reliable start, visible focus block, and clean finish to workdays that otherwise blur together.","primaryKeyword":"virtual coworking for remote workers","secondaryKeywords":["remote work accountability","online coworking for remote work","remote focus room"],"searchIntent":"commercial","sections":[{"heading":"Replace missing environmental cues","body":["An office naturally provides arrival, shared activity, and departure cues. Remote work often removes them. A focus room recreates those boundaries without adding a status meeting."],"bullets":["Begin at a chosen time","Declare one outcome","Work quietly beside others","Close with progress and the next action"]},{"heading":"Useful blocks in a remote day","body":["Use a short block to clear administration, a 50-minute session for regular project work, or a 90-minute session for work that needs sustained context."],"bullets":["Inbox and follow-up","Writing and analysis","Portfolio or client work","Planning and weekly review"]},{"heading":"Accountability that respects autonomy","body":["Participants can see that others are present, but they do not need access to your files, screen, employer systems, or confidential task details."]}],"faqItems":[{"question":"Does my employer need to use MySession?","answer":"No. You can join as an individual and keep company information private."},{"question":"Is the room noisy?","answer":"Sessions are designed for focus, with microphone controls and structured check-ins."}],"relatedPageSlugs":["virtual-coworking","focus-session-50-minutes","flow-club-alternative"],"ctaVariant":"join","indexable":true,"sitemapPriority":0.8,"changeFrequency":"monthly","createdAt":"2026-07-29","updatedAt":"2026-07-29"},
+    "slug": "virtual-coworking-for-remote-workers",
+    "route": "/virtual-coworking-for-remote-workers",
+    "pageType": "use-case",
+    "cluster": "virtual-coworking",
+    "title": "Virtual Coworking for Remote Workers | MySession",
+    "metaDescription": "Use online focus rooms to give remote work a start and finish.",
+    "h1": "Virtual coworking for remote workers",
+    "heroDescription": "Make an independent workday easier to begin: share a focus block with other remote workers without adding another status meeting.",
+    "primaryKeyword": "virtual coworking for remote workers",
+    "secondaryKeywords": ["remote work focus room", "online focus sessions for remote workers", "remote work accountability"],
+    "searchIntent": "commercial",
+    "imagePath": "/blog/editorial/virtual-coworking-for-remote-workers-cover.jpg",
+    "imageAlt": "Woman in headphones works on a laptop by a city window beside the words Make remote work move",
+    "sections": [
+      {
+        "heading": "Give a remote day a visible starting line",
+        "body": [
+          "Working from home removes the everyday cues of arriving, seeing others settle in, and leaving together. A virtual focus room can supply a simpler boundary. Choose one outcome before you join, work through the shared stage, then record what changed at the check-in.",
+          "This is useful when the task is already yours to do and another meeting would only delay it. The other people in the room may be writing, studying, coding, or doing admin; they do not need to work for your company."
+        ],
+        "bullets": ["Choose a room and start time", "Name one work outcome", "Work independently during the timer", "Leave with a clear handoff"]
+      },
+      {
+        "heading": "Pick a focus interval that matches the task",
+        "body": [
+          "For an avoided email or small admin queue, try a short 25-minute block. A 50-minute session leaves room for drafting, analysis, or follow-up. A longer block can protect context for writing, design, or development when the materials are ready in advance.",
+          "MySession includes scheduled sessions when a calendar commitment helps and always-open rooms when you need to begin now. The room timeline, personal tasks, and check-ins provide a working rhythm without asking everyone to collaborate on the same document."
+        ]
+      },
+      {
+        "heading": "Keep company and client work private",
+        "body": [
+          "You can state an outcome such as 'revise the proposal outline' without naming the client or sharing a confidential screen. Check each room's camera and screen-sharing rules before joining, and follow your employer's security policy. Shared accountability should not require disclosing sensitive material.",
+          "If the work actually needs a decision from colleagues, make that decision in a meeting first. Use the coworking room for the execution block that follows."
+        ]
+      }
+    ],
+    "faqItems": [
+      {"question": "Do I need my employer to join?", "answer": "No. You can use an available room as an individual while keeping company information private."},
+      {"question": "Is a remote focus room the same as a meeting?", "answer": "No. The group shares a start, focus interval, and check-in while everyone works on their own task."},
+      {"question": "Can I use it for confidential work?", "answer": "Only if the room rules and your employer's policy allow it. Do not expose confidential files or screens to other participants."}
+    ],
+    "relatedPageSlugs": ["virtual-coworking", "focus-session-50-minutes", "body-doubling-app"],
+    "ctaVariant": "join",
+    "indexable": true,
+    "sitemapPriority": 0.8,
+    "changeFrequency": "monthly",
+    "createdAt": "2026-07-29",
+    "updatedAt": "2026-10-10"
+  },
   {
     "slug":"virtual-coworking-for-students","route":"/virtual-coworking-for-students","pageType":"use-case","cluster":"virtual-coworking","title":"Virtual Coworking for Students | MySession","metaDescription":"Plan quieter, more accountable study blocks with online coworking rooms for revision, assignments, reading, and exam preparation.","h1":"Virtual coworking for students","heroDescription":"Study independently without studying alone. Shared rooms add a start time, a visible interval, and a simple check-in to academic work.","primaryKeyword":"virtual coworking for students","secondaryKeywords":["online study room","study accountability","virtual study together"],"searchIntent":"commercial","sections":[{"heading":"Turn workload into sessions","body":["Map each focus block to a result you can observe. A completed outline, twenty reviewed flashcards, or three solved problems is easier to act on than a general plan to catch up."],"bullets":["Revision and practice questions","Essay research and drafting","Lecture review","Applications and administrative tasks"]},{"heading":"Keep the room separate from the subject","body":["Virtual coworking is not tutoring. That makes it flexible: people can work on different subjects while sharing the same concentration window."]},{"heading":"Use breaks intentionally","body":["Short breaks help protect attention across several blocks. Session stages make the pause explicit, so returning to work requires less negotiation with yourself."]}],"faqItems":[{"question":"Can I use a virtual room during exams?","answer":"Use it for preparation and independent permitted work, not where an assessment prohibits outside communication or devices."},{"question":"Are sessions available outside school hours?","answer":"MySession includes scheduled sessions and always-open rooms across different times."}],"relatedPageSlugs":["body-doubling-for-studying","virtual-coworking","focus-session-25-minutes"],"ctaVariant":"explore","indexable":true,"sitemapPriority":0.8,"changeFrequency":"monthly","createdAt":"2026-07-29","updatedAt":"2026-07-29"},
   {

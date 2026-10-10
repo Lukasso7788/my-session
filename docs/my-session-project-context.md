@@ -1,6 +1,6 @@
 # MySession — project architecture and continuation context
 
-Updated: 2026-10-10. This is a project-wide navigation/architecture handoff based on
+Updated: 2026-10-11. This is a project-wide navigation/architecture handoff based on
 the checked-out source, not a claim that every module or production service was
 audited. Never put secret values, tokens, user exports or private logs in this file.
 
@@ -8,16 +8,17 @@ audited. Never put secret values, tokens, user exports or private logs in this f
 
 - Repository: Lukasso7788/my-session. Deployment branch is main (not necessarily
   the remote default branch). Do not force-push or rewrite shared history.
-- Current implementation checkout for the 07:00 Kyiv digest schedule:
+- Historical implementation checkout for the 07:00 Kyiv digest schedule:
   C:\projects\my-session\.codex-safe-daily-email-7am.
   It was created from `e673e3317182a7b3ad683ff1deffdac79142fcfc`,
   which matched `origin/main` on 2026-10-09. Commit only the relevant files
   and push HEAD:main only after checking origin/main for new commits.
-- Current task: fix the white screen on `/body-doubling`, make that URL a
-  parent hub with a separate `/guides/what-is-body-doubling` article, and
-  finish the SEO editorial release. The latest sections record the runtime
-  failure, article source, React/Supabase fallback, prerender/sitemap pipeline,
-  verification, and release caveats. The separate 07:00 Kyiv Plunk schedule digest is
+- Current task (2026-10-11): improve semantic SEO for body doubling app,
+  virtual coworking rooms and remote-worker focus rooms; add matching editorial
+  photo compositions and descriptive alt text; validate, commit and push.
+  Current worktree is `C:\projects\my-session\.codex-safe-room-side-panels`
+  on `codex/room-side-panels-overlay`, tracking `origin/main`. The latest section
+  records this task; older entries remain as historical context. The separate 07:00 Kyiv Plunk schedule digest is
   documented later in this file and in docs/plunk-email-rollout.md; do not
   change its audience, scheduling, or consent logic as part of SEO work.
 - C:\projects\my-session is a different old/dirty checkout with nested work.
@@ -2108,3 +2109,71 @@ line-ending-only sitemap diffs (`public/sitemap-guides.xml`,
 `public/sitemap-pages.xml`, `public/sitemap.xml`) predate this task; never
 stage them with the covers. After any push, check the exact Vercel SHA and
 production URL before saying the images are live.
+
+## 2026-10-11 semantic SEO and editorial image continuation
+
+Goal: map three seed clusters (`body doubling app`, `virtual coworking rooms`,
+and coworking focus rooms for remote workers) to existing MySession URLs,
+implement focused on-page improvements, add HTML-composed photographs in the
+same style as the latest article covers, and make every image alt descriptive.
+The full 75-candidate map and top-15 priorities are in
+`docs/seo/keyword-research.md`; implementation and limitations are in
+`docs/seo/seo-implementation-report.md`. GSC Wizard returned
+`payment_required`, so search volume, difficulty, live indexing, and CTR are
+unknown; no invented metrics should be repeated in later chats.
+
+Page ownership: `/body-doubling` stays a brief parent hub for online body
+doubling, while the new `/body-doubling-app` addresses commercial intent for
+a *browser-based* live body-doubling product. `/virtual-coworking` owns the
+general virtual room/format explanation. `/virtual-coworking-for-remote-workers`
+owns workday boundaries, focus intervals, and privacy for remote workers.
+`/guides/what-is-body-doubling` remains the detailed definition/first-session
+guide; `/blog/remote-work-accountability-without-meetings` remains the
+editorial routine. No other keyword-variant route was added. The page registry
+is `src/data/seo-pages.json` + `seoPageRegistry.ts`; the Router route list
+uses `seo-route-manifest.json`; `DataDrivenSeoPage.tsx` renders the UI and
+`pageSeo.ts` applies runtime metadata. `scripts/prerender-seo.mjs` emits
+route-specific raw HTML so the new page has crawlable content without JS.
+`scripts/generate-seo-assets.mjs` adds indexable use-case pages to
+`public/sitemap-pages.xml`; the public `robots.txt` already allows them.
+
+Photo pipeline: five new Pexels source JPEGs live under
+`scripts/editorial-covers/photos/`, with their photo ID, photographer,
+original page URL, theme and copy in `sources.json`. The HTML/CSS template
+and `render.mjs` produce five standalone compositions under
+`scripts/editorial-covers/compositions/` and five 1200 x 630 screenshots
+under `public/blog/editorial/`. Three are SEO landing-page covers, two are
+inline illustrations in bundled article Markdown. This reuses the previous
+cover pipeline: `npm run covers:photos` downloads only missing photos;
+`npm run covers:photos -- <slug>` refreshes one after a source change;
+`npm run covers:render` uses Chrome/headless CDP. All images are local at
+runtime. Stock photos are illustrations, not testimonials or actual room
+screenshots. The `alt` describes the visible crop plus meaningful text in
+the composition; Pexels credits for inline article images are in Markdown.
+`DataDrivenSeoPage.tsx` and `scripts/prerender-seo.mjs` both render the same
+landing images/alt, and runtime/raw HTML have matching OG/Twitter image
+metadata. `seoStructuredData.ts` labels the dedicated app page as
+`WebApplication`, explanatory use-case pages as `WebPage`, and the coworking
+guide as `Article`.
+
+Checks: `scripts/verify-seo-semantic-clusters.mjs` is part of `npm run build`.
+It asserts route registry, unique title/description, H1, canonical, 200+
+raw-HTML words, schema, local image dimensions/size/alt/provenance, sitemap,
+hub internal link, and inline images. The full build passed all integrated
+SEO checks. Focused ESLint on touched code passed; repository-wide lint still
+has 2,686 errors and 109 warnings in untouched code. Standalone typecheck
+fails with preexisting TS6306 and TS6310 project-reference errors; direct app
+`tsc --noEmit` also finds unrelated room/chat errors. Do not call either
+globally clean. `git diff --check` passed. An optional Chrome screenshot test
+`node scripts/seo-visual-check.mjs http://127.0.0.1:<preview-port> <output-dir>`
+checked four mobile/desktop viewport cases with loaded images, nonempty alt,
+and no horizontal overflow against a local production preview; screenshots
+were visually inspected. Build in this checkout needs only the existing
+root `.env.local` values `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`
+exported into the process, without displaying or copying their values.
+`public/sitemap.xml` has an unrelated preexisting line-ending-only change;
+preserve and exclude it from staging. Include `public/sitemap-pages.xml` because
+it adds `/body-doubling-app`, and `public/sitemap-guides.xml` because it updates
+the modified coworking guide's lastmod. Commit/push only task files after
+checking `origin/main`; no force push. Pushing `main` may create a preview,
+but do not claim production deployment without verifying exact SHA/alias.

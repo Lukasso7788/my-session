@@ -8,10 +8,14 @@ The useful part is often the transition into work. A vague intention becomes eas
 
 An online body doubling session can be very simple. People join a room, name what they intend to do, work independently for a set interval, and check in when it ends. Some rooms use video; others allow quieter participation. The point is shared presence and a clear boundary around the work block, not constant conversation.
 
+![Two people work on separate laptops at home beside the words A shared start](/blog/editorial/body-doubling-shared-start-cover.jpg)
+
+*Photo by [Mikhail Nilov](https://www.pexels.com/photo/a-couple-at-home-working-with-laptops-6894067/) on Pexels; editorial composition by MySession.*
+
 Try this first session:
 
 1. Pick one outcome you could verify by the end: draft a paragraph, answer ten questions, or clear one small queue.
-2. Join a [live body doubling room](/body-doubling) or choose a scheduled session if an appointment helps you show up.
+2. Join a [live body doubling room](/body-doubling) or use the [browser-based body doubling app](/body-doubling-app) if you want to see the room tools before you begin. A scheduled session may help if an appointment makes it easier to show up.
 3. State your intention in a sentence. Keep private information out of it if you are working with confidential material.
 4. Work on the task during the focus stage. If you get distracted, return to the smallest visible next action.
 5. At the check-in, say what changed and write down the first step for next time.

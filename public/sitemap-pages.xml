@@ -73,6 +73,12 @@
     <priority>0.3</priority>
   </url>
   <url>
+    <loc>https://mysession.club/body-doubling-app</loc>
+    <lastmod>2026-10-10</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
     <loc>https://mysession.club/body-doubling</loc>
     <lastmod>2026-10-10</lastmod>
     <changefreq>monthly</changefreq>
@@ -98,7 +104,7 @@
   </url>
   <url>
     <loc>https://mysession.club/virtual-coworking-for-remote-workers</loc>
-    <lastmod>2026-07-29</lastmod>
+    <lastmod>2026-10-10</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>

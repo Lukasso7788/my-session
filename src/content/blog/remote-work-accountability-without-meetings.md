@@ -4,6 +4,10 @@ Remote work can remove the simple cues that an office provides: arriving, seeing
 
 The purpose is not to prove that you were online. It is to make an independent work block easier to start and easier to finish. You can keep private client or company details out of the room while still naming a useful outcome.
 
+![Woman wearing headphones works at a laptop by a window beside the words Protect the work block](/blog/editorial/remote-work-protected-block-cover.jpg)
+
+*Photo by [Christina Morillo](https://www.pexels.com/photo/photography-of-woman-using-laptop-1181682/) on Pexels; editorial composition by MySession.*
+
 ## A three-part daily routine
 
 **1. Start with a result, not an activity.** Instead of “work on the project,” choose “send the first draft to the reviewer” or “identify the three open decisions.” Make it small enough for the session you have chosen.
@@ -27,7 +31,7 @@ Not every remote task needs the same amount of social structure.
 | You have complex writing or design work | Choose a longer block and prepare materials before joining |
 | You need to coordinate with teammates | Use a real meeting for decisions, then a focus room for execution |
 
-This is why [virtual coworking](/virtual-coworking) is not a replacement for collaboration. Meetings are useful when people need to decide something together. A focus room is useful when the decision is made and the work still needs doing.
+This is why [virtual coworking rooms](/virtual-coworking) are not a replacement for collaboration. Meetings are useful when people need to decide something together. A focus room is useful when the decision is made and the work still needs doing. For a remote-work-specific example, see [virtual coworking for remote workers](/virtual-coworking-for-remote-workers).
 
 ## Keep sensitive work private
 

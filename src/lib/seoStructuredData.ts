@@ -18,6 +18,7 @@ export function buildSeoPageStructuredData(page: SeoPageDefinition) {
         name: page.h1,
         description: page.metaDescription,
         url: page.canonicalUrl,
+        ...(page.imagePath ? { primaryImageOfPage: `${SITE_ORIGIN}${page.imagePath}` } : {}),
         hasPart: [{ "@type": "Article", name: "What is body doubling?", url: `${SITE_ORIGIN}/guides/what-is-body-doubling` }],
       }
     : page.pageType === "guide"
@@ -29,18 +30,29 @@ export function buildSeoPageStructuredData(page: SeoPageDefinition) {
         datePublished: page.createdAt,
         dateModified: page.updatedAt,
         mainEntityOfPage: page.canonicalUrl,
+        ...(page.imagePath ? { image: `${SITE_ORIGIN}${page.imagePath}` } : {}),
         author: { "@type": "Organization", name: "MySession" },
         publisher: { "@type": "Organization", name: "MySession", url: SITE_ORIGIN },
       }
-    : {
-        "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        name: "MySession",
-        applicationCategory: "ProductivityApplication",
-        operatingSystem: "Web",
-        url: SITE_ORIGIN,
-        description: page.metaDescription,
-      };
+    : page.slug === "body-doubling-app"
+      ? {
+          "@context": "https://schema.org",
+          "@type": "WebApplication",
+          name: "MySession",
+          applicationCategory: "ProductivityApplication",
+          operatingSystem: "Web",
+          url: SITE_ORIGIN,
+          description: page.metaDescription,
+          ...(page.imagePath ? { image: `${SITE_ORIGIN}${page.imagePath}` } : {}),
+        }
+      : {
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          name: page.h1,
+          url: page.canonicalUrl,
+          description: page.metaDescription,
+          ...(page.imagePath ? { primaryImageOfPage: `${SITE_ORIGIN}${page.imagePath}` } : {}),
+        };
   const faq = page.faqItems.length > 0
     ? {
         "@context": "https://schema.org",

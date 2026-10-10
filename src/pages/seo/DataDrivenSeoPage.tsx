@@ -43,6 +43,8 @@ function SeoPageContent({ page }: { page: SeoPageDefinition }) {
       description: page.metaDescription,
       canonicalUrl,
       type: page.pageType === "guide" ? "article" : "website",
+      imageUrl: page.imagePath,
+      imageAlt: page.imageAlt,
       noIndex: !page.indexable,
       article: page.pageType === "guide"
         ? { publishedAt: page.createdAt, modifiedAt: page.updatedAt, authorName: "MySession" }
@@ -81,8 +83,8 @@ function SeoPageContent({ page }: { page: SeoPageDefinition }) {
               </div>
             </div>
             <img
-              src="/blog/editorial/body-doubling-together.jpg"
-              alt="Two people quietly working on their own tasks at the same table"
+              src={page.imagePath}
+              alt={page.imageAlt}
               width={1672}
               height={941}
               fetchPriority="high"
@@ -178,6 +180,20 @@ function SeoPageContent({ page }: { page: SeoPageDefinition }) {
             </div>
           </div>
         </header>
+
+        {page.imagePath && page.imageAlt ? (
+          <figure className="mx-auto mt-5 max-w-[840px] overflow-hidden rounded-[24px] border border-black/[0.06] bg-white">
+            <img
+              src={page.imagePath}
+              alt={page.imageAlt}
+              width={1200}
+              height={630}
+              loading="lazy"
+              decoding="async"
+              className="block h-auto w-full"
+            />
+          </figure>
+        ) : null}
 
         <section aria-label="MySession focus room features" className="mt-5 grid gap-3 sm:grid-cols-3">
           {[

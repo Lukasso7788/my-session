@@ -58,5 +58,68 @@
     "subline": "25  /  50  /  90 minutes",
     "number": "05",
     "theme": "mist"
+  },
+  {
+    "slug": "body-doubling-app",
+    "photoId": 9909088,
+    "photographer": "Ron Lach",
+    "sourcePage": "https://www.pexels.com/photo/high-angle-shot-of-two-people-using-laptops-9909088/",
+    "photoDescription": "Hands typing beside two open laptops on a white desk",
+    "category": "BODY DOUBLING APP",
+    "headline": "A room to begin.",
+    "subline": "Live people. Your own work.",
+    "number": "06",
+    "theme": "sky",
+    "footerLabel": "PRODUCT GUIDE"
+  },
+  {
+    "slug": "virtual-coworking",
+    "photoId": 6937662,
+    "photographer": "Diva Plavalaguna",
+    "sourcePage": "https://www.pexels.com/photo/person-sitting-on-table-working-on-laptop-6937662/",
+    "photoDescription": "Overhead view of a laptop video call while a person types at a desk",
+    "category": "VIRTUAL COWORKING",
+    "headline": "Work apart. Focus together.",
+    "subline": "Your task, a shared rhythm.",
+    "number": "07",
+    "theme": "night",
+    "footerLabel": "ROOM GUIDE"
+  },
+  {
+    "slug": "virtual-coworking-for-remote-workers",
+    "photoId": 34211776,
+    "photographer": "Julio Lopez",
+    "sourcePage": "https://www.pexels.com/photo/woman-working-remotely-with-laptop-by-window-34211776/",
+    "photoDescription": "Woman wearing headphones works on a laptop by a city window",
+    "category": "REMOTE WORK",
+    "headline": "Make remote work move.",
+    "subline": "A focused start and a real finish.",
+    "number": "08",
+    "theme": "indigo",
+    "footerLabel": "REMOTE WORK GUIDE"
+  },
+  {
+    "slug": "body-doubling-shared-start",
+    "photoId": 6894067,
+    "photographer": "Mikhail Nilov",
+    "sourcePage": "https://www.pexels.com/photo/a-couple-at-home-working-with-laptops-6894067/",
+    "photoDescription": "Two people work on their own laptops in a home workspace",
+    "category": "FIRST SESSION",
+    "headline": "A shared start.",
+    "subline": "One intention. One work block.",
+    "number": "09",
+    "theme": "paper"
+  },
+  {
+    "slug": "remote-work-protected-block",
+    "photoId": 1181682,
+    "photographer": "Christina Morillo",
+    "sourcePage": "https://www.pexels.com/photo/photography-of-woman-using-laptop-1181682/",
+    "photoDescription": "Woman wearing headphones works at a laptop beside a window",
+    "category": "WORKDAY RHYTHM",
+    "headline": "Protect the work block.",
+    "subline": "Less status. More progress.",
+    "number": "10",
+    "theme": "mist"
   }
 ]

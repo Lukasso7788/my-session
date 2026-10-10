@@ -19,7 +19,7 @@ function escapeHtml(value) {
 
 function materialize(source) {
   if (!/^[a-z0-9-]+$/.test(source.slug)) throw new Error(`Unsafe slug: ${source.slug}`);
-  return template.replace(/{{(category|theme|slug|photoDescription|headline|subline|number)}}/g, (_, key) => escapeHtml(source[key]));
+  return template.replace(/{{(category|theme|slug|photoDescription|headline|subline|number|footerLabel)}}/g, (_, key) => escapeHtml(key === "footerLabel" ? source.footerLabel || "EDITORIAL GUIDE" : source[key]));
 }
 
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }

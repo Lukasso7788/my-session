@@ -25,6 +25,8 @@ export type SeoPageDefinition = {
   primaryKeyword: string;
   secondaryKeywords: string[];
   searchIntent: SeoSearchIntent;
+  imagePath?: string;
+  imageAlt?: string;
   sections: SeoSectionDefinition[];
   faqItems: SeoFaqItem[];
   relatedPageSlugs: string[];

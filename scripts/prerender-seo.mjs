@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+const origin = "https://mysession.club";
 const pages = JSON.parse(await readFile(path.resolve("src/data/seo-pages.json"), "utf8"));
 const dist = path.resolve("dist");
 const template = await readFile(path.join(dist, "index.html"), "utf8");
@@ -148,7 +149,7 @@ function renderVisibleContent(page) {
     return `<main class="seo-prerender">
       <nav aria-label="Breadcrumb"><a href="/">Home</a> / Body doubling</nav>
       <header><h1>${escapeHtml(page.h1)}</h1><p>${escapeHtml(page.heroDescription)}</p>
-        <img src="/blog/editorial/body-doubling-together.jpg" width="1672" height="941" alt="Two people quietly working on their own tasks at the same table">
+        <img src="${escapeHtml(page.imagePath)}" width="1672" height="941" alt="${escapeHtml(page.imageAlt)}">
         <a href="/sessions">Find a room</a> <a href="/how-it-works">How it works</a>
       </header>
       <section><h2>${escapeHtml(page.sections[0].heading)}</h2><p>${escapeHtml(page.sections[0].body[0])}</p></section>
@@ -171,10 +172,13 @@ function renderVisibleContent(page) {
   const related = (page.relatedPageSlugs || [])
     .map((slug) => pageBySlug.get(slug)).filter(Boolean)
     .map((item) => `<li><a href="${escapeHtml(item.route)}">${escapeHtml(item.h1)}</a></li>`).join("");
+  const cover = page.imagePath && page.imageAlt
+    ? `<figure><img src="${escapeHtml(page.imagePath)}" alt="${escapeHtml(page.imageAlt)}" width="1200" height="630"></figure>`
+    : "";
   return `<main class="seo-prerender">
     <nav aria-label="Breadcrumb"><a href="/">Home</a> / ${escapeHtml(page.h1)}</nav>
     <header><p>${escapeHtml(page.eyebrow || page.pageType)}</p><h1>${escapeHtml(page.h1)}</h1><p>${escapeHtml(page.heroDescription)}</p><a href="/sessions">Browse focus sessions</a></header>
-    ${sections}${faq}
+    ${cover}${sections}${faq}
     <section><h2>Continue exploring</h2><ul>${related}</ul></section>
   </main>`;
 }
@@ -191,8 +195,17 @@ function renderMetadata(page) {
   html = replaceOrInsert(html, /<meta\s+property="og:description"[\s\S]*?\/?>/i, `<meta property="og:description" content="${description}" />`);
   html = replaceOrInsert(html, /<meta\s+property="og:url"[\s\S]*?\/?>/i, `<meta property="og:url" content="${canonical}" />`);
   html = replaceOrInsert(html, /<meta\s+property="og:type"[\s\S]*?\/?>/i, `<meta property="og:type" content="${page.pageType === "guide" ? "article" : "website"}" />`);
+  html = replaceOrInsert(html, /<meta\s+name="twitter:card"[\s\S]*?\/?>/i, `<meta name="twitter:card" content="${page.imagePath ? "summary_large_image" : "summary"}" />`);
   html = replaceOrInsert(html, /<meta\s+name="twitter:title"[\s\S]*?\/?>/i, `<meta name="twitter:title" content="${title}" />`);
   html = replaceOrInsert(html, /<meta\s+name="twitter:description"[\s\S]*?\/?>/i, `<meta name="twitter:description" content="${description}" />`);
+  if (page.imagePath && page.imageAlt) {
+    const image = `${origin}${page.imagePath}`;
+    const alt = escapeHtml(page.imageAlt);
+    html = replaceOrInsert(html, /<meta\s+property="og:image"[\s\S]*?\/?>/i, `<meta property="og:image" content="${image}" />`);
+    html = replaceOrInsert(html, /<meta\s+property="og:image:alt"[\s\S]*?\/?>/i, `<meta property="og:image:alt" content="${alt}" />`);
+    html = replaceOrInsert(html, /<meta\s+name="twitter:image"[\s\S]*?\/?>/i, `<meta name="twitter:image" content="${image}" />`);
+    html = replaceOrInsert(html, /<meta\s+name="twitter:image:alt"[\s\S]*?\/?>/i, `<meta name="twitter:image:alt" content="${alt}" />`);
+  }
   return html;
 }
 
@@ -233,12 +246,13 @@ function render(page) {
         }
       : {
           "@context": "https://schema.org",
-          "@type": page.pageType === "topic-hub" ? "CollectionPage" : page.pageType === "guide" ? "Article" : "WebPage",
+          "@type": page.pageType === "topic-hub" ? "CollectionPage" : page.pageType === "guide" ? "Article" : page.slug === "body-doubling-app" ? "WebApplication" : "WebPage",
           headline: page.h1,
           name: page.h1,
           description: page.metaDescription,
           url: canonical,
           dateModified: page.updatedAt,
+          ...(page.imagePath ? { image: `${origin}${page.imagePath}` } : {}),
         };
   html = html.replace("</head>", `  <script type="application/ld+json">${safeJson(jsonLd)}</script>\n</head>`);
   const prerenderContent = renderVisibleContent(page);
