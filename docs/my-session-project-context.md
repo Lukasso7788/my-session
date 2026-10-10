@@ -2045,4 +2045,9 @@ was fetched and confirmed at `e9cfa81`, matching this checkout. The current
 The commit should include the requested body-doubling design and prior SEO
 repairs, but exclude three sitemap files with line-ending-only changes. A
 Git push may trigger deployment; verify the resulting deployment separately
-before claiming a production change is live.
+before claiming a production change is live. The implementation commit is
+`7ba6a0d` (`Refresh body doubling hub and public SEO routes`); it was pushed
+to `origin/main`, and `git ls-remote origin refs/heads/main` confirmed the
+remote at `7ba6a0dcf50518c5a18288cc962498a5700722ae`. Production was not
+checked in this turn. Three sitemap files with line-ending-only differences
+remain unstaged in the working tree and should not be swept into future work.
