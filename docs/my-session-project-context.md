@@ -1911,3 +1911,138 @@ This is an isolated source change in
 generated sitemap CRLF-only changes or touch the separate, uncommitted SEO
 worktree. No commit, push, or production deploy is implicit in a request to
 restore the local theme; only do those on explicit follow-up.
+
+## 2026-10-10 keyword research and public SEO HTML repair (local work)
+
+The user supplied `C:\Users\misha\OneDrive\Рабочий стол\mysession-keywords.xlsx`
+as research, not as source code. It has 154 keywords (42 P1, 67 P2, 45 P3),
+with clusters, intent and mapped URLs. `estimated_demand` is a qualitative
+High/Med/Low estimate, **not** measured search volume. Autocomplete and
+Google Trends give directional evidence only. Do not publish invented keyword
+volumes or treat the workbook's technical diagnosis as current without
+checking production HTML.
+
+Project architecture relevant to this work: MySession is a Vite + React +
+TypeScript single-page app. `src/App.tsx` registers routes; data-driven SEO
+routes come from `src/data/seo-route-manifest.json` and definitions in
+`src/data/seo-pages.json` via `src/data/seoPageRegistry.ts`. The shared page
+component is `src/pages/seo/DataDrivenSeoPage.tsx`. Vercel's `vercel.json`
+serves built filesystem routes first, then falls back to `index.html`. Build
+starts in `package.json`: generate sitemaps, Vite bundle, prerender blog and
+SEO route HTML, then run verification scripts. `scripts/prerender-seo.mjs`
+generates `dist/<route>/index.html` with route metadata, visible crawler
+content, and a small script clearing that fallback before React hydration.
+`scripts/prerender-blog.mjs` does the equivalent for bundled blog posts.
+`scripts/generate-seo-assets.mjs` writes the three public sitemaps and sitemap
+index. `public/robots.txt` points search engines to them. React page handlers,
+auth, session data, and pricing behavior are not changed by this SEO work.
+
+Live baseline checked before local changes on 2026-10-10: `/sessions`,
+`/pricing`, `/faq`, and `/updates` already returned their own title and
+self-canonical, contrary to the spreadsheet's older diagnosis, but their raw
+HTML had no H1. `/blog/best-focusmate-alternatives` also had no raw H1 or
+substantial raw content. `/caveday-alternative` fell through to the home HTML
+and home canonical. The homepage title `Stay Focused 24/7` was ambiguous:
+infinite rooms are 24/7, but hosted sessions should not be described that way.
+
+Local changes in this checkout:
+
+- `scripts/prerender-seo.mjs`: route-specific no-JS H1, summaries and internal
+  links for the four public app routes; `/sessions` has more useful static
+  descriptions of scheduled, infinite and one-on-one formats. It keeps their
+  existing React routes and uses the established hydration handoff. Home title
+  is now `Live Focus Sessions & 24/7 Rooms | MySession`, matched in
+  `index.html` and `src/pages/LandingPage.tsx`.
+- `scripts/prerender-blog.mjs`: loads the already-bundled
+  `starterFocusmatePost` from `src/data/blogSeed.ts` through Vite SSR during
+  build, so the blog route uses the same starter Markdown without maintaining
+  a second copy. If a live Supabase `blog_posts` row overrides that starter
+  after hydration, compare the contents before promising perfect parity.
+- `/caveday-alternative` is in both SEO JSON files; the definition is a
+  600+ word comparison that correctly acknowledges Caveday's guided Caves
+  **and** 24/7 Focus Lounge. It does not claim unverified prices or imply
+  Caveday lacks always-open access. The route is included in the comparison
+  sitemap generated at build time.
+- `scripts/verify-seo-public-routes.mjs` is wired into `npm run build` and
+  checks the six affected raw HTML routes for distinct canonical, H1, enough
+  body text, and React handoff; also checks Caveday's route and sitemap.
+
+Verification: `npm run build` passed all existing checks plus the new route
+check: `/sessions` has over 100 raw words; Focusmate blog has 834 and Caveday
+has 611; all six have one H1. `npm run typecheck` remains blocked before
+source checking by pre-existing tsconfig project-reference errors TS6306 and
+TS6310. `git diff --check` passes. A Vite preview started on localhost:4195,
+but the sandbox blocked HTTP requests to localhost, so do not claim a browser
+or HTTP smoke test. Production remains **unchanged** until an explicit
+commit/push/deploy request; reread live HTML after deployment.
+
+Working tree: use `C:\projects\my-session\.codex-safe-room-side-panels` for
+these changes. It began aligned with `origin/main` at `e9cfa81` and already
+had line-ending-only dirt in four sitemap files. Build generated one real
+change in `public/sitemap-comparisons.xml` for Caveday; the other sitemap
+files are CRLF noise and must not be included accidentally. A separate
+checkout `.codex-safe-daily-email-7am` contains uncommitted body-doubling
+design work: do not overwrite or incorporate it by accident. This SEO batch
+is local and uncommitted unless a later turn explicitly requests publishing.
+
+Remaining SEO work: keyword mapping is a roadmap, not all implemented in
+this batch. The Focusmate blog and `/focusmate-alternative` still overlap in
+topic/primary keyword; decide whether to differentiate the blog as a genuine
+multi-product listicle before claiming cannibalization is resolved. Other
+proposed landing pages and articles (`/online-body-doubling`,
+`/body-doubling-app`, cleaning, studying, task paralysis, task initiation)
+need separate content and factual review. Check actual search performance in
+Search Console when available; do not invent exact demand figures. After any
+future push, validate the deployed Vercel SHA and re-fetch public HTML before
+asking Google to recrawl. The broader project architecture and prior room,
+auth, email and deployment notes are in the earlier sections of this file.
+
+## 2026-10-10 body-doubling page visual redesign (local, uncommitted)
+
+The user wanted the changed `/body-doubling` design actually delivered to a
+local preview: shorter, less templated, blue/light-blue room-like accents in
+place of green, and a real editorial hero image without a “Topic hub” label.
+The redesign had been left uncommitted in the separate
+`C:\projects\my-session\.codex-safe-daily-email-7am` checkout. It was
+carefully merged into the active SEO checkout
+`C:\projects\my-session\.codex-safe-room-side-panels`; do not treat this as a
+published deployment or discard either worktree's unrelated dirty files.
+
+Implementation map: `src/data/seo-pages.json` defines the short hero copy and
+single introductory section for `body-doubling`. React's route registry uses
+`src/pages/seo/DataDrivenSeoPage.tsx`; its `topic-hub` branch renders a split
+photo/text hero, one plain-language explainer, three related-page links and
+compact FAQ. Other comparison/guide pages still use the shared generic branch.
+The image is `public/blog/editorial/body-doubling-together.jpg` (1672 x 941),
+with descriptive alt text; it is a copied original asset, not a recreated
+icon or remote dependency. `scripts/prerender-seo.mjs` has a matching topic-hub
+branch so no-JavaScript HTML includes the same H1, image, key copy, links and
+answers. The page's metadata/structured data still come from the established
+SEO page registry. The earlier public-route SEO fixes and new Caveday route
+remain in this same uncommitted worktree.
+
+Verification in this turn: `npm run build` passed with SEO validations and
+prerendered routes, `npx eslint src/pages/seo/DataDrivenSeoPage.tsx` passed,
+and `git diff --check` passed (only existing sitemap CRLF warnings). Browser
+inspection of `http://127.0.0.1:4196/body-doubling` at 1600 px confirmed
+the hero image loads, H1 and links render, no desktop horizontal overflow, and
+no green accent appears on the redesigned page. A browser viewport override
+did not change the effective viewport, so do not claim a fresh mobile visual
+pass from this inspection; responsive Tailwind breakpoints are present.
+
+Local preview caveat: this checkout lacks its own `.env.local`; a plain Vite
+preview build starts with empty Supabase URL/key and white-screens when the
+client initializes. For this preview, the existing root repository
+`C:\projects\my-session\.env.local` supplied `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY` to the build process without printing values. Do not
+copy secrets into tracked files or interpret that preview-only configuration
+issue as a production incident. The preview server runs from the active
+checkout on port 4196. `npm run typecheck` remains blocked by pre-existing
+TS6306/TS6310 tsconfig reference errors (see section above). The user then
+explicitly requested a commit and push. Before publication, `origin/main`
+was fetched and confirmed at `e9cfa81`, matching this checkout. The current
+`npm run build` passed all SEO checks, including the raw HTML route checks.
+The commit should include the requested body-doubling design and prior SEO
+repairs, but exclude three sitemap files with line-ending-only changes. A
+Git push may trigger deployment; verify the resulting deployment separately
+before claiming a production change is live.

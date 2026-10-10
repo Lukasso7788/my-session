@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/generate-seo-assets.mjs && vite build && node scripts/prerender-blog.mjs && node scripts/prerender-seo.mjs && node scripts/verify-seo-batch1.mjs && node scripts/verify-sitemap-pages.mjs && node scripts/verify-blog-editorial.mjs && node scripts/verify-seo-react-render.mjs",
+    "build": "node scripts/generate-seo-assets.mjs && vite build && node scripts/prerender-blog.mjs && node scripts/prerender-seo.mjs && node scripts/verify-seo-batch1.mjs && node scripts/verify-seo-public-routes.mjs && node scripts/verify-sitemap-pages.mjs && node scripts/verify-blog-editorial.mjs && node scripts/verify-seo-react-render.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

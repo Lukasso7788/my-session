@@ -850,7 +850,7 @@ function FinalCta() {
 export default function LandingPage() {
     useEffect(() => {
         applyPageSeo({
-            title: "MySession – Stay Focused 24/7",
+            title: "Live Focus Sessions & 24/7 Rooms | MySession",
             description: HOME_META_DESCRIPTION,
             canonicalUrl: "https://mysession.club/",
             type: "website",

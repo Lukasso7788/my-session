@@ -16,7 +16,7 @@ const corePages = [
     pageType: "website",
     schemaType: "WebSite",
     eyebrow: "Live online focus community",
-    title: "MySession – Stay Focused 24/7",
+    title: "Live Focus Sessions & 24/7 Rooms | MySession",
     metaDescription: "Join live virtual coworking and body doubling sessions, work alongside focused people, and use structured focus rooms to finally get things done.",
     h1: "Live body doubling sessions for focused work",
     heroDescription: "MySession gives remote workers, students, creators, and independent professionals a shared place to begin, focus, and finish meaningful work.",
@@ -111,13 +111,17 @@ const corePages = [
   },
 ];
 
-// These public routes are client-rendered, but must not inherit the homepage's
-// title, canonical, or prerendered content from the SPA fallback HTML.
+// These public routes are client-rendered. Give crawlers useful route-specific
+// HTML while React replaces the fallback during hydration.
 const staticPublicPages = [
-  { route: "/sessions", title: "Focus Sessions and 24/7 Rooms | MySession", metaDescription: "Browse scheduled group focus sessions, always-open rooms, and one-on-one options on MySession." },
-  { route: "/pricing", title: "Pricing | MySession", metaDescription: "Explore MySession's free and paid plans for focus sessions, always-open rooms, and productivity tools." },
-  { route: "/faq", title: "FAQ | MySession", metaDescription: "Answers to common questions about MySession, live coworking, body doubling, focus sessions, pricing, cameras, and how sessions work." },
-  { route: "/updates", title: "Latest Updates | MySession", metaDescription: "Read the latest MySession product updates and improvements to focus sessions and productivity tools." },
+  { route: "/sessions", title: "Focus Sessions and 24/7 Rooms | MySession", metaDescription: "Browse group focus sessions and 24/7 rooms.", h1: "Live focus sessions and 24/7 rooms", summary: "Choose a time and format that helps you get started. MySession brings scheduled group sessions, always-open focus rooms, and one-on-one options together in one place.", sections: [
+    { heading: "Scheduled group sessions", text: "Pick an upcoming session when putting a start time on your calendar helps you follow through. Check the current schedule for available hosts, times, room rules, and session length." },
+    { heading: "Always-open focus rooms", text: "Enter an infinite room when you want to begin now. Work independently alongside others, keep your task visible, and follow the room's current stage. These rooms are different from the scheduled host-led sessions." },
+    { heading: "One-on-one focus", text: "For a smaller accountability format, browse the one-on-one options. Compare the formats by how much structure and interaction you need for the task in front of you." },
+  ], links: [["How it works", "/how-it-works"], ["Pricing", "/pricing"], ["Caveday comparison", "/caveday-alternative"]] },
+  { route: "/pricing", title: "Pricing | MySession", metaDescription: "Explore MySession's free and paid plans for focus sessions, always-open rooms, and productivity tools.", h1: "Pricing that stays simple", summary: "Start free and compare MySession plans for live focus sessions, always-open rooms, and productivity tools.", links: [["Browse sessions", "/sessions"], ["Frequently asked questions", "/faq"]] },
+  { route: "/faq", title: "FAQ | MySession", metaDescription: "Answers to common questions about MySession, live coworking, body doubling, focus sessions, pricing, cameras, and how sessions work.", h1: "Frequently asked questions about MySession", summary: "Find answers about body doubling, focus sessions, room access, pricing, cameras, and getting started with MySession.", links: [["Browse sessions", "/sessions"], ["How it works", "/how-it-works"]] },
+  { route: "/updates", title: "Latest Updates | MySession", metaDescription: "Read the latest MySession product updates and improvements to focus sessions and productivity tools.", h1: "Latest updates", summary: "See recent MySession product changes and improvements to focus sessions, rooms, and productivity tools.", links: [["Browse sessions", "/sessions"], ["Help and FAQ", "/faq"]] },
   { route: "/affiliate", title: "Affiliate Program | MySession", metaDescription: "Learn about the MySession affiliate program for creators, hosts, and community partners." },
   { route: "/contact", title: "Contact Information | MySession", metaDescription: "Find MySession seller details and support contact information." },
   { route: "/terms", title: "Terms and Conditions | MySession", metaDescription: "Read the terms and conditions for using the MySession productivity platform." },
@@ -133,6 +137,27 @@ function replaceOrInsert(html, pattern, replacement) {
 }
 
 function renderVisibleContent(page) {
+  if (page.pageType === "topic-hub") {
+    const relatedLinks = (page.relatedPageSlugs || [])
+      .slice(0, 3)
+      .map((slug) => pageBySlug.get(slug))
+      .filter(Boolean)
+      .map((item) => `<li><a href="${escapeHtml(item.route)}">${escapeHtml(item.h1)}</a></li>`)
+      .join("");
+    const questions = page.faqItems.map((item) => `<h3>${escapeHtml(item.question)}</h3><p>${escapeHtml(item.answer)}</p>`).join("");
+    return `<main class="seo-prerender">
+      <nav aria-label="Breadcrumb"><a href="/">Home</a> / Body doubling</nav>
+      <header><h1>${escapeHtml(page.h1)}</h1><p>${escapeHtml(page.heroDescription)}</p>
+        <img src="/blog/editorial/body-doubling-together.jpg" width="1672" height="941" alt="Two people quietly working on their own tasks at the same table">
+        <a href="/sessions">Find a room</a> <a href="/how-it-works">How it works</a>
+      </header>
+      <section><h2>${escapeHtml(page.sections[0].heading)}</h2><p>${escapeHtml(page.sections[0].body[0])}</p></section>
+      <section><h2>Read more, or just begin</h2><p>A practical guide if you want the details. A room if you are ready now.</p>
+        <a href="/guides/what-is-body-doubling">What is body doubling?</a><ul>${relatedLinks}</ul>
+      </section>
+      <section><h2>A few quick answers</h2>${questions}</section>
+    </main>`;
+  }
   const sections = page.sections.map((section) => `
     <section>
       <h2>${escapeHtml(section.heading)}</h2>
@@ -146,13 +171,10 @@ function renderVisibleContent(page) {
   const related = (page.relatedPageSlugs || [])
     .map((slug) => pageBySlug.get(slug)).filter(Boolean)
     .map((item) => `<li><a href="${escapeHtml(item.route)}">${escapeHtml(item.h1)}</a></li>`).join("");
-  const hubGuide = page.pageType === "topic-hub"
-    ? '<section><h2>What is body doubling?</h2><p>Read the full explanation of shared presence and how to try a focus block.</p><a href="/guides/what-is-body-doubling">Read the full body doubling guide</a></section>'
-    : "";
   return `<main class="seo-prerender">
     <nav aria-label="Breadcrumb"><a href="/">Home</a> / ${escapeHtml(page.h1)}</nav>
     <header><p>${escapeHtml(page.eyebrow || page.pageType)}</p><h1>${escapeHtml(page.h1)}</h1><p>${escapeHtml(page.heroDescription)}</p><a href="/sessions">Browse focus sessions</a></header>
-    ${hubGuide}${sections}${faq}
+    ${sections}${faq}
     <section><h2>Continue exploring</h2><ul>${related}</ul></section>
   </main>`;
 }
@@ -172,6 +194,16 @@ function renderMetadata(page) {
   html = replaceOrInsert(html, /<meta\s+name="twitter:title"[\s\S]*?\/?>/i, `<meta name="twitter:title" content="${title}" />`);
   html = replaceOrInsert(html, /<meta\s+name="twitter:description"[\s\S]*?\/?>/i, `<meta name="twitter:description" content="${description}" />`);
   return html;
+}
+
+function renderStaticPublicPage(page) {
+  const html = renderMetadata(page);
+  if (!page.h1) return html;
+  const links = page.links.map(([label, route]) => `<a href="${escapeHtml(route)}">${escapeHtml(label)}</a>`).join(" · ");
+  const sections = (page.sections || []).map((section) => `<section><h2>${escapeHtml(section.heading)}</h2><p>${escapeHtml(section.text)}</p></section>`).join("");
+  const content = `<main class="seo-prerender"><nav aria-label="Breadcrumb"><a href="/">Home</a> / ${escapeHtml(page.h1)}</nav><h1>${escapeHtml(page.h1)}</h1><p>${escapeHtml(page.summary)}</p>${sections}<p>${links}</p></main>`;
+  const clearBeforePaint = '<script id="seo-prerender-clear">(function(){var root=document.getElementById("root");if(root)root.innerHTML="";})();</script>';
+  return html.replace('<div id="root"></div>', `<div id="root">${content}</div>${clearBeforePaint}`);
 }
 
 function render(page) {
@@ -225,8 +257,6 @@ for (const page of prerenderPages) {
 for (const page of staticPublicPages) {
   const output = path.join(dist, ...page.route.slice(1).split("/"));
   await mkdir(output, { recursive: true });
-  // Keep the SPA root empty: legal/product content is rendered by its existing
-  // React route, while crawlers receive accurate route-specific head metadata.
-  await writeFile(path.join(output, "index.html"), renderMetadata(page), "utf8");
+  await writeFile(path.join(output, "index.html"), renderStaticPublicPage(page), "utf8");
 }
 console.log(`[prerender-seo] Wrote ${prerenderPages.length + staticPublicPages.length} route-specific HTML files.`);

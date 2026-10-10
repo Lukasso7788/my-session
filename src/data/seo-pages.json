@@ -1,20 +1,49 @@
 [
   {
+    "slug": "caveday-alternative",
+    "route": "/caveday-alternative",
+    "pageType": "comparison",
+    "cluster": "comparisons",
+    "title": "Caveday Alternative for Online Focus | MySession",
+    "metaDescription": "Compare Caveday with MySession focus rooms and sessions.",
+    "h1": "A Caveday alternative for flexible focus",
+    "heroDescription": "Compare guided Caves with MySession's group sessions and task-focused rooms, then choose the structure that helps you actually begin.",
+    "primaryKeyword": "Caveday alternative",
+    "secondaryKeywords": ["online coworking alternative", "virtual focus room", "group body doubling"],
+    "searchIntent": "commercial-comparison",
+    "sections": [
+      {"heading":"Two ways to make starting easier","body":["Caveday is known for guided online work sessions called Caves. A host leads a shared start and end, which can help when you want someone else to set the pace. Caveday also has a Focus Lounge that is open around the clock, so this is not a comparison between an available room and no available room.","MySession gives you a choice of scheduled group sessions and always-open rooms. Once inside, the room's tasks, intentions, timeline, check-ins, chat, and optional audio remain close to the work. If you like seeing your next action and the current stage in one place, that difference may matter more than another entry on a feature list."]},
+      {"heading":"When a guided session is the better fit","body":["Choose a hosted Cave if you want a facilitator to set expectations, announce transitions, and bring the group back together. That external lead can be especially useful on days when deciding how to run the session feels like work in itself.","If you need a specific start time to make a commitment real, compare the actual schedules in your time zone before choosing either service. Do not assume that a calendar of hosted sessions is the same thing as an always-open room: they solve different parts of the problem."]},
+      {"heading":"When MySession may fit better","body":["MySession may suit you if the work block needs visible task tracking or a customizable stage rhythm. You can enter an infinite room to begin now, or pick a scheduled session when a future appointment provides useful pressure. People can work independently while sharing the same room; nobody needs to be on the same project.","For example, you might write one concrete intention, finish a 25-minute block, mark a task complete, and use the check-in to decide what comes next. On a different day you might choose a longer focus interval. The practical question is whether the room makes the first action easier to take, not which service has the longest feature list."],"bullets":["Scheduled and always-open group formats","Visible tasks and intentions inside the room","Session stages and check-ins","Optional camera, microphone, chat, and shared audio"]},
+      {"heading":"Try the workflow, then decide","body":["Before paying for either product, check each provider's current schedule, access rules, and pricing on its official site. Details can change, and a feature you do not use is not an advantage. A short trial of the actual room will tell you more than a comparison table alone.","Use the same small task in both formats. Notice how quickly you enter, whether the group structure helps you stay with the work, and whether the ending leaves you with a clear next step. If you consistently need a host to lead the block, a guided format may win. If you want your task and timer together in a flexible room, try MySession."]}
+    ],
+    "faqItems": [
+      {"question":"Does Caveday have a 24/7 room?","answer":"Yes. Caveday describes a 24/7 Focus Lounge as well as its guided Caves. Check its official website for current access details."},
+      {"question":"Does MySession offer hosted sessions?","answer":"Yes. MySession offers scheduled group sessions alongside always-open rooms; check the current calendar for hosted times."},
+      {"question":"Which format should I try first?","answer":"Try a guided session if facilitation is your main need. Try MySession if visible tasks, stages, and flexible group entry are more useful to you."}
+    ],
+    "relatedPageSlugs": ["flow-club-alternative", "focusmate-alternative", "virtual-coworking"],
+    "ctaVariant": "compare",
+    "indexable": true,
+    "sitemapPriority": 0.8,
+    "changeFrequency": "monthly",
+    "createdAt": "2026-10-10",
+    "updatedAt": "2026-10-10"
+  },
+  {
     "slug": "body-doubling",
     "route": "/body-doubling",
     "pageType": "topic-hub",
     "cluster": "body-doubling",
     "title": "Body Doubling Sessions and Guides | MySession",
     "metaDescription": "Explore body doubling guides and live focus rooms.",
-    "h1": "Body doubling: sessions and guides",
-    "heroDescription": "Find a live focus room, choose the amount of structure you need, and explore practical guides for studying, remote work, and difficult starts.",
+    "h1": "Body doubling for the work in front of you",
+    "heroDescription": "Open a room, name what you are working on, and get started alongside other people. Everyone works on their own task.",
     "primaryKeyword": "body doubling sessions",
     "secondaryKeywords": ["online body doubling", "virtual body double", "accountability sessions"],
     "searchIntent": "informational-commercial",
     "sections": [
-      {"heading":"Choose a body doubling room","body":["A scheduled session gives you an appointment to show up for. An always-open room lets you begin when the task is in front of you. Both formats make independent work feel less isolated without turning it into another meeting.","Pick a room by start time, length, and participation rules. The right choice is the one you can join and use for a concrete outcome today."],"bullets":["Scheduled group sessions for a fixed commitment","Always-open rooms when you need to start now","Short blocks for an avoided task","Longer blocks for work with expensive context"]},
-      {"heading":"Explore guides for different needs","body":["New to the method? Start with our full explanation of what body doubling is and how an online session works. If the challenge is more specific, use the related guides for ADHD, studying, or procrastination.","You do not need to work on the same subject as other people in the room. Shared presence provides a working rhythm while each person keeps control of their own task."]},
-      {"heading":"Try one focused block","body":["Choose a single outcome you can check at the end, enter a suitable session, and name your first action. When the block ends, record what changed and what you will do next.","Body doubling is a practical focus format, not a medical treatment or a promise that every task will suddenly feel easy. Use the session as one tool for building a repeatable work routine."]}
+      {"heading":"What is body doubling?","body":["Body doubling means working on your own task alongside someone else. You do not need to collaborate or work on the same thing. A shared start and a check-in can make a difficult first step feel more manageable."]}
     ],
     "faqItems": [
       {"question":"Can I join a body doubling room immediately?","answer":"Yes. MySession has always-open rooms as well as scheduled sessions."},
