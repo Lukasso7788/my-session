@@ -19,10 +19,9 @@ const staticPages = [
   ["/refund-policy", "yearly", 0.3],
 ];
 
-// Google ignores changefreq/priority, so entries carry only loc and lastmod.
 function urlset(items) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${items
-    .map((item) => `  <url>\n    <loc>${origin}${item.route}</loc>\n    <lastmod>${item.updatedAt || "2026-07-29"}</lastmod>\n  </url>`)
+    .map((item) => `  <url>\n    <loc>${origin}${item.route}</loc>\n    <lastmod>${item.updatedAt || "2026-07-29"}</lastmod>\n    <changefreq>${item.changeFrequency}</changefreq>\n    <priority>${Number(item.sitemapPriority).toFixed(1)}</priority>\n  </url>`)
     .join("\n")}\n</urlset>\n`;
 }
 
@@ -47,8 +46,8 @@ await writeFile("public/sitemap-pages.xml", urlset(pageEntries), "utf8");
 await writeFile("public/sitemap-guides.xml", urlset(guideEntries), "utf8");
 await writeFile("public/sitemap-comparisons.xml", urlset(comparisonEntries), "utf8");
 
-// sitemap.xml is the single submitted sitemap and lists every URL directly.
-// The section files stay published for anyone who submitted them separately.
-const allEntries = [...pageEntries, ...guideEntries, ...comparisonEntries];
-await writeFile("public/sitemap.xml", urlset(allEntries), "utf8");
-console.log(`[seo-assets] Wrote sitemap.xml with ${allEntries.length} URLs plus three section sitemaps.`);
+const sitemapIndex = `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${[
+  "sitemap-pages.xml", "sitemap-guides.xml", "sitemap-comparisons.xml",
+].map((name) => `  <sitemap><loc>${origin}/${name}</loc></sitemap>`).join("\n")}\n</sitemapindex>\n`;
+await writeFile("public/sitemap.xml", sitemapIndex, "utf8");
+console.log(`[seo-assets] Wrote sitemaps for ${pageEntries.length + guideEntries.length + comparisonEntries.length} URLs.`);
