@@ -1,6 +1,6 @@
 # Editorial photo compositions
 
-Five bundled SEO articles, three SEO landing pages, and two inline article
+Fifteen bundled SEO articles, three SEO landing pages, and two inline article
 illustrations use reproducible, 1200 × 630 JPEG compositions
 composed in HTML/CSS and captured with local headless Chrome. This directory
 contains the Pexels source metadata and page links (`sources.json`), downloaded
@@ -11,9 +11,13 @@ their images through `imagePath` and `imageAlt` in `src/data/seo-pages.json`;
 the two inline article images are referenced in bundled Markdown.
 
 To revise one, edit its copy, theme, or Pexels photo in `sources.json` and
-optionally change `cover-template.html`. Run `npm run covers:photos` to fetch
+optionally change `cover-template.html`. An optional `photoPosition` (CSS
+`object-position`, e.g. `"100% 100%"`) overrides the theme's default crop
+when the subject would otherwise be cut off. Run `npm run covers:photos` to fetch
 missing photos or `npm run covers:photos -- <slug>` to replace one photo after
-changing its `photoId`, then `npm run covers:render`. Chrome defaults to
+changing its `photoId`, then `npm run covers:render` (all covers) or
+`npm run covers:render -- <slug> [<slug> ...]` to re-render only the named
+covers and leave the other published JPEGs untouched. Chrome defaults to
 `C:\Program Files\Google\Chrome\Application\chrome.exe`; set `CHROME_PATH`
 for another location. Run `npm run build` afterward: the editorial verifier
 checks dimensions, file size, provenance, alt text, social metadata and
