@@ -2308,3 +2308,20 @@ without horizontal overflow, with both product columns visible on phones.
 
 Open items outside the code: `www.mysession.club` redirects to the apex with
 a temporary 307. Switch it to a permanent redirect in Vercel → Domains.
+
+## 2026-10-11 video audit (read-only)
+
+`docs/video-audit-2026-10-11.md` lists camera, effects, screen-share, policy,
+PiP and mobile video problems with line references, 30-day production
+aggregates and a suggested fix order. No video code was changed. The most
+serious items:
+- With blur or a virtual background selected, the raw camera is published
+  when the camera is first turned on in the room.
+- A camera that ends in the background is not restored when the tab returns.
+- Cameras-required rooms remove people for device failures and host-forced
+  camera-off.
+- The prejoin camera keeps running after gate closes.
+- Every remote camera is mirrored by default.
+
+Video behaviour changes still need the user's agreement before
+implementation.
