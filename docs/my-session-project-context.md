@@ -245,9 +245,17 @@ first mount after a load on that room URL, revoked on leave/kick/removal);
 background-recovery token requests use `{ recovery: true }`; media-policy
 countdowns pause while hidden or reconnecting; the stage countdown lives in
 `src/lib/roomCountdownStore.ts`; room timing uses `serverNow()` from
-`src/lib/serverClock.ts`. Run `node --experimental-strip-types --test
+`src/lib/serverClock.ts`. The first LiveKit connection is retried in place
+up to three times (`ROOM_INITIAL_CONNECT_ATTEMPTS`, 32 s timeout) and every
+failure is logged as `room_connect_failed`. Run `node --experimental-strip-types --test
 scripts/*.test.mjs tests/*.test.mjs` on Node 22 (type stripping is default on
 Node 23+).
+
+Deployments: production is promoted from branch builds, not only from
+`main`. On 2026-10-11 promoting the room-fix branch (based on `main`)
+replaced the SEO-article build, so the 10 new articles and the Vite dep-scan
+fix disappeared from production. The room branch now merges the SEO branch;
+promote one branch that contains all wanted work, or merge to `main` first.
 
 RoomPageLiveKit.tsx is the large room orchestrator (over 20k source lines), with
 prejoin/identity/admission -> token -> Room connection -> prepared media publish
