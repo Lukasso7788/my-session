@@ -22,6 +22,3 @@ Disallow: /tasks
 Disallow: /focus-plan
 
 Sitemap: https://mysession.club/sitemap.xml
-Sitemap: https://mysession.club/sitemap-pages.xml
-Sitemap: https://mysession.club/sitemap-guides.xml
-Sitemap: https://mysession.club/sitemap-comparisons.xml
