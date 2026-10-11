@@ -1,6 +1,14 @@
 const RECOVERY_KEY = "mysession:dynamic-import-recovery";
 const RECOVERY_COOLDOWN_MS = 60_000;
 
+/**
+ * Fired instead of a reload while a live room defers reloads. `detail.error`
+ * carries the import failure.
+ */
+export const APP_UPDATE_AVAILABLE_EVENT = "mysession:app-update-available";
+
+const reloadDeferrals = new Set<symbol>();
+
 function errorMessage(value: unknown): string {
   if (value instanceof Error) return value.message;
   if (typeof value === "string") return value;
@@ -25,6 +33,23 @@ export function isDynamicImportFailure(value: unknown): boolean {
     message.includes("loading chunk") ||
     message.includes("unable to preload css")
   );
+}
+
+/**
+ * While the returned release function has not been called, import failures
+ * announce APP_UPDATE_AVAILABLE_EVENT instead of reloading the page. A live
+ * room uses this so a stale chunk cannot end the call.
+ */
+export function deferDynamicImportReloads(): () => void {
+  const token = Symbol("dynamic-import-reload-deferral");
+  reloadDeferrals.add(token);
+  return () => {
+    reloadDeferrals.delete(token);
+  };
+}
+
+export function areDynamicImportReloadsDeferred(): boolean {
+  return reloadDeferrals.size > 0;
 }
 
 function recoveryStorageKey() {
@@ -53,10 +78,25 @@ function markReloadAttempt() {
   }
 }
 
+function announceAppUpdate(value: unknown) {
+  try {
+    window.dispatchEvent(new CustomEvent(APP_UPDATE_AVAILABLE_EVENT, { detail: { error: value } }));
+  } catch {
+    // CustomEvent is available in every supported browser; never throw here.
+  }
+}
+
 export function recoverFromDynamicImportFailure(value: unknown): boolean {
-  if (typeof window === "undefined" || !isDynamicImportFailure(value) || !canReloadNow()) {
+  if (typeof window === "undefined" || !isDynamicImportFailure(value)) return false;
+
+  if (areDynamicImportReloadsDeferred()) {
+    // The caller still receives the original error (for example a panel error
+    // boundary), so the import failure is not marked as handled.
+    announceAppUpdate(value);
     return false;
   }
+
+  if (!canReloadNow()) return false;
 
   markReloadAttempt();
 
@@ -65,10 +105,10 @@ export function recoverFromDynamicImportFailure(value: unknown): boolean {
     value,
   );
 
-  // A long-lived MySession room can stay open while Vercel promotes a new
-  // deployment. Its already-loaded JS then points at hashed lazy chunks from
-  // the previous deployment, which no longer exist on the production domain.
-  // A full reload fetches the current index + manifest and keeps the same URL.
+  // A page can stay open while Vercel promotes a new deployment. Its loaded
+  // JS then points at hashed lazy chunks from the previous deployment, which
+  // no longer exist on the production domain. A full reload fetches the
+  // current index + manifest and keeps the same URL.
   window.location.reload();
   return true;
 }
