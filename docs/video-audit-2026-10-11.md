@@ -51,6 +51,22 @@ Read-only audit of camera capture, effects (blur / virtual background / colour c
 - `enableLocalCameraWithRecovery` (12273-12397) always tries selected → default constrained → default unconstrained, with releases and settle delays between, even for NotAllowedError or NotFoundError where retrying cannot help. Each try logs two diagnostics. Production shows 225 NotAllowedError failures with bursts of up to 25 per minute.
 - Fix: stop after the first NotAllowedError/SecurityError/NotFoundError and show specific guidance (site permission, no camera found).
 
+**Why access is denied (checked 2026-10-11).**
+- **Not in-app browsers.** None of the failures, room joins (115 people) or sign-ins in `auth.sessions` (116 people) in 30 days had an in-app browser or WebView user agent: Instagram, Facebook, TikTok, Telegram, LINE, LinkedIn, Snapchat, X, the Google app, Discord, Android `; wv)`, or iOS WebKit without `Safari/`.
+- **The browser remembers a per-site decision:**
+  - Chrome/Edge "Permission denied": 121 logged attempts, 8 people; one of them on 5 different days.
+  - Safari/Firefox "The request is not allowed by the user agent or the platform…": 101 attempts, 4 people; one iPad user logged 63 in a day.
+  - "Permission dismissed": 3.
+  - OS-level "Permission denied by system": none.
+- **Real scale.** 76 real tries (225 logged) from 12 of 115 active people.
+- **Likely trigger.** Prejoin defaults to `videoEnabled: true` (6264-6266) and starts the preview as soon as it opens (9953-9969). The browser prompt therefore appears before the person has chosen to use the camera, and Chrome keeps a reflexive "Block" for the site until it is changed in site settings.
+- **The message does not help.** NotAllowedError maps to "A camera or microphone permission step failed." (1295-1297), and Safari's technical message is shown as is. Nothing checks `navigator.permissions`.
+- **Invisible failures.** Prejoin preview failures are not logged, so people who fail before joining don't appear in this data.
+- **Fix:**
+  - Ask for the camera only after a click in prejoin.
+  - Check the permission state first and show per-browser steps when it is denied.
+  - Log prejoin preview failures.
+
 ### 7. The app can open the camera twice — code reading, supported by data
 - The bottom bar's private preview opens its own camera track; only the bottom-bar toggle stops it, while voice, PiP and policy-reminder "Camera on" call `toggleCam` directly (code reading).
 - Join can race an in-flight prejoin FX init that recreates the prepared track (9796-9851, 14611-14649; code reading).
