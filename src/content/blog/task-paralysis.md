@@ -28,7 +28,7 @@ Task paralysis usually has a specific cause, even when it feels like a general f
 
 This sequence is deliberately small. Its only job is to turn "stuck" into "started."
 
-1. **Name the freeze (1 minute).** Say or write: "I am avoiding X because Y." Choose Y from the list above. Labelling the reason lowers its pull.
+1. **Name the freeze (1 minute).** Say or write: "I am avoiding X because Y." Choose Y from the list above. Labeling the reason lowers its pull.
 2. **Shrink the task (2 minutes).** Write the smallest action you could finish in five minutes: open the document and type a title, find one receipt, read the first paragraph of the email.
 3. **Lower the bar (1 minute).** Decide in advance that the first pass will be rough. You are collecting material, not producing the final version.
 4. **Borrow a start signal (1 minute).** Start a five-minute timer, or join a room where other people are already working. An external start removes the moment of decision.

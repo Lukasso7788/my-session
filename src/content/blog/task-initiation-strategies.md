@@ -61,7 +61,7 @@ Pick one or two strategies, not all nine. A small system you use beats an elabor
 
 Difficulty starting tasks is one of the most common challenges people with ADHD describe, and external structure is a frequent recommendation: timers, scheduled blocks, visible plans, and working alongside other people. The strategies above are practical habits, not treatment. If starting is a persistent struggle that affects your work, studies, or wellbeing, a doctor or qualified professional can help you explore what is going on. Our page on [body doubling for ADHD](/body-doubling-for-adhd) explains how shared focus sessions fit into a routine without medical claims.
 
-## Practise the start, not the whole task
+## Practice the start, not the whole task
 
 Task initiation improves with repetition. Each small, successful start is evidence that beginning is possible, which makes the next one easier. Choose one task you have been avoiding, write its two-minute entry action, and [join a live focus room](/sessions) where the next block is about to begin. Count the session as a success if you started, whatever you finished.
 

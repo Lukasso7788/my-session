@@ -63,7 +63,7 @@ Flow Club runs booked group sessions of up to nine people. A volunteer host welc
 
 FLOWN combines facilitated focus sessions of one or two hours with smaller member-run community sessions, a silent 24/7 Drop-In, and recharge sessions such as breathwork, journaling, and planning. It also offers on-demand work-with-me videos and paid coaching add-ons.
 
-**Good for:** people who want a full programme around their work, not just a focus room. **Less good for:** anyone who only needs a quick room to start in. FLOWN costs $25 a month, $19 a month billed annually, or $900 for lifetime access, with a 30-day free trial; FLOWN Free includes four community sessions a month plus any session on Fridays. Compare it with MySession on our [FLOWN alternative page](/flown-alternative).
+**Good for:** people who want a full program around their work, not just a focus room. **Less good for:** anyone who only needs a quick room to start in. FLOWN costs $25 a month, $19 a month billed annually, or $900 for lifetime access, with a 30-day free trial; FLOWN Free includes four community sessions a month plus any session on Fridays. Compare it with MySession on our [FLOWN alternative page](/flown-alternative).
 
 ## 4. Caveday: best for guided deep-work blocks
 
