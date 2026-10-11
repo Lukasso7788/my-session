@@ -32,7 +32,7 @@ That does not mean the other participants should watch your screen or judge your
 
 A [25-minute focus session](/focus-session-25-minutes) can help when starting is the main challenge. A [50-minute session](/focus-session-50-minutes) leaves more time for a normal work unit. Longer blocks can protect context for writing, design, or complex problem solving, especially when the materials are already ready.
 
-Scheduled sessions create commitment because the start time is fixed. An always-open room removes the wait when you want to begin immediately. Neither is universally better. Pick the format that removes the obstacle you actually have today.
+Scheduled sessions create commitment because the start time is fixed. An always-open room removes the wait when you want to begin immediately. Neither is universally better. Pick the format that removes the obstacle you actually have today. If you are deciding between a single partner and a shared room, read [group vs one-on-one body doubling](/blog/group-vs-one-on-one-body-doubling).
 
 For a study-specific routine, see our [body doubling study guide](/blog/body-doubling-study-session-routine). If you are stuck before the first minute, follow the [ten-minute guide to starting a focus session](/blog/how-to-start-a-focus-session-when-stuck).
 

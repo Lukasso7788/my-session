@@ -4,6 +4,16 @@ import studyRoutineMarkdown from "../content/blog/body-doubling-study-session-ro
 import startWhenStuckMarkdown from "../content/blog/how-to-start-a-focus-session-when-stuck.md?raw";
 import remoteWorkMarkdown from "../content/blog/remote-work-accountability-without-meetings.md?raw";
 import whatIsBodyDoublingMarkdown from "../content/blog/what-is-body-doubling.md?raw";
+import groupVsOneOnOneMarkdown from "../content/blog/group-vs-one-on-one-body-doubling.md?raw";
+import accountabilityPartnerMarkdown from "../content/blog/accountability-partner-vs-body-double.md?raw";
+import coworkingEtiquetteMarkdown from "../content/blog/virtual-coworking-etiquette.md?raw";
+import cameraOnOrOffMarkdown from "../content/blog/body-doubling-camera-on-or-off.md?raw";
+import groupPomodoroMarkdown from "../content/blog/group-pomodoro-sessions.md?raw";
+import scheduledVsDropInMarkdown from "../content/blog/scheduled-vs-drop-in-focus-sessions.md?raw";
+import sessionIntentionMarkdown from "../content/blog/how-to-write-a-focus-session-intention.md?raw";
+import cleaningMarkdown from "../content/blog/body-doubling-for-cleaning.md?raw";
+import studyWithMeMarkdown from "../content/blog/study-with-me-videos-vs-live-study-rooms.md?raw";
+import hostSessionMarkdown from "../content/blog/how-to-host-a-virtual-coworking-session.md?raw";
 import editorialCoverSources from "../../scripts/editorial-covers/sources.json";
 import editorialManifest from "./blog-editorial-manifest.json";
 import { starterFocusmatePost, withStarterFocusmateAssets } from "./blogSeed";
@@ -14,6 +24,16 @@ const markdownByFile: Record<string, string> = {
   "how-to-start-a-focus-session-when-stuck.md": startWhenStuckMarkdown,
   "remote-work-accountability-without-meetings.md": remoteWorkMarkdown,
   "what-is-body-doubling.md": whatIsBodyDoublingMarkdown,
+  "group-vs-one-on-one-body-doubling.md": groupVsOneOnOneMarkdown,
+  "accountability-partner-vs-body-double.md": accountabilityPartnerMarkdown,
+  "virtual-coworking-etiquette.md": coworkingEtiquetteMarkdown,
+  "body-doubling-camera-on-or-off.md": cameraOnOrOffMarkdown,
+  "group-pomodoro-sessions.md": groupPomodoroMarkdown,
+  "scheduled-vs-drop-in-focus-sessions.md": scheduledVsDropInMarkdown,
+  "how-to-write-a-focus-session-intention.md": sessionIntentionMarkdown,
+  "body-doubling-for-cleaning.md": cleaningMarkdown,
+  "study-with-me-videos-vs-live-study-rooms.md": studyWithMeMarkdown,
+  "how-to-host-a-virtual-coworking-session.md": hostSessionMarkdown,
 };
 
 const coverDetailsBySlug = new Map(

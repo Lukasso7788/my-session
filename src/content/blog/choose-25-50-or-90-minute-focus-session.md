@@ -14,7 +14,7 @@ MySession offers different room formats and stage timelines. Use the duration as
 
 A short block is easier to accept when the task feels vague or unpleasant. Name a result small enough to see within the interval: open the file, draft three headings, or answer the first questions. You can decide on a second block after the first one ends.
 
-The [25-minute session format](/focus-session-25-minutes) is useful for quick administration, revision, or the first pass of something larger. If setup consumes half the block every time, that is a sign to prepare materials earlier or choose a longer room next time.
+The [25-minute session format](/focus-session-25-minutes) is useful for quick administration, revision, or the first pass of something larger. If setup consumes half the block every time, that is a sign to prepare materials earlier or choose a longer room next time. Running 25-minute rounds with other people is covered in [group Pomodoro sessions](/blog/group-pomodoro-sessions).
 
 ## Try 50 minutes for a normal work unit
 
