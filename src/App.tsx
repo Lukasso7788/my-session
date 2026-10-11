@@ -213,7 +213,7 @@ export default function App() {
             element={<SilentCoworkingPage />}
           />
 
-          <Route path="/study-together" element={<Navigate to="/body-doubling-for-studying" replace />} />
+          <Route path="/study-together" element={<Navigate to="/virtual-coworking-for-students" replace />} />
           <Route path="/procrastination" element={<Navigate to="/body-doubling-for-procrastination" replace />} />
 
           <Route path="/how-it-works" element={<HowItWorksPage />} />

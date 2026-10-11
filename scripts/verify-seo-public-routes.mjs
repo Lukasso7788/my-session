@@ -54,6 +54,15 @@ const listicleTitle = htmlByRoute.get("/blog/best-focusmate-alternatives").match
 const landingTitle = htmlByRoute.get("/focusmate-alternative").match(/<title>([^<]+)<\/title>/i)?.[1];
 if (listicleTitle === landingTitle) errors.push("Focusmate roundup and landing page share a title");
 
+const seoPages = JSON.parse(await readFile(path.resolve("src/data/seo-pages.json"), "utf8"));
+const editorialPosts = JSON.parse(await readFile(path.resolve("src/data/blog-editorial-manifest.json"), "utf8"));
+const articleRoutes = new Set(["/blog/best-focusmate-alternatives", ...editorialPosts.map((post) => post.route || `/blog/${post.slug}`)]);
+for (const page of seoPages) {
+  for (const article of page.relatedArticles || []) {
+    if (!articleRoutes.has(article.route)) errors.push(`${page.route}: related article ${article.route} is not a published article`);
+  }
+}
+
 if (!manifest.some((page) => page.route === "/caveday-alternative")) errors.push("Caveday route missing from React manifest");
 if (!sitemap.includes("<loc>https://mysession.club/caveday-alternative</loc>")) errors.push("Caveday route missing from comparison sitemap");
 
