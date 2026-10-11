@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { SessionStage } from "../SessionConfig";
+import { serverNow } from "../lib/serverClock";
 
 type RoomTheme = "dark" | "light";
 
@@ -363,7 +364,7 @@ export function SessionStageBar({
     }
 
     const tick = () => {
-      const nowMs = Date.now();
+      const nowMs = serverNow();
       const diff = Math.floor((nowMs - startMs) / 1000);
       setElapsed(Number.isFinite(diff) ? diff : 0);
     };
