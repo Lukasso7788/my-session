@@ -173,6 +173,10 @@ structured data, sitemap and robots; browser-rendered UI alone is insufficient.
 
 ## Production room flow and existing optimizations
 
+The 2026-10-11 audit of people being thrown out of rooms (side-panel clicks,
+mobile tab switching) with ranked findings, production evidence and a fix
+order is in docs/room-disconnect-audit-2026-10-11.md. It changed no code.
+
 RoomPageLiveKit.tsx is the large room orchestrator (over 20k source lines), with
 prejoin/identity/admission -> token -> Room connection -> prepared media publish
 -> tile rebuild -> controls/panels. src/pages/livekit/VideoTileLiveKit.tsx wraps
