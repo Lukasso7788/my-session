@@ -2261,3 +2261,50 @@ loaded cover, alt text and no horizontal overflow; `/blog` lists all 16 posts
 `throwClosedServerError` stack traces during `prerender-blog`; the same
 traces appear on an unmodified `main` build and are not caused by this batch.
 Production, Google indexing and rankings are not verified by this work.
+
+## 2026-10-11 keyword quick wins: comparison tables, roundups, crawler HTML
+
+Request: SEO work from a 154-key research summary (42 P1 / 67 P2 / 45 P3, no
+volumes) and its technical findings. Committed on
+`cursor/room-disconnect-audit-7ef6` on top of the room fixes, because
+production is promoted from this branch's preview builds. The keyword map,
+the live-state check of each finding, the decisions not to create duplicate
+landings, and the dated competitor facts are in `docs/seo/keyword-research.md`
+("Quick-win batch").
+
+What changed and where:
+- `SeoPageDefinition` (`src/data/seoPageRegistry.ts`) has two optional
+  fields. `comparisonTable` (`heading`, `columns`, `rows`, `note`, `sources`)
+  renders after the first section in `DataDrivenSeoPage.tsx` and in
+  `scripts/prerender-seo.mjs`; internal sources (starting with `/`) are
+  normal links, external ones are `nofollow`. `relatedArticles` (`title`,
+  `route`) adds article cards to "Continue exploring". Landing body text is
+  plain strings, so this is the only way for a landing to link to an article.
+  The prerender must not emit `<div>` inside `#root`: the verifiers match the
+  root with a non-greedy `<div id="root">…</div>`.
+- The four alternative pages are 750-880 words with dated tables. The
+  Focusmate starter post (`src/data/blogSeed.ts`) is now a six-product
+  roundup; `/focusmate-alternative` keeps the head-to-head intent.
+- `src/data/faq-page.json` feeds both `FaqPage.tsx` and the `/faq` crawler
+  HTML; `src/data/updates.json` feeds `UpdatesPage` and `/updates`. The
+  `/pricing` crawler copy mirrors `PricingPage.tsx`, and
+  `verify-seo-public-routes.mjs` fails when a prerendered plan line, price or
+  pricing FAQ answer no longer appears in that file. Update both together.
+- New articles: `best-body-doubling-apps`, `task-paralysis`,
+  `task-initiation-strategies`, `does-body-doubling-work-without-adhd` (covers
+  21-24, Pexels credits in `sources.json`).
+- `/virtual-coworking-for-students` is retitled "Study Together Online", and
+  the legacy client redirect `/study-together` now points there.
+- Hours copy ("busiest about 9 AM to midnight US Eastern, 4 PM-7 AM Kyiv")
+  comes from 28 days of aggregate `session_attendance` presence by hour; only
+  hourly counts were queried, no user data. Re-check it if the schedule shifts.
+
+Verification: `npm run build` passed every integrated check (19 editorial
+articles, 47 sitemap URLs). Unit tests 114/114. App TypeScript diagnostics are
+250 in both this branch and the pre-batch commit `bffa1bf`, with none in the
+changed files; ESLint reports nothing on the changed files. A local preview
+showed the new articles and all comparison tables at 390 px and 1440 px
+without horizontal overflow, with both product columns visible on phones.
+
+Open items outside the code: `www.mysession.club` redirects to the apex with
+a temporary 307. Switch it to a permanent redirect in Vercel → Domains.

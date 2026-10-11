@@ -156,4 +156,67 @@ Source: `MySession_Keyword_Research_2026-10-11.xlsx` (297 candidates, 30 cluster
 | `/blog/study-with-me-videos-vs-live-study-rooms` | study with me videos | K25 is YouTube-heavy, so a landing cannot rank; a comparison article can | `/virtual-coworking-for-students`, `/body-doubling-for-studying` |
 | `/blog/how-to-host-a-virtual-coworking-session` | host a virtual coworking session | Product-fit gap (Free and Pro include hosting); verified builder features only | `/virtual-coworking` |
 
-Competitor facts quoted in the articles were read from official pages on 2026-10-11 and are dated "as of October 2026" in copy: Focusmate (booked 1:1, 25/50/75 min, camera on, free 3 sessions/week), Flow Club (host-led groups up to 9, booked, video "as much as you can", chat-only options), Caveday (guided Caves plus 24/7 Focus Lounge), FocusPair (free video coworking, built-in Pomodoro, no sign-up), CSW Study Stream (24/7 student rooms, cameras on, synced timer). Re-check before reusing any of them; do not add prices to articles.
+Competitor facts quoted in the articles were read from official pages on 2026-10-11 and are dated "as of October 2026" in copy: Focusmate (booked 1:1, 25/50/75 min, camera on, free 3 sessions/week), Flow Club (host-led groups up to 9, booked, video "as much as you can", chat-only options), Caveday (guided Caves plus 24/7 Focus Lounge), FocusPair (free video coworking, built-in Pomodoro, no sign-up), CSW Study Stream (24/7 student rooms, cameras on, synced timer). Re-check before reusing any of them. Prices appear only in dated, sourced comparison tables and roundups; see the quick-win batch below.
+
+## Quick-win batch — 2026-10-11 (154-key summary)
+
+Source: a keyword research summary supplied in chat (154 keys: 42 P1, 67 P2, 45 P3) plus its technical findings and page proposals, cross-checked against the 297-candidate workbook above. It has **no** search volumes or difficulty; Search Console was still unavailable. Priorities below are editorial, not traffic estimates.
+
+### Technical findings versus live production
+
+Checked with a Googlebot user agent against `https://mysession.club` (production SHA `26f24db`) on 2026-10-11.
+
+| Finding in the summary | Live state | Change in this batch |
+| --- | --- | --- |
+| `/sessions`, `/pricing`, `/faq`, `/updates` inherit the homepage title, H1 and canonical | Already fixed: each has its own title, H1 and self-canonical. But the raw HTML of `/pricing`, `/faq`, `/updates` was only 31, 34 and 26 words | Full crawler HTML: plans and FAQ (291 words), all 20 FAQ answers (1,168), changelog (83); `/sessions` adds hosting, 1:1 and busy-hour details (271) |
+| `/blog/best-focusmate-alternatives` is nearly empty without JS and competes with `/focusmate-alternative` | Not empty (833 raw words), but it was a second MySession-vs-Focusmate page with a near-identical title | Rewritten as a six-product roundup that owns the list intent; the landing keeps the head-to-head |
+| `/caveday-alternative` does not exist | Live since 2026-10-10 (612 words) | Expanded to ~800 words with a dated table |
+| The title says "Stay Focused 24/7" while hosted sessions run 16:00–07:00 Kyiv | Homepage title is "Live Focus Sessions & 24/7 Rooms"; the old string survives only in verifier guards | Copy now says rooms are always open but busiest about 9 AM–midnight US Eastern (4 PM–7 AM Kyiv), confirmed by 28 days of aggregate room presence |
+| (new) `www.mysession.club` redirects to the apex with a **307** | Temporary redirect | Change it to 308/301 in Vercel → Domains; not a code change |
+
+### Ownership of the quick-win keywords
+
+| Keyword group | Owner URL | Notes |
+| --- | --- | --- |
+| caveday alternative, apps like Caveday | `/caveday-alternative` | Table: format, length, late entry (Caves close after 10 min), Zoom, camera, price |
+| flow club alternative, cheaper alternative to Flow Club, free alternative to Flow Club | `/flow-club-alternative` | Leads with $10 vs $40/month; credits Flow Club's host ritual |
+| FLOWN alternative | `/flown-alternative` | Correct "FLOWN" casing everywhere |
+| focusmate alternative, Focusmate vs MySession, free Focusmate alternative | `/focusmate-alternative` | Head-to-head with 1:1 facts (50 min, camera required) |
+| best Focusmate alternatives, apps like / sites like Focusmate | `/blog/best-focusmate-alternatives` | Product-by-product roundup; distinct title and focus keyword |
+| best body doubling apps, body doubling website, body doubling groups online | `/blog/best-body-doubling-apps` (new) | Grouped by format so it does not repeat the Focusmate roundup |
+| body doubling online free, free body doubling app | `/body-doubling-app` | New "free to start, with clear limits" section and FAQ |
+| online / virtual body doubling | `/body-doubling` | Hub FAQ answers; no `/online-body-doubling` duplicate |
+| virtual coworking sessions, pomodoro with others, free virtual coworking | `/virtual-coworking` (+ `/blog/group-pomodoro-sessions`) | FAQ answers with real presets |
+| study together online | `/virtual-coworking-for-students` | Retitled; `/study-together` now redirects here |
+| task paralysis, task paralysis help / app | `/blog/task-paralysis` (new) | Problem-aware article; no medical claims |
+| task initiation | `/blog/task-initiation-strategies` (new) | Skill article; cites Gollwitzer and Sheeran (2006) |
+| does body doubling work without ADHD | `/blog/does-body-doubling-work-without-adhd` (new) | Cites Triplett (1898) and Bond and Titus (1983, 241 studies) |
+
+### Proposed pages that were not created
+
+- `/online-body-doubling`: `/body-doubling` already targets "online body doubling", and the sister site has `bodydoubling.net/online-body-doubling`. A third page would split the same intent.
+- `/body-doubling-for-cleaning` as a landing: `/blog/body-doubling-for-cleaning` already owns it.
+- `/study-together-online`: the student page was retitled instead, avoiding a near-duplicate of `/virtual-coworking-for-students`.
+- `/body-doubling-app` and `/caveday-alternative` already existed and were strengthened.
+
+### Competitor facts and price policy
+
+Read from official pages on 2026-10-11; copy and tables say "checked October 11, 2026".
+
+| Product | Facts used | Source |
+| --- | --- | --- |
+| Focusmate | Booked 1:1; 25/50/75 min; camera on for the whole session; no native app; free 3 sessions/week; Plus $12/month or $8/month billed annually | focusmate.com/pricing, /faq |
+| Flow Club | Host-led groups up to 9; 30 min–3 h (60 most popular); booked; video "as much as you can"; chat-only options; volunteer hosts after 10 sessions; free trial without a card; $40/month or $400/year; 50% student/non-profit discount | flow.club FAQ, help.flow.club |
+| Caveday | Guided Caves of 30 min/1 h/3 h, 20+ hours a day, on Zoom; 24/7 Focus Lounge; camera encouraged, all muted; Caves close 10 min after start; 14-day trial; Starter Pass $105 per 3 months | caveday.org |
+| FLOWN | Facilitated 1–2 h sessions, community sessions, 24/7 silent self-directed Drop-In, recharge sessions, work-with-me videos; 30-day trial without a card; $25/month, $19/month annually, $900 lifetime; FLOWN Free = 4 community sessions/month + Fridays | flown.com, flown.com/pricing |
+| FocusPair | Free, no sign-up, unlimited time, built-in Pomodoro, share a code | focuspair.com |
+| CSW Study Stream | Free, 24/7 student rooms, cameras on / mics off, synced 25/5, 50/10, 20/5 timer | csw.live/focusmate |
+
+Competitor prices are allowed only in these dated, sourced tables and roundups. Re-check them every quarter or when a competitor changes plans, and update the date in the table note. MySession's own prices on `/pricing` are guarded by `verify-seo-public-routes.mjs`, which fails if the prerendered plan lines drift from `PricingPage.tsx`.
+
+### What to measure once Search Console is back
+
+- Whether Google ranks `/focusmate-alternative` and `/blog/best-focusmate-alternatives` for different queries (head-to-head vs list). Merge only if both keep swapping for the same queries.
+- Impressions for "study together online" on the retitled student page, and whether `/body-doubling-for-studying` loses anything.
+- Clicks and sign-ups from the four comparison pages after the tables ship.
+- Queries reaching the three problem-aware articles, and whether readers continue to `/sessions`.
