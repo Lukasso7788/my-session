@@ -31,22 +31,26 @@ function ComparisonTableSection({ table }: { table: SeoComparisonTable }) {
   return (
     <section aria-labelledby="comparison-table-title">
       <h2 id="comparison-table-title" className="text-2xl font-bold tracking-[-0.025em] sm:text-3xl">{table.heading}</h2>
-      <div className="mt-5 overflow-x-auto rounded-2xl bg-white ring-1 ring-black/[0.06]">
-        <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+      <div className="mt-5 overflow-hidden rounded-2xl bg-white ring-1 ring-black/[0.06]">
+        <table className="w-full table-fixed border-collapse text-left text-[13px] sm:text-sm">
+          <colgroup>
+            <col className="w-[28%] sm:w-[150px]" />
+            {products.map((product) => <col key={product} />)}
+          </colgroup>
           <thead>
             <tr className="border-b border-black/[0.08] bg-[#f4f6f4]">
-              <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-black/45">{rowHeader}</th>
+              <th scope="col" className="px-3 py-3 text-[11px] font-semibold uppercase tracking-wide text-black/45 sm:px-4 sm:text-xs">{rowHeader}</th>
               {products.map((product) => (
-                <th key={product} scope="col" className="px-4 py-3 text-sm font-semibold text-[#202124]">{product}</th>
+                <th key={product} scope="col" className="px-3 py-3 font-semibold text-[#202124] sm:px-4">{product}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {table.rows.map(([label, ...values]) => (
               <tr key={label} className="border-b border-black/[0.06] align-top last:border-0">
-                <th scope="row" className="w-[150px] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-black/45">{label}</th>
+                <th scope="row" className="break-words px-3 py-3 text-[11px] font-semibold uppercase leading-4 tracking-wide text-black/45 sm:px-4 sm:text-xs">{label}</th>
                 {values.map((value, index) => (
-                  <td key={`${label}-${products[index]}`} className="px-4 py-3 leading-6 text-black/70">{value}</td>
+                  <td key={`${label}-${products[index]}`} className="break-words px-3 py-3 leading-5 text-black/70 sm:px-4 sm:leading-6">{value}</td>
                 ))}
               </tr>
             ))}
