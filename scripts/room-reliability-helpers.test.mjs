@@ -4,6 +4,7 @@ import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 
 import { computeServerClockOffset } from '../src/lib/serverClock.ts';
+import { classifyLiveKitConnectFailure } from '../src/lib/livekitConnectFailure.ts';
 import { createRoomCountdownStore } from '../src/lib/roomCountdownStore.ts';
 import { preloadableLazy } from '../src/lib/preloadableLazy.ts';
 
@@ -24,6 +25,16 @@ test('server clock offset rejects unusable measurements', () => {
   assert.equal(computeServerClockOffset('not a date', 0, 10), null);
   const started = Date.parse('2026-10-11T05:00:00.000Z');
   assert.equal(computeServerClockOffset('Sun, 11 Oct 2026 05:00:30 GMT', started, started + 30_000), null);
+});
+
+test('first-connection failures are grouped for retry decisions', () => {
+  const sdkError = (reason, message) => Object.assign(new Error(message), { reason });
+  assert.equal(classifyLiveKitConnectFailure(sdkError(0, 'invalid token')), 'not_allowed');
+  assert.equal(classifyLiveKitConnectFailure(sdkError(1, 'could not connect')), 'server_unreachable');
+  assert.equal(classifyLiveKitConnectFailure(sdkError(3, 'Client initiated disconnect')), 'cancelled');
+  assert.equal(classifyLiveKitConnectFailure(new Error('Connecting to LiveKit timed out. Please try again.')), 'timeout');
+  assert.equal(classifyLiveKitConnectFailure(new Error('could not establish pc connection')), 'pc_connection');
+  assert.equal(classifyLiveKitConnectFailure('unexpected'), 'other');
 });
 
 test('countdown store notifies only on real changes', () => {
