@@ -241,6 +241,43 @@ None of these fixes change video capture, send or receive quality, PiP, or
 background video handling. Any change that would should be discussed first, as
 required by the project rules.
 
+## Follow-up: joins that need several attempts
+
+Report: one member ("Pred") sometimes has to press Join several times before
+the room connects. The matching account (profile timezone Asia/Kolkata) has
+no `room_diagnostics`/`connection_diagnostics` rows in 30 days and no
+attendance since 2026-09-02, so the failing attempts left no trace. The
+paywall is compiled off in production (`VITE_PAYWALL_ENABLED=false`), so it
+is not the cause.
+
+Code trace of a first connection (`connectRoom`):
+
+- There is one self-hosted LiveKit server (`livekit_servers`: `lk-main-1`,
+  region `eu`). livekit-client only retries a first connection through
+  LiveKit Cloud region failover; with the default `maxRetries: 1` a
+  self-hosted first connection is tried exactly once.
+- The room wrapped `r.connect()` in a 20 s timeout, while the SDK itself
+  allows 15 s for signalling plus 15 s for the media (ICE/TURN) connection.
+  From far away or on TURN-only networks a connection that would succeed was
+  cut off at 20 s.
+- Any failure disconnected, set `joinRequested=false` and reopened prejoin,
+  without an automatic retry and without writing a remote diagnostic. The
+  next click usually works because DNS/TLS/TURN are warm.
+- After a failure `lkToken` stayed set and the token effect skips fetching
+  when a token exists, so a rejected or expired token was reused on every
+  manual retry.
+
+Fix: up to three attempts in place (1.5 s and 3 s apart; "The connection is
+slow. Trying again (2 of 3)…" on the stage), 32 s app timeout,
+`maxRetries: 2` for the SDK, a fresh token after a `NotAllowed` failure and for
+the next manual Join after the last failure. Every failed attempt writes
+`room_connect_failed` to `room_diagnostics` (reason, attempt, duration,
+server host, message) and `livekit.connect_failed` to
+`connection_diagnostics` (reason in `disconnect_reason`); `room_join` records
+`connectAttempt`. Classification lives in `src/lib/livekitConnectFailure.ts`.
+If failures persist for distant members after this, the next step is a second
+LiveKit region (or LiveKit Cloud) rather than longer timeouts.
+
 ## Fixes (2026-10-11, same branch)
 
 The owner approved all of the above, including a one-time automatic rejoin
