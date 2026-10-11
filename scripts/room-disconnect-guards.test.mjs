@@ -57,6 +57,16 @@ test('room timing uses the measured server clock', () => {
   assert.match(read('src/components/SessionStageBar.tsx'), /const nowMs = serverNow\(\);/);
 });
 
+test('a failed first connection is retried in place before prejoin', () => {
+  assert.match(room, /const ROOM_INITIAL_CONNECT_ATTEMPTS = 3;/);
+  assert.match(room, /const ROOM_CONNECT_TIMEOUT_MS = 32_000;/);
+  assert.match(room, /\{ autoSubscribe: true, maxRetries: 2 \}/);
+  assert.match(room, /initialAttempt < ROOM_INITIAL_CONNECT_ATTEMPTS/);
+  assert.match(room, /roomLifecycleDiagnosticRef\.current\("livekit\.connect_failed"/);
+  // A rejected token is never reused by the next manual Join.
+  assert.match(room, /setLkToken\(""\);\s*\n\s*lkTokenRef\.current = "";/);
+});
+
 test('the side panel keeps one mount point across layouts', () => {
   assert.match(room, /createPortal\(RightPanelBody, rightPanelHost\)/);
   assert.equal((room.match(/ref=\{attachRightPanelHost\}/g) || []).length, 2);

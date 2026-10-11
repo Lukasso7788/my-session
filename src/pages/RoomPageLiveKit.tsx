@@ -60,6 +60,7 @@ import {
   type RoomCountdownStore,
 } from "../lib/roomCountdownStore";
 import { APP_BUILD_ID, getPageLoadDiagnostics } from "../lib/pageLifecycle";
+import { classifyLiveKitConnectFailure } from "../lib/livekitConnectFailure";
 import {
   RoomPanelErrorBoundary,
   RoomSilentErrorBoundary,
@@ -2281,7 +2282,14 @@ const MOBILE_ROOM_LEASE_MS = 50 * 60 * 1000;
 const MOBILE_PIP_ROOM_LEASE_MS = 4 * 60 * 60 * 1000;
 const ROOM_LIVEKIT_RECONNECT_WINDOW_MS = 45_000;
 const ROOM_AUTO_RECOVERY_MANUAL_THRESHOLD = 3;
-const ROOM_CONNECT_TIMEOUT_MS = 20_000;
+// Above livekit-client's own budget (15 s signalling + 15 s media connection),
+// so a slow but working connection from far away is not cut off early.
+const ROOM_CONNECT_TIMEOUT_MS = 32_000;
+// The SDK does not retry a first connection to a self-hosted server, and the
+// first attempt from a distant or TURN-only network is the one most likely
+// to fail. Retry in place instead of sending the person back to prejoin.
+const ROOM_INITIAL_CONNECT_ATTEMPTS = 3;
+const ROOM_INITIAL_CONNECT_RETRY_DELAYS_MS = [1_500, 3_000];
 const ROOM_TOKEN_TIMEOUT_MS = 15_000;
 const VOICE_LEAVE_CONFIRM_WINDOW_MS = 8_000;
 
@@ -8749,6 +8757,9 @@ export function RoomPageLiveKit({
   const [connected, setConnected] = useState(false);
   // LiveKit keeps `connected` true while it reconnects in place.
   const [livekitReconnecting, setLivekitReconnecting] = useState(false);
+  // >1 while the first connection is being retried in place.
+  const [connectRetryAttempt, setConnectRetryAttempt] = useState(0);
+  const initialConnectAttemptRef = useRef(1);
   const [pageVisible, setPageVisible] = useState(
     () => typeof document === "undefined" || document.visibilityState === "visible",
   );
@@ -11965,6 +11976,7 @@ export function RoomPageLiveKit({
       resumedAfterReload,
       resumeMarkerAgeMs: resumeDecision?.markerAgeMs ?? null,
       serverClockOffsetMs: getServerClockOffsetMs(),
+      connectAttempt: initialConnectAttemptRef.current,
     });
     if (resumedAfterReload) {
       captureProductEvent("room_resumed_after_reload", {});
@@ -12144,7 +12156,8 @@ export function RoomPageLiveKit({
 
             hidden_for_ms: hiddenForMs,
             disconnect_reason:
-              eventType === "livekit.disconnected"
+              eventType === "livekit.disconnected" ||
+              eventType === "livekit.connect_failed"
                 ? String(payload.reason ?? "") || null
                 : null,
             remote_participants: roomAny?.remoteParticipants?.size ?? null,
@@ -14148,14 +14161,18 @@ export function RoomPageLiveKit({
     }
   };
 
-  const connectRoom = async (opts: {
+  type ConnectRoomOptions = {
     forceReconnect?: boolean;
     preserveAttendance?: boolean;
     preserveTabPresence?: boolean;
     preserveJoinRequested?: boolean;
     tokenOverride?: string;
     serverUrlOverride?: string;
-  } = {}) => {
+    /** 1-based attempt of the first connection from prejoin. */
+    initialAttempt?: number;
+  };
+
+  const connectRoom = async (opts: ConnectRoomOptions = {}) => {
     const connectToken = String(opts.tokenOverride || lkToken || "").trim();
     const connectServerUrl = String(
       opts.serverUrlOverride || lkServerUrl || "",
@@ -14214,6 +14231,7 @@ export function RoomPageLiveKit({
 
     let connectedToRoom = false;
     let connectingRoom: Room | null = null;
+    let connectStartedAt = Date.now();
 
     setClientError("");
     setFxError("");
@@ -14266,6 +14284,7 @@ export function RoomPageLiveKit({
 
         setConnected(true);
         setLivekitReconnecting(false);
+        setConnectRetryAttempt(0);
         writeMobileRoomLease(sessionId, authUserId, {
           audioEnabled: prejoinRef.current.audioEnabled,
           videoEnabled: prejoinRef.current.videoEnabled,
@@ -14485,9 +14504,12 @@ export function RoomPageLiveKit({
       // Limit only the signalling connection itself. The previous watchdog kept
       // running while camera/microphone permissions and tracks were prepared, so
       // a slow permission prompt could disconnect an already connected room.
+      initialConnectAttemptRef.current = opts.initialAttempt ?? 1;
+      connectStartedAt = Date.now();
       try {
         await withTimeout(
-          r.connect(connectServerUrl, connectToken, { autoSubscribe: true }),
+          // maxRetries lets the SDK retry an unreachable signalling server once.
+          r.connect(connectServerUrl, connectToken, { autoSubscribe: true, maxRetries: 2 }),
           ROOM_CONNECT_TIMEOUT_MS,
           "Connecting to LiveKit timed out. Please try again.",
         );
@@ -14765,13 +14787,92 @@ export function RoomPageLiveKit({
       const msg = String(e?.message || e || "connect_failed");
 
       if (!connectedToRoom) {
-        setClientError(msg);
+        const initialAttempt = opts.initialAttempt ?? 1;
+        const failureKind = classifyLiveKitConnectFailure(e);
+        const durationMs = Date.now() - connectStartedAt;
+        roomLifecycleDiagnosticRef.current("livekit.connect_failed", {
+          reason: failureKind,
+          attempt: initialAttempt,
+          duration_ms: durationMs,
+        });
+        void logRoomDiagnostic("room_connect_failed", {
+          reason: failureKind,
+          attempt: initialAttempt,
+          maxAttempts: ROOM_INITIAL_CONNECT_ATTEMPTS,
+          durationMs,
+          recovery: !!opts.forceReconnect,
+          message: msg.slice(0, 300),
+          serverHost: (() => {
+            try {
+              return new URL(connectServerUrl).host;
+            } catch {
+              return null;
+            }
+          })(),
+        });
+
+        // Background recovery has its own retry loop; only the first
+        // connection from prejoin is retried here.
+        const retryInPlace =
+          !opts.forceReconnect &&
+          failureKind !== "cancelled" &&
+          initialAttempt < ROOM_INITIAL_CONNECT_ATTEMPTS &&
+          !explicitLeaveRequestedRef.current &&
+          !kickedBySignalRef.current;
+
         await disconnectRoom({
           preserveAttendance: opts.preserveAttendance,
-          preserveTabPresence: opts.preserveTabPresence,
-          preserveJoinRequested: opts.preserveJoinRequested,
+          preserveTabPresence: retryInPlace || opts.preserveTabPresence,
+          preserveJoinRequested: retryInPlace || opts.preserveJoinRequested,
           preserveConnectAttempt: true,
         });
+
+        if (retryInPlace) {
+          setClientError("");
+          setConnectRetryAttempt(initialAttempt + 1);
+          const guardAttemptId = connectAttemptIdRef.current;
+          const retryDelayMs =
+            ROOM_INITIAL_CONNECT_RETRY_DELAYS_MS[initialAttempt - 1] ?? 3_000;
+          window.setTimeout(() => {
+            if (
+              connectAttemptIdRef.current !== guardAttemptId ||
+              explicitLeaveRequestedRef.current ||
+              kickedBySignalRef.current ||
+              !joinRequestedRef.current
+            ) {
+              return;
+            }
+            const nextOptions = { ...opts, initialAttempt: initialAttempt + 1 };
+            if (failureKind === "not_allowed") {
+              // The token was rejected (expired or invalid): mint a new one.
+              lkTokenRef.current = "";
+              void requestToken().then((fresh) => {
+                if (!fresh?.token || !fresh?.url) return;
+                void connectRoom({
+                  ...nextOptions,
+                  tokenOverride: fresh.token,
+                  serverUrlOverride: fresh.url,
+                });
+              });
+              return;
+            }
+            void connectRoom({
+              ...nextOptions,
+              tokenOverride: connectToken,
+              serverUrlOverride: connectServerUrl,
+            });
+          }, retryDelayMs);
+          return;
+        }
+
+        setConnectRetryAttempt(0);
+        setClientError(msg);
+        if (!opts.forceReconnect) {
+          // The next manual Join mints a fresh token instead of reusing one
+          // that may be expired or rejected.
+          setLkToken("");
+          lkTokenRef.current = "";
+        }
 
         if (!opts.preserveJoinRequested) {
           setJoinRequested(false);
@@ -18394,7 +18495,9 @@ export function RoomPageLiveKit({
     : prejoinOpen
       ? ""
       : joinRequested
-        ? "Joining room…"
+        ? connectRetryAttempt > 1
+          ? `The connection is slow. Trying again (${connectRetryAttempt} of ${ROOM_INITIAL_CONNECT_ATTEMPTS})…`
+          : "Joining room…"
         : "";
   const lastErr = tokenError || clientError;
 
