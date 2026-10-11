@@ -21,7 +21,7 @@ Open the relevant material before the session starts, but do not spend the entir
 
 If the room has an intentions stage, a short sentence is enough: “I will attempt four calculus problems” or “I will draft my essay outline.” You do not need to present your notes or explain your grades. A clear intention helps you return to the task when you are tempted to switch topics.
 
-Choose a [virtual coworking room for students](/virtual-coworking-for-students) when you want the flexibility to join at a convenient time. A scheduled session can be better when putting a specific start time on the calendar is what gets you to your desk.
+Choose a [virtual coworking room for students](/virtual-coworking-for-students) when you want the flexibility to join at a convenient time. A scheduled session can be better when putting a specific start time on the calendar is what gets you to your desk. If you usually study along with a recorded video, compare [study-with-me videos and live study rooms](/blog/study-with-me-videos-vs-live-study-rooms) to see what changes when others can see you working.
 
 ## During the block: protect attention, not appearance
 

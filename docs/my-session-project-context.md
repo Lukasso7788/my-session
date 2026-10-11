@@ -2192,3 +2192,64 @@ it adds `/body-doubling-app`, and `public/sitemap-guides.xml` because it updates
 the modified coworking guide's lastmod. Commit/push only task files after
 checking `origin/main`; no force push. Pushing `main` may create a preview,
 but do not claim production deployment without verifying exact SHA/alias.
+
+## 2026-10-11 editorial batch 2: ten bundled SEO articles
+
+Request: about ten more articles for MySession based on the 2026-10-11 keyword
+workbook (297 unvalidated candidates, 30 clusters, SERP/competitor notes,
+exclusions), body-doubling/virtual-coworking/focus-session niche, and existing
+SEO best practice. Work is on branch `cursor/seo-editorial-articles-batch-2-7ef6`
+(cloud agent, Linux checkout `/workspace`), based on `origin/main` at `b66f09a`.
+
+Topic selection and keyword ownership are in `docs/seo/keyword-research.md`
+("Editorial batch 2"). Every article targets an informational/decision intent
+that no existing route owns; commercial clusters stay on their landings and are
+linked contextually. No new data-driven landing route was added, so
+`seo-pages.json`, the route manifest, `App.tsx`, and `sitemap-pages.xml` are
+unchanged. New URLs (all `/blog/<slug>`): `group-vs-one-on-one-body-doubling`,
+`accountability-partner-vs-body-double`, `virtual-coworking-etiquette`,
+`body-doubling-camera-on-or-off`, `group-pomodoro-sessions`,
+`scheduled-vs-drop-in-focus-sessions`, `how-to-write-a-focus-session-intention`,
+`body-doubling-for-cleaning`, `study-with-me-videos-vs-live-study-rooms`,
+`how-to-host-a-virtual-coworking-session`.
+
+Implementation follows the established bundled-editorial pipeline: Markdown in
+`src/content/blog/`, metadata in `blog-editorial-manifest.json`, `?raw` imports
+in `src/data/blogEditorial.ts`, sitemap/prerender picked up automatically from
+the manifest. `verify-blog-editorial.mjs` now also fails if a manifest article is
+not imported by `blogEditorial.ts` (otherwise it would ship with empty content).
+Four older articles received one contextual link each to a new article.
+
+Product claims were checked in source before writing: rooms default to
+camera-optional (`roomPolicies.ts`), hosts can require camera / screen share /
+either and disable public chat, shown as session-card badges
+(`sessionCardIndicators.ts`); 1:1 uses a matching queue, scheduled 50-minute
+slots and private links, and "Camera is required for 1:1 sessions"
+(`OneOnOnePage.tsx`); session builder presets 15/3, 25/5, 50/10 with cycles,
+timeline blocks welcome/intentions/focus/break/check-in/recap/celebrate/custom,
+max participants, public vs link-only, templates (`CreateSessionModal.tsx`);
+Free Flow presets Ladder, 30/10, 75/15 (`roomTimelineModel.ts`); Free plan
+"first 15 sessions" and hosting on Free and Pro (`PricingPage.tsx`). If any
+of these change, update the affected articles. Competitor facts are dated
+"as of October 2026"; no competitor prices are quoted.
+
+Covers: ten new Pexels sources (IDs, photographers, pages) in
+`scripts/editorial-covers/sources.json`, numbered 11-20. `render.mjs` now
+accepts slugs (`npm run covers:render -- <slug> ...`) so only new covers are
+re-rendered and the existing published JPEGs stay byte-identical; the template
+accepts an optional per-source `photoPosition` crop override (used for the
+planner and hosting photos). Rendered on Linux with
+`CHROME_PATH=/usr/local/bin/google-chrome`; all covers 45-82 KB, visually
+inspected for crop and text fit. `seo-visual-check.mjs` accepts optional
+routes (`node scripts/seo-visual-check.mjs <base> <out> /blog/a /blog/b`).
+
+Verification: `npm run build` passed every integrated check (15 editorial
+articles, 43 sitemap URLs, React SEO render, semantic clusters). Focused ESLint
+on touched scripts/TS and `git diff --check` passed. A local preview built with
+the public Supabase URL/anon key in the process env only (not written to any
+file) rendered all ten articles after hydration at 390 px and 1440 px with
+loaded cover, alt text and no horizontal overflow; `/blog` lists all 16 posts
+(below-fold card covers are lazy by design). Vite prints
+`throwClosedServerError` stack traces during `prerender-blog`; the same
+traces appear on an unmodified `main` build and are not caused by this batch.
+Production, Google indexing and rankings are not verified by this work.
