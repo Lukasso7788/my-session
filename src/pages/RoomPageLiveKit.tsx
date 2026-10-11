@@ -43,6 +43,28 @@ import { invalidateHostLeaseCache } from "../lib/supabaseFetchOptimizer";
 import { withTimeout } from "../lib/promiseTimeout";
 import { readSessionRoomPolicies, shouldEnforceMediaPolicyForRole, withRoomPolicies, type RoomPolicies } from "../lib/roomPolicies";
 import { captureProductEvent } from "../lib/analytics";
+import { preloadableLazy } from "../lib/preloadableLazy";
+import {
+  APP_UPDATE_AVAILABLE_EVENT,
+  deferDynamicImportReloads,
+} from "../lib/dynamicImportRecovery";
+import {
+  clearSameTabRoomResume,
+  getSameTabRoomResumeDecision,
+  markSameTabRoomResume,
+} from "../lib/sameTabRoomResume";
+import { loadServerClockOffset, getServerClockOffsetMs, serverNow } from "../lib/serverClock";
+import {
+  createRoomCountdownStore,
+  useRoomCountdown,
+  type RoomCountdownStore,
+} from "../lib/roomCountdownStore";
+import { APP_BUILD_ID, getPageLoadDiagnostics } from "../lib/pageLifecycle";
+import {
+  RoomPanelErrorBoundary,
+  RoomSilentErrorBoundary,
+  reloadRoomWithResume,
+} from "../components/RoomErrorBoundary";
 import { advertiseSharedMusic, sharedRoomMusicActive } from "../lib/roomMusicPresence";
 import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
@@ -125,10 +147,13 @@ const SCREEN_SHARE_SIMULCAST_LAYERS = [
   ScreenSharePresets.h720fps15,
 ];
 
-const ChatPanel = React.lazy(() => import("../components/ChatPanel"));
-const TasksPanel = React.lazy(() => import("../components/TasksPanel"));
+// The three bottom-bar panels are preloaded right after the room connects, so
+// a deployment during a long session cannot leave them pointing at removed
+// chunks when they are opened for the first time.
+const ChatPanel = preloadableLazy(() => import("../components/ChatPanel"));
+const TasksPanel = preloadableLazy(() => import("../components/TasksPanel"));
 const RoomTimelineEditor = React.lazy(() => import("../components/RoomTimelineEditor"));
-const RoomSoundscapePanel = React.lazy(() => import("./livekit/RoomSoundscapePanel"));
+const RoomSoundscapePanel = preloadableLazy(() => import("./livekit/RoomSoundscapePanel"));
 // These panels are not needed to connect. Keep their code and mounted UI out
 // of the room's initial path until the user actually opens them.
 const AIHostedRoomController = React.lazy(() => import("../components/ai-host/AIHostedRoomController"));
@@ -139,6 +164,33 @@ const FreeFlowIntroModal = React.lazy(() => import("../components/FreeFlowIntroM
 const UserProfileModal = React.lazy(() =>
   import("../components/UserProfileModal").then((module) => ({ default: module.UserProfileModal })),
 );
+
+// Only these countdown consumers re-render every second; the room shell does not.
+type CountdownProps = { countdownStore: RoomCountdownStore };
+
+function RoomTopBarWithCountdown({
+  countdownStore,
+  ...props
+}: Omit<React.ComponentProps<typeof RoomTopBar>, "remainingTime"> & CountdownProps) {
+  const remainingTime = useRoomCountdown(countdownStore);
+  return <RoomTopBar {...props} remainingTime={remainingTime} />;
+}
+
+function TasksPanelWithCountdown({
+  countdownStore,
+  ...props
+}: Omit<React.ComponentProps<typeof TasksPanel>, "timerText"> & CountdownProps) {
+  const remainingTime = useRoomCountdown(countdownStore);
+  return <TasksPanel {...props} timerText={remainingTime || "--:--"} />;
+}
+
+function PiPPortalWithCountdown({
+  countdownStore,
+  ...props
+}: Omit<React.ComponentProps<typeof LiveKitPiPPortal>, "remainingTime"> & CountdownProps) {
+  const remainingTime = useRoomCountdown(countdownStore);
+  return <LiveKitPiPPortal {...props} remainingTime={remainingTime} />;
+}
 
 const PARTICIPANT_CONTROL_TOPIC = "mysession.participant-control.v1";
 const SHARED_TAB_MUSIC_TRACK_NAME = "shared_tab_music";
@@ -2231,6 +2283,7 @@ const ROOM_LIVEKIT_RECONNECT_WINDOW_MS = 45_000;
 const ROOM_AUTO_RECOVERY_MANUAL_THRESHOLD = 3;
 const ROOM_CONNECT_TIMEOUT_MS = 20_000;
 const ROOM_TOKEN_TIMEOUT_MS = 15_000;
+const VOICE_LEAVE_CONFIRM_WINDOW_MS = 8_000;
 
 type MobileRoomLease = {
   lastSeenAt: number;
@@ -2275,6 +2328,16 @@ function readMobileRoomLease(
   }
 }
 
+// Rooms this page has actually joined (not just opened prejoin for). Lease
+// writes for these rooms also refresh the same-tab rejoin marker.
+const sameTabResumeEligibleSessions = new Set<string>();
+
+/** After a leave, kick, removal or closed room a reload must show prejoin. */
+function revokeSameTabRoomResume(sessionId: string) {
+  if (sessionId) sameTabResumeEligibleSessions.delete(sessionId);
+  clearSameTabRoomResume(sessionId);
+}
+
 function writeMobileRoomLease(
   sessionId: string,
   userId: string | null | undefined,
@@ -2285,6 +2348,9 @@ function writeMobileRoomLease(
   },
 ) {
   if (!sessionId || !userId) return;
+  if (sameTabResumeEligibleSessions.has(sessionId)) {
+    markSameTabRoomResume(sessionId, sessionId);
+  }
 
   try {
     const key = mobileRoomLeaseKey(sessionId, userId);
@@ -2314,6 +2380,7 @@ function clearMobileRoomLease(
   sessionId: string,
   userId: string | null | undefined,
 ) {
+  revokeSameTabRoomResume(sessionId);
   if (!sessionId || !userId) return;
   try {
     localStorage.removeItem(mobileRoomLeaseKey(sessionId, userId));
@@ -6532,7 +6599,7 @@ export function RoomPageLiveKit({
   const [stages, setStages] = useState<Stage[]>([]);
   const [, setHoveredStage] = useState<Stage | null>(null);
   const [currentStage, setCurrentStage] = useState(0);
-  const [remainingTime, setRemainingTime] = useState<string>("");
+  const remainingTimeStore = useMemo(() => createRoomCountdownStore(), []);
 
   const [stagebarStartTime, setStagebarStartTime] = useState<string>("");
   const [stagebarCycleSeconds, setStagebarCycleSeconds] = useState<
@@ -6991,6 +7058,22 @@ export function RoomPageLiveKit({
     setAssignedServerId("");
   }, [sessionId, defaultLivekitUrl]);
 
+  // Session times are server timestamps; compare them with server time so a
+  // device clock that is ahead or behind cannot open or close rooms early.
+  const [serverClockOffsetMs, setServerClockOffsetMs] = useState<number>(() =>
+    getServerClockOffsetMs(),
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadServerClockOffset().then((offset) => {
+      if (!cancelled) setServerClockOffsetMs(offset);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [joinNowTickMs, setJoinNowTickMs] = useState<number>(() => Date.now());
 
   useEffect(() => {
@@ -7002,11 +7085,11 @@ export function RoomPageLiveKit({
 
     const allowMs = startMs - JOIN_EARLY_WINDOW_MINUTES * 60 * 1000;
 
-    if (Date.now() >= allowMs) return;
+    if (Date.now() + serverClockOffsetMs >= allowMs) return;
 
     const t = window.setInterval(() => setJoinNowTickMs(Date.now()), 1000);
     return () => window.clearInterval(t);
-  }, [session?.start_time]);
+  }, [session?.start_time, serverClockOffsetMs]);
 
   const joinGateInfo = useMemo(() => {
     const startIso = String(session?.start_time || "").trim();
@@ -7034,15 +7117,16 @@ export function RoomPageLiveKit({
     }
 
     const allowMs = startMs - JOIN_EARLY_WINDOW_MINUTES * 60 * 1000;
+    const nowMs = joinNowTickMs + serverClockOffsetMs;
 
     return {
       enabled: true,
-      canJoinNow: joinNowTickMs >= allowMs,
+      canJoinNow: nowMs >= allowMs,
       startMs,
       allowMs,
-      msUntilAllowed: Math.max(0, allowMs - joinNowTickMs),
+      msUntilAllowed: Math.max(0, allowMs - nowMs),
     };
-  }, [session?.start_time, joinNowTickMs]);
+  }, [session?.start_time, joinNowTickMs, serverClockOffsetMs]);
 
   const canJoinNow = joinGateInfo.canJoinNow;
   const joinBlocked = joinGateInfo.enabled && !joinGateInfo.canJoinNow;
@@ -7133,21 +7217,11 @@ export function RoomPageLiveKit({
     };
   }, [joinBlocked, session?.host_id, session?.id]);
 
+  // Re-evaluated at the end/close boundaries only (see the timeout below), not
+  // every second: a per-second state tick re-rendered the whole room.
   const [sessionAccessTickMs, setSessionAccessTickMs] = useState<number>(() =>
     Date.now(),
   );
-
-  useEffect(() => {
-    if (!session?.id) return;
-
-    setSessionAccessTickMs(Date.now());
-    const t = window.setInterval(
-      () => setSessionAccessTickMs(Date.now()),
-      1000,
-    );
-
-    return () => window.clearInterval(t);
-  }, [session?.id]);
 
   const sessionCloseInfo = useMemo(() => {
     if (!session || isInfiniteRoom) {
@@ -7216,17 +7290,51 @@ export function RoomPageLiveKit({
 
     const endMs = startMs + totalMs;
     const closeMs = endMs + SESSION_CLOSE_GRACE_MINUTES * 60 * 1000;
+    const nowMs = sessionAccessTickMs + serverClockOffsetMs;
 
     return {
       enabled: true,
-      ended: sessionAccessTickMs >= endMs,
-      closed: sessionAccessTickMs >= closeMs,
+      ended: nowMs >= endMs,
+      closed: nowMs >= closeMs,
       startMs,
       endMs,
       closeMs,
-      msUntilClose: Math.max(0, closeMs - sessionAccessTickMs),
+      msUntilClose: Math.max(0, closeMs - nowMs),
     };
-  }, [session, stages, stagebarStartTime, isInfiniteRoom, sessionAccessTickMs]);
+  }, [
+    session,
+    stages,
+    stagebarStartTime,
+    isInfiniteRoom,
+    sessionAccessTickMs,
+    serverClockOffsetMs,
+  ]);
+
+  useEffect(() => {
+    if (!sessionCloseInfo.enabled) return;
+    const nowMs = Date.now() + serverClockOffsetMs;
+    const nextBoundaryMs = [sessionCloseInfo.endMs, sessionCloseInfo.closeMs].find(
+      (boundaryMs) => boundaryMs > nowMs,
+    );
+    if (nextBoundaryMs === undefined) {
+      // A boundary can pass between render and this effect (or while the tab
+      // was suspended); refresh once so `ended`/`closed` catch up.
+      if (!sessionCloseInfo.closed) setSessionAccessTickMs(Date.now());
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setSessionAccessTickMs(Date.now()),
+      Math.min(nextBoundaryMs - nowMs + 250, 2_000_000_000),
+    );
+    return () => window.clearTimeout(timer);
+  }, [
+    sessionCloseInfo.enabled,
+    sessionCloseInfo.endMs,
+    sessionCloseInfo.closeMs,
+    sessionCloseInfo.closed,
+    sessionAccessTickMs,
+    serverClockOffsetMs,
+  ]);
 
   useEffect(() => {
     const currentSessionId = String(session?.id || "").trim();
@@ -7906,7 +8014,7 @@ export function RoomPageLiveKit({
 
   useEffect(() => {
     if (isSilentRoom) {
-      setRemainingTime("");
+      remainingTimeStore.set("");
       setCurrentStage(0);
       firstTickDoneRef.current = false;
       prevStageRef.current = -1;
@@ -7934,7 +8042,7 @@ export function RoomPageLiveKit({
         : Math.max(1, sumStageSeconds);
 
     const timer = window.setInterval(() => {
-      const now = Date.now();
+      const now = serverNow();
       const diffSecRaw = (now - startMs) / 1000;
       const diffSec =
         loopSeconds > 0 && isInfiniteRoom
@@ -7954,7 +8062,7 @@ export function RoomPageLiveKit({
         if (diffSec < next) {
           active = i;
           const rem = next - diffSec;
-          setRemainingTime(
+          remainingTimeStore.set(
             `${Math.floor(rem / 60)}:${String(Math.floor(rem % 60)).padStart(2, "0")}`,
           );
           found = true;
@@ -7965,7 +8073,7 @@ export function RoomPageLiveKit({
         active = i;
       }
 
-      if (!found && !isInfiniteRoom) setRemainingTime("0:00");
+      if (!found && !isInfiniteRoom) remainingTimeStore.set("0:00");
 
       setCurrentStage(active);
 
@@ -8040,6 +8148,7 @@ export function RoomPageLiveKit({
     isSilentRoom,
     isInfiniteRoom,
     stagebarCycleSeconds,
+    remainingTimeStore,
   ]);
 
   const refreshRoomAuth = useCallback(async () => {
@@ -8638,6 +8747,21 @@ export function RoomPageLiveKit({
   );
   const firefoxSafeFx = useMemo(() => isFirefoxLike(), []);
   const [connected, setConnected] = useState(false);
+  // LiveKit keeps `connected` true while it reconnects in place.
+  const [livekitReconnecting, setLivekitReconnecting] = useState(false);
+  const [pageVisible, setPageVisible] = useState(
+    () => typeof document === "undefined" || document.visibilityState === "visible",
+  );
+
+  useEffect(() => {
+    const update = () => setPageVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", update);
+    window.addEventListener("pageshow", update);
+    return () => {
+      document.removeEventListener("visibilitychange", update);
+      window.removeEventListener("pageshow", update);
+    };
+  }, []);
   const [voiceUiStatus, setVoiceUiStatus] =
     useState<VoiceUiStatus>("idle");
   const [voiceUiMode, setVoiceUiMode] = useState<VoiceUiMode>(() => {
@@ -8660,6 +8784,9 @@ export function RoomPageLiveKit({
   const voiceUiEnabled = voiceUiMode !== "off";
   const voiceUiActive = voiceUiMode === "always" || (voiceUiMode === "hotkey" && voiceUiHotkeyPressed);
   const [voiceUiLastCommand, setVoiceUiLastCommand] = useState("");
+  // "Leave room" heard once only arms leaving; it must be repeated or
+  // confirmed within this window, so a misheard phrase cannot end the call.
+  const voiceLeaveConfirmUntilRef = useRef(0);
   const [voiceUiLastHeard, setVoiceUiLastHeard] = useState("");
   const [voiceUiHelpOpen, setVoiceUiHelpOpen] = useState(false);
   const [voiceFxPopupMounted, setVoiceFxPopupMounted] = useState(false);
@@ -10589,7 +10716,10 @@ export function RoomPageLiveKit({
   };
 
   // ---- continue in chunk 2 ----
-  const requestToken = async () => {
+  // `recovery`: the person is already in the room (background return or
+  // reconnect). A failed request must keep the room and its restore overlay,
+  // not send them back to prejoin; the recovery loop retries with backoff.
+  const requestToken = async (options: { recovery?: boolean } = {}) => {
     if (!session) return;
 
     if (tokenRequestInFlightRef.current) {
@@ -10655,30 +10785,46 @@ export function RoomPageLiveKit({
         }
       }
 
-      const res = await withTimeout(
-        fetch(tokenEndpoint, {
-          method: "POST",
-          headers: await buildAuthHeaders(),
-          body: JSON.stringify({
-            roomName,
-            identity,
-            name: nameToUse,
-            isHost,
-            sessionId: session.id,
-            isModerator:
-              !isHost && !!authUserId
-                ? moderatorUserIds.includes(String(authUserId).toLowerCase())
-                : false,
-            baseUserId: baseUser,
-            tabId,
-            inviteToken:
-              new URLSearchParams(window.location.search).get("invite") ||
-              undefined,
+      const sendTokenRequest = async () =>
+        withTimeout(
+          fetch(tokenEndpoint, {
+            method: "POST",
+            headers: await buildAuthHeaders(),
+            body: JSON.stringify({
+              roomName,
+              identity,
+              name: nameToUse,
+              isHost,
+              sessionId: session.id,
+              isModerator:
+                !isHost && !!authUserId
+                  ? moderatorUserIds.includes(String(authUserId).toLowerCase())
+                  : false,
+              baseUserId: baseUser,
+              tabId,
+              inviteToken:
+                new URLSearchParams(window.location.search).get("invite") ||
+                undefined,
+            }),
           }),
-        }),
-        ROOM_TOKEN_TIMEOUT_MS,
-        "Preparing the room timed out. Please try again.",
-      );
+          ROOM_TOKEN_TIMEOUT_MS,
+          "Preparing the room timed out. Please try again.",
+        );
+
+      let res = await sendTokenRequest();
+      if (res.status === 401) {
+        // The cached Supabase access token can expire while a phone keeps the
+        // tab suspended. Refresh it once instead of failing the rejoin.
+        roomLifecycleDiagnosticRef.current("token.auth_refresh_retry");
+        accessTokenRef.current = "";
+        try {
+          const { data: refreshed } = await supabase.auth.refreshSession();
+          accessTokenRef.current = String(refreshed?.session?.access_token || "").trim();
+        } catch {
+          // buildAuthHeaders falls back to getSession().
+        }
+        res = await sendTokenRequest();
+      }
 
       const json = (await res.json().catch(() => ({}))) as {
         token?: string;
@@ -10758,7 +10904,8 @@ export function RoomPageLiveKit({
           json?.message || json?.error || `Token endpoint error: ${res.status}`,
         ).trim();
         console.error(msg, json);
-        setTokenError(msg);
+        // During recovery the restore overlay already explains the state.
+        if (!options.recovery) setTokenError(msg);
         setTokenLoading(false);
         return;
       }
@@ -10796,10 +10943,17 @@ export function RoomPageLiveKit({
       roomLifecycleDiagnosticRef.current("token.fetch_failed", {
         duration_ms: Date.now() - tokenRequestStartedAt,
         message: String(e?.message || e || ""),
+        recovery: !!options.recovery,
       });
-      setTokenError(String(e?.message || e || "token_request_failed"));
       setTokenLoading(false);
 
+      if (options.recovery) {
+        // Phones often fail the first request right after resuming. Stay in
+        // the room UI; the restore overlay and retry loop handle it.
+        return undefined;
+      }
+
+      setTokenError(String(e?.message || e || "token_request_failed"));
       joinFlowStartedRef.current = false;
       connectingFromPrejoinRef.current = false;
       setJoinRequested(false);
@@ -11755,6 +11909,7 @@ export function RoomPageLiveKit({
               : 0,
             livekitConnected: !!connectedRef.current,
             tabId,
+            buildId: APP_BUILD_ID,
             routeId: routeId || null,
             effectiveSessionParam,
             isMobileQuery,
@@ -11798,13 +11953,22 @@ export function RoomPageLiveKit({
     if (roomJoinDiagnosticKeyRef.current === key) return;
     roomJoinDiagnosticKeyRef.current = key;
 
+    const resumeDecision = getSameTabRoomResumeDecision();
+    const resumedAfterReload = !!resumeDecision?.resumed;
     void logRoomDiagnostic("room_join", {
       roomName: session?.id ? safeRoomName(session.id) : null,
       isHost,
       isModerator: isSelfModerator,
       lkServerUrl,
       screenShareSupported: supportsScreenShareCapture(),
+      ...getPageLoadDiagnostics(),
+      resumedAfterReload,
+      resumeMarkerAgeMs: resumeDecision?.markerAgeMs ?? null,
+      serverClockOffsetMs: getServerClockOffsetMs(),
     });
+    if (resumedAfterReload) {
+      captureProductEvent("room_resumed_after_reload", {});
+    }
   }, [
     connected,
     session?.id,
@@ -11815,6 +11979,57 @@ export function RoomPageLiveKit({
     isSelfModerator,
     lkServerUrl,
   ]);
+
+  const inLiveRoom = joinRequested || connected;
+
+  useEffect(() => {
+    if (!sessionId || !inLiveRoom) return;
+    sameTabResumeEligibleSessions.add(sessionId);
+    return () => {
+      sameTabResumeEligibleSessions.delete(sessionId);
+    };
+  }, [sessionId, inLiveRoom]);
+
+  // A deployment during a live room must not reload the page; show a notice
+  // instead and let the person refresh when it suits them.
+  const [appUpdateAvailable, setAppUpdateAvailable] = useState(false);
+  const appUpdateReportedRef = useRef(false);
+
+  useEffect(() => {
+    if (!inLiveRoom) return;
+    return deferDynamicImportReloads();
+  }, [inLiveRoom]);
+
+  useEffect(() => {
+    const onUpdateAvailable = () => {
+      setAppUpdateAvailable(true);
+      if (appUpdateReportedRef.current) return;
+      appUpdateReportedRef.current = true;
+      captureProductEvent("room_update_deferred", {});
+      void logRoomDiagnostic("app_update_deferred");
+    };
+    window.addEventListener(APP_UPDATE_AVAILABLE_EVENT, onUpdateAvailable);
+    return () => window.removeEventListener(APP_UPDATE_AVAILABLE_EVENT, onUpdateAvailable);
+  }, [logRoomDiagnostic]);
+
+  // Fetch the side-panel chunks while the build the room started with is
+  // still deployed, so opening them later never needs a new chunk.
+  useEffect(() => {
+    if (!connected) return;
+    const preload = () => {
+      void Promise.allSettled([
+        ChatPanel.preload(),
+        TasksPanel.preload(),
+        RoomSoundscapePanel.preload(),
+      ]);
+    };
+    if (typeof window.requestIdleCallback === "function") {
+      const handle = window.requestIdleCallback(preload, { timeout: 5_000 });
+      return () => window.cancelIdleCallback?.(handle);
+    }
+    const timer = window.setTimeout(preload, 1_500);
+    return () => window.clearTimeout(timer);
+  }, [connected]);
 
   const connectInFlightRef = useRef(false);
   const connectAttemptIdRef = useRef(0);
@@ -13296,6 +13511,7 @@ export function RoomPageLiveKit({
 
     setKickRedirecting(true);
     kickedBySignalRef.current = true;
+    revokeSameTabRoomResume(sessionId);
 
     const byName = String(payload?.kickedByName || "").trim();
     const body = byName
@@ -13737,6 +13953,7 @@ export function RoomPageLiveKit({
       console.warn("disconnect error:", e);
     } finally {
       setConnected(false);
+      setLivekitReconnecting(false);
       setMicOn(false);
       setCamOn(false);
       setScreenShareOn(false);
@@ -14048,6 +14265,7 @@ export function RoomPageLiveKit({
         });
 
         setConnected(true);
+        setLivekitReconnecting(false);
         writeMobileRoomLease(sessionId, authUserId, {
           audioEnabled: prejoinRef.current.audioEnabled,
           videoEnabled: prejoinRef.current.videoEnabled,
@@ -14088,6 +14306,7 @@ export function RoomPageLiveKit({
         });
 
         setConnected(false);
+        setLivekitReconnecting(false);
         setTiles([]);
         setScreenShareTiles([]);
         setOpenTileAdminMenuId(null);
@@ -14122,6 +14341,9 @@ export function RoomPageLiveKit({
         }
 
         closeMobileRestoreState();
+        // Removed, kicked, closed room or replaced by another connection: a
+        // reload must not rejoin automatically.
+        revokeSameTabRoomResume(sessionId);
 
         void trackWeeklyUsageOnLeave();
         void leaveAttendanceOnce({ keepalive: false });
@@ -14138,6 +14360,7 @@ export function RoomPageLiveKit({
       });
 
       const handleLiveKitReconnecting = (eventType: string) => {
+        if (roomRef.current === r) setLivekitReconnecting(true);
         captureProductEvent("room_reconnecting", {
           signal_only: eventType === "livekit.signal_reconnecting",
         });
@@ -14172,6 +14395,7 @@ export function RoomPageLiveKit({
           unexpectedDisconnectRecoveryTimerRef.current = null;
         }
         setConnected(true);
+        setLivekitReconnecting(false);
         void attendanceHeartbeat();
         startAttendanceHeartbeat();
         closeMobileRestoreState();
@@ -14621,6 +14845,9 @@ export function RoomPageLiveKit({
       stopWelcomeLoop();
       if (!preserveBackgroundSession) {
         releaseTabPresence();
+        // Leaving the room inside the app (or a crash) is not a page reload.
+        // The crash screen's Rejoin button marks the room again on purpose.
+        revokeSameTabRoomResume(retention.sessionId);
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -14952,6 +15179,9 @@ export function RoomPageLiveKit({
     }
   };
 
+  const toggleCamRef = useRef(toggleCam);
+  toggleCamRef.current = toggleCam;
+
   useEffect(() => {
     if (cameraPolicyTimerRef.current !== null) {
       window.clearTimeout(cameraPolicyTimerRef.current);
@@ -14963,7 +15193,12 @@ export function RoomPageLiveKit({
       !roomPolicies.cameraRequired ||
       !shouldEnforceMediaPolicyForRole(roomPolicies, isHost || isSelfModerator) ||
       camOn ||
-      kickRedirecting
+      kickRedirecting ||
+      // Phones stop the camera in the background and restart it on return.
+      // Count only while the room is visible and stable; start over after.
+      !pageVisible ||
+      livekitReconnecting ||
+      mobileMediaRestoreOpen
     ) {
       return;
     }
@@ -14979,6 +15214,7 @@ export function RoomPageLiveKit({
     const disconnectForCameraPolicy = () => {
       void (async () => {
         kickedBySignalRef.current = true;
+        revokeSameTabRoomResume(mobileRoomRetentionRef.current.sessionId);
         setKickRedirecting(true);
         await disconnectRoom({
           skipNavigate: true,
@@ -15032,6 +15268,9 @@ export function RoomPageLiveKit({
     kickRedirecting,
     roomPolicies.cameraRequired,
     roomPolicies.mediaRequirementsApplyToStaff,
+    pageVisible,
+    livekitReconnecting,
+    mobileMediaRestoreOpen,
   ]);
 
   useEffect(() => {
@@ -15046,7 +15285,10 @@ export function RoomPageLiveKit({
       !shouldEnforceMediaPolicyForRole(roomPolicies, isHost || isSelfModerator) ||
       screenShareOn ||
       (roomPolicies.cameraOrScreenShareRequired && camOn) ||
-      kickRedirecting
+      kickRedirecting ||
+      !pageVisible ||
+      livekitReconnecting ||
+      mobileMediaRestoreOpen
     ) {
       return;
     }
@@ -15058,10 +15300,12 @@ export function RoomPageLiveKit({
         if (!cancelled) callback();
       }, delayMs);
     };
+    const canShareScreenHere = supportsScreenShareCapture();
 
     const disconnectForScreenSharePolicy = () => {
       void (async () => {
         kickedBySignalRef.current = true;
+        revokeSameTabRoomResume(mobileRoomRetentionRef.current.sessionId);
         setKickRedirecting(true);
         await disconnectRoom({
           skipNavigate: true,
@@ -15079,6 +15323,34 @@ export function RoomPageLiveKit({
     };
 
     const showReminder = (reminder: 1 | 2) => {
+      if (roomPolicies.cameraOrScreenShareRequired && !canShareScreenHere) {
+        showSystemNotice({
+          kind: "info",
+          presentation: "camera-reminder",
+          title: "Please turn on your camera",
+          body:
+            reminder === 1
+              ? "This room requires a camera or screen share. Screen sharing isn't available in this browser, so turn your camera on within two minutes to stay in the room."
+              : "Your camera is still off. This is the final reminder; turn it on within 30 seconds to stay in the room.",
+          actionLabel: "Turn camera on",
+          action: () => {
+            void toggleCamRef.current(true);
+          },
+        });
+        return;
+      }
+      if (!roomPolicies.cameraOrScreenShareRequired && !canShareScreenHere) {
+        showSystemNotice({
+          kind: "info",
+          presentation: "screen-share-reminder",
+          title: "Screen sharing required",
+          body:
+            reminder === 1
+              ? "The host now requires screen sharing, which isn't available in this browser. Join from a computer to keep taking part; you'll be disconnected in two minutes."
+              : "Screen sharing isn't available in this browser. You'll be disconnected in 30 seconds; join from a computer to take part.",
+        });
+        return;
+      }
       showSystemNotice({
         kind: "info",
         presentation: "screen-share-reminder",
@@ -15123,6 +15395,9 @@ export function RoomPageLiveKit({
     roomPolicies.mediaRequirementsApplyToStaff,
     camOn,
     screenShareOn,
+    pageVisible,
+    livekitReconnecting,
+    mobileMediaRestoreOpen,
   ]);
 
   voiceUiCommandHandlerRef.current = async (command: VoiceUiCommand) => {
@@ -15670,10 +15945,17 @@ export function RoomPageLiveKit({
         setVoiceUiLastCommand("Send message requested");
         break;
       case "message_confirm":
+        if (voiceLeaveConfirmUntilRef.current > Date.now()) {
+          voiceLeaveConfirmUntilRef.current = 0;
+          setVoiceUiLastCommand("Leaving room");
+          await leave();
+          break;
+        }
         dispatchVoiceMessageSend();
         setVoiceUiLastCommand("Message confirmed");
         break;
       case "message_cancel":
+        voiceLeaveConfirmUntilRef.current = 0;
         window.dispatchEvent(new Event("mysession:voice-message-cancel"));
         if (pipWindowRef.current && !pipWindowRef.current.closed) {
           const PiPEvent = (
@@ -15898,8 +16180,14 @@ export function RoomPageLiveKit({
         setVoiceUiLastCommand("Camera and microphone restored");
         break;
       case "leave_room":
-        setVoiceUiLastCommand("Leaving room");
-        await leave();
+        if (voiceLeaveConfirmUntilRef.current > Date.now()) {
+          voiceLeaveConfirmUntilRef.current = 0;
+          setVoiceUiLastCommand("Leaving room");
+          await leave();
+          break;
+        }
+        voiceLeaveConfirmUntilRef.current = Date.now() + VOICE_LEAVE_CONFIRM_WINDOW_MS;
+        setVoiceUiLastCommand("Say “Leave room” again or “Confirm” to leave");
         break;
       case "reaction_fire":
         sendReaction("fire");
@@ -16655,11 +16943,8 @@ export function RoomPageLiveKit({
         setPrejoinOpen(false);
         setJoinRequested(true);
 
-        const refreshed = await requestToken().catch((e) => {
+        const refreshed = await requestToken({ recovery: true }).catch((e) => {
           console.warn("mobile restore token refresh failed:", e);
-          setTokenError(
-            String((e as any)?.message || e || "restore_token_failed"),
-          );
           return undefined;
         });
 
@@ -16708,7 +16993,7 @@ export function RoomPageLiveKit({
         openMobileRestoreState(offerManualRejoin ? "needs_action" : "restoring");
         setMediaWarning(
           offerManualRejoin
-            ? "Automatic reconnect is taking longer than expected. You can use Rejoin room to retry now."
+            ? "Still reconnecting automatically. You can also rejoin now."
             : "Still reconnecting automatically…",
         );
       }
@@ -16723,7 +17008,7 @@ export function RoomPageLiveKit({
       openMobileRestoreState(offerManualRejoin ? "needs_action" : "restoring");
       setMediaWarning(
         offerManualRejoin
-          ? "Automatic reconnect failed. Use Rejoin room to try again."
+          ? "Still reconnecting automatically. You can also rejoin now."
           : "Still reconnecting automatically…",
       );
     } finally {
@@ -19242,6 +19527,13 @@ export function RoomPageLiveKit({
       data-theme="light"
       style={{ colorScheme: "light" }}
     >
+      <RoomPanelErrorBoundary
+        panel="pip-chat"
+        routeId={routeId}
+        sessionId={session.id}
+        isLight
+        onClose={() => setPipMode("gallery")}
+      >
       <React.Suspense fallback={<div className="p-4 text-sm text-black/60">Loading chat…</div>}>
       <ChatPanel
         key={`pip-chat-${session.id}`}
@@ -19260,17 +19552,18 @@ export function RoomPageLiveKit({
         renderWindow={pipChatWindow}
       />
       </React.Suspense>
+      </RoomPanelErrorBoundary>
     </div>
   ) : null;
 
   const pipPortal = pipMountEl
     ? createPortal(
-      <LiveKitPiPPortal
+      <PiPPortalWithCountdown
+        countdownStore={remainingTimeStore}
         isLight={isLight}
         theme={theme}
         sessionTitle={String(session?.title || "Session")}
         participantsCount={participantsCount}
-        remainingTime={remainingTime}
         pipMode={pipMode}
         pipGalleryTiles={pipGalleryTiles}
         pipGalleryColumns={pipGalleryColumns}
@@ -19354,6 +19647,25 @@ export function RoomPageLiveKit({
     if (!q) return base;
     return base.filter((t) => (t.label || "").toLowerCase().includes(q));
   }, [tilesBaseForUi, participantsSearch]);
+
+  // The side panel renders once into this host element, which moves between
+  // the desktop column and the mobile/tablet overlay. Switching layouts
+  // (resize, rotation) then keeps the open panel mounted instead of remounting
+  // chat/tasks/music state.
+  const [rightPanelHost] = useState<HTMLDivElement | null>(() => {
+    if (typeof document === "undefined") return null;
+    const host = document.createElement("div");
+    host.className = "h-full min-h-0";
+    return host;
+  });
+  const attachRightPanelHost = useCallback(
+    (slot: HTMLDivElement | null) => {
+      if (slot && rightPanelHost && rightPanelHost.parentElement !== slot) {
+        slot.appendChild(rightPanelHost);
+      }
+    },
+    [rightPanelHost],
+  );
 
   const RightPanelBody = (
     <div
@@ -19928,6 +20240,13 @@ export function RoomPageLiveKit({
             </button>
           </div>
 
+          <RoomPanelErrorBoundary
+            panel="chat"
+            routeId={routeId}
+            sessionId={sessionId}
+            isLight={sidePanelIsLight}
+            onClose={() => openRightTab(null)}
+          >
           <React.Suspense fallback={<div className="p-4 text-sm text-black/60">Loading chat…</div>}>
           <ChatPanel
             sessionId={sessionId}
@@ -19948,10 +20267,18 @@ export function RoomPageLiveKit({
             generalChatDisabled={roomPolicies.publicChatDisabled}
           />
           </React.Suspense>
+          </RoomPanelErrorBoundary>
         </div>
       )}
 
       {rightTab === "music" && (
+        <RoomPanelErrorBoundary
+          panel="music"
+          routeId={routeId}
+          sessionId={sessionId}
+          isLight={sidePanelIsLight}
+          onClose={() => openRightTab(null)}
+        >
         <React.Suspense fallback={
           <div className="p-5 flex items-center justify-between gap-3">
             <span role="status">Loading music controls…</span>
@@ -20078,6 +20405,7 @@ export function RoomPageLiveKit({
           onClose={() => openRightTab(null)}
         />
         </React.Suspense>
+        </RoomPanelErrorBoundary>
       )}
 
       {rightTab === "tasks" && (
@@ -20114,14 +20442,21 @@ export function RoomPageLiveKit({
                   className="h-full min-h-0"
                 >
                   {session?.id && connected ? (
+                    <RoomPanelErrorBoundary
+                      panel="tasks"
+                      routeId={routeId}
+                      sessionId={session.id}
+                      isLight={sidePanelIsLight}
+                      onClose={() => openRightTab(null)}
+                    >
                     <React.Suspense fallback={<div className={`p-4 text-sm ${sidePanelIsLight ? "text-black/60" : "text-white/60"}`}>Loading tasks…</div>}>
-                    <TasksPanel
+                    <TasksPanelWithCountdown
                       key={`tasks-${session.id}`}
+                      countdownStore={remainingTimeStore}
                       currentUserId={authUserId}
                       theme={sidePanelTheme}
                       sessionId={session.id}
                       oneOnOneMode={isOneOnOneRoom}
-                      timerText={remainingTime || "--:--"}
                       pictureInPictureSupported={connected && pipSupported}
                       pictureInPictureOpen={pictureInPictureOpen}
                       onOpenPictureInPicture={() => {
@@ -20146,6 +20481,7 @@ export function RoomPageLiveKit({
                       }}
                     />
                     </React.Suspense>
+                    </RoomPanelErrorBoundary>
                   ) : null}
                 </div>
               </div>
@@ -20694,6 +21030,18 @@ export function RoomPageLiveKit({
       return;
     }
 
+    if (
+      roomPolicies.screenShareRequired &&
+      !supportsScreenShareCapture() &&
+      shouldEnforceMediaPolicyForRole(roomPolicies, isHost || isSelfModerator)
+    ) {
+      // Joining would only end in the screen-share policy removing them.
+      setDeviceError(
+        "This room requires screen sharing, which isn't available in this browser. Join from a computer to take part.",
+      );
+      return;
+    }
+
     joinFlowStartedRef.current = true;
     connectingFromPrejoinRef.current = true;
     if (paywallRuntimeBlocked) {
@@ -20929,6 +21277,11 @@ export function RoomPageLiveKit({
         }}
       />
 
+      <RoomSilentErrorBoundary
+        area="ai-host"
+        sessionId={sessionId}
+        onError={() => setAiHostInputOpen(false)}
+      >
       <React.Suspense fallback={null}>
         {aiHostedEnabled && session?.id && authUserId ? (
         <AIHostedRoomController
@@ -20947,6 +21300,7 @@ export function RoomPageLiveKit({
         />
         ) : null}
       </React.Suspense>
+      </RoomSilentErrorBoundary>
 
       <div className={`ms-room-page h-[100dvh] overflow-hidden ${pageBg}`}>
         <input
@@ -21341,7 +21695,7 @@ export function RoomPageLiveKit({
                   </div>
 
                   <div className={`mt-4 rounded-2xl px-3 py-2 text-[10px] leading-4 ${isLight ? "bg-amber-50 text-amber-900/70" : "bg-amber-400/10 text-amber-100/65"}`}>
-                    Common alternatives such as video/camera, mic/sound, show/open, hide/close and turn on/off are accepted. “Leave room” exits immediately. Participant moderation commands open the matching management menu so you can confirm the action.
+                    Common alternatives such as video/camera, mic/sound, show/open, hide/close and turn on/off are accepted. “Leave room” asks first: say it again or say “Confirm” to leave. Participant moderation commands open the matching management menu so you can confirm the action.
                   </div>
                 </div>
               </>
@@ -21349,7 +21703,8 @@ export function RoomPageLiveKit({
           </>
         ) : null}
         <div className="relative isolate h-full w-full px-2 sm:px-3 pt-2 pb-[calc(68px+env(safe-area-inset-bottom))] sm:pb-[calc(72px+env(safe-area-inset-bottom))] flex flex-col gap-2 min-h-0">
-          <RoomTopBar
+          <RoomTopBarWithCountdown
+            countdownStore={remainingTimeStore}
             theme={theme}
             sessionTitle={String(session?.title || "Session")}
             canEditTimeline={canEditRoomTimeline}
@@ -21360,7 +21715,6 @@ export function RoomPageLiveKit({
             stages={stages as any}
             stagebarStartTime={stagebarStartTime}
             stagebarCycleSeconds={stagebarCycleSeconds}
-            remainingTime={remainingTime}
             currentStage={(stages[currentStage] as any) || null}
             hostProfile={session?.host_profile || null}
             isInfiniteRoom={isInfiniteRoom}
@@ -21449,15 +21803,17 @@ export function RoomPageLiveKit({
                     <div className="mt-3 text-[20px] font-bold leading-tight">
                       {mobileRestoreMode === "restoring"
                         ? "Restoring your connection…"
-                        : "Rejoin the room"}
+                        : "Still reconnecting…"}
                     </div>
 
                     <div
                       className={`mt-2 text-[13px] leading-5 ${isLight ? "text-black/60" : "text-white/65"}`}
                     >
-                      {mobileRestoreMode === "restoring"
-                        ? "Your browser or network paused the room. Please wait a few seconds while MySession reconnects."
-                        : "The room connection was interrupted. Rejoin to continue with your camera and microphone."}
+                      {typeof navigator !== "undefined" && navigator.onLine === false
+                        ? "Waiting for your network. MySession reconnects automatically as soon as you are back online."
+                        : mobileRestoreMode === "restoring"
+                          ? "Your browser or network paused the room. Please wait a few seconds while MySession reconnects."
+                          : "MySession keeps trying automatically. If it takes too long, rejoin now."}
                     </div>
 
                     {frozenLocalVideoFrame ? (
@@ -21472,7 +21828,16 @@ export function RoomPageLiveKit({
                       <button
                         type="button"
                         disabled={mobileMediaRestoreBusy}
-                        onClick={() => void restoreMobileMediaFromBackground(true)}
+                        onClick={() => {
+                          void restoreMobileMediaFromBackground(true).finally(() => {
+                            // Hand control back to the automatic retry loop.
+                            if (roomIsActuallyConnected()) return;
+                            window.setTimeout(
+                              () => window.dispatchEvent(new Event(ROOM_RECOVERY_REQUEST_EVENT)),
+                              3_000,
+                            );
+                          });
+                        }}
                         className={[
                           "mt-4 h-11 w-full rounded-2xl text-[14px] font-semibold transition disabled:opacity-60",
                           isLight
@@ -21480,7 +21845,7 @@ export function RoomPageLiveKit({
                             : "bg-[#F3F3F3] text-black hover:bg-[#F1F1F1]/90",
                         ].join(" ")}
                       >
-                        {mobileMediaRestoreBusy ? "Rejoining…" : "Rejoin room"}
+                        {mobileMediaRestoreBusy ? "Rejoining…" : "Rejoin now"}
                       </button>
                     ) : null}
 
@@ -21504,7 +21869,7 @@ export function RoomPageLiveKit({
                     <button
                       type="button"
                       disabled={mobileMediaRestoreBusy}
-                      onClick={() => window.location.reload()}
+                      onClick={() => reloadRoomWithResume(routeId || sessionId)}
                       className={`mt-2 h-9 w-full rounded-2xl text-[12px] font-semibold transition disabled:opacity-60 ${isLight
                         ? "text-black/65 hover:bg-black/[0.05]"
                         : "text-white/65 hover:bg-white/[0.06]"
@@ -21555,17 +21920,22 @@ export function RoomPageLiveKit({
             </div>
 
             {rightPanelOpen && !useOverlayRightPanel && (
-              <div className="min-h-0 h-full overflow-hidden">
-                {RightPanelBody}
-              </div>
+              <div
+                ref={attachRightPanelHost}
+                className="min-h-0 h-full overflow-hidden"
+              />
             )}
           </div>
 
           {rightPanelOpen && useOverlayRightPanel && (
-            <div className="absolute inset-x-2 top-2 bottom-[calc(68px+env(safe-area-inset-bottom))] z-[70] min-h-0 sm:inset-x-3 sm:bottom-[calc(72px+env(safe-area-inset-bottom))]">
-              {RightPanelBody}
-            </div>
+            <div
+              ref={attachRightPanelHost}
+              className="absolute inset-x-2 top-2 bottom-[calc(68px+env(safe-area-inset-bottom))] z-[70] min-h-0 sm:inset-x-3 sm:bottom-[calc(72px+env(safe-area-inset-bottom))]"
+            />
           )}
+          {rightPanelOpen && rightPanelHost
+            ? createPortal(RightPanelBody, rightPanelHost)
+            : null}
         </div>
 
         {roomState ? (
@@ -21850,6 +22220,12 @@ export function RoomPageLiveKit({
           onOpenAIHost={() => setAiHostInputOpen(true)}
         />
 
+        <RoomSilentErrorBoundary
+          area="bug-report"
+          sessionId={sessionId}
+          resetKey={bugReportOpen}
+          onError={() => setBugReportOpen(false)}
+        >
         <React.Suspense fallback={null}>
         {bugReportOpen && <BugReportModal
           open={bugReportOpen}
@@ -21861,7 +22237,14 @@ export function RoomPageLiveKit({
           userId={authUserId || null}
         />}
         </React.Suspense>
+        </RoomSilentErrorBoundary>
 
+        <RoomSilentErrorBoundary
+          area="settings"
+          sessionId={sessionId}
+          resetKey={settingsOpen}
+          onError={() => setSettingsOpen(false)}
+        >
         <React.Suspense fallback={null}>
         {settingsOpen && <RoomSettingsModalLiveKit
           open={settingsOpen}
@@ -22069,6 +22452,7 @@ export function RoomPageLiveKit({
           onChangeVoiceUiHotkey={setVoiceUiHotkey}
         />}
         </React.Suspense>
+        </RoomSilentErrorBoundary>
 
         {settingsOpen && deviceError ? (
           <div
@@ -22078,6 +22462,35 @@ export function RoomPageLiveKit({
               }`}
           >
             {deviceError}
+          </div>
+        ) : null}
+
+        {appUpdateAvailable ? (
+          <div className="pointer-events-none fixed inset-x-0 top-2 z-[95] flex justify-center px-3">
+            <div
+              role="status"
+              className={`pointer-events-auto flex max-w-[560px] items-center gap-3 rounded-2xl border px-4 py-2.5 text-[13px] shadow-xl ${isLight
+                ? "border-[#CFCFCF] bg-[#F3F3F3] text-black/80"
+                : "border-[#2B2B2B] bg-[#1B1B1B] text-white/85"
+                }`}
+            >
+              <span>A new version of MySession is available. Refresh when it suits you; you will rejoin automatically.</span>
+              <button
+                type="button"
+                onClick={() => reloadRoomWithResume(routeId || sessionId)}
+                className="shrink-0 rounded-xl bg-[#5286F6] px-3 py-1.5 text-[12px] font-semibold text-white transition hover:bg-[#6B98FA]"
+              >
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={() => setAppUpdateAvailable(false)}
+                aria-label="Dismiss update notice"
+                className={`shrink-0 rounded-lg px-1.5 text-[14px] ${isLight ? "text-black/50 hover:text-black/80" : "text-white/50 hover:text-white/85"}`}
+              >
+                ✕
+              </button>
+            </div>
           </div>
         ) : null}
 
@@ -22196,6 +22609,12 @@ export function RoomPageLiveKit({
             </div>
           </div>
         )}
+        <RoomSilentErrorBoundary
+          area="report-participant"
+          sessionId={sessionId}
+          resetKey={reportModalOpen}
+          onError={() => setReportModalOpen(false)}
+        >
         <React.Suspense fallback={null}>
         {reportModalOpen && <ReportParticipantModalLiveKit
           open={reportModalOpen}
@@ -22217,6 +22636,7 @@ export function RoomPageLiveKit({
           }}
         />}
         </React.Suspense>
+        </RoomSilentErrorBoundary>
 
         {editNameOpen && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center">
@@ -22276,6 +22696,11 @@ export function RoomPageLiveKit({
         )}
 
         {timelineEditorOpen && (
+          <RoomSilentErrorBoundary
+            area="timeline-editor"
+            sessionId={sessionId}
+            onError={closeTimelineEditor}
+          >
           <React.Suspense fallback={
             <div className="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4">
               <div role="dialog" aria-modal="true" aria-label="Loading timeline editor"
@@ -22300,8 +22725,15 @@ export function RoomPageLiveKit({
             onCustomRoomNameChange={freeFlowDraftPresetId === "custom" ? setFreeFlowCustomName : undefined}
           />
           </React.Suspense>
+          </RoomSilentErrorBoundary>
         )}
 
+        <RoomSilentErrorBoundary
+          area="free-flow-intro"
+          sessionId={sessionId}
+          resetKey={freeFlowIntroOpen}
+          onError={() => setFreeFlowIntroOpen(false)}
+        >
         <React.Suspense fallback={null}>
         {freeFlowIntroOpen && <FreeFlowIntroModal
           open={freeFlowIntroOpen}
@@ -22323,13 +22755,20 @@ export function RoomPageLiveKit({
           }}
         />}
         </React.Suspense>
+        </RoomSilentErrorBoundary>
         {selectedUser && (
+          <RoomSilentErrorBoundary
+            area="user-profile"
+            sessionId={sessionId}
+            onError={() => setSelectedUser(null)}
+          >
           <React.Suspense fallback={null}>
             <UserProfileModal
               user={selectedUser}
               onClose={() => setSelectedUser(null)}
             />
           </React.Suspense>
+          </RoomSilentErrorBoundary>
         )}
       </div>
       {openTileAdminMenuId &&
