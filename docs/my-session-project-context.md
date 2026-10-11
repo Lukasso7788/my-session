@@ -174,8 +174,19 @@ structured data, sitemap and robots; browser-rendered UI alone is insufficient.
 ## Production room flow and existing optimizations
 
 The 2026-10-11 audit of people being thrown out of rooms (side-panel clicks,
-mobile tab switching) with ranked findings, production evidence and a fix
-order is in docs/room-disconnect-audit-2026-10-11.md. It changed no code.
+mobile tab switching), its production evidence and the fixes that followed are
+in docs/room-disconnect-audit-2026-10-11.md ("Fixes" table). Key rules from it:
+panels are `preloadableLazy` + preloaded after connect; a joined room defers
+`dynamicImportRecovery` reloads and shows an update banner; every lazy room
+section has an error boundary and the route has `RoomCrashBoundary`; a reload of
+the same tab rejoins once via `src/lib/sameTabRoomResume.ts` (10 minutes,
+first mount after a load on that room URL, revoked on leave/kick/removal);
+background-recovery token requests use `{ recovery: true }`; media-policy
+countdowns pause while hidden or reconnecting; the stage countdown lives in
+`src/lib/roomCountdownStore.ts`; room timing uses `serverNow()` from
+`src/lib/serverClock.ts`. Run `node --experimental-strip-types --test
+scripts/*.test.mjs tests/*.test.mjs` on Node 22 (type stripping is default on
+Node 23+).
 
 RoomPageLiveKit.tsx is the large room orchestrator (over 20k source lines), with
 prejoin/identity/admission -> token -> Room connection -> prepared media publish

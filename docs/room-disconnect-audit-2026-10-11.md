@@ -11,8 +11,9 @@ Method: read-only trace of `src/pages/RoomPageLiveKit.tsx` (23k lines), the
 bottom bar, the app shell/routes, `api/livekit/token.ts`, `api/livekit/admin.ts`,
 Supabase migrations and cron, plus aggregated production diagnostics from
 `public.room_diagnostics` and `public.connection_diagnostics` (last ~14 days,
-counts only, no user identifiers copied). No code, data or settings were
-changed by this audit. Line numbers refer to `origin/main` at `b66f09a`.
+counts only, no user identifiers copied). No data or settings were changed.
+Line numbers in the findings refer to `origin/main` at `b66f09a`, before the
+fixes. All ten findings were fixed afterwards; see "Fixes" at the end.
 
 ## Production evidence
 
@@ -239,3 +240,35 @@ payload and to a remote `room.unmounted` event:
 None of these fixes change video capture, send or receive quality, PiP, or
 background video handling. Any change that would should be discussed first, as
 required by the project rules.
+
+## Fixes (2026-10-11, same branch)
+
+The owner approved all of the above, including a one-time automatic rejoin
+after a reload of the same tab with the previous microphone/camera choice.
+
+| Finding | Fix | Where |
+| --- | --- | --- |
+| 1 Stale chunk reload | Chat, Tasks and Music are `preloadableLazy` and preloaded (idle) right after connect. While joined, `deferDynamicImportReloads()` stops `dynamicImportRecovery` from reloading; it fires `mysession:app-update-available` and the room shows a dismissible "new version" banner with Refresh. | `src/lib/preloadableLazy.ts`, `src/lib/dynamicImportRecovery.ts`, room effects after the `room_join` diagnostic |
+| 2 No error boundaries | `RoomPanelErrorBoundary` around Chat, PiP chat, Music and Tasks (stale chunk: Refresh with rejoin; other errors: Try again; Close panel). `RoomSilentErrorBoundary` around AI host, bug report, settings, report participant, timeline editor, Free Flow intro and profile modals (closes them). `RoomCrashBoundary` around the room route (Rejoin / Back to sessions). Errors go to Sentry when configured and to `room_diagnostics`. | `src/components/RoomErrorBoundary.tsx`, `src/App.tsx` |
+| 3 Reload lands on prejoin | `sessionStorage` marker (`src/lib/sameTabRoomResume.ts`), refreshed by every lease write while the room is joined. `RoomPageLiveKitEntry` keeps the lease (so the existing lease auto-join runs) only for the first room mount after a page load, when the page was loaded on that room URL and the marker is at most 10 minutes old. The marker is consumed, and revoked on Leave, kick, policy removal, terminal disconnect, session close, ban and in-app exits. | `src/lib/sameTabRoomResume.ts`, `src/App.tsx`, `writeMobileRoomLease` / `revokeSameTabRoomResume` |
+| 4 Token error opens prejoin | `requestToken({ recovery: true })` from background recovery keeps the room and overlay on exceptions and on generic errors; admission/ban decisions still leave the room. A 401 retries once after `supabase.auth.refreshSession()`. | `requestToken`, `restoreMobileMediaFromBackground` |
+| 5 Policy countdown in background | Camera and screen-share countdowns only run while the page is visible, LiveKit is not reconnecting and the restore overlay is closed; they start over afterwards. "Screen share required" rooms block joining on browsers without screen capture with an explanation in prejoin; reminders on such devices no longer offer an impossible "Share screen". | policy effects, `onJoinGate` |
+| 6 Manual Rejoin | Overlay says "Still reconnecting…" and that retries continue; the button is "Rejoin now", and a failed manual attempt hands control back to the automatic loop. Refresh page rejoins automatically. Offline shows a waiting-for-network text. | restore overlay |
+| 7 Leave without confirmation | Bottom-bar Leave opens "Leave the room? Stay / Leave" (auto-closes after 8 s, outside tap or Escape). Voice "Leave room" must be repeated or confirmed with "Confirm" within 8 s. | `LiveKitBottomBarLegacy.tsx`, voice handler |
+| 8 Device clock | `src/lib/serverClock.ts` measures the offset from the `Date` header of `HEAD /robots.txt` (ignored under 2 s or with a > 10 s round trip). Auto-close, join window, stage timer and `SessionStageBar` use server time. | `serverClock.ts`, room, `SessionStageBar.tsx` |
+| 9 Per-second re-render | Stage countdown text lives in `createRoomCountdownStore`; only the top bar, Tasks panel and PiP subscribe. `sessionAccessTickMs` updates only at the end/close boundaries (scheduled rooms). | `src/lib/roomCountdownStore.ts`, room |
+| 10 Panel remount on layout switch | `RightPanelBody` renders once through a portal into a host element that moves between the desktop column and the overlay. | room, `attachRightPanelHost` |
+| Diagnostics | `room_join` payload adds `navigationType`, `wasDiscarded`, `buildId`, `resumedAfterReload`, `resumeMarkerAgeMs`, `serverClockOffsetMs`; every `room_diagnostics` row has `buildId`; new events `app_update_deferred`, `room_panel_failed`, `room_section_failed`, `room_crashed`; local diagnostics add `token.auth_refresh_retry`. Build id comes from `VERCEL_GIT_COMMIT_SHA` (vite `define`). | `src/lib/pageLifecycle.ts`, `src/lib/roomDiagnosticsReport.ts`, `vite.config.ts` |
+
+Verification: `node --experimental-strip-types --test scripts/*.test.mjs
+tests/*.test.mjs` (112 tests, including new `same-tab-room-resume`,
+`room-reliability-helpers`, `dynamic-import-recovery` and the source guards in
+`room-disconnect-guards`); `scripts/verify-room-performance-types.mjs` (0 new
+TS diagnostics); `scripts/verify-room-performance-lint.mjs` (0 new); focused
+ESLint on new files; `npm run build`; `scripts/verify-room-performance-bundle.mjs`
+(timeline and music still lazy); `CHROME_PATH=... node
+scripts/room-reliability-browser.mjs` (8 real-component checks in headless
+Chrome at 390 px: stale-chunk panel, render-error panel, crash screen, Leave
+confirmation). Not verified: a live two-person LiveKit room on real iOS/Android
+devices (needs test accounts); check after deploy with the queries above,
+split by `buildId` and `navigationType`.
