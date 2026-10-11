@@ -209,5 +209,81 @@
     "coverImageAlt": "Woman waves at a laptop during a video call beside the words Open the room",
     "markdownFile": "how-to-host-a-virtual-coworking-session.md",
     "publishedAt": "2026-10-11T00:00:00.000Z"
+  },
+  {
+    "slug": "best-body-doubling-apps",
+    "title": "Best Body Doubling Apps and Websites in 2026",
+    "excerpt": "Seven body doubling apps and websites compared by format, camera rules, and price, from booked one-to-one partners to free drop-in study rooms.",
+    "category": "Body doubling",
+    "tags": [
+      "best body doubling apps",
+      "body doubling website",
+      "body doubling groups online",
+      "virtual body doubling"
+    ],
+    "seoTitle": "Best Body Doubling Apps in 2026 | MySession",
+    "metaDescription": "Seven body doubling apps and sites, compared by format.",
+    "focusKeyword": "best body doubling apps",
+    "coverImagePath": "/blog/editorial/best-body-doubling-apps-cover.jpg",
+    "coverImageAlt": "One hand holds a phone while the other types on a laptop beside the words Seven rooms to try",
+    "markdownFile": "best-body-doubling-apps.md",
+    "publishedAt": "2026-10-11T00:00:00.000Z"
+  },
+  {
+    "slug": "task-paralysis",
+    "title": "Task Paralysis: Why Starting Feels Impossible and What Helps",
+    "excerpt": "Why task paralysis happens, a ten-minute way to get unstuck, and which tools actually make the first step easier.",
+    "category": "Getting started",
+    "tags": [
+      "task paralysis",
+      "task paralysis help",
+      "task paralysis app",
+      "procrastination"
+    ],
+    "seoTitle": "Task Paralysis: What Helps When You Can't Start | MySession",
+    "metaDescription": "Why task paralysis happens and a 10-minute way to start.",
+    "focusKeyword": "task paralysis",
+    "coverImagePath": "/blog/editorial/task-paralysis-cover.jpg",
+    "coverImageAlt": "Woman holds her head over a laptop at a table beside the words Stuck before step one?",
+    "markdownFile": "task-paralysis.md",
+    "publishedAt": "2026-10-11T00:00:00.000Z"
+  },
+  {
+    "slug": "task-initiation-strategies",
+    "title": "Task Initiation: 9 Strategies to Start Tasks You Keep Avoiding",
+    "excerpt": "Nine practical task initiation strategies, from two-minute entry actions and if-then plans to working alongside other people.",
+    "category": "Getting started",
+    "tags": [
+      "task initiation",
+      "executive function",
+      "how to start tasks",
+      "implementation intentions"
+    ],
+    "seoTitle": "Task Initiation: 9 Ways to Start Avoided Tasks | MySession",
+    "metaDescription": "Nine practical ways to start tasks you keep avoiding.",
+    "focusKeyword": "task initiation",
+    "coverImagePath": "/blog/editorial/task-initiation-strategies-cover.jpg",
+    "coverImageAlt": "Hand writes a checklist in a notebook beside the words Start with one box.",
+    "markdownFile": "task-initiation-strategies.md",
+    "publishedAt": "2026-10-11T00:00:00.000Z"
+  },
+  {
+    "slug": "does-body-doubling-work-without-adhd",
+    "title": "Does Body Doubling Work Without ADHD?",
+    "excerpt": "Body doubling is not an ADHD-only technique. What research on working around others suggests, who benefits, and how to test it in two weeks.",
+    "category": "Body doubling",
+    "tags": [
+      "body doubling without ADHD",
+      "is body doubling only for ADHD",
+      "social facilitation",
+      "virtual body doubling"
+    ],
+    "seoTitle": "Does Body Doubling Work Without ADHD? | MySession",
+    "metaDescription": "Who benefits from body doubling, ADHD or not, and why.",
+    "focusKeyword": "does body doubling work without ADHD",
+    "coverImagePath": "/blog/editorial/does-body-doubling-work-without-adhd-cover.jpg",
+    "coverImageAlt": "Two people work on separate laptops at a shared desk beside the words Not just for ADHD.",
+    "markdownFile": "does-body-doubling-work-without-adhd.md",
+    "publishedAt": "2026-10-11T00:00:00.000Z"
   }
 ]

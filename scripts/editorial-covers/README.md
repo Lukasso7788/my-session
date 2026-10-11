@@ -1,6 +1,6 @@
 # Editorial photo compositions
 
-Fifteen bundled SEO articles, three SEO landing pages, and two inline article
+Nineteen bundled SEO articles, three SEO landing pages, and two inline article
 illustrations use reproducible, 1200 × 630 JPEG compositions
 composed in HTML/CSS and captured with local headless Chrome. This directory
 contains the Pexels source metadata and page links (`sources.json`), downloaded

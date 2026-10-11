@@ -14,6 +14,10 @@ import sessionIntentionMarkdown from "../content/blog/how-to-write-a-focus-sessi
 import cleaningMarkdown from "../content/blog/body-doubling-for-cleaning.md?raw";
 import studyWithMeMarkdown from "../content/blog/study-with-me-videos-vs-live-study-rooms.md?raw";
 import hostSessionMarkdown from "../content/blog/how-to-host-a-virtual-coworking-session.md?raw";
+import bestAppsMarkdown from "../content/blog/best-body-doubling-apps.md?raw";
+import taskParalysisMarkdown from "../content/blog/task-paralysis.md?raw";
+import taskInitiationMarkdown from "../content/blog/task-initiation-strategies.md?raw";
+import withoutAdhdMarkdown from "../content/blog/does-body-doubling-work-without-adhd.md?raw";
 import editorialCoverSources from "../../scripts/editorial-covers/sources.json";
 import editorialManifest from "./blog-editorial-manifest.json";
 import { starterFocusmatePost, withStarterFocusmateAssets } from "./blogSeed";
@@ -34,6 +38,10 @@ const markdownByFile: Record<string, string> = {
   "body-doubling-for-cleaning.md": cleaningMarkdown,
   "study-with-me-videos-vs-live-study-rooms.md": studyWithMeMarkdown,
   "how-to-host-a-virtual-coworking-session.md": hostSessionMarkdown,
+  "best-body-doubling-apps.md": bestAppsMarkdown,
+  "task-paralysis.md": taskParalysisMarkdown,
+  "task-initiation-strategies.md": taskInitiationMarkdown,
+  "does-body-doubling-work-without-adhd.md": withoutAdhdMarkdown,
 };
 
 const coverDetailsBySlug = new Map(

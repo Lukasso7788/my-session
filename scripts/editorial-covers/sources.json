@@ -243,5 +243,57 @@
     "number": "20",
     "theme": "mist",
     "photoPosition": "48% 50%"
+  },
+  {
+    "slug": "best-body-doubling-apps",
+    "photoId": 7382446,
+    "photographer": "Polina Tankilevitch",
+    "sourcePage": "https://www.pexels.com/photo/person-holding-gadgets-7382446/",
+    "photoDescription": "One hand holds a phone while the other types on a laptop on a wooden desk",
+    "category": "BODY DOUBLING APPS",
+    "headline": "Seven rooms to try.",
+    "subline": "Body doubling apps, compared by format.",
+    "number": "21",
+    "theme": "paper",
+    "photoPosition": "50% 42%"
+  },
+  {
+    "slug": "task-paralysis",
+    "photoId": 6173662,
+    "photographer": "Anna Tarazevich",
+    "sourcePage": "https://www.pexels.com/photo/a-woman-holding-her-head-6173662/",
+    "photoDescription": "A woman leans over a laptop holding her head at a white table",
+    "category": "TASK PARALYSIS",
+    "headline": "Stuck before step one?",
+    "subline": "Why starting stalls, and how to unfreeze.",
+    "number": "22",
+    "theme": "mist",
+    "photoPosition": "50% 48%"
+  },
+  {
+    "slug": "task-initiation-strategies",
+    "photoId": 35719571,
+    "photographer": "Jakub Zerdzicki",
+    "sourcePage": "https://www.pexels.com/photo/hand-writing-on-notebook-with-checklist-35719571/",
+    "photoDescription": "A hand writes a checklist with ticked boxes in a notebook",
+    "category": "TASK INITIATION",
+    "headline": "Start with one box.",
+    "subline": "Nine ways to make starting smaller.",
+    "number": "23",
+    "theme": "night",
+    "photoPosition": "58% 50%"
+  },
+  {
+    "slug": "does-body-doubling-work-without-adhd",
+    "photoId": 5908490,
+    "photographer": "Kaboompics",
+    "sourcePage": "https://www.pexels.com/photo/people-sitting-at-desk-working-on-laptops-5908490/",
+    "photoDescription": "Two people work on separate laptops at a shared desk",
+    "category": "BODY DOUBLING",
+    "headline": "Not just for ADHD.",
+    "subline": "Why working beside others helps most people.",
+    "number": "24",
+    "theme": "sky",
+    "photoPosition": "52% 50%"
   }
 ]
