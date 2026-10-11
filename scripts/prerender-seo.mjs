@@ -3,6 +3,8 @@ import path from "node:path";
 
 const origin = "https://mysession.club";
 const pages = JSON.parse(await readFile(path.resolve("src/data/seo-pages.json"), "utf8"));
+const faqPage = JSON.parse(await readFile(path.resolve("src/data/faq-page.json"), "utf8"));
+const updates = JSON.parse(await readFile(path.resolve("src/data/updates.json"), "utf8"));
 const dist = path.resolve("dist");
 const template = await readFile(path.join(dist, "index.html"), "utf8");
 
@@ -114,15 +116,33 @@ const corePages = [
 
 // These public routes are client-rendered. Give crawlers useful route-specific
 // HTML while React replaces the fallback during hydration.
+// Pricing copy mirrors src/pages/PricingPage.tsx; verify-seo-public-routes
+// fails the build when a price or plan line here no longer appears there.
 const staticPublicPages = [
-  { route: "/sessions", title: "Focus Sessions and 24/7 Rooms | MySession", metaDescription: "Browse group focus sessions and 24/7 rooms.", h1: "Live focus sessions and 24/7 rooms", summary: "Choose a time and format that helps you get started. MySession brings scheduled group sessions, always-open focus rooms, and one-on-one options together in one place.", sections: [
-    { heading: "Scheduled group sessions", text: "Pick an upcoming session when putting a start time on your calendar helps you follow through. Check the current schedule for available hosts, times, room rules, and session length." },
-    { heading: "Always-open focus rooms", text: "Enter an infinite room when you want to begin now. Work independently alongside others, keep your task visible, and follow the room's current stage. These rooms are different from the scheduled host-led sessions." },
-    { heading: "One-on-one focus", text: "For a smaller accountability format, browse the one-on-one options. Compare the formats by how much structure and interaction you need for the task in front of you." },
-  ], links: [["How it works", "/how-it-works"], ["Pricing", "/pricing"], ["Caveday comparison", "/caveday-alternative"]] },
-  { route: "/pricing", title: "Pricing | MySession", metaDescription: "Explore MySession's free and paid plans for focus sessions, always-open rooms, and productivity tools.", h1: "Pricing that stays simple", summary: "Start free and compare MySession plans for live focus sessions, always-open rooms, and productivity tools.", links: [["Browse sessions", "/sessions"], ["Frequently asked questions", "/faq"]] },
-  { route: "/faq", title: "FAQ | MySession", metaDescription: "Answers to common questions about MySession, live coworking, body doubling, focus sessions, pricing, cameras, and how sessions work.", h1: "Frequently asked questions about MySession", summary: "Find answers about body doubling, focus sessions, room access, pricing, cameras, and getting started with MySession.", links: [["Browse sessions", "/sessions"], ["How it works", "/how-it-works"]] },
-  { route: "/updates", title: "Latest Updates | MySession", metaDescription: "Read the latest MySession product updates and improvements to focus sessions and productivity tools.", h1: "Latest updates", summary: "See recent MySession product changes and improvements to focus sessions, rooms, and productivity tools.", links: [["Browse sessions", "/sessions"], ["Help and FAQ", "/faq"]] },
+  { route: "/sessions", title: "Focus Sessions and 24/7 Rooms | MySession", metaDescription: "Browse group focus sessions and 24/7 rooms.", h1: "Live focus sessions and 24/7 rooms", summary: ["Choose a time and format that helps you get started. MySession brings scheduled group sessions, always-open focus rooms, and one-on-one options together in one place."], sections: [
+    { heading: "Scheduled group sessions", paragraphs: ["Pick an upcoming session when putting a start time on your calendar helps you follow through. Community hosts open the room, invite everyone to share an intention, run the focus and break stages, and close with a check-in. Check the current schedule for available hosts, times, room rules, and session length."] },
+    { heading: "Always-open focus rooms", paragraphs: ["Enter an infinite room when you want to begin now. Work independently alongside others, keep your task visible, and follow the room's current stage. Always-open rooms repeat structures such as 30/10 and 75/15 focus and break cycles, so you can join at any point. These rooms are different from the scheduled host-led sessions."] },
+    { heading: "When rooms are busiest", paragraphs: ["Always-open rooms never close, but how many people are inside depends on the hour. Live activity is concentrated between about 9 AM and midnight US Eastern time (4 PM to 7 AM in Kyiv), when most scheduled sessions also run. At quieter hours you may be one of only a few people in a room, so check each room's live activity before you join."] },
+    { heading: "One-on-one focus", paragraphs: ["For a smaller accountability format, open the 1:1 tab: join the matching queue for a 50-minute session with one partner, book a scheduled 1:1 slot, or send a private invite link to a friend. A camera is required for 1:1 sessions."] },
+  ], links: [["How it works", "/how-it-works"], ["Pricing", "/pricing"], ["Focusmate comparison", "/focusmate-alternative"], ["Caveday comparison", "/caveday-alternative"]] },
+  { route: "/pricing", title: "Pricing | MySession", metaDescription: "Start free, then go Pro for $10/month or $96/year.", h1: "Pricing that stays simple", summary: ["Start free. Upgrade when you want unlimited access.", "Monthly and yearly plans include a 7-day free trial."], sections: [
+    { heading: "Free: $0", paragraphs: ["For getting started. No credit card."], items: ["Your first 15 sessions are free", "Join and host sessions", "Upgrade later when you want unlimited access"] },
+    { heading: "Pro Monthly: $10 per month", paragraphs: ["Unlimited access to all formats. Cancel anytime. In India, Pro Monthly can also be paid in INR with UPI for ₹958/month."], items: ["Unlimited sessions", "Join and host without limits", "All formats: Group sessions, Infinite rooms, Body tripling", "Priority access to new features", "7-day free trial"] },
+    { heading: "Pro Yearly: $96 per year", paragraphs: ["Unlimited access, billed yearly. Pay $96/year instead of $120."], items: ["Unlimited sessions", "Join and host without limits", "All formats: Group sessions, Infinite rooms, Body tripling", "7-day free trial"] },
+    { heading: "Lifetime: $300 once", paragraphs: ["Early supporter lifetime access: one payment, unlimited sessions and hosting, and all formats included. Lifetime is a limited early supporter offer with a fixed number of spots in the current drop."] },
+    { heading: "Payment and service information", paragraphs: ["Payments for paid plans are processed online. MySession is a digital online service; access to paid features is provided through your account after successful payment. You can request cancellation by contacting support, and refund requests are handled according to the Refund Policy."] },
+  ], faq: [
+    { q: "What is included on Free?", a: "Your first 15 sessions are free. After that, Pro keeps joining and hosting unlimited while supporting the video infrastructure." },
+    { q: "Do monthly and yearly include a trial?", a: "Yes. Monthly and yearly plans include a 7-day free trial." },
+    { q: "How does Lifetime work?", a: "Lifetime is a limited early supporter offer with a fixed number of spots in the current drop." },
+  ], links: [["Browse sessions", "/sessions"], ["Frequently asked questions", "/faq"], ["Refund Policy", "/refund-policy"], ["Terms and Conditions", "/terms"]] },
+  { route: "/faq", title: `${faqPage.pageTitle} | MySession`, metaDescription: faqPage.metaDescription, h1: faqPage.h1, summary: faqPage.intro,
+    sections: faqPage.sections.map((section) => ({ heading: section.h2, paragraphs: section.paragraphs, items: section.bullets })),
+    faqHeading: "FAQ", faq: faqPage.faq,
+    links: [...faqPage.relatedLinks.map((link) => [link.label, link.to]), ["Browse sessions", "/sessions"]] },
+  { route: "/updates", title: "Latest Updates | MySession", metaDescription: "Read the latest MySession product updates and improvements to focus sessions and productivity tools.", h1: "Latest updates", summary: ["Small weekly improvements. Big product direction."],
+    sections: updates.map((update) => ({ heading: update.title, paragraphs: [`${update.date}${update.tag ? ` · ${update.tag}` : ""}`], items: update.bullets })),
+    links: [["Browse sessions", "/sessions"], ["Help and FAQ", "/faq"]] },
   { route: "/affiliate", title: "Affiliate Program | MySession", metaDescription: "Learn about the MySession affiliate program for creators, hosts, and community partners." },
   { route: "/contact", title: "Contact Information | MySession", metaDescription: "Find MySession seller details and support contact information." },
   { route: "/terms", title: "Terms and Conditions | MySession", metaDescription: "Read the terms and conditions for using the MySession productivity platform." },
@@ -229,8 +249,14 @@ function renderStaticPublicPage(page) {
   const html = renderMetadata(page);
   if (!page.h1) return html;
   const links = page.links.map(([label, route]) => `<a href="${escapeHtml(route)}">${escapeHtml(label)}</a>`).join(" · ");
-  const sections = (page.sections || []).map((section) => `<section><h2>${escapeHtml(section.heading)}</h2><p>${escapeHtml(section.text)}</p></section>`).join("");
-  const content = `<main class="seo-prerender"><nav aria-label="Breadcrumb"><a href="/">Home</a> / ${escapeHtml(page.h1)}</nav><h1>${escapeHtml(page.h1)}</h1><p>${escapeHtml(page.summary)}</p>${sections}<p>${links}</p></main>`;
+  const summary = page.summary.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("");
+  const sections = (page.sections || []).map((section) => `<section><h2>${escapeHtml(section.heading)}</h2>${
+    (section.paragraphs || []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}${
+    section.items?.length ? `<ul>${section.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}</section>`).join("");
+  const faq = page.faq?.length
+    ? `<section><h2>${escapeHtml(page.faqHeading || "Frequently asked questions")}</h2>${page.faq.map((item) => `<h3>${escapeHtml(item.q)}</h3><p>${escapeHtml(item.a)}</p>`).join("")}</section>`
+    : "";
+  const content = `<main class="seo-prerender"><nav aria-label="Breadcrumb"><a href="/">Home</a> / ${escapeHtml(page.h1)}</nav><h1>${escapeHtml(page.h1)}</h1>${summary}${sections}${faq}<p>${links}</p></main>`;
   const clearBeforePaint = '<script id="seo-prerender-clear">(function(){var root=document.getElementById("root");if(root)root.innerHTML="";})();</script>';
   return html.replace('<div id="root"></div>', `<div id="root">${content}</div>${clearBeforePaint}`);
 }
