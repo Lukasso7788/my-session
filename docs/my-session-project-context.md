@@ -2238,3 +2238,20 @@ loaded cover, alt text and no horizontal overflow; `/blog` lists all 16 posts
 `throwClosedServerError` stack traces during `prerender-blog`; the same
 traces appear on an unmodified `main` build and are not caused by this batch.
 Production, Google indexing and rankings are not verified by this work.
+
+### 2026-10-11 flat sitemap.xml
+
+The user reported Search Console not fetching `sitemap.xml` properly and
+asked for the same flat format as bodydoubling.net. Production checks from
+outside showed the old sitemap index and its children were valid (200,
+`application/xml`, no BOM, all 43 URLs 200 with self-canonicals). The
+`<script id="pphgdbgldlmicfdkhondlafkiomnelnk">` tags seen in the user's
+browser are injected by the 1ClickVPN Chrome extension, not served by
+Vercel. Still, `scripts/generate-seo-assets.mjs` now writes `sitemap.xml`
+as one `<urlset>` with every URL (loc + lastmod only; changefreq/priority
+dropped from all sitemaps). `sitemap-pages/guides/comparisons.xml` are
+still generated (so previously submitted URLs never fall through to the
+SPA HTML), but `robots.txt` lists only `sitemap.xml`.
+`verify-sitemap-pages.mjs` enforces the flat format, page checks, and that
+section URLs equal the `sitemap.xml` set. In GSC, submit only
+`https://mysession.club/sitemap.xml` after deployment.
