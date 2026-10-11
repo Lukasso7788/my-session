@@ -32,7 +32,7 @@ const indexable = pages.filter((page) => page.indexable);
 const pageEntries = [...normalizedStatic, ...indexable.filter((page) => ["topic-hub", "use-case", "session-format"].includes(page.pageType))];
 const guideEntries = [
   ...indexable.filter((page) => page.pageType === "guide"),
-  { route: "/blog/best-focusmate-alternatives", changeFrequency: "monthly", sitemapPriority: 0.8, updatedAt: "2026-07-29" },
+  { route: "/blog/best-focusmate-alternatives", changeFrequency: "monthly", sitemapPriority: 0.8, updatedAt: "2026-10-11" },
   ...editorialPosts.map((post) => ({
     route: post.route || `/blog/${post.slug}`,
     changeFrequency: "monthly",

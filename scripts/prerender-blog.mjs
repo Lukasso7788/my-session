@@ -41,6 +41,7 @@ const pages = [
     type: "article",
     headline: starterFocusmatePost.title,
     publishedAt: starterFocusmatePost.published_at,
+    modifiedAt: starterFocusmatePost.updated_at,
     markdown: starterFocusmatePost.content_markdown,
     breadcrumb: { name: "Blog", path: "/blog" },
     image:
@@ -151,6 +152,7 @@ function renderPage(page) {
       mainEntityOfPage: page.canonical,
       image: page.image,
       datePublished: page.publishedAt,
+      dateModified: page.modifiedAt || page.publishedAt,
       author: { "@type": "Organization", name: "MySession Editorial" },
       publisher: { "@type": "Organization", name: "MySession", url: "https://mysession.club" },
     }).replaceAll("<", "\\u003c");
