@@ -137,6 +137,20 @@ function replaceOrInsert(html, pattern, replacement) {
   return pattern.test(html) ? html.replace(pattern, replacement) : html.replace("</head>", `  ${replacement}\n</head>`);
 }
 
+function renderComparisonTable(table) {
+  const [rowHeader, ...products] = table.columns;
+  const head = `<tr><th scope="col">${escapeHtml(rowHeader)}</th>${products.map((product) => `<th scope="col">${escapeHtml(product)}</th>`).join("")}</tr>`;
+  const body = table.rows.map(([label, ...values]) => `<tr><th scope="row">${escapeHtml(label)}</th>${values.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("");
+  const sources = table.sources.map((source) => source.url.startsWith("/")
+    ? `<a href="${escapeHtml(source.url)}">${escapeHtml(source.label)}</a>`
+    : `<a href="${escapeHtml(source.url)}" rel="nofollow noopener noreferrer">${escapeHtml(source.label)}</a>`).join(", ");
+  return `
+    <section><h2>${escapeHtml(table.heading)}</h2>
+      <table><thead>${head}</thead><tbody>${body}</tbody></table>
+      <p>${escapeHtml(table.note)} Sources: ${sources}.</p>
+    </section>`;
+}
+
 function renderVisibleContent(page) {
   if (page.pageType === "topic-hub") {
     const relatedLinks = (page.relatedPageSlugs || [])
@@ -159,19 +173,21 @@ function renderVisibleContent(page) {
       <section><h2>A few quick answers</h2>${questions}</section>
     </main>`;
   }
-  const sections = page.sections.map((section) => `
+  const sections = page.sections.map((section, index) => `
     <section>
       <h2>${escapeHtml(section.heading)}</h2>
       ${section.body.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}
       ${section.bullets?.length ? `<ul>${section.bullets.map((bullet) => `<li>${escapeHtml(bullet)}</li>`).join("")}</ul>` : ""}
-    </section>`).join("");
+    </section>${index === 0 && page.comparisonTable ? renderComparisonTable(page.comparisonTable) : ""}`).join("");
   const faq = page.faqItems?.length ? `
     <section><h2>Frequently asked questions</h2>
       ${page.faqItems.map((item) => `<h3>${escapeHtml(item.question)}</h3><p>${escapeHtml(item.answer)}</p>`).join("")}
     </section>` : "";
-  const related = (page.relatedPageSlugs || [])
-    .map((slug) => pageBySlug.get(slug)).filter(Boolean)
-    .map((item) => `<li><a href="${escapeHtml(item.route)}">${escapeHtml(item.h1)}</a></li>`).join("");
+  const related = [
+    ...(page.relatedPageSlugs || []).map((slug) => pageBySlug.get(slug)).filter(Boolean)
+      .map((item) => ({ route: item.route, title: item.h1 })),
+    ...(page.relatedArticles || []),
+  ].map((item) => `<li><a href="${escapeHtml(item.route)}">${escapeHtml(item.title)}</a></li>`).join("");
   const cover = page.imagePath && page.imageAlt
     ? `<figure><img src="${escapeHtml(page.imagePath)}" alt="${escapeHtml(page.imageAlt)}" width="1200" height="630"></figure>`
     : "";

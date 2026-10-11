@@ -4,31 +4,153 @@
     "route": "/caveday-alternative",
     "pageType": "comparison",
     "cluster": "comparisons",
-    "title": "Caveday Alternative for Online Focus | MySession",
-    "metaDescription": "Compare Caveday with MySession focus rooms and sessions.",
-    "h1": "A Caveday alternative for flexible focus",
-    "heroDescription": "Compare guided Caves with MySession's group sessions and task-focused rooms, then choose the structure that helps you actually begin.",
+    "title": "Caveday Alternative With Flexible Group Rooms | MySession",
+    "metaDescription": "Compare Caveday's guided Caves with MySession rooms.",
+    "h1": "MySession vs Caveday: a flexible alternative to guided Caves",
+    "heroDescription": "Caveday runs guided Caves on Zoom with a human guide. MySession offers group rooms you can join at any point, scheduled sessions, and 1:1 matching, with tasks and stages inside the room.",
     "primaryKeyword": "Caveday alternative",
-    "secondaryKeywords": ["online coworking alternative", "virtual focus room", "group body doubling"],
+    "secondaryKeywords": [
+      "alternatives to Caveday",
+      "Caveday vs MySession",
+      "apps like Caveday"
+    ],
     "searchIntent": "commercial-comparison",
     "sections": [
-      {"heading":"Two ways to make starting easier","body":["Caveday is known for guided online work sessions called Caves. A host leads a shared start and end, which can help when you want someone else to set the pace. Caveday also has a Focus Lounge that is open around the clock, so this is not a comparison between an available room and no available room.","MySession gives you a choice of scheduled group sessions and always-open rooms. Once inside, the room's tasks, intentions, timeline, check-ins, chat, and optional audio remain close to the work. If you like seeing your next action and the current stage in one place, that difference may matter more than another entry on a feature list."]},
-      {"heading":"When a guided session is the better fit","body":["Choose a hosted Cave if you want a facilitator to set expectations, announce transitions, and bring the group back together. That external lead can be especially useful on days when deciding how to run the session feels like work in itself.","If you need a specific start time to make a commitment real, compare the actual schedules in your time zone before choosing either service. Do not assume that a calendar of hosted sessions is the same thing as an always-open room: they solve different parts of the problem."]},
-      {"heading":"When MySession may fit better","body":["MySession may suit you if the work block needs visible task tracking or a customizable stage rhythm. You can enter an infinite room to begin now, or pick a scheduled session when a future appointment provides useful pressure. People can work independently while sharing the same room; nobody needs to be on the same project.","For example, you might write one concrete intention, finish a 25-minute block, mark a task complete, and use the check-in to decide what comes next. On a different day you might choose a longer focus interval. The practical question is whether the room makes the first action easier to take, not which service has the longest feature list."],"bullets":["Scheduled and always-open group formats","Visible tasks and intentions inside the room","Session stages and check-ins","Optional camera, microphone, chat, and shared audio"]},
-      {"heading":"Try the workflow, then decide","body":["Before paying for either product, check each provider's current schedule, access rules, and pricing on its official site. Details can change, and a feature you do not use is not an advantage. A short trial of the actual room will tell you more than a comparison table alone.","Use the same small task in both formats. Notice how quickly you enter, whether the group structure helps you stay with the work, and whether the ending leaves you with a clear next step. If you consistently need a host to lead the block, a guided format may win. If you want your task and timer together in a flexible room, try MySession."]}
+      {
+        "heading": "The short answer",
+        "body": [
+          "Caveday is built around Caves: guided online focus sessions of 30 minutes, one hour, or three hours, led by a human guide on Zoom, with live Caves scheduled for 20+ hours a day. Members also get a 24/7 Focus Lounge, workshops, and accountability groups. The Starter Pass costs $105 for three months after a 14-day free trial.",
+          "MySession is a Caveday alternative for people who want group focus with more flexible entry and the plan on screen. Always-open rooms can be joined at any point in their cycle, scheduled group sessions add a fixed start, and the 1:1 queue covers days when you want one partner. The Free plan covers your first 15 sessions; Pro is $10 a month or $96 a year."
+        ],
+        "bullets": [
+          "Join an always-open room at any time",
+          "Tasks, intentions, and stages in the room",
+          "Scheduled groups and 1:1 matching",
+          "Free plan, then Pro at $10/month"
+        ]
+      },
+      {
+        "heading": "When a guided Cave is the better fit",
+        "body": [
+          "Choose a Cave if you want a guide to set expectations, run the sprints and breaks, and bring the group back together. A small-group check-in at the start makes your goal concrete, and the shared ending gives you a moment to name a win. That external lead helps on days when deciding how to run the session feels like work in itself.",
+          "Caves also suit noisy tasks: everyone is muted, so you can make a call or practise music while others work. Each Cave closes 10 minutes after it starts, so plan to arrive on time."
+        ]
+      },
+      {
+        "heading": "When MySession may fit better",
+        "body": [
+          "MySession may suit you if you want to start the moment you are ready, including partway through a cycle. Always-open rooms never close and are busiest from about 9 AM to midnight US Eastern time, so you will usually find people working during US daytime and evening hours.",
+          "Inside the room, your intention, task list, and the session's stages stay beside the video, and the check-in asks what moved forward. You might write one concrete intention, finish a 30-minute block, mark a task complete, and use the check-in to choose the next step. Nobody needs to be on the same project."
+        ],
+        "bullets": [
+          "Scheduled and always-open group formats",
+          "Visible tasks and intentions inside the room",
+          "Session stages and check-ins",
+          "Optional camera, microphone, chat, and room music"
+        ]
+      },
+      {
+        "heading": "Try the workflow, then decide",
+        "body": [
+          "Use the same small task in both formats. Notice how quickly you got started, whether the structure kept you with the work, and whether the ending left you with a clear next step.",
+          "If you consistently need a guide to lead the block, Caveday is worth its price. If you want your task and timer together in a room you can enter at any time, try MySession first; the Free plan makes the test cheap."
+        ]
+      }
     ],
+    "comparisonTable": {
+      "heading": "MySession vs Caveday at a glance",
+      "columns": [
+        "Compared",
+        "MySession",
+        "Caveday"
+      ],
+      "rows": [
+        [
+          "Format",
+          "Scheduled group sessions, always-open rooms, and 1:1 matching",
+          "Guided Caves led by a human guide, plus a 24/7 Focus Lounge"
+        ],
+        [
+          "Session length",
+          "Set by the host; open rooms repeat cycles such as 30/10 and 75/15",
+          "30-minute, 1-hour, and 3-hour Caves daily"
+        ],
+        [
+          "Joining late",
+          "Enter an always-open room at any point in its cycle",
+          "A Cave closes 10 minutes after it starts"
+        ],
+        [
+          "Where it runs",
+          "In the browser, inside MySession rooms",
+          "On Zoom, via a link emailed after you reserve"
+        ],
+        [
+          "Camera and mic",
+          "Camera optional in most rooms; hosts can require it",
+          "Camera encouraged; everyone muted during work"
+        ],
+        [
+          "Price",
+          "Free plan for 15 sessions; Pro $10/month or $96/year",
+          "Starter Pass $105 per 3 months; 14-day free trial"
+        ]
+      ],
+      "note": "Checked against each provider's official pages on October 11, 2026. Prices exclude taxes and can change, so confirm current details before you pay.",
+      "sources": [
+        {
+          "label": "MySession pricing",
+          "url": "/pricing"
+        },
+        {
+          "label": "Caveday membership and FAQ",
+          "url": "https://www.caveday.org/"
+        }
+      ]
+    },
     "faqItems": [
-      {"question":"Does Caveday have a 24/7 room?","answer":"Yes. Caveday describes a 24/7 Focus Lounge as well as its guided Caves. Check its official website for current access details."},
-      {"question":"Does MySession offer hosted sessions?","answer":"Yes. MySession offers scheduled group sessions alongside always-open rooms; check the current calendar for hosted times."},
-      {"question":"Which format should I try first?","answer":"Try a guided session if facilitation is your main need. Try MySession if visible tasks, stages, and flexible group entry are more useful to you."}
+      {
+        "question": "Does Caveday have a 24/7 room?",
+        "answer": "Yes. Caveday membership includes a 24/7 Focus Lounge alongside its guided Caves. Check Caveday's site for current access details."
+      },
+      {
+        "question": "Can I join a Caveday session late?",
+        "answer": "Caveday says each Cave closes 10 minutes after its start time. MySession's always-open rooms can be joined at any point in their focus cycle."
+      },
+      {
+        "question": "How much does Caveday cost compared with MySession?",
+        "answer": "As of October 11, 2026, Caveday's Starter Pass is $105 for three months after a 14-day free trial. MySession has a Free plan for your first 15 sessions, then Pro at $10 a month or $96 a year."
+      },
+      {
+        "question": "Does MySession offer hosted sessions?",
+        "answer": "Yes. Community hosts run scheduled group sessions alongside the always-open rooms; check the sessions page for times in your time zone."
+      },
+      {
+        "question": "Which format should I try first?",
+        "answer": "Try a guided Cave if facilitation is your main need. Try MySession if visible tasks, stages, and flexible group entry are more useful to you."
+      }
     ],
-    "relatedPageSlugs": ["flow-club-alternative", "focusmate-alternative", "virtual-coworking"],
+    "relatedPageSlugs": [
+      "flow-club-alternative",
+      "focusmate-alternative",
+      "virtual-coworking"
+    ],
+    "relatedArticles": [
+      {
+        "title": "Scheduled vs drop-in focus sessions",
+        "route": "/blog/scheduled-vs-drop-in-focus-sessions"
+      },
+      {
+        "title": "Group Pomodoro sessions",
+        "route": "/blog/group-pomodoro-sessions"
+      }
+    ],
     "ctaVariant": "compare",
     "indexable": true,
     "sitemapPriority": 0.8,
     "changeFrequency": "monthly",
     "createdAt": "2026-10-10",
-    "updatedAt": "2026-10-10"
+    "updatedAt": "2026-10-11"
   },
   {
     "slug": "body-doubling-app",
@@ -228,11 +350,470 @@
   {
     "slug":"virtual-coworking-for-students","route":"/virtual-coworking-for-students","pageType":"use-case","cluster":"virtual-coworking","title":"Virtual Coworking for Students | MySession","metaDescription":"Plan quieter, more accountable study blocks with online coworking rooms for revision, assignments, reading, and exam preparation.","h1":"Virtual coworking for students","heroDescription":"Study independently without studying alone. Shared rooms add a start time, a visible interval, and a simple check-in to academic work.","primaryKeyword":"virtual coworking for students","secondaryKeywords":["online study room","study accountability","virtual study together"],"searchIntent":"commercial","sections":[{"heading":"Turn workload into sessions","body":["Map each focus block to a result you can observe. A completed outline, twenty reviewed flashcards, or three solved problems is easier to act on than a general plan to catch up."],"bullets":["Revision and practice questions","Essay research and drafting","Lecture review","Applications and administrative tasks"]},{"heading":"Keep the room separate from the subject","body":["Virtual coworking is not tutoring. That makes it flexible: people can work on different subjects while sharing the same concentration window."]},{"heading":"Use breaks intentionally","body":["Short breaks help protect attention across several blocks. Session stages make the pause explicit, so returning to work requires less negotiation with yourself."]}],"faqItems":[{"question":"Can I use a virtual room during exams?","answer":"Use it for preparation and independent permitted work, not where an assessment prohibits outside communication or devices."},{"question":"Are sessions available outside school hours?","answer":"MySession includes scheduled sessions and always-open rooms across different times."}],"relatedPageSlugs":["body-doubling-for-studying","virtual-coworking","focus-session-25-minutes"],"ctaVariant":"explore","indexable":true,"sitemapPriority":0.8,"changeFrequency":"monthly","createdAt":"2026-07-29","updatedAt":"2026-07-29"},
   {
-    "slug":"focusmate-alternative","route":"/focusmate-alternative","pageType":"comparison","cluster":"comparisons","title":"Focusmate Alternative for Group and 24/7 Focus | MySession","metaDescription":"Compare MySession with a scheduled one-to-one focus format and decide whether group rooms, 24/7 access, tasks, stages, chat, and music fit you.","h1":"A Focusmate alternative for flexible group focus","heroDescription":"MySession is built for people who want shared accountability with a choice of scheduled sessions and always-open group rooms.","primaryKeyword":"Focusmate alternative","secondaryKeywords":["alternatives to Focusmate","virtual coworking alternative","body doubling platform"],"searchIntent":"commercial-comparison","sections":[{"heading":"Choose based on the working format","body":["The important difference between focus platforms is not a slogan; it is the interaction model. A scheduled one-to-one appointment creates direct partner accountability. MySession emphasizes group presence, reusable room structure, and the option to start without matching with one person."],"bullets":["Use scheduled sessions when an appointment helps","Use 24/7 rooms when waiting creates friction","Keep personal tasks visible during the session","Use stages, chat and optional shared music inside the room"]},{"heading":"When MySession may fit better","body":["Consider MySession when you prefer a group atmosphere, want to move between different focus lengths, or need an always-available room. If one-to-one matching is the core source of accountability for you, a partner-first service may remain the better fit."]},{"heading":"Compare from current product information","body":["Features and pricing can change. Check each provider’s current website before deciding; this page describes MySession’s own format and avoids claiming access to another company’s internal performance or roadmap."]}],"faqItems":[{"question":"Is MySession the same as Focusmate?","answer":"No. Both can support focused work, but MySession centers group rooms, structured stages and 24/7 entry alongside scheduled sessions."},{"question":"Does MySession require one-to-one matching?","answer":"No. You can focus in group rooms without being paired with one specific partner."}],"relatedPageSlugs":["virtual-coworking","flow-club-alternative","flown-alternative"],"ctaVariant":"compare","indexable":true,"sitemapPriority":0.9,"changeFrequency":"monthly","createdAt":"2026-07-29","updatedAt":"2026-07-29"},
+    "slug": "focusmate-alternative",
+    "route": "/focusmate-alternative",
+    "pageType": "comparison",
+    "cluster": "comparisons",
+    "title": "Focusmate Alternative: Group Rooms, No Booking | MySession",
+    "metaDescription": "Compare Focusmate's booked 1:1 sessions with group rooms.",
+    "h1": "MySession vs Focusmate: a group alternative to 1:1 sessions",
+    "heroDescription": "Focusmate pairs you with one partner for a booked session. MySession gives you group rooms you can enter now, scheduled sessions, and a 1:1 option, so you can match the format to the task.",
+    "primaryKeyword": "Focusmate alternative",
+    "secondaryKeywords": [
+      "Focusmate vs MySession",
+      "free Focusmate alternative",
+      "Focusmate alternative with groups"
+    ],
+    "searchIntent": "commercial-comparison",
+    "sections": [
+      {
+        "heading": "The short answer",
+        "body": [
+          "Focusmate is built around one idea and does it well: book a time, meet one partner on video, say what you will work on, and check in at the end. If that personal commitment is what gets you started, it is hard to beat, and its free plan covers three sessions a week.",
+          "MySession is a Focusmate alternative for people who want the same live accountability in a different shape: a group room you can enter without booking, scheduled group sessions when a start time helps, and a 1:1 match when you want one partner. Your intention, tasks, and check-ins stay inside the room."
+        ],
+        "bullets": [
+          "Join an always-open room without booking",
+          "Pick a scheduled group session for a fixed start",
+          "Queue for a 50-minute 1:1 match",
+          "Keep your intention and tasks visible"
+        ]
+      },
+      {
+        "heading": "Where Focusmate is the better choice",
+        "body": [
+          "Choose Focusmate if you want one person expecting you at a specific time. A booked partner makes skipping feel costly, and the 25, 50, and 75-minute options make it easy to fit a block into a calendar. There is very little to configure before you start.",
+          "It also suits people who find groups distracting. With one partner there is nobody else to watch, and the opening and closing check-ins are short and predictable."
+        ]
+      },
+      {
+        "heading": "Where MySession is the better choice",
+        "body": [
+          "MySession fits better when booking itself is the obstacle. If you only feel ready to work at 10:40 on a Tuesday, an always-open room lets you start then instead of waiting for the next slot. Rooms stay open around the clock and are busiest from about 9 AM to midnight US Eastern time, so at quiet hours you may be one of only a few people inside.",
+          "It also suits people who find one-to-one video intense. In a group, attention is spread across the room, many rooms keep the camera optional, and you can write your intention in chat. When you do want a single partner, the 1:1 tab offers a matching queue, scheduled 50-minute slots, and a private invite link; the camera is required there."
+        ],
+        "bullets": [
+          "Group presence without one-to-one pressure",
+          "Session stages and check-ins built into the room",
+          "Optional chat and room music",
+          "Free plan includes joining and hosting"
+        ]
+      },
+      {
+        "heading": "How to choose in one week",
+        "body": [
+          "Run a small test instead of reading more comparisons. Use Focusmate's free sessions for two or three booked blocks, and use MySession for the same kind of task in a group room. Write down how long it took to start, whether you stayed with the task, and how you felt afterwards.",
+          "If the booked partner got you moving every time, stay with the 1:1 format. If you started faster when you could simply walk into a room, or you preferred a quieter group, MySession is probably the better fit. Some people use both: a booked partner for hard deadlines and an open room for everything else."
+        ]
+      }
+    ],
+    "comparisonTable": {
+      "heading": "MySession vs Focusmate at a glance",
+      "columns": [
+        "Compared",
+        "MySession",
+        "Focusmate"
+      ],
+      "rows": [
+        [
+          "Format",
+          "Group sessions, always-open rooms, and 1:1 matching",
+          "1:1 sessions with one matched partner"
+        ],
+        [
+          "How you start",
+          "Walk into an open room, join a scheduled group, or queue for a 1:1 match",
+          "Book a session time and get paired with a partner"
+        ],
+        [
+          "Session length",
+          "Set by each room or host; 1:1 sessions are 50 minutes",
+          "25, 50, or 75 minutes"
+        ],
+        [
+          "Camera",
+          "Optional in most group rooms; hosts can require it; required for 1:1",
+          "Camera on for the whole session"
+        ],
+        [
+          "Inside the session",
+          "Intention, task list, session stages, chat, optional music",
+          "Share goals at the start, check in at the end, no talking in between"
+        ],
+        [
+          "Free option",
+          "Free plan: your first 15 sessions, joining and hosting included",
+          "Free plan: 3 sessions per week"
+        ],
+        [
+          "Paid plan",
+          "Pro: $10/month or $96/year, 7-day free trial",
+          "Plus: $12/month, or $8/month billed annually"
+        ]
+      ],
+      "note": "Checked against each provider's official pages on October 11, 2026. Prices exclude taxes and can change, so confirm current details before you pay.",
+      "sources": [
+        {
+          "label": "MySession pricing",
+          "url": "/pricing"
+        },
+        {
+          "label": "Focusmate pricing",
+          "url": "https://www.focusmate.com/pricing/"
+        },
+        {
+          "label": "Focusmate FAQ",
+          "url": "https://www.focusmate.com/faq/"
+        }
+      ]
+    },
+    "faqItems": [
+      {
+        "question": "Is there a free Focusmate alternative?",
+        "answer": "Yes. MySession's Free plan covers your first 15 sessions, including joining and hosting, with no credit card. Focusmate's own free plan includes 3 sessions per week, so you can compare both without paying."
+      },
+      {
+        "question": "Does MySession have 1:1 sessions like Focusmate?",
+        "answer": "Yes. The 1:1 tab on the sessions page has a live matching queue, scheduled 50-minute slots, and a private link you can send to a friend. Camera is required for 1:1 sessions; 25 and 75-minute options are not available yet."
+      },
+      {
+        "question": "Do I need to book a MySession room?",
+        "answer": "No. Always-open rooms can be entered at any time. Scheduled group sessions and 1:1 slots can be reserved when you want a fixed start."
+      },
+      {
+        "question": "Can I keep my camera off?",
+        "answer": "In most MySession group rooms, yes: the camera is optional unless the host requires it. MySession 1:1 sessions require a camera, and Focusmate sessions are built around video."
+      },
+      {
+        "question": "Is MySession better than Focusmate?",
+        "answer": "It depends on the format you need. Focusmate is a strong choice for booked one-partner accountability. MySession is designed for group rooms, flexible entry, and in-room task tools. Trying both with the same task is the fastest way to decide."
+      }
+    ],
+    "relatedPageSlugs": [
+      "flow-club-alternative",
+      "caveday-alternative",
+      "body-doubling-app"
+    ],
+    "relatedArticles": [
+      {
+        "title": "Best Focusmate alternatives in 2026",
+        "route": "/blog/best-focusmate-alternatives"
+      },
+      {
+        "title": "Group vs one-on-one body doubling",
+        "route": "/blog/group-vs-one-on-one-body-doubling"
+      }
+    ],
+    "ctaVariant": "compare",
+    "indexable": true,
+    "sitemapPriority": 0.9,
+    "changeFrequency": "monthly",
+    "createdAt": "2026-07-29",
+    "updatedAt": "2026-10-11"
+  },
   {
-    "slug":"flow-club-alternative","route":"/flow-club-alternative","pageType":"comparison","cluster":"comparisons","title":"Flow Club Alternative with 24/7 Focus Rooms | MySession","metaDescription":"Explore MySession as a Flow Club alternative for scheduled group focus, always-open rooms, tasks, session stages, chat, and shared room music.","h1":"A Flow Club alternative with always-open rooms","heroDescription":"Combine hosted or scheduled group focus with rooms you can enter when you are ready to work, day or night.","primaryKeyword":"Flow Club alternative","secondaryKeywords":["alternatives to Flow Club","group focus sessions","virtual coworking platform"],"searchIntent":"commercial-comparison","sections":[{"heading":"Group energy with less waiting","body":["Hosted group sessions can create a strong commitment and shared rhythm. MySession also offers always-open rooms for moments when booking or waiting would become another reason not to start."],"bullets":["Scheduled and infinite room formats","Visible tasks and intentions","Customizable session stages","Chat, reactions and room audio"]},{"heading":"When this format makes sense","body":["MySession may fit when availability matters as much as facilitation, or when you want task tools to stay inside the focus room. People who primarily want a host-led calendar should compare the live schedules and current experience of each service directly."]},{"heading":"A fair comparison","body":["This page does not assume another service’s current pricing, attendance, or feature limits. Product details change, so verify them on the provider’s official site before choosing."]}],"faqItems":[{"question":"Does MySession have hosted sessions?","answer":"MySession supports hosted and scheduled sessions as well as always-open focus rooms."},{"question":"Can I join without waiting for a scheduled time?","answer":"Yes. Infinite rooms are designed for immediate entry, subject to room access rules."}],"relatedPageSlugs":["focusmate-alternative","flown-alternative","virtual-coworking-for-remote-workers"],"ctaVariant":"compare","indexable":true,"sitemapPriority":0.8,"changeFrequency":"monthly","createdAt":"2026-07-29","updatedAt":"2026-07-29"},
+    "slug": "flow-club-alternative",
+    "route": "/flow-club-alternative",
+    "pageType": "comparison",
+    "cluster": "comparisons",
+    "title": "A Cheaper Flow Club Alternative With 24/7 Rooms | MySession",
+    "metaDescription": "Compare Flow Club ($40/mo) with MySession Pro ($10/mo).",
+    "h1": "A cheaper Flow Club alternative with always-open rooms",
+    "heroDescription": "Flow Club runs hosted group sessions for $40 a month. MySession offers group sessions, always-open rooms, and 1:1 matching, with a free plan and Pro at $10 a month.",
+    "primaryKeyword": "Flow Club alternative",
+    "secondaryKeywords": [
+      "cheaper alternative to Flow Club",
+      "free alternative to Flow Club",
+      "Flow Club vs MySession"
+    ],
+    "searchIntent": "commercial-comparison",
+    "sections": [
+      {
+        "heading": "The short answer",
+        "body": [
+          "Flow Club and MySession both use group body doubling: people share what they will work on, focus quietly together, and check in at the end. Flow Club wraps that in a well-run, host-led session you book in advance, with groups of up to nine. Membership is $40 a month or $400 a year, with 50% off for students and non-profits.",
+          "MySession is a cheaper alternative to Flow Club if you want group focus without a $40 monthly commitment. The Free plan covers your first 15 sessions, and Pro is $10 a month or $96 a year with a 7-day free trial. You can also skip booking and walk into an always-open room when you are ready to start."
+        ],
+        "bullets": [
+          "Free plan for your first 15 sessions",
+          "Pro at $10/month or $96/year",
+          "Always-open rooms with no booking",
+          "Scheduled groups and 1:1 matching"
+        ]
+      },
+      {
+        "heading": "What Flow Club does especially well",
+        "body": [
+          "Flow Club's strength is the ritual. A host welcomes everyone, asks what each person is working on, plays focus music while the group works, and brings everyone back to celebrate progress. Booking ahead turns a vague plan into an appointment, and small groups mean you are noticed without being on the spot.",
+          "If you rely on a host to set the pace and value a consistent, curated community, the higher price can be worth it. Flow Club also offers chat-only sessions for days when you do not want to talk."
+        ]
+      },
+      {
+        "heading": "When MySession is the better value",
+        "body": [
+          "MySession makes sense when price or scheduling is what keeps you from showing up. If you want several focus blocks a day, a lower monthly price changes how freely you use them. If you rarely know your free time in advance, an always-open room removes the booking step entirely. Rooms are open 24/7 and busiest from about 9 AM to midnight US Eastern time.",
+          "Inside the room, your intention, task list, and the session's stages stay on screen, so you can see what comes next without leaving the call. Hosting is open to Free and Pro members, which helps if you want to run a regular session for your own study group or team."
+        ]
+      },
+      {
+        "heading": "A fair way to compare",
+        "body": [
+          "Price only matters if the format works for you. Try one hosted Flow Club session and one MySession group room with the same kind of task, such as an hour of writing or admin. Compare how quickly you started, how much you finished, and whether the group felt supportive or distracting.",
+          "If a host-led ritual is what makes you follow through, Flow Club may be worth the extra cost. If you mainly need people around you and the freedom to start at any time, MySession gives you that for much less."
+        ]
+      }
+    ],
+    "comparisonTable": {
+      "heading": "MySession vs Flow Club at a glance",
+      "columns": [
+        "Compared",
+        "MySession",
+        "Flow Club"
+      ],
+      "rows": [
+        [
+          "Format",
+          "Scheduled group sessions, always-open rooms, and 1:1 matching",
+          "Host-led group sessions"
+        ],
+        [
+          "Booking",
+          "Optional: enter an open room any time or reserve a scheduled session",
+          "Book a session in advance"
+        ],
+        [
+          "Session length",
+          "Set by the host; open rooms repeat cycles such as 30/10 and 75/15",
+          "30 minutes to 3 hours; 60 minutes is most popular"
+        ],
+        [
+          "Group size",
+          "Varies by room",
+          "Up to 9 people"
+        ],
+        [
+          "Camera",
+          "Optional in most rooms; hosts can require it",
+          "Video on as much as you can; chat-only options"
+        ],
+        [
+          "Hosts",
+          "Community hosts; Free and Pro members can host",
+          "Volunteer peers; you can host after 10 sessions"
+        ],
+        [
+          "Price",
+          "Free plan for 15 sessions; Pro $10/month or $96/year",
+          "$40/month or $400/year; 50% off for students and non-profits"
+        ]
+      ],
+      "note": "Checked against each provider's official pages on October 11, 2026. Prices exclude taxes and can change, so confirm current details before you pay.",
+      "sources": [
+        {
+          "label": "MySession pricing",
+          "url": "/pricing"
+        },
+        {
+          "label": "Flow Club FAQ",
+          "url": "https://www.flow.club/"
+        }
+      ]
+    },
+    "faqItems": [
+      {
+        "question": "Is there a cheaper alternative to Flow Club?",
+        "answer": "Yes. MySession Pro costs $10 a month or $96 a year, compared with Flow Club's $40 a month or $400 a year (checked October 11, 2026). MySession's Free plan also covers your first 15 sessions."
+      },
+      {
+        "question": "Is there a free alternative to Flow Club?",
+        "answer": "MySession's Free plan includes your first 15 sessions, with joining and hosting, and no credit card. Free tools such as FocusPair let you work alongside a friend, but they do not run hosted groups."
+      },
+      {
+        "question": "Does MySession have hosted group sessions like Flow Club?",
+        "answer": "Yes. Community hosts run scheduled group sessions with intentions, focus stages, and check-ins. Check the sessions page for current times in your time zone."
+      },
+      {
+        "question": "Do I have to keep my camera on?",
+        "answer": "In most MySession rooms the camera is optional unless the host requires it. Flow Club asks members to keep video on as much as they can and offers chat-only options."
+      },
+      {
+        "question": "Can I keep my Flow Club routine if I switch?",
+        "answer": "Yes. Recreate your usual time slot by joining an always-open room or a scheduled session at the same time each day, and keep the habit of naming one task before the timer starts."
+      }
+    ],
+    "relatedPageSlugs": [
+      "focusmate-alternative",
+      "flown-alternative",
+      "virtual-coworking"
+    ],
+    "relatedArticles": [
+      {
+        "title": "Scheduled vs drop-in focus sessions",
+        "route": "/blog/scheduled-vs-drop-in-focus-sessions"
+      },
+      {
+        "title": "How to host a virtual coworking session",
+        "route": "/blog/how-to-host-a-virtual-coworking-session"
+      }
+    ],
+    "ctaVariant": "compare",
+    "indexable": true,
+    "sitemapPriority": 0.8,
+    "changeFrequency": "monthly",
+    "createdAt": "2026-07-29",
+    "updatedAt": "2026-10-11"
+  },
   {
-    "slug":"flown-alternative","route":"/flown-alternative","pageType":"comparison","cluster":"comparisons","title":"FLown Alternative for Structured Online Focus | MySession","metaDescription":"Compare MySession as a FLown alternative with scheduled sessions, 24/7 group rooms, task accountability, customizable stages, chat, and music.","h1":"A FLown alternative for structured focus rooms","heroDescription":"MySession combines flexible entry with visible tasks and a room timeline, giving independent work a shared structure without turning it into another meeting.","primaryKeyword":"FLown alternative","secondaryKeywords":["alternatives to FLown","online focus community","virtual focus sessions"],"searchIntent":"commercial-comparison","sections":[{"heading":"Start with the workflow you need","body":["Some people want a facilitated event; others need a room that is already open. MySession supports scheduled group sessions and 24/7 rooms, then uses stages and task tools to keep the work block legible."],"bullets":["Join now or book ahead","See the current session stage","Attach tasks to eligible sessions","Use optional chat and shared audio"]},{"heading":"Who may prefer MySession","body":["The format can suit remote workers, students and independent creators who want multiple session lengths and persistent community rooms. Evaluate the actual experience rather than choosing on feature count alone."]},{"heading":"Current information matters","body":["Competitor products evolve. MySession does not present unverified claims about another provider’s pricing or capabilities; consult official product pages for the latest comparison inputs."]}],"faqItems":[{"question":"Does MySession include 24/7 rooms?","answer":"Yes. MySession offers always-open focus rooms alongside scheduled sessions."},{"question":"Can a session have different work and break stages?","answer":"Yes. Session timelines can contain structured stages for focus, breaks, intentions and check-ins."}],"relatedPageSlugs":["flow-club-alternative","focusmate-alternative","virtual-coworking"],"ctaVariant":"compare","indexable":true,"sitemapPriority":0.8,"changeFrequency":"monthly","createdAt":"2026-07-29","updatedAt":"2026-07-29"},
+    "slug": "flown-alternative",
+    "route": "/flown-alternative",
+    "pageType": "comparison",
+    "cluster": "comparisons",
+    "title": "FLOWN Alternative for Structured Group Focus | MySession",
+    "metaDescription": "Compare FLOWN and MySession formats, prices, and rooms.",
+    "h1": "A FLOWN alternative for structured group focus",
+    "heroDescription": "FLOWN pairs facilitated sessions with a 24/7 Drop-In and wellbeing extras. MySession focuses on group rooms with tasks and stages built in, plus a free plan and Pro at $10 a month.",
+    "primaryKeyword": "FLOWN alternative",
+    "secondaryKeywords": [
+      "alternatives to FLOWN",
+      "FLOWN vs MySession",
+      "free alternative to FLOWN"
+    ],
+    "searchIntent": "commercial-comparison",
+    "sections": [
+      {
+        "heading": "The short answer",
+        "body": [
+          "FLOWN is a full focus membership: facilitated sessions of one or two hours, smaller community sessions run by members, a silent 24/7 Drop-In, and recharge sessions such as breathwork and journaling. Membership is $25 a month, $19 a month billed annually, or $900 for lifetime access, after a 30-day free trial. FLOWN Free includes four community sessions a month plus any session on Fridays.",
+          "MySession is a FLOWN alternative for people who mainly want the focus room itself: group sessions, always-open rooms, and 1:1 matching, with your intention, tasks, and the session's stages visible in one place. The Free plan covers your first 15 sessions, and Pro is $10 a month or $96 a year."
+        ],
+        "bullets": [
+          "Group rooms with tasks and stages built in",
+          "Always-open rooms, open 24/7",
+          "1:1 matching for 50-minute sessions",
+          "Pro at $10/month after the free plan"
+        ]
+      },
+      {
+        "heading": "When FLOWN is the better fit",
+        "body": [
+          "Choose FLOWN if you like professional facilitation and a broader programme around your work. Facilitators lead the focus sessions, and daily planning, guided breaks, and work-with-me videos add structure beyond the focus block itself. FLOWN also sells coaching and accountability groups as add-ons.",
+          "FLOWN's Drop-In works like a silent virtual library: you set your own goal and timer and work in the quiet presence of others. That suits people who want company without any conversation."
+        ]
+      },
+      {
+        "heading": "When MySession is the better fit",
+        "body": [
+          "Choose MySession if the room should carry your plan. You write an intention, keep a task list beside the video, and follow a shared timeline of focus, break, and check-in stages, so nobody has to run their own timer. Always-open rooms are busiest from about 9 AM to midnight US Eastern time; scheduled group sessions add a fixed start when you need one.",
+          "Cost and flexibility also matter. Pro is $10 a month, the Free plan includes hosting, and the 1:1 queue covers days when you want a single partner instead of a group."
+        ]
+      },
+      {
+        "heading": "How to decide",
+        "body": [
+          "Use each free option for the same kind of task for a week: FLOWN's trial or Free plan, and MySession's Free plan. Count the sessions you actually joined, not the ones you planned to join.",
+          "If facilitators and wellbeing sessions kept you coming back, FLOWN is worth its price. If you mostly joined when you could drop straight into a room with your task list ready, MySession is the simpler, cheaper fit."
+        ]
+      }
+    ],
+    "comparisonTable": {
+      "heading": "MySession vs FLOWN at a glance",
+      "columns": [
+        "Compared",
+        "MySession",
+        "FLOWN"
+      ],
+      "rows": [
+        [
+          "Format",
+          "Scheduled group sessions, always-open rooms, and 1:1 matching",
+          "Facilitated sessions, member-run community sessions, and a 24/7 Drop-In"
+        ],
+        [
+          "Session length",
+          "Set by the host; open rooms repeat cycles such as 30/10 and 75/15",
+          "Facilitated sessions run 1 or 2 hours"
+        ],
+        [
+          "Drop-in room",
+          "Shared focus and break stages with visible intentions and tasks",
+          "Silent, self-directed: set your own goal and timer"
+        ],
+        [
+          "Extras",
+          "Task list, chat, optional room music",
+          "Recharge sessions, work-with-me videos, coaching add-ons"
+        ],
+        [
+          "Free option",
+          "Your first 15 sessions, joining and hosting included",
+          "FLOWN Free: 4 community sessions a month plus any session on Fridays"
+        ],
+        [
+          "Paid plan",
+          "Pro $10/month or $96/year, 7-day free trial",
+          "$25/month, $19/month billed annually, or $900 lifetime; 30-day free trial"
+        ]
+      ],
+      "note": "Checked against each provider's official pages on October 11, 2026. Prices exclude taxes and can change, so confirm current details before you pay.",
+      "sources": [
+        {
+          "label": "MySession pricing",
+          "url": "/pricing"
+        },
+        {
+          "label": "FLOWN pricing",
+          "url": "https://www.flown.com/pricing"
+        },
+        {
+          "label": "FLOWN session formats",
+          "url": "https://www.flown.com/"
+        }
+      ]
+    },
+    "faqItems": [
+      {
+        "question": "Is there a free alternative to FLOWN?",
+        "answer": "MySession's Free plan covers your first 15 sessions, including joining and hosting. FLOWN also has a free tier, FLOWN Free, with four community sessions a month and access to any session on Fridays."
+      },
+      {
+        "question": "Does MySession have a 24/7 room like FLOWN's Drop-In?",
+        "answer": "Yes. Always-open rooms can be entered at any time. Instead of each person running their own timer, they follow shared focus and break stages and show each person's intention."
+      },
+      {
+        "question": "Does MySession have facilitated sessions?",
+        "answer": "Scheduled group sessions are run by community hosts who open the room, invite intentions, and close with a check-in. They are not professional facilitators, so compare the experience if facilitation is your priority."
+      },
+      {
+        "question": "Which is cheaper, FLOWN or MySession?",
+        "answer": "As of October 11, 2026, FLOWN is $25 a month or $19 a month billed annually, and MySession Pro is $10 a month or $96 a year. Both have a free option with limits."
+      },
+      {
+        "question": "Do I need my camera on in MySession?",
+        "answer": "Most group rooms keep the camera optional unless the host requires it. 1:1 sessions require a camera."
+      }
+    ],
+    "relatedPageSlugs": [
+      "flow-club-alternative",
+      "caveday-alternative",
+      "virtual-coworking"
+    ],
+    "relatedArticles": [
+      {
+        "title": "Scheduled vs drop-in focus sessions",
+        "route": "/blog/scheduled-vs-drop-in-focus-sessions"
+      },
+      {
+        "title": "Group Pomodoro sessions",
+        "route": "/blog/group-pomodoro-sessions"
+      }
+    ],
+    "ctaVariant": "compare",
+    "indexable": true,
+    "sitemapPriority": 0.8,
+    "changeFrequency": "monthly",
+    "createdAt": "2026-07-29",
+    "updatedAt": "2026-10-11"
+  },
   {
     "slug":"focus-session-25-minutes","route":"/focus-session-25-minutes","pageType":"session-format","cluster":"focus-formats","title":"25-Minute Focus Session | MySession","metaDescription":"Use a 25-minute focus session to lower start friction, complete a small task, or begin a larger project with a clear stopping point.","h1":"25-minute focus sessions","heroDescription":"A short block is long enough to create progress and small enough to begin when attention or motivation is limited.","primaryKeyword":"25 minute focus session","secondaryKeywords":["25 minute body doubling","Pomodoro focus room","short focus session"],"searchIntent":"commercial","sections":[{"heading":"Best for a clean start","body":["Choose 25 minutes when the primary challenge is beginning. It works well for a bounded task or the first pass of something larger."],"bullets":["Email and administration","Flashcards or review","Outlining and planning","The first step of an avoided task"]},{"heading":"A simple session plan","body":["Spend one minute naming the outcome, protect the work interval from extra planning, and use the closing check-in to decide whether to stop, break, or begin another block."]},{"heading":"When to choose longer","body":["If setup consumes much of the interval or you are already in flow, a 50- or 90-minute room may protect context better."]}],"faqItems":[{"question":"Is 25 minutes a required Pomodoro?","answer":"No. It is simply a useful short focus length; you can choose the workflow that fits your task."},{"question":"Can I do two sessions in a row?","answer":"Yes. Take a deliberate break and begin another block if it remains useful."}],"relatedPageSlugs":["focus-session-50-minutes","focus-session-90-minutes","body-doubling-for-procrastination"],"ctaVariant":"start","indexable":true,"sitemapPriority":0.8,"changeFrequency":"monthly","createdAt":"2026-07-29","updatedAt":"2026-07-29"},
   {

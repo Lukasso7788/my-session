@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { Fragment, useEffect } from "react";
 import { ArrowRight, Check, Clock3, Layers3, Sparkles, Users } from "lucide-react";
 import { Link } from "react-router-dom";
 import { applyPageSeo, safeJsonLd } from "../../lib/pageSeo";
@@ -6,6 +6,7 @@ import { buildSeoPageStructuredData } from "../../lib/seoStructuredData";
 import {
   getRelatedSeoPages,
   seoPagesBySlug,
+  type SeoComparisonTable,
   type SeoPageDefinition,
 } from "../../data/seoPageRegistry";
 
@@ -24,6 +25,54 @@ const typeLabels: Record<SeoPageDefinition["pageType"], string> = {
   comparison: "Platform comparison",
   "session-format": "Session format",
 };
+
+function ComparisonTableSection({ table }: { table: SeoComparisonTable }) {
+  const [rowHeader, ...products] = table.columns;
+  return (
+    <section aria-labelledby="comparison-table-title">
+      <h2 id="comparison-table-title" className="text-2xl font-bold tracking-[-0.025em] sm:text-3xl">{table.heading}</h2>
+      <div className="mt-5 overflow-x-auto rounded-2xl bg-white ring-1 ring-black/[0.06]">
+        <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+          <thead>
+            <tr className="border-b border-black/[0.08] bg-[#f4f6f4]">
+              <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-black/45">{rowHeader}</th>
+              {products.map((product) => (
+                <th key={product} scope="col" className="px-4 py-3 text-sm font-semibold text-[#202124]">{product}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map(([label, ...values]) => (
+              <tr key={label} className="border-b border-black/[0.06] align-top last:border-0">
+                <th scope="row" className="w-[150px] px-4 py-3 text-xs font-semibold uppercase tracking-wide text-black/45">{label}</th>
+                {values.map((value, index) => (
+                  <td key={`${label}-${products[index]}`} className="px-4 py-3 leading-6 text-black/70">{value}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-3 text-xs leading-5 text-black/50">
+        {table.note}{" "}
+        Sources:{" "}
+        {table.sources.map((source, index) => (
+          <span key={source.url}>
+            {index > 0 ? ", " : null}
+            {source.url.startsWith("/") ? (
+              <Link to={source.url} className="underline underline-offset-2 hover:text-black">{source.label}</Link>
+            ) : (
+              <a href={source.url} target="_blank" rel="nofollow noopener noreferrer" className="underline underline-offset-2 hover:text-black">
+                {source.label}
+              </a>
+            )}
+          </span>
+        ))}
+        .
+      </p>
+    </section>
+  );
+}
 
 export default function DataDrivenSeoPage({ slug }: { slug: string }) {
   const page = seoPagesBySlug.get(slug);
@@ -214,49 +263,33 @@ function SeoPageContent({ page }: { page: SeoPageDefinition }) {
 
         <div className="mx-auto mt-14 max-w-[840px] space-y-14">
           {page.sections.map((section, sectionIndex) => (
-            <section key={section.heading} className="scroll-mt-24">
-              <div className="flex items-start gap-4">
-                <span className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#e9f8ec] text-xs font-bold text-[#2f8f43]">
-                  {String(sectionIndex + 1).padStart(2, "0")}
-                </span>
-                <div>
-                  <h2 className="text-2xl font-bold tracking-[-0.025em] sm:text-3xl">{section.heading}</h2>
-                  <div className="mt-4 space-y-4 text-[15px] leading-7 text-black/65 sm:text-base">
-                    {section.body.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+            <Fragment key={section.heading}>
+              <section className="scroll-mt-24">
+                <div className="flex items-start gap-4">
+                  <span className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#e9f8ec] text-xs font-bold text-[#2f8f43]">
+                    {String(sectionIndex + 1).padStart(2, "0")}
+                  </span>
+                  <div>
+                    <h2 className="text-2xl font-bold tracking-[-0.025em] sm:text-3xl">{section.heading}</h2>
+                    <div className="mt-4 space-y-4 text-[15px] leading-7 text-black/65 sm:text-base">
+                      {section.body.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                    </div>
+                    {section.bullets?.length ? (
+                      <ul className="mt-5 grid gap-2 sm:grid-cols-2">
+                        {section.bullets.map((bullet) => (
+                          <li key={bullet} className="flex items-start gap-2.5 rounded-xl bg-white px-4 py-3 text-sm leading-5 text-black/70">
+                            <Check size={16} className="mt-0.5 shrink-0 text-[#36a14d]" aria-hidden="true" />
+                            {bullet}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                   </div>
-                  {section.bullets?.length ? (
-                    <ul className="mt-5 grid gap-2 sm:grid-cols-2">
-                      {section.bullets.map((bullet) => (
-                        <li key={bullet} className="flex items-start gap-2.5 rounded-xl bg-white px-4 py-3 text-sm leading-5 text-black/70">
-                          <Check size={16} className="mt-0.5 shrink-0 text-[#36a14d]" aria-hidden="true" />
-                          {bullet}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
                 </div>
-              </div>
-            </section>
+              </section>
+              {sectionIndex === 0 && page.comparisonTable ? <ComparisonTableSection table={page.comparisonTable} /> : null}
+            </Fragment>
           ))}
-
-          {page.pageType === "comparison" ? (
-            <section>
-              <h2 className="text-2xl font-bold tracking-[-0.025em]">What MySession is designed around</h2>
-              <div className="mt-5 overflow-hidden rounded-2xl bg-white">
-                {[
-                  ["Entry", "Book a scheduled session or enter an available 24/7 room"],
-                  ["Accountability", "Group presence, intentions, visible tasks and check-ins"],
-                  ["Room tools", "Session stages, chat, reactions and optional music"],
-                  ["Best way to decide", "Try the working format and verify current provider details"],
-                ].map(([label, value]) => (
-                  <div key={label} className="grid gap-1 border-b border-black/[0.06] px-5 py-4 last:border-0 sm:grid-cols-[150px_1fr]">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-black/40">{label}</div>
-                    <div className="text-sm leading-6 text-black/70">{value}</div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          ) : null}
 
           {page.faqItems.length > 0 ? (
             <section>
@@ -282,6 +315,15 @@ function SeoPageContent({ page }: { page: SeoPageDefinition }) {
                   <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#3a9a4e]">{typeLabels[related.pageType]}</div>
                   <div className="mt-2 flex items-center justify-between gap-4 font-semibold">
                     {related.h1}
+                    <ArrowRight size={16} className="shrink-0 transition-transform group-hover:translate-x-1" aria-hidden="true" />
+                  </div>
+                </Link>
+              ))}
+              {page.relatedArticles?.map((article) => (
+                <Link key={article.route} to={article.route} className="group rounded-2xl bg-white p-5 transition-transform hover:-translate-y-0.5">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#3a9a4e]">Article</div>
+                  <div className="mt-2 flex items-center justify-between gap-4 font-semibold">
+                    {article.title}
                     <ArrowRight size={16} className="shrink-0 transition-transform group-hover:translate-x-1" aria-hidden="true" />
                   </div>
                 </Link>
