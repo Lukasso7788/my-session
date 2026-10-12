@@ -6,6 +6,18 @@ audited. Never put secret values, tokens, user exports or private logs in this f
 
 ## Checkout and safe working rules
 
+- Latest follow-up (2026-10-12): apply the pre-join motion style to in-room
+  settings. Base `c06901c` matched origin/main. Same safe checkout/branch;
+  all six SelectField controls reuse `PreJoinDeviceSelect` without changing
+  options, values or parent callbacks. Motion/focus CSS is scoped to
+  `.ms-room-settings`; advanced sound test, camera preview, blur, correction
+  and background controls use inert animated disclosures. Preview receives
+  a null track immediately on close, independently of exit animation.
+  Capture/sound-test/effect application logic and supplied icons are unchanged.
+  Feature context: `docs/room-settings-motion-2026-10-12.md`; actual component
+  preview: `tests/browser/room-settings-motion.html` (`?theme=light` supported).
+  User requested focused commit/push; no direct production promotion.
+
 - Latest follow-up (2026-10-12): inset all pre-join chevrons 16px and animate
   device menus, Audio processing, and background controls. Starting commit
   `c382349` matched origin/main. Same safe checkout/branch; presentation-only

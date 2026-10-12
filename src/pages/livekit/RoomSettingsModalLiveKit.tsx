@@ -1,6 +1,9 @@
 import React from "react";
 import type { CameraFramingMode } from "./VideoTileLiveKit";
 import { FX_BG_PRESETS } from "./backgroundPresets";
+import { PreJoinDeviceSelect, PreJoinDisclosure } from "./PreJoinMenus";
+import { RoomSettingsDisclosure } from "./RoomSettingsMotion";
+import "./room-settings-motion.css";
 
 type RoomTheme = "dark" | "light";
 type FxMode = "off" | "blur" | "bg";
@@ -68,6 +71,7 @@ function ToggleRow(props: {
                             : "bg-[#3F3F46] border-[#3F3F46]",
                 ].join(" ")}
                 aria-pressed={checked}
+                aria-label={label}
                 title={label}
             >
                 <span
@@ -111,6 +115,7 @@ function CompactToggleTile(props: {
                     checked ? "bg-[#5286F6] border-[#5286F6]" : isLight ? "bg-[#EAE7E7] border-[#D8D0D0]" : "bg-[#3F3F46] border-[#3F3F46]",
                 ].join(" ")}
                 aria-pressed={checked}
+                aria-label={label}
                 title={label}
             >
                 <span
@@ -130,24 +135,12 @@ function SelectField(props: {
     isLight: boolean;
 }) {
     const { label, value, onChange, options, isLight } = props;
+    const id = React.useId();
 
     return (
         <div>
-            <div className={`text-[13px] font-semibold mb-2 ${isLight ? "text-black/85" : "text-white/90"}`}>{label}</div>
-            <select
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                className={[
-                    "w-full h-10 rounded-xl px-3 outline-none border text-[12px]",
-                    isLight ? "bg-[#F3F1F1] border-[#D8D0D0] text-black/85" : "bg-[#27272A] border-[#3F3F46] text-white/90",
-                ].join(" ")}
-            >
-                {options.map((opt) => (
-                    <option key={`${label}-${opt.value}`} value={opt.value}>
-                        {opt.label}
-                    </option>
-                ))}
-            </select>
+            <label htmlFor={id} className={`block text-[13px] font-semibold mb-2 ${isLight ? "text-black/85" : "text-white/90"}`}>{label}</label>
+            <PreJoinDeviceSelect id={id} label={label} value={value} options={options} onChange={onChange} theme={isLight ? "light" : "dark"} />
         </div>
     );
 }
@@ -165,12 +158,13 @@ function SliderField(props: {
     valueSuffix?: string;
 }) {
     const { label, description, min, max, step = 1, value, onChange, disabled, isLight, valueSuffix = "" } = props;
+    const id = React.useId();
 
     return (
         <div>
             <div className="flex items-center justify-between gap-3">
                 <div>
-                    <div className={`text-[13px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>{label}</div>
+                    <label htmlFor={id} className={`text-[13px] font-semibold ${isLight ? "text-black/85" : "text-white/90"}`}>{label}</label>
                     {description ? (
                         <div className={`mt-1 text-[12px] ${isLight ? "text-black/55" : "text-white/55"}`}>{description}</div>
                     ) : null}
@@ -182,6 +176,7 @@ function SliderField(props: {
             </div>
 
             <input
+                id={id}
                 type="range"
                 min={min}
                 max={max}
@@ -318,7 +313,7 @@ function RecoveryGuideModal(props: {
     return (
         <div className="fixed inset-0 z-[1010] flex items-center justify-center px-4 py-6">
             <div className="absolute inset-0 bg-black/55" onClick={onClose} />
-            <div className={`relative w-full max-w-[560px] rounded-3xl border shadow-2xl overflow-hidden ${panelCls}`}>
+            <div className={`ms-room-settings-guide relative w-full max-w-[560px] rounded-3xl border shadow-2xl overflow-hidden ${panelCls}`}>
                 <div className={`px-5 py-4 border-b ${isLight ? "border-[#D8D0D0]" : "border-[#3F3F46]"}`}>
                     <div className="flex items-start justify-between gap-4">
                         <div>
@@ -1322,9 +1317,11 @@ export function RoomSettingsModalLiveKit({
     );
 
     const [previewOpen, setPreviewOpen] = React.useState(false);
+    const [soundTestOpen, setSoundTestOpen] = React.useState(false);
 
     const scrollToSection = React.useCallback((id: string) => {
-        document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+        const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        document.getElementById(id)?.scrollIntoView({ behavior: reducedMotion ? "auto" : "smooth", block: "start" });
     }, []);
 
     if (!open) return null;
@@ -1396,11 +1393,11 @@ export function RoomSettingsModalLiveKit({
     const effectivePreviewFilterCss = colorCorrectionEnabled ? (previewVideoFilterCss || "") : "";
 
     return (
-        <div className={overlay} data-theme={theme} style={{ colorScheme: theme }}>
+        <div className={`ms-room-settings ${overlay}`} data-theme={theme} style={{ colorScheme: theme }} role="dialog" aria-modal="true" aria-labelledby="room-settings-title">
             <div className={backdrop} onClick={onClose} />
 
-            <div className={card.replace("sm:max-w-[1100px]", "sm:max-w-[1180px]")}>
-                <div className={[
+            <div className={`ms-room-settings-card ${card.replace("sm:max-w-[1100px]", "sm:max-w-[1180px]")}`}>
+                <div data-prejoin-header className={[
                     "sticky top-0 z-20 h-[68px] shrink-0 border-b px-4 sm:px-5",
                     isLight ? "border-[#D8D0D0] bg-[#F5F5F5]/95" : "border-[#3F3F46] bg-[#18181B]/95",
                     "backdrop-blur-xl",
@@ -1418,7 +1415,7 @@ export function RoomSettingsModalLiveKit({
                                 />
                             </div>
                             <div className="min-w-0">
-                                <div className="text-[14px] font-semibold">Room settings</div>
+                                <div id="room-settings-title" className="text-[14px] font-semibold">Room settings</div>
                                 <div className={`mt-0.5 truncate text-[11px] ${subtleText}`}>
                                     Room preferences · changes apply immediately
                                 </div>
@@ -1514,7 +1511,7 @@ export function RoomSettingsModalLiveKit({
                     </aside>
 
                     <div className="ms-room-settings-scrollbar custom-scrollbar min-w-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-4 sm:py-4">
-                        <div className="mx-auto max-w-[920px] space-y-4">
+                        <div className="ms-room-settings-content mx-auto max-w-[920px] space-y-4">
                             <section id="appearance" className="scroll-mt-4">
                                 <div className={`rounded-2xl p-3.5 ${sectionCls}`}>
                                     <div className="mb-3 flex items-center justify-between">
@@ -1754,14 +1751,15 @@ export function RoomSettingsModalLiveKit({
                                     </div>
                                 </div>
 
-                                <details className={`group rounded-2xl ${sectionCls}`}>
-                                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3.5 py-3">
+                                <div className={`rounded-2xl ${sectionCls}`}>
+                                    <button type="button" aria-expanded={soundTestOpen} aria-controls="room-settings-sound-test" onClick={() => setSoundTestOpen((value) => !value)} className="flex w-full items-center justify-between gap-3 rounded-2xl px-3.5 py-3 text-left">
                                         <div>
                                             <div className="text-[11.5px] font-semibold">Advanced sound test</div>
                                             <div className={`mt-0.5 text-[10px] ${subtleText}`}>Speaker test, microphone monitor and input meter.</div>
                                         </div>
-                                        <span className={`text-[11px] transition group-open:rotate-180 ${subtleText}`}>⌄</span>
-                                    </summary>
+                                        <span aria-hidden="true" className={`ms-prejoin-chevron text-[11px] ${subtleText}`} data-open={soundTestOpen}>⌄</span>
+                                    </button>
+                                    <PreJoinDisclosure open={soundTestOpen} id="room-settings-sound-test">
                                     <div className="px-3 pb-3">
                                         <SoundTestSection
                                             isLight={isLight}
@@ -1775,7 +1773,8 @@ export function RoomSettingsModalLiveKit({
                                             autoGainControlEnabled={autoGainControlEnabled}
                                         />
                                     </div>
-                                </details>
+                                    </PreJoinDisclosure>
+                                </div>
 
                                 <div className={`rounded-2xl p-3.5 ${sectionCls}`}>
                                     <div className="mb-2 text-[11.5px] font-semibold">Room sounds</div>
@@ -1927,7 +1926,7 @@ export function RoomSettingsModalLiveKit({
                                                         {fxError ? <div className="mt-2 text-[10.5px] text-red-500 break-words">{fxError}</div> : null}
                                                     </div>
 
-                                                    {mode === "blur" ? (
+                                                    <RoomSettingsDisclosure open={mode === "blur"}>
                                                         <div className={[
                                                             "rounded-xl border p-3",
                                                             isLight ? "bg-black/[0.025] border-black/[0.07]" : "bg-white/[0.035] border-white/[0.07]",
@@ -1943,7 +1942,7 @@ export function RoomSettingsModalLiveKit({
                                                                 valueSuffix="px"
                                                             />
                                                         </div>
-                                                    ) : null}
+                                                    </RoomSettingsDisclosure>
 
                                                     <div className={[
                                                         "rounded-xl border p-3",
@@ -1956,7 +1955,7 @@ export function RoomSettingsModalLiveKit({
                                                             onChange={onToggleColorCorrection}
                                                             isLight={isLight}
                                                         />
-                                                        {colorCorrectionEnabled ? (
+                                                        <RoomSettingsDisclosure open={colorCorrectionEnabled}>
                                                             <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
                                                                 <SliderField
                                                                     label="Brightness"
@@ -1983,7 +1982,7 @@ export function RoomSettingsModalLiveKit({
                                                                     isLight={isLight}
                                                                 />
                                                             </div>
-                                                        ) : null}
+                                                        </RoomSettingsDisclosure>
                                                     </div>
                                                 </>
                                             ) : null}
@@ -1997,6 +1996,8 @@ export function RoomSettingsModalLiveKit({
                                                 <button
                                                     type="button"
                                                     onClick={() => setPreviewOpen((value) => !value)}
+                                                    aria-expanded={previewOpen}
+                                                    aria-controls="room-settings-camera-preview"
                                                     className="flex w-full items-center justify-between gap-3 text-left"
                                                 >
                                                     <div>
@@ -2005,10 +2006,10 @@ export function RoomSettingsModalLiveKit({
                                                     </div>
                                                     <span className={`text-[10.5px] font-semibold ${subtleText}`}>{previewOpen ? "Hide" : "Open preview"}</span>
                                                 </button>
-                                                {previewOpen ? (
+                                                <RoomSettingsDisclosure open={previewOpen} id="room-settings-camera-preview">
                                                     <div className="mt-3">
                                                         <VideoPreviewBox
-                                                            track={previewTrack}
+                                                            track={previewOpen ? previewTrack : null}
                                                             filterCss={effectivePreviewFilterCss}
                                                             isLight={isLight}
                                                             label="Live preview"
@@ -2016,10 +2017,10 @@ export function RoomSettingsModalLiveKit({
                                                             framingMode={cameraFramingMode}
                                                         />
                                                     </div>
-                                                ) : null}
+                                                </RoomSettingsDisclosure>
                                             </div>
 
-                                            {!disableFxControls && mode === "bg" ? (
+                                            <RoomSettingsDisclosure open={!disableFxControls && mode === "bg"}>
                                                 <div className={[
                                                     "rounded-xl border p-3",
                                                     isLight ? "bg-black/[0.025] border-black/[0.07]" : "bg-white/[0.035] border-white/[0.07]",
@@ -2030,12 +2031,12 @@ export function RoomSettingsModalLiveKit({
                                                             <div className={`mt-0.5 text-[10px] ${subtleText}`}>Upload your own or choose a preset.</div>
                                                         </div>
                                                         <div className="flex gap-1.5">
-                                                            <label className={`flex h-8 cursor-pointer items-center rounded-lg px-2.5 text-[10px] font-semibold ${ghostBtn}`}>
+                                                            <label className={`ms-room-settings-upload flex h-8 cursor-pointer items-center rounded-lg px-2.5 text-[10px] font-semibold ${ghostBtn}`}>
                                                                 Upload
                                                                 <input
                                                                     type="file"
                                                                     accept="image/*"
-                                                                    className="hidden"
+                                                                    aria-label="Upload background image"
                                                                     onChange={(e) => {
                                                                         const file = e.target.files?.[0];
                                                                         if (!file) return;
@@ -2090,7 +2091,7 @@ export function RoomSettingsModalLiveKit({
                                                         {isCustomBackground ? "Custom uploaded background selected." : bgImageUrl ? "Preset background selected." : "No background selected."}
                                                     </div>
                                                 </div>
-                                            ) : null}
+                                            </RoomSettingsDisclosure>
                                         </div>
                                     </div>
                                 </div>
