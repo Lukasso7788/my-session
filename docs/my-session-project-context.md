@@ -234,6 +234,29 @@ structured data, sitemap and robots; browser-rendered UI alone is insufficient.
 
 ## Production room flow and existing optimizations
 
+The 2026-10-11 audit of people being thrown out of rooms (side-panel clicks,
+mobile tab switching), its production evidence and the fixes that followed are
+in docs/room-disconnect-audit-2026-10-11.md ("Fixes" table). Key rules from it:
+panels are `preloadableLazy` + preloaded after connect; a joined room defers
+`dynamicImportRecovery` reloads and shows an update banner; every lazy room
+section has an error boundary and the route has `RoomCrashBoundary`; a reload of
+the same tab rejoins once via `src/lib/sameTabRoomResume.ts` (10 minutes,
+first mount after a load on that room URL, revoked on leave/kick/removal);
+background-recovery token requests use `{ recovery: true }`; media-policy
+countdowns pause while hidden or reconnecting; the stage countdown lives in
+`src/lib/roomCountdownStore.ts`; room timing uses `serverNow()` from
+`src/lib/serverClock.ts`. The first LiveKit connection is retried in place
+up to three times (`ROOM_INITIAL_CONNECT_ATTEMPTS`, 32 s timeout) and every
+failure is logged as `room_connect_failed`. Run `node --experimental-strip-types --test
+scripts/*.test.mjs tests/*.test.mjs` on Node 22 (type stripping is default on
+Node 23+).
+
+Deployments: production is promoted from branch builds, not only from
+`main`. On 2026-10-11 promoting the room-fix branch (based on `main`)
+replaced the SEO-article build, so the 10 new articles and the Vite dep-scan
+fix disappeared from production. The room branch now merges the SEO branch;
+promote one branch that contains all wanted work, or merge to `main` first.
+
 RoomPageLiveKit.tsx is the large room orchestrator (over 20k source lines), with
 prejoin/identity/admission -> token -> Room connection -> prepared media publish
 -> tile rebuild -> controls/panels. src/pages/livekit/VideoTileLiveKit.tsx wraps
@@ -2238,3 +2261,128 @@ it adds `/body-doubling-app`, and `public/sitemap-guides.xml` because it updates
 the modified coworking guide's lastmod. Commit/push only task files after
 checking `origin/main`; no force push. Pushing `main` may create a preview,
 but do not claim production deployment without verifying exact SHA/alias.
+
+## 2026-10-11 editorial batch 2: ten bundled SEO articles
+
+Request: about ten more articles for MySession based on the 2026-10-11 keyword
+workbook (297 unvalidated candidates, 30 clusters, SERP/competitor notes,
+exclusions), body-doubling/virtual-coworking/focus-session niche, and existing
+SEO best practice. Work is on branch `cursor/seo-editorial-articles-batch-2-7ef6`
+(cloud agent, Linux checkout `/workspace`), based on `origin/main` at `b66f09a`.
+
+Topic selection and keyword ownership are in `docs/seo/keyword-research.md`
+("Editorial batch 2"). Every article targets an informational/decision intent
+that no existing route owns; commercial clusters stay on their landings and are
+linked contextually. No new data-driven landing route was added, so
+`seo-pages.json`, the route manifest, `App.tsx`, and `sitemap-pages.xml` are
+unchanged. New URLs (all `/blog/<slug>`): `group-vs-one-on-one-body-doubling`,
+`accountability-partner-vs-body-double`, `virtual-coworking-etiquette`,
+`body-doubling-camera-on-or-off`, `group-pomodoro-sessions`,
+`scheduled-vs-drop-in-focus-sessions`, `how-to-write-a-focus-session-intention`,
+`body-doubling-for-cleaning`, `study-with-me-videos-vs-live-study-rooms`,
+`how-to-host-a-virtual-coworking-session`.
+
+Implementation follows the established bundled-editorial pipeline: Markdown in
+`src/content/blog/`, metadata in `blog-editorial-manifest.json`, `?raw` imports
+in `src/data/blogEditorial.ts`, sitemap/prerender picked up automatically from
+the manifest. `verify-blog-editorial.mjs` now also fails if a manifest article is
+not imported by `blogEditorial.ts` (otherwise it would ship with empty content).
+Four older articles received one contextual link each to a new article.
+
+Product claims were checked in source before writing: rooms default to
+camera-optional (`roomPolicies.ts`), hosts can require camera / screen share /
+either and disable public chat, shown as session-card badges
+(`sessionCardIndicators.ts`); 1:1 uses a matching queue, scheduled 50-minute
+slots and private links, and "Camera is required for 1:1 sessions"
+(`OneOnOnePage.tsx`); session builder presets 15/3, 25/5, 50/10 with cycles,
+timeline blocks welcome/intentions/focus/break/check-in/recap/celebrate/custom,
+max participants, public vs link-only, templates (`CreateSessionModal.tsx`);
+Free Flow presets Ladder, 30/10, 75/15 (`roomTimelineModel.ts`); Free plan
+"first 15 sessions" and hosting on Free and Pro (`PricingPage.tsx`). If any
+of these change, update the affected articles. Competitor facts are dated
+"as of October 2026"; no competitor prices are quoted.
+
+Covers: ten new Pexels sources (IDs, photographers, pages) in
+`scripts/editorial-covers/sources.json`, numbered 11-20. `render.mjs` now
+accepts slugs (`npm run covers:render -- <slug> ...`) so only new covers are
+re-rendered and the existing published JPEGs stay byte-identical; the template
+accepts an optional per-source `photoPosition` crop override (used for the
+planner and hosting photos). Rendered on Linux with
+`CHROME_PATH=/usr/local/bin/google-chrome`; all covers 45-82 KB, visually
+inspected for crop and text fit. `seo-visual-check.mjs` accepts optional
+routes (`node scripts/seo-visual-check.mjs <base> <out> /blog/a /blog/b`).
+
+Verification: `npm run build` passed every integrated check (15 editorial
+articles, 43 sitemap URLs, React SEO render, semantic clusters). Focused ESLint
+on touched scripts/TS and `git diff --check` passed. A local preview built with
+the public Supabase URL/anon key in the process env only (not written to any
+file) rendered all ten articles after hydration at 390 px and 1440 px with
+loaded cover, alt text and no horizontal overflow; `/blog` lists all 16 posts
+(below-fold card covers are lazy by design). Vite prints
+`throwClosedServerError` stack traces during `prerender-blog`; the same
+traces appear on an unmodified `main` build and are not caused by this batch.
+Production, Google indexing and rankings are not verified by this work.
+
+## 2026-10-11 keyword quick wins: comparison tables, roundups, crawler HTML
+
+Request: SEO work from a 154-key research summary (42 P1 / 67 P2 / 45 P3, no
+volumes) and its technical findings. Committed on
+`cursor/room-disconnect-audit-7ef6` on top of the room fixes, because
+production is promoted from this branch's preview builds. The keyword map,
+the live-state check of each finding, the decisions not to create duplicate
+landings, and the dated competitor facts are in `docs/seo/keyword-research.md`
+("Quick-win batch").
+
+What changed and where:
+- `SeoPageDefinition` (`src/data/seoPageRegistry.ts`) has two optional
+  fields. `comparisonTable` (`heading`, `columns`, `rows`, `note`, `sources`)
+  renders after the first section in `DataDrivenSeoPage.tsx` and in
+  `scripts/prerender-seo.mjs`; internal sources (starting with `/`) are
+  normal links, external ones are `nofollow`. `relatedArticles` (`title`,
+  `route`) adds article cards to "Continue exploring". Landing body text is
+  plain strings, so this is the only way for a landing to link to an article.
+  The prerender must not emit `<div>` inside `#root`: the verifiers match the
+  root with a non-greedy `<div id="root">…</div>`.
+- The four alternative pages are 750-880 words with dated tables. The
+  Focusmate starter post (`src/data/blogSeed.ts`) is now a six-product
+  roundup; `/focusmate-alternative` keeps the head-to-head intent.
+- `src/data/faq-page.json` feeds both `FaqPage.tsx` and the `/faq` crawler
+  HTML; `src/data/updates.json` feeds `UpdatesPage` and `/updates`. The
+  `/pricing` crawler copy mirrors `PricingPage.tsx`, and
+  `verify-seo-public-routes.mjs` fails when a prerendered plan line, price or
+  pricing FAQ answer no longer appears in that file. Update both together.
+- New articles: `best-body-doubling-apps`, `task-paralysis`,
+  `task-initiation-strategies`, `does-body-doubling-work-without-adhd` (covers
+  21-24, Pexels credits in `sources.json`).
+- `/virtual-coworking-for-students` is retitled "Study Together Online", and
+  the legacy client redirect `/study-together` now points there.
+- Hours copy ("busiest about 9 AM to midnight US Eastern, 4 PM-7 AM Kyiv")
+  comes from 28 days of aggregate `session_attendance` presence by hour; only
+  hourly counts were queried, no user data. Re-check it if the schedule shifts.
+
+Verification: `npm run build` passed every integrated check (19 editorial
+articles, 47 sitemap URLs). Unit tests 114/114. App TypeScript diagnostics are
+250 in both this branch and the pre-batch commit `bffa1bf`, with none in the
+changed files; ESLint reports nothing on the changed files. A local preview
+showed the new articles and all comparison tables at 390 px and 1440 px
+without horizontal overflow, with both product columns visible on phones.
+
+Open items outside the code: `www.mysession.club` redirects to the apex with
+a temporary 307. Switch it to a permanent redirect in Vercel → Domains.
+
+## 2026-10-11 video audit (read-only)
+
+`docs/video-audit-2026-10-11.md` lists camera, effects, screen-share, policy,
+PiP and mobile video problems with line references, 30-day production
+aggregates and a suggested fix order. No video code was changed. The most
+serious items:
+- With blur or a virtual background selected, the raw camera is published
+  when the camera is first turned on in the room.
+- A camera that ends in the background is not restored when the tab returns.
+- Cameras-required rooms remove people for device failures and host-forced
+  camera-off.
+- The prejoin camera keeps running after gate closes.
+- Every remote camera is mirrored by default.
+
+Video behaviour changes still need the user's agreement before
+implementation.

@@ -21,6 +21,8 @@ import AppLayout from "./layouts/AppLayout";
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
 import { storeReferralCodeFromUrl } from "./lib/referrals";
 import AppBootstrapGate from "./components/AppBootstrapGate";
+import { RoomCrashBoundary } from "./components/RoomErrorBoundary";
+import { consumeSameTabRoomResume } from "./lib/sameTabRoomResume";
 
 import GroupFocusSessionsPage from "./pages/seo/GroupFocusSessionsPage";
 import SilentCoworkingPage from "./pages/seo/SilentCoworkingPage";
@@ -88,15 +90,22 @@ function RoomPageLiveKitEntry() {
   const [preparedSessionId, setPreparedSessionId] = useState("");
 
   useLayoutEffect(() => {
-    clearRoomEntryRecoveryLease(sessionId);
+    // A reload of the same tab that was just in this room (manual refresh,
+    // error recovery, or a mobile browser restoring a discarded tab) may rejoin
+    // once with the saved media state. Every other entry clears the lease.
+    if (!consumeSameTabRoomResume(sessionId)) clearRoomEntryRecoveryLease(sessionId);
     setPreparedSessionId(sessionId);
   }, [sessionId]);
 
   // Gate the production room for one layout pass so a stale recovery lease can
-  // never auto-skip prejoin on a fresh room entry or a full page refresh.
+  // never auto-skip prejoin on a fresh room entry.
   if (!sessionId || preparedSessionId !== sessionId) return null;
 
-  return <RoomPageLiveKit />;
+  return (
+    <RoomCrashBoundary key={sessionId} routeId={sessionId}>
+      <RoomPageLiveKit />
+    </RoomCrashBoundary>
+  );
 }
 
 export default function App() {
@@ -204,7 +213,7 @@ export default function App() {
             element={<SilentCoworkingPage />}
           />
 
-          <Route path="/study-together" element={<Navigate to="/body-doubling-for-studying" replace />} />
+          <Route path="/study-together" element={<Navigate to="/virtual-coworking-for-students" replace />} />
           <Route path="/procrastination" element={<Navigate to="/body-doubling-for-procrastination" replace />} />
 
           <Route path="/how-it-works" element={<HowItWorksPage />} />

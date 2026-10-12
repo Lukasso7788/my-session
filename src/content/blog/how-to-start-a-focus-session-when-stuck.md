@@ -19,7 +19,7 @@ This is deliberately modest. The first action gives you information that plannin
 
 An intention is more useful when it describes an observable result than when it promises a feeling. “Focus hard” is difficult to evaluate. “Draft the opening paragraph” can be checked at the end of the session.
 
-For example, if the project is “prepare a presentation,” a useful first intention could be “list the audience's three questions.” If the project is “clean up finances,” try “categorize last week's transactions.” The intention should fit the time available, not the size of your ambition.
+For example, if the project is “prepare a presentation,” a useful first intention could be “list the audience's three questions.” If the project is “clean up finances,” try “categorize last week's transactions.” The intention should fit the time available, not the size of your ambition. For more before-and-after examples, see [how to write a focus session intention](/blog/how-to-write-a-focus-session-intention).
 
 If a room includes an intentions stage, use it to say what you are doing without explaining your whole situation. Other people can work on different tasks while the shared start gives everyone a little structure. Learn more about that format in our [body-doubling guide](/body-doubling).
 

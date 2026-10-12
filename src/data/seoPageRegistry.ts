@@ -12,6 +12,19 @@ export type SeoSectionDefinition = {
 
 export type SeoFaqItem = { question: string; answer: string };
 
+export type SeoComparisonSource = { label: string; url: string };
+
+export type SeoRelatedArticle = { title: string; route: string };
+
+export type SeoComparisonTable = {
+  heading: string;
+  /** First column labels the rows; the remaining columns are the compared products. */
+  columns: string[];
+  rows: string[][];
+  note: string;
+  sources: SeoComparisonSource[];
+};
+
 export type SeoPageDefinition = {
   slug: string;
   route: string;
@@ -28,8 +41,10 @@ export type SeoPageDefinition = {
   imagePath?: string;
   imageAlt?: string;
   sections: SeoSectionDefinition[];
+  comparisonTable?: SeoComparisonTable;
   faqItems: SeoFaqItem[];
   relatedPageSlugs: string[];
+  relatedArticles?: SeoRelatedArticle[];
   ctaVariant: "join" | "try" | "start" | "explore" | "compare";
   indexable: boolean;
   sitemapPriority: number;

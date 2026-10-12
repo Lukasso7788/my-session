@@ -260,6 +260,30 @@ export function LiveKitBottomBar(props: {
 
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
     const reactionsMenuRef = useRef<HTMLDivElement | null>(null);
+    // Leaving needs a second tap so a mis-tap cannot end the session.
+    const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false);
+    const leaveConfirmRef = useRef<HTMLDivElement | null>(null);
+
+    useEffect(() => {
+        if (!leaveConfirmOpen) return;
+        const onDown = (event: MouseEvent | TouchEvent) => {
+            const target = event.target as Node | null;
+            if (target && !leaveConfirmRef.current?.contains(target)) setLeaveConfirmOpen(false);
+        };
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") setLeaveConfirmOpen(false);
+        };
+        const timer = window.setTimeout(() => setLeaveConfirmOpen(false), 8_000);
+        document.addEventListener("mousedown", onDown);
+        document.addEventListener("touchstart", onDown);
+        document.addEventListener("keydown", onKeyDown);
+        return () => {
+            window.clearTimeout(timer);
+            document.removeEventListener("mousedown", onDown);
+            document.removeEventListener("touchstart", onDown);
+            document.removeEventListener("keydown", onKeyDown);
+        };
+    }, [leaveConfirmOpen]);
     const [mediaMenu, setMediaMenu] = useState<"mic" | "camera" | null>(null);
     const mediaMenuRef = useRef<HTMLDivElement | null>(null);
     const backgroundUploadRef = useRef<HTMLInputElement | null>(null);
@@ -987,15 +1011,48 @@ export function LiveKitBottomBar(props: {
                         <div className="hidden md:block">
                             {pipDesktopBtn}
                         </div>
-                        <button
-                            onClick={onLeave}
-                            className="h-10 w-10 rounded-2xl bg-[#F65252] hover:bg-[#E64545] text-white flex items-center justify-center transition md:h-11 md:w-11"
-                            title="Leave room"
-                            aria-label="Leave room"
-                            type="button"
-                        >
-                            <Icon name="leave" theme="dark" className="h-5 w-5" />
-                        </button>
+                        <div className="relative" ref={leaveConfirmRef}>
+                            <button
+                                onClick={() => setLeaveConfirmOpen((open) => !open)}
+                                className="h-10 w-10 rounded-2xl bg-[#F65252] hover:bg-[#E64545] text-white flex items-center justify-center transition md:h-11 md:w-11"
+                                title="Leave room"
+                                aria-label="Leave room"
+                                aria-haspopup="dialog"
+                                aria-expanded={leaveConfirmOpen}
+                                type="button"
+                            >
+                                <Icon name="leave" theme="dark" className="h-5 w-5" />
+                            </button>
+
+                            {leaveConfirmOpen && (
+                                <div
+                                    role="dialog"
+                                    aria-label="Leave the room?"
+                                    className={`absolute bottom-[54px] right-0 w-[220px] rounded-2xl p-3 shadow-xl sm:bottom-[58px] md:left-1/2 md:right-auto md:-translate-x-1/2 ${menuSurface}`}
+                                >
+                                    <div className="text-[13px] font-semibold">Leave the room?</div>
+                                    <div className="mt-3 flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setLeaveConfirmOpen(false)}
+                                            className={`h-9 flex-1 rounded-xl text-[12px] font-semibold transition ${menuItem}`}
+                                        >
+                                            Stay
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setLeaveConfirmOpen(false);
+                                                onLeave();
+                                            }}
+                                            className="h-9 flex-1 rounded-xl bg-[#F65252] text-[12px] font-semibold text-white transition hover:bg-[#E64545]"
+                                        >
+                                            Leave
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     <div className="flex items-center justify-end gap-2">

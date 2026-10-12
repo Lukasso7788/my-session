@@ -10,7 +10,14 @@ const editorialCoverSources = JSON.parse(await readFile(path.resolve("scripts/ed
 const editorialCoverBySlug = new Map(editorialCoverSources.map((source) => [source.slug, source]));
 // Reuse the published starter article rather than maintaining a separate
 // crawler-only copy that can drift from the client-rendered blog page.
-const vite = await createServer({ server: { middlewareMode: true }, appType: "custom" });
+// Only one SSR module is loaded, so skip the app-wide dependency scan that
+// would otherwise be aborted (with noisy errors) when the server closes.
+const vite = await createServer({
+  server: { middlewareMode: true },
+  appType: "custom",
+  logLevel: "error",
+  optimizeDeps: { noDiscovery: true, entries: [] },
+});
 let starterFocusmatePost;
 try {
   ({ starterFocusmatePost } = await vite.ssrLoadModule("/src/data/blogSeed.ts"));
@@ -34,6 +41,7 @@ const pages = [
     type: "article",
     headline: starterFocusmatePost.title,
     publishedAt: starterFocusmatePost.published_at,
+    modifiedAt: starterFocusmatePost.updated_at,
     markdown: starterFocusmatePost.content_markdown,
     breadcrumb: { name: "Blog", path: "/blog" },
     image:
@@ -144,6 +152,7 @@ function renderPage(page) {
       mainEntityOfPage: page.canonical,
       image: page.image,
       datePublished: page.publishedAt,
+      dateModified: page.modifiedAt || page.publishedAt,
       author: { "@type": "Organization", name: "MySession Editorial" },
       publisher: { "@type": "Organization", name: "MySession", url: "https://mysession.club" },
     }).replaceAll("<", "\\u003c");

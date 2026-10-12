@@ -18,6 +18,10 @@ const ROOM_EVENT_ALLOWLIST = new Set([
   "room_disconnected",
   "panel_opened",
   "leave_clicked",
+  "room_crashed",
+  "room_panel_failed",
+  "room_update_deferred",
+  "room_resumed_after_reload",
 ]);
 
 const BLOCKED_PROPERTY_PATTERN =
@@ -226,6 +230,16 @@ export function setAnalyticsUser(userId: string | null): void {
   }
   if (sentryReady && Sentry) Sentry.setUser(safeId ? { id: safeId } : null);
   if (safeId && !sensitiveRoomRoute) (window as AnalyticsWindow).clarity?.("identify", safeId);
+}
+
+/** Reports a caught UI error to Sentry (when configured) without user content. */
+export function captureAppError(error: unknown, area: string): void {
+  if (!isEnabled() || typeof window === "undefined") return;
+  try {
+    if (sentryReady && Sentry) Sentry.captureException(error, { tags: { area } });
+  } catch {
+    // Error reporting must never interrupt a live room.
+  }
 }
 
 export function captureProductEvent(

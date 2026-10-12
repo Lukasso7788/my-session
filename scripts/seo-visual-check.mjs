@@ -1,5 +1,6 @@
 // Optional local visual QA; not part of CI because it needs an installed Chrome.
-// Usage: node scripts/seo-visual-check.mjs http://127.0.0.1:4193 <output-directory>
+// Usage: node scripts/seo-visual-check.mjs http://127.0.0.1:4193 <output-directory> [/route ...]
+// Extra routes replace the default cases and are each checked at mobile and desktop widths.
 import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,12 +10,21 @@ const baseUrl = new URL(process.argv[2] || "http://127.0.0.1:4173");
 const outputDir = path.resolve(process.argv[3] || path.join(tmpdir(), "mysession-seo-visual"));
 const chrome = process.env.CHROME_PATH || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
 const profile = await mkdtemp(path.join(tmpdir(), "mysession-seo-qa-"));
-const cases = [
-  { route: "/body-doubling-app", name: "body-doubling-app-mobile", width: 390, height: 844 },
-  { route: "/body-doubling-app", name: "body-doubling-app-desktop", width: 1440, height: 900 },
-  { route: "/virtual-coworking", name: "virtual-coworking-mobile", width: 390, height: 844 },
-  { route: "/virtual-coworking-for-remote-workers", name: "remote-coworking-desktop", width: 1440, height: 900 },
-];
+const requestedRoutes = process.argv.slice(4);
+const cases = requestedRoutes.length
+  ? requestedRoutes.flatMap((route) => {
+      const name = route.replace(/^\/+|\/+$/g, "").replaceAll("/", "-") || "home";
+      return [
+        { route, name: `${name}-mobile`, width: 390, height: 844 },
+        { route, name: `${name}-desktop`, width: 1440, height: 900 },
+      ];
+    })
+  : [
+      { route: "/body-doubling-app", name: "body-doubling-app-mobile", width: 390, height: 844 },
+      { route: "/body-doubling-app", name: "body-doubling-app-desktop", width: 1440, height: 900 },
+      { route: "/virtual-coworking", name: "virtual-coworking-mobile", width: 390, height: 844 },
+      { route: "/virtual-coworking-for-remote-workers", name: "remote-coworking-desktop", width: 1440, height: 900 },
+    ];
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitForPort(child) {
