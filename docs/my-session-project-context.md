@@ -6,6 +6,17 @@ audited. Never put secret values, tokens, user exports or private logs in this f
 
 ## Checkout and safe working rules
 
+- Latest follow-up (2026-10-12): contain the header plan-popover text and move
+  the membership badge tightly against the wordmark, with a 4px overlap.
+  Checkout/branch remain `.codex-safe-billing-session-notice` /
+  `codex/billing-session-notice`; starting commit `dbcfd70` was verified equal
+  to origin/main. The prior billing release is already pushed. This follow-up
+  is presentation-only: no Supabase grants, expiry, Stripe, paywall or video
+  behavior changed. Commit/push to main requested; no direct deployment promotion.
+  Feature handoff: `docs/header-plan-badge-layout-2026-10-12.md`.
+  The shared `src/components/HeaderPlanBadge.tsx` is used by the real Header and
+  browser fixture. Keep wrapping scoped to the popover and nowrap to the badge.
+
 - Current task (2026-10-12): prepare a remaining-free-session warning starting
   after 12 of 15 attended sessions, plus a clear account subscription cancellation
   flow, then a distinct Founding Member Pro presentation and grant audience review.

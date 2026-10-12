@@ -9,6 +9,7 @@ import {
 import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "./PaywallModal";
 import FreeSessionsNotice from "./FreeSessionsNotice";
+import HeaderPlanBadge from "./HeaderPlanBadge";
 import { useAccountEntitlement } from "../hooks/useAccountEntitlement";
 import { getFreeSessionUsage } from "../lib/freeSessionNotice";
 import { PAYWALL_ENABLED } from "../lib/flags";
@@ -329,49 +330,19 @@ export default function Header() {
                             </button>
 
                             {planBadgeLabel ? (
-                                <div
-                                    className="absolute left-[calc(100%+6px)] -top-[2px] z-20 whitespace-nowrap pb-[12px]"
-                                    onMouseEnter={openPlanPopover}
-                                    onMouseLeave={closePlanPopoverWithDelay}
-                                >
-                                    <button
-                                        type="button"
-                                        onClick={handlePlanBadgeClick}
-                                        className="inline-flex items-center justify-center rounded-[8px] border border-[#2F2F2F] bg-white px-[6px] py-[2px] text-[12px] font-bold leading-none text-[#2F2F2F] shadow-[0_2px_8px_rgba(0,0,0,0.06)]"
-                                        style={{ fontFamily: "Inter, sans-serif" }}
-                                        aria-label={`Current plan: ${planBadgeLabel}`}
-                                        title={planBadgeLabel === "Free" ? "Upgrade plan" : "Plan status"}
-                                    >
-                                        {planBadgeLabel}
-                                    </button>
-
-                                    {planBadgeOpen ? (
-                                        <div className="absolute right-0 top-full mt-0 w-[220px] pt-[8px]">
-                                            <div className="rounded-[14px] border border-[#2F2F2F]/10 bg-white p-3 text-left shadow-[0_12px_32px_rgba(0,0,0,0.12)]">
-                                                <div className="text-[12px] font-semibold text-[#2F2F2F]">
-                                                    {planPopoverTitle}
-                                                </div>
-
-                                                <div className="mt-1 text-[12px] leading-[1.45] text-[#2F2F2F]/75">
-                                                    {planPopoverText}
-                                                </div>
-
-                                                {planBadgeLabel ? (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setPlanBadgeOpen(false);
-                                                            navigate(planBadgeLabel === "Free" ? "/pricing" : "/settings#subscription");
-                                                        }}
-                                                        className="mt-3 w-full rounded-[10px] bg-[#2F2F2F] px-3 py-2 text-[12px] font-semibold text-white transition hover:opacity-90"
-                                                    >
-                                                        {planBadgeLabel === "Free" ? "Upgrade to Pro" : "Manage subscription"}
-                                                    </button>
-                                                ) : null}
-                                            </div>
-                                        </div>
-                                    ) : null}
-                                </div>
+                                <HeaderPlanBadge
+                                    label={planBadgeLabel}
+                                    open={planBadgeOpen}
+                                    title={planPopoverTitle}
+                                    description={planPopoverText}
+                                    onBadgeClick={handlePlanBadgeClick}
+                                    onOpen={openPlanPopover}
+                                    onClose={closePlanPopoverWithDelay}
+                                    onActionClick={() => {
+                                        setPlanBadgeOpen(false);
+                                        navigate(planBadgeLabel === "Free" ? "/pricing" : "/settings#subscription");
+                                    }}
+                                />
                             ) : null}
                         </div>
                     </div>
