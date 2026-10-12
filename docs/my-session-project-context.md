@@ -6,6 +6,19 @@ audited. Never put secret values, tokens, user exports or private logs in this f
 
 ## Checkout and safe working rules
 
+- Latest follow-up (2026-10-12): inset all pre-join chevrons 16px and animate
+  device menus, Audio processing, and background controls. Starting commit
+  `c382349` matched origin/main. Same safe checkout/branch; presentation-only
+  changes in `src/pages/livekit/PreJoinModalLiveKit.tsx`, new `PreJoinMenus.tsx`
+  and scoped CSS. Device IDs, onChange contracts, capture/publishing, effects,
+  subscriptions, and server rules remain parent-owned and unchanged. Native
+  browser select popups cannot be animated, so these three controls now use
+  accessible select-only comboboxes with listboxes. Portals stay inside the modal
+  for accessibility but outside its clipping/scrolling content. Dropdown bounds
+  exclude its header/footer; closed disclosures are inert and respect reduced
+  motion. Feature details/checks: `docs/prejoin-menus-2026-10-12.md`.
+  Commit/push requested; no manual production deployment promotion authorized.
+
 - Latest follow-up (2026-10-12): contain the header plan-popover text and move
   the membership badge tightly against the wordmark, with a 4px overlap.
   Checkout/branch remain `.codex-safe-billing-session-notice` /

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { LocalVideoTrack } from "livekit-client";
 import { ArrowRight, Check, ChevronDown, X } from "lucide-react";
+import { PreJoinDeviceSelect, PreJoinDisclosure } from "./PreJoinMenus";
 
 type RoomTheme = "dark" | "light";
 type FxMode = "off" | "blur" | "bg";
@@ -153,6 +154,10 @@ export function PreJoinModal({
   const [blurDraft, setBlurDraft] = useState<number>(blurStrength);
   const [localFxMessage, setLocalFxMessage] = useState("");
   const [expandedBackgroundChoice, setExpandedBackgroundChoice] = useState<"image" | "custom" | null>(null);
+  const [audioProcessingOpen, setAudioProcessingOpen] = useState(false);
+  useEffect(() => {
+    if (!open) setAudioProcessingOpen(false);
+  }, [open]);
 
   useEffect(() => {
     setBlurDraft(blurStrength);
@@ -273,7 +278,7 @@ export function PreJoinModal({
     document.body.style.overflow = "hidden";
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape" && !e.defaultPrevented) onCancel();
     };
 
     document.addEventListener("keydown", onKey);
@@ -317,13 +322,6 @@ export function PreJoinModal({
   const fxBtnIdle = isLight
     ? "border border-[#D8D0D0] bg-white text-[#2F2F2F] hover:border-[#5286F6]/50 hover:bg-[#5286F6]/10 hover:text-[#2459BE]"
     : "border border-[#343434] bg-[#2F2F2F] text-white/85 hover:border-[#5286F6]/50 hover:bg-[#5286F6]/15 hover:text-[#C4D6FF]";
-  const selectCls = [
-    "h-11 w-full rounded-2xl px-3 text-[13px] outline-none transition focus:ring-2 focus:ring-[#5286F6]/30",
-    isLight ? "border border-[#D8D0D0] bg-white text-[#20242D]" : "border border-[#343434] bg-[#242424] text-white",
-  ].join(" ");
-  const optionStyle: React.CSSProperties = isLight
-    ? { color: "#111111", backgroundColor: "#F3F1F1" }
-    : { color: "#ffffff", backgroundColor: "#242424" };
   const mediaToggleBase = "inline-flex h-12 min-w-0 flex-1 items-center justify-center gap-2.5 rounded-2xl border px-3 text-[13px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6]";
   const mediaToggleOn = isLight ? "border-[#A9C4FC] bg-[#EAF1FF] text-[#2459BE] hover:bg-[#DDE9FF]" : "border-[#5286F6]/45 bg-[#5286F6]/18 text-[#C4D6FF] hover:bg-[#5286F6]/25";
   const mediaToggleOff = isLight ? "border-[#D8D0D0] bg-white text-[#5E5E5E] hover:bg-[#F3F1F1]" : "border-[#343434] bg-[#2F2F2F] text-[#C8C8C8] hover:bg-[#383838]";
@@ -391,6 +389,11 @@ export function PreJoinModal({
       ? "blur"
       : savedBackground ? "custom" : "image";
   const visibleBackgroundChoice = expandedBackgroundChoice || activeBackgroundChoice;
+  const [closingBackgroundChoice, setClosingBackgroundChoice] = useState<BackgroundChoice>("off");
+  useEffect(() => {
+    if (visibleBackgroundChoice !== "off") setClosingBackgroundChoice(visibleBackgroundChoice);
+  }, [visibleBackgroundChoice]);
+  const renderedBackgroundChoice = visibleBackgroundChoice === "off" ? closingBackgroundChoice : visibleBackgroundChoice;
 
   if (!open) return null;
 
@@ -415,7 +418,7 @@ export function PreJoinModal({
         className={`${card} z-10`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className={`relative shrink-0 overflow-hidden border-b px-5 py-4 sm:px-7 sm:py-5 ${border}`}>
+        <div data-prejoin-header className={`relative shrink-0 overflow-hidden border-b px-5 py-4 sm:px-7 sm:py-5 ${border}`}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3.5">
               <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${isLight ? "border-[#C9D9FB] bg-[#EAF1FF] text-[#336BD8]" : "border-[#5286F6]/25 bg-[#5286F6]/15 text-[#9AB9FF]"}`}>
@@ -564,13 +567,14 @@ export function PreJoinModal({
                     </div>
                   </div>
 
-                  {(visibleBackgroundChoice !== "off" || fxBlockedReason || fxError) ? <div className={`border-t px-4 pb-4 ${border}`}>
+                  <PreJoinDisclosure open={!!(visibleBackgroundChoice !== "off" || fxBlockedReason || fxError)}>
+                  <div className={`border-t px-4 pb-4 ${border}`}>
 
                   {fxBlockedReason ? <div className={`mt-2 text-[11px] ${labelCls}`}>{fxBlockedReason}</div> : null}
                   {fxError ? <div className={`mt-3 text-[12px] ${isLight ? "text-[#C73535]" : "text-[#FCA5A5]"}`}>{fxError}</div> : null}
 
-                  {visibleBackgroundChoice === "blur" ? (
-                    <div className="mt-4">
+                  {renderedBackgroundChoice === "blur" ? (
+                    <div className="ms-prejoin-background-content mt-4">
                       <div className="flex items-center justify-between">
                         <div className={`text-[12px] ${labelCls}`}>Blur strength</div>
                         <div className={`text-[12px] ${labelCls}`}>{blurDraft}</div>
@@ -592,7 +596,7 @@ export function PreJoinModal({
                     </div>
                   ) : null}
 
-                  {visibleBackgroundChoice === "image" ? <div className="mt-4">
+                  {renderedBackgroundChoice === "image" ? <div className="ms-prejoin-background-content mt-4">
                     <div className={`text-[12px] ${labelCls}`}>Choose a background image</div>
 
                     <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -666,8 +670,8 @@ export function PreJoinModal({
 
                   </div> : null}
 
-                  {visibleBackgroundChoice === "custom" ? (
-                    <div className="mt-4">
+                  {renderedBackgroundChoice === "custom" ? (
+                    <div className="ms-prejoin-background-content mt-4">
                       <div className="flex items-center justify-between gap-2">
                         <span className={`text-[12px] ${labelCls}`}>Saved on this device</span>
                         <span className={`text-[11px] ${labelCls}`}>Up to 8 MB per image</span>
@@ -725,7 +729,8 @@ export function PreJoinModal({
                       </div>
                     </div>
                   ) : null}
-                  </div> : null}
+                  </div>
+                  </PreJoinDisclosure>
                 </div>
               ) : null}
             </div>
@@ -757,38 +762,23 @@ export function PreJoinModal({
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="flex flex-col gap-2">
                   <label htmlFor="prejoin-microphone" className="text-[12px] font-medium">Microphone</label>
-                  <select id="prejoin-microphone" value={value.audioInputId} onChange={(e) => onChange({ ...value, audioInputId: e.target.value })} className={selectCls}>
-                    <option value="" style={optionStyle}>Default</option>
-                    {devices.audioInputs.map((d, i) => (
-                      <option key={d.deviceId || `mic-${i}`} value={d.deviceId} style={optionStyle}>
-                        {deviceLabel(d, `Microphone ${i + 1}`)}
-                      </option>
-                    ))}
-                  </select>
+                  <PreJoinDeviceSelect id="prejoin-microphone" label="Microphone" theme={theme} value={value.audioInputId}
+                    onChange={(audioInputId) => onChange({ ...value, audioInputId })}
+                    options={[{ value: "", label: "Default" }, ...devices.audioInputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Microphone ${i + 1}`) }))]} />
                 </div>
 
                 <div className="flex flex-col gap-2">
                   <label htmlFor="prejoin-camera" className="text-[12px] font-medium">Camera</label>
-                  <select id="prejoin-camera" value={value.videoInputId} onChange={(e) => onChange({ ...value, videoInputId: e.target.value })} className={selectCls}>
-                    <option value="" style={optionStyle}>Default</option>
-                    {devices.videoInputs.map((d, i) => (
-                      <option key={d.deviceId || `cam-${i}`} value={d.deviceId} style={optionStyle}>
-                        {deviceLabel(d, `Camera ${i + 1}`)}
-                      </option>
-                    ))}
-                  </select>
+                  <PreJoinDeviceSelect id="prejoin-camera" label="Camera" theme={theme} value={value.videoInputId}
+                    onChange={(videoInputId) => onChange({ ...value, videoInputId })}
+                    options={[{ value: "", label: "Default" }, ...devices.videoInputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Camera ${i + 1}`) }))]} />
                 </div>
 
                 <div className="flex flex-col gap-2 sm:col-span-2">
                   <label htmlFor="prejoin-speaker" className="text-[12px] font-medium">Speaker</label>
-                  <select id="prejoin-speaker" value={value.audioOutputId} onChange={(e) => onChange({ ...value, audioOutputId: e.target.value })} className={selectCls}>
-                    <option value="default" style={optionStyle}>Default</option>
-                    {devices.audioOutputs.map((d, i) => (
-                      <option key={d.deviceId || `speaker-${i}`} value={d.deviceId} style={optionStyle}>
-                        {deviceLabel(d, `Speaker ${i + 1}`)}
-                      </option>
-                    ))}
-                  </select>
+                  <PreJoinDeviceSelect id="prejoin-speaker" label="Speaker" theme={theme} value={value.audioOutputId}
+                    onChange={(audioOutputId) => onChange({ ...value, audioOutputId })}
+                    options={[{ value: "default", label: "Default" }, ...devices.audioOutputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Speaker ${i + 1}`) }))]} />
                 </div>
                 </div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -801,11 +791,13 @@ export function PreJoinModal({
                 </div>
               </div>
 
-              <details className={`group border-t pt-4 ${border}`}>
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[13px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5286F6] [&::-webkit-details-marker]:hidden">
+              <div className={`border-t pt-2 ${border}`}>
+                <button type="button" onClick={() => setAudioProcessingOpen(!audioProcessingOpen)} aria-expanded={audioProcessingOpen} aria-controls="prejoin-audio-processing"
+                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl pl-0 pr-4 text-left text-[13px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5286F6]">
                   Audio processing
-                  <ChevronDown size={16} aria-hidden="true" className={`transition-transform group-open:rotate-180 ${labelCls}`} />
-                </summary>
+                  <ChevronDown size={16} aria-hidden="true" className={`ms-prejoin-chevron ${labelCls}`} data-open={audioProcessingOpen} />
+                </button>
+                <PreJoinDisclosure open={audioProcessingOpen} id="prejoin-audio-processing">
                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <label className="flex items-center gap-2 text-[12px]">
                     <input className="accent-[#5286F6]" type="checkbox" checked={value.echoCancellation} onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })} />
@@ -821,13 +813,14 @@ export function PreJoinModal({
                   </label>
                 </div>
                 <p className={`mt-3 text-[11px] leading-4 ${labelCls}`}>Voice quiet or clipped? Try turning noise suppression off.</p>
-              </details>
+                </PreJoinDisclosure>
+              </div>
               <p className={`text-[11px] leading-4 ${labelCls}`}>Allow camera and microphone access in your browser to see device names and preview.</p>
             </div>
           </div>
         </div>
 
-        <div className={`flex shrink-0 items-center justify-between gap-3 border-t px-5 py-4 sm:px-7 sm:py-5 ${border} ${isLight ? "bg-[#F3F1F1]" : "bg-[#202020]"}`}>
+        <div data-prejoin-footer className={`flex shrink-0 items-center justify-between gap-3 border-t px-5 py-4 sm:px-7 sm:py-5 ${border} ${isLight ? "bg-[#F3F1F1]" : "bg-[#202020]"}`}>
           <div className={`hidden items-center gap-2 text-[12px] sm:flex ${labelCls}`}>
             <span className="h-2 w-2 rounded-full bg-[#5286F6] shadow-[0_0_0_4px_rgba(82,134,246,0.14)]" />
             Your choices are saved for next time

@@ -1,0 +1,54 @@
+.ms-prejoin-select {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 44px;
+  border: 1px solid #343434;
+  border-radius: 16px;
+  padding: 0 16px;
+  background: #242424;
+  color: #fff;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+.ms-prejoin-select[data-theme="light"] { border-color: #d8d0d0; background: #fff; color: #20242d; }
+.ms-prejoin-select:hover { border-color: #5286f6; }
+.ms-prejoin-select:focus-visible,
+.ms-prejoin-select[aria-expanded="true"] { border-color: #5286f6; box-shadow: 0 0 0 3px rgb(82 134 246 / 20%); }
+.ms-prejoin-chevron { flex-shrink: 0; transition: transform 200ms ease; }
+.ms-prejoin-chevron[data-open="true"] { transform: rotate(180deg); }
+.ms-prejoin-device-menu {
+  position: fixed;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px;
+  border: 1px solid #454545;
+  border-radius: 14px;
+  background: #242424;
+  color: #fff;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 30%);
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-4px) scale(.98);
+  pointer-events: none;
+  transition: opacity 160ms ease, transform 160ms ease, visibility 0s linear 160ms;
+}
+.ms-prejoin-device-menu[data-theme="light"] { border-color: #d8d0d0; background: #fff; color: #20242d; }
+.ms-prejoin-device-menu[data-open="true"] {
+  visibility: visible; opacity: 1; transform: translateY(0) scale(1); pointer-events: auto;
+  transition-delay: 0s;
+}
+.ms-prejoin-device-option { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 8px 12px; border-radius: 10px; font-size: 13px; cursor: pointer; }
+.ms-prejoin-device-option[data-active="true"] { background: rgb(82 134 246 / 20%); color: #c4d6ff; }
+.ms-prejoin-device-menu[data-theme="light"] .ms-prejoin-device-option[data-active="true"] { background: #eaf1ff; color: #2459be; }
+.ms-prejoin-disclosure { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden; transition: grid-template-rows 220ms ease, opacity 180ms ease, visibility 0s linear 220ms; }
+.ms-prejoin-disclosure[data-open="true"] { grid-template-rows: 1fr; opacity: 1; visibility: visible; transition-delay: 0s; }
+.ms-prejoin-disclosure-content { min-height: 0; overflow: hidden; }
+.ms-prejoin-background-content { animation: ms-prejoin-content-in 180ms ease both; }
+@keyframes ms-prejoin-content-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .ms-prejoin-select, .ms-prejoin-chevron, .ms-prejoin-device-menu, .ms-prejoin-disclosure { transition: none; }
+  .ms-prejoin-background-content { animation: none; }
+}
