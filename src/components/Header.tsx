@@ -4,13 +4,16 @@ import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 import {
     isPersonalPaywallForced,
-    loadEntitlementState,
     type EntitlementState,
 } from "../lib/entitlements";
 import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "./PaywallModal";
+import FreeSessionsNotice from "./FreeSessionsNotice";
+import { useAccountEntitlement } from "../hooks/useAccountEntitlement";
+import { getFreeSessionUsage } from "../lib/freeSessionNotice";
+import { PAYWALL_ENABLED } from "../lib/flags";
+import { getMembershipBadge, isComplimentaryPro } from "../lib/membershipPresentation";
 
-const DEBUG = true;
 const BRAND_BLACK = "#2F2F2F";
 
 const tabs = [
@@ -36,38 +39,10 @@ const tabs = [
 
 type SessionTabId = (typeof tabs)[number]["id"];
 
-function getPlanBadgeLabel(state: EntitlementState | null): "Free" | "Pro" | null {
-    if (!state?.isLoggedIn) return null;
-
-    const plan = String(state?.entitlement?.plan || "free").toLowerCase();
-
-    if (
-        plan === "pro_monthly" ||
-        plan === "pro_yearly" ||
-        plan === "lifetime" ||
-        plan === "founding_free"
-    ) {
-        return "Pro";
-    }
-
-    return "Free";
-}
-
 function getPlanPopoverTitle(state: EntitlementState | null): string {
     if (!state?.isLoggedIn) return "";
-
-    const plan = String(state?.entitlement?.plan || "free").toLowerCase();
-
-    if (
-        plan === "pro_monthly" ||
-        plan === "pro_yearly" ||
-        plan === "lifetime" ||
-        plan === "founding_free"
-    ) {
-        return "Pro plan";
-    }
-
-    return "Free plan";
+    if (state.isUnlimited && state.entitlement?.plan === "founding_free") return "Founding Member Pro";
+    return state.isUnlimited ? "Pro plan" : "Free plan";
 }
 
 function getPlanPopoverText(state: EntitlementState | null): string {
@@ -76,24 +51,26 @@ function getPlanPopoverText(state: EntitlementState | null): string {
     const plan = String(state?.entitlement?.plan || "free").toLowerCase();
     const status = String(state?.entitlement?.status || "active").toLowerCase();
 
-    if (plan === "pro_monthly" || plan === "pro_yearly") {
-        return "Your Pro plan is active.";
+    if (state.isUnlimited && isComplimentaryPro(state.entitlement)) {
+        return "Your complimentary Pro access is active. No recurring payments or automatic renewal.";
     }
 
-    if (plan === "lifetime" || plan === "founding_free") {
-        return "Your Pro access is active.";
+    if (state.isUnlimited && (plan === "pro_monthly" || plan === "pro_yearly")) {
+        return "Manage your plan, billing and cancellation in account settings.";
     }
 
-    if (plan === "free" && status === "trialing") {
-        return "Your account is currently marked as Free in trial state.";
+    if (state.isUnlimited && plan === "founding_free") {
+        return "Free permanent Pro access as a founding member. No subscription or renewal payments.";
     }
 
-    const used = Math.max(0, Number(state.lifetimeSessionsCount || 0));
-    const remaining = Math.max(0, 15 - used);
+    if (state.isUnlimited && plan === "lifetime") {
+        return "Your purchased Lifetime Pro access is active. No renewal payments.";
+    }
 
-    return remaining > 0
-        ? `${remaining} of your 15 free sessions remaining.`
-        : "Your 15 free sessions are used. Upgrade to Pro to continue.";
+    const usage = getFreeSessionUsage({ ...state, enabled: PAYWALL_ENABLED });
+    if (usage) return `${usage.title}. ${Math.min(usage.used, usage.limit)} of ${usage.limit} free sessions used.`;
+    if (state.lifetimeSessionsCount === null) return "Your session usage is temporarily unavailable.";
+    return `${state.lifetimeSessionsCount} sessions attended. Your plan is Free${status === "trialing" ? " (trial)" : ""}.`;
 }
 
 export default function Header() {
@@ -110,7 +87,7 @@ export default function Header() {
     const [hoveredSessionTab, setHoveredSessionTab] = useState<SessionTabId | null>(null);
     const dropdownRef = useRef<HTMLDivElement | null>(null);
 
-    const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
+    const { state: entitlementState } = useAccountEntitlement(user?.id, location.pathname);
     const [planBadgeOpen, setPlanBadgeOpen] = useState(false);
     const planBadgeWrapRef = useRef<HTMLDivElement | null>(null);
     const planBadgeCloseTimeoutRef = useRef<number | null>(null);
@@ -131,7 +108,11 @@ export default function Header() {
         return "group";
     }, [location.pathname, location.search]);
 
-    const planBadgeLabel = useMemo(() => getPlanBadgeLabel(entitlementState), [entitlementState]);
+    const planBadgeLabel = getMembershipBadge({
+        isLoggedIn: Boolean(entitlementState?.isLoggedIn),
+        isUnlimited: Boolean(entitlementState?.isUnlimited),
+        plan: entitlementState?.entitlement?.plan,
+    });
     const planPopoverTitle = useMemo(() => getPlanPopoverTitle(entitlementState), [entitlementState]);
     const planPopoverText = useMemo(() => getPlanPopoverText(entitlementState), [entitlementState]);
 
@@ -209,34 +190,6 @@ export default function Header() {
             document.body.style.overflow = prev;
         };
     }, [mobileMenu]);
-
-    useEffect(() => {
-        let cancelled = false;
-
-        const run = async () => {
-            if (!user?.id) {
-                setEntitlementState(null);
-                return;
-            }
-
-            try {
-                const state = await loadEntitlementState();
-                if (!cancelled) {
-                    setEntitlementState(state);
-                    if (DEBUG) console.log("[DEBUG Header] entitlement state:", state);
-                }
-            } catch (e) {
-                console.error("[DEBUG Header] entitlement load failed:", e);
-                if (!cancelled) setEntitlementState(null);
-            }
-        };
-
-        void run();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [user?.id]);
 
     useEffect(() => {
         return () => {
@@ -377,7 +330,7 @@ export default function Header() {
 
                             {planBadgeLabel ? (
                                 <div
-                                    className="absolute -right-[32px] -top-[2px] z-20 pb-[12px]"
+                                    className="absolute left-[calc(100%+6px)] -top-[2px] z-20 whitespace-nowrap pb-[12px]"
                                     onMouseEnter={openPlanPopover}
                                     onMouseLeave={closePlanPopoverWithDelay}
                                 >
@@ -403,16 +356,16 @@ export default function Header() {
                                                     {planPopoverText}
                                                 </div>
 
-                                                {planBadgeLabel === "Free" ? (
+                                                {planBadgeLabel ? (
                                                     <button
                                                         type="button"
                                                         onClick={() => {
                                                             setPlanBadgeOpen(false);
-                                                            navigate("/pricing");
+                                                            navigate(planBadgeLabel === "Free" ? "/pricing" : "/settings#subscription");
                                                         }}
                                                         className="mt-3 w-full rounded-[10px] bg-[#2F2F2F] px-3 py-2 text-[12px] font-semibold text-white transition hover:opacity-90"
                                                     >
-                                                        Upgrade plan
+                                                        {planBadgeLabel === "Free" ? "Upgrade to Pro" : "Manage subscription"}
                                                     </button>
                                                 ) : null}
                                             </div>
@@ -498,6 +451,11 @@ export default function Header() {
                                                 >
                                                     Settings
                                                 </button>
+
+                                                <button
+                                                    onClick={() => { navigate("/settings#subscription"); setShowUserMenu(false); }}
+                                                    className="w-full text-left px-4 py-2 text-sm font-light hover:bg-slate-50"
+                                                >Subscription</button>
 
                                                 <button
                                                     onClick={() => {
@@ -646,6 +604,8 @@ export default function Header() {
                                             Settings
                                         </button>
 
+                                        <button onClick={() => { navigate("/settings#subscription"); setMobileMenu(false); }} className="text-left">Subscription</button>
+
                                         <button
                                             onClick={async () => {
                                                 await signOut();
@@ -687,6 +647,12 @@ export default function Header() {
                     </div>
                 )}
             </header>
+
+            {location.pathname === "/sessions" ? (
+                <div className="mx-auto w-full max-w-[1180px] px-3 md:px-6">
+                    <FreeSessionsNotice state={entitlementState} />
+                </div>
+            ) : null}
 
             <PaywallModal
                 open={paywallOpen}

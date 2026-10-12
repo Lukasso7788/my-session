@@ -201,7 +201,7 @@ async function loadEntitlementStateForUser(userId: string): Promise<EntitlementS
  * succession. Share one per-user result for two minutes instead of repeating
  * the entitlement + weekly usage + lifetime attendance waterfall.
  */
-export async function loadEntitlementState(): Promise<EntitlementState> {
+export async function loadEntitlementState(options: { forceRefresh?: boolean } = {}): Promise<EntitlementState> {
   const {
     data: { session },
     error: sessionError,
@@ -216,7 +216,7 @@ export async function loadEntitlementState(): Promise<EntitlementState> {
 
   const now = Date.now();
   const cached = entitlementStateCache.get(userId);
-  if (cached && cached.expiresAt > now) {
+  if (!options.forceRefresh && cached && cached.expiresAt > now) {
     return cached.state;
   }
 

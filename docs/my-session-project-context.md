@@ -1,10 +1,35 @@
 # MySession — project architecture and continuation context
 
-Updated: 2026-10-11. This is a project-wide navigation/architecture handoff based on
+Updated: 2026-10-12. This is a project-wide navigation/architecture handoff based on
 the checked-out source, not a claim that every module or production service was
 audited. Never put secret values, tokens, user exports or private logs in this file.
 
 ## Checkout and safe working rules
+
+- Current task (2026-10-12): prepare a remaining-free-session warning starting
+  after 12 of 15 attended sessions, plus a clear account subscription cancellation
+  flow, then a distinct Founding Member Pro presentation and grant audience review.
+  IMPORTANT: the owner's pasted names are EXCLUSIONS from permanent free FM Pro,
+  not recipients. Also exclude accounts with zero canonical attended sessions.
+  Applied on 2026-10-12 at 08:51 Kyiv: 481 eligible attendees granted permanent
+  founding_free/active access; one recipient separately granted six-month Pro ending
+  2027-04-12 at 08:51 Kyiv. The minute-level expiry job is live and verified.
+  Both disputed accounts are now confirmed EXCLUDED by the owner; no extra grant
+  or revocation was needed. One Stripe-linked Pro account remains unchanged pending
+  billing direction. All name/email ambiguity decisions are in the private audit.
+  The owner's primary account was verified as an active permanent founding member
+  and was already included in the 481-account cohort; no duplicate grant was needed.
+  Zero excluded/zero-attendance FM grants and zero unrequested entitlement changes
+  were independently verified. UI/badge changes are still local, not deployed.
+  Checkout: `C:\projects\my-session\.codex-safe-billing-session-notice`,
+  branch `codex/billing-session-notice`, base `b66f09a` from `origin/main`.
+  On 2026-10-12 the owner explicitly requested commit and push to main. Release
+  subject: feat(billing): add Founding Member Pro and subscription controls.
+  No separate deployment promotion or paywall activation is authorized. Use Git
+  history/remote refs to verify publication; a push alone is not live deployment proof.
+  Do not merge or overwrite the separate unfinished video-audit implementation.
+  Full feature handoff: `docs/billing-session-notice-2026-10-12.md`.
+  Grant/presentation handoff: `docs/founding-members-2026-10-12.md`.
 
 - Repository: Lukasso7788/my-session. Deployment branch is main (not necessarily
   the remote default branch). Do not force-push or rewrite shared history.

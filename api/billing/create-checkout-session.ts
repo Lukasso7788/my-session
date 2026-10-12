@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Stripe from "stripe";
 import { randomUUID } from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { createSubscriptionPortal, subscriptionManagementSummary, type BillingIdentity } from "../_lib/stripeSubscriptionPortal.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2026-03-25.dahlia",
@@ -14,7 +15,7 @@ const supabaseAdmin = createClient(
 
 const APP_URL = process.env.APP_URL || "http://localhost:5173";
 
-type CheckoutKind = "subscription" | "host_support" | "customer_portal";
+type CheckoutKind = "subscription" | "host_support" | "customer_portal" | "subscription_status";
 
 type SupportedPlan = "pro_monthly" | "pro_yearly" | "lifetime" | "india_upi_monthly";
 type EntitlementPlan = "pro_monthly" | "pro_yearly" | "lifetime";
@@ -25,11 +26,11 @@ const SUPPORTED_PLANS: SupportedPlan[] = [
   "lifetime",
   "india_upi_monthly",
 ];
-async function createCustomerPortalSession(user: any) {
+async function getBillingIdentity(userId: string): Promise<BillingIdentity | null> {
   const { data: entitlement, error } = await supabaseAdmin
     .from("user_entitlements")
-    .select("stripe_customer_id")
-    .eq("user_id", String(user.id || ""))
+    .select("plan,stripe_customer_id,stripe_subscription_id")
+    .eq("user_id", userId)
     .maybeSingle();
 
   if (error) {
@@ -37,15 +38,7 @@ async function createCustomerPortalSession(user: any) {
     throw new Error("billing_profile_lookup_failed");
   }
 
-  const customerId = String(entitlement?.stripe_customer_id || "").trim();
-  if (!customerId) throw new Error("billing_profile_not_found");
-
-  const session = await stripe.billingPortal.sessions.create({
-    customer: customerId,
-    return_url: `${APP_URL.replace(/\/$/, "")}/settings`,
-  });
-
-  return { url: session.url };
+  return entitlement;
 }
 
 function looksLikeUuid(v: string) {
@@ -369,6 +362,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const body = (req.body || {}) as {
       checkoutKind?: CheckoutKind;
+      portalAction?: "manage" | "cancel";
       plan?: SupportedPlan;
       hostUserId?: string;
       sessionId?: string | null;
@@ -389,8 +383,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (checkoutKind === "customer_portal") {
-      const result = await createCustomerPortalSession(user);
+      const action = body.portalAction || "manage";
+      if (action !== "manage" && action !== "cancel") return res.status(400).json({ error: "invalid_portal_action" });
+      const identity = await getBillingIdentity(user.id);
+      const result = await createSubscriptionPortal(stripe, identity, action, APP_URL, process.env.STRIPE_BILLING_PORTAL_CONFIGURATION_ID);
+      res.setHeader("Cache-Control", "no-store");
       return res.status(200).json(result);
+    }
+
+    if (checkoutKind === "subscription_status") {
+      const identity = await getBillingIdentity(user.id);
+      const subscription = await subscriptionManagementSummary(stripe, identity, process.env.STRIPE_BILLING_PORTAL_CONFIGURATION_ID);
+      res.setHeader("Cache-Control", "no-store");
+      return res.status(200).json({ subscription });
     }
 
     const result = await createSubscriptionCheckout({
@@ -411,11 +416,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       message === "invalid_amount_min_2" ||
       message === "cannot_support_yourself" ||
       message === "billing_profile_not_found" ||
+      message === "billing_subscription_not_found" ||
+      message === "billing_subscription_not_cancelable" ||
+      message === "billing_cancellation_not_configured" ||
       message === "Invalid plan"
         ? 400
         : message === "host_not_found"
           ? 404
-          : message === "host_support_not_enabled"
+          : message === "host_support_not_enabled" || message === "billing_subscription_mismatch"
             ? 403
             : 500;
 

@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import { isRecurringBillingPlan, subscriptionPeriodEnd } from "../_lib/stripeSubscriptionPortal.js";
 import {
   AFFILIATE_TERMS_VERSION,
   LEGACY_AFFILIATE_TERMS_VERSION,
@@ -793,20 +794,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (event.type === "customer.subscription.deleted") {
       const subscription = event.data.object as any;
       const entitlement = await findEntitlementByStripeObject(subscription);
-      if (entitlement?.user_id) {
-        await supabaseAdmin
+      if (entitlement?.user_id && isRecurringBillingPlan(entitlement.plan)) {
+        const { error: cancellationError } = await supabaseAdmin
           .from("user_entitlements")
-          .update({ status: "cancelled", updated_at: new Date().toISOString() })
+          .update({ status: "canceled", updated_at: new Date().toISOString() })
           .eq("user_id", entitlement.user_id);
+        if (cancellationError) throw cancellationError;
         await enqueueStripeLifecycleEvent({
           userId: entitlement.user_id,
           eventType: "subscription_cancelled",
           idempotencyKey: `subscription_cancelled:${subscription.id}:${subscription.canceled_at || event.created}`,
           properties: {
             plan: "free",
-            access_ends_at: subscription.current_period_end
-              ? new Date(subscription.current_period_end * 1000).toISOString()
-              : "",
+            access_ends_at: subscriptionPeriodEnd(subscription) || "",
           },
         });
       }
@@ -819,8 +819,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         previous,
         "cancel_at_period_end",
       );
-      const entitlement = cancellationChanged
+      const matchingEntitlement = cancellationChanged
         ? await findEntitlementByStripeObject(subscription)
+        : null;
+      const entitlement = matchingEntitlement && isRecurringBillingPlan(matchingEntitlement.plan)
+        ? matchingEntitlement
         : null;
 
       if (entitlement?.user_id && subscription.cancel_at_period_end === true) {
@@ -830,9 +833,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           idempotencyKey: `subscription_cancelled:${event.id}`,
           properties: {
             plan: entitlement.plan || "free",
-            access_ends_at: subscription.current_period_end
-              ? new Date(subscription.current_period_end * 1000).toISOString()
-              : "",
+            access_ends_at: subscriptionPeriodEnd(subscription) || "",
           },
         });
       }
