@@ -1,11 +1,14 @@
-/* Ripple loader: rings are born as a dot in the centre and widen outwards,
-   one every 0.5s. Geometry is SMIL-animated in the component; flat brand
-   colours only, as everywhere in MySession. */
+/* Compact ripple + "Loading" word. Rings are born as a dot in the centre and
+   widen outwards, one every 0.5s (SMIL geometry in the component); the word's
+   letters brighten in a left-to-right wave. Flat brand colours only, as
+   everywhere in MySession. */
 .ms-room-joining {
   --joining-ink: #f5f5f6;
-  display: grid;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   max-width: 100%;
+  color: var(--joining-ink);
   pointer-events: none;
 }
 .ms-room-joining[data-theme="light"] { --joining-ink: #2f2f2f; }
@@ -23,11 +26,23 @@
 }
 
 .ms-room-joining-ripple,
-.ms-room-joining-still { display: block; width: 48px; height: 48px; overflow: visible; }
+.ms-room-joining-still { display: block; flex-shrink: 0; width: 20px; height: 20px; overflow: visible; }
 .ms-room-joining circle { fill: none; stroke: var(--joining-ink); }
 .ms-room-joining-still { display: none; }
+
+.ms-room-joining-word { font-size: 20px; font-weight: 500; line-height: 1; letter-spacing: 0.01em; white-space: nowrap; }
+.ms-room-joining-word > span {
+  display: inline-block;
+  opacity: 0.35;
+  animation: ms-room-joining-letter 1.4s ease-in-out infinite both;
+}
+@keyframes ms-room-joining-letter {
+  0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+  25% { opacity: 1; transform: translateY(-1.5px); }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .ms-room-joining-ripple { display: none; }
   .ms-room-joining-still { display: block; }
+  .ms-room-joining-word > span { animation: none; opacity: 0.8; }
 }

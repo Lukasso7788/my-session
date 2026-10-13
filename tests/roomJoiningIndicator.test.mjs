@@ -28,15 +28,22 @@ test("both themes and custom status text are supported", () => {
   assert.match(css, /--joining-ink: #f5f5f6/);
   assert.match(css, /--joining-ink: #2f2f2f/);
 });
-test("two ripples half a cycle apart, plain colours, no visible text", () => {
+test("compact 20px ripple, two rings half a cycle apart, plain colours", () => {
   const html = renderToStaticMarkup(createElement(Indicator, { theme: "dark" }));
   assert.equal((html.match(/attributeName="r"/g) || []).length, 2);
   assert.equal((html.match(/attributeName="stroke-width"/g) || []).length, 2);
   assert.match(html, /begin="0s"/);
   assert.match(html, /begin="-0.5s"/);
+  assert.match(css, /width: 20px; height: 20px/);
   assert.doesNotMatch(source + css, /gradient|drop-shadow|box-shadow/i);
+});
+test("visible 'Loading' word animates letter by letter and is hidden from screen readers", () => {
+  const html = renderToStaticMarkup(createElement(Indicator, { theme: "dark" }));
+  assert.match(html, /<span class="ms-room-joining-word" aria-hidden="true">/);
   const visible = html.replace(/<span class="ms-room-joining-accessible">[^<]*<\/span>/, "").replace(/<[^>]+>/g, "");
-  assert.equal(visible.trim(), "");
+  assert.equal(visible.trim(), "Loading");
+  assert.equal((html.match(/animation-delay:/g) || []).length, 7);
+  assert.match(css, /ms-room-joining-letter 1\.4s ease-in-out infinite/);
 });
 test("keyframe lists line up and reduced motion shows a still ring", () => {
   const list = (name) => source.match(new RegExp(`const ${name} = "([^"]+)"`))[1].split(";");

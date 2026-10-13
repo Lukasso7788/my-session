@@ -11,7 +11,12 @@ const KEY_TIMES = "0;0.067;0.133;0.2;0.267;0.333;0.4;0.467;0.533;0.6;0.667;0.733
 const RADIUS = "0;0.85;1.35;2.9;4.7;5.8;7.2;8.9;9.8;11;12.25;12.9;13;13";
 const STROKE = "0;1.7;2.7;2.8;3.1;3.1;3;2.4;1.9;1.5;0.8;0.2;0;0";
 
-/** Ripple loader for the temporary joining state; the label is for screen readers. */
+const WORD = "Loading";
+
+/**
+ * Small ripple with a "Loading" word whose letters brighten in a wave, for the
+ * temporary joining state. The label is what screen readers announce.
+ */
 export default function RoomJoiningIndicator({ theme, label = "Joining room…" }: Props) {
   return (
     <div className="ms-room-joining" data-theme={theme} role="status" aria-live="polite">
@@ -27,6 +32,11 @@ export default function RoomJoiningIndicator({ theme, label = "Joining room…" 
       <svg className="ms-room-joining-still" viewBox="-14 -14 28 28" aria-hidden="true" focusable="false">
         <circle r="5.8" strokeWidth="3.1" />
       </svg>
+      <span className="ms-room-joining-word" aria-hidden="true">
+        {WORD.split("").map((letter, index) => (
+          <span key={index} style={{ animationDelay: `${index * 0.09}s` }}>{letter}</span>
+        ))}
+      </span>
     </div>
   );
 }
