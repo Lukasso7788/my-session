@@ -14,11 +14,11 @@ const Indicator = compiled.exports.default;
 const css = readFileSync("src/components/room-joining-indicator.css", "utf8");
 const room = readFileSync("src/pages/RoomPageLiveKit.tsx", "utf8");
 
-test("joining status is announced to screen readers while the ripple is decorative", () => {
+test("joining status is announced to screen readers while the dots are decorative", () => {
   const html = renderToStaticMarkup(createElement(Indicator, { theme: "dark" }));
   assert.match(html, /role="status" aria-live="polite"/);
   assert.match(html, /ms-room-joining-accessible">Joining room…/);
-  assert.match(html, /<svg class="ms-room-joining-ripple"[^>]*aria-hidden="true"/);
+  assert.match(html, /<svg class="ms-room-joining-dots"[^>]*aria-hidden="true"/);
   assert.doesNotMatch(html, /progressbar|aria-valuenow/);
 });
 test("both themes and custom status text are supported", () => {
@@ -28,14 +28,14 @@ test("both themes and custom status text are supported", () => {
   assert.match(css, /--joining-ink: #ffffff/);
   assert.match(css, /--joining-ink: #2f2f2f/);
 });
-test("compact 16px ripple, two rings half a cycle apart, plain colours", () => {
+test("outer dots close in on the middle dot every 0.5s, flat colours", () => {
   const html = renderToStaticMarkup(createElement(Indicator, { theme: "dark" }));
-  assert.equal((html.match(/attributeName="r"/g) || []).length, 2);
-  assert.equal((html.match(/attributeName="stroke-width"/g) || []).length, 2);
-  assert.match(html, /begin="0s"/);
-  assert.match(html, /begin="-0.5s"/);
-  assert.match(css, /width: 16px; height: 16px/);
+  assert.equal((html.match(/attributeName="cx"/g) || []).length, 2);
+  assert.equal((html.match(/attributeName="r"/g) || []).length, 1);
+  assert.equal((html.match(/dur="0.5s"/g) || []).length, 3);
+  assert.match(css, /ms-room-joining-dots,\s*\.ms-room-joining-still \{[^}]*width: 20px; height: 10px/);
   assert.match(css, /ms-room-joining-word \{ font-size: 16px;/);
+  assert.match(css, /\.ms-room-joining circle \{ fill: var\(--joining-ink\); \}/);
   assert.doesNotMatch(source + css, /gradient|drop-shadow|box-shadow/i);
 });
 test("visible 'Loading' word animates letter by letter and is hidden from screen readers", () => {
@@ -46,15 +46,16 @@ test("visible 'Loading' word animates letter by letter and is hidden from screen
   assert.equal((html.match(/animation-delay:/g) || []).length, 7);
   assert.match(css, /ms-room-joining-letter 1\.4s ease-in-out infinite/);
 });
-test("keyframe lists line up and reduced motion shows a still ring", () => {
+test("keyframe lists line up, stay symmetric, and reduced motion shows still dots", () => {
   const list = (name) => source.match(new RegExp(`const ${name} = "([^"]+)"`))[1].split(";");
   const times = list("KEY_TIMES").map(Number);
-  assert.equal(list("RADIUS").length, times.length);
-  assert.equal(list("STROKE").length, times.length);
+  for (const name of ["LEFT_X", "RIGHT_X", "MIDDLE_R"]) assert.equal(list(name).length, times.length, name);
+  assert.deepEqual(list("LEFT_X").map((x) => -Number(x)), list("RIGHT_X").map(Number));
   assert.deepEqual([...times].sort((a, b) => a - b), times);
   assert.equal(times[0], 0);
   assert.equal(times.at(-1), 1);
-  assert.match(css, /prefers-reduced-motion: reduce[\s\S]*ms-room-joining-ripple \{ display: none; \}[\s\S]*ms-room-joining-still \{ display: block; \}/);
+  assert.equal(list("LEFT_X")[0], list("LEFT_X").at(-1));
+  assert.match(css, /prefers-reduced-motion: reduce[\s\S]*ms-room-joining-dots \{ display: none; \}[\s\S]*ms-room-joining-still \{ display: block; \}/);
   assert.doesNotMatch(source, /useEffect|setTimeout|fetch\(|Math\.random/);
 });
 test("real room integration retains the existing joining condition and error surface", () => {

@@ -4,28 +4,30 @@ Replaces the visible "Joining room…" text in the LiveKit video zone
 (`RoomPageLiveKit.tsx`, the `roomReadyText` block) with
 `src/components/RoomJoiningIndicator.tsx`. The display condition
 (`connected` / `prejoinOpen` / `joinRequested`) and the error surface are
-unchanged; no join, reconnect, token or media code was touched.
+unchanged; no join, reconnect, token or media code was touched. While an
+in-place connect retry runs, its "The connection is slow. Trying again…" text
+is shown as a caption under the loader.
 
 ## Design
 
-- Ripple loader requested by the owner from a Pinterest reference (third row,
-  second from the left of a loader-icon sheet): a centre dot swells into a disc,
-  opens into a ring, the ring widens and thins out; a new ring every 0.5s.
-- Geometry comes from frame measurements of that reference (30 fps). Ring
-  radii and timing follow it; strokes are about two thirds of its weight at
-  the owner's request.
-- Flat brand colours only, matching the rest of MySession: `#F5F5F6` on the
-  dark room, `#2F2F2F` on the light room. No gradients or shadows. 48px.
-- Earlier rejected directions: four-portrait room scene, network bars, dots,
-  bottom line, ring spinner, logo wave, sliding tiles.
+- Dots + word, chosen by the owner from a Pinterest loader-icon sheet (first
+  row, fifth from the left): every 0.5s two outer dots close in on a small
+  middle dot, absorb it, touch, and spring back while it reappears.
+- Geometry comes from frame measurements of that reference (30 fps).
+- Next to it a 16px "Loading" word; a soft dimming wave runs across the letters.
+- Flat colours only: `#FFFFFF` on the dark room, `#2F2F2F` on the light room.
+  No gradients or shadows. Dots icon is 20x10px so the dots read at the weight
+  of 16px text.
+- Earlier tries the owner turned down: four-portrait room scene, ring spinner,
+  logo wave, sliding tiles, a 48px ripple (third row, second from the left).
 
 ## Implementation
 
-- Two `<circle>`s animate `r` and `stroke-width` with SMIL (`dur=1s`, begins
-  `0s` and `-0.5s`), keyTimes shared in `KEY_TIMES`.
+- Three `<circle>`s; the outer ones animate `cx`, the middle one `r`, with SMIL
+  (`dur=0.5s`, spline easing), shared `KEY_TIMES`.
 - `role="status"` / `aria-live="polite"` with the label kept screen-reader only;
-  the artwork is `aria-hidden`.
-- `prefers-reduced-motion: reduce` swaps to a still ring.
+  the dots and the visible word are `aria-hidden`.
+- `prefers-reduced-motion: reduce` swaps to still dots and a still word.
 
 ## Verification
 
