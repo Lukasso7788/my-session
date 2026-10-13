@@ -42,6 +42,7 @@ import { createPiPAvatarCache } from "../lib/pipAvatarCache";
 import { invalidateHostLeaseCache } from "../lib/supabaseFetchOptimizer";
 import { withTimeout } from "../lib/promiseTimeout";
 import { readSessionRoomPolicies, shouldEnforceMediaPolicyForRole, withRoomPolicies, type RoomPolicies } from "../lib/roomPolicies";
+import { installBackgroundSafeLiveKitTimers } from "../lib/backgroundSafeTimers";
 import {
   type VideoQualityChoice,
   readReceiveVideoQuality,
@@ -205,6 +206,15 @@ function PiPPortalWithCountdown({
 }
 
 const PARTICIPANT_CONTROL_TOPIC = "mysession.participant-control.v1";
+// Sent just before an intentional Leave, so others can tell it from a dropped
+// connection (LiveKit does not tell remote participants why someone left).
+const PRESENCE_TOPIC = "mysession.presence.v1";
+// How long others keep a dropped participant's tile, marked Reconnecting,
+// before treating it as leaving.
+const RECONNECT_GRACE_MS = 60_000;
+
+// Keep LiveKit's keep-alive pings on time in hidden tabs (see the module).
+installBackgroundSafeLiveKitTimers();
 const SHARED_TAB_MUSIC_TRACK_NAME = "shared_tab_music";
 
 type VoiceUiCommand =
@@ -3275,6 +3285,15 @@ function isTabletOrMobilePiPRuntime(): boolean {
     /android|iphone|ipad|ipod|mobile|tablet/.test(userAgent) ||
     iPadUsingDesktopUserAgent
   );
+}
+
+// Reconnecting after a drop used to wait until the tab was visible again, so
+// a desktop user who stayed on another tab looked gone to everyone until they
+// came back. Desktop browsers keep running a hidden tab, so recover there right
+// away; phones and tablets still wait for the page to be visible.
+function canRecoverRoomNow(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.visibilityState === "visible" || !isTabletOrMobilePiPRuntime();
 }
 
 function isAppleMobilePiPRuntime(): boolean {
@@ -13851,6 +13870,17 @@ export function RoomPageLiveKit({
 
   // RAF-scheduled rebuild
   const rebuildRafRef = useRef<number | null>(null);
+  // Dropped participants waiting out the reconnect grace period, by user.
+  const reconnectingParticipantsRef = useRef(new Map<string, { tile: TileModel; timer: number }>());
+  // When each user announced an intentional Leave (see PRESENCE_TOPIC).
+  const intentionalLeaveAtRef = useRef(new Map<string, number>());
+  const lastRemoteTilesRef = useRef<TileModel[]>([]);
+  const clearReconnectingParticipants = () => {
+    reconnectingParticipantsRef.current.forEach((entry) => window.clearTimeout(entry.timer));
+    reconnectingParticipantsRef.current.clear();
+    intentionalLeaveAtRef.current.clear();
+    lastRemoteTilesRef.current = [];
+  };
   const scheduleRebuildTiles = () => {
     if (rebuildRafRef.current) return;
     rebuildRafRef.current = window.requestAnimationFrame(() => {
@@ -14114,6 +14144,18 @@ export function RoomPageLiveKit({
       }
     });
 
+    // People whose connection dropped keep their tile (no video, marked
+    // Reconnecting) until they return or the grace period ends.
+    const presentUserKeys = new Set(
+      Array.from(room.remoteParticipants.values())
+        .map((rp) => extractBaseUserIdFromIdentity(String(rp.identity || "")))
+        .filter(Boolean),
+    );
+    reconnectingParticipantsRef.current.forEach((entry, userKey) => {
+      if (!presentUserKeys.has(userKey)) next.push(entry.tile);
+    });
+    lastRemoteTilesRef.current = next;
+
     setTiles((prev) => (areTileListsEqual(prev, next) ? prev : next));
 
     requestRemoteScreenShareSubscriptions(room);
@@ -14163,6 +14205,7 @@ export function RoomPageLiveKit({
       setMicOn(false);
       setCamOn(false);
       setScreenShareOn(false);
+      clearReconnectingParticipants();
       setTiles([]);
       setScreenShareTiles([]);
       setFxStatusText("");
@@ -14542,7 +14585,7 @@ export function RoomPageLiveKit({
             closeMobileRestoreState();
           }
 
-          if (document.visibilityState === "visible") {
+          if (canRecoverRoomNow()) {
             if (unexpectedDisconnectRecoveryTimerRef.current) {
               window.clearTimeout(unexpectedDisconnectRecoveryTimerRef.current);
             }
@@ -14618,14 +14661,65 @@ export function RoomPageLiveKit({
         setMediaWarning("");
         refresh();
       });
-      r.on(RoomEvent.ParticipantConnected, () => {
-        if (joinSoundEnabledRef.current) {
+      r.on(RoomEvent.ParticipantConnected, (participant: RemoteParticipant) => {
+        // Someone coming back from a dropped connection just takes their tile
+        // back: no join sound.
+        const userKey = extractBaseUserIdFromIdentity(String(participant?.identity || ""));
+        const returning = userKey ? reconnectingParticipantsRef.current.get(userKey) : undefined;
+        if (returning) {
+          window.clearTimeout(returning.timer);
+          reconnectingParticipantsRef.current.delete(userKey);
+        } else if (joinSoundEnabledRef.current) {
           playOneShotFromCandidates(JOIN_SOUND_CANDIDATES, 0.8);
         }
         refresh();
       });
-      r.on(RoomEvent.ParticipantDisconnected, () => {
-        if (leaveSoundEnabledRef.current) {
+      r.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
+        const identity = String(participant?.identity || "");
+        const userKey = extractBaseUserIdFromIdentity(identity);
+        const leftOnPurpose =
+          !!userKey && Date.now() - (intentionalLeaveAtRef.current.get(userKey) || 0) < 15_000;
+        if (userKey) intentionalLeaveAtRef.current.delete(userKey);
+        // The same person still here in another tab has not gone anywhere.
+        const stillPresent = !!userKey && Array.from(r.remoteParticipants.values())
+          .some((rp) => extractBaseUserIdFromIdentity(String(rp.identity || "")) === userKey);
+        const snapshot = !leftOnPurpose && !stillPresent && roomRef.current === r
+          ? lastRemoteTilesRef.current.find((tile) => !tile.isLocal && tile.participantIdentity === identity)
+          : undefined;
+
+        if (snapshot && userKey) {
+          // A drop rather than a Leave: keep their tile, marked Reconnecting,
+          // for a grace period, and only then treat it as a leave.
+          const previous = reconnectingParticipantsRef.current.get(userKey);
+          if (previous) window.clearTimeout(previous.timer);
+          const timer = window.setTimeout(() => {
+            const entry = reconnectingParticipantsRef.current.get(userKey);
+            if (!entry || entry.timer !== timer) return;
+            reconnectingParticipantsRef.current.delete(userKey);
+            if (leaveSoundEnabledRef.current && roomRef.current === r) {
+              playOneShotFromCandidates(LEAVE_SOUND_CANDIDATES, 0.8);
+            }
+            scheduleRebuildTiles();
+          }, RECONNECT_GRACE_MS);
+          reconnectingParticipantsRef.current.set(userKey, {
+            timer,
+            tile: {
+              ...snapshot,
+              status: "reconnecting",
+              videoTrack: undefined,
+              audioTrack: undefined,
+              audioLevel: 0,
+              isSpeaking: false,
+              micMuted: true,
+              micTrackSid: undefined,
+              camTrackSid: undefined,
+              remoteMicPubSid: undefined,
+              camPubExists: false,
+              camPubHasTrack: false,
+              camPubMuted: true,
+            },
+          });
+        } else if (!stillPresent && leaveSoundEnabledRef.current) {
           playOneShotFromCandidates(LEAVE_SOUND_CANDIDATES, 0.8);
         }
         refresh();
@@ -14658,6 +14752,13 @@ export function RoomPageLiveKit({
       r.on(
         RoomEvent.DataReceived,
         ((payload: Uint8Array, sender?: RemoteParticipant, _kind?: unknown, topic?: string) => {
+          if (topic === PRESENCE_TOPIC && sender) {
+            // The sender is leaving on purpose: their disconnect is a real
+            // leave, not a dropped connection to wait for.
+            const leavingUserId = extractBaseUserIdFromIdentity(String(sender.identity || ""));
+            if (leavingUserId) intentionalLeaveAtRef.current.set(leavingUserId, Date.now());
+            return;
+          }
           if (topic !== PARTICIPANT_CONTROL_TOPIC || !sender) return;
 
           const senderIdentity = String(sender.identity || "").trim();
@@ -17232,7 +17333,7 @@ export function RoomPageLiveKit({
       // Go straight to a fresh token instead of spending a full connection cycle
       // retrying a stale JWT first.
       for (let attempt = 0; attempt < 2 && !roomIsActuallyConnected(); attempt += 1) {
-        if (document.visibilityState !== "visible") return;
+        if (!canRecoverRoomNow()) return;
 
         setLkToken("");
         lkTokenRef.current = "";
@@ -17323,7 +17424,7 @@ export function RoomPageLiveKit({
     const scheduleRecoveryRetry = () => {
       if (mobileRecoveryRetryTimerRef.current) return;
       if (mobileAutoRestoreInFlightRef.current) return;
-      if (document.visibilityState !== "visible") return;
+      if (!canRecoverRoomNow()) return;
       if (roomIsActuallyConnected()) return;
       if (!readMobileRoomLease(sessionId, authUserId)) return;
 
@@ -17339,7 +17440,7 @@ export function RoomPageLiveKit({
     };
 
     const restoreFromLease = (resetBackoff = true) => {
-      if (document.visibilityState !== "visible") return;
+      if (!canRecoverRoomNow()) return;
 
       const lease = readMobileRoomLease(sessionId, authUserId);
       if (!lease) return;
@@ -17404,7 +17505,8 @@ export function RoomPageLiveKit({
 
     const onVisibilityChange = () => {
       if (document.visibilityState !== "visible") {
-        clearRecoveryRetry();
+        // Desktop keeps retrying in the background (see canRecoverRoomNow).
+        if (!canRecoverRoomNow()) clearRecoveryRetry();
         return;
       }
       restoreFromLease(true);
@@ -17705,6 +17807,20 @@ export function RoomPageLiveKit({
     // Attendance has a keepalive fallback on pagehide, and a temporary host
     // lease expires automatically if its explicit release cannot finish.
     const cleanupPromise = (async () => {
+      // Tell the room this is a real Leave, so others drop the tile with the
+      // leave sound right away instead of waiting for a reconnect.
+      try {
+        const announced = roomRef.current?.localParticipant?.publishData(
+          new TextEncoder().encode(JSON.stringify({ type: "leaving" })),
+          { reliable: true, topic: PRESENCE_TOPIC },
+        );
+        if (announced) {
+          await Promise.race([announced.catch(() => { }), new Promise((resolve) => window.setTimeout(resolve, 300))]);
+        }
+      } catch {
+        // Best effort: without it others just wait out the grace period.
+      }
+
       if (isTemporaryRoomHost && sessionId) {
         try {
           await supabase.rpc("release_infinite_room_host", {
