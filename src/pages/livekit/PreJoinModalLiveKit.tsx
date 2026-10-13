@@ -150,6 +150,7 @@ export function PreJoinModal({
   const attachedPreviewElRef = useRef<HTMLElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadSlotRef = useRef<string | null>(null);
+  const joinFromKeyboardRef = useRef<() => void>(() => { });
   const testAudioRef = useRef<HTMLAudioElement | null>(null);
   const [blurDraft, setBlurDraft] = useState<number>(blurStrength);
   const [localFxMessage, setLocalFxMessage] = useState("");
@@ -279,6 +280,17 @@ export function PreJoinModal({
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !e.defaultPrevented) onCancel();
+      // Enter joins from the name field or anywhere outside a control;
+      // buttons, menus and checkboxes keep their own Enter behaviour.
+      if (e.key === "Enter" && !e.defaultPrevented && !e.isComposing && !e.repeat) {
+        const target = e.target as HTMLElement | null;
+        const textField = target instanceof HTMLInputElement && (target.type === "text" || target.type === "");
+        const control = !!target?.closest?.('button, a, select, textarea, input, [role="combobox"], [role="listbox"], [role="option"]');
+        if (textField || !control) {
+          e.preventDefault();
+          joinFromKeyboardRef.current();
+        }
+      }
     };
 
     document.addEventListener("keydown", onKey);
@@ -365,6 +377,9 @@ export function PreJoinModal({
   const handleJoin = () => {
     onPrepareAudioGesture?.();
     onJoin();
+  };
+  joinFromKeyboardRef.current = () => {
+    if (!fxApplying) handleJoin();
   };
 
   const handleTestSpeaker = () => {

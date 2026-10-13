@@ -2293,6 +2293,9 @@ const ROOM_CONNECT_TIMEOUT_MS = 32_000;
 const ROOM_INITIAL_CONNECT_ATTEMPTS = 3;
 const ROOM_INITIAL_CONNECT_RETRY_DELAYS_MS = [1_500, 3_000];
 const ROOM_TOKEN_TIMEOUT_MS = 15_000;
+// LiveKit tokens live for hours; a prejoin prefetch older than this is
+// refetched anyway so admission checks stay current.
+const PREFETCHED_TOKEN_MAX_AGE_MS = 10 * 60_000;
 const VOICE_LEAVE_CONFIRM_WINDOW_MS = 8_000;
 
 type MobileRoomLease = {
@@ -10732,6 +10735,128 @@ export function RoomPageLiveKit({
   // `recovery`: the person is already in the room (background return or
   // reconnect). A failed request must keep the room and its restore overlay,
   // not send them back to prejoin; the recovery loop retries with backoff.
+  // One description of the token request, shared by the real request and the
+  // prejoin prefetch. `key` changes whenever anything that goes into the
+  // token changes (name, role, invite, tab identity).
+  const describeTokenRequest = () => {
+    if (!session) return null;
+    const pj = prejoinRef.current;
+    const nameToUse =
+      (pj.displayName || displayName || userName || "User").trim() || "User";
+    const roomName = safeRoomName(`session-${session.id}`);
+    const baseUser = safeIdentity(
+      (authUserId && looksLikeUuid(authUserId)
+        ? authUserId
+        : authUserId || nameToUse) as any,
+    );
+    const identity = safeIdentity(`${baseUser}--${tabId}`);
+    const body = {
+      roomName,
+      identity,
+      name: nameToUse,
+      isHost,
+      sessionId: session.id,
+      isModerator:
+        !isHost && !!authUserId
+          ? moderatorUserIds.includes(String(authUserId).toLowerCase())
+          : false,
+      baseUserId: baseUser,
+      tabId,
+      inviteToken:
+        new URLSearchParams(window.location.search).get("invite") ||
+        undefined,
+    };
+    return { baseUser, identity, body, key: JSON.stringify(body) };
+  };
+
+  // Prejoin token prefetch. Fetching the token (a serverless call plus
+  // admission checks) used to start only after Join; doing it quietly while
+  // the person checks their camera takes it off the join path. Failures are
+  // ignored here: Join then uses the normal request with its normal errors.
+  const prefetchedJoinTokenRef = useRef<{
+    key: string;
+    at: number;
+    promise: Promise<{ token: string; url: string; assignedServerId: string } | null>;
+  } | null>(null);
+
+  const prefetchJoinToken = (request: NonNullable<ReturnType<typeof describeTokenRequest>>) => {
+    const startedAt = Date.now();
+    const promise = (async () => {
+      try {
+        const res = await withTimeout(
+          fetch(tokenEndpoint, {
+            method: "POST",
+            headers: await buildAuthHeaders(),
+            body: JSON.stringify(request.body),
+          }),
+          ROOM_TOKEN_TIMEOUT_MS,
+          "Token prefetch timed out.",
+        );
+        const json = (await res.json().catch(() => ({}))) as {
+          token?: string;
+          url?: string;
+          assignedServerId?: string | null;
+        };
+        const token = String(json.token || "").trim();
+        const url = String(json.url || defaultLivekitUrl || "").trim();
+        if (!res.ok || !token || !url) {
+          roomLifecycleDiagnosticRef.current("token.prefetch_skipped", {
+            status: res.status,
+            duration_ms: Date.now() - startedAt,
+          });
+          return null;
+        }
+        roomLifecycleDiagnosticRef.current("token.prefetch_succeeded", {
+          duration_ms: Date.now() - startedAt,
+        });
+        // The session may be pinned to a server other than the default one
+        // the room pre-warmed; warm the real one too.
+        if (url !== defaultLivekitUrl) {
+          void prewarmedRoomRef.current?.prepareConnection(url, token).catch(() => { });
+        }
+        return { token, url, assignedServerId: String(json.assignedServerId || "").trim() };
+      } catch {
+        return null;
+      }
+    })();
+    prefetchedJoinTokenRef.current = { key: request.key, at: startedAt, promise };
+  };
+
+  // Uses a matching prefetched token (waiting for it if it is still on its
+  // way). Returns false when the normal request should run instead.
+  const consumePrefetchedJoinToken = async () => {
+    const cached = prefetchedJoinTokenRef.current;
+    prefetchedJoinTokenRef.current = null;
+    const request = describeTokenRequest();
+    if (!cached || !request || !session) return false;
+    if (cached.key !== request.key) return false;
+    if (Date.now() - cached.at > PREFETCHED_TOKEN_MAX_AGE_MS) return false;
+
+    const prefetched = await cached.promise;
+    if (!prefetched) return false;
+    // A newer join attempt, leave or token may have happened while waiting;
+    // a normal request already running owns the token.
+    if (!joinRequestedRef.current || lkTokenRef.current || tokenRequestInFlightRef.current) return false;
+
+    if (!tabPresenceAcquiredRef.current) {
+      // The normal request repeats this check and shows its message.
+      const gate = tryAcquireTabGate(session.id, request.baseUser);
+      if (!gate.ok) return false;
+    }
+
+    baseUserIdRef.current = request.baseUser;
+    livekitIdentityRef.current = request.identity;
+    setLkToken(prefetched.token);
+    setLkServerUrl(prefetched.url);
+    lkTokenRef.current = prefetched.token;
+    lkServerUrlRef.current = prefetched.url;
+    setAssignedServerId(prefetched.assignedServerId);
+    roomLifecycleDiagnosticRef.current("token.prefetch_used", {
+      age_ms: Date.now() - cached.at,
+    });
+    return true;
+  };
+
   const requestToken = async (options: { recovery?: boolean } = {}) => {
     if (!session) return;
 
@@ -10756,19 +10881,9 @@ export function RoomPageLiveKit({
     roomLifecycleDiagnosticRef.current("token.fetch_started");
 
     try {
-      const pj = prejoinRef.current;
-      const nameToUse =
-        (pj.displayName || displayName || userName || "User").trim() || "User";
-      const roomName = safeRoomName(`session-${session.id}`);
-
-      const baseUser = safeIdentity(
-        (authUserId && looksLikeUuid(authUserId)
-          ? authUserId
-          : authUserId || nameToUse) as any,
-      );
+      const request = describeTokenRequest()!;
+      const { baseUser, identity } = request;
       baseUserIdRef.current = baseUser;
-
-      const identity = safeIdentity(`${baseUser}--${tabId}`);
       livekitIdentityRef.current = identity;
 
       console.log("[LK TAB DEBUG]", {
@@ -10803,22 +10918,7 @@ export function RoomPageLiveKit({
           fetch(tokenEndpoint, {
             method: "POST",
             headers: await buildAuthHeaders(),
-            body: JSON.stringify({
-              roomName,
-              identity,
-              name: nameToUse,
-              isHost,
-              sessionId: session.id,
-              isModerator:
-                !isHost && !!authUserId
-                  ? moderatorUserIds.includes(String(authUserId).toLowerCase())
-                  : false,
-              baseUserId: baseUser,
-              tabId,
-              inviteToken:
-                new URLSearchParams(window.location.search).get("invite") ||
-                undefined,
-            }),
+            body: JSON.stringify(request.body),
           }),
           ROOM_TOKEN_TIMEOUT_MS,
           "Preparing the room timed out. Please try again.",
@@ -10988,6 +11088,7 @@ export function RoomPageLiveKit({
       if (!authUserId) return;
       if (activeBan) return;
       if (lkToken) return;
+      if (await consumePrefetchedJoinToken()) return;
       await requestToken();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -11000,6 +11101,39 @@ export function RoomPageLiveKit({
     isHost,
     moderatorUserIds.join("|"),
   ]);
+
+  // Prefetch while the person is on prejoin and allowed to join. Debounced so
+  // typing a display name does not send a request per keystroke.
+  useEffect(() => {
+    if (!prejoinOpen || joinRequested || lkToken) return;
+    if (!session || !authReady || !authUserId || activeBan) return;
+    if (joinBlocked || !canJoinNow) return;
+    const request = describeTokenRequest();
+    // An invite link claims a 1:1 booking when its token is issued; only do
+    // that after an explicit Join.
+    if (!request || request.body.inviteToken) return;
+    const cached = prefetchedJoinTokenRef.current;
+    if (cached && cached.key === request.key && Date.now() - cached.at < PREFETCHED_TOKEN_MAX_AGE_MS) return;
+    const timer = window.setTimeout(() => prefetchJoinToken(request), 600);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    prejoinOpen,
+    joinRequested,
+    lkToken,
+    session?.id,
+    authReady,
+    authUserId,
+    activeBan,
+    joinBlocked,
+    canJoinNow,
+    isHost,
+    moderatorUserIds.join("|"),
+    prejoin.displayName,
+    displayName,
+    userName,
+  ]);
+
   useEffect(() => {
     if (!lkToken) return;
     setPrejoinOpen(false);
