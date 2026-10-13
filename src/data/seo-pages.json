@@ -92,12 +92,12 @@
     "route": "/body-doubling",
     "pageType": "topic-hub",
     "cluster": "body-doubling",
-    "title": "Online Body Doubling Sessions | MySession",
+    "title": "Body Doubling Rooms and Guides | MySession",
     "metaDescription": "Explore live body doubling rooms and practical guides.",
     "h1": "Body doubling for the work in front of you",
     "heroDescription": "Open a room, name what you are working on, and get started alongside other people. Everyone works on their own task.",
-    "primaryKeyword": "online body doubling",
-    "secondaryKeywords": ["online body doubling", "virtual body double", "accountability sessions"],
+    "primaryKeyword": "body doubling",
+    "secondaryKeywords": ["body doubling rooms", "body doubling guides", "accountability sessions"],
     "searchIntent": "informational-commercial",
     "imagePath": "/blog/editorial/body-doubling-together.jpg",
     "imageAlt": "Two people quietly working on their own tasks at the same table",
@@ -109,13 +109,131 @@
       {"question":"Do participants need to work on the same task?","answer":"No. Everyone can work independently while sharing a focused time block."},
       {"question":"Where can I learn how body doubling works?","answer":"Read the detailed What Is Body Doubling guide linked on this page."}
     ],
-    "relatedPageSlugs": ["body-doubling-app","body-doubling-for-adhd","virtual-coworking"],
+    "relatedPageSlugs": ["body-doubling-online","body-doubling-app","body-doubling-for-adhd","virtual-coworking"],
     "ctaVariant": "join",
     "indexable": true,
     "sitemapPriority": 0.9,
     "changeFrequency": "monthly",
     "createdAt": "2026-07-29",
-    "updatedAt": "2026-10-10"
+    "updatedAt": "2026-10-14"
+  },
+  {
+    "slug": "body-doubling-online",
+    "route": "/body-doubling-online",
+    "pageType": "use-case",
+    "cluster": "body-doubling",
+    "title": "Body Doubling Online: Free, Virtual Sessions | MySession",
+    "metaDescription": "Try body doubling online for free. Join a virtual focus room, name one task, and work beside real people: group, one-on-one and 24/7 rooms in your browser.",
+    "h1": "Body doubling online",
+    "heroDescription": "Join a live virtual room, say what you are working on, and start next to people doing the same with their own tasks. Free to start, right in your browser.",
+    "primaryKeyword": "body doubling online",
+    "secondaryKeywords": [
+      "free body doubling",
+      "virtual body doubling",
+      "body doubling for ADHD",
+      "online accountability partner",
+      "study with someone online"
+    ],
+    "searchIntent": "informational-commercial",
+    "imagePath": "/blog/editorial/body-doubling-online-cover.jpg",
+    "imageAlt": "A man and a woman with laptops on a sofa at home beside the words Start together, online",
+    "sections": [
+      {
+        "heading": "How body doubling online works",
+        "body": [
+          "Body doubling means doing your own task while another person is present. Online, that presence comes from a live video room: you see other people at work, they see you, and nobody needs to collaborate or explain their project.",
+          "MySession turns that into a short routine. You pick a room, write one intention, work through the session's focus and break stages, and leave with a clear next step. The structure is shared, the work stays yours."
+        ],
+        "bullets": [
+          "Pick a scheduled session or an always-open room",
+          "Write one task you will finish or move forward",
+          "Work through timed focus and break stages",
+          "Close with a short check of what got done"
+        ]
+      },
+      {
+        "heading": "Free body doubling: what you can use today",
+        "body": [
+          "You can start body doubling on MySession for free, with no credit card. Payments are optional right now. As attendance grows, the free plan may get weekly session or hour limits; the pricing page always shows the current rules before anything changes for you.",
+          "Starting free lets you test the format before deciding anything: join a few sessions, see which length and time of day suit you, and keep the routine only if it actually helps you get work done."
+        ]
+      },
+      {
+        "heading": "Virtual body doubling vs. working alone",
+        "body": [
+          "A timer on your desk tells you when to stop. A virtual body double gives you a reason to start: a fixed beginning, people who are already working, and a light sense that someone would notice if you drifted off.",
+          "That makes virtual body doubling most useful for tasks you keep postponing, work without a deadline, and long projects where the hardest part is opening the file. For work that already has momentum, a solo timer may be all you need."
+        ]
+      },
+      {
+        "heading": "Body doubling for ADHD",
+        "body": [
+          "Many people with ADHD describe body doubling as an external starting cue: the session begins, others are working, and the task becomes easier to begin. A short block with one clearly named task keeps the first step small.",
+          "It is a practical productivity technique, not a diagnosis or a treatment, and it does not replace professional care. If you want a deeper, non-clinical guide, read the dedicated Body doubling for ADHD page."
+        ]
+      },
+      {
+        "heading": "An online accountability partner, without the scheduling back-and-forth",
+        "body": [
+          "An accountability partner usually means one person you check in with. That works well, but it depends on two calendars lining up. MySession gives you two options: one-on-one sessions when you want a single partner, and group rooms when you simply need people present at a set time.",
+          "In both, accountability stays light. You state what you will do, others can see it, and you can share how it went at the end. Nobody grades your work or manages your time for you."
+        ]
+      },
+      {
+        "heading": "Study with someone online",
+        "body": [
+          "Studying with someone online works best when everyone is quiet during focus blocks and the breaks are short and predictable. Shared stages handle that for you: the room knows when it is time to work and when it is time to stretch.",
+          "Use a 25-minute session for flashcards, problem sets or a reading you keep avoiding, and a 50- or 90-minute session for essays and exam preparation. The Body doubling for studying page covers study routines in more detail."
+        ],
+        "bullets": [
+          "Quiet focus blocks, short breaks",
+          "Your study goal visible to the room",
+          "Scheduled sessions for a fixed study time",
+          "24/7 rooms for late-night or early-morning studying"
+        ]
+      },
+      {
+        "heading": "Your first online body doubling session",
+        "body": [
+          "Choose a task small enough to describe in one sentence, such as \"draft the introduction\" or \"finish 20 practice questions\". Join a session that starts soon, type that sentence as your intention, and keep your phone out of reach until the first break.",
+          "Cameras are optional unless the session card says the host requires them. If you are unsure which length to pick, start with 25 minutes: it is long enough to make progress and short enough to say yes to."
+        ]
+      }
+    ],
+    "faqItems": [
+      {
+        "question": "Is online body doubling on MySession free?",
+        "answer": "Yes, you can start for free with no credit card. Payments are optional right now; if free limits are introduced as attendance grows, the pricing page will show them."
+      },
+      {
+        "question": "Do I need to turn on my camera?",
+        "answer": "Only when the session card says the host requires cameras. Otherwise you choose whether to show video."
+      },
+      {
+        "question": "Is body doubling only for people with ADHD?",
+        "answer": "No. It helps anyone who finds it hard to start or stay with a task alone, including students, freelancers and remote workers."
+      },
+      {
+        "question": "Can I find a one-on-one accountability partner online?",
+        "answer": "Yes. Besides group rooms, MySession has one-on-one sessions for when you want to work beside a single person."
+      },
+      {
+        "question": "Can I study with someone online right now?",
+        "answer": "Yes. Always-open rooms are available at any hour, and scheduled sessions let you plan a study block in advance."
+      }
+    ],
+    "relatedPageSlugs": [
+      "body-doubling-for-adhd",
+      "body-doubling-for-studying",
+      "body-doubling-app",
+      "focus-session-25-minutes"
+    ],
+    "ctaVariant": "try",
+    "indexable": true,
+    "sitemapPriority": 0.9,
+    "changeFrequency": "monthly",
+    "createdAt": "2026-10-14",
+    "updatedAt": "2026-10-14"
   },
   {
     "slug":"body-doubling-for-adhd","route":"/body-doubling-for-adhd","pageType":"use-case","cluster":"body-doubling","title":"Body Doubling for ADHD | MySession","metaDescription":"A practical, non-clinical guide to ADHD body doubling: reduce start friction, create gentle accountability, and choose a focus session that fits.","h1":"Body doubling for ADHD","heroDescription":"A shared focus room can provide an external starting cue and gentle accountability when a task feels hard to begin alone.","primaryKeyword":"body doubling for ADHD","secondaryKeywords":["ADHD body double","ADHD focus sessions","online accountability"],"searchIntent":"informational-commercial","sections":[{"heading":"What it can help with","body":["Body doubling can be useful when intention is present but activation is difficult. The other participant is not monitoring you; their presence supplies a stable context for doing the task."],"bullets":["Starting an avoided task","Returning after distraction","Defining a realistic work block","Closing the session with a clear next step"]},{"heading":"A low-pressure way to try it","body":["Pick a task small enough to describe in one sentence. Join a 25- or 50-minute room, state that intention, and avoid expanding the plan during the block.","This is a productivity technique rather than a diagnosis or treatment. Professional care remains important when symptoms affect health or daily functioning."]},{"heading":"Structure without micromanagement","body":["MySession combines intentions, visible tasks, stage cues, chat and optional room sound. These tools create structure while leaving each participant in control of their own work."]}],"faqItems":[{"question":"Is ADHD body doubling therapy?","answer":"No. It is a practical accountability technique and not a substitute for medical or psychological care."},{"question":"What session length should I start with?","answer":"A 25-minute session is a useful low-friction first test. Choose longer blocks when the task already has momentum."}],"relatedPageSlugs":["body-doubling","body-doubling-for-procrastination","focus-session-25-minutes"],"ctaVariant":"try","indexable":true,"sitemapPriority":0.9,"changeFrequency":"monthly","createdAt":"2026-07-29","updatedAt":"2026-07-29"},

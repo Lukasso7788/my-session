@@ -1,5 +1,6 @@
 [
   { "slug": "body-doubling", "route": "/body-doubling" },
+  { "slug": "body-doubling-online", "route": "/body-doubling-online" },
   { "slug": "body-doubling-app", "route": "/body-doubling-app" },
   { "slug": "body-doubling-for-adhd", "route": "/body-doubling-for-adhd" },
   { "slug": "body-doubling-for-studying", "route": "/body-doubling-for-studying" },

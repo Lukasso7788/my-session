@@ -121,5 +121,18 @@
     "subline": "Less status. More progress.",
     "number": "10",
     "theme": "mist"
+  },
+  {
+    "slug": "body-doubling-online",
+    "photoId": 6894067,
+    "photographer": "Mikhail Nilov",
+    "sourcePage": "https://www.pexels.com/photo/a-couple-at-home-working-with-laptops-6894067/",
+    "photoDescription": "A man and a woman with laptops on a sofa at home",
+    "category": "BODY DOUBLING",
+    "headline": "Start together, online.",
+    "subline": "Your task. Real people. One room.",
+    "number": "11",
+    "theme": "sky",
+    "footerLabel": "BODY DOUBLING ONLINE"
   }
 ]
