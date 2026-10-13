@@ -18643,19 +18643,17 @@ export function RoomPageLiveKit({
         : "";
   const lastErr = tokenError || clientError;
 
-  // Room chrome (top bar, side panel, bottom bar) stays out of frame until
-  // LiveKit has connected, then slides in once. The only other way in is a
-  // state that will never connect (ban, closed session, signed out), so those
-  // screens still have their controls. Failed joins reopen prejoin instead.
+  // Room chrome (top bar, side panel, bottom bar) stays out of frame behind
+  // prejoin and slides in once as soon as prejoin closes, so the room is in
+  // place while LiveKit connects. A ban, closed session or signed-out state
+  // reveals it too. Once revealed it stays, including through reconnects and
+  // a failed join that reopens prejoin.
   const [roomChromeRevealed, setRoomChromeRevealed] = useState(false);
   const roomChromeReady =
-    connected || !!activeBan || sessionCloseInfo.closed || (authReady && !authUserId);
+    !prejoinOpen || connected || !!activeBan || sessionCloseInfo.closed || (authReady && !authUserId);
   useEffect(() => {
-    if (roomChromeRevealed || !roomChromeReady) return;
-    // Give the first video tiles a moment to paint before the chrome moves in.
-    const timer = window.setTimeout(() => setRoomChromeRevealed(true), connected ? 220 : 0);
-    return () => window.clearTimeout(timer);
-  }, [roomChromeRevealed, roomChromeReady, connected]);
+    if (roomChromeReady && !roomChromeRevealed) setRoomChromeRevealed(true);
+  }, [roomChromeRevealed, roomChromeReady]);
 
   // hide/pin helpers
   const toggleHide = (tileId: string) => {

@@ -8,8 +8,9 @@ import "../../src/pages/livekit/room-chrome-motion.css";
 
 // Dev-only preview of the room entrance: the real top bar and bottom bar with
 // fixture data, fake video tiles and a fake chat panel. "Replay join" runs the
-// same sequence as the room: loader while joining, tiles appear on connect,
-// then the chrome slides in 220ms later. No LiveKit, camera or network.
+// same sequence as the room: when prejoin closes the chrome slides in while
+// the joining tip shows, and the tiles appear once "connected". No LiveKit,
+// camera or network.
 
 const noop = () => {};
 const people = ["Maya", "Pramish", "Alex", "You"];
@@ -28,8 +29,9 @@ function Preview() {
   useEffect(() => {
     setConnected(false);
     setChromeIn(false);
-    const connect = window.setTimeout(() => setConnected(true), 1600);
-    const reveal = window.setTimeout(() => setChromeIn(true), 1600 + 220);
+    // 400ms stands in for prejoin; Join closes it and the chrome enters at once.
+    const reveal = window.setTimeout(() => setChromeIn(true), 400);
+    const connect = window.setTimeout(() => setConnected(true), 400 + 2200);
     return () => { window.clearTimeout(connect); window.clearTimeout(reveal); };
   }, [run]);
 
