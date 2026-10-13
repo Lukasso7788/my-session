@@ -19859,6 +19859,7 @@ export function RoomPageLiveKit({
         }
         externalMode="general"
         generalChatDisabled={roomPolicies.publicChatDisabled}
+        canModerateMessages={isSelfModerator}
         renderDocument={pipChatDocument}
         renderWindow={pipChatWindow}
       />
@@ -20576,6 +20577,7 @@ export function RoomPageLiveKit({
             externalDirectPeerUserId={selectedHostChatPeerId}
             onDirectPeerIdsChange={setHostChatPeerIds}
             generalChatDisabled={roomPolicies.publicChatDisabled}
+            canModerateMessages={isSelfModerator}
           />
           </React.Suspense>
           </RoomPanelErrorBoundary>

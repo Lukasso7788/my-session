@@ -358,6 +358,8 @@ type MessageCardProps = {
     onOpenReactionDetails: (messageId: string, emoji: string) => void;
     isLight: boolean;
     canEdit: boolean;
+    /** A room moderator may delete someone else's public message. */
+    canModerate: boolean;
     onUpdateMessage: (messageId: string, newBody: string) => Promise<void>;
     onDeleteMessage: (messageId: string) => Promise<void>;
     onJumpToMessage: (messageId: string) => void;
@@ -382,6 +384,7 @@ function MessageCardInner({
     onOpenReactionDetails,
     isLight,
     canEdit,
+    canModerate,
     onUpdateMessage,
     onDeleteMessage,
     onJumpToMessage,
@@ -636,7 +639,9 @@ function MessageCardInner({
 
     const doDelete = async () => {
         if (deleting) return;
-        const ok = renderWindow.confirm("Delete this message?");
+        const ok = renderWindow.confirm(
+            canEdit ? "Delete this message?" : "Delete this message for everyone in the room?",
+        );
         if (!ok) return;
 
         setDeleting(true);
@@ -890,31 +895,32 @@ function MessageCardInner({
                             </div>
 
                             {canEdit && (
-                                <>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsEditing(true)}
-                                        className={
-                                            "inline-flex h-5 w-5 items-center justify-center leading-none transition " +
-                                            actionBtnCls
-                                        }
-                                        title="Edit"
-                                    >
-                                        <Pencil size={14} className="block shrink-0" />
-                                    </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsEditing(true)}
+                                    className={
+                                        "inline-flex h-5 w-5 items-center justify-center leading-none transition " +
+                                        actionBtnCls
+                                    }
+                                    title="Edit"
+                                >
+                                    <Pencil size={14} className="block shrink-0" />
+                                </button>
+                            )}
 
-                                    <button
-                                        type="button"
-                                        onClick={doDelete}
-                                        className={
-                                            "inline-flex h-5 w-5 items-center justify-center leading-none transition " +
-                                            dangerBtnCls
-                                        }
-                                        title="Delete"
-                                    >
-                                        <Trash2 size={14} className="block shrink-0" />
-                                    </button>
-                                </>
+                            {(canEdit || canModerate) && (
+                                <button
+                                    type="button"
+                                    onClick={doDelete}
+                                    className={
+                                        "inline-flex h-5 w-5 items-center justify-center leading-none transition " +
+                                        dangerBtnCls
+                                    }
+                                    title={canEdit ? "Delete" : "Delete message (moderator)"}
+                                    aria-label={canEdit ? "Delete message" : "Delete message as moderator"}
+                                >
+                                    <Trash2 size={14} className="block shrink-0" />
+                                </button>
                             )}
                         </div>
                     )}
@@ -1102,6 +1108,7 @@ const areMessageCardPropsEqual = (
         prev.myReactions === next.myReactions &&
         prev.isLight === next.isLight &&
         prev.canEdit === next.canEdit &&
+        prev.canModerate === next.canModerate &&
         prev.onReply === next.onReply &&
         prev.onToggleReaction === next.onToggleReaction &&
         prev.onOpenReactionDetails === next.onOpenReactionDetails &&
@@ -1131,6 +1138,7 @@ export function ChatPanel({
     externalDirectPeerUserId = null,
     onDirectPeerIdsChange,
     generalChatDisabled = false,
+    canModerateMessages = false,
     currentUserId = null,
     renderDocument,
     renderWindow,
@@ -1148,6 +1156,8 @@ export function ChatPanel({
     externalDirectPeerUserId?: string | null;
     onDirectPeerIdsChange?: (peerIds: string[]) => void;
     generalChatDisabled?: boolean;
+    /** Super-admin, host, temporary host or session moderator: may delete others' public messages. */
+    canModerateMessages?: boolean;
     currentUserId?: string | null;
     renderDocument?: Document | null;
     renderWindow?: Window | null;
@@ -2900,15 +2910,28 @@ export function ChatPanel({
             return next;
         });
 
-        const { error } = await supabase
-            .from(MSG_TABLE)
-            .delete()
-            .eq("id", messageId)
-            .eq("session_id", sessionId)
-            .eq("user_id", userId);
+        // Own messages use the existing row policy; a moderator removing someone
+        // else's public message goes through a server function that checks
+        // the role (super-admin, host, temporary host or session moderator).
+        const moderating = !!deleted && deleted.user_id !== userId;
+        const { error } = moderating
+            ? await supabase.rpc("moderate_delete_chat_message", { p_message_id: messageId })
+            : await supabase
+                .from(MSG_TABLE)
+                .delete()
+                .eq("id", messageId)
+                .eq("session_id", sessionId)
+                .eq("user_id", userId);
 
         if (error && deleted && aliveRef.current && latestChatViewRef.current === deleteViewKey) {
             console.error("chat delete error:", error);
+            if (moderating) {
+                try {
+                    chatWindow.alert("This message could not be deleted. Please try again.");
+                } catch {
+                    // Alerts can be blocked in a PiP window; the message is restored either way.
+                }
+            }
             setMessages((current) => {
                 const next = boundChatMessages([deleted, ...current]);
                 messagesRef.current = next;
@@ -3492,6 +3515,8 @@ export function ChatPanel({
                 {visibleMessages.map((m) => {
                     const mine = m.user_id === userId;
                     const canEdit = mine && !m.id.startsWith("optimistic-");
+                    // Moderators remove others' public messages; direct messages stay private.
+                    const canModerate = canModerateMessages && !mine && m.scope !== "direct" && !m.id.startsWith("optimistic-");
                     return (
                         <div
                             key={m.id}
@@ -3511,6 +3536,7 @@ export function ChatPanel({
                                 onOpenReactionDetails={onOpenMessageReactionDetails}
                                 isLight={isLight}
                                 canEdit={canEdit}
+                                canModerate={canModerate}
                                 onUpdateMessage={onUpdateChatMessage}
                                 onDeleteMessage={onDeleteChatMessage}
                                 onJumpToMessage={jumpToMessage}
