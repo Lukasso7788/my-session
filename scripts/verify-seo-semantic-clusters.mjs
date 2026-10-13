@@ -74,9 +74,7 @@ for (const [slug, keyword, schemaType, sitemapFile] of checks) {
 }
 
 const hub = await readFile("dist/body-doubling/index.html", "utf8");
-assert(hub.includes('href="/body-doubling-app"'), "body-doubling hub: missing app link");
-assert(hub.includes('href="/body-doubling-online"'), "body-doubling hub: missing body doubling online link");
-for (const [route, slug, alt] of [
+assert(hub.includes('href="/body-doubling-app"'), "body-doubling hub: missing app link");for (const [route, slug, alt] of [
   ["guides/what-is-body-doubling", "body-doubling-shared-start", "Two people work on separate laptops at home beside the words A shared start"],
   ["blog/remote-work-accountability-without-meetings", "remote-work-protected-block", "Woman wearing headphones works at a laptop by a window beside the words Protect the work block"],
 ]) {

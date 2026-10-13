@@ -92,12 +92,12 @@
     "route": "/body-doubling",
     "pageType": "topic-hub",
     "cluster": "body-doubling",
-    "title": "Body Doubling Rooms and Guides | MySession",
+    "title": "Online Body Doubling Sessions | MySession",
     "metaDescription": "Explore live body doubling rooms and practical guides.",
     "h1": "Body doubling for the work in front of you",
     "heroDescription": "Open a room, name what you are working on, and get started alongside other people. Everyone works on their own task.",
-    "primaryKeyword": "body doubling",
-    "secondaryKeywords": ["body doubling rooms", "body doubling guides", "accountability sessions"],
+    "primaryKeyword": "online body doubling",
+    "secondaryKeywords": ["online body doubling", "virtual body double", "accountability sessions"],
     "searchIntent": "informational-commercial",
     "imagePath": "/blog/editorial/body-doubling-together.jpg",
     "imageAlt": "Two people quietly working on their own tasks at the same table",
@@ -109,13 +109,13 @@
       {"question":"Do participants need to work on the same task?","answer":"No. Everyone can work independently while sharing a focused time block."},
       {"question":"Where can I learn how body doubling works?","answer":"Read the detailed What Is Body Doubling guide linked on this page."}
     ],
-    "relatedPageSlugs": ["body-doubling-online","body-doubling-app","body-doubling-for-adhd","virtual-coworking"],
+    "relatedPageSlugs": ["body-doubling-app","body-doubling-for-adhd","virtual-coworking"],
     "ctaVariant": "join",
     "indexable": true,
     "sitemapPriority": 0.9,
     "changeFrequency": "monthly",
     "createdAt": "2026-07-29",
-    "updatedAt": "2026-10-14"
+    "updatedAt": "2026-10-10"
   },
   {
     "slug": "body-doubling-online",

@@ -16,8 +16,7 @@ Legend: intent `C` commercial/product, `I` informational, `N` navigational; funn
 | URL | Primary phrase | Distinct intent |
 | --- | --- | --- |
 | `/` | live focus sessions | Broad product entry, not an app-specific page. |
-| `/body-doubling` | body doubling | Parent topic hub, room-or-guide choice. |
-| `/body-doubling-online` | body doubling online | Commercial landing page: free, virtual, ADHD, accountability-partner and study-together variants (added 2026-10-14). |
+| `/body-doubling` | online body doubling | Parent topic hub, room-or-guide choice. |
 | `/body-doubling-app` | body doubling app | Browser-based product, tools, live-vs-solo distinction. |
 | `/guides/what-is-body-doubling` | what is body doubling | Definition and first-session walkthrough. |
 | `/virtual-coworking` | virtual coworking rooms | How online coworking rooms work and room formats. |
@@ -41,11 +40,11 @@ Legend: intent `C` commercial/product, `I` informational, `N` navigational; funn
 | body doubling app for studying | Body doubling app | C | E | `/body-doubling-for-studying` | H | M | P2 | SEM; unvalidated |
 | body doubling app for ADHD | Body doubling app | C | E | `/body-doubling-for-adhd` | H | M | P2 | SERP context; no volume |
 | free body doubling app | Body doubling app | C | E | `/pricing` | M | H | P2 | SEM; confirm current plan details |
-| body doubling sessions online | Online body doubling | C | X | `/body-doubling-online` | H | H | P1 | SEM; unvalidated |
-| online body doubling room | Online body doubling | C | X | `/body-doubling-online` | H | H | P1 | SEM; unvalidated |
+| body doubling sessions online | Online body doubling | C | X | `/body-doubling` | H | H | P1 | SEM; unvalidated |
+| online body doubling room | Online body doubling | C | X | `/body-doubling` | H | H | P1 | SEM; unvalidated |
 | body doubling with strangers online | Online body doubling | C | E | `/body-doubling-app` | H | M | P2 | SEM; unvalidated |
-| virtual body double for work | Online body doubling | C | E | `/body-doubling-online` | H | M | P2 | SEM; unvalidated |
-| online accountability partner | Online body doubling | C | E | `/body-doubling-online` | M | M | P3 | SEM; partner implies 1:1; copy names one-on-one sessions and group rooms separately |
+| virtual body double for work | Online body doubling | C | E | `/body-doubling` | H | M | P2 | SEM; unvalidated |
+| online accountability partner | Online body doubling | C | E | `/body-doubling` | M | M | P3 | SEM; partner implies 1:1; avoid misleading copy |
 | body doubling focus timer | App features | C | E | `/body-doubling-app` | H | M | P2 | SEM; unvalidated |
 | body doubling task app | App features | C | E | `/body-doubling-app` | H | M | P2 | SEM; unvalidated |
 | body doubling check in | App features | I | A | `/guides/what-is-body-doubling` | H | M | P2 | SEM; unvalidated |
@@ -123,7 +122,7 @@ These are prioritized by fit and intent, **not** by unverified volume or difficu
 | 1 | body doubling app | `/body-doubling-app` | Distinct product-intent page; web app vs native app clarification. |
 | 2 | online body doubling app | `/body-doubling-app` | Near-conversion variant on same page. |
 | 3 | live body doubling app | `/body-doubling-app` | Live group experience is a real differentiator. |
-| 4 | online body doubling | `/body-doubling-online` | Dedicated landing page since 2026-10-14; the `/body-doubling` hub now targets plain "body doubling". |
+| 4 | online body doubling | `/body-doubling` | Existing parent hub and room pathway. |
 | 5 | body doubling sessions online | `/body-doubling` | Action intent with no duplicate landing page. |
 | 6 | virtual coworking rooms | `/virtual-coworking` | Strong match to product and existing URL. |
 | 7 | online coworking rooms | `/virtual-coworking` | Synonym on the same page, not a second route. |
