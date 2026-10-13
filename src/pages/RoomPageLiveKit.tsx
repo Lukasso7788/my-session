@@ -19504,7 +19504,11 @@ export function RoomPageLiveKit({
         <div
           className={`absolute inset-0 flex items-center justify-center z-10 ${isLight ? "text-black/60" : "text-white/70"}`}
         >
-          <RoomJoiningIndicator theme={theme} label={roomReadyText} />
+          <div className="flex flex-col items-center gap-3 px-4 text-center">
+            <RoomJoiningIndicator theme={theme} label={roomReadyText} />
+            {/* Retries are worth seeing; the indicator already announces the text. */}
+            {connectRetryAttempt > 1 ? <p className="text-[13px]" aria-hidden="true">{roomReadyText}</p> : null}
+          </div>
         </div>
       ) : null}
 

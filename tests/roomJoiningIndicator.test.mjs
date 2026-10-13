@@ -50,7 +50,9 @@ test("keyframe lists line up and reduced motion shows a still ring", () => {
   assert.doesNotMatch(source, /useEffect|setTimeout|fetch\(|Math\.random/);
 });
 test("real room integration retains the existing joining condition and error surface", () => {
-  assert.match(room, /const roomReadyText = connected\s*\? ""\s*: prejoinOpen\s*\? ""\s*: joinRequested\s*\? "Joining room…"\s*: ""/);
+  assert.match(room, /const roomReadyText = connected\s*\? ""\s*: prejoinOpen\s*\? ""\s*: joinRequested\s*\?[\s\S]*?"Joining room…"\s*: ""/);
   assert.match(room, /\{roomReadyText \? \([\s\S]*?<RoomJoiningIndicator theme=\{theme\} label=\{roomReadyText\}/);
+  // A slow-connection retry stays visible under the loader.
+  assert.match(room, /connectRetryAttempt > 1 \? <p className="text-\[13px\]" aria-hidden="true">\{roomReadyText\}<\/p> : null/);
   assert.match(room, /\{lastErr && \(/);
 });
