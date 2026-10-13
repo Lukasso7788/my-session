@@ -35,17 +35,21 @@ test("two dots swap places every 0.5s, back one shrinking and dimming, flat colo
   assert.equal((html.match(/attributeName="opacity"/g) || []).length, 1);
   assert.equal((html.match(/dur="0.5s"/g) || []).length, 5);
   assert.match(css, /ms-room-joining-dots,\s*\.ms-room-joining-still \{[^}]*width: 20px; height: 10px/);
-  assert.match(css, /ms-room-joining-word \{ font-size: 16px;/);
+  assert.match(css, /ms-room-joining-word \{[^}]*font-size: 16px;/);
   assert.match(css, /\.ms-room-joining circle \{ fill: var\(--joining-ink\); \}/);
-  assert.doesNotMatch(source + css, /gradient|drop-shadow|box-shadow/i);
+  assert.doesNotMatch(source + css, /drop-shadow|box-shadow/i);
+  // The only gradient is the word shimmer, built from the single ink colour.
+  assert.equal((css.match(/gradient\(/g) || []).length, 1);
+  assert.match(css, /linear-gradient\(100deg, var\(--joining-ink\) 40%, var\(--joining-ink-soft\) 50%, var\(--joining-ink\) 60%\)/);
 });
-test("visible 'Loading' word animates letter by letter and is hidden from screen readers", () => {
+test("visible 'Loading' word shimmers as a whole and is hidden from screen readers", () => {
   const html = renderToStaticMarkup(createElement(Indicator, { theme: "dark" }));
-  assert.match(html, /<span class="ms-room-joining-word" aria-hidden="true">/);
+  assert.match(html, /<span class="ms-room-joining-word" aria-hidden="true">Loading<\/span>/);
   const visible = html.replace(/<span class="ms-room-joining-accessible">[^<]*<\/span>/, "").replace(/<[^>]+>/g, "");
   assert.equal(visible.trim(), "Loading");
-  assert.equal((html.match(/animation-delay:/g) || []).length, 7);
-  assert.match(css, /ms-room-joining-letter 1\.4s ease-in-out infinite/);
+  assert.doesNotMatch(html, /animation-delay/);
+  assert.match(css, /ms-room-joining-shimmer 1\.8s linear infinite/);
+  assert.match(css, /background-clip: text/);
 });
 test("tracks have one value per reference frame, loop seamlessly, and reduced motion shows still dots", () => {
   const list = (name) => source.match(new RegExp(`const ${name} = "([^"]+)"`))[1].split(";").map(Number);

@@ -1,7 +1,7 @@
 /* Compact dots + "Loading" word. Two dots swap places every 0.5s, one in
-   front and one behind (SMIL geometry in the component); the word
-   stays in the full ink colour while a soft dimming wave runs across its
-   letters. Flat colours only: white on dark, #2F2F2F on light. */
+   front and one behind (SMIL geometry in the component). The word sits in the
+   full ink colour and a softer band of the same ink sweeps across it.
+   Flat colours only: white on dark, #2F2F2F on light. */
 .ms-room-joining {
   --joining-ink: #ffffff;
   display: inline-flex;
@@ -31,18 +31,27 @@
 .ms-room-joining-middle { opacity: 0.6; }
 .ms-room-joining-still { display: none; }
 
-.ms-room-joining-word { font-size: 16px; font-weight: 500; line-height: 1; letter-spacing: 0.01em; white-space: nowrap; }
-.ms-room-joining-word > span {
-  display: inline-block;
-  animation: ms-room-joining-letter 1.4s ease-in-out infinite both;
+/* Shimmer: one ink colour, only its alpha varies inside the letters. */
+.ms-room-joining-word {
+  --joining-ink-soft: color-mix(in srgb, var(--joining-ink) 35%, transparent);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: transparent;
+  background: linear-gradient(100deg, var(--joining-ink) 40%, var(--joining-ink-soft) 50%, var(--joining-ink) 60%) 0 0 / 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: ms-room-joining-shimmer 1.8s linear infinite;
 }
-@keyframes ms-room-joining-letter {
-  0%, 60%, 100% { opacity: 1; transform: translateY(0); }
-  25% { opacity: 0.4; transform: translateY(-1px); }
+@keyframes ms-room-joining-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: 0 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .ms-room-joining-dots { display: none; }
   .ms-room-joining-still { display: block; }
-  .ms-room-joining-word > span { animation: none; }
+  .ms-room-joining-word { animation: none; background: none; color: var(--joining-ink); }
 }

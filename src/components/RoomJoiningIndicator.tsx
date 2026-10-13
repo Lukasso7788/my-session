@@ -18,8 +18,8 @@ const MIDDLE_X = "0.1;0.1;-0.14;-0.82;-1.5;-2;-1.6;-1;-0.2;1.5;1.9;1.3;1.01;0.69
 const WORD = "Loading";
 
 /**
- * Small dots loader with a "Loading" word whose letters dim in a wave, for the
- * temporary joining state. The label is what screen readers announce.
+ * Small dots loader with a shimmering "Loading" word, for the temporary
+ * joining state. The label is what screen readers announce.
  */
 export default function RoomJoiningIndicator({ theme, label = "Joining room…" }: Props) {
   const animate = (attributeName: string, values: string) => (
@@ -43,11 +43,7 @@ export default function RoomJoiningIndicator({ theme, label = "Joining room…" 
         <circle className="ms-room-joining-middle" cx="0.1" r="1.3" />
         <circle cx="8.95" r="2.9" />
       </svg>
-      <span className="ms-room-joining-word" aria-hidden="true">
-        {WORD.split("").map((letter, index) => (
-          <span key={index} style={{ animationDelay: `${index * 0.09}s` }}>{letter}</span>
-        ))}
-      </span>
+      <span className="ms-room-joining-word" aria-hidden="true">{WORD}</span>
     </div>
   );
 }

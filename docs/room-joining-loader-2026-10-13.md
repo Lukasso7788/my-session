@@ -17,7 +17,8 @@ is shown as a caption under the loader.
   snap past each other. A small dim middle dot hides under the front dot.
 - Every value is tracked from the reference frame by frame (30 fps, 15 frames
   per loop, linear between frames).
-- Next to it a 16px "Loading" word; a soft dimming wave runs across the letters.
+- Next to it a 16px "Loading" word in the full ink colour; a softer band of the
+  same ink sweeps across it (shimmer, 1.8s). The only gradient in the loader.
 - Flat colours only: `#FFFFFF` on the dark room, `#2F2F2F` on the light room.
   No gradients or shadows. Dots icon is 20x10px so the dots read at the weight
   of 16px text.
@@ -35,4 +36,5 @@ is shown as a caption under the loader.
 ## Verification
 
 Preview: `tests/browser/room-joining.html` (`?theme=light` for light).
-Tests: `node --test tests/roomJoiningIndicator.test.mjs`.
+Tests: 
+ode --test tests/roomJoiningIndicator.test.mjs`.
