@@ -343,7 +343,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
             // The room tooltip extends below this bar. Lift the whole stacking
             // context above the later video grid; its own z-index cannot escape
             // this isolated parent, but fixed room overlays remain above z-60.
-            className={`relative isolate z-[60] flex min-w-0 w-full rounded-2xl overflow-visible ${topBarBg}`}
+            className={`ms-room-topbar relative isolate z-[60] flex min-w-0 w-full rounded-2xl overflow-visible ${topBarBg}`}
         >
             <div className="min-w-0 flex-1 px-4 py-2.5 sm:px-5 sm:py-3 lg:py-2 overflow-visible">
                 <div className="flex flex-col gap-2 max-[480px]:gap-2 overflow-visible">

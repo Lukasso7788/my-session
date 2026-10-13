@@ -1,0 +1,49 @@
+/* Room chrome entrance. While the room page is "pending" (prejoin open or the
+   first connection running) the top bar, side panel and bottom bar sit out of
+   frame; when it switches to "in" they slide in from their own edges once.
+   The animations end on `transform: none` (fill: backwards only) so the fixed
+   bottom bar never keeps a transform that would re-anchor its popovers. */
+.ms-room-page {
+  --ms-chrome-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ms-room-page[data-room-chrome="pending"] .ms-room-topbar,
+.ms-room-page[data-room-chrome="pending"] .ms-room-side,
+.ms-room-page[data-room-chrome="pending"] .ms-room-bottombar {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.ms-room-page[data-room-chrome="pending"] .ms-room-topbar { transform: translateY(calc(-100% - 16px)); }
+.ms-room-page[data-room-chrome="pending"] .ms-room-side { transform: translateX(calc(100% + 16px)); }
+.ms-room-page[data-room-chrome="pending"] .ms-room-bottombar { transform: translateY(100%); }
+
+.ms-room-page[data-room-chrome="in"] .ms-room-topbar {
+  animation: ms-chrome-from-top 680ms var(--ms-chrome-ease) backwards;
+}
+.ms-room-page[data-room-chrome="in"] .ms-room-bottombar {
+  animation: ms-chrome-from-bottom 680ms var(--ms-chrome-ease) 80ms backwards;
+}
+/* Also plays whenever a side panel is opened later. */
+.ms-room-page[data-room-chrome="in"] .ms-room-side {
+  animation: ms-chrome-from-right 760ms var(--ms-chrome-ease) 160ms backwards;
+}
+
+@keyframes ms-chrome-from-top {
+  from { transform: translateY(calc(-100% - 16px)); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes ms-chrome-from-bottom {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes ms-chrome-from-right {
+  from { transform: translateX(calc(100% + 16px)); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ms-room-page[data-room-chrome="in"] .ms-room-topbar,
+  .ms-room-page[data-room-chrome="in"] .ms-room-bottombar,
+  .ms-room-page[data-room-chrome="in"] .ms-room-side { animation: none; }
+}

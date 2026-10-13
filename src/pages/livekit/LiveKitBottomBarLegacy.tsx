@@ -540,7 +540,7 @@ export function LiveKitBottomBar(props: {
         ) : null;
 
     return (
-        <div className="fixed inset-x-0 bottom-0 z-50">
+        <div className="ms-room-bottombar fixed inset-x-0 bottom-0 z-50">
             <div className="w-full px-2 sm:px-4 pb-[calc(4px+env(safe-area-inset-bottom))]">
                 <div
                     className={`h-[60px] sm:h-[64px] grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}

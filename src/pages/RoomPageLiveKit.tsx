@@ -124,6 +124,7 @@ import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 import { FX_BG_PRESETS } from "./livekit/backgroundPresets";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
 import "./livekit/roomSidePanelTheme.css";
+import "./livekit/room-chrome-motion.css";
 import {
   isPublishedColorCorrectionIdentity,
   publishedColorCorrectionSignature,
@@ -18504,6 +18505,18 @@ export function RoomPageLiveKit({
         : "";
   const lastErr = tokenError || clientError;
 
+  // Room chrome (top bar, side panel, bottom bar) stays out of frame while
+  // prejoin is open or the first connection is running, then slides in once.
+  // An error or a cancelled join shows it too, so controls are never missing.
+  const [roomChromeRevealed, setRoomChromeRevealed] = useState(false);
+  const roomChromeReady = connected || !!lastErr || (!prejoinOpen && !joinRequested);
+  useEffect(() => {
+    if (roomChromeRevealed || !roomChromeReady) return;
+    // Give the first video tiles a moment to paint before the chrome moves in.
+    const timer = window.setTimeout(() => setRoomChromeRevealed(true), connected ? 220 : 0);
+    return () => window.clearTimeout(timer);
+  }, [roomChromeRevealed, roomChromeReady, connected]);
+
   // hide/pin helpers
   const toggleHide = (tileId: string) => {
     setHiddenTileIds((prev) => {
@@ -21408,7 +21421,10 @@ export function RoomPageLiveKit({
       </React.Suspense>
       </RoomSilentErrorBoundary>
 
-      <div className={`ms-room-page h-[100dvh] overflow-hidden ${pageBg}`}>
+      <div
+        className={`ms-room-page h-[100dvh] overflow-hidden ${pageBg}`}
+        data-room-chrome={roomChromeRevealed ? "in" : "pending"}
+      >
         <input
           ref={voiceFxUploadInputRef}
           type="file"
@@ -22028,7 +22044,7 @@ export function RoomPageLiveKit({
             {rightPanelOpen && !useOverlayRightPanel && (
               <div
                 ref={attachRightPanelHost}
-                className="min-h-0 h-full overflow-hidden"
+                className="ms-room-side min-h-0 h-full overflow-hidden"
               />
             )}
           </div>
@@ -22036,7 +22052,7 @@ export function RoomPageLiveKit({
           {rightPanelOpen && useOverlayRightPanel && (
             <div
               ref={attachRightPanelHost}
-              className="absolute inset-x-2 top-2 bottom-[calc(68px+env(safe-area-inset-bottom))] z-[70] min-h-0 sm:inset-x-3 sm:bottom-[calc(72px+env(safe-area-inset-bottom))]"
+              className="ms-room-side absolute inset-x-2 top-2 bottom-[calc(68px+env(safe-area-inset-bottom))] z-[70] min-h-0 sm:inset-x-3 sm:bottom-[calc(72px+env(safe-area-inset-bottom))]"
             />
           )}
           {rightPanelOpen && rightPanelHost
