@@ -25,16 +25,17 @@ test("both themes and custom status text are supported", () => {
   const html = renderToStaticMarkup(createElement(Indicator, { theme: "light", label: "Preparing your room" }));
   assert.match(html, /data-theme="light"/);
   assert.match(html, /Preparing your room/);
-  assert.match(css, /--joining-ink: #f5f5f6/);
+  assert.match(css, /--joining-ink: #ffffff/);
   assert.match(css, /--joining-ink: #2f2f2f/);
 });
-test("compact 20px ripple, two rings half a cycle apart, plain colours", () => {
+test("compact 16px ripple, two rings half a cycle apart, plain colours", () => {
   const html = renderToStaticMarkup(createElement(Indicator, { theme: "dark" }));
   assert.equal((html.match(/attributeName="r"/g) || []).length, 2);
   assert.equal((html.match(/attributeName="stroke-width"/g) || []).length, 2);
   assert.match(html, /begin="0s"/);
   assert.match(html, /begin="-0.5s"/);
-  assert.match(css, /width: 20px; height: 20px/);
+  assert.match(css, /width: 16px; height: 16px/);
+  assert.match(css, /ms-room-joining-word \{ font-size: 16px;/);
   assert.doesNotMatch(source + css, /gradient|drop-shadow|box-shadow/i);
 });
 test("visible 'Loading' word animates letter by letter and is hidden from screen readers", () => {
