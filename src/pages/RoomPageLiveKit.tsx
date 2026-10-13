@@ -94,6 +94,7 @@ import JoinGateModal, {
   type JoinGateHostSession,
 } from "../components/JoinGateModal";
 import RoomTopBar from "../components/RoomTopBar";
+import RoomJoiningIndicator from "../components/RoomJoiningIndicator";
 import {
   type RoomTimelineBlock,
   timelineBlocksFromSchedule,
@@ -19503,11 +19504,7 @@ export function RoomPageLiveKit({
         <div
           className={`absolute inset-0 flex items-center justify-center z-10 ${isLight ? "text-black/60" : "text-white/70"}`}
         >
-          <div
-            className={`px-4 py-2 rounded-xl ${isLight ? "bg-[#FAFAFA]" : "bg-[#242424]"}`}
-          >
-            {roomReadyText}
-          </div>
+          <RoomJoiningIndicator theme={theme} label={roomReadyText} />
         </div>
       ) : null}
 
