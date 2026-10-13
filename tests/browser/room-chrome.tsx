@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import RoomTopBar from "../../src/components/RoomTopBar";
-import RoomJoiningIndicator from "../../src/components/RoomJoiningIndicator";
+import RoomJoiningTip from "../../src/components/RoomJoiningTip";
 import { LiveKitBottomBar } from "../../src/pages/livekit/LiveKitBottomBarLegacy";
 import "../../src/index.css";
 import "../../src/pages/livekit/room-chrome-motion.css";
@@ -63,7 +63,7 @@ function Preview() {
               </div>
             ) : (
               <div className="absolute inset-0 flex items-center justify-center">
-                <RoomJoiningIndicator theme={theme} />
+                <RoomJoiningTip key={run} theme={theme} status="Connecting to room..." />
               </div>
             )}
           </div>

@@ -1,0 +1,55 @@
+/* Joining screen with a productivity tip. Flat ink colours as elsewhere in
+   the room: white on dark, #2F2F2F on light. No motion of its own; the loader
+   underneath keeps its animation and its reduced-motion fallback. */
+.ms-room-joining-tip {
+  --joining-tip-ink: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(30rem, 100%);
+  padding: 0 16px;
+  text-align: center;
+  color: var(--joining-tip-ink);
+}
+.ms-room-joining-tip[data-theme="light"] { --joining-tip-ink: #2f2f2f; }
+
+.ms-room-joining-tip-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+
+.ms-room-joining-tip-text {
+  margin: 10px 0 0;
+  max-width: 100%;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+/* Subtle status row: same loader, smaller and quieter than the tip. */
+.ms-room-joining-tip-status {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+  max-width: 100%;
+  opacity: 0.7;
+}
+.ms-room-joining-tip-status .ms-room-joining { gap: 7px; }
+.ms-room-joining-tip-status .ms-room-joining-dots,
+.ms-room-joining-tip-status .ms-room-joining-still { width: 16px; height: 8px; }
+.ms-room-joining-tip-status .ms-room-joining-word {
+  font-size: 13px;
+  white-space: normal;
+  text-align: left;
+}
+
+@media (max-width: 639px) {
+  .ms-room-joining-tip-text { font-size: 16px; }
+}

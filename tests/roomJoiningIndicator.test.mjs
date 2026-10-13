@@ -65,8 +65,8 @@ test("tracks have one value per reference frame, loop seamlessly, and reduced mo
 });
 test("real room integration retains the existing joining condition and error surface", () => {
   assert.match(room, /const roomReadyText = connected\s*\? ""\s*: prejoinOpen\s*\? ""\s*: joinRequested\s*\?[\s\S]*?"Joining room…"\s*: ""/);
-  assert.match(room, /\{roomReadyText \? \([\s\S]*?<RoomJoiningIndicator theme=\{theme\} label=\{roomReadyText\}/);
-  // A slow-connection retry stays visible under the loader.
-  assert.match(room, /connectRetryAttempt > 1 \? <p className="text-\[13px\]" aria-hidden="true">\{roomReadyText\}<\/p> : null/);
+  // The joining screen (productivity tip + this loader) only exists while joining;
+  // a slow-connection retry replaces its status line.
+  assert.match(room, /\{roomReadyText \? \([\s\S]*?<RoomJoiningTip\s+theme=\{theme\}\s+status=\{connectRetryAttempt > 1 \? roomReadyText : "Connecting to room\.\.\."\}/);
   assert.match(room, /\{lastErr && \(/);
 });

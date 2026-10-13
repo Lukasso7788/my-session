@@ -1,6 +1,7 @@
 import "./room-joining-indicator.css";
 
-type Props = { theme: "light" | "dark"; label?: string };
+// `label` is announced to screen readers; `word` is the visible status text.
+type Props = { theme: "light" | "dark"; label?: string; word?: string };
 
 // Frame-by-frame track (30 fps, 0.5s loop) of the owner's reference: first row,
 // fifth from the left. Two big dots swap places: the one travelling left to
@@ -21,7 +22,7 @@ const WORD = "Loading";
  * Small dots loader with a shimmering "Loading" word, for the temporary
  * joining state. The label is what screen readers announce.
  */
-export default function RoomJoiningIndicator({ theme, label = "Joining room…" }: Props) {
+export default function RoomJoiningIndicator({ theme, label = "Joining room…", word = WORD }: Props) {
   const animate = (attributeName: string, values: string) => (
     <animate attributeName={attributeName} dur="0.5s" repeatCount="indefinite" keyTimes={KEY_TIMES} values={values} />
   );
@@ -43,7 +44,7 @@ export default function RoomJoiningIndicator({ theme, label = "Joining room…" 
         <circle className="ms-room-joining-middle" cx="0.1" r="1.3" />
         <circle cx="8.95" r="2.9" />
       </svg>
-      <span className="ms-room-joining-word" aria-hidden="true">{WORD}</span>
+      <span className="ms-room-joining-word" aria-hidden="true">{word}</span>
     </div>
   );
 }
