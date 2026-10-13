@@ -1,5 +1,5 @@
-/* Compact dots + "Loading" word. Two outer dots close in on a small middle
-   dot and spring back every 0.5s (SMIL geometry in the component); the word
+/* Compact dots + "Loading" word. Two dots swap places every 0.5s, one in
+   front and one behind (SMIL geometry in the component); the word
    stays in the full ink colour while a soft dimming wave runs across its
    letters. Flat colours only: white on dark, #2F2F2F on light. */
 .ms-room-joining {
@@ -28,6 +28,7 @@
 .ms-room-joining-dots,
 .ms-room-joining-still { display: block; flex-shrink: 0; width: 20px; height: 10px; overflow: visible; }
 .ms-room-joining circle { fill: var(--joining-ink); }
+.ms-room-joining-middle { opacity: 0.6; }
 .ms-room-joining-still { display: none; }
 
 .ms-room-joining-word { font-size: 16px; font-weight: 500; line-height: 1; letter-spacing: 0.01em; white-space: nowrap; }

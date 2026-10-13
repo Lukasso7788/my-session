@@ -28,11 +28,12 @@ test("both themes and custom status text are supported", () => {
   assert.match(css, /--joining-ink: #ffffff/);
   assert.match(css, /--joining-ink: #2f2f2f/);
 });
-test("outer dots close in on the middle dot every 0.5s, flat colours", () => {
+test("two dots swap places every 0.5s, back one shrinking and dimming, flat colours", () => {
   const html = renderToStaticMarkup(createElement(Indicator, { theme: "dark" }));
-  assert.equal((html.match(/attributeName="cx"/g) || []).length, 2);
+  assert.equal((html.match(/attributeName="cx"/g) || []).length, 3);
   assert.equal((html.match(/attributeName="r"/g) || []).length, 1);
-  assert.equal((html.match(/dur="0.5s"/g) || []).length, 3);
+  assert.equal((html.match(/attributeName="opacity"/g) || []).length, 1);
+  assert.equal((html.match(/dur="0.5s"/g) || []).length, 5);
   assert.match(css, /ms-room-joining-dots,\s*\.ms-room-joining-still \{[^}]*width: 20px; height: 10px/);
   assert.match(css, /ms-room-joining-word \{ font-size: 16px;/);
   assert.match(css, /\.ms-room-joining circle \{ fill: var\(--joining-ink\); \}/);
@@ -46,15 +47,15 @@ test("visible 'Loading' word animates letter by letter and is hidden from screen
   assert.equal((html.match(/animation-delay:/g) || []).length, 7);
   assert.match(css, /ms-room-joining-letter 1\.4s ease-in-out infinite/);
 });
-test("keyframe lists line up, stay symmetric, and reduced motion shows still dots", () => {
-  const list = (name) => source.match(new RegExp(`const ${name} = "([^"]+)"`))[1].split(";");
-  const times = list("KEY_TIMES").map(Number);
-  for (const name of ["LEFT_X", "RIGHT_X", "MIDDLE_R"]) assert.equal(list(name).length, times.length, name);
-  assert.deepEqual(list("LEFT_X").map((x) => -Number(x)), list("RIGHT_X").map(Number));
-  assert.deepEqual([...times].sort((a, b) => a - b), times);
-  assert.equal(times[0], 0);
-  assert.equal(times.at(-1), 1);
-  assert.equal(list("LEFT_X")[0], list("LEFT_X").at(-1));
+test("tracks have one value per reference frame, loop seamlessly, and reduced motion shows still dots", () => {
+  const list = (name) => source.match(new RegExp(`const ${name} = "([^"]+)"`))[1].split(";").map(Number);
+  for (const name of ["FRONT_X", "BACK_X", "BACK_R", "BACK_OPACITY", "MIDDLE_X"]) assert.equal(list(name).length, 16, name);
+  // The front dot ends where the back dot starts (and vice versa), so the swap is invisible at the loop.
+  assert.equal(list("FRONT_X").at(-1), list("BACK_X")[0]);
+  assert.equal(list("BACK_X").at(-1), list("FRONT_X")[0]);
+  assert.equal(list("BACK_R")[0], list("BACK_R").at(-1));
+  assert.equal(list("MIDDLE_X")[0], list("MIDDLE_X").at(-1));
+  assert.ok(Math.min(...list("BACK_OPACITY")) < 0.8, "back dot dims while it passes behind");
   assert.match(css, /prefers-reduced-motion: reduce[\s\S]*ms-room-joining-dots \{ display: none; \}[\s\S]*ms-room-joining-still \{ display: block; \}/);
   assert.doesNotMatch(source, /useEffect|setTimeout|fetch\(|Math\.random/);
 });

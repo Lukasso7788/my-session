@@ -11,9 +11,12 @@ is shown as a caption under the loader.
 ## Design
 
 - Dots + word, chosen by the owner from a Pinterest loader-icon sheet (first
-  row, fifth from the left): every 0.5s two outer dots close in on a small
-  middle dot, absorb it, touch, and spring back while it reappears.
-- Geometry comes from frame measurements of that reference (30 fps).
+  row, fifth from the left): every 0.5s two dots swap places. The one moving
+  right passes in front at full size; the other passes behind, shrinking to
+  ~78% and dimming to ~0.72. Both hesitate before and after they cross, then
+  snap past each other. A small dim middle dot hides under the front dot.
+- Every value is tracked from the reference frame by frame (30 fps, 15 frames
+  per loop, linear between frames).
 - Next to it a 16px "Loading" word; a soft dimming wave runs across the letters.
 - Flat colours only: `#FFFFFF` on the dark room, `#2F2F2F` on the light room.
   No gradients or shadows. Dots icon is 20x10px so the dots read at the weight
@@ -23,8 +26,8 @@ is shown as a caption under the loader.
 
 ## Implementation
 
-- Three `<circle>`s; the outer ones animate `cx`, the middle one `r`, with SMIL
-  (`dur=0.5s`, spline easing), shared `KEY_TIMES`.
+- Three `<circle>`s painted back to front; SMIL animates `cx` (all), plus `r`
+  and `opacity` of the back dot (`dur=0.5s`, 16 key frames).
 - `role="status"` / `aria-live="polite"` with the label kept screen-reader only;
   the dots and the visible word are `aria-hidden`.
 - `prefers-reduced-motion: reduce` swaps to still dots and a still word.
