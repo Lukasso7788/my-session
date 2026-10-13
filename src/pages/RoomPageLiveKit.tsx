@@ -42,6 +42,15 @@ import { createPiPAvatarCache } from "../lib/pipAvatarCache";
 import { invalidateHostLeaseCache } from "../lib/supabaseFetchOptimizer";
 import { withTimeout } from "../lib/promiseTimeout";
 import { readSessionRoomPolicies, shouldEnforceMediaPolicyForRole, withRoomPolicies, type RoomPolicies } from "../lib/roomPolicies";
+import {
+  type VideoQualityChoice,
+  readReceiveVideoQuality,
+  readSendVideoQuality,
+  receiveCapFor,
+  sendPresetOverride,
+  writeReceiveVideoQuality,
+  writeSendVideoQuality,
+} from "../lib/videoQualityPreferences";
 import { captureProductEvent } from "../lib/analytics";
 import { preloadableLazy } from "../lib/preloadableLazy";
 import {
@@ -6207,6 +6216,19 @@ export function RoomPageLiveKit({
     [deviceTier],
   );
 
+  // Video quality from room settings. "auto" keeps every existing preset and
+  // cap below exactly as it is; another choice overrides them on this device.
+  const [sendVideoQuality, setSendVideoQuality] = useState<VideoQualityChoice>(
+    () => (typeof window === "undefined" ? "auto" : readSendVideoQuality()),
+  );
+  const [receiveVideoQuality, setReceiveVideoQuality] = useState<VideoQualityChoice>(
+    () => (typeof window === "undefined" ? "auto" : readReceiveVideoQuality()),
+  );
+  const cameraQualityOverride = useMemo(
+    () => sendPresetOverride(sendVideoQuality),
+    [sendVideoQuality],
+  );
+
   const isChromeOS = useMemo(() => isChromeOSLike(), []);
   const isMobileOrTabletDevice = useMemo(
     () => isMobileOrTabletDeviceLike(),
@@ -6228,6 +6250,8 @@ export function RoomPageLiveKit({
   const shouldDisableBackgroundFx = false;
 
   const prejoinPreviewPreset = useMemo(() => {
+    if (cameraQualityOverride) return cameraQualityOverride;
+
     if (lowPowerMobileMode) {
       return {
         width: 320,
@@ -6257,7 +6281,7 @@ export function RoomPageLiveKit({
       height: capturePreset.height,
       fps: capturePreset.fps,
     };
-  }, [lowPowerMobileMode, isChromeOS, deviceTier, capturePreset]);
+  }, [cameraQualityOverride, lowPowerMobileMode, isChromeOS, deviceTier, capturePreset]);
 
   const [prejoin, setPrejoin] = useState<PreJoinSettings>(() => {
     const audioProcessing = readAudioProcessingPreferences();
@@ -12420,10 +12444,10 @@ export function RoomPageLiveKit({
     ) => {
       const baseOptions = {
         resolution: {
-          width: lowPowerMobileMode ? 320 : capturePreset.width,
-          height: lowPowerMobileMode ? 180 : capturePreset.height,
+          width: cameraQualityOverride?.width ?? (lowPowerMobileMode ? 320 : capturePreset.width),
+          height: cameraQualityOverride?.height ?? (lowPowerMobileMode ? 180 : capturePreset.height),
         },
-        frameRate: lowPowerMobileMode ? 8 : capturePreset.fps,
+        frameRate: cameraQualityOverride?.fps ?? (lowPowerMobileMode ? 8 : capturePreset.fps),
       } as any;
       const requestedDeviceId = String(args.requestedDeviceId || "").trim();
       const attempts = [
@@ -12538,6 +12562,7 @@ export function RoomPageLiveKit({
     },
     [
       bindLocalCameraEndedListener,
+      cameraQualityOverride,
       capturePreset.fps,
       capturePreset.height,
       capturePreset.width,
@@ -13499,14 +13524,12 @@ export function RoomPageLiveKit({
   useEffect(() => {
     if (!connected || !roomState) return;
 
-    // Cap cameras by room size. Screen shares use adaptive stream alone:
-    // their attached video element requests 360p/720p/full quality as the
-    // gallery tile is resized, pinned, or opened full screen.
-    const maxCameraDimensions = participantsCount <= 2
-      ? { width: 1280, height: 720 }
-      : participantsCount <= 4
-        ? { width: 854, height: 480 }
-        : { width: 640, height: 360 };
+    // Cap cameras by room size ("auto"), or by the person's own choice in
+    // settings. Adaptive stream still lowers this for small tiles. Screen
+    // shares use adaptive stream alone: their attached video element requests
+    // 360p/720p/full quality as the gallery tile is resized, pinned, or opened
+    // full screen.
+    const maxCameraDimensions = receiveCapFor(receiveVideoQuality, participantsCount);
 
     roomState.remoteParticipants.forEach((participant) => {
       participant.videoTrackPublications.forEach((publication) => {
@@ -13514,7 +13537,37 @@ export function RoomPageLiveKit({
         publication.setVideoDimensions(maxCameraDimensions);
       });
     });
-  }, [connected, roomState, participantsCount, remoteCameraSignature]);
+  }, [connected, roomState, participantsCount, remoteCameraSignature, receiveVideoQuality]);
+
+  // A quality change in settings reaches a running camera through constraints
+  // on its source track: no restart, so the published track, its effects and
+  // the camera light stay as they are. Later camera starts use the same preset.
+  const sendVideoQualityAppliedRef = useRef(sendVideoQuality);
+  useEffect(() => {
+    if (sendVideoQualityAppliedRef.current === sendVideoQuality) return;
+    sendVideoQualityAppliedRef.current = sendVideoQuality;
+    const source = (roomState?.localParticipant
+      ?.getTrackPublication(Track.Source.Camera)?.track as LocalVideoTrack | undefined)
+      ?.mediaStreamTrack;
+    if (!source || source.readyState !== "live") return;
+    const preset = cameraQualityOverride ?? (lowPowerMobileMode ? { width: 320, height: 180, fps: 8 } : capturePreset);
+    void source.applyConstraints({
+      width: { ideal: preset.width },
+      height: { ideal: preset.height },
+      frameRate: { ideal: preset.fps },
+    }).catch((error) => {
+      console.warn("[room] camera quality change was not applied", error);
+    });
+  }, [sendVideoQuality, cameraQualityOverride, roomState, lowPowerMobileMode, capturePreset]);
+
+  const changeSendVideoQuality = useCallback((value: VideoQualityChoice) => {
+    setSendVideoQuality(value);
+    writeSendVideoQuality(value);
+  }, []);
+  const changeReceiveVideoQuality = useCallback((value: VideoQualityChoice) => {
+    setReceiveVideoQuality(value);
+    writeReceiveVideoQuality(value);
+  }, []);
 
   const micToggleHook = useTrackToggle({
     source: Track.Source.Microphone,
@@ -14240,10 +14293,10 @@ export function RoomPageLiveKit({
       const nextTrack = await createLocalVideoTrack({
         deviceId: useId || undefined,
         resolution: {
-          width: isChromeOS ? 640 : capturePreset.width,
-          height: isChromeOS ? 360 : capturePreset.height,
+          width: cameraQualityOverride?.width ?? (isChromeOS ? 640 : capturePreset.width),
+          height: cameraQualityOverride?.height ?? (isChromeOS ? 360 : capturePreset.height),
         },
-        frameRate: isChromeOS ? 15 : capturePreset.fps,
+        frameRate: cameraQualityOverride?.fps ?? (isChromeOS ? 15 : capturePreset.fps),
       } as any);
 
       if (!shouldDisableBackgroundFx && videoFxMode !== "off") {
@@ -22613,6 +22666,10 @@ export function RoomPageLiveKit({
             }
             setBgImageUrl(DEFAULT_BG_DATA_URL);
           }}
+          sendVideoQuality={sendVideoQuality}
+          receiveVideoQuality={receiveVideoQuality}
+          onChangeSendVideoQuality={changeSendVideoQuality}
+          onChangeReceiveVideoQuality={changeReceiveVideoQuality}
           videoTileLayoutPreset={videoTileLayoutPreset}
           videoTileLayoutColumns={videoTileLayoutColumns}
           videoTileLayoutRows={videoTileLayoutRows}

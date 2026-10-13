@@ -10,7 +10,8 @@ const css = readFileSync("src/pages/livekit/room-settings-motion.css", "utf8");
 test("settings TSX parses and every dropdown uses the existing animated presenter", () => {
   const ast = ts.createSourceFile("settings.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   assert.equal(ast.parseDiagnostics.length, 0);
-  assert.equal((source.match(/<SelectField\s/g) || []).length, 6);
+  // 6 original dropdowns + the two video quality ones.
+  assert.equal((source.match(/<SelectField\s/g) || []).length, 8);
   assert.doesNotMatch(source, /<select\s/);
   assert.match(source, /<PreJoinDeviceSelect .*onChange=\{onChange\}/);
 });

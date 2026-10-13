@@ -8,6 +8,7 @@ const initial = {
   sidePanelTheme: "light" as "light" | "dark", mode: "off" as "off" | "blur" | "bg", blurStrength: 12, bgImageUrl: "",
   defaultRemoteVolumePct: 100, previewMirrored: true, cameraFramingMode: "fill" as CameraFramingMode,
   videoTileLayoutPreset: "auto" as "auto" | "one" | "two" | "three" | "four" | "five" | "six" | "strip",
+  sendVideoQuality: "auto" as "auto" | "high" | "medium" | "low", receiveVideoQuality: "auto" as "auto" | "high" | "medium" | "low",
   videoTileLayoutColumns: 0, videoTileLayoutRows: 0, showMobileLayoutSwitcher: true, voiceUiHotkey: "Alt+V",
   cameraRequired: false, screenShareRequired: false, cameraOrScreenShareRequired: false, publicChatDisabled: false, mediaRequirementsApplyToStaff: false,
   selectedAudioInputId: "mic-1", selectedVideoInputId: "cam-1", selectedAudioOutputId: "default",
@@ -39,6 +40,7 @@ function Preview() {
       onApplyMode={(mode, url) => setSettings((current) => ({ ...current, mode, bgImageUrl: url || current.bgImageUrl }))}
       onTogglePreviewMirrored={change("previewMirrored")} onChangeCameraFramingMode={change("cameraFramingMode")}
       onUploadBg={() => {}} onResetBg={() => change("bgImageUrl")("")}
+      onChangeSendVideoQuality={change("sendVideoQuality")} onChangeReceiveVideoQuality={change("receiveVideoQuality")}
       onChangeVideoTileLayoutPreset={change("videoTileLayoutPreset")} onChangeVideoTileLayoutColumns={change("videoTileLayoutColumns")} onChangeVideoTileLayoutRows={change("videoTileLayoutRows")}
       onChangeShowMobileLayoutSwitcher={change("showMobileLayoutSwitcher")} onChangeVoiceUiHotkey={change("voiceUiHotkey")}
       onChangeCameraRequired={change("cameraRequired")} onChangeScreenShareRequired={change("screenShareRequired")} onChangeCameraOrScreenShareRequired={change("cameraOrScreenShareRequired")}

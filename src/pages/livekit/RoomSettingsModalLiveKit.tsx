@@ -3,7 +3,31 @@ import type { CameraFramingMode } from "./VideoTileLiveKit";
 import { FX_BG_PRESETS } from "./backgroundPresets";
 import { PreJoinDeviceSelect, PreJoinDisclosure } from "./PreJoinMenus";
 import { RoomSettingsDisclosure } from "./RoomSettingsMotion";
+import type { VideoQualityChoice } from "../../lib/videoQualityPreferences";
 import "./room-settings-motion.css";
+
+const SEND_VIDEO_QUALITY_OPTIONS: Array<{ value: VideoQualityChoice; label: string }> = [
+    { value: "auto", label: "Auto (recommended)" },
+    { value: "high", label: "High · 540p, 24 fps" },
+    { value: "medium", label: "Medium · 360p, 15 fps" },
+    { value: "low", label: "Low · 180p, 10 fps" },
+];
+
+const RECEIVE_VIDEO_QUALITY_OPTIONS: Array<{ value: VideoQualityChoice; label: string }> = [
+    { value: "auto", label: "Auto (by room size)" },
+    { value: "high", label: "High · up to 720p" },
+    { value: "medium", label: "Medium · up to 360p" },
+    { value: "low", label: "Low · up to 180p" },
+];
+
+const PERFORMANCE_TIPS = [
+    "Room feels slow or the fan spins up? Set Others' video to Medium or Low: it downloads and decodes less.",
+    "Others see you freeze or blur? Lower My camera to Medium or Low, especially on weak Wi-Fi.",
+    "Background blur and virtual backgrounds use the most processing power. Turn them off on older laptops.",
+    "Close other tabs and apps that use the camera, video or a lot of CPU.",
+    "Keep a laptop plugged in: on battery it often slows itself down.",
+    "On Wi-Fi, move closer to the router or use a cable.",
+];
 
 type RoomTheme = "dark" | "light";
 type FxMode = "off" | "blur" | "bg";
@@ -1080,6 +1104,11 @@ export function RoomSettingsModalLiveKit({
     onUploadBg,
     onResetBg,
 
+    sendVideoQuality = "auto",
+    receiveVideoQuality = "auto",
+    onChangeSendVideoQuality,
+    onChangeReceiveVideoQuality,
+
     videoTileLayoutPreset = "auto",
     videoTileLayoutColumns = 0,
     videoTileLayoutRows = 0,
@@ -1166,6 +1195,11 @@ export function RoomSettingsModalLiveKit({
     onChangeCameraFramingMode: (mode: CameraFramingMode) => void;
     onUploadBg: (file: File) => void;
     onResetBg: () => void;
+
+    sendVideoQuality?: VideoQualityChoice;
+    receiveVideoQuality?: VideoQualityChoice;
+    onChangeSendVideoQuality?: (v: VideoQualityChoice) => void;
+    onChangeReceiveVideoQuality?: (v: VideoQualityChoice) => void;
 
     videoTileLayoutPreset?: VideoTileLayoutPreset;
     videoTileLayoutColumns?: number;
@@ -1482,6 +1516,7 @@ export function RoomSettingsModalLiveKit({
                             ["appearance", "Appearance", "/icons/room-settings/graphic-design.svg", false],
                             ["host-controls", "Host controls", "/icons/room-settings/setting.svg", false],
                             ["video-layout", "Video layout", "/icons/room-settings/layout.svg", false],
+                            ["video-quality", "Video quality", "/icons/room-settings/setting.svg", false],
                             ["shortcuts", "Shortcuts", "/icons/room-settings/command.svg", false],
                             ["audio-devices", "Audio & devices", "/icons/room-settings/volume.svg", false],
                             ["camera-effects", "Camera & effects", isLight ? "/icons/camera-on-light.svg" : "/icons/camera-on-dark.svg", true],
@@ -1630,6 +1665,55 @@ export function RoomSettingsModalLiveKit({
                                             onChange={(v) => onChangeShowMobileLayoutSwitcher?.(v)}
                                             isLight={isLight}
                                         />
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section id="video-quality" className="scroll-mt-4">
+                                <div className={`rounded-2xl p-3.5 ${sectionCls}`}>
+                                    <div className="mb-3 flex items-start justify-between gap-3">
+                                        <div>
+                                            <div className="text-[12px] font-semibold">Video quality</div>
+                                            <div className={`mt-0.5 text-[10.5px] ${subtleText}`}>Only on this device. Auto keeps the room's usual quality.</div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                onChangeSendVideoQuality?.("auto");
+                                                onChangeReceiveVideoQuality?.("auto");
+                                            }}
+                                            className={`h-8 shrink-0 rounded-lg px-2.5 text-[10px] font-semibold ${ghostBtn}`}
+                                        >
+                                            Reset
+                                        </button>
+                                    </div>
+                                    <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+                                        <div>
+                                            <SelectField
+                                                label="My camera"
+                                                value={sendVideoQuality}
+                                                onChange={(v) => onChangeSendVideoQuality?.(v as VideoQualityChoice)}
+                                                options={SEND_VIDEO_QUALITY_OPTIONS}
+                                                isLight={isLight}
+                                            />
+                                            <div className={`mt-1.5 text-[10.5px] leading-4 ${subtleText}`}>What others receive from you.</div>
+                                        </div>
+                                        <div>
+                                            <SelectField
+                                                label="Others' video"
+                                                value={receiveVideoQuality}
+                                                onChange={(v) => onChangeReceiveVideoQuality?.(v as VideoQualityChoice)}
+                                                options={RECEIVE_VIDEO_QUALITY_OPTIONS}
+                                                isLight={isLight}
+                                            />
+                                            <div className={`mt-1.5 text-[10.5px] leading-4 ${subtleText}`}>The most you download per camera. Small tiles still use less.</div>
+                                        </div>
+                                    </div>
+                                    <div className={`mt-3 rounded-xl px-3 py-2.5 ${isLight ? "bg-black/[0.03]" : "bg-white/[0.04]"}`}>
+                                        <div className="text-[11px] font-semibold">Optimize performance</div>
+                                        <ul className={`mt-1.5 list-disc space-y-1 pl-4 text-[10.5px] leading-4 ${subtleText}`}>
+                                            {PERFORMANCE_TIPS.map((tip) => <li key={tip}>{tip}</li>)}
+                                        </ul>
                                     </div>
                                 </div>
                             </section>
