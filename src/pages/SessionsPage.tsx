@@ -24,6 +24,7 @@ import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
 import { ListChecks, UserPlus } from "lucide-react";
 import { captureProductEvent } from "../lib/analytics";
+import { buildSessionSeries } from "../lib/sessionSeries";
 import {
   musicSessionIdsFromPresence,
   roomMusicPresenceKey,
@@ -1870,6 +1871,14 @@ export function SessionsPage() {
     };
   }, [fetchLiveCounts, liveCountRoomIdsKey]);
 
+  const seriesBySession = useMemo(
+    () => buildSessionSeries(
+      privacyFilteredSessions.filter((s) => resolveSessionType(s) === "group"),
+      { userId: user?.id }
+    ),
+    [privacyFilteredSessions, user?.id]
+  );
+
   const typeFilteredSessions = useMemo(() => {
     return privacyFilteredSessions.filter(
       (s) => resolveSessionType(s) === sessionTypeTab
@@ -2062,7 +2071,11 @@ export function SessionsPage() {
     navigate(next);
   };
 
-  const book = async (id: string, opts: BookSessionOptions = {}): Promise<boolean> => {
+  const book = async (
+    id: string,
+    opts: BookSessionOptions = {},
+    { refresh = true }: { refresh?: boolean } = {}
+  ): Promise<boolean> => {
     if (showBanModal()) return false;
 
     if (!user) {
@@ -2150,10 +2163,52 @@ export function SessionsPage() {
         booking_role: opts.booking_role || "participant",
       });
 
-      await fetchSessions();
+      if (refresh) await fetchSessions();
       return true;
     } catch (err) {
       console.error("[DEBUG Sessions] Booking error:", err);
+      return false;
+    }
+  };
+
+  // Books every listed occurrence of a series one by one (the booking RPC is
+  // per session) and refreshes the list once at the end.
+  const bookSeries = async (ids: string[]): Promise<string[]> => {
+    if (!user) {
+      navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+      return [];
+    }
+    const booked: string[] = [];
+    for (const id of ids) {
+      if (await book(id, {}, { refresh: false })) booked.push(id);
+      else if (activeBan) break;
+    }
+    if (booked.length) {
+      captureProductEvent("session_series_booked", { occurrences: booked.length });
+    }
+    await fetchSessions();
+    return booked;
+  };
+
+  const cancelSeries = async (ids: string[]): Promise<boolean> => {
+    if (!user) {
+      navigate(`/login?next=${encodeURIComponent("/sessions")}`);
+      return false;
+    }
+    if (!ids.length) return true;
+
+    try {
+      const { error } = await supabase
+        .from("session_bookings")
+        .delete()
+        .in("session_id", ids)
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+      await fetchSessions();
+      return true;
+    } catch (err) {
+      console.error("[DEBUG Sessions] Series cancel error:", err);
       return false;
     }
   };
@@ -2517,6 +2572,9 @@ export function SessionsPage() {
       onJoin={join}
       onBook={book}
       onCancelBooking={cancel}
+      seriesOccurrences={seriesBySession.get(String(s.id))}
+      onBookSeries={bookSeries}
+      onCancelSeries={cancelSeries}
       onDelete={remove}
       onEditSession={editSession}
       onInviteToSession={inviteToSession}

@@ -23,6 +23,7 @@ import type { SessionStage } from "../SessionConfig";
 import { readSessionRoomPolicies, withRoomPolicies } from "../lib/roomPolicies";
 import SessionRoomPolicyIndicator from "./SessionRoomPolicyIndicator";
 import SessionMusicIndicator from "./SessionMusicIndicator";
+import { SERIES_WINDOW_DAYS, type SeriesOccurrence } from "../lib/sessionSeries";
 
 let roomPagePrefetchPromise: Promise<unknown> | null = null;
 function prefetchRoomPage() {
@@ -55,6 +56,11 @@ interface SessionCardProps {
 
     onBook: (sessionId: string, opts?: BookSessionOptions) => boolean | Promise<boolean>;
     onCancelBooking: (sessionId: string) => void;
+    // Upcoming occurrences of the same series (this session included), when
+    // it repeats within the next week.
+    seriesOccurrences?: SeriesOccurrence[];
+    onBookSeries?: (sessionIds: string[]) => Promise<string[]>;
+    onCancelSeries?: (sessionIds: string[]) => Promise<boolean>;
     onJoin: (sessionId: string) => void;
     onDelete: (sessionId: string) => void;
 
@@ -371,6 +377,19 @@ function AvatarCircle({
             )}
         </div>
     );
+}
+
+const DRAWER_BOOKERS_PREVIEW = 6;
+
+function formatStartsIn(ms: number): string {
+    if (!Number.isFinite(ms)) return "Upcoming";
+    const minutes = Math.round(ms / 60_000);
+    if (minutes < 1) return "Starting now";
+    if (minutes < 60) return `Starts in ${minutes} min`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `Starts in ${hours} h`;
+    const days = Math.round(hours / 24);
+    return `Starts in ${days} day${days === 1 ? "" : "s"}`;
 }
 
 function ModalShell({
@@ -3949,6 +3968,9 @@ export default function SessionCard({
     userId,
     onBook,
     onCancelBooking,
+    seriesOccurrences,
+    onBookSeries,
+    onCancelSeries,
     onJoin,
     onDelete,
     onEditSession,
@@ -4218,37 +4240,6 @@ export default function SessionCard({
         window.addEventListener("keydown", onKeyDown);
         return () => window.removeEventListener("keydown", onKeyDown);
     }, [isBookersModalOpen]);
-
-    const bookingTimeRangeString = useMemo(() => {
-        const start = session?.start_time ? new Date(session.start_time) : null;
-        const durationMinutes = Number(session?.duration_minutes || 0);
-
-        if (!start || Number.isNaN(start.getTime())) {
-            return isInfinite ? "Any time — this room is always open" : "Time TBD";
-        }
-
-        if (isInfinite) return "Any time — this room is always open";
-
-        const end = durationMinutes > 0
-            ? new Date(start.getTime() + durationMinutes * 60_000)
-            : null;
-
-        const startText = start.toLocaleString("en-US", {
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-        });
-
-        if (!end || Number.isNaN(end.getTime())) return startText;
-
-        const endText = end.toLocaleTimeString("en-US", {
-            hour: "2-digit",
-            minute: "2-digit",
-        });
-
-        return `${startText} — ${endText}`;
-    }, [session?.start_time, session?.duration_minutes, isInfinite]);
 
 
     const liveCountFromSession: number | null = parseDbCount(
@@ -4669,6 +4660,91 @@ export default function SessionCard({
         setIsHoveringCancel(false);
     };
 
+    // The list comes from the page; this card's own booking state is newer
+    // than the page data right after a click, so it wins for this session.
+    const seriesList = useMemo(() => {
+        if (isInfinite || !seriesOccurrences || seriesOccurrences.length < 2) return null;
+        const currentId = String(session.id);
+        return seriesOccurrences.map((occurrence) =>
+            occurrence.id === currentId ? { ...occurrence, booked: isBookingConfirmed } : occurrence
+        );
+    }, [isInfinite, seriesOccurrences, session.id, isBookingConfirmed]);
+    const seriesOpenIds = seriesList?.filter((occurrence) => !occurrence.booked).map((occurrence) => occurrence.id) ?? [];
+    const seriesBookedIds = seriesList?.filter((occurrence) => occurrence.booked).map((occurrence) => occurrence.id) ?? [];
+    const [seriesPending, setSeriesPending] = useState<string | null>(null);
+    const [seriesMessage, setSeriesMessage] = useState("");
+
+    const handleBookWholeSeries = async () => {
+        if (!userId) {
+            navigate(buildLoginNext("/sessions"));
+            return;
+        }
+        if (!onBookSeries || !seriesOpenIds.length || seriesPending) return;
+        const requested = seriesOpenIds;
+        setSeriesPending("all");
+        setSeriesMessage("");
+        try {
+            const booked = await onBookSeries(requested);
+            if (booked.includes(String(session.id))) {
+                setIsBookingConfirmed(true);
+                ensureCurrentUserAsBooked();
+            }
+            if (booked.length < requested.length) {
+                setSeriesMessage(
+                    booked.length
+                        ? `Booked ${booked.length} of ${requested.length}. The rest could not be booked, try again.`
+                        : "Could not book these sessions. Please try again."
+                );
+            }
+        } finally {
+            setSeriesPending(null);
+        }
+    };
+
+    const handleCancelWholeSeries = async () => {
+        if (!onCancelSeries || !seriesBookedIds.length || seriesPending) return;
+        const requested = seriesBookedIds;
+        setSeriesPending("cancel");
+        setSeriesMessage("");
+        try {
+            const ok = await onCancelSeries(requested);
+            if (!ok) {
+                setSeriesMessage("Could not cancel these bookings. Please try again.");
+                return;
+            }
+            if (requested.includes(String(session.id))) {
+                setIsBookingConfirmed(false);
+                removeCurrentUserFromBooked();
+            }
+        } finally {
+            setSeriesPending(null);
+        }
+    };
+
+    const handleToggleSeriesOccurrence = async (occurrence: SeriesOccurrence) => {
+        if (seriesPending) return;
+        if (occurrence.id === String(session.id)) {
+            if (occurrence.booked) handleCancelBooking();
+            else await handleBookSession();
+            return;
+        }
+        if (!userId) {
+            navigate(buildLoginNext("/sessions"));
+            return;
+        }
+        setSeriesPending(occurrence.id);
+        setSeriesMessage("");
+        try {
+            if (occurrence.booked) {
+                await Promise.resolve(onCancelBooking(occurrence.id));
+            } else if (!(await Promise.resolve(onBook(occurrence.id)))) {
+                setSeriesMessage("Could not book that session. Please try again.");
+            }
+        } finally {
+            setSeriesPending(null);
+        }
+    };
+
     const handleCopyInviteLink = async () => {
         const url = buildPrettySessionUrl(session, resolvedHostSlug);
 
@@ -4750,8 +4826,31 @@ export default function SessionCard({
 
     const liveStackUsers = liveUsers.slice(0, maxStack);
     const liveRemaining = Math.max(0, liveNowCount - liveStackUsers.length);
-    const bookedDrawerStackUsers = bookers.slice(0, 8);
-    const bookedDrawerRemaining = Math.max(0, bookers.length - bookedDrawerStackUsers.length);
+    const [showAllDrawerBookers, setShowAllDrawerBookers] = useState(false);
+
+    const drawerWhen = useMemo(() => {
+        if (isInfinite) return { date: "Always open", time: "book the focus window that works for you" };
+        const start = session?.start_time ? new Date(session.start_time) : null;
+        if (!start || Number.isNaN(start.getTime())) return { date: "Time TBD", time: "" };
+        const durationMinutes = Number(session?.duration_minutes || 0);
+        const timeOptions: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit" };
+        const startText = start.toLocaleTimeString("en-US", timeOptions);
+        const endText = durationMinutes > 0
+            ? new Date(start.getTime() + durationMinutes * 60_000).toLocaleTimeString("en-US", timeOptions)
+            : "";
+        return {
+            date: start.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
+            time: endText ? `${startText} – ${endText}` : startText,
+        };
+    }, [isInfinite, session?.start_time, session?.duration_minutes]);
+
+    const drawerStatus = isInfinite
+        ? hasLiveNow
+            ? { live: true, label: `${liveNowCount} in the room now` }
+            : { live: false, label: "Open 24/7" }
+        : hasStarted
+            ? { live: true, label: hasLiveNow ? `Happening now · ${liveNowCount} in the room` : "Happening now" }
+            : { live: false, label: formatStartsIn(Date.parse(String(session?.start_time || "")) - Date.now()) };
 
     const canEdit = canManageSession && !!onEditSession;
     const canCancelBooking = !!isBookingConfirmed;
@@ -5532,89 +5631,274 @@ export default function SessionCard({
                     />
 
                     <aside className="session-booking-drawer relative flex h-full w-full max-w-[460px] flex-col border-l border-[#E5E7EB] bg-white shadow-[-18px_0_60px_rgba(17,24,39,0.14)]">
-                        <div className="flex items-start justify-between gap-4 border-b border-[#E5E7EB] px-5 py-5">
-                            <div>
-                                <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#65A96A]">
+                        <header className="shrink-0 px-6 pb-5 pt-5">
+                            <div className="flex items-center justify-between gap-3">
+                                <span
+                                    className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-[12px] font-semibold"
+                                    style={{ backgroundColor: t.bg, color: t.color }}
+                                >
+                                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: t.color }} aria-hidden="true" />
                                     {isInfinite ? "Infinite room" : resolvedType}
-                                </div>
-                                <h3 className="mt-1 text-[22px] font-bold leading-tight text-[#111827]">{session.title}</h3>
-                                <p className="mt-1 text-[12px] leading-5 text-[#606060]">
-                                    {isInfinite ? "Always open · book the focus window that works for you." : bookingTimeRangeString}
-                                </p>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setIsBookersModalOpen(false)}
-                                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#E5E7EB] text-[24px] leading-none text-[#606060] transition hover:bg-[#F3F4F6] hover:text-[#111827]"
-                                aria-label="Close session details"
-                            >
-                                ×
-                            </button>
-                        </div>
-
-                        <div className="border-b border-[#E5E7EB] px-5 py-4">
-                            <div className="flex flex-wrap items-center gap-2 text-[12px] text-[#606060]">
-                                <Link to={`/profile/${displayedHostId}`} onClick={() => setIsBookersModalOpen(false)} className="inline-flex items-center gap-2.5 rounded-full border border-[#E5E7EB] bg-white py-1.5 pl-1.5 pr-3 transition hover:border-[#BFC8C0] hover:bg-[#F8FAF8]">
-                                    <AvatarCircle user={hostCardUser} size={32} isLive={false} showLiveDot={false} />
-                                    <span><span className="text-[#7A7A7A]">Host</span> <strong className="font-semibold text-[#111827]">{hostCardUser.full_name || "Not assigned"}</strong></span>
-                                </Link>
-                                <span className="rounded-full bg-[#F3F4F6] px-3 py-1.5 font-medium text-[#111827]">
-                                    {isInfinite ? "24/7 room" : `${session.duration_minutes} min`}
                                 </span>
-                                {cardRoomPolicies.cameraRequired ? (
-                                    <span
-                                        className="inline-flex items-center gap-1.5 rounded-full bg-[#F3F4F6] px-3 py-1.5 font-medium text-[#2F2F2F]"
-                                        title="Cameras are required in this session"
-                                    >
-                                        <Camera size={13} strokeWidth={1.9} aria-hidden="true" />
-                                        Cameras required
-                                    </span>
-                                ) : null}
-                                {cardRoomPolicies.publicChatDisabled ? (
-                                    <span
-                                        className="inline-flex items-center gap-1.5 rounded-full bg-[#F3F4F6] px-3 py-1.5 font-medium text-[#2F2F2F]"
-                                        title="Public chat is disabled; participant-to-host DMs remain available"
-                                    >
-                                        <MessageSquareOff size={13} strokeWidth={1.9} aria-hidden="true" />
-                                        Public chat off
-                                    </span>
-                                ) : null}
+                                <button
+                                    type="button"
+                                    onClick={() => setIsBookersModalOpen(false)}
+                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#E5E7EB] text-[22px] leading-none text-[#606060] transition hover:border-[#A3A3A3] hover:text-[#111827]"
+                                    aria-label="Close session details"
+                                >
+                                    ×
+                                </button>
                             </div>
 
-                            <p className="mt-4 whitespace-pre-wrap text-[13px] leading-5 text-[#334155]">
-                                {description || "No description yet."}
-                            </p>
+                            <h3 className="mt-4 text-[24px] font-bold leading-[1.15] text-[#111827]">{session.title}</h3>
 
-                            <div className="mt-5 rounded-[18px] border border-[#E8EBE8] bg-[#FAFBFA] px-3 py-3">
-                                {stagesVisual?.length ? (
-                                    <SessionStageBar
-                                        {...({
-                                            stages: stagesVisual,
-                                            startTime: timelineStartTime,
-                                            cycleSeconds,
-                                            progressStyle: "tick",
-                                            tickEveryMs,
-                                        } as any)}
-                                    />
+                            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-[#606060]">
+                                {drawerWhen.date ? <span className="font-semibold text-[#2F2F2F]">{drawerWhen.date}</span> : null}
+                                {drawerWhen.date && drawerWhen.time ? <span aria-hidden="true">·</span> : null}
+                                {drawerWhen.time ? <span>{drawerWhen.time}</span> : null}
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                                {drawerStatus.live ? (
+                                    <span className="inline-flex items-center gap-2 rounded-full bg-[#65D46C]/15 px-3 py-1 text-[12px] font-semibold text-[#2F8F35]">
+                                        <span className="h-2 w-2 rounded-full bg-[#65D46C]" aria-hidden="true" />
+                                        {drawerStatus.label}
+                                    </span>
                                 ) : (
-                                    <div className="text-[11px] text-[#8A8A8A]">
-                                        {isStagesLoading ? "Loading session stages…" : "No timeline stages configured."}
-                                    </div>
+                                    <span className="inline-flex items-center rounded-full bg-[#F3F4F6] px-3 py-1 text-[12px] font-semibold text-[#2F2F2F]">
+                                        {drawerStatus.label}
+                                    </span>
                                 )}
+                                {isBookingConfirmed ? (
+                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-[#65D46C] px-3 py-1 text-[12px] font-semibold text-[#2F8F35]">
+                                        <img src="/icons/book-session-green.svg" className="h-3.5 w-3.5" alt="" aria-hidden="true" />
+                                        You're booked
+                                    </span>
+                                ) : null}
                             </div>
+                        </header>
 
-                            {!isInfinite ? (
-                                <div className="mt-5 rounded-[18px] border border-[#E8EBE8] bg-[#FAFBFA] px-3 py-3">
-                                    <div className="mb-3 flex items-center justify-between gap-3">
-                                        <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#7A7A7A]">Booked participants</div>
-                                        <div className="text-[11px] font-semibold text-[#606060]">{bookedCount}</div>
+                        <div className="min-h-0 flex-1 overflow-y-auto border-t border-[#F0F0F0] px-6 pb-6">
+                            <section className="flex items-center justify-between gap-3 py-5">
+                                <Link
+                                    to={`/profile/${displayedHostId}`}
+                                    onClick={() => setIsBookersModalOpen(false)}
+                                    className="group flex min-w-0 items-center gap-3"
+                                >
+                                    <AvatarCircle user={hostCardUser} size={42} isLive={false} showLiveDot={false} />
+                                    <span className="min-w-0">
+                                        <span className="block text-[11px] font-medium text-[#7A7A7A]">Hosted by</span>
+                                        <span className="block truncate text-[14px] font-semibold text-[#111827] group-hover:underline">
+                                            {hostCardUser.full_name || "Not assigned"}
+                                        </span>
+                                    </span>
+                                </Link>
+                                {cardRoomPolicies.cameraRequired || cardRoomPolicies.publicChatDisabled ? (
+                                    <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                                        {cardRoomPolicies.cameraRequired ? (
+                                            <span
+                                                className="inline-flex items-center gap-1.5 rounded-full bg-[#F3F4F6] px-2.5 py-1 text-[11px] font-medium text-[#2F2F2F]"
+                                                title="Cameras are required in this session"
+                                            >
+                                                <Camera size={12} strokeWidth={1.9} aria-hidden="true" />
+                                                Camera on
+                                            </span>
+                                        ) : null}
+                                        {cardRoomPolicies.publicChatDisabled ? (
+                                            <span
+                                                className="inline-flex items-center gap-1.5 rounded-full bg-[#F3F4F6] px-2.5 py-1 text-[11px] font-medium text-[#2F2F2F]"
+                                                title="Public chat is disabled; participant-to-host DMs remain available"
+                                            >
+                                                <MessageSquareOff size={12} strokeWidth={1.9} aria-hidden="true" />
+                                                Chat off
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                ) : null}
+                            </section>
+
+                            <section className="grid grid-cols-3 gap-2">
+                                {[
+                                    { label: "Length", value: isInfinite ? "24/7" : `${session.duration_minutes} min` },
+                                    { label: isInfinite ? "Planned" : "Booked", value: String(bookedCount) },
+                                    { label: "In room", value: `${liveNowCount}/${displayedMaxParticipants}` },
+                                ].map((fact) => (
+                                    <div key={fact.label} className="rounded-[18px] bg-[#F6F6F6] px-3 py-3">
+                                        <div className="text-[11px] font-medium text-[#7A7A7A]">{fact.label}</div>
+                                        <div className="mt-0.5 text-[18px] font-bold leading-6 text-[#111827]">{fact.value}</div>
+                                    </div>
+                                ))}
+                            </section>
+
+                            {description ? (
+                                <section className="pt-6">
+                                    <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">About</h4>
+                                    <p className="mt-2 whitespace-pre-wrap text-[14px] leading-[1.55] text-[#334155]">{description}</p>
+                                </section>
+                            ) : null}
+
+                            <section className="pt-6">
+                                <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">Session flow</h4>
+                                <div className="mt-2 rounded-[18px] border border-[#EEEEEE] px-3 py-3">
+                                    {stagesVisual?.length ? (
+                                        <SessionStageBar
+                                            {...({
+                                                stages: stagesVisual,
+                                                startTime: timelineStartTime,
+                                                cycleSeconds,
+                                                progressStyle: "tick",
+                                                tickEveryMs,
+                                            } as any)}
+                                        />
+                                    ) : (
+                                        <div className="text-[12px] text-[#8A8A8A]">
+                                            {isStagesLoading ? "Loading session stages…" : "No timeline stages configured."}
+                                        </div>
+                                    )}
+                                </div>
+                            </section>
+
+                            {seriesList ? (
+                                <section className="pt-6" aria-label="This week">
+                                    <div className="flex items-end justify-between gap-3">
+                                        <div>
+                                            <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">This week</h4>
+                                            <p className="mt-1 text-[13px] text-[#606060]">
+                                                {isHost
+                                                    ? `You host ${seriesList.length} sessions of this series in the next ${SERIES_WINDOW_DAYS} days.`
+                                                    : `Same time, same host · ${seriesList.length} sessions in the next ${SERIES_WINDOW_DAYS} days.`}
+                                            </p>
+                                        </div>
                                     </div>
 
-                                    {bookers.length === 0 ? (
-                                        <div className="text-[11px] text-[#8A8A8A]">No bookings yet.</div>
+                                    <div className="mt-3 grid grid-cols-7 gap-1.5">
+                                        {seriesList.map((occurrence) => {
+                                            const start = new Date(occurrence.startTime);
+                                            const isCurrent = occurrence.id === String(session.id);
+                                            const pending =
+                                                seriesPending === occurrence.id ||
+                                                (seriesPending === "all" && !occurrence.booked) ||
+                                                (seriesPending === "cancel" && occurrence.booked);
+                                            const dayLabel = start.toLocaleDateString("en-US", { weekday: "short" });
+                                            const fullLabel = start.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+
+                                            return (
+                                                <button
+                                                    key={occurrence.id}
+                                                    type="button"
+                                                    disabled={isHost || !!seriesPending}
+                                                    onClick={() => void handleToggleSeriesOccurrence(occurrence)}
+                                                    aria-pressed={occurrence.booked}
+                                                    aria-label={`${fullLabel}: ${occurrence.booked ? "booked, click to cancel" : "not booked, click to book"}`}
+                                                    title={isCurrent ? `${fullLabel} · this session` : fullLabel}
+                                                    className={`relative flex h-[66px] w-full min-w-0 flex-col items-center justify-center rounded-[16px] border transition disabled:cursor-default ${occurrence.booked
+                                                        ? "border-[#65D46C] bg-[#65D46C]/10 text-[#2F8F35]"
+                                                        : "border-[#E5E7EB] bg-white text-[#111827] enabled:hover:border-[#A3A3A3]"
+                                                        } ${isCurrent ? "ring-2 ring-[#2F2F2F] ring-offset-2" : ""} ${pending ? "opacity-50" : ""}`}
+                                                >
+                                                    <span className="text-[10px] font-semibold uppercase tracking-[0.06em] opacity-70">{dayLabel}</span>
+                                                    <span className="text-[18px] font-bold leading-6">{start.getDate()}</span>
+                                                    <span className="text-[9px] font-semibold">{occurrence.booked ? "Booked" : "Open"}</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {!isHost ? (
+                                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                                            {seriesOpenIds.length ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void handleBookWholeSeries()}
+                                                    disabled={!!seriesPending}
+                                                    className="h-10 rounded-full bg-[#2F2F2F] px-4 text-[13px] font-semibold text-white transition hover:bg-[#111827] disabled:opacity-60"
+                                                >
+                                                    {seriesPending === "all"
+                                                        ? "Booking…"
+                                                        : seriesBookedIds.length
+                                                            ? `Book the other ${seriesOpenIds.length}`
+                                                            : `Book all ${seriesOpenIds.length}`}
+                                                </button>
+                                            ) : (
+                                                <span className="text-[13px] font-semibold text-[#2F8F35]">You're booked for the whole week.</span>
+                                            )}
+                                            {seriesBookedIds.length > 1 ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => void handleCancelWholeSeries()}
+                                                    disabled={!!seriesPending}
+                                                    className="h-10 rounded-full px-3 text-[13px] font-semibold text-[#606060] transition hover:text-[#D83F3F] disabled:opacity-60"
+                                                >
+                                                    {seriesPending === "cancel" ? "Cancelling…" : `Cancel all ${seriesBookedIds.length}`}
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                    ) : null}
+                                    {seriesMessage ? (
+                                        <p className="mt-2 text-[12px] font-medium text-[#D83F3F]" role="status">{seriesMessage}</p>
+                                    ) : null}
+                                </section>
+                            ) : null}
+
+                            {isInfinite ? (
+                                <section className="pt-6">
+                                    <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">Who's planning to be here</h4>
+                                    <p className="mt-1 text-[12px] text-[#7A7A7A]">Focus windows are shown in your local time.</p>
+                                    {sortedBookingTimeline.length === 0 ? (
+                                        <div className="mt-3 rounded-[18px] border border-dashed border-[#D1D5DB] px-5 py-6 text-center">
+                                            <div className="text-[14px] font-semibold text-[#111827]">No bookings yet</div>
+                                            <div className="mt-1 text-[12px] leading-5 text-[#606060]">Pick a focus window and others will see when you'll be here.</div>
+                                        </div>
                                     ) : (
-                                        <div className="flex max-w-full items-center overflow-x-auto py-1 pr-1">
-                                            {bookedDrawerStackUsers.map((booking, index) => {
+                                        <div className="mt-3 flex flex-col gap-2">
+                                            {sortedBookingTimeline.map((booking) => {
+                                                const label = booking.full_name || booking.id || "Participant";
+                                                const isLive = liveIdSet.has(booking.id);
+                                                const isCurrentUser = booking.id === userId;
+                                                const start = booking.booked_start_time ? new Date(booking.booked_start_time) : null;
+                                                const hasStart = !!start && !Number.isNaN(start.getTime());
+
+                                                return (
+                                                    <Link
+                                                        key={booking.id}
+                                                        to={`/profile/${booking.id}`}
+                                                        onClick={() => setIsBookersModalOpen(false)}
+                                                        className={`flex items-center gap-3 rounded-[18px] border px-3 py-2.5 transition ${isCurrentUser ? "border-[#2F2F2F]" : "border-[#EEEEEE] hover:border-[#A3A3A3]"}`}
+                                                    >
+                                                        <AvatarCircle user={booking} size={36} isLive={isLive} showLiveDot={isLive} />
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="truncate text-[13px] font-semibold text-[#111827]">
+                                                                    {isCurrentUser ? `${label} (you)` : label}
+                                                                </span>
+                                                                {booking.booking_role === "host" ? (
+                                                                    <span className="shrink-0 rounded-full bg-[#2F2F2F] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Host</span>
+                                                                ) : null}
+                                                            </div>
+                                                            <div className="mt-0.5 truncate text-[12px] text-[#606060]">
+                                                                {hasStart
+                                                                    ? `${start!.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · ${formatBookingRangeFromIso(booking.booked_start_time, booking.booked_end_time)}`
+                                                                    : "Time not specified"}
+                                                            </div>
+                                                        </div>
+                                                        {isLive ? <span className="shrink-0 text-[11px] font-semibold text-[#2F8F35]">Online</span> : null}
+                                                    </Link>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </section>
+                            ) : (
+                                <section className="pt-6">
+                                    <div className="flex items-center justify-between gap-3">
+                                        <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">Who's coming</h4>
+                                        <span className="text-[12px] font-semibold text-[#606060]">{bookedCount}</span>
+                                    </div>
+                                    {bookers.length === 0 ? (
+                                        <p className="mt-2 text-[13px] text-[#7A7A7A]">No one has booked yet. Be the first.</p>
+                                    ) : (
+                                        <div className="mt-2 flex flex-col">
+                                            {(showAllDrawerBookers ? bookers : bookers.slice(0, DRAWER_BOOKERS_PREVIEW)).map((booking) => {
                                                 const label = booking.full_name || booking.id || "Participant";
                                                 const isLive = liveIdSet.has(booking.id);
 
@@ -5623,138 +5907,87 @@ export default function SessionCard({
                                                         key={booking.id}
                                                         to={`/profile/${booking.id}`}
                                                         onClick={() => setIsBookersModalOpen(false)}
-                                                        className="relative shrink-0 rounded-full transition hover:z-50 hover:-translate-y-0.5 hover:scale-105"
-                                                        style={{
-                                                            marginLeft: index === 0 ? 0 : -12,
-                                                            zIndex: bookedDrawerStackUsers.length - index,
-                                                        }}
-                                                        title={label}
-                                                        aria-label={label}
+                                                        className="-mx-2 flex items-center gap-3 rounded-[14px] px-2 py-2 transition hover:bg-[#F6F6F6]"
                                                     >
-                                                        <AvatarCircle user={booking} size={42} isLive={isLive} showLiveDot={isLive} />
+                                                        <AvatarCircle user={booking} size={34} isLive={isLive} showLiveDot={isLive} />
+                                                        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#111827]">
+                                                            {booking.id === userId ? `${label} (you)` : label}
+                                                        </span>
+                                                        {booking.id === effectiveHostId ? (
+                                                            <span className="shrink-0 rounded-full bg-[#2F2F2F] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Host</span>
+                                                        ) : null}
+                                                        {isLive ? <span className="shrink-0 text-[11px] font-semibold text-[#2F8F35]">In room</span> : null}
                                                     </Link>
                                                 );
                                             })}
-
-                                            {bookedDrawerRemaining > 0 ? (
-                                                <div
-                                                    className="relative flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-full border-2 border-white bg-[#EEF3EE] text-[11px] font-bold text-[#334155]"
-                                                    style={{ marginLeft: -12, zIndex: 0 }}
-                                                    title={`${bookedDrawerRemaining} more booked participants`}
+                                            {bookers.length > DRAWER_BOOKERS_PREVIEW ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowAllDrawerBookers((value) => !value)}
+                                                    className="mt-1 self-start rounded-full px-2 py-1 text-[12px] font-semibold text-[#606060] transition hover:text-[#111827]"
                                                 >
-                                                    +{bookedDrawerRemaining}
-                                                </div>
+                                                    {showAllDrawerBookers ? "Show less" : `Show all ${bookers.length}`}
+                                                </button>
                                             ) : null}
                                         </div>
                                     )}
-                                </div>
-                            ) : null}
-                        </div>
-
-                        <div className="border-b border-[#E5E7EB] px-5 py-4">
-                            <div className="grid grid-cols-3 gap-3 rounded-[18px] bg-[#F3F8F3] px-4 py-3">
-                                <div className="min-w-0">
-                                    <div className="text-[11px] leading-4 text-[#606060]">Booked</div>
-                                    <div className="mt-0.5 text-[18px] font-bold text-[#111827]">{bookedCount}</div>
-                                </div>
-                                <div className="min-w-0 border-l border-[#DDE7DE] pl-3">
-                                    <div className="text-[11px] leading-4 text-[#606060]">In session</div>
-                                    <div className="mt-0.5 text-[18px] font-bold text-[#111827]">{liveNowCount}</div>
-                                </div>
-                                <div className="min-w-0 border-l border-[#DDE7DE] pl-3">
-                                    <div className="text-[11px] leading-4 text-[#606060]">Maximum</div>
-                                    <div className="mt-0.5 text-[18px] font-bold text-[#111827]">{displayedMaxParticipants}</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {isInfinite ? (
-                        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-                            <div className="mb-4 flex items-center justify-between">
-                                <div>
-                                    <div className="text-[15px] font-bold text-[#111827]">Who booked</div>
-                                    <div className="mt-0.5 text-[11px] text-[#7A7A7A]">
-                                        Planned focus windows are shown in your local time.
-                                    </div>
-                                </div>
-                            </div>
-                            {sortedBookingTimeline.length === 0 ? (
-                                <div className="rounded-[20px] border border-dashed border-[#D1D5DB] px-5 py-8 text-center">
-                                    <div className="text-[15px] font-semibold text-[#111827]">No bookings yet</div>
-                                    <div className="mt-1 text-[12px] leading-5 text-[#606060]">Be the first person to book this session.</div>
-                                </div>
-                            ) : (
-                                <div className="relative pl-7">
-                                    <div className="absolute bottom-4 left-[9px] top-4 w-px bg-[#DDE7DE]" />
-                                    <div className="flex flex-col gap-4">
-                                        {sortedBookingTimeline.map((booking) => {
-                                            const label = booking.full_name || booking.id || "Participant";
-                                            const isLive = liveIdSet.has(booking.id);
-                                            const isCurrentUser = booking.id === userId;
-                                            const start = booking.booked_start_time ? new Date(booking.booked_start_time) : null;
-                                            const hasStart = !!start && !Number.isNaN(start.getTime());
-
-                                            return (
-                                                <div key={booking.id} className="relative">
-                                                    <div className={`absolute -left-7 top-5 h-[11px] w-[11px] rounded-full border-2 border-white ring-1 ${isLive ? "bg-[#65D46C] ring-[#65D46C]" : "bg-[#A7CDAA] ring-[#A7CDAA]"}`} />
-                                                    <Link
-                                                        to={`/profile/${booking.id}`}
-                                                        onClick={() => setIsBookersModalOpen(false)}
-                                                        className={`block rounded-[20px] border px-4 py-3 transition hover:-translate-y-0.5 hover:shadow-sm ${isCurrentUser ? "border-[#5286F6] bg-[#F3FBF3]" : "border-[#E5E7EB] bg-white hover:border-[#BFD8C1]"}`}
-                                                    >
-                                                        <div className="flex items-start gap-3">
-                                                            <AvatarCircle user={booking} size={38} isLive={isLive} showLiveDot={true} />
-                                                            <div className="min-w-0 flex-1">
-                                                                <div className="flex items-center justify-between gap-2">
-                                                                    <div className="truncate text-[13px] font-bold text-[#111827]">
-                                                                        {isCurrentUser ? `${label} (you)` : label}
-                                                                    </div>
-                                                                    <div className="flex shrink-0 items-center gap-1.5">
-                                                                        {booking.booking_role === "host" ? (
-                                                                            <span className="rounded-full bg-[#111827] px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-white">Host</span>
-                                                                        ) : null}
-                                                                        {isLive ? <span className="text-[10px] font-bold uppercase tracking-wide text-[#49A650]">Online</span> : null}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="mt-1 text-[12px] font-semibold text-[#334155]">
-                                                                    {hasStart
-                                                                        ? formatBookingRangeFromIso(booking.booked_start_time, booking.booked_end_time)
-                                                                        : "Booking time not specified"}
-                                                                </div>
-                                                                {hasStart ? (
-                                                                    <div className="mt-1 text-[11px] text-[#7A7A7A]">
-                                                                        {start!.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
-                                                                    </div>
-                                                                ) : null}
-                                                            </div>
-                                                        </div>
-                                                    </Link>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
+                                </section>
                             )}
                         </div>
-                        ) : (
-                            <div className="min-h-0 flex-1" />
-                        )}
 
-                        {isBookingConfirmed ? (
-                            <div className="border-t border-[#E5E7EB] p-5">
+                        <footer className="shrink-0 border-t border-[#EEEEEE] px-6 py-4">
+                            <div className="flex gap-2">
+                                {isBookingConfirmed ? (
+                                    isInfinite ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => void handleBookSession()}
+                                            className="h-12 flex-1 rounded-full border border-[#2F2F2F] text-[14px] font-semibold text-[#2F2F2F] transition hover:bg-[#F6F6F6]"
+                                        >
+                                            Change my time
+                                        </button>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={handleCancelBooking}
+                                            className="h-12 flex-1 rounded-full border border-[#E5E7EB] text-[14px] font-semibold text-[#606060] transition hover:border-[#F65252] hover:bg-[#F65252]/5 hover:text-[#D83F3F]"
+                                        >
+                                            Cancel booking
+                                        </button>
+                                    )
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => void handleBookSession()}
+                                        className="flex h-12 flex-1 items-center justify-center gap-2 rounded-full border border-[#2F2F2F] text-[14px] font-semibold text-[#2F2F2F] transition hover:border-[#65D46C] hover:bg-[#65D46C]/10 hover:text-[#2F8F35]"
+                                    >
+                                        {isInfinite ? "Book a time" : "Book session"}
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={handleJoinRoom}
+                                    onMouseEnter={prefetchRoomPage}
+                                    onFocus={prefetchRoomPage}
+                                    onTouchStart={prefetchRoomPage}
+                                    className={`h-12 flex-1 rounded-full text-[14px] font-semibold text-white transition ${!canManageSession && isSessionFull ? "cursor-not-allowed bg-[#8A8A8A]" : "bg-[#2F2F2F] hover:bg-[#111827]"}`}
+                                >
+                                    {!canManageSession && isSessionFull ? "Full" : "Join session"}
+                                </button>
+                            </div>
+                            {isInfinite && isBookingConfirmed ? (
                                 <button
                                     type="button"
                                     onClick={() => {
                                         handleCancelBooking();
                                         setIsBookersModalOpen(false);
                                     }}
-                                    className="h-11 w-full rounded-full border border-[#F65252] bg-[#FFF7F7] text-[13px] font-semibold text-[#D83F3F] transition hover:bg-[#FFEDED] flex items-center justify-center gap-2"
+                                    className="mx-auto mt-2 block rounded-full px-3 py-1 text-[12px] font-semibold text-[#7A7A7A] transition hover:text-[#D83F3F]"
                                 >
-                                    <img src="/icons/cross-cancel.svg" className="h-5 w-5" alt="" aria-hidden="true" />
                                     Cancel my booking
                                 </button>
-                            </div>
-                        ) : null}
+                            ) : null}
+                        </footer>
                     </aside>
                 </div>
             ) : null}
