@@ -138,3 +138,22 @@ These are prioritized by fit and intent, **not** by unverified volume or difficu
 ## Measurement plan
 
 When Search Console access is restored: inspect each canonical URL for indexability, pull settled 28-day query/page pairs by country and device, check whether Google selected the intended canonical, and compare impressions/CTR before and after publication. Consolidate or rewrite only if actual query overlap or engagement shows cannibalization. Do not create additional keyword-variant pages from this hypothesis list alone.
+
+## Editorial batch 2 — 2026-10-11 (10 bundled articles)
+
+Source: `MySession_Keyword_Research_2026-10-11.xlsx` (297 candidates, 30 clusters, plain-text export supplied in chat) plus the maps above. The workbook has **no** verified volume/KD; GSC was still unavailable. Topics were chosen only where the intent is informational or decision-stage and no existing URL already owns it, so no new page competes with a commercial landing for the same query. Commercial/transactional clusters (K01–K09, K12–K15, K29) stay on their existing landings; the articles link to them contextually.
+
+| URL | Primary phrase | Workbook cluster / reason | Must not compete with |
+| --- | --- | --- | --- |
+| `/blog/group-vs-one-on-one-body-doubling` | group vs one-on-one body doubling | K18/K19 are CONDITIONAL landings; a decision article explains the real 1:1 product (matching queue, 50 min, camera required) without a thin landing | `/focusmate-alternative`, `/body-doubling` |
+| `/blog/accountability-partner-vs-body-double` | accountability partner vs body double | K19 "partner implies 1:1 / coaching" caution; answers the definitional difference | `/body-doubling-for-procrastination` |
+| `/blog/virtual-coworking-etiquette` | virtual coworking etiquette | K05/K28 room questions ("do I need a camera", "is it a meeting") need a how-to, not a landing | `/virtual-coworking` |
+| `/blog/body-doubling-camera-on-or-off` | body doubling camera | EXCLUSIONS lists "body doubling without camera" as a *landing* risk; article states verified per-room rules instead of promising camera-free | `/body-doubling-app` |
+| `/blog/group-pomodoro-sessions` | group pomodoro | K17 Pomodoro coworking is PROPOSED; SERP mixes solo timers. Informational guide, no `/pomodoro-coworking` landing yet | `/focus-session-25-minutes` |
+| `/blog/scheduled-vs-drop-in-focus-sessions` | scheduled vs drop-in focus sessions | K04 24/7 rooms PROPOSED; decision article without implying rooms are always populated | `/virtual-coworking`, `/sessions` |
+| `/blog/how-to-write-a-focus-session-intention` | focus session intention | K21 "how to set intention for focus session" was a sub-phrase of the stuck article; this goes deeper with examples | `/blog/how-to-start-a-focus-session-when-stuck` |
+| `/blog/body-doubling-for-cleaning` | body doubling for cleaning | Earlier roadmap gap (cleaning/chores); distinct household workflow; competitors (Focusmate, Caveday) publicly list chores | `/body-doubling-for-procrastination` |
+| `/blog/study-with-me-videos-vs-live-study-rooms` | study with me videos | K25 is YouTube-heavy, so a landing cannot rank; a comparison article can | `/virtual-coworking-for-students`, `/body-doubling-for-studying` |
+| `/blog/how-to-host-a-virtual-coworking-session` | host a virtual coworking session | Product-fit gap (Free and Pro include hosting); verified builder features only | `/virtual-coworking` |
+
+Competitor facts quoted in the articles were read from official pages on 2026-10-11 and are dated "as of October 2026" in copy: Focusmate (booked 1:1, 25/50/75 min, camera on, free 3 sessions/week), Flow Club (host-led groups up to 9, booked, video "as much as you can", chat-only options), Caveday (guided Caves plus 24/7 Focus Lounge), FocusPair (free video coworking, built-in Pomodoro, no sign-up), CSW Study Stream (24/7 student rooms, cameras on, synced timer). Re-check before reusing any of them; do not add prices to articles.

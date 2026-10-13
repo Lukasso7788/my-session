@@ -5,7 +5,13 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const sources = JSON.parse(await readFile(path.join(root, "sources.json"), "utf8"));
+const allSources = JSON.parse(await readFile(path.join(root, "sources.json"), "utf8"));
+const requestedSlugs = process.argv.slice(2);
+const unknownSlug = requestedSlugs.find((slug) => !allSources.some((source) => source.slug === slug));
+if (unknownSlug) throw new Error(`Unknown cover slug: ${unknownSlug}`);
+const sources = requestedSlugs.length
+  ? allSources.filter((source) => requestedSlugs.includes(source.slug))
+  : allSources;
 const template = await readFile(path.join(root, "cover-template.html"), "utf8");
 const compositions = path.join(root, "compositions");
 const destination = path.resolve(root, "../../public/blog/editorial");
@@ -19,7 +25,8 @@ function escapeHtml(value) {
 
 function materialize(source) {
   if (!/^[a-z0-9-]+$/.test(source.slug)) throw new Error(`Unsafe slug: ${source.slug}`);
-  return template.replace(/{{(category|theme|slug|photoDescription|headline|subline|number|footerLabel)}}/g, (_, key) => escapeHtml(key === "footerLabel" ? source.footerLabel || "EDITORIAL GUIDE" : source[key]));
+  const defaults = { footerLabel: "EDITORIAL GUIDE", photoPosition: "var(--photo-position, 50% 50%)" };
+  return template.replace(/{{(category|theme|slug|photoDescription|headline|subline|number|footerLabel|photoPosition)}}/g, (_, key) => escapeHtml(source[key] || defaults[key]));
 }
 
 function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }

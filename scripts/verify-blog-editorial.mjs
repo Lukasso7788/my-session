@@ -6,6 +6,7 @@ const posts = JSON.parse(await readFile(path.resolve("src/data/blog-editorial-ma
 const coverSources = JSON.parse(await readFile(path.resolve("scripts/editorial-covers/sources.json"), "utf8"));
 const coverSourceBySlug = new Map(coverSources.map((source) => [source.slug, source]));
 const guideSitemap = await readFile(path.resolve("dist/sitemap-guides.xml"), "utf8");
+const runtimeModule = await readFile(path.resolve("src/data/blogEditorial.ts"), "utf8");
 const slugs = new Set();
 const errors = [];
 
@@ -60,6 +61,9 @@ for (const post of posts) {
   const composition = await readFile(path.resolve("scripts/editorial-covers/compositions", `${post.slug}.html`), "utf8");
   if (!composition.includes(source?.headline || "<missing headline>")) errors.push(`${post.slug}: composition does not match source metadata`);
 
+  if (!runtimeModule.includes(`"${post.markdownFile}":`) || !runtimeModule.includes(`../content/blog/${post.markdownFile}?raw`)) {
+    errors.push(`${post.slug}: markdown is not imported by src/data/blogEditorial.ts`);
+  }
   const markdown = await readFile(path.resolve("src/content/blog", post.markdownFile), "utf8");
   const words = markdown.trim().split(/\s+/).length;
   if (words < 400) errors.push(`${post.slug}: article is too thin (${words} words)`);
