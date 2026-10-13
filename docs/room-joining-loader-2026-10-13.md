@@ -35,6 +35,7 @@ is shown as a caption under the loader.
 
 ## Verification
 
-Preview: `tests/browser/room-joining.html` (`?theme=light` for light).
-Tests: 
-ode --test tests/roomJoiningIndicator.test.mjs`.
+Preview: `tests/browser/room-joining.html` (`?theme=light` for light). Since
+2026-10-13 the joining screen is `RoomJoiningTip` (a productivity tip from
+`src/data/productivityTips.ts` above this loader).
+Tests: `node --test tests/roomJoiningIndicator.test.mjs tests/productivityTips.test.mjs`.
