@@ -7,9 +7,12 @@ const topBar = readFileSync("src/components/RoomTopBar.tsx", "utf8");
 const bottomBar = readFileSync("src/pages/livekit/LiveKitBottomBarLegacy.tsx", "utf8");
 const css = readFileSync("src/pages/livekit/room-chrome-motion.css", "utf8");
 
-test("room chrome waits for the first connection and never hides controls on error or a cancelled join", () => {
+test("room chrome enters only after LiveKit connects, or on a state that will never connect", () => {
   assert.match(room, /import "\.\/livekit\/room-chrome-motion\.css";/);
-  assert.match(room, /const roomChromeReady = connected \|\| !!lastErr \|\| \(!prejoinOpen && !joinRequested\);/);
+  assert.match(room, /const roomChromeReady =\s*connected \|\| !!activeBan \|\| sessionCloseInfo\.closed \|\| \(authReady && !authUserId\);/);
+  // Transient join states (prejoin closing, token request, errors that reopen
+  // prejoin) must not reveal it early.
+  assert.doesNotMatch(room, /roomChromeReady =[^;]*(prejoinOpen|joinRequested|lastErr)/);
   // Revealed once; reconnects do not hide or replay it.
   assert.match(room, /if \(roomChromeRevealed \|\| !roomChromeReady\) return;/);
   assert.doesNotMatch(room, /setRoomChromeRevealed\(false\)/);

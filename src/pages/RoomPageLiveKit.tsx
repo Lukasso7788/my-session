@@ -3268,6 +3268,18 @@ function isTabletOrMobilePiPRuntime(): boolean {
   );
 }
 
+// Lets LiveKit stop downloading and decoding remote video while the room tab
+// is hidden, which is most of a body-doubling session for many people. Only
+// where every PiP path is one LiveKit recognises and keeps playing: desktop
+// Document PiP. Phones and tablets draw their PiP collage from the room's own
+// video elements, and Safari/Firefox desktop fall back to a popup window, so
+// those keep decoding in the background exactly as before.
+function shouldPauseRemoteVideoInBackground(): boolean {
+  if (typeof window === "undefined") return false;
+  if (isTabletOrMobilePiPRuntime()) return false;
+  return typeof (window as WindowWithDocumentPiP).documentPictureInPicture !== "undefined";
+}
+
 function isAppleMobilePiPRuntime(): boolean {
   if (typeof navigator === "undefined") return false;
 
@@ -9019,7 +9031,9 @@ export function RoomPageLiveKit({
     const updateProgress = () => {
       const engine = soundscapeEngineRef.current;
       if (!engine) return;
-      setSoundscapePosition(engine.currentTime());
+      // Whole seconds: the panel shows m:ss, and an unchanged value lets React
+      // skip re-rendering the room every 500ms while music plays.
+      setSoundscapePosition(Math.floor(engine.currentTime()));
       setSoundscapeDuration(engine.duration());
     };
     updateProgress();
@@ -9032,7 +9046,7 @@ export function RoomPageLiveKit({
     const updateProgress = () => {
       const engine = personalSoundscapeEngineRef.current;
       if (!engine) return;
-      setPersonalSoundscapePosition(engine.currentTime());
+      setPersonalSoundscapePosition(Math.floor(engine.currentTime()));
       setPersonalSoundscapeDuration(engine.duration());
     };
     updateProgress();
@@ -11522,15 +11536,17 @@ export function RoomPageLiveKit({
       engine.setMuted(
         personalSoundscapeMuted || soundscapeListeningMode === "room",
       );
+      // The paused engine keeps the exact position; the displayed one is
+      // rounded to whole seconds.
       const resumePosition =
         personalSoundscapeId === id && !personalSoundscapePlaying
-          ? personalSoundscapePosition
+          ? engine.currentTime()
           : 0;
       const started = await engine.play(id, soundscapeVolume / 100, resumePosition);
       if (!started || requestId !== personalSoundscapeRequestRef.current) return;
       setPersonalSoundscapeId(id);
       setPersonalSoundscapePlaying(true);
-      setPersonalSoundscapePosition(engine.currentTime());
+      setPersonalSoundscapePosition(Math.floor(engine.currentTime()));
       setPersonalSoundscapeDuration(engine.duration());
     } catch (error) {
       if (requestId !== personalSoundscapeRequestRef.current) return;
@@ -11869,7 +11885,7 @@ export function RoomPageLiveKit({
     if (!session?.id || !defaultLivekitUrl) return;
 
     const warmRoom = new Room({
-      adaptiveStream: { pixelDensity: 1, pauseVideoInBackground: false },
+      adaptiveStream: { pixelDensity: 1, pauseVideoInBackground: shouldPauseRemoteVideoInBackground() },
       dynacast: true,
       disconnectOnPageLeave: false,
       reconnectPolicy: createMobileReconnectPolicy(),
@@ -14391,7 +14407,7 @@ export function RoomPageLiveKit({
       const r =
         prewarmedRoomRef.current ||
         new Room({
-          adaptiveStream: { pixelDensity: 1, pauseVideoInBackground: false },
+          adaptiveStream: { pixelDensity: 1, pauseVideoInBackground: shouldPauseRemoteVideoInBackground() },
           dynacast: true,
           disconnectOnPageLeave: false,
           reconnectPolicy: createMobileReconnectPolicy(),
@@ -18639,11 +18655,13 @@ export function RoomPageLiveKit({
         : "";
   const lastErr = tokenError || clientError;
 
-  // Room chrome (top bar, side panel, bottom bar) stays out of frame while
-  // prejoin is open or the first connection is running, then slides in once.
-  // An error or a cancelled join shows it too, so controls are never missing.
+  // Room chrome (top bar, side panel, bottom bar) stays out of frame until
+  // LiveKit has connected, then slides in once. The only other way in is a
+  // state that will never connect (ban, closed session, signed out), so those
+  // screens still have their controls. Failed joins reopen prejoin instead.
   const [roomChromeRevealed, setRoomChromeRevealed] = useState(false);
-  const roomChromeReady = connected || !!lastErr || (!prejoinOpen && !joinRequested);
+  const roomChromeReady =
+    connected || !!activeBan || sessionCloseInfo.closed || (authReady && !authUserId);
   useEffect(() => {
     if (roomChromeRevealed || !roomChromeReady) return;
     // Give the first video tiles a moment to paint before the chrome moves in.
