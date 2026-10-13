@@ -3268,18 +3268,6 @@ function isTabletOrMobilePiPRuntime(): boolean {
   );
 }
 
-// Lets LiveKit stop downloading and decoding remote video while the room tab
-// is hidden, which is most of a body-doubling session for many people. Only
-// where every PiP path is one LiveKit recognises and keeps playing: desktop
-// Document PiP. Phones and tablets draw their PiP collage from the room's own
-// video elements, and Safari/Firefox desktop fall back to a popup window, so
-// those keep decoding in the background exactly as before.
-function shouldPauseRemoteVideoInBackground(): boolean {
-  if (typeof window === "undefined") return false;
-  if (isTabletOrMobilePiPRuntime()) return false;
-  return typeof (window as WindowWithDocumentPiP).documentPictureInPicture !== "undefined";
-}
-
 function isAppleMobilePiPRuntime(): boolean {
   if (typeof navigator === "undefined") return false;
 
@@ -11885,7 +11873,7 @@ export function RoomPageLiveKit({
     if (!session?.id || !defaultLivekitUrl) return;
 
     const warmRoom = new Room({
-      adaptiveStream: { pixelDensity: 1, pauseVideoInBackground: shouldPauseRemoteVideoInBackground() },
+      adaptiveStream: { pixelDensity: 1, pauseVideoInBackground: false },
       dynacast: true,
       disconnectOnPageLeave: false,
       reconnectPolicy: createMobileReconnectPolicy(),
@@ -14407,7 +14395,7 @@ export function RoomPageLiveKit({
       const r =
         prewarmedRoomRef.current ||
         new Room({
-          adaptiveStream: { pixelDensity: 1, pauseVideoInBackground: shouldPauseRemoteVideoInBackground() },
+          adaptiveStream: { pixelDensity: 1, pauseVideoInBackground: false },
           dynacast: true,
           disconnectOnPageLeave: false,
           reconnectPolicy: createMobileReconnectPolicy(),
