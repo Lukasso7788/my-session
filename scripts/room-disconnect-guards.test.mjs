@@ -2,11 +2,12 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 // Source-level guards for the 2026-10-11 room disconnect fixes
 // (docs/room-disconnect-audit-2026-10-11.md). They fail if a later edit
 // silently reintroduces one of the confirmed causes.
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (file) => readFileSync(join(root, file), 'utf8');
 const room = read('src/pages/RoomPageLiveKit.tsx');
 const app = read('src/App.tsx');

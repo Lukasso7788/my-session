@@ -14299,7 +14299,9 @@ export function RoomPageLiveKit({
       });
 
       r.on(RoomEvent.Disconnected, (reason?: DisconnectReason) => {
-        if (roomRef.current && roomRef.current !== r) {
+        // A replaced room (even while roomRef is briefly empty during a retry)
+        // must not end the newer connection, e.g. via DUPLICATE_IDENTITY.
+        if (roomRef.current !== r || connectAttemptIdRef.current !== attemptId) {
           void writeConnectionDiagnostic("livekit.stale_disconnected_ignored", {
             reason: getDisconnectReasonLabel(reason),
           });
