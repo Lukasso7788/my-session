@@ -30,7 +30,6 @@ function Preview() {
         {PRODUCTIVITY_TIPS.map((tip, index) => (
           <li key={tip} style={{ display: "flex", justifyContent: "center" }} data-tip-index={index}>
             <div className="ms-room-joining-tip" data-theme={theme}>
-              <p className="ms-room-joining-tip-label">Productivity tip</p>
               <p className="ms-room-joining-tip-text">{tip}</p>
             </div>
           </li>

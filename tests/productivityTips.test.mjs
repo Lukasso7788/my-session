@@ -108,9 +108,9 @@ test("a repeat-avoiding pick is uniform over the other 47 and never repeats", ()
   for (const count of counts) assert.ok(count > 700 && count < 1300, `count ${count}`);
 });
 
-test("joining screen shows label, one tip and the connection status, accessibly", () => {
+test("joining screen shows one tip (no label) and the connection status, accessibly", () => {
   const html = renderToStaticMarkup(createElement(RoomJoiningTip, { theme: "dark", status: "Connecting to room..." }));
-  assert.match(html, /<p class="ms-room-joining-tip-label">Productivity tip<\/p>/);
+  assert.doesNotMatch(html, /Productivity tip|ms-room-joining-tip-label/i);
   const tip = html.match(/<p class="ms-room-joining-tip-text">([^<]*)<\/p>/)[1].replace(/&quot;/g, '"').replace(/&#x27;/g, "'");
   assert.ok(EXPECTED.includes(tip), tip);
   // The loader stays the announcer for the connection state.

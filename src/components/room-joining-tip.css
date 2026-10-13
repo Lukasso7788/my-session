@@ -13,18 +13,8 @@
 }
 .ms-room-joining-tip[data-theme="light"] { --joining-tip-ink: #2f2f2f; }
 
-.ms-room-joining-tip-label {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.55;
-}
-
 .ms-room-joining-tip-text {
-  margin: 10px 0 0;
+  margin: 0;
   max-width: 100%;
   font-size: 18px;
   font-weight: 500;

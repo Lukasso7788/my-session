@@ -29,7 +29,6 @@ export default function RoomJoiningTip({ theme, status }: Props) {
 
   return (
     <div className="ms-room-joining-tip" data-theme={theme}>
-      <p className="ms-room-joining-tip-label">Productivity tip</p>
       <p className="ms-room-joining-tip-text">{PRODUCTIVITY_TIPS[tipIndex]}</p>
       <div className="ms-room-joining-tip-status">
         <RoomJoiningIndicator theme={theme} label={status} word={status} />
