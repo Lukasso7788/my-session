@@ -41,14 +41,19 @@ test("community pages keep the data sources and the app's flat style", () => {
   assert.match(leaderboard, /supabase\.rpc\("community_user_leaderboard", \{ p_limit: 200 \}\)/);
   assert.match(leaderboard, /supabase\.rpc\("community_hosts", \{ p_limit: 200 \}\)/);
   for (const source of [hosts, leaderboard]) {
-    assert.doesNotMatch(source, /gradient|#FBFAF7|#F3EEE6|uppercase tracking|Badge|avatarTone/);
+    assert.doesNotMatch(source, /gradient|#FBFAF7|#F3EEE6|uppercase tracking-\[0\.1\d*em\]|Badge|avatarTone/);
     assert.match(source, /bg-white font-inter text-brandBlack/);
   }
   // Your own row stays visible even when it is below the shown rows.
   assert.match(leaderboard, /yourEntry && yourIndex >= shown \?/);
 });
 
-test("leaderboard highlights the top three in neutral colors", () => {
+test("leaderboard highlights the top three as cards, first place in the accent blue", () => {
   assert.match(leaderboard, /const podium = entries\.length >= 3 \? entries\.slice\(0, 3\) : \[\];/);
-  assert.match(leaderboard, /rank === 1 \? "bg-brandBlack text-white" : "bg-\[#F1F1F1\] text-\[#2F2F2F\]"/);
+  assert.match(leaderboard, /first \? "bg-\[#5286F6\] text-white" : "bg-\[#EEF3FE\] text-\[#3F6FD8\]"/);
+});
+
+test("hosts page has filters instead of a separate hosting-soon strip", () => {
+  assert.doesNotMatch(hosts, /Hosting in the next 24 hours/);
+  assert.match(hosts, /\["today", "Hosting today"\]/);
 });

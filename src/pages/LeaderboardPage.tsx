@@ -41,26 +41,20 @@ type Entry = {
 
 const PAGE_SIZE = 50;
 
-function Segmented<T extends string>({
+// Dark pill chips, the same as the filters on /hosts.
+function Chips<T extends string>({
   value,
   options,
   onChange,
   label,
-  size = "md",
 }: {
   value: T;
   options: ReadonlyArray<readonly [T, string]>;
   onChange: (value: T) => void;
   label: string;
-  size?: "md" | "lg";
 }) {
-  const large = size === "lg";
   return (
-    <div
-      className={large ? "inline-flex rounded-full border border-borderGray bg-white p-1.5" : "inline-flex rounded-full bg-[#F1F1F1] p-1"}
-      role="group"
-      aria-label={label}
-    >
+    <div className="flex gap-2" role="group" aria-label={label}>
       {options.map(([option, text]) => {
         const active = value === option;
         return (
@@ -69,11 +63,7 @@ function Segmented<T extends string>({
             type="button"
             onClick={() => onChange(option)}
             aria-pressed={active}
-            className={
-              large
-                ? `h-11 min-w-[128px] rounded-full px-6 text-[15px] transition-colors duration-200 ${active ? "bg-brandBlack text-white" : "text-brandBlack hover:bg-[#F6F6F6]"}`
-                : `h-9 whitespace-nowrap rounded-full px-4 text-[13px] font-medium transition-colors ${active ? "bg-white text-[#2F2F2F] shadow-[0_1px_2px_rgba(0,0,0,0.08)]" : "text-[#606060] hover:text-[#2F2F2F]"}`
-            }
+            className={`h-10 shrink-0 whitespace-nowrap rounded-full border px-4 text-[13px] font-medium transition-colors ${active ? "border-brandBlack bg-brandBlack text-white" : "border-borderGray bg-white text-[#2F2F2F] hover:border-[#A3A3A3]"}`}
           >
             {text}
           </button>
@@ -83,40 +73,73 @@ function Segmented<T extends string>({
   );
 }
 
+// Compact two-way switch, the same as the sort control on /hosts.
+function Segmented<T extends string>({
+  value,
+  options,
+  onChange,
+  label,
+}: {
+  value: T;
+  options: ReadonlyArray<readonly [T, string]>;
+  onChange: (value: T) => void;
+  label: string;
+}) {
+  return (
+    <div className="inline-flex shrink-0 rounded-full border border-borderGray bg-white p-1" role="group" aria-label={label}>
+      {options.map(([option, text]) => (
+        <button
+          key={option}
+          type="button"
+          onClick={() => onChange(option)}
+          aria-pressed={value === option}
+          className={`h-9 whitespace-nowrap rounded-full px-4 text-[13px] font-medium transition-colors ${value === option ? "bg-brandBlack text-white" : "text-[#606060] hover:text-[#2F2F2F]"}`}
+        >
+          {text}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Avatar({ entry, size }: { entry: Entry; size: number }) {
   const style = { width: size, height: size };
   return entry.avatar_url ? (
     <img src={entry.avatar_url} style={style} className="shrink-0 rounded-full object-cover" alt="" loading="lazy" />
   ) : (
-    <span style={style} className="flex shrink-0 items-center justify-center rounded-full bg-[#F1F1F1] text-[13px] font-semibold text-[#2F2F2F]">
+    <span
+      style={{ ...style, fontSize: Math.round(size * 0.3) }}
+      className="flex shrink-0 items-center justify-center rounded-full bg-[#F1F1F1] font-semibold text-[#2F2F2F]"
+    >
       {initials(entry.full_name)}
     </span>
   );
 }
 
+// Profile-style card for the top three: a band with the place, the avatar
+// overlapping it, then name and score. First place gets the solid blue band.
 function PodiumCard({ entry, rank, isYou }: { entry: Entry; rank: number; isYou: boolean }) {
   const country = countryName(entry.country_code);
+  const first = rank === 1;
   return (
     <Link
       to={"/profile/" + entry.user_id}
-      className={`flex min-w-0 flex-col items-center rounded-[26px] border bg-white px-3 pb-4 pt-4 text-center transition-colors hover:border-[#A3A3A3] hover:bg-[#F6F6F6] sm:px-5 sm:pb-5 ${rank === 1 ? "border-brandBlack" : "border-borderGray"} ${isYou ? "ring-2 ring-brandBlack ring-offset-2" : ""}`}
+      className={`flex min-w-0 flex-col overflow-hidden rounded-[26px] border bg-white text-center transition-colors hover:border-[#5286F6] ${first ? "border-[#5286F6]" : "border-borderGray"} ${isYou ? "ring-2 ring-[#5286F6] ring-offset-2" : ""}`}
     >
-      <span
-        className={`flex h-7 w-7 items-center justify-center rounded-full text-[13px] font-semibold tabular-nums ${rank === 1 ? "bg-brandBlack text-white" : "bg-[#F1F1F1] text-[#2F2F2F]"}`}
-      >
-        {rank}
-      </span>
-      <span className="mt-3">
-        <Avatar entry={entry} size={rank === 1 ? 64 : 56} />
-      </span>
-      <span className="mt-3 max-w-full truncate text-[14px] font-semibold text-[#2F2F2F] sm:text-[15px]">
-        {entry.full_name}
-      </span>
-      <span className="mt-0.5 hidden h-4 max-w-full truncate text-[12px] text-[#8A8A8A] sm:block">{country || ""}</span>
-      <span className="mt-2 text-[20px] font-semibold leading-6 tabular-nums text-[#2F2F2F] sm:text-[24px] sm:leading-7">
-        {entry.valueText}
-      </span>
-      <span className="text-[12px] text-[#8A8A8A]">{entry.unit}</span>
+      <div className={`flex h-[52px] items-start justify-center pt-2.5 ${first ? "bg-[#5286F6] text-white" : "bg-[#EEF3FE] text-[#3F6FD8]"}`}>
+        <span className="text-[12px] font-semibold">{first ? "1st place" : rank === 2 ? "2nd place" : "3rd place"}</span>
+      </div>
+      <div className="flex flex-1 flex-col items-center px-3 pb-4 sm:px-4 sm:pb-5">
+        <span className="-mt-6 rounded-full bg-white p-1">
+          <Avatar entry={entry} size={first ? 60 : 52} />
+        </span>
+        <span className="mt-2 max-w-full truncate text-[14px] font-semibold text-[#2F2F2F] sm:text-[15px]">{entry.full_name}</span>
+        <span className="mt-0.5 hidden h-4 max-w-full truncate text-[12px] text-[#8A8A8A] sm:block">{country || ""}</span>
+        <span className={`mt-2 text-[22px] font-semibold leading-7 tabular-nums sm:text-[26px] ${first ? "text-[#3F6FD8]" : "text-[#2F2F2F]"}`}>
+          {entry.valueText}
+        </span>
+        <span className="text-[12px] text-[#8A8A8A]">{entry.unit}</span>
+      </div>
     </Link>
   );
 }
@@ -127,25 +150,21 @@ function LeaderRow({ entry, rank, top, isYou }: { entry: Entry; rank: number; to
   return (
     <Link
       to={"/profile/" + entry.user_id}
-      className={`grid grid-cols-[32px_1fr_auto] items-center gap-3 rounded-[22px] px-3 py-3 transition-colors sm:grid-cols-[40px_1fr_auto] sm:gap-4 sm:px-4 ${isYou ? "bg-[#F6F6F6] ring-1 ring-borderGray" : "hover:bg-[#F6F6F6]"}`}
+      className={`grid grid-cols-[32px_1fr_auto] items-center gap-3 rounded-[22px] px-3 py-2.5 transition-colors sm:grid-cols-[40px_1fr_auto] sm:gap-4 sm:px-4 ${isYou ? "bg-[#EEF3FE] ring-1 ring-[#D6E2FC]" : "hover:bg-[#F6F6F6]"}`}
     >
-      <span className={`text-center text-[15px] tabular-nums ${rank <= 3 ? "font-semibold text-[#2F2F2F]" : "text-[#A3A3A3]"}`}>
-        {rank}
-      </span>
+      <span className="text-center text-[15px] tabular-nums text-[#A3A3A3]">{rank}</span>
       <span className="flex min-w-0 items-center gap-3">
-        <span className="flex w-11 shrink-0 justify-center">
-          <Avatar entry={entry} size={rank <= 3 ? 44 : 38} />
-        </span>
+        <Avatar entry={entry} size={40} />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
             <span className="truncate text-[15px] font-medium text-[#2F2F2F]">{entry.full_name}</span>
             {isYou ? (
-              <span className="shrink-0 rounded-full bg-brandBlack px-2 py-0.5 text-[10px] font-semibold text-white">You</span>
+              <span className="shrink-0 rounded-full bg-[#5286F6] px-2 py-0.5 text-[10px] font-semibold text-white">You</span>
             ) : null}
           </span>
           <span className="mt-1.5 flex items-center gap-2">
-            <span className="h-1 w-full max-w-[220px] overflow-hidden rounded-full bg-[#EEEEEE]" aria-hidden="true">
-              <span className="block h-full rounded-full bg-brandBlack" style={{ width: `${share}%` }} />
+            <span className="h-1.5 w-full max-w-[220px] overflow-hidden rounded-full bg-[#EEF3FE]" aria-hidden="true">
+              <span className="block h-full rounded-full bg-[#5286F6]" style={{ width: `${share}%` }} />
             </span>
             {country ? <span className="hidden shrink-0 text-[12px] text-[#8A8A8A] sm:inline">{country}</span> : null}
           </span>
@@ -255,6 +274,23 @@ export default function LeaderboardPage() {
     });
   }, [tab, members, hosts, memberSort, hostSort]);
 
+  const summary = useMemo(() => {
+    if (tab === "members") {
+      const sessions = members.reduce((sum, row) => sum + (Number(row.sessions_count) || 0), 0);
+      const hours = members.reduce((sum, row) => sum + (Number(row.focus_hours) || 0), 0);
+      return [
+        [formatCount(members.length), "members"],
+        [formatCount(sessions), "sessions joined"],
+        [formatCount(Math.round(hours)), "focus hours"],
+      ];
+    }
+    const hosted = hosts.reduce((sum, row) => sum + (Number(row.hosted_sessions) || 0), 0);
+    return [
+      [formatCount(hosts.length), "hosts"],
+      [formatCount(hosted), "sessions hosted"],
+    ];
+  }, [tab, members, hosts]);
+
   const top = entries[0]?.value ?? 0;
   // The top three get cards when there are at least three people to show.
   const podium = entries.length >= 3 ? entries.slice(0, 3) : [];
@@ -263,25 +299,23 @@ export default function LeaderboardPage() {
 
   return (
     <main className="min-h-screen bg-white font-inter text-brandBlack">
-      <div className="mx-auto w-full max-w-[820px] px-4 pb-16 pt-14 md:px-6 md:pt-[72px]">
+      <div className="mx-auto w-full max-w-[820px] px-4 pb-16 pt-8 md:px-6 md:pt-12">
         <header className="text-center">
           <h1 className="text-[24px] font-normal leading-tight md:text-[28px] xl:text-[36px]">Leaderboard</h1>
-          <p className="mx-auto mt-3 max-w-[480px] text-[15px] leading-6 text-[#606060]">
+          <p className="mx-auto mt-2 max-w-[480px] text-[15px] leading-6 text-[#606060]">
             The members who keep showing up, and the hosts who make room for them.
           </p>
+          {!loading && !failed ? (
+            <div className="mt-3 inline-flex flex-wrap items-center justify-center gap-x-5 gap-y-1 text-[14px] text-[#606060]">
+              {summary.map(([value, label]) => (
+                <span key={label}><b className="font-semibold text-[#5286F6]">{value}</b> {label}</span>
+              ))}
+            </div>
+          ) : null}
         </header>
 
-        <div className="mt-10 flex justify-center">
-          <Segmented
-            size="lg"
-            label="Leaderboard"
-            value={tab}
-            onChange={setTab}
-            options={[["members", "Members"], ["hosts", "Hosts"]] as const}
-          />
-        </div>
-
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+        <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Chips label="Leaderboard" value={tab} onChange={setTab} options={[["members", "Members"], ["hosts", "Hosts"]] as const} />
           {tab === "members" ? (
             <Segmented
               label="Rank members by"
@@ -297,19 +331,15 @@ export default function LeaderboardPage() {
               options={[["sessions", "Sessions hosted"], ["focus", "Focus rate"]] as const}
             />
           )}
-
-          {yourEntry ? (
-            <span className="text-[13px] text-[#606060]">
-              You're <span className="font-semibold text-[#2F2F2F]">#{yourIndex + 1}</span> with {yourEntry.valueText} {yourEntry.unit}
-            </span>
-          ) : tab === "hosts" ? (
-            <Link to="/hosts" className="text-[13px] font-medium text-[#2F2F2F] underline-offset-4 hover:underline">
-              Browse all hosts
-            </Link>
-          ) : null}
         </div>
 
-        <section className="mt-4">
+        {yourEntry ? (
+          <p className="mt-3 text-[13px] text-[#606060]">
+            You're <span className="font-semibold text-[#3F6FD8]">#{yourIndex + 1}</span> with {yourEntry.valueText} {yourEntry.unit}
+          </p>
+        ) : null}
+
+        <section className="mt-5">
           {loading ? (
             <div className="space-y-2" aria-label="Loading leaderboard">
               {Array.from({ length: 8 }, (_, index) => (
@@ -325,7 +355,7 @@ export default function LeaderboardPage() {
           ) : (
             <div className="space-y-1">
               {podium.length ? (
-                <div className="mb-4 grid grid-cols-3 items-end gap-2 sm:gap-3">
+                <div className="mb-4 grid grid-cols-3 gap-2 sm:gap-3">
                   {podium.map((entry, index) => (
                     <PodiumCard key={entry.user_id} entry={entry} rank={index + 1} isYou={entry.user_id === user?.id} />
                   ))}
@@ -353,7 +383,7 @@ export default function LeaderboardPage() {
               <button
                 type="button"
                 onClick={() => setShown((value) => value + PAGE_SIZE)}
-                className="h-11 rounded-full border border-borderGray px-6 text-[14px] font-medium transition-colors hover:border-[#A3A3A3] hover:bg-[#F6F6F6]"
+                className="h-11 rounded-full border border-borderGray px-6 text-[14px] font-medium transition-colors hover:border-[#5286F6] hover:text-[#3F6FD8]"
               >
                 Show more
               </button>
