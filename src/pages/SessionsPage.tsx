@@ -1626,11 +1626,59 @@ export function SessionsPage() {
       };
 
       /**
+       * OPTIONAL ENRICHMENT:
+       * extra days hosts booked in infinite rooms (the first day is a normal
+       * booking). The table comes with a migration; until it exists this
+       * request fails and the cards simply show the regular bookings.
+       */
+      const loadInfiniteHostSlots = async () => {
+        const infiniteIds = rows
+          .filter((session) => resolveSessionType(session) === "infinite")
+          .map((session) => String(session.id || "").trim())
+          .filter(Boolean);
+        if (!infiniteIds.length) return;
+        try {
+          const { data: slotRows, error: slotError } = await withTimeout(
+            supabase
+              .from("infinite_room_host_slots")
+              .select("id, session_id, user_id, starts_at, ends_at, profiles(full_name, avatar_url)")
+              .in("session_id", infiniteIds)
+              .gt("ends_at", new Date().toISOString())
+              .order("starts_at", { ascending: true }),
+            SESSIONS_ENRICHMENT_TIMEOUT_MS,
+            "sessions_infinite_host_slots_enrichment"
+          );
+
+          if (!isCurrentRequest()) return;
+          if (slotError) throw slotError;
+
+          const slotsBySessionId = new Map<string, any[]>();
+          for (const slot of (slotRows || []) as any[]) {
+            const sid = String(slot?.session_id || "").trim();
+            if (!sid) continue;
+            const list = slotsBySessionId.get(sid) || [];
+            list.push(slot);
+            slotsBySessionId.set(sid, list);
+          }
+
+          setSessions((previousSessions) =>
+            previousSessions.map((session) => {
+              const slots = slotsBySessionId.get(String(session.id || ""));
+              return slots ? { ...session, host_slots: slots } : session;
+            })
+          );
+        } catch (error) {
+          if (DEBUG) console.warn("[Sessions] Optional infinite host slots enrichment failed:", error);
+        }
+      };
+
+      /**
        * Start all optional enrichment in parallel.
        *
        * IMPORTANT:
        * No await here.
        */
+      void loadInfiniteHostSlots();
       void loadRoomPolicies();
       void loadPublicSlugs();
       void loadPublicBookings();
@@ -2227,10 +2275,42 @@ export function SessionsPage() {
 
       if (error) throw error;
 
+      // Extra hosting days in infinite rooms go too. The table may not exist
+      // yet (migration pending); that is not an error here.
+      await supabase
+        .from("infinite_room_host_slots")
+        .delete()
+        .eq("session_id", id)
+        .eq("user_id", user.id);
+
       await fetchSessions();
     } catch (err) {
       console.error("[DEBUG Sessions] Cancel error:", err);
     }
+  };
+
+  // Saves the extra days of a "host every day" booking in an infinite room.
+  // "unavailable" means the database update for this has not been applied.
+  const bookHostSlots = async (
+    id: string,
+    slots: Array<{ starts_at: string; ends_at: string }>
+  ): Promise<"ok" | "unavailable" | "error"> => {
+    if (!user || !slots.length) return "ok";
+    const { error } = await supabase.rpc("save_infinite_room_host_slots", {
+      p_session_id: id,
+      p_slots: slots,
+    });
+    if (error) {
+      const missing =
+        error.code === "PGRST202" ||
+        error.code === "42883" ||
+        /save_infinite_room_host_slots|schema cache|could not find the function/i.test(error.message || "");
+      if (!missing) console.error("[DEBUG Sessions] Host slots error:", error);
+      return missing ? "unavailable" : "error";
+    }
+    captureProductEvent("infinite_room_host_week_booked", { days: slots.length + 1 });
+    await fetchSessions();
+    return "ok";
   };
 
   const remove = async (id: string) => {
@@ -2572,6 +2652,7 @@ export function SessionsPage() {
       onJoin={join}
       onBook={book}
       onCancelBooking={cancel}
+      onBookHostSlots={bookHostSlots}
       seriesOccurrences={seriesBySession.get(String(s.id))}
       onBookSeries={bookSeries}
       onCancelSeries={cancelSeries}

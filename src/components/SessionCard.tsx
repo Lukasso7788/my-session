@@ -60,6 +60,11 @@ interface SessionCardProps {
     // it repeats within the next week.
     seriesOccurrences?: SeriesOccurrence[];
     onBookSeries?: (sessionIds: string[]) => Promise<string[]>;
+    // Extra days of a "host every day" booking in an infinite room.
+    onBookHostSlots?: (
+        sessionId: string,
+        slots: Array<{ starts_at: string; ends_at: string }>
+    ) => Promise<"ok" | "unavailable" | "error">;
     onCancelSeries?: (sessionIds: string[]) => Promise<boolean>;
     onJoin: (sessionId: string) => void;
     onDelete: (sessionId: string) => void;
@@ -3971,6 +3976,7 @@ export default function SessionCard({
     seriesOccurrences,
     onBookSeries,
     onCancelSeries,
+    onBookHostSlots,
     onJoin,
     onDelete,
     onEditSession,
@@ -4022,7 +4028,26 @@ export default function SessionCard({
     const [bookers, setBookers] = useState<BookedUser[]>(initialBookers);
     const sortedBookingTimeline = useMemo(() => {
         const nowMs = Date.now();
-        return [...bookers]
+        // Extra days a host booked (infinite rooms); each is its own entry.
+        const extraSlots: BookedUser[] = (Array.isArray(session?.host_slots) ? session.host_slots : []).map((slot: any) => {
+            const profile = Array.isArray(slot?.profiles) ? slot.profiles[0] : slot?.profiles;
+            return {
+                id: String(slot?.user_id || ""),
+                full_name: profile?.full_name || undefined,
+                avatar_url: profile?.avatar_url || undefined,
+                booked_start_time: slot?.starts_at || null,
+                booked_end_time: slot?.ends_at || null,
+                booking_role: "host" as const,
+            };
+        });
+        const seen = new Set<string>();
+        return [...bookers, ...extraSlots]
+            .filter((booking) => {
+                const key = `${booking.id}|${booking.booked_start_time}`;
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            })
             .filter((booking) => {
                 const startMs = Date.parse(String(booking.booked_start_time || ""));
                 const endMs = Date.parse(String(booking.booked_end_time || ""));
@@ -4036,7 +4061,7 @@ export default function SessionCard({
                 if (aValue !== bValue) return aValue - bValue;
                 return String(a.full_name || a.id).localeCompare(String(b.full_name || b.id));
             });
-    }, [bookers]);
+    }, [bookers, session?.host_slots]);
 
     const [stages, setStages] = useState<SessionStage[]>([]);
     const [isStagesLoading, setIsStagesLoading] = useState(false);
@@ -4067,7 +4092,9 @@ export default function SessionCard({
         return toLocalTimeInputValue(end);
     });
     const [bookingDraftError, setBookingDraftError] = useState("");
-    const [bookingRoleDraft, setBookingRoleDraft] = useState<"participant" | "host">("participant");
+    // Infinite rooms are booked to host; there is no participant booking.
+    const bookingRoleDraft = "host" as const;
+    const [repeatWeekDraft, setRepeatWeekDraft] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [entitlementState, setEntitlementState] = useState<EntitlementState | null>(null);
     const [paywallOpen, setPaywallOpen] = useState(false);
@@ -4594,7 +4621,7 @@ export default function SessionCard({
             setBookingEndDateDraft(toLocalDateInputValue(end));
             setBookingStartTimeDraft(toLocalTimeInputValue(start));
             setBookingEndTimeDraft(toLocalTimeInputValue(end));
-            setBookingRoleDraft("participant");
+            setRepeatWeekDraft(false);
             setIsBookingTimeModalOpen(true);
             setIsHoveringBook(false);
             return;
@@ -4631,6 +4658,19 @@ export default function SessionCard({
 
         setBookingDraftError("");
 
+        // Repeating: the same window on each of the next six days.
+        const DAY_MS = 24 * 60 * 60 * 1000;
+        const extraSlots = repeatWeekDraft
+            ? Array.from({ length: 6 }, (_, index) => ({
+                starts_at: new Date(startMs + (index + 1) * DAY_MS).toISOString(),
+                ends_at: new Date(endMs + (index + 1) * DAY_MS).toISOString(),
+            }))
+            : [];
+        if (extraSlots.length && endMs - startMs > DAY_MS) {
+            setBookingDraftError("To repeat daily, keep the window under 24 hours.");
+            return;
+        }
+
         const saved = await Promise.resolve(onBook(session.id, {
             booked_start_time: startIso,
             booked_end_time: endIso,
@@ -4648,6 +4688,18 @@ export default function SessionCard({
             booked_end_time: endIso,
             booking_role: bookingRoleDraft,
         });
+
+        if (extraSlots.length && onBookHostSlots) {
+            const result = await onBookHostSlots(session.id, extraSlots);
+            if (result !== "ok") {
+                setBookingDraftError(
+                    result === "unavailable"
+                        ? "Your first day is booked. Booking the whole week is not available yet."
+                        : "Your first day is booked, but the other days could not be saved. Please try again."
+                );
+                return;
+            }
+        }
         setIsBookingTimeModalOpen(false);
         setIsHoveringBook(false);
     };
@@ -4829,7 +4881,7 @@ export default function SessionCard({
     const [showAllDrawerBookers, setShowAllDrawerBookers] = useState(false);
 
     const drawerWhen = useMemo(() => {
-        if (isInfinite) return { date: "Always open", time: "book the focus window that works for you" };
+        if (isInfinite) return { date: "Always open", time: "hosts pick the times they keep the room company" };
         const start = session?.start_time ? new Date(session.start_time) : null;
         if (!start || Number.isNaN(start.getTime())) return { date: "Time TBD", time: "" };
         const durationMinutes = Number(session?.duration_minutes || 0);
@@ -5004,7 +5056,7 @@ export default function SessionCard({
     const bookSessionButton = (
         <button
             onClick={handleBookSession}
-            aria-label="Book session"
+            aria-label={isInfinite ? "Host a time" : "Book session"}
             onMouseEnter={() => setIsHoveringBook(true)}
             onMouseLeave={() => setIsHoveringBook(false)}
             className={`
@@ -5023,7 +5075,7 @@ export default function SessionCard({
                 className="w-4 h-4"
                 alt=""
             />
-            <span className="hidden min-[1024px]:inline">Book session</span>
+            <span className="hidden min-[1024px]:inline">{isInfinite ? "Host a time" : "Book session"}</span>
         </button>
     );
 
@@ -5466,41 +5518,15 @@ export default function SessionCard({
             </div>
 
             <ModalShell
-                title="Book your focus time"
+                title="Host this room"
                 isOpen={isBookingTimeModalOpen}
                 onClose={() => setIsBookingTimeModalOpen(false)}
                 widthClass="max-w-[500px]"
             >
                 <div className="space-y-4">
                     <div className="rounded-[18px] border border-[#DBEAFE] bg-[#EFF6FF] px-4 py-3 text-[13px] leading-5 text-[#1E3A8A]">
-                        Choose when you plan to use this 24/7 room. The room stays open, but your booking helps others see when people are planning to focus.
+                        Pick when you will host this 24/7 room. Your name and hosting window appear in the room's schedule so people know when to join.
                     </div>
-
-                    <div>
-                        <div className="mb-2 text-[12px] font-semibold text-[#606060]">Reserve as</div>
-                        <div className="grid grid-cols-2 gap-2 rounded-[16px] bg-[#F3F4F6] p-1">
-                            {(["participant", "host"] as const).map((role) => {
-                                const selected = bookingRoleDraft === role;
-                                return (
-                                    <button
-                                        key={role}
-                                        type="button"
-                                        onClick={() => setBookingRoleDraft(role)}
-                                        className={`h-10 rounded-[13px] px-3 text-[13px] font-semibold transition ${selected ? "bg-white text-[#111827] shadow-sm" : "text-[#6B7280] hover:text-[#111827]"}`}
-                                        aria-pressed={selected}
-                                    >
-                                        {role === "host" ? "Host the room" : "Join as participant"}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                        <p className="mt-2 text-[11px] leading-4 text-[#7A7A7A]">
-                            {bookingRoleDraft === "host"
-                                ? "Your name and hosting window will appear in today's schedule."
-                                : "Let others know when you plan to focus in this room."}
-                        </p>
-                    </div>
-
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <label className="flex flex-col gap-1.5">
                             <span className="text-[12px] font-semibold text-[#606060]">Start date</span>
@@ -5543,6 +5569,22 @@ export default function SessionCard({
                         </label>
                     </div>
 
+                    <button
+                        type="button"
+                        role="switch"
+                        aria-checked={repeatWeekDraft}
+                        onClick={() => setRepeatWeekDraft((value) => !value)}
+                        className={`flex w-full items-center justify-between gap-3 rounded-[16px] border px-4 py-3 text-left transition ${repeatWeekDraft ? "border-[#5286F6] bg-[#EEF3FE]" : "border-[#E5E7EB] bg-white hover:border-[#A3A3A3]"}`}
+                    >
+                        <span>
+                            <span className="block text-[13px] font-semibold text-[#111827]">Repeat every day for 7 days</span>
+                            <span className="mt-0.5 block text-[11px] leading-4 text-[#7A7A7A]">Same time window, starting on the date above.</span>
+                        </span>
+                        <span className={`relative h-6 w-10 shrink-0 rounded-full transition ${repeatWeekDraft ? "bg-[#5286F6]" : "bg-[#D1D5DB]"}`} aria-hidden="true">
+                            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${repeatWeekDraft ? "left-[18px]" : "left-0.5"}`} />
+                        </span>
+                    </button>
+
                     {bookingDraftError ? (
                         <div className="rounded-[14px] border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
                             {bookingDraftError}
@@ -5556,6 +5598,7 @@ export default function SessionCard({
                                 combineLocalDateAndTimeToIso(bookingEndDateDraft, bookingEndTimeDraft)
                             )}
                         </span>
+                        {repeatWeekDraft ? <span className="text-[#3F6FD8]"> · every day for 7 days</span> : null}
                     </div>
 
                     <div className="flex flex-col sm:flex-row gap-2">
@@ -5571,7 +5614,7 @@ export default function SessionCard({
                             onClick={() => void handleConfirmInfiniteBooking()}
                             className="h-11 flex-1 rounded-full bg-[#111827] px-4 text-[14px] font-semibold text-white transition hover:bg-[#2F2F2F]"
                         >
-                            Book this time
+                            {repeatWeekDraft ? "Host every day" : "Host this time"}
                         </button>
                     </div>
                 </div>
@@ -5842,12 +5885,12 @@ export default function SessionCard({
 
                             {isInfinite ? (
                                 <section className="pt-6">
-                                    <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">Who's planning to be here</h4>
-                                    <p className="mt-1 text-[12px] text-[#7A7A7A]">Focus windows are shown in your local time.</p>
+                                    <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">Hosting schedule</h4>
+                                    <p className="mt-1 text-[12px] text-[#7A7A7A]">Hosting windows are shown in your local time.</p>
                                     {sortedBookingTimeline.length === 0 ? (
                                         <div className="mt-3 rounded-[18px] border border-dashed border-[#D1D5DB] px-5 py-6 text-center">
-                                            <div className="text-[14px] font-semibold text-[#111827]">No bookings yet</div>
-                                            <div className="mt-1 text-[12px] leading-5 text-[#606060]">Pick a focus window and others will see when you'll be here.</div>
+                                            <div className="text-[14px] font-semibold text-[#111827]">No hosts booked yet</div>
+                                            <div className="mt-1 text-[12px] leading-5 text-[#606060]">Pick a time to host and others will see when you'll be here.</div>
                                         </div>
                                     ) : (
                                         <div className="mt-3 flex flex-col gap-2">
@@ -5860,7 +5903,7 @@ export default function SessionCard({
 
                                                 return (
                                                     <Link
-                                                        key={booking.id}
+                                                        key={`${booking.id}-${booking.booked_start_time || ""}`}
                                                         to={`/profile/${booking.id}`}
                                                         onClick={() => setIsBookersModalOpen(false)}
                                                         className={`flex items-center gap-3 rounded-[18px] border px-3 py-2.5 transition ${isCurrentUser ? "border-[#2F2F2F]" : "border-[#EEEEEE] hover:border-[#A3A3A3]"}`}
@@ -5944,7 +5987,7 @@ export default function SessionCard({
                                             onClick={() => void handleBookSession()}
                                             className="h-12 flex-1 rounded-full border border-[#2F2F2F] text-[14px] font-semibold text-[#2F2F2F] transition hover:bg-[#F6F6F6]"
                                         >
-                                            Change my time
+                                            Change my hosting
                                         </button>
                                     ) : (
                                         <button
@@ -5961,7 +6004,7 @@ export default function SessionCard({
                                         onClick={() => void handleBookSession()}
                                         className="flex h-12 flex-1 items-center justify-center gap-2 rounded-full border border-[#2F2F2F] text-[14px] font-semibold text-[#2F2F2F] transition hover:border-[#65D46C] hover:bg-[#65D46C]/10 hover:text-[#2F8F35]"
                                     >
-                                        {isInfinite ? "Book a time" : "Book session"}
+                                        {isInfinite ? "Host a time" : "Book session"}
                                     </button>
                                 )}
                                 <button

@@ -58,6 +58,53 @@ function Preview() {
       return next;
     });
 
+  // ?infinite=1 shows a 24/7 room with a host who booked several days.
+  const infinite = new URLSearchParams(window.location.search).get("infinite") === "1";
+  const [hostSlots, setHostSlots] = useState<Array<{ starts_at: string; ends_at: string }>>([]);
+  const infiniteRoom = useMemo(() => {
+    const at = (day: number, hour: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() + day);
+      d.setHours(hour, 0, 0, 0);
+      return d.toISOString();
+    };
+    return {
+      id: "room-247",
+      title: "Deep Work 24/7",
+      host_id: HOST,
+      session_format_type: "infinite",
+      start_time: at(-30, 0),
+      duration_minutes: 0,
+      max_participants: 30,
+      description: "An always-open room for quiet focus. Hosts keep it company at set times.",
+      session_bookings: [
+        { user_id: "p-1", profiles: { full_name: "Maya Chen" }, booking_role: "host", booked_start_time: at(0, 18), booked_end_time: at(0, 20) },
+      ],
+      host_slots: [
+        { user_id: "p-1", starts_at: at(1, 18), ends_at: at(1, 20), profiles: { full_name: "Maya Chen" } },
+        { user_id: "p-1", starts_at: at(2, 18), ends_at: at(2, 20), profiles: { full_name: "Maya Chen" } },
+        ...hostSlots.map((slot) => ({ user_id: ME, ...slot, profiles: { full_name: "You" } })),
+      ],
+    };
+  }, [hostSlots]);
+
+  if (infinite) {
+    return (
+      <div style={{ maxWidth: 1100, margin: "40px auto", padding: 16 }}>
+        <SessionCard
+          session={infiniteRoom}
+          userId={ME}
+          currentUser={{ id: ME, full_name: "You" }}
+          onBook={async () => { await wait(); return true; }}
+          onBookHostSlots={async (_id, slots) => { await wait(); setHostSlots(slots); return "ok"; }}
+          onCancelBooking={async () => { await wait(); setHostSlots([]); }}
+          onJoin={() => {}}
+          onDelete={() => {}}
+        />
+      </div>
+    );
+  }
+
   return (
     <div style={{ maxWidth: 1100, margin: "40px auto", padding: 16 }}>
       <SessionCard

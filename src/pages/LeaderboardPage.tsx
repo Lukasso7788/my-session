@@ -139,6 +139,7 @@ function PodiumCard({ entry, rank, isYou }: { entry: Entry; rank: number; isYou:
           {entry.valueText}
         </span>
         <span className="text-[12px] text-[#8A8A8A]">{entry.unit}</span>
+        <span className="mt-1 max-w-full truncate text-[11px] text-[#A3A3A3]">{entry.detail}</span>
       </div>
     </Link>
   );
@@ -262,14 +263,15 @@ export default function LeaderboardPage() {
             value: rate ?? 0,
             valueText: `${rate ?? 0}%`,
             unit: "focus",
-            detail: `${formatCount(ratings)} ${ratings === 1 ? "rating" : "ratings"}`,
+            // What the rate is based on: participants' ratings across the host's sessions.
+            detail: `${formatCount(ratings)} ${ratings === 1 ? "rating" : "ratings"} · ${formatCount(hosted)} ${hosted === 1 ? "session" : "sessions"}`,
           }
         : {
             ...row,
             value: hosted,
             valueText: formatCount(hosted),
             unit: "hosted",
-            detail: rate == null ? "No ratings yet" : `${rate}% focus`,
+            detail: rate == null ? "No ratings yet" : `${rate}% focus · ${formatCount(ratings)} ${ratings === 1 ? "rating" : "ratings"}`,
           };
     });
   }, [tab, members, hosts, memberSort, hostSort]);
