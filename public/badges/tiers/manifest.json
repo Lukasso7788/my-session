@@ -1,0 +1,52 @@
+[
+  {
+    "id": "beginner",
+    "label": "Beginner",
+    "minSessions": 1,
+    "maxSessions": 49,
+    "pill": "tier-beginner.svg",
+    "round": "tier-beginner-icon.svg",
+    "width": 132,
+    "height": 40
+  },
+  {
+    "id": "regular",
+    "label": "Regular",
+    "minSessions": 50,
+    "maxSessions": 99,
+    "pill": "tier-regular.svg",
+    "round": "tier-regular-icon.svg",
+    "width": 122,
+    "height": 40
+  },
+  {
+    "id": "experienced",
+    "label": "Experienced",
+    "minSessions": 100,
+    "maxSessions": 499,
+    "pill": "tier-experienced.svg",
+    "round": "tier-experienced-icon.svg",
+    "width": 157,
+    "height": 40
+  },
+  {
+    "id": "expert",
+    "label": "Productivity Expert",
+    "minSessions": 500,
+    "maxSessions": 999,
+    "pill": "tier-expert.svg",
+    "round": "tier-expert-icon.svg",
+    "width": 207,
+    "height": 40
+  },
+  {
+    "id": "master",
+    "label": "Productivity Master",
+    "minSessions": 1000,
+    "maxSessions": null,
+    "pill": "tier-master.svg",
+    "round": "tier-master-icon.svg",
+    "width": 211,
+    "height": 40
+  }
+]
