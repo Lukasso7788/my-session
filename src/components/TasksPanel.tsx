@@ -17,7 +17,6 @@ import {
   Lock,
   Globe2,
   TimerReset,
-  GripVertical,
   Eye,
   EyeOff,
   Sparkles,
@@ -30,6 +29,7 @@ import { supabase } from "../lib/supabase";
 import { useNavigate, useParams } from "react-router-dom";
 import { getUserEntitlement } from "../lib/entitlements";
 import { hasUnlimitedAccess } from "../lib/billing";
+import { formatTaskAddedAt } from "../lib/taskAddedAt";
 
 type RoomTheme = "dark" | "light";
 
@@ -1329,6 +1329,9 @@ export function TasksPanel({
 
   const titleText = isLight ? "text-black/95" : "text-[#F4F5F6]";
   const mutedText = isLight ? "text-black/55" : "text-[#B5BCC6]";
+  // When a task was added: hidden until the row is hovered or focused.
+  const taskAddedAtCls =
+    `block max-h-0 overflow-hidden text-left text-[11px] leading-4 font-inter opacity-0 transition-[max-height,opacity,margin] duration-300 ease-out group-hover:mt-0.5 group-hover:max-h-4 group-hover:opacity-100 group-focus-within:mt-0.5 group-focus-within:max-h-4 group-focus-within:opacity-100 ${mutedText}`;
   const divider = isLight ? "bg-[#D8D0D0]" : "bg-[#464646]";
 
   const panelBg = isLight ? "bg-[#F3F1F1] text-black" : "bg-[#1B1B1B] text-[#F4F5F6]";
@@ -4608,7 +4611,7 @@ export function TasksPanel({
                 <button
                   type="button"
                   onClick={openImportModal}
-                  className="ms-task-add-from-tasks inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[7px] border border-[#2F2F2F] bg-white p-0 text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/40"
+                  className="ms-task-add-from-tasks inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border border-[#2F2F2F] bg-white p-0 text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/40"
                   title="Add tasks from Tasks page"
                   aria-label="Add tasks from Tasks page"
                 >
@@ -4850,18 +4853,6 @@ export function TasksPanel({
 
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      {!isEditing ? (
-                        <div
-                          className="shrink-0 cursor-grab active:cursor-grabbing text-black/25 group-hover:text-black/45 transition"
-                          title="Drag to reorder"
-                          aria-label="Drag to reorder"
-                          onClick={(e) => e.stopPropagation()}
-                          onDoubleClick={(e) => e.stopPropagation()}
-                        >
-                          <GripVertical size={15} />
-                        </div>
-                      ) : null}
-
                       <button
                         type="button"
                         className="flex h-[18px] w-[18px] shrink-0 self-center items-center justify-center leading-none"
@@ -4888,8 +4879,19 @@ export function TasksPanel({
                         }
                       >
                         {!isEditing ? (
-                          <button
-                            type="button"
+                          <>
+                          {/* A div rather than a button: Safari and Firefox will not start
+                              dragging the row from a button, and the whole row is the drag
+                              area (there is no separate handle). */}
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Enter" && event.key !== " ") return;
+                              event.preventDefault();
+                              closeAiSuggestionPreview();
+                              openAiTaskSuggestions(i);
+                            }}
                             onClick={(event) => {
                               event.stopPropagation();
                               const view = event.currentTarget.ownerDocument.defaultView;
@@ -4908,7 +4910,7 @@ export function TasksPanel({
                             onMouseEnter={(event) => showAiSuggestionPreview(event, i)}
                             onMouseLeave={() => closeAiSuggestionPreview(140)}
                             className={
-                              `block w-full max-h-[18px] overflow-hidden whitespace-normal break-words text-left text-[13px] leading-[18px] font-inter transition-[max-height,color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[max-height] group-hover:max-h-[288px] group-focus-within:max-h-[288px] ${isLight ? "hover:text-black" : "hover:text-white"} ` +
+                              `block w-full cursor-pointer max-h-[18px] overflow-hidden whitespace-normal break-words text-left text-[13px] leading-[18px] font-inter transition-[max-height,color] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[max-height] group-hover:max-h-[288px] group-focus-within:max-h-[288px] ${isLight ? "hover:text-black" : "hover:text-white"} ` +
                               (i.completed ? textDoneCls : textActiveCls)
                             }
                             title={getPersistedTaskAiSuggestion(i) ? "Open saved AI suggestion" : `Get AI suggestions for: ${i.text}`}
@@ -4919,7 +4921,11 @@ export function TasksPanel({
                               ) : null}
                               <span>{i.text}</span>
                             </span>
-                          </button>
+                          </div>
+                          {formatTaskAddedAt(i.created_at) ? (
+                            <span className={taskAddedAtCls}>{formatTaskAddedAt(i.created_at)}</span>
+                          ) : null}
+                          </>
                         ) : (
                           <input
                             value={editingText}
@@ -5138,6 +5144,9 @@ export function TasksPanel({
                           {item.text}
                         </span>
                       </div>
+                      {formatTaskAddedAt(item.created_at) ? (
+                        <span className={taskAddedAtCls}>{formatTaskAddedAt(item.created_at)}</span>
+                      ) : null}
 
                       {renderTaskTimerControls({
                         ownerUserId: item.user_id,

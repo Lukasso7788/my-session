@@ -81,6 +81,7 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
   const [editingText, setEditingText] = useState("");
   const [draggingId, setDraggingId] = useState("");
   const [dragTargetId, setDragTargetId] = useState("");
+  const [showCompleted, setShowCompleted] = useState(false);
 
   const sessionById = useMemo(
     () => new Map(sessions.map((session) => [String(session.id), session])),
@@ -463,6 +464,240 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
     await persistTaskOrder(reordered, previous, draggedId);
   };
 
+  const openItems = items.filter((task) => !task.completed);
+  const doneItems = items.filter((task) => task.completed);
+  const progress = items.length ? Math.round((doneItems.length / items.length) * 100) : 0;
+
+  const sessionLabel = (session: TaskSessionOption) =>
+    isInfiniteTaskSession(session)
+      ? `∞ ${session.title || "Infinite room"}`
+      : `${session.title || "Session"} · ${formatSessionTime(session.start_time)}`;
+
+  const renderRow = (item: TaskItem) => {
+    const assigned = item.session_id ? sessionById.get(String(item.session_id)) : null;
+    const hasUnavailableAssignment = !!item.session_id && !assigned;
+    const peers = items.filter((task) => task.completed === item.completed);
+    const peerIndex = peers.findIndex((task) => task.id === item.id);
+    const menuOpen = assignMenuId === item.id || settingsMenuId === item.id;
+
+    return (
+      <div
+        key={item.id}
+        draggable={!busyId && editingId !== item.id}
+        onDragStart={(event) => {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", item.id);
+          setDraggingId(item.id);
+          setAssignMenuId("");
+          setSettingsMenuId("");
+        }}
+        onDragOver={(event) => {
+          const dragged = items.find((task) => task.id === draggingId);
+          if (!dragged || dragged.completed !== item.completed) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          setDragTargetId(item.id);
+        }}
+        onDragLeave={() => {
+          if (dragTargetId === item.id) setDragTargetId("");
+        }}
+        onDrop={(event) => {
+          event.preventDefault();
+          void dropTask(event.dataTransfer.getData("text/plain") || draggingId, item.id);
+        }}
+        onDragEnd={() => {
+          setDraggingId("");
+          setDragTargetId("");
+        }}
+        className={[
+          "group relative flex cursor-grab items-start gap-3 rounded-[16px] px-3 py-2.5 transition-colors active:cursor-grabbing",
+          draggingId === item.id ? "opacity-40" : "opacity-100",
+          dragTargetId === item.id && draggingId !== item.id
+            ? "bg-[#EEF3FE] ring-1 ring-[#5286F6]/40"
+            : menuOpen ? "bg-[#F6F6F6]" : "hover:bg-[#F6F6F6]",
+        ].join(" ")}
+      >
+        <button
+          type="button"
+          onClick={() => void toggleTask(item)}
+          disabled={busyId === item.id}
+          className={[
+            "mt-[1px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-[1.5px] transition",
+            item.completed
+              ? "border-[#5286F6] bg-[#5286F6] text-white"
+              : "border-[#C9C9C9] bg-white text-transparent hover:border-[#5286F6] hover:text-[#5286F6]",
+          ].join(" ")}
+          aria-label={item.completed ? "Mark task active" : "Complete task"}
+        >
+          <Check size={12} strokeWidth={3} />
+        </button>
+
+        <div className="min-w-0 flex-1">
+          {editingId === item.id ? (
+            <input
+              autoFocus
+              value={editingText}
+              onChange={(event) => setEditingText(event.target.value)}
+              onBlur={() => void saveTaskText(item)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") void saveTaskText(item);
+                if (event.key === "Escape") setEditingId("");
+              }}
+              className="-my-1 h-8 w-full rounded-[10px] border border-[#5286F6] bg-white px-2 text-[13px] outline-none"
+            />
+          ) : (
+            <div
+              onDoubleClick={() => {
+                setEditingId(item.id);
+                setEditingText(item.text);
+              }}
+              title={item.text}
+              className={[
+                "line-clamp-2 break-words text-[13px] leading-[19px]",
+                item.completed ? "text-[#A3A3A3] line-through" : "text-[#2F2F2F]",
+              ].join(" ")}
+            >
+              {item.text}
+            </div>
+          )}
+
+          {editingId !== item.id ? (
+            assigned || hasUnavailableAssignment ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setAssignMenuId((current) => current === item.id ? "" : item.id);
+                  setSettingsMenuId("");
+                }}
+                disabled={busyId === item.id}
+                className={[
+                  "mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium transition",
+                  assigned
+                    ? "bg-[#EEF3FE] text-[#3F6FD8] hover:bg-[#E4ECFD]"
+                    : "bg-amber-50 text-amber-700",
+                ].join(" ")}
+              >
+                <CalendarPlus size={12} className="shrink-0" />
+                <span className="truncate">{assigned ? sessionLabel(assigned) : "Session no longer available"}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setAssignMenuId((current) => current === item.id ? "" : item.id);
+                  setSettingsMenuId("");
+                }}
+                disabled={busyId === item.id}
+                className={[
+                  "mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-[#8A8A8A] transition hover:text-[#3F6FD8]",
+                  menuOpen ? "" : "sm:hidden sm:group-hover:inline-flex sm:group-focus-within:inline-flex",
+                ].join(" ")}
+              >
+                <CalendarPlus size={12} /> Add to a session
+              </button>
+            )
+          ) : null}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSettingsMenuId((current) => current === item.id ? "" : item.id);
+            setAssignMenuId("");
+          }}
+          disabled={busyId === item.id}
+          className={[
+            "-mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#8A8A8A] transition hover:bg-[#EAEAEA] hover:text-[#2F2F2F] disabled:opacity-50",
+            menuOpen ? "opacity-100" : "sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100",
+          ].join(" ")}
+          aria-label={`Task settings for ${item.text}`}
+        >
+          <MoreHorizontal size={16} />
+        </button>
+
+        {assignMenuId === item.id ? (
+          <div className="absolute left-8 right-2 top-full z-30 -mt-1 overflow-hidden rounded-[16px] border border-[#EEEEEE] bg-white p-1.5 shadow-[0_12px_36px_rgba(0,0,0,0.14)]">
+            <div className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium text-[#8A8A8A]">Add to a session</div>
+            <div className="max-h-56 overflow-y-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setAssignMenuId("");
+                  void assignTask(item, "");
+                }}
+                className="flex w-full items-center justify-between rounded-[10px] px-2.5 py-2 text-left text-[12px] hover:bg-[#F6F6F6]"
+              >
+                <span>Unscheduled</span>
+                {!item.session_id ? <Check size={14} className="text-[#5286F6]" /> : null}
+              </button>
+              {sessions.map((session) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  onClick={() => {
+                    setAssignMenuId("");
+                    void assignTask(item, session.id);
+                  }}
+                  className="flex w-full items-center justify-between gap-3 rounded-[10px] px-2.5 py-2 text-left text-[12px] hover:bg-[#F6F6F6]"
+                >
+                  <span className="min-w-0 truncate">{sessionLabel(session)}</span>
+                  {item.session_id === session.id ? <Check className="shrink-0 text-[#5286F6]" size={14} /> : null}
+                </button>
+              ))}
+              {sessions.length === 0 ? (
+                <div className="px-2.5 py-2 text-[11px] leading-4 text-[#8A8A8A]">
+                  Book a future session or host one to assign tasks to it.
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {settingsMenuId === item.id ? (
+          <div className="absolute right-2 top-full z-40 -mt-1 w-[170px] rounded-[16px] border border-[#EEEEEE] bg-white p-1.5 shadow-[0_12px_36px_rgba(0,0,0,0.14)]">
+            <button
+              type="button"
+              onClick={() => {
+                setEditingId(item.id);
+                setEditingText(item.text);
+                setSettingsMenuId("");
+              }}
+              className="flex w-full items-center gap-2 rounded-[10px] px-2.5 py-2 text-[12px] hover:bg-[#F6F6F6]"
+            >
+              <Pencil size={14} /> Edit
+            </button>
+            <button
+              type="button"
+              disabled={peerIndex <= 0}
+              onClick={() => void moveTask(item, -1)}
+              className="flex w-full items-center gap-2 rounded-[10px] px-2.5 py-2 text-[12px] hover:bg-[#F6F6F6] disabled:opacity-35"
+            >
+              <ArrowUp size={14} /> Move up
+            </button>
+            <button
+              type="button"
+              disabled={peerIndex < 0 || peerIndex >= peers.length - 1}
+              onClick={() => void moveTask(item, 1)}
+              className="flex w-full items-center gap-2 rounded-[10px] px-2.5 py-2 text-[12px] hover:bg-[#F6F6F6] disabled:opacity-35"
+            >
+              <ArrowDown size={14} /> Move down
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSettingsMenuId("");
+                void deleteTask(item);
+              }}
+              className="flex w-full items-center gap-2 rounded-[10px] px-2.5 py-2 text-[12px] text-[#D94B4B] hover:bg-red-50"
+            >
+              <Trash2 size={14} /> Delete
+            </button>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <div
       className={[
@@ -483,284 +718,129 @@ export default function SessionsTasksSidebar({ open, userId, onClose }: Props) {
 
       <aside
         className={[
-          "absolute inset-y-0 right-0 flex w-full flex-col bg-[#F7F7F7] text-[#2F2F2F] shadow-[-18px_0_50px_rgba(0,0,0,0.12)] will-change-transform transition-[transform,opacity] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] sm:w-[390px]",
+          "absolute inset-y-0 right-0 flex w-full flex-col bg-white text-[#2F2F2F] shadow-[-18px_0_50px_rgba(0,0,0,0.12)] will-change-transform transition-[transform,opacity] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] sm:w-[400px] sm:rounded-l-[28px]",
           open ? "translate-x-0 opacity-100" : "translate-x-full opacity-0",
         ].join(" ")}
       >
-        <header className="flex h-[76px] shrink-0 items-center justify-between px-5">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-[#E9E9E9]">
-              <ListChecks size={18} />
+        <header className="shrink-0 px-5 pb-4 pt-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#EEF3FE] text-[#5286F6]">
+                <ListChecks size={19} />
+              </div>
+              <div>
+                <div className="text-[17px] font-semibold leading-6">Tasks</div>
+                <div className="text-[12px] text-[#8A8A8A]">
+                  {items.length
+                    ? `${openItems.length} to do · ${doneItems.length} done`
+                    : "Plan work for your sessions"}
+                </div>
+              </div>
             </div>
-            <div>
-              <div className="text-[15px] font-semibold">Tasks</div>
-              <div className="text-[11px] text-[#777]">Plan work for your sessions</div>
-            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-[#E5E5E5] text-[#606060] transition hover:border-[#A3A3A3] hover:text-[#2F2F2F]"
+              aria-label="Close tasks"
+            >
+              <X size={17} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-[12px] bg-[#E9E9E9] transition hover:bg-[#DFDFDF]"
-            aria-label="Close tasks"
-          >
-            <X size={17} />
-          </button>
-        </header>
 
-        <div className="px-5 pb-4">
-          <div className="flex items-center gap-2 rounded-[16px] bg-white p-2">
+          {items.length ? (
+            <div className="mt-4 flex items-center gap-3">
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#EEF3FE]">
+                <div
+                  className="h-full rounded-full bg-[#5286F6] transition-[width] duration-500 ease-out"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <span className="shrink-0 text-[12px] font-medium tabular-nums text-[#3F6FD8]">{progress}%</span>
+            </div>
+          ) : null}
+
+          <div className="mt-4 flex items-center gap-2 rounded-full border border-[#E5E5E5] bg-white py-1.5 pl-4 pr-1.5 transition-colors focus-within:border-[#5286F6]">
             <input
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") void addTask();
               }}
-              placeholder="New task"
-              className="h-10 min-w-0 flex-1 bg-transparent px-2 text-[13px] outline-none placeholder:text-[#999]"
+              placeholder="Add a task and press Enter"
+              className="h-9 min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-[#A3A3A3]"
             />
             <button
               type="button"
               onClick={() => void addTask()}
               disabled={!draft.trim() || !!busyId}
-              className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#2F2F2F] text-white transition hover:bg-[#242424] disabled:opacity-35"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#2F2F2F] text-white transition hover:bg-[#1F1F1F] disabled:opacity-30"
               aria-label="Add task"
             >
               <Plus size={18} />
             </button>
           </div>
-          <p className="mt-2 px-1 text-[11px] leading-4 text-[#777]">
-            Assign tasks to an infinite room or a future session you booked or host.
-          </p>
-        </div>
+        </header>
 
         {error ? (
-          <div className="mx-5 mb-3 rounded-[14px] bg-red-50 px-3 py-2 text-[11px] text-red-700">
+          <div className="mx-5 mb-3 rounded-[14px] bg-red-50 px-3 py-2 text-[12px] text-red-700">
             {error}
           </div>
         ) : null}
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-          {loading ? (
-            <div className="py-10 text-center text-[12px] text-[#777]">Loading tasks…</div>
+        <div className="min-h-0 flex-1 overflow-y-auto border-t border-[#F0F0F0] px-3 pb-5 pt-3">
+          {loading && !items.length ? (
+            <div className="space-y-2 px-2 pt-1" aria-label="Loading tasks">
+              {Array.from({ length: 4 }, (_, index) => (
+                <div key={index} className="h-11 animate-pulse rounded-[16px] bg-[#F6F6F6]" />
+              ))}
+            </div>
           ) : items.length === 0 ? (
-            <div className="rounded-[18px] bg-white px-5 py-8 text-center">
-              <div className="text-[13px] font-medium">No tasks yet</div>
-              <div className="mt-1 text-[11px] text-[#777]">Add one above, then choose its session.</div>
+            <div className="mx-2 mt-2 rounded-[22px] border border-dashed border-[#DBD8D8] px-6 py-10 text-center">
+              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#EEF3FE] text-[#5286F6]">
+                <ListChecks size={20} />
+              </div>
+              <div className="mt-3 text-[14px] font-medium">No tasks yet</div>
+              <div className="mt-1 text-[12px] leading-5 text-[#8A8A8A]">
+                Add one above, then attach it to a session you booked or an always-open room.
+              </div>
             </div>
           ) : (
-            <div className="rounded-[16px] bg-white px-3">
-              {items.map((item) => {
-                const assigned = item.session_id
-                  ? sessionById.get(String(item.session_id))
-                  : null;
-                const hasUnavailableAssignment = !!item.session_id && !assigned;
-                const peers = items.filter((task) => task.completed === item.completed);
-                const peerIndex = peers.findIndex((task) => task.id === item.id);
-                return (
-                  <div
-                    key={item.id}
-                    draggable={!busyId && editingId !== item.id}
-                    onDragStart={(event) => {
-                      event.dataTransfer.effectAllowed = "move";
-                      event.dataTransfer.setData("text/plain", item.id);
-                      setDraggingId(item.id);
-                      setAssignMenuId("");
-                      setSettingsMenuId("");
-                    }}
-                    onDragOver={(event) => {
-                      const dragged = items.find((task) => task.id === draggingId);
-                      if (!dragged || dragged.completed !== item.completed) return;
-                      event.preventDefault();
-                      event.dataTransfer.dropEffect = "move";
-                      setDragTargetId(item.id);
-                    }}
-                    onDragLeave={() => {
-                      if (dragTargetId === item.id) setDragTargetId("");
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      void dropTask(event.dataTransfer.getData("text/plain") || draggingId, item.id);
-                    }}
-                    onDragEnd={() => {
-                      setDraggingId("");
-                      setDragTargetId("");
-                    }}
-                    title="Drag to reorder"
-                    className={[
-                      "group relative flex min-h-12 cursor-grab items-center gap-2 border-b border-[#ECECEC] py-1.5 transition-[min-height,background-color,opacity] duration-200 ease-out last:border-b-0 hover:min-h-[68px] hover:bg-[#FAFAFA] active:cursor-grabbing",
-                      draggingId === item.id ? "opacity-40" : "opacity-100",
-                      dragTargetId === item.id && draggingId !== item.id ? "bg-[#EDF8EF]" : "",
-                    ].join(" ")}
+            <>
+              {openItems.length ? (
+                <div className="space-y-0.5">{openItems.map(renderRow)}</div>
+              ) : (
+                <div className="mx-2 rounded-[16px] bg-[#EEF3FE] px-4 py-3 text-[12px] font-medium text-[#3F6FD8]">
+                  Everything is done. Nice work.
+                </div>
+              )}
+
+              {doneItems.length ? (
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowCompleted((value) => !value)}
+                    className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2 text-[12px] font-medium text-[#8A8A8A] transition hover:text-[#2F2F2F]"
+                    aria-expanded={showCompleted}
                   >
-                    <button
-                      type="button"
-                      onClick={() => void toggleTask(item)}
-                      disabled={busyId === item.id}
-                      className={[
-                        "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[6px] transition",
-                        item.completed
-                          ? "bg-[#81DB86] text-[#1F4A22]"
-                          : "bg-[#ECECEC] text-transparent hover:bg-[#E2E2E2]",
-                      ].join(" ")}
-                      aria-label={item.completed ? "Mark task active" : "Complete task"}
-                    >
-                      <Check size={13} />
-                    </button>
-
-                    <div className="min-w-0 flex-1">
-                      {editingId === item.id ? (
-                        <input
-                          autoFocus
-                          value={editingText}
-                          onChange={(event) => setEditingText(event.target.value)}
-                          onBlur={() => void saveTaskText(item)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") void saveTaskText(item);
-                            if (event.key === "Escape") setEditingId("");
-                          }}
-                          className="h-8 w-full rounded-[8px] bg-[#F1F1F1] px-2 text-[12px] outline-none focus:bg-[#EAEAEA]"
-                        />
-                      ) : (
-                        <div
-                          title={item.text}
-                          className={[
-                            "max-h-5 overflow-hidden whitespace-nowrap text-[12px] leading-5 transition-[max-height] duration-200 group-hover:max-h-10 group-hover:whitespace-normal group-hover:leading-[18px]",
-                            item.completed ? "text-[#8A8A8A] line-through" : "text-[#2F2F2F]",
-                          ].join(" ")}
-                        >
-                          {item.text}
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAssignMenuId((current) => current === item.id ? "" : item.id);
-                        setSettingsMenuId("");
-                      }}
-                      disabled={busyId === item.id}
-                      title={assigned ? `Assigned to ${assigned.title}` : "Assign task to session"}
-                      className={[
-                        "relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] transition disabled:opacity-50",
-                        assigned
-                          ? "bg-[#E6F7E8] text-[#3FAE49] hover:bg-[#DDF2DF]"
-                          : hasUnavailableAssignment
-                            ? "bg-amber-50 text-amber-700"
-                            : "bg-[#EEEEEE] text-[#555] hover:bg-[#E4E4E4]",
-                      ].join(" ")}
-                      aria-label={`Assign ${item.text} to a session`}
-                    >
-                      <CalendarPlus size={15} strokeWidth={2} />
-                      {assigned ? <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[#55C95F]" /> : null}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSettingsMenuId((current) => current === item.id ? "" : item.id);
-                        setAssignMenuId("");
-                      }}
-                      disabled={busyId === item.id}
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[#EEEEEE] text-[#555] transition hover:bg-[#E4E4E4] disabled:opacity-50"
-                      aria-label={`Task settings for ${item.text}`}
-                    >
-                      <MoreHorizontal size={16} />
-                    </button>
-
-                    {assignMenuId === item.id ? (
-                      <div className="absolute right-10 top-11 z-30 w-[270px] overflow-hidden rounded-[14px] bg-white p-1.5 shadow-[0_12px_36px_rgba(0,0,0,0.16)]">
-                        <div className="px-2 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#999]">Assign to session</div>
-                        <div className="max-h-56 overflow-y-auto">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAssignMenuId("");
-                              void assignTask(item, "");
-                            }}
-                            className="flex w-full items-center justify-between rounded-[10px] px-2.5 py-2 text-left text-[11px] hover:bg-[#F1F1F1]"
-                          >
-                            <span>Unscheduled</span>
-                            {!item.session_id ? <Check size={14} /> : null}
-                          </button>
-                          {sessions.map((session) => (
-                            <button
-                              key={session.id}
-                              type="button"
-                              onClick={() => {
-                                setAssignMenuId("");
-                                void assignTask(item, session.id);
-                              }}
-                              className="flex w-full items-center justify-between gap-3 rounded-[10px] px-2.5 py-2 text-left text-[11px] hover:bg-[#F1F1F1]"
-                            >
-                              <span className="min-w-0 truncate">
-                                {isInfiniteTaskSession(session)
-                                  ? `∞ ${session.title || "Infinite room"}`
-                                  : `${session.title || "Session"} · ${formatSessionTime(session.start_time)}`}
-                              </span>
-                              {item.session_id === session.id ? <Check className="shrink-0" size={14} /> : null}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {settingsMenuId === item.id ? (
-                      <div className="absolute right-0 top-11 z-40 w-[170px] rounded-[14px] bg-white p-1.5 shadow-[0_12px_36px_rgba(0,0,0,0.16)]">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingId(item.id);
-                            setEditingText(item.text);
-                            setSettingsMenuId("");
-                          }}
-                          className="flex w-full items-center gap-2 rounded-[10px] px-2.5 py-2 text-[11px] hover:bg-[#F1F1F1]"
-                        >
-                          <Pencil size={14} /> Edit
-                        </button>
-                        <button
-                          type="button"
-                          disabled={peerIndex <= 0}
-                          onClick={() => void moveTask(item, -1)}
-                          className="flex w-full items-center gap-2 rounded-[10px] px-2.5 py-2 text-[11px] hover:bg-[#F1F1F1] disabled:opacity-35"
-                        >
-                          <ArrowUp size={14} /> Move up
-                        </button>
-                        <button
-                          type="button"
-                          disabled={peerIndex < 0 || peerIndex >= peers.length - 1}
-                          onClick={() => void moveTask(item, 1)}
-                          className="flex w-full items-center gap-2 rounded-[10px] px-2.5 py-2 text-[11px] hover:bg-[#F1F1F1] disabled:opacity-35"
-                        >
-                          <ArrowDown size={14} /> Move down
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSettingsMenuId("");
-                            void deleteTask(item);
-                          }}
-                          className="flex w-full items-center gap-2 rounded-[10px] px-2.5 py-2 text-[11px] text-[#D94B4B] hover:bg-red-50"
-                        >
-                          <Trash2 size={14} /> Delete
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
+                    <ChevronRight size={14} className={`transition-transform ${showCompleted ? "rotate-90" : ""}`} />
+                    Completed
+                    <span className="rounded-full bg-[#F1F1F1] px-1.5 text-[11px] tabular-nums text-[#606060]">{doneItems.length}</span>
+                  </button>
+                  {showCompleted ? <div className="space-y-0.5">{doneItems.map(renderRow)}</div> : null}
+                </div>
+              ) : null}
+            </>
           )}
         </div>
 
-        <footer className="shrink-0 px-5 pb-[calc(18px+env(safe-area-inset-bottom))] pt-3">
+        <footer className="shrink-0 border-t border-[#F0F0F0] px-5 pb-[calc(16px+env(safe-area-inset-bottom))] pt-3">
           <button
             type="button"
             onClick={() => {
               onClose();
               navigate("/tasks");
             }}
-            className="flex h-11 w-full items-center justify-between rounded-[15px] bg-[#E9E9E9] px-4 text-[12px] font-medium transition hover:bg-[#DFDFDF]"
+            className="flex h-11 w-full items-center justify-between rounded-full border border-[#E5E5E5] px-5 text-[13px] font-medium transition hover:border-[#2F2F2F]"
           >
             <span>Open full task plan</span>
             <ChevronRight size={16} />
