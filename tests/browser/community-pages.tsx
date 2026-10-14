@@ -35,7 +35,6 @@ const hosts = names.slice(0, 9).map(([full_name, country_code], index) => ({
   next_session_id: index % 3 === 2 ? null : `s-${index}`,
   next_session_title: index % 3 === 2 ? null : ["Morning Deep Work", "Code Sprint 50/10", "", "Exam Prep Pomodoro", "Night Owls Focus", "Writers' Room"][index % 6] || null,
   next_session_start: index % 3 === 2 ? null : new Date(now + (index + 1) * 5 * 3_600_000).toISOString(),
-  is_founding_member: index === 0 || index === 2,
 }));
 const members = Array.from({ length: 140 }, (_, index) => {
   const [full_name, country_code] = names[index % names.length];
@@ -47,7 +46,6 @@ const members = Array.from({ length: 140 }, (_, index) => {
     sessions_count: Math.max(1, Math.round(420 / (1 + index * 0.35))),
     focus_hours: Math.max(0.4, Math.round((610 / (1 + index * 0.33)) * 10) / 10),
     last_seen_at: null,
-    is_founding_member: index === 0 || index === 2 || index === 6,
   };
 });
 

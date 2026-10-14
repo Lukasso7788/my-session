@@ -32,38 +32,6 @@ export function formatCount(value: number | string | null | undefined): string {
   return new Intl.NumberFormat("en-US").format(numeric);
 }
 
-// Flat background/text pairs for initials avatars, picked by a stable hash
-// of the user id so a person keeps the same color everywhere.
-const AVATAR_TONES = [
-  { background: "#E4EDFF", color: "#2F5FD0" },
-  { background: "#E5F8E7", color: "#2F8F35" },
-  { background: "#FFE9E4", color: "#C2412D" },
-  { background: "#EEF0FF", color: "#5145CD" },
-  { background: "#FFF3D6", color: "#8A6100" },
-  { background: "#F1F1F1", color: "#2F2F2F" },
-] as const;
-
-export function avatarTone(seed: string | null | undefined) {
-  let hash = 0;
-  for (const char of String(seed || "")) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return AVATAR_TONES[hash % AVATAR_TONES.length];
-}
-
-// "in 20 min", "in 5 h", "in 3 days", "2 days ago", "just now".
-export function relativeTime(target: number, now = Date.now()): string {
-  const diff = target - now;
-  const minutes = Math.round(Math.abs(diff) / 60_000);
-  let text: string;
-  if (minutes < 1) return "just now";
-  if (minutes < 60) text = `${minutes} min`;
-  else if (minutes < 60 * 24) text = `${Math.round(minutes / 60)} h`;
-  else {
-    const days = Math.round(minutes / (60 * 24));
-    text = `${days} ${days === 1 ? "day" : "days"}`;
-  }
-  return diff > 0 ? `in ${text}` : `${text} ago`;
-}
-
 export function formatHours(value: number | string | null | undefined): string {
   const numeric = Number(value) || 0;
   return numeric >= 100 ? String(Math.round(numeric)) : numeric.toFixed(1).replace(/\.0$/, "");
