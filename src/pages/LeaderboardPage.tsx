@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
-import { countryName, formatCount, formatHours, initials } from "../lib/communityDisplay";
+import { countryName, formatCount, formatHours } from "../lib/communityDisplay";
+import CommunityAvatar from "../components/CommunityAvatar";
+import { FoundingMemberBadge, SessionMilestoneBadge } from "../components/CommunityBadges";
 
 type HostRow = {
   user_id: string;
@@ -10,8 +12,11 @@ type HostRow = {
   avatar_url: string | null;
   country_code: string | null;
   hosted_sessions: number;
+  attended_sessions?: number;
   focus_rate: number | null;
   focus_feedback_count: number;
+  // Present once the founding-member migration is applied.
+  is_founding_member?: boolean | null;
 };
 
 type UserRow = {
@@ -22,6 +27,7 @@ type UserRow = {
   sessions_count: number;
   focus_hours: number;
   last_seen_at: string | null;
+  is_founding_member?: boolean | null;
 };
 
 type Tab = "members" | "hosts";
@@ -33,6 +39,9 @@ type Entry = {
   full_name: string;
   avatar_url: string | null;
   country_code: string | null;
+  is_founding_member?: boolean | null;
+  // Sessions attended, for the milestone badge.
+  attended: number;
   value: number;
   valueText: string;
   unit: string;
@@ -40,6 +49,13 @@ type Entry = {
 };
 
 const PAGE_SIZE = 50;
+
+// Flat rank colors for the top three.
+const PODIUM = [
+  { label: "1st", fill: "#FFF3D6", ink: "#8A6100" },
+  { label: "2nd", fill: "#F1F1F1", ink: "#4B4B4B" },
+  { label: "3rd", fill: "#FBEBDD", ink: "#9A5527" },
+] as const;
 
 function Segmented<T extends string>({
   value,
@@ -83,14 +99,44 @@ function Segmented<T extends string>({
   );
 }
 
-function Avatar({ entry, size }: { entry: Entry; size: number }) {
-  const style = { width: size, height: size };
-  return entry.avatar_url ? (
-    <img src={entry.avatar_url} style={style} className="shrink-0 rounded-full object-cover" alt="" loading="lazy" />
-  ) : (
-    <span style={style} className="flex shrink-0 items-center justify-center rounded-full bg-[#F1F1F1] text-[13px] font-semibold text-[#2F2F2F]">
-      {initials(entry.full_name)}
-    </span>
+function Badges({ entry }: { entry: Entry }) {
+  return (
+    <>
+      {entry.is_founding_member ? <FoundingMemberBadge compact /> : null}
+      <SessionMilestoneBadge sessions={entry.attended} compact />
+    </>
+  );
+}
+
+function PodiumCard({ entry, rank, isYou }: { entry: Entry; rank: number; isYou: boolean }) {
+  const podium = PODIUM[rank - 1];
+  const country = countryName(entry.country_code);
+  return (
+    <Link
+      to={"/profile/" + entry.user_id}
+      className={`flex min-w-0 flex-col items-center rounded-[26px] border bg-white px-3 pb-4 pt-4 text-center transition-colors hover:border-[#A3A3A3] sm:px-5 sm:pb-5 ${rank === 1 ? "border-[#2F2F2F]" : "border-borderGray"} ${isYou ? "ring-2 ring-[#65D46C] ring-offset-2" : ""}`}
+    >
+      <span
+        className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+        style={{ backgroundColor: podium.fill, color: podium.ink }}
+      >
+        {podium.label}
+      </span>
+      <span className="mt-3">
+        <CommunityAvatar userId={entry.user_id} name={entry.full_name} url={entry.avatar_url} size={rank === 1 ? 64 : 56} />
+      </span>
+      <span className="mt-3 flex max-w-full items-center justify-center gap-1">
+        <span className="truncate text-[14px] font-semibold text-[#2F2F2F] sm:text-[15px]">{entry.full_name}</span>
+        <span className="hidden shrink-0 items-center gap-1 sm:inline-flex">
+          <Badges entry={entry} />
+        </span>
+      </span>
+      <span className="mt-0.5 hidden h-4 truncate text-[12px] text-[#8A8A8A] sm:block">{country || ""}</span>
+      <span className="mt-2 text-[20px] font-semibold leading-6 tabular-nums text-[#2F2F2F] sm:text-[24px] sm:leading-7">
+        {entry.valueText}
+      </span>
+      <span className="text-[12px] text-[#8A8A8A]">{entry.unit}</span>
+    </Link>
   );
 }
 
@@ -106,12 +152,11 @@ function LeaderRow({ entry, rank, top, isYou }: { entry: Entry; rank: number; to
         {rank}
       </span>
       <span className="flex min-w-0 items-center gap-3">
-        <span className="flex w-11 shrink-0 justify-center">
-          <Avatar entry={entry} size={rank <= 3 ? 44 : 38} />
-        </span>
+        <CommunityAvatar userId={entry.user_id} name={entry.full_name} url={entry.avatar_url} size={40} />
         <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-2">
+          <span className="flex items-center gap-1.5">
             <span className="truncate text-[15px] font-medium text-[#2F2F2F]">{entry.full_name}</span>
+            <Badges entry={entry} />
             {isYou ? (
               <span className="shrink-0 rounded-full bg-brandBlack px-2 py-0.5 text-[10px] font-semibold text-white">You</span>
             ) : null}
@@ -184,6 +229,7 @@ export default function LeaderboardPage() {
         return memberSort === "hours"
           ? {
               ...row,
+              attended: sessions,
               value: Number(row.focus_hours || 0),
               valueText: hours,
               unit: "h",
@@ -191,6 +237,7 @@ export default function LeaderboardPage() {
             }
           : {
               ...row,
+              attended: sessions,
               value: sessions,
               valueText: formatCount(sessions),
               unit: sessions === 1 ? "session" : "sessions",
@@ -210,9 +257,11 @@ export default function LeaderboardPage() {
       const hosted = Number(row.hosted_sessions || 0);
       const ratings = Number(row.focus_feedback_count || 0);
       const rate = row.focus_rate == null ? null : Math.round(Number(row.focus_rate));
+      const attended = Number(row.attended_sessions || 0);
       return hostSort === "focus"
         ? {
             ...row,
+            attended,
             value: rate ?? 0,
             valueText: `${rate ?? 0}%`,
             unit: "focus",
@@ -220,6 +269,7 @@ export default function LeaderboardPage() {
           }
         : {
             ...row,
+            attended,
             value: hosted,
             valueText: formatCount(hosted),
             unit: "hosted",
@@ -229,6 +279,8 @@ export default function LeaderboardPage() {
   }, [tab, members, hosts, memberSort, hostSort]);
 
   const top = entries[0]?.value ?? 0;
+  // The top three get cards when there are at least three people to show.
+  const podium = entries.length >= 3 ? entries.slice(0, 3) : [];
   const yourIndex = user?.id ? entries.findIndex((entry) => entry.user_id === user.id) : -1;
   const yourEntry = yourIndex >= 0 ? entries[yourIndex] : null;
 
@@ -295,11 +347,18 @@ export default function LeaderboardPage() {
             </div>
           ) : (
             <div className="space-y-1">
-              {entries.slice(0, shown).map((entry, index) => (
+              {podium.length ? (
+                <div className="mb-4 grid grid-cols-3 items-end gap-2 sm:gap-3">
+                  {podium.map((entry, index) => (
+                    <PodiumCard key={entry.user_id} entry={entry} rank={index + 1} isYou={entry.user_id === user?.id} />
+                  ))}
+                </div>
+              ) : null}
+              {entries.slice(podium.length, shown).map((entry, index) => (
                 <LeaderRow
                   key={entry.user_id}
                   entry={entry}
-                  rank={index + 1}
+                  rank={podium.length + index + 1}
                   top={top}
                   isYou={entry.user_id === user?.id}
                 />
@@ -325,8 +384,23 @@ export default function LeaderboardPage() {
           ) : null}
         </section>
 
+        {!loading && !failed ? (
+          <div className="mx-auto mt-10 max-w-[560px] rounded-[22px] border border-[#EEEEEE] px-5 py-4">
+            <div className="text-[13px] font-medium text-[#2F2F2F]">Badges</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <FoundingMemberBadge />
+              {[10, 25, 50, 100, 250, 500, 1000].map((threshold) => (
+                <SessionMilestoneBadge key={threshold} sessions={threshold} />
+              ))}
+            </div>
+            <p className="mt-2 text-[12px] leading-5 text-[#8A8A8A]">
+              Session badges count the sessions a person has joined; each person shows their highest one.
+            </p>
+          </div>
+        ) : null}
+
         {tab === "hosts" ? (
-          <p className="mx-auto mt-8 max-w-[560px] text-center text-[12px] leading-5 text-[#8A8A8A]">
+          <p className="mx-auto mt-6 max-w-[560px] text-center text-[12px] leading-5 text-[#8A8A8A]">
             Focus rate is the average focus score participants give themselves after a host's sessions. It describes the sessions, not the host as a person.
           </p>
         ) : null}

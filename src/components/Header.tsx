@@ -253,7 +253,7 @@ export default function Header() {
     return (
         <>
             <header className="border-b border-borderGray bg-white sticky top-0 z-30">
-                <div className="w-full px-5 md:px-8 py-5 flex items-center justify-between gap-3">
+                <div className="w-full px-5 md:px-8 py-5 flex items-center justify-between gap-3 lg:gap-6">
                     <nav className="hidden lg:flex items-center gap-6 flex-1 text-sm text-[#2E2E2E]">
                         <div className="relative" ref={dropdownRef}>
                             <button
@@ -319,16 +319,18 @@ export default function Header() {
                             Tasks
                         </button>
 
-                        <button onClick={() => navigate("/hosts")} className="hover:text-[#2F2F2F]">
+                        {/* Until the right side has room (wider when signed in,
+                            because of Create a session and the avatar) these stay here. */}
+                        <button onClick={() => navigate("/hosts")} className={`hover:text-[#2F2F2F] ${user ? "2xl:hidden" : "xl:hidden"}`}>
                             Hosts
                         </button>
 
-                        <button onClick={() => navigate("/leaderboard")} className="hover:text-[#2F2F2F]">
+                        <button onClick={() => navigate("/leaderboard")} className={`hover:text-[#2F2F2F] ${user ? "2xl:hidden" : "xl:hidden"}`}>
                             Leaderboard
                         </button>
                     </nav>
 
-                    <div className="flex-1 flex justify-start lg:justify-center">
+                    <div className="flex-1 flex justify-start lg:flex-none lg:justify-center">
                         <div className="relative inline-flex items-center justify-center" ref={planBadgeWrapRef}>
                             <button
                                 onClick={() => navigate("/")}
@@ -356,6 +358,25 @@ export default function Header() {
                     </div>
 
                     <div className="flex items-center justify-end gap-3 flex-1">
+                        <div className={`mr-1 hidden items-center gap-1 ${user ? "2xl:flex" : "xl:flex"}`}>
+                            {([
+                                ["/hosts", "Hosts"],
+                                ["/leaderboard", "Leaderboard"],
+                            ] as const).map(([path, label]) => {
+                                const active = location.pathname === path;
+                                return (
+                                    <button
+                                        key={path}
+                                        onClick={() => navigate(path)}
+                                        aria-current={active ? "page" : undefined}
+                                        className={`h-10 rounded-full px-4 text-sm transition-colors ${active ? "bg-[#F1F1F1] text-[#2F2F2F]" : "text-[#2E2E2E] hover:bg-[#F6F6F6]"}`}
+                                    >
+                                        {label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
                         {loading ? null : (
                             <>
                                 {!user && (
