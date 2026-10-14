@@ -369,7 +369,7 @@ export default function Header() {
                                         key={path}
                                         onClick={() => navigate(path)}
                                         aria-current={active ? "page" : undefined}
-                                        className={`h-10 rounded-full px-4 text-sm transition-colors ${active ? "bg-[#F1F1F1] text-[#2F2F2F]" : "text-[#2E2E2E] hover:bg-[#F6F6F6]"}`}
+                                        className={`h-10 px-3 text-sm transition-colors ${active ? "text-[#2F2F2F]" : "text-[#2E2E2E] hover:text-[#2F2F2F]"}`}
                                     >
                                         {label}
                                     </button>

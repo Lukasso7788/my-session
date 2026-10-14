@@ -4063,6 +4063,33 @@ export default function SessionCard({
             });
     }, [bookers, session?.host_slots]);
 
+    // Infinite rooms: hosting windows grouped by local day for the drawer.
+    const scheduleNowMs = Date.now();
+    const hostingScheduleDays = useMemo(() => {
+        const today = new Date();
+        const tomorrow = new Date();
+        tomorrow.setDate(today.getDate() + 1);
+        const groups: Array<{ key: string; label: string; isToday: boolean; items: BookedUser[] }> = [];
+        for (const booking of sortedBookingTimeline) {
+            const start = new Date(String(booking.booked_start_time || ""));
+            if (Number.isNaN(start.getTime())) continue;
+            const key = start.toDateString();
+            let group = groups.find((entry) => entry.key === key);
+            if (!group) {
+                const isToday = key === today.toDateString();
+                const label = isToday
+                    ? "Today"
+                    : key === tomorrow.toDateString()
+                        ? "Tomorrow"
+                        : start.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+                group = { key, label, isToday, items: [] };
+                groups.push(group);
+            }
+            group.items.push(booking);
+        }
+        return groups;
+    }, [sortedBookingTimeline]);
+
     const [stages, setStages] = useState<SessionStage[]>([]);
     const [isStagesLoading, setIsStagesLoading] = useState(false);
     const [liveUsers, setLiveUsers] = useState<BookedUser[]>([]);
@@ -5665,7 +5692,8 @@ export default function SessionCard({
             </ModalShell>
 
             {isBookersModalOpen ? (
-                <div className="fixed inset-0 z-[950] flex justify-end" role="dialog" aria-modal="true" aria-label="Session details">
+                // Session details: a centered modal on desktop, a bottom sheet on phones.
+                <div className="fixed inset-0 z-[950] flex items-end justify-center sm:items-center sm:p-6" role="dialog" aria-modal="true" aria-label="Session details">
                     <button
                         type="button"
                         className="session-booking-drawer-backdrop absolute inset-0 bg-black/30 backdrop-blur-[2px]"
@@ -5673,8 +5701,11 @@ export default function SessionCard({
                         onClick={() => setIsBookersModalOpen(false)}
                     />
 
-                    <aside className="session-booking-drawer relative flex h-full w-full max-w-[460px] flex-col border-l border-[#E5E7EB] bg-white shadow-[-18px_0_60px_rgba(17,24,39,0.14)]">
-                        <header className="shrink-0 px-6 pb-5 pt-5">
+                    <aside className="session-booking-drawer relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[28px] bg-white shadow-[0_24px_80px_rgba(17,24,39,0.22)] sm:max-h-[min(86vh,780px)] sm:max-w-[540px] sm:rounded-[28px]">
+                        <div className="flex justify-center pt-2.5 sm:hidden" aria-hidden="true">
+                            <span className="h-1 w-10 rounded-full bg-[#DBD8D8]" />
+                        </div>
+                        <header className="shrink-0 px-6 pb-5 pt-3 sm:pt-5">
                             <div className="flex items-center justify-between gap-3">
                                 <span
                                     className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-[12px] font-semibold"
@@ -5760,15 +5791,15 @@ export default function SessionCard({
                                 ) : null}
                             </section>
 
-                            <section className="grid grid-cols-3 gap-2">
+                            <section className="grid grid-cols-3 divide-x divide-[#E3E3E3] rounded-[18px] bg-[#F6F6F6] py-3">
                                 {[
                                     { label: "Length", value: isInfinite ? "24/7" : `${session.duration_minutes} min` },
                                     { label: isInfinite ? "Planned" : "Booked", value: String(bookedCount) },
                                     { label: "In room", value: `${liveNowCount}/${displayedMaxParticipants}` },
                                 ].map((fact) => (
-                                    <div key={fact.label} className="rounded-[18px] bg-[#F6F6F6] px-3 py-3">
+                                    <div key={fact.label} className="min-w-0 px-4">
                                         <div className="text-[11px] font-medium text-[#7A7A7A]">{fact.label}</div>
-                                        <div className="mt-0.5 text-[18px] font-bold leading-6 text-[#111827]">{fact.value}</div>
+                                        <div className="mt-0.5 truncate text-[18px] font-bold leading-6 text-[#111827]">{fact.value}</div>
                                     </div>
                                 ))}
                             </section>
@@ -5885,49 +5916,62 @@ export default function SessionCard({
 
                             {isInfinite ? (
                                 <section className="pt-6">
-                                    <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">Hosting schedule</h4>
-                                    <p className="mt-1 text-[12px] text-[#7A7A7A]">Hosting windows are shown in your local time.</p>
-                                    {sortedBookingTimeline.length === 0 ? (
-                                        <div className="mt-3 rounded-[18px] border border-dashed border-[#D1D5DB] px-5 py-6 text-center">
-                                            <div className="text-[14px] font-semibold text-[#111827]">No hosts booked yet</div>
-                                            <div className="mt-1 text-[12px] leading-5 text-[#606060]">Pick a time to host and others will see when you'll be here.</div>
+                                    <div className="flex items-end justify-between gap-3">
+                                        <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">Hosting schedule</h4>
+                                        <span className="text-[11px] text-[#A3A3A3]">Your local time</span>
+                                    </div>
+                                    {hostingScheduleDays.length === 0 ? (
+                                        <div className="mt-3 rounded-[20px] border border-dashed border-[#D1D5DB] px-5 py-7 text-center">
+                                            <div className="text-[14px] font-semibold text-[#111827]">No one is hosting yet</div>
+                                            <div className="mt-1 text-[12px] leading-5 text-[#606060]">Pick a time to host and people will see when the room has company.</div>
                                         </div>
                                     ) : (
-                                        <div className="mt-3 flex flex-col gap-2">
-                                            {sortedBookingTimeline.map((booking) => {
-                                                const label = booking.full_name || booking.id || "Participant";
-                                                const isLive = liveIdSet.has(booking.id);
-                                                const isCurrentUser = booking.id === userId;
-                                                const start = booking.booked_start_time ? new Date(booking.booked_start_time) : null;
-                                                const hasStart = !!start && !Number.isNaN(start.getTime());
+                                        <div className="mt-3 space-y-4">
+                                            {hostingScheduleDays.map((day) => (
+                                                <div key={day.key}>
+                                                    <div className="mb-1.5 flex items-center gap-2 px-1">
+                                                        <span className={`text-[12px] font-semibold ${day.isToday ? "text-[#3F6FD8]" : "text-[#2F2F2F]"}`}>{day.label}</span>
+                                                        <span className="h-px flex-1 bg-[#EEEEEE]" aria-hidden="true" />
+                                                    </div>
+                                                    <div className="overflow-hidden rounded-[18px] border border-[#EEEEEE]">
+                                                        {day.items.map((booking, index) => {
+                                                            const label = booking.full_name || booking.id || "Host";
+                                                            const isLive = liveIdSet.has(booking.id);
+                                                            const isCurrentUser = booking.id === userId;
+                                                            const startMs = Date.parse(String(booking.booked_start_time || ""));
+                                                            const endMs = Date.parse(String(booking.booked_end_time || ""));
+                                                            const isNow = Number.isFinite(startMs) && Number.isFinite(endMs) && startMs <= scheduleNowMs && scheduleNowMs < endMs;
+                                                            const timeOpts: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
 
-                                                return (
-                                                    <Link
-                                                        key={`${booking.id}-${booking.booked_start_time || ""}`}
-                                                        to={`/profile/${booking.id}`}
-                                                        onClick={() => setIsBookersModalOpen(false)}
-                                                        className={`flex items-center gap-3 rounded-[18px] border px-3 py-2.5 transition ${isCurrentUser ? "border-[#2F2F2F]" : "border-[#EEEEEE] hover:border-[#A3A3A3]"}`}
-                                                    >
-                                                        <AvatarCircle user={booking} size={36} isLive={isLive} showLiveDot={isLive} />
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="truncate text-[13px] font-semibold text-[#111827]">
-                                                                    {isCurrentUser ? `${label} (you)` : label}
-                                                                </span>
-                                                                {booking.booking_role === "host" ? (
-                                                                    <span className="shrink-0 rounded-full bg-[#2F2F2F] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Host</span>
-                                                                ) : null}
-                                                            </div>
-                                                            <div className="mt-0.5 truncate text-[12px] text-[#606060]">
-                                                                {hasStart
-                                                                    ? `${start!.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} · ${formatBookingRangeFromIso(booking.booked_start_time, booking.booked_end_time)}`
-                                                                    : "Time not specified"}
-                                                            </div>
-                                                        </div>
-                                                        {isLive ? <span className="shrink-0 text-[11px] font-semibold text-[#2F8F35]">Online</span> : null}
-                                                    </Link>
-                                                );
-                                            })}
+                                                            return (
+                                                                <Link
+                                                                    key={`${booking.id}-${booking.booked_start_time || ""}`}
+                                                                    to={`/profile/${booking.id}`}
+                                                                    onClick={() => setIsBookersModalOpen(false)}
+                                                                    className={`flex items-center gap-3 px-3 py-2.5 transition-colors ${index > 0 ? "border-t border-[#F1F1F1]" : ""} ${isNow ? "bg-[#EEF3FE]" : "hover:bg-[#F6F6F6]"}`}
+                                                                >
+                                                                    <div className="w-[64px] shrink-0 leading-tight">
+                                                                        <div className={`text-[13px] font-semibold tabular-nums ${isNow ? "text-[#3F6FD8]" : "text-[#2F2F2F]"}`}>
+                                                                            {Number.isFinite(startMs) ? new Date(startMs).toLocaleTimeString("en-US", timeOpts) : "—"}
+                                                                        </div>
+                                                                        <div className="text-[11px] tabular-nums text-[#8A8A8A]">
+                                                                            {Number.isFinite(endMs) ? `to ${new Date(endMs).toLocaleTimeString("en-US", timeOpts)}` : ""}
+                                                                        </div>
+                                                                    </div>
+                                                                    <AvatarCircle user={booking} size={32} isLive={isLive} showLiveDot={isLive} />
+                                                                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#111827]">{label}</span>
+                                                                    {isCurrentUser ? (
+                                                                        <span className="shrink-0 rounded-full bg-[#F1F1F1] px-2 py-0.5 text-[10px] font-semibold text-[#606060]">you</span>
+                                                                    ) : null}
+                                                                    {isNow ? (
+                                                                        <span className="shrink-0 rounded-full bg-[#5286F6] px-2 py-0.5 text-[10px] font-semibold text-white">Now</span>
+                                                                    ) : null}
+                                                                </Link>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     )}
                                 </section>

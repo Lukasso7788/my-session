@@ -132,6 +132,8 @@ import {
 } from "@livekit/components-react";
 import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 import { FX_BG_PRESETS } from "./livekit/backgroundPresets";
+import { downscaleImageFile, downscaleImageSrc, isLargeDataUrl } from "../lib/backgroundImageDownscale";
+import { prefetchBackgroundFxAssets } from "../lib/prefetchBackgroundFx";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
 import "./livekit/roomSidePanelTheme.css";
 import "./livekit/room-chrome-motion.css";
@@ -2698,7 +2700,15 @@ function normalizeCustomBackgroundSlots(value: unknown): CustomBackgroundSlot[] 
   });
 }
 
-function readImageFileAsDataUrl(file: File): Promise<string> {
+async function readImageFileAsDataUrl(file: File): Promise<string> {
+  // Phones/tablets keep a small copy (see backgroundImageDownscale).
+  if (isMobileOrTabletDeviceLike()) {
+    try {
+      return await downscaleImageFile(file);
+    } catch (error) {
+      console.warn("background downscale failed; using the original", error);
+    }
+  }
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(reader.error || new Error("background_file_read_failed"));
@@ -2733,7 +2743,24 @@ async function loadCustomBackgroundSlots(): Promise<CustomBackgroundSlot[]> {
       request.onerror = () => reject(request.error || new Error("background_db_read_failed"));
     });
     database.close();
-    return normalizeCustomBackgroundSlots(value);
+    const slots = normalizeCustomBackgroundSlots(value);
+    // Phones/tablets: shrink backgrounds saved at full size (once), so the
+    // room does not hold several multi-MB images in memory.
+    if (isMobileOrTabletDeviceLike() && slots.some((slot) => isLargeDataUrl(slot.dataUrl))) {
+      const shrunk = await Promise.all(
+        slots.map(async (slot) => {
+          if (!isLargeDataUrl(slot.dataUrl)) return slot;
+          try {
+            return { ...slot, dataUrl: await downscaleImageSrc(slot.dataUrl) };
+          } catch {
+            return slot;
+          }
+        }),
+      );
+      void saveCustomBackgroundSlots(shrunk).catch(() => { });
+      return shrunk;
+    }
+    return slots;
   } catch (error) {
     console.warn("custom background slots could not be loaded", error);
     return DEFAULT_CUSTOM_BACKGROUND_SLOTS;
@@ -8716,6 +8743,13 @@ export function RoomPageLiveKit({
       ? "off"
       : restoredVideoFxPreference.mode,
   );
+  // Phones/tablets: when an effect is saved or turned on, start downloading
+  // the segmenter runtime right away (see prefetchBackgroundFx).
+  useEffect(() => {
+    if (!lowPowerMobileMode) return;
+    if (videoFxMode === "off" && restoredVideoFxPreference.mode === "off") return;
+    prefetchBackgroundFxAssets();
+  }, [lowPowerMobileMode, videoFxMode, restoredVideoFxPreference.mode]);
   const [bgImageUrl, setBgImageUrl] = useState<string>(() => {
     if (restoredVideoFxPreference.background.kind === "preset") {
       return (
@@ -21775,8 +21809,15 @@ export function RoomPageLiveKit({
             }
             try {
               if (uploadedBgUrlRef.current) URL.revokeObjectURL(uploadedBgUrlRef.current);
-              const url = URL.createObjectURL(file);
-              uploadedBgUrlRef.current = url;
+              uploadedBgUrlRef.current = null;
+              // Phones/tablets get a small copy instead of the full photo.
+              let url: string;
+              if (lowPowerMobileMode) {
+                url = await readImageFileAsDataUrl(file);
+              } else {
+                url = URL.createObjectURL(file);
+                uploadedBgUrlRef.current = url;
+              }
               setBgImageUrl(url);
               await applyVideoFx("bg", url);
               setVoiceUiLastCommand("Uploaded background applied");
@@ -22766,6 +22807,16 @@ export function RoomPageLiveKit({
               if (uploadedBgUrlRef.current) {
                 URL.revokeObjectURL(uploadedBgUrlRef.current);
                 uploadedBgUrlRef.current = null;
+              }
+              if (lowPowerMobileMode) {
+                // Phones/tablets get a small copy instead of the full photo.
+                void readImageFileAsDataUrl(file)
+                  .then((url) => setBgImageUrl(url))
+                  .catch((e) => {
+                    console.error("upload bg failed", e);
+                    setFxError("Failed to load selected image");
+                  });
+                return;
               }
               const url = URL.createObjectURL(file);
               uploadedBgUrlRef.current = url;
