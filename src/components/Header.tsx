@@ -669,7 +669,8 @@ export default function Header() {
             </header>
 
             {location.pathname === "/sessions" ? (
-                <div className="mx-auto w-full max-w-[1180px] px-3 md:px-6">
+                // Same side padding as the Sessions page, so the notice spans the session list.
+                <div className="w-full px-3 pt-3 md:px-6 lg:px-10">
                     <FreeSessionsNotice state={entitlementState} />
                 </div>
             ) : null}

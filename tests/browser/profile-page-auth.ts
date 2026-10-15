@@ -59,11 +59,15 @@ window.fetch = async (input, init) => {
     new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json", ...headers } });
 
   if (url.includes("/auth/v1/user")) return json(user);
+  // Other harness pages can set RPC answers before importing this module.
+  const rpc = url.match(/\/rest\/v1\/rpc\/([a-z_]+)/);
+  if (rpc) return json(((globalThis as any).__harnessRpc || {})[rpc[1]] ?? null);
+  const overrides = (globalThis as any).__harnessTables || {};
   const rest = url.match(/\/rest\/v1\/([a-z_]+)/);
   if (rest) {
     const table = rest[1];
     if (table === "host_followers") return new Response(null, { status: 200, headers: { "content-range": "0-0/12" } });
-    const rows = tables[table] ?? [];
+    const rows = overrides[table] ?? tables[table] ?? [];
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
     const accept = headers.get("accept") || "";
     const body = accept.includes("vnd.pgrst.object") ? rows[0] ?? null : rows;

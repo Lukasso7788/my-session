@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Lock } from "lucide-react";
 import { getFreeSessionUsage } from "../lib/freeSessionNotice";
 import type { EntitlementState } from "../lib/entitlements";
 import { PAYWALL_ENABLED } from "../lib/flags";
@@ -9,13 +9,20 @@ export default function FreeSessionsNotice({ state, enabled = PAYWALL_ENABLED }:
   const usage = getFreeSessionUsage({ ...state, enabled });
   if (!usage?.showWarning) return null;
 
+  // Same red as the "Structured Flow" tile on the 24/7 Focus Rooms card:
+  // #F65252 border, the same color at 20% for the fill. Message and button sit together in the center.
   return (
-    <aside aria-label="Free session allowance" className="flex flex-col gap-3 rounded-2xl border border-[#BCD4F5] bg-[#EDF5FF] px-4 py-3 text-[#16365C] sm:flex-row sm:items-center sm:justify-between">
-      <div>
-        <p className="text-sm font-semibold" aria-live="polite" aria-atomic="true">{usage.title}.</p>
-        <p className="mt-0.5 text-xs text-[#405D7F]">{Math.min(usage.used, usage.limit)} of {usage.limit} free sessions used. Pro includes unlimited sessions.</p>
+    <aside aria-label="Free session allowance" className="flex flex-col items-center justify-center gap-3 rounded-[24px] border border-[#F65252] bg-[#F6525233] px-4 py-3 text-center font-inter text-brandBlack sm:flex-row sm:gap-6 sm:px-5 sm:text-left">
+      <div className="flex min-w-0 flex-col items-center gap-2 sm:flex-row sm:gap-4">
+        <span className="inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-[13.5px] border border-[#F65252] bg-white text-[#F65252]" aria-hidden="true">
+          <Lock className="h-5 w-5" strokeWidth={2} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[14px] font-semibold leading-snug" aria-live="polite" aria-atomic="true">{usage.title}.</p>
+          <p className="mt-0.5 text-[12px] font-light leading-snug text-brandBlack/70">{Math.min(usage.used, usage.limit)} of {usage.limit} free sessions used. Pro includes unlimited sessions.</p>
+        </div>
       </div>
-      <Link to="/pricing" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-full bg-[#245FBD] px-4 text-sm font-semibold text-white hover:bg-[#194C9B] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#245FBD]">
+      <Link to="/pricing" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-1.5 rounded-full bg-[#F65252] px-5 text-sm font-semibold text-white transition hover:bg-[#E64545] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#F65252]">
         Upgrade to Pro <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
       </Link>
     </aside>
