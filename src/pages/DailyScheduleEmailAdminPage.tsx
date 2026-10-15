@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import FoundingThanksEmailPanel from "../components/FoundingThanksEmailPanel";
 
 type PreviewRecipient = {
   userId: string;
@@ -677,6 +678,8 @@ export default function DailyScheduleEmailAdminPage() {
               <iframe title="Plunk upcoming sessions email preview" sandbox="" srcDoc={plunkPreview.html} className="h-[600px] w-full rounded-xl border bg-white" />
             </>}
           </section>
+
+          <FoundingThanksEmailPanel />
 
           <div className="mt-4 flex flex-wrap gap-2">
             <button type="button" disabled={loading} onClick={() => void selectOnlyMe()} className="rounded-full border border-black/10 bg-white px-4 py-2 text-[13px] font-semibold hover:bg-black/[0.04] disabled:opacity-60">

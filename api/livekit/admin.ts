@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID, timingSafeEqual } from "crypto";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { missingPlunkEnvironment, sendPlunkEmail } from "../_lib/plunk.js";
+import { buildFoundingThanksEmail, FOUNDING_THANKS_CAMPAIGN } from "../_lib/foundingThanksEmail.js";
 import { canReceiveDailyDigest, isLocalMorning, isPlausibleEmail } from "../_lib/dailyScheduleAudience.js";
 import { dateKeyInTimeZone, hostSlotOverlapsLocalDate, normalizeEmailBaseUrl, renderInfiniteHostingSlots, sampleInfiniteHostingSlot, type DailyHostingSlot } from "../_lib/dailyScheduleHosting.js";
 import {
@@ -64,6 +65,8 @@ type TrackKind = "camera" | "microphone" | "";
 
 type Body = {
   action?: AdminAction | string;
+  /** founding_thanks_send_batch: must equal FOUNDING_THANKS_CONFIRM. */
+  confirmPhrase?: string;
   roomName?: string;
   sessionId?: string;
   participantIdentity?: string;
@@ -388,6 +391,14 @@ function normalizeEmailAction(raw: unknown): EmailAdminAction | "" {
   if (a === "daily_schedule_send_saved_audience") return "daily_schedule_send_saved_audience";
   if (a === "daily_schedule_send_all_active") return "daily_schedule_send_all_active";
 
+  return "";
+}
+
+type FoundingThanksAction = "founding_thanks_preview" | "founding_thanks_send_test" | "founding_thanks_send_batch";
+
+function normalizeFoundingThanksAction(raw: unknown): FoundingThanksAction | "" {
+  const a = String(raw || "").trim().toLowerCase();
+  if (a === "founding_thanks_preview" || a === "founding_thanks_send_test" || a === "founding_thanks_send_batch") return a;
   return "";
 }
 
@@ -1865,6 +1876,288 @@ async function handleDailyScheduleAllUsersAction(params: {
   });
 }
 
+// ---------------------------------------------------------------------------
+// One-time Founding Member thank-you email.
+//
+// Audience: active Founding Member Pro entitlements (plan founding_free) with
+// an auth email, minus people who switched lifecycle email off. Every send is
+// recorded in one_time_email_sends (one row per campaign and person), so the
+// admin page can send in small batches, resume after a timeout, and never
+// email the same person twice.
+// ---------------------------------------------------------------------------
+
+const FOUNDING_THANKS_CONFIRM = "SEND TO FOUNDING MEMBERS";
+const FOUNDING_THANKS_BATCH_MAX = 25;
+// A row stuck in "sending" (the function died mid-send) may be retried after
+// this long; Plunk's idempotency key covers the retry.
+const FOUNDING_THANKS_STALE_MS = 15 * 60_000;
+
+type FoundingThanksRecipient = {
+  userId: string;
+  email: string;
+  fullName: string | null;
+  ledgerStatus: "sent" | "failed" | "sending" | null;
+  ledgerUpdatedAt: string | null;
+};
+
+function isMissingRelation(error: unknown) {
+  const code = String((error as { code?: string } | null)?.code || "");
+  return code === "42P01" || code === "PGRST205";
+}
+
+async function loadFoundingThanksAudience(sb: SupabaseClient) {
+  const foundingIds = new Set<string>();
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await sb
+      .from("user_entitlements")
+      .select("user_id")
+      .eq("plan", "founding_free")
+      .in("status", ["active", "trialing"])
+      .order("user_id", { ascending: true })
+      .range(offset, offset + 999);
+    if (error) throw new Error("founding_entitlements_unavailable");
+    for (const row of data || []) if (row?.user_id) foundingIds.add(String(row.user_id));
+    if (!data || data.length < 1000) break;
+  }
+
+  const optedOut = new Set<string>();
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await sb
+      .from("email_automation_preferences")
+      .select("user_id")
+      .eq("lifecycle_email_enabled", false)
+      .order("user_id", { ascending: true })
+      .range(offset, offset + 999);
+    if (error) {
+      if (isMissingRelation(error)) break;
+      throw new Error("email_preferences_unavailable");
+    }
+    for (const row of data || []) if (row?.user_id) optedOut.add(String(row.user_id));
+    if (!data || data.length < 1000) break;
+  }
+
+  let ledgerAvailable = true;
+  const ledger = new Map<string, { status: string; updated_at: string }>();
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await sb
+      .from("one_time_email_sends")
+      .select("user_id,status,updated_at")
+      .eq("campaign", FOUNDING_THANKS_CAMPAIGN)
+      .order("user_id", { ascending: true })
+      .range(offset, offset + 999);
+    if (error) {
+      if (isMissingRelation(error)) {
+        ledgerAvailable = false;
+        break;
+      }
+      throw new Error("one_time_email_ledger_unavailable");
+    }
+    for (const row of data || []) ledger.set(String(row.user_id), { status: String(row.status), updated_at: String(row.updated_at) });
+    if (!data || data.length < 1000) break;
+  }
+
+  const authUsers = await listAllAuthUsers(sb);
+  const usersById = new Map(authUsers.map((u: any) => [String(u.id), u]));
+  const ids = Array.from(foundingIds);
+  const profiles = await loadDailyRecipientProfiles(sb, ids, false);
+  const namesById = new Map(profiles.map((p: any) => [String(p.id), p?.full_name ? String(p.full_name) : null]));
+
+  const recipients: FoundingThanksRecipient[] = [];
+  let missingEmail = 0;
+  let optedOutCount = 0;
+  let banned = 0;
+  for (const userId of ids) {
+    const user: any = usersById.get(userId);
+    const email = String(user?.email || "").trim().toLowerCase();
+    if (!user || !email || !email.includes("@")) {
+      missingEmail += 1;
+      continue;
+    }
+    if (user.banned_until && Date.parse(user.banned_until) > Date.now()) {
+      banned += 1;
+      continue;
+    }
+    if (optedOut.has(userId)) {
+      optedOutCount += 1;
+      continue;
+    }
+    const entry = ledger.get(userId);
+    recipients.push({
+      userId,
+      email,
+      fullName: namesById.get(userId) ?? (user.user_metadata?.full_name ? String(user.user_metadata.full_name) : null),
+      ledgerStatus: (entry?.status as FoundingThanksRecipient["ledgerStatus"]) ?? null,
+      ledgerUpdatedAt: entry?.updated_at ?? null,
+    });
+  }
+
+  const counts = {
+    foundingMembers: ids.length,
+    recipients: recipients.length,
+    alreadySent: recipients.filter((r) => r.ledgerStatus === "sent").length,
+    failed: recipients.filter((r) => r.ledgerStatus === "failed").length,
+    inProgress: recipients.filter((r) => r.ledgerStatus === "sending").length,
+    notSentYet: recipients.filter((r) => r.ledgerStatus !== "sent").length,
+    missingEmail,
+    optedOut: optedOutCount,
+    banned,
+  };
+  return { recipients, counts, ledgerAvailable };
+}
+
+// Takes the person's ledger row for this send. False when someone else is
+// sending it right now or it was already sent.
+async function claimFoundingThanksSend(sb: SupabaseClient, recipient: FoundingThanksRecipient) {
+  const now = new Date().toISOString();
+  const { error } = await sb.from("one_time_email_sends").insert({
+    campaign: FOUNDING_THANKS_CAMPAIGN,
+    user_id: recipient.userId,
+    email: recipient.email,
+    status: "sending",
+    updated_at: now,
+  });
+  if (!error) return true;
+  if (String((error as any).code || "") !== "23505") throw error;
+
+  const { data: row, error: readError } = await sb
+    .from("one_time_email_sends")
+    .select("status,attempts,updated_at")
+    .eq("campaign", FOUNDING_THANKS_CAMPAIGN)
+    .eq("user_id", recipient.userId)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (!row || row.status === "sent") return false;
+  const stale = row.status === "sending" && Date.now() - Date.parse(String(row.updated_at)) > FOUNDING_THANKS_STALE_MS;
+  if (row.status !== "failed" && !stale) return false;
+
+  const { data: claimed, error: updateError } = await sb
+    .from("one_time_email_sends")
+    .update({ status: "sending", attempts: Number(row.attempts || 0) + 1, updated_at: now, email: recipient.email, last_error: null })
+    .eq("campaign", FOUNDING_THANKS_CAMPAIGN)
+    .eq("user_id", recipient.userId)
+    .eq("status", row.status)
+    .eq("updated_at", row.updated_at)
+    .select("user_id");
+  if (updateError) throw updateError;
+  return Array.isArray(claimed) && claimed.length > 0;
+}
+
+async function handleFoundingThanksAction(params: {
+  res: VercelResponse;
+  sb: SupabaseClient;
+  accessToken: string;
+  body: Body;
+  action: FoundingThanksAction;
+}) {
+  const { res, sb, accessToken, body, action } = params;
+  const admin = await assertAppAdmin({ sb, accessToken });
+  const appUrl = getAppUrl();
+  const replyTo = env("RESEND_REPLY_TO") || "support@mysession.club";
+  const missingEnv = missingPlunkEnvironment();
+
+  const { data: adminProfile } = await sb.from("profiles").select("full_name").eq("id", admin.userId).maybeSingle();
+  const adminName = adminProfile?.full_name ? String(adminProfile.full_name) : null;
+
+  if (action === "founding_thanks_preview") {
+    const audience = await loadFoundingThanksAudience(sb);
+    const email = buildFoundingThanksEmail({ fullName: adminName || "Anna Fischer", appUrl });
+    return res.status(200).json({
+      ok: true,
+      campaign: FOUNDING_THANKS_CAMPAIGN,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+      counts: audience.counts,
+      ledgerAvailable: audience.ledgerAvailable,
+      missing: missingEnv,
+      confirmPhrase: FOUNDING_THANKS_CONFIRM,
+      batchMax: FOUNDING_THANKS_BATCH_MAX,
+    });
+  }
+
+  if (missingEnv.length) return res.status(500).json({ error: "missing_plunk_env", required: missingEnv });
+
+  if (action === "founding_thanks_send_test") {
+    const { data: adminUser } = await sb.auth.getUser(accessToken);
+    const to = String(adminUser?.user?.email || "").trim();
+    if (!to) return res.status(400).json({ error: "admin_email_missing" });
+    const email = buildFoundingThanksEmail({ fullName: adminName, appUrl });
+    const { id } = await sendPlunkEmail({
+      to,
+      replyTo,
+      subject: `[Test] ${email.subject}`,
+      body: email.html,
+      headers: { "X-MySession-Email-Type": "founding_thanks_test" },
+      idempotencyKey: `${FOUNDING_THANKS_CAMPAIGN}:test:${admin.userId}:${Date.now()}`,
+    });
+    return res.status(200).json({ ok: true, to, providerId: id });
+  }
+
+  // founding_thanks_send_batch
+  if (String(body.confirmPhrase || "").trim() !== FOUNDING_THANKS_CONFIRM) {
+    return res.status(400).json({ error: "confirm_phrase_required", confirmPhrase: FOUNDING_THANKS_CONFIRM });
+  }
+  const audience = await loadFoundingThanksAudience(sb);
+  if (!audience.ledgerAvailable) {
+    return res.status(503).json({ error: "one_time_email_ledger_missing", migration: "20261015090000_one_time_email_sends.sql" });
+  }
+
+  const limit = Math.max(1, Math.min(FOUNDING_THANKS_BATCH_MAX, Math.round(Number(body.limit) || FOUNDING_THANKS_BATCH_MAX)));
+  const isStale = (r: FoundingThanksRecipient) =>
+    r.ledgerStatus === "sending" && !!r.ledgerUpdatedAt && Date.now() - Date.parse(r.ledgerUpdatedAt) > FOUNDING_THANKS_STALE_MS;
+  // Never-sent first, then failed and stuck ones.
+  const candidates = [
+    ...audience.recipients.filter((r) => r.ledgerStatus === null),
+    ...audience.recipients.filter((r) => r.ledgerStatus === "failed" || isStale(r)),
+  ].slice(0, limit);
+
+  let sent = 0;
+  let failed = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+  for (const recipient of candidates) {
+    if (!(await claimFoundingThanksSend(sb, recipient))) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      const email = buildFoundingThanksEmail({ fullName: recipient.fullName, appUrl });
+      const { id } = await sendPlunkEmail({
+        to: recipient.email,
+        replyTo,
+        subject: email.subject,
+        body: email.html,
+        headers: { "X-MySession-Email-Type": "founding_thanks" },
+        idempotencyKey: `${FOUNDING_THANKS_CAMPAIGN}:${recipient.userId}`,
+      });
+      const now = new Date().toISOString();
+      await sb.from("one_time_email_sends")
+        .update({ status: "sent", sent_at: now, updated_at: now, provider_id: id, last_error: null })
+        .eq("campaign", FOUNDING_THANKS_CAMPAIGN)
+        .eq("user_id", recipient.userId);
+      sent += 1;
+    } catch (error) {
+      const message = String(error instanceof Error ? error.message : error).slice(0, 300);
+      await sb.from("one_time_email_sends")
+        .update({ status: "failed", updated_at: new Date().toISOString(), last_error: message })
+        .eq("campaign", FOUNDING_THANKS_CAMPAIGN)
+        .eq("user_id", recipient.userId);
+      failed += 1;
+      if (errors.length < 5) errors.push(message);
+    }
+  }
+
+  return res.status(200).json({
+    ok: true,
+    sent,
+    failed,
+    skipped,
+    errors,
+    remaining: Math.max(0, audience.counts.notSentYet - sent),
+    counts: audience.counts,
+  });
+}
+
 async function handleDailyScheduleEmailAction(params: {
   req: VercelRequest;
   res: VercelResponse;
@@ -2995,6 +3288,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         accessToken,
         body,
         action: rawEmailAction,
+      });
+    }
+
+    const foundingThanksAction = normalizeFoundingThanksAction(body.action);
+    if (foundingThanksAction) {
+      return await handleFoundingThanksAction({
+        res,
+        sb,
+        accessToken,
+        body,
+        action: foundingThanksAction,
       });
     }
 
