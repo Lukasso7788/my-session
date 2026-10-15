@@ -4,7 +4,7 @@ import { getFreeSessionUsage } from "../lib/freeSessionNotice";
 import type { EntitlementState } from "../lib/entitlements";
 import { PAYWALL_ENABLED } from "../lib/flags";
 
-export default function FreeSessionsNotice({ state, enabled = PAYWALL_ENABLED }: { state: EntitlementState | null; enabled?: boolean }) {
+export default function FreeSessionsNotice({ state, enabled = PAYWALL_ENABLED, className = "" }: { state: EntitlementState | null; enabled?: boolean; className?: string }) {
   if (!state) return null;
   const usage = getFreeSessionUsage({ ...state, enabled });
   if (!usage?.showWarning) return null;
@@ -13,7 +13,7 @@ export default function FreeSessionsNotice({ state, enabled = PAYWALL_ENABLED }:
   // #F65252 border, the same color at 20% for the fill. A full-bleed bar right under the header;
   // message and button sit together in the center.
   return (
-    <aside aria-label="Free session allowance" className="flex w-full flex-col items-center justify-center gap-3 border-b border-[#F65252] bg-[#F6525233] px-4 py-3 text-center font-inter text-brandBlack sm:flex-row sm:gap-6 sm:text-left">
+    <aside aria-label="Free session allowance" className={`flex w-full flex-col items-center justify-center gap-3 border-b border-[#F65252] bg-[#F6525233] px-4 py-3 text-center font-inter text-brandBlack sm:flex-row sm:gap-6 sm:text-left ${className}`}>
       <div className="flex min-w-0 flex-col items-center gap-2 sm:flex-row sm:gap-4">
         <span className="inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-[13.5px] border border-[#F65252] bg-white text-[#F65252]" aria-hidden="true">
           <Lock className="h-5 w-5" strokeWidth={2} />
