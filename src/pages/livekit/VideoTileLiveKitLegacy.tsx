@@ -924,7 +924,9 @@ function VideoTileInner({
                     className={[
                         "pointer-events-none absolute inset-0 z-[13] flex min-h-0 w-full flex-col justify-end overflow-hidden px-3 transition-all duration-300 ease-out",
                         isCompact ? "pb-[2.5rem]" : "pb-[3rem]",
-                        !hasCameraOn
+                        // Camera off in a light room: no shade (dark text on a light tile).
+                        // Camera on, or camera off in a dark room: the same hover shade.
+                        !hasCameraOn && isLight
                             ? ""
                             : showAllTasks
                                 ? "bg-gradient-to-t from-black/90 via-black/72 to-black/20 opacity-100"

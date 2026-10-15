@@ -110,3 +110,7 @@ test("timeline tooltips in the session details modal are not clipped", () => {
   const flow = card.slice(card.indexOf('aria-label="Session flow"'), card.indexOf('aria-label="Session flow"') + 900);
   assert.match(flow, /tooltipPortal: true,/);
 });
+test("tile hover shade shows with the camera off in dark rooms only", () => {
+  const tile = readFileSync("src/pages/livekit/VideoTileLiveKitLegacy.tsx", "utf8");
+  assert.match(tile, /!hasCameraOn && isLight\s*\?\s*""\s*:\s*showAllTasks\s*\?\s*"bg-gradient-to-t from-black\/90 via-black\/72 to-black\/20 opacity-100"\s*:\s*"group-hover:bg-gradient-to-t/);
+});
