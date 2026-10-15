@@ -10,9 +10,10 @@ export default function FreeSessionsNotice({ state, enabled = PAYWALL_ENABLED }:
   if (!usage?.showWarning) return null;
 
   // Same red as the "Structured Flow" tile on the 24/7 Focus Rooms card:
-  // #F65252 border, the same color at 20% for the fill. Message and button sit together in the center.
+  // #F65252 border, the same color at 20% for the fill. A full-bleed bar right under the header;
+  // message and button sit together in the center.
   return (
-    <aside aria-label="Free session allowance" className="flex flex-col items-center justify-center gap-3 rounded-[24px] border border-[#F65252] bg-[#F6525233] px-4 py-3 text-center font-inter text-brandBlack sm:flex-row sm:gap-6 sm:px-5 sm:text-left">
+    <aside aria-label="Free session allowance" className="flex w-full flex-col items-center justify-center gap-3 border-b border-[#F65252] bg-[#F6525233] px-4 py-3 text-center font-inter text-brandBlack sm:flex-row sm:gap-6 sm:text-left">
       <div className="flex min-w-0 flex-col items-center gap-2 sm:flex-row sm:gap-4">
         <span className="inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-[13.5px] border border-[#F65252] bg-white text-[#F65252]" aria-hidden="true">
           <Lock className="h-5 w-5" strokeWidth={2} />
