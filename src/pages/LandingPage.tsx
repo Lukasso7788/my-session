@@ -147,20 +147,30 @@ function RotatingPrompt() {
     const [visible, setVisible] = useState(true);
 
     useEffect(() => {
+        if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+        let transitionTimer: number | undefined;
         const timer = window.setInterval(() => {
             setVisible(false);
-            window.setTimeout(() => {
+            transitionTimer = window.setTimeout(() => {
                 setIndex((prev) => (prev + 1) % ROTATING_LINES.length);
                 setVisible(true);
             }, 190);
         }, 2450);
 
-        return () => window.clearInterval(timer);
+        return () => {
+            window.clearInterval(timer);
+            window.clearTimeout(transitionTimer);
+        };
     }, []);
 
     return (
-        <span className={cx("inline-block min-h-[1.08em] transition-all duration-200", visible ? "translate-y-0 opacity-100" : "translate-y-[8px] opacity-0")}>
-            {ROTATING_LINES[index]}
+        <span className="inline-grid w-full align-top">
+            {ROTATING_LINES.map((line) => (
+                <span key={line} aria-hidden="true" className="invisible [grid-area:1/1]">{line}</span>
+            ))}
+            <span className={cx("[grid-area:1/1] transition-[transform,opacity] duration-200", visible ? "translate-y-0 opacity-100" : "translate-y-[8px] opacity-0")}>
+                {ROTATING_LINES[index]}
+            </span>
         </span>
     );
 }
@@ -213,13 +223,12 @@ function MovingChips({ items, reverse = false }: { items: Array<{ emoji: string;
 function HeroArtwork() {
     return (
         <div className="mx-auto mt-[44px] w-full max-w-[1320px] sm:mt-[54px] md:mt-[64px] lg:mt-[70px]">
-            <div className="hidden md:block">
-                <img src="/images/landing/hero-complete-desktop.png" alt="MySession live coworking room preview" className="mx-auto block w-full max-w-[1180px] select-none object-contain" draggable={false} />
-            </div>
-
-            <div className="block md:hidden">
-                <img src="/images/landing/hero-complete-mobile.png" alt="MySession live coworking room preview" className="mx-auto block w-full max-w-[420px] select-none object-contain" draggable={false} />
-            </div>
+            <picture>
+                <source media="(min-width: 768px)" srcSet="/images/landing/hero-complete-desktop.webp" type="image/webp" width={2222} height={1120} />
+                <source media="(min-width: 768px)" srcSet="/images/landing/hero-complete-desktop.png" width={2222} height={1120} />
+                <source srcSet="/images/landing/hero-complete-mobile.webp" type="image/webp" width={840} height={536} />
+                <img src="/images/landing/hero-complete-mobile.png" alt="MySession live coworking room with participant videos, shared tasks, and chat" width={1554} height={992} fetchPriority="high" decoding="async" className="mx-auto block h-auto w-full max-w-[420px] select-none object-contain md:max-w-[1180px]" draggable={false} />
+            </picture>
         </div>
     );
 }

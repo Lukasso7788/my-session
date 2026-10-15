@@ -10,7 +10,11 @@ const editorialCoverSources = JSON.parse(await readFile(path.resolve("scripts/ed
 const editorialCoverBySlug = new Map(editorialCoverSources.map((source) => [source.slug, source]));
 // Reuse the published starter article rather than maintaining a separate
 // crawler-only copy that can drift from the client-rendered blog page.
-const vite = await createServer({ server: { middlewareMode: true }, appType: "custom" });
+const vite = await createServer({
+  server: { middlewareMode: true },
+  appType: "custom",
+  optimizeDeps: { noDiscovery: true, entries: [] },
+});
 let starterFocusmatePost;
 try {
   ({ starterFocusmatePost } = await vite.ssrLoadModule("/src/data/blogSeed.ts"));

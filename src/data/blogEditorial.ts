@@ -1,20 +1,18 @@
 import type { BlogPost } from "../lib/blog";
-import chooseLengthMarkdown from "../content/blog/choose-25-50-or-90-minute-focus-session.md?raw";
-import studyRoutineMarkdown from "../content/blog/body-doubling-study-session-routine.md?raw";
-import startWhenStuckMarkdown from "../content/blog/how-to-start-a-focus-session-when-stuck.md?raw";
-import remoteWorkMarkdown from "../content/blog/remote-work-accountability-without-meetings.md?raw";
-import whatIsBodyDoublingMarkdown from "../content/blog/what-is-body-doubling.md?raw";
 import editorialCoverSources from "../../scripts/editorial-covers/sources.json";
 import editorialManifest from "./blog-editorial-manifest.json";
 import { starterFocusmatePost, withStarterFocusmateAssets } from "./blogSeed";
 
-const markdownByFile: Record<string, string> = {
-  "choose-25-50-or-90-minute-focus-session.md": chooseLengthMarkdown,
-  "body-doubling-study-session-routine.md": studyRoutineMarkdown,
-  "how-to-start-a-focus-session-when-stuck.md": startWhenStuckMarkdown,
-  "remote-work-accountability-without-meetings.md": remoteWorkMarkdown,
-  "what-is-body-doubling.md": whatIsBodyDoublingMarkdown,
-};
+// The manifest drives publishing; discover its Markdown automatically so a new
+// prerendered article cannot be missing from the browser bundle's manual imports.
+const markdownModules = import.meta.glob<string>("../content/blog/*.md", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+});
+const markdownByFile = Object.fromEntries(
+  Object.entries(markdownModules).map(([file, markdown]) => [file.split("/").pop()!, markdown]),
+);
 
 const coverDetailsBySlug = new Map(
   editorialManifest.map((entry) => [entry.slug, {
