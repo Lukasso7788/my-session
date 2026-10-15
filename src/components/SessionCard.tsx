@@ -5916,6 +5916,8 @@ export default function SessionCard({
                                                 cycleSeconds,
                                                 progressStyle: "tick",
                                                 tickEveryMs,
+                                                // The modal's column scrolls and would clip the tooltip.
+                                                tooltipPortal: true,
                                             } as any)}
                                         />
                                     ) : (

@@ -102,3 +102,11 @@ test("session details modal hugs its content", () => {
   assert.match(card, /sm:max-h-\[min\(90vh,900px\)\] sm:max-w-\[1280px\]/);
   assert.doesNotMatch(card, /sm:h-\[min\(90vh,900px\)\]/);
 });
+test("timeline tooltips in the session details modal are not clipped", () => {
+  const bar = readFileSync("src/components/SessionStageBar.tsx", "utf8");
+  assert.match(bar, /tooltipPortal\?: boolean;/);
+  assert.match(bar, /if \(tooltipPortal && hoveredStageRect && typeof document !== "undefined"\) \{[\s\S]*?createPortal\(/);
+  assert.match(bar, /fixed z-\[2147483647\]/);
+  const flow = card.slice(card.indexOf('aria-label="Session flow"'), card.indexOf('aria-label="Session flow"') + 900);
+  assert.match(flow, /tooltipPortal: true,/);
+});

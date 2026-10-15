@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { SessionStage } from "../SessionConfig";
 import { serverNow } from "../lib/serverClock";
 
@@ -15,6 +16,8 @@ interface Props {
   showLegend?: boolean;
   size?: "default" | "card";
   tooltipPlacement?: "top" | "bottom";
+  /** Render stage tooltips on document.body so a scrolling or clipped parent cannot hide them. */
+  tooltipPortal?: boolean;
 }
 
 function clamp(n: number, a: number, b: number) {
@@ -335,12 +338,27 @@ export function SessionStageBar({
   showLegend = false,
   size = "default",
   tooltipPlacement = "top",
+  tooltipPortal = false,
 }: Props) {
   const [elapsed, setElapsed] = useState(0);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [cycleProgress, setCycleProgress] = useState(0);
   const [hoveredStageIndex, setHoveredStageIndex] = useState<number | null>(null);
+  const [hoveredStageRect, setHoveredStageRect] = useState<DOMRect | null>(null);
+
+  // A portaled tooltip is placed from the block's position; drop it on scroll
+  // instead of leaving it floating in the wrong place.
+  useEffect(() => {
+    if (!tooltipPortal || hoveredStageIndex === null) return;
+    const hide = () => setHoveredStageIndex(null);
+    window.addEventListener("scroll", hide, true);
+    window.addEventListener("resize", hide);
+    return () => {
+      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("resize", hide);
+    };
+  }, [tooltipPortal, hoveredStageIndex]);
 
   const stageSecondsList = useMemo(() => {
     return (stages || []).map((s) => Math.max(0, getStageSeconds(s)));
@@ -528,8 +546,9 @@ export function SessionStageBar({
                 opacity: isActive ? 1 : 0.84,
                 ...borderRadiusStyle,
               }}
-              onMouseEnter={() => {
+              onMouseEnter={(event) => {
                 setHoveredStageIndex(index);
+                if (tooltipPortal) setHoveredStageRect(event.currentTarget.getBoundingClientRect());
                 onHoverStage?.(hoverStage);
               }}
               onMouseLeave={() => {
@@ -545,8 +564,8 @@ export function SessionStageBar({
                 }}
               />
 
-              {isHovered && (
-                <div className={`pointer-events-none absolute left-1/2 z-[9999] flex -translate-x-1/2 ${tooltipPlacement === "bottom" ? "top-full mt-3" : "bottom-full mb-3"}`}>
+              {isHovered && (() => {
+                const tooltip = (
                   <div className={`relative min-w-[150px] rounded-xl px-3 py-2 ${tooltipCardClass}`}>
                     <div className="flex items-start gap-2">
                       <div
@@ -569,8 +588,30 @@ export function SessionStageBar({
                       className={`absolute left-1/2 h-2.5 w-2.5 -translate-x-1/2 rotate-45 ${tooltipPlacement === "bottom" ? "bottom-full translate-y-1/2" : "top-full -translate-y-1/2"} ${tooltipArrowClass}`}
                     />
                   </div>
-                </div>
-              )}
+                );
+
+                if (tooltipPortal && hoveredStageRect && typeof document !== "undefined") {
+                  const below = tooltipPlacement === "bottom";
+                  return createPortal(
+                    <div
+                      className={`pointer-events-none fixed z-[2147483647] flex -translate-x-1/2 ${below ? "" : "-translate-y-full"}`}
+                      style={{
+                        left: hoveredStageRect.left + hoveredStageRect.width / 2,
+                        top: below ? hoveredStageRect.bottom + 12 : hoveredStageRect.top - 12,
+                      }}
+                    >
+                      {tooltip}
+                    </div>,
+                    document.body,
+                  );
+                }
+
+                return (
+                  <div className={`pointer-events-none absolute left-1/2 z-[9999] flex -translate-x-1/2 ${tooltipPlacement === "bottom" ? "top-full mt-3" : "bottom-full mb-3"}`}>
+                    {tooltip}
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
