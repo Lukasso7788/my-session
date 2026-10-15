@@ -86,6 +86,18 @@ The canonical public origin remains the non-www HTTPS domain.
 - No new production deployment or new indexing request is confirmed in this
   continuation. Earlier production check still had 34 URLs and missing articles.
 
+## Git delivery — 16 October 2026
+
+SEO changes committed as `a6e660c`. Integrated the current origin/main into
+the isolated branch with merge `485474d`; this preserved concurrent room,
+header and free-session-notice changes. Branch was pushed successfully to
+`origin/codex/seo-indexability-repair`. Production main was not pushed or
+deployed. The merged branch passed the full build and all SEO checks again.
+Local browser checks also confirmed the task-paralysis article renders and
+the homepage selects the loaded desktop WebP without horizontal overflow.
+Proof screenshot is saved beside the indexing ledger as
+`seo-restored-article-2026-10-16.png`.
+
 ## Safe continuation
 
 Worktree: `C:/Users/misha/.codex/worktrees/seo-indexability-repair/my-session`.
