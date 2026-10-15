@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { profileHoverAttrs } from "../components/ProfileHoverLayer";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import { countryName, formatCount, formatHours, initials } from "../lib/communityDisplay";
@@ -105,11 +106,12 @@ function Segmented<T extends string>({
 function Avatar({ entry, size }: { entry: Entry; size: number }) {
   const style = { width: size, height: size };
   return entry.avatar_url ? (
-    <img src={entry.avatar_url} style={style} className="shrink-0 rounded-full object-cover" alt="" loading="lazy" />
+    <img src={entry.avatar_url} style={style} className="shrink-0 rounded-full object-cover" alt="" loading="lazy" {...profileHoverAttrs(entry.user_id, entry.full_name)} />
   ) : (
     <span
       style={{ ...style, fontSize: Math.round(size * 0.3) }}
       className="flex shrink-0 items-center justify-center rounded-full bg-[#F1F1F1] font-semibold text-[#2F2F2F]"
+      {...profileHoverAttrs(entry.user_id, entry.full_name)}
     >
       {initials(entry.full_name)}
     </span>

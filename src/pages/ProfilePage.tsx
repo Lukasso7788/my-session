@@ -170,8 +170,6 @@ export default function ProfilePage() {
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`;
   }, [displayName]);
 
-  const hasHostedSessions = sessions.length > 0;
-
   const hostBalance = useMemo(() => {
     return hostSupportPayments.reduce(
       (acc, payment) => {
@@ -210,8 +208,6 @@ export default function ProfilePage() {
     });
   }, [payoutRequests]);
 
-  const recentSupportPayments = useMemo(() => hostSupportPayments.slice(0, 5), [hostSupportPayments]);
-  const recentPayoutRequests = useMemo(() => payoutRequests.slice(0, 5), [payoutRequests]);
 
   const upcomingSessions = useMemo(() => {
     const now = Date.now();
@@ -262,26 +258,6 @@ export default function ProfilePage() {
     }
   };
 
-  const getPaymentBadgeClass = (status: string | null) => {
-    const normalized = String(status || "").toLowerCase();
-
-    if (normalized === "available") return "bg-[#DCFCE7] text-[#15803D]";
-    if (normalized === "pending") return "bg-[#FEF3C7] text-[#92400E]";
-    if (normalized === "paid_out") return "bg-[#DBEAFE] text-[#1D4ED8]";
-
-    return "bg-[#E5E7EB] text-[#374151]";
-  };
-
-  const getPayoutBadgeClass = (status: string | null) => {
-    const normalized = String(status || "").toLowerCase();
-
-    if (normalized === "requested") return "bg-[#FEF3C7] text-[#92400E]";
-    if (normalized === "processing") return "bg-[#DBEAFE] text-[#1D4ED8]";
-    if (normalized === "paid" || normalized === "completed") return "bg-[#DCFCE7] text-[#15803D]";
-    if (normalized === "rejected") return "bg-red-100 text-red-700";
-
-    return "bg-[#E5E7EB] text-[#374151]";
-  };
 
   const formatSince = (iso: string) => {
     const d = new Date(iso);
@@ -784,189 +760,46 @@ export default function ProfilePage() {
 
       <div className="mt-16 border-t border-gray-200" />
 
+      {/* Host profile and balance, kept to one compact row. */}
       <section className="mt-10">
-        <div className="rounded-2xl border border-gray-200 bg-gray-50 px-6 py-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-[#2F2F2F]">Host profile</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                {hasHostedSessions
-                  ? `You already have a public host profile with ${followersCount} follower${followersCount === 1 ? "" : "s"}. Visitors can follow you, view your sessions, and support you there.`
-                  : "Once you host sessions, your public profile becomes your host surface for follows, support, and upcoming sessions."}
-              </p>
-            </div>
+        <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-5 py-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-gray-600">
+            <span className="text-[15px] font-semibold text-[#2F2F2F]">Host profile</span>
+            <span>
+              {followersCount} follower{followersCount === 1 ? "" : "s"}
+            </span>
+            {hostSupportApproved ? (
+              <span title={`Pending ${formatMoney(hostBalance.pendingUsd)} · Paid out ${formatMoney(hostBalance.paidOutUsd)}`}>
+                {hostSupportLoading ? "Loading balance…" : `${formatMoney(hostBalance.availableUsd)} available`}
+              </span>
+            ) : null}
+          </div>
 
-            <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {hostSupportApproved ? (
               <button
                 type="button"
-                onClick={() => navigate(`/profile/${user.id}`)}
-                className="inline-flex items-center justify-center rounded-full border border-[#2F2F2F] px-5 py-2.5 text-[14px] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white transition"
+                onClick={handleAskPayout}
+                disabled={payoutBusy || hostBalance.availableUsd <= 0 || hasOpenPayoutRequest}
+                className="rounded-full border border-[#2F2F2F] px-4 py-2 text-[13px] font-semibold text-[#2F2F2F] transition hover:bg-[#2F2F2F] hover:text-white disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#2F2F2F]"
+                title={hasOpenPayoutRequest ? "You already have an open payout request" : "Ask admin to process payout"}
               >
-                Open public profile · {followersCount} follower{followersCount === 1 ? "" : "s"}
+                {payoutBusy ? "Requesting..." : "Ask payout"}
               </button>
-
-              <button
-                type="button"
-                onClick={() => navigate("/sessions")}
-                className="inline-flex items-center justify-center rounded-full bg-[#2F2F2F] px-5 py-2.5 text-[14px] text-white hover:opacity-90 transition"
-              >
-                Back to sessions
-              </button>
-            </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => navigate(`/profile/${user.id}`)}
+              className="rounded-full bg-[#2F2F2F] px-4 py-2 text-[13px] font-semibold text-white transition hover:opacity-90"
+            >
+              Open public profile
+            </button>
           </div>
         </div>
+        {payoutMessage || payoutError ? (
+          <p className={`mt-2 px-1 text-[12px] ${payoutError ? "text-red-600" : "text-green-700"}`}>{payoutError || payoutMessage}</p>
+        ) : null}
       </section>
-
-      {hostSupportApproved && (
-        <section className="mt-8">
-          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-            <div className="flex flex-col gap-3 border-b border-gray-200 bg-gray-50 px-6 py-5 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-xl font-bold text-[#2F2F2F]">Host balance</h2>
-                <p className="mt-1 text-sm text-gray-600">
-                  Support received through your public host profile.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                {hostSupportLoading && <span className="text-sm text-gray-500">Loading balance…</span>}
-
-                <button
-                  type="button"
-                  onClick={handleAskPayout}
-                  disabled={payoutBusy || hostBalance.availableUsd <= 0 || hasOpenPayoutRequest}
-                  className="rounded-full bg-[#2F2F2F] px-5 py-2.5 text-[13px] font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                  title={hasOpenPayoutRequest ? "You already have an open payout request" : "Ask admin to process payout"}
-                >
-                  {payoutBusy ? "Requesting..." : "Ask payout"}
-                </button>
-              </div>
-            </div>
-
-            {(payoutMessage || payoutError) && (
-              <div className="px-6 pt-5">
-                <div
-                  className={`rounded-2xl border px-4 py-3 text-[13px] ${payoutError
-                      ? "border-red-200 bg-red-50 text-red-700"
-                      : "border-green-200 bg-green-50 text-green-700"
-                    }`}
-                >
-                  {payoutError || payoutMessage}
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 gap-3 px-6 py-5 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">Available</div>
-                <div className="mt-2 text-2xl font-bold text-[#15803D]">{formatMoney(hostBalance.availableUsd)}</div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">Pending</div>
-                <div className="mt-2 text-2xl font-bold text-[#92400E]">{formatMoney(hostBalance.pendingUsd)}</div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">Paid out</div>
-                <div className="mt-2 text-2xl font-bold text-[#1D4ED8]">{formatMoney(hostBalance.paidOutUsd)}</div>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-[#F8FAFC] p-4">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-500">Total received</div>
-                <div className="mt-2 text-2xl font-bold text-[#2F2F2F]">{formatMoney(hostBalance.totalReceivedUsd)}</div>
-              </div>
-            </div>
-
-            <div className="border-t border-gray-200 px-6 py-5">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="text-[15px] font-bold text-[#2F2F2F]">Payout requests</h3>
-                <span className="text-[12px] text-gray-500">Showing latest {recentPayoutRequests.length}</span>
-              </div>
-
-              {recentPayoutRequests.length === 0 ? (
-                <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-5 text-sm text-slate-500">
-                  No payout requests yet.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {recentPayoutRequests.map((request) => {
-                    const status = String(request.status || "requested");
-                    return (
-                      <div
-                        key={request.id}
-                        className="flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3"
-                      >
-                        <div>
-                          <div className="text-[14px] font-semibold text-[#2F2F2F]">
-                            {formatMoney(Number(request.amount_usd || 0))}
-                          </div>
-                          <div className="mt-0.5 text-[12px] text-gray-500">
-                            Requested {formatSessionDateTime(request.requested_at || request.created_at)}
-                          </div>
-                        </div>
-
-                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${getPayoutBadgeClass(status)}`}>
-                          {status}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="border-t border-gray-200 px-6 py-5">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <h3 className="text-[15px] font-bold text-[#2F2F2F]">Recent support</h3>
-                <span className="text-[12px] text-gray-500">Showing latest {recentSupportPayments.length}</span>
-              </div>
-
-              {recentSupportPayments.length === 0 ? (
-                <div className="rounded-xl border border-gray-200 bg-gray-50 px-5 py-5 text-sm text-slate-500">
-                  No support payments yet.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {recentSupportPayments.map((payment) => {
-                    const status = String(payment.status || "unknown");
-                    return (
-                      <div
-                        key={payment.id}
-                        className="flex items-center justify-between gap-4 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3"
-                      >
-                        <div>
-                          <div className="text-[14px] font-semibold text-[#2F2F2F]">
-                            {formatMoney(Number(payment.host_amount_usd || 0))}
-                          </div>
-                          <div className="mt-0.5 text-[12px] text-gray-500">
-                            Gross {formatMoney(Number(payment.gross_amount_usd || 0))} · Fee{" "}
-                            {formatMoney(Number(payment.platform_fee_usd || 0))}
-                          </div>
-                        </div>
-
-                        <div className="flex shrink-0 items-center gap-3">
-                          <span className="text-right text-[12px] text-gray-500">
-                            {formatSessionDateTime(payment.created_at)}
-                          </span>
-
-                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${getPaymentBadgeClass(status)}`}>
-                            {status}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <p className="mt-4 text-[12px] leading-5 text-gray-500">
-                Payouts are currently handled manually. Available balance means the payment succeeded and is recorded for host payout.
-              </p>
-            </div>
-          </div>
-        </section>
-      )}
 
       <section className="mt-10">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

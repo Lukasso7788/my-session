@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
+import { profileHoverAttrs } from "./ProfileHoverLayer";
 
 type RoomTheme = "dark" | "light";
 
@@ -1822,6 +1823,7 @@ export function TasksPanel({
                   >
                     <img
                       src={getAvatar(u)}
+                      {...profileHoverAttrs(u.id, u.full_name)}
                       className="w-8 h-8 rounded-full object-cover shrink-0"
                       alt=""
                     />
@@ -2207,6 +2209,7 @@ export function TasksPanel({
                   <div className="flex items-center gap-3 min-w-0">
                     <img
                       src={getAvatar(item.profiles)}
+                      {...profileHoverAttrs(item.user_id, item.profiles?.full_name)}
                       className="w-9 h-9 rounded-full object-cover shrink-0"
                       alt=""
                     />

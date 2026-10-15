@@ -88,6 +88,6 @@ test("the drawer offers the week, per-day toggles and sticky actions", () => {
   assert.match(card, /`Cancel all \$\{seriesBookedIds\.length\}`/);
   // A host sees their own series but does not book it.
   assert.match(card, /disabled=\{isHost \|\| !!seriesPending\}/);
-  assert.match(card, /<footer className="shrink-0 border-t border-\[#EEEEEE\] px-6 py-4">[\s\S]*Join session/);
+  assert.match(card, /<footer className="shrink-0 border-t border-\[#EEEEEE\] px-6 py-4 sm:px-10">[\s\S]*Join session/);
   assert.doesNotMatch(card, /linear-gradient|radial-gradient/);
 });

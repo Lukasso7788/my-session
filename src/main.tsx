@@ -9,6 +9,7 @@ import "./free-flow-intro.css";
 import { AuthProvider } from "./context/AuthContext";
 import AnalyticsProvider from "./components/AnalyticsProvider";
 import ProfileCompletionGate from "./components/ProfileCompletionGate";
+import ProfileHoverLayer from "./components/ProfileHoverLayer";
 import InAppBrowserMediaGate from "./components/InAppBrowserMediaGate";
 import { initializeAnalytics } from "./lib/analytics";
 import { installDynamicImportRecovery } from "./lib/dynamicImportRecovery";
@@ -32,6 +33,7 @@ createRoot(document.getElementById("root")!).render(
             <AnalyticsProvider>
               <ProfileCompletionGate />
               <App />
+              <ProfileHoverLayer />
             </AnalyticsProvider>
           </AuthProvider>
         </BrowserRouter>

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import SessionCard from "../../src/components/SessionCard";
+import ProfileHoverLayer from "../../src/components/ProfileHoverLayer";
 import { buildSessionSeries } from "../../src/lib/sessionSeries";
 import "../../src/index.css";
 
@@ -126,5 +127,44 @@ function Preview() {
 createRoot(document.getElementById("root")!).render(
   <MemoryRouter>
     <Preview />
+    <ProfileHoverLayer />
   </MemoryRouter>
 );
+
+// Profile hover cards: answer the two profile-stats requests with sample data.
+const realFetch = window.fetch.bind(window);
+window.fetch = async (input, init) => {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  if (url.includes("/rest/v1/host_followers")) {
+    return new Response(null, { status: 200, headers: { "content-range": "0-0/128" } });
+  }
+  if (url.includes("/rest/v1/profiles")) {
+    const profile = {
+      full_name: null,
+      bio: "Designer in Berlin. Mornings are for deep work, afternoons for calls.",
+      timezone: "Europe/Berlin",
+      avatar_url: null,
+      attended_sessions_count: 214,
+      created_at: "2025-03-02T10:00:00Z",
+    };
+    const accept = new Headers(init?.headers).get("accept") || "";
+    const body = accept.includes("vnd.pgrst.object") ? profile : [profile];
+    return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+  }
+  return realFetch(input, init);
+};
+
+// ?open=1 opens the details modal right away (for headless screenshots).
+if (new URLSearchParams(window.location.search).get("open") === "1") {
+  window.setTimeout(() => {
+    document.querySelector<HTMLButtonElement>('button[aria-label="Session details"]')?.click();
+    // ?hover=<name> also opens that person's profile card.
+    const hover = new URLSearchParams(window.location.search).get("hover");
+    if (hover) {
+      window.setTimeout(() => {
+        const chip = [...document.querySelectorAll<HTMLElement>('[role="dialog"] a[data-profile-id]')].find((el) => el.textContent?.includes(hover));
+        chip?.dispatchEvent(new PointerEvent("pointerover", { bubbles: true, pointerType: "mouse" }));
+      }, 600);
+    }
+  }, 600);
+}

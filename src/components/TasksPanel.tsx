@@ -30,6 +30,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { getUserEntitlement } from "../lib/entitlements";
 import { hasUnlimitedAccess } from "../lib/billing";
 import { formatTaskAddedAt } from "../lib/taskAddedAt";
+import { profileHoverAttrs } from "./ProfileHoverLayer";
 
 type RoomTheme = "dark" | "light";
 
@@ -4179,6 +4180,7 @@ export function TasksPanel({
                   >
                     <img
                       src={getAvatar(u)}
+                      {...profileHoverAttrs(u.id, u.full_name)}
                       className="w-8 h-8 rounded-full object-cover shrink-0"
                       alt=""
                     />
@@ -5119,6 +5121,7 @@ export function TasksPanel({
                     >
                       <img
                         src={getAvatar(item.profiles)}
+                        {...profileHoverAttrs(item.user_id, item.profiles?.full_name)}
                         className="w-7 h-7 rounded-full object-cover shrink-0"
                         alt=""
                       />

@@ -135,6 +135,7 @@ import { FX_BG_PRESETS } from "./livekit/backgroundPresets";
 import { downscaleImageFile, downscaleImageSrc, isLargeDataUrl } from "../lib/backgroundImageDownscale";
 import { prefetchBackgroundFxAssets } from "../lib/prefetchBackgroundFx";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
+import { profileHoverAttrs } from "../components/ProfileHoverLayer";
 import "./livekit/roomSidePanelTheme.css";
 import "./livekit/room-chrome-motion.css";
 import {
@@ -20252,6 +20253,7 @@ export function RoomPageLiveKit({
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
                         <div
+                          {...(p.kind === "screen" ? {} : profileHoverAttrs(p.participantUserId, p.label))}
                           className={`relative flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border text-[14px] font-semibold ${p.isLocal
                             ? sidePanelIsLight
                               ? "border-[#5286F6]/70 bg-[#5286F6]/20 text-[#245F2A] ring-2 ring-[#5286F6]/20"

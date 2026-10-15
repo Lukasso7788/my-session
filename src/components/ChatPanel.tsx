@@ -13,6 +13,7 @@ import { useLatestCallback } from "../hooks/useLatestCallback";
 import { boundChatMessages, reconcileChatSnapshot, CHAT_PAGE_SIZE, CHAT_WINDOW_LIMIT } from "../lib/chatMessageWindow";
 import { createChatProfileLoader } from "../lib/chatProfileLoader";
 import { createPanelSnapshotCache } from "../lib/panelSnapshotCache";
+import { profileHoverAttrs } from "./ProfileHoverLayer";
 import {
     Check,
     CheckCheck,
@@ -661,6 +662,7 @@ function MessageCardInner({
             {!mine && (
                 <img
                     src={avatarFromProfile(msg.profile)}
+                    {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
                     className="w-9 h-9 rounded-full object-cover"
                     alt=""
                 />
@@ -1089,6 +1091,7 @@ function MessageCardInner({
             {mine && (
                 <img
                     src={avatarFromProfile(msg.profile)}
+                    {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
                     className="w-9 h-9 rounded-full object-cover"
                     alt=""
                 />
@@ -3391,6 +3394,7 @@ export function ChatPanel({
                                                     >
                                                         <img
                                                             src={avatarFromProfile(prof)}
+                                                            {...profileHoverAttrs(uid, prof?.full_name)}
                                                             className="w-9 h-9 rounded-full object-cover"
                                                             alt=""
                                                         />

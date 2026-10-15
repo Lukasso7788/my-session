@@ -43,9 +43,62 @@ test("infinite-room schedule is grouped by day and shows no host label", () => {
 
 test("session details open as a modal (bottom sheet on phones) with one facts block", () => {
   assert.match(card, /fixed inset-0 z-\[950\] flex items-end justify-center sm:items-center/);
-  assert.match(card, /session-booking-drawer relative flex max-h-\[92vh\][^"]*rounded-t-\[28px\][^"]*sm:rounded-\[28px\]/);
+  assert.match(card, /session-booking-drawer relative flex max-h-\[92vh\][^"]*rounded-t-\[28px\][^"]*sm:max-w-\[1280px\] sm:rounded-\[32px\]/);
   assert.match(card, /grid grid-cols-3 divide-x divide-\[#E3E3E3\] rounded-\[18px\] bg-\[#F6F6F6\]/);
   const css = readFileSync("src/index.css", "utf8");
   assert.match(css, /@keyframes sessionBookingDrawerIn \{\s*from \{\s*opacity: 0;\s*transform: translateY\(100%\);/);
   assert.match(css, /@media \(min-width: 640px\) \{\s*\.session-booking-drawer \{\s*animation: sessionDetailsModalIn/);
+});
+test("session details modal is page-sized, timeline first, and shows only switched-on rules", () => {
+  assert.match(card, /lg:grid lg:grid-cols-\[minmax\(0,1fr\)_440px\]/);
+  // Type, when and capacity always show; the rest only when switched on.
+  for (const key of ["capacity"]) assert.match(card, new RegExp(`key: "${key}",`));
+  const optional = card.slice(card.indexOf("...optionalDetails(["), card.indexOf("]),", card.indexOf("...optionalDetails([")));
+  for (const key of ["access", "listing", "pinned", "media", "chat", "mic", "music"]) {
+    assert.match(optional, new RegExp(`&& \\{\\s*key: "${key}",`));
+  }
+  // Host and session flow share the first line; details come before About.
+  const body = card.slice(card.indexOf("Phones scroll the whole body"));
+  const firstLine = body.slice(body.indexOf("Host and session flow share one line"), body.indexOf("grid grid-cols-3 divide-x"));
+  assert.match(firstLine, />Hosted by</);
+  assert.match(firstLine, /aria-label="Session flow"/);
+  assert.ok(body.indexOf('aria-label="Details"') < body.indexOf(">About<"));
+  // Copy link sits in the header next to the close button.
+  const header = card.slice(card.indexOf("One line: title, start date and time, status"), card.indexOf("Phones scroll the whole body"));
+  assert.match(header, /"Copy link"/);
+  assert.match(header, /<XIcon size=\{18\}/);
+  // Start date and time sit next to the title; chips use the room's icons.
+  assert.match(card, /label: "Length"[\s\S]*?label: "In room"/);
+  assert.match(header, /drawerStartShort\.date\} · \$\{drawerStartShort\.time/);
+  assert.match(card, /<RoomIcon src="\/icons\/participants-light\.svg" \/>/);
+  assert.match(card, /<RoomIcon src="\/icons\/camera-on-light\.svg" \/>/);
+  assert.match(card, />In the room now</);
+  assert.match(card, /onClick=\{\(\) => void handleCopyInviteLink\(\)\}/);
+});
+test("hovering any person's avatar opens the shared profile card", () => {
+  const layer = readFileSync("src/components/ProfileHoverLayer.tsx", "utf8");
+  const main = readFileSync("src/main.tsx", "utf8");
+  assert.match(main, /<ProfileHoverLayer \/>/);
+  // Mouse only, stats cached per person, timezone and a "Check account" link.
+  assert.match(layer, /if \(event\.pointerType !== "mouse"\) return;/);
+  assert.match(layer, /const statsCache = new Map/);
+  assert.match(layer, /timeZone: timezone/);
+  assert.match(layer, />\s*Check account\s*</);
+  // Avatars across the app are marked.
+  for (const file of [
+    "src/components/SessionCard.tsx",
+    "src/pages/HostsPage.tsx",
+    "src/pages/LeaderboardPage.tsx",
+    "src/components/ChatPanel.tsx",
+    "src/components/TasksPanel.tsx",
+    "src/components/IntentionsPanel.tsx",
+    "src/pages/RoomPageLiveKit.tsx",
+  ]) {
+    assert.match(readFileSync(file, "utf8"), /profileHoverAttrs\(/, file);
+  }
+});
+
+test("session details modal hugs its content", () => {
+  assert.match(card, /sm:max-h-\[min\(90vh,900px\)\] sm:max-w-\[1280px\]/);
+  assert.doesNotMatch(card, /sm:h-\[min\(90vh,900px\)\]/);
 });

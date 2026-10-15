@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { profileHoverAttrs } from "../components/ProfileHoverLayer";
 import { CalendarDays, Search } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { countryName, formatCount, initials } from "../lib/communityDisplay";
@@ -76,11 +77,12 @@ function lastHosted(value: string | null, now: number) {
 function Avatar({ host, size }: { host: HostRow; size: number }) {
   const style = { width: size, height: size };
   return host.avatar_url ? (
-    <img src={host.avatar_url} style={style} className="shrink-0 rounded-full object-cover" alt="" loading="lazy" />
+    <img src={host.avatar_url} style={style} className="shrink-0 rounded-full object-cover" alt="" loading="lazy" {...profileHoverAttrs(host.user_id, host.full_name)} />
   ) : (
     <span
       style={{ ...style, fontSize: Math.round(size * 0.3) }}
       className="flex shrink-0 items-center justify-center rounded-full bg-[#F1F1F1] font-semibold text-[#2F2F2F]"
+      {...profileHoverAttrs(host.user_id, host.full_name)}
     >
       {initials(host.full_name)}
     </span>

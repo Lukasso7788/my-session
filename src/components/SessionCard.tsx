@@ -5,10 +5,12 @@ import {
     useState,
     useCallback,
     useLayoutEffect,
+    type ReactNode,
 } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock, Eye, EyeOff, Pin, PinOff, Camera, MessageSquareOff } from "lucide-react";
+import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock, Eye, EyeOff, Pin, PinOff, MessageSquareOff } from "lucide-react";
+import { MonitorUp, MicOff, Link2, Check as CheckIcon, X as XIcon } from "lucide-react";
 import { SessionStageBar } from "./SessionStageBar";
 import { supabase } from "../lib/supabase";
 import { isFreeFlowSchedule } from "../lib/freeFlowSession";
@@ -23,6 +25,8 @@ import type { SessionStage } from "../SessionConfig";
 import { readSessionRoomPolicies, withRoomPolicies } from "../lib/roomPolicies";
 import SessionRoomPolicyIndicator from "./SessionRoomPolicyIndicator";
 import SessionMusicIndicator from "./SessionMusicIndicator";
+import { profileHoverAttrs } from "./ProfileHoverLayer";
+import { getSessionCardPolicyState } from "../lib/sessionCardIndicators";
 import { SERIES_WINDOW_DAYS, type SeriesOccurrence } from "../lib/sessionSeries";
 
 let roomPagePrefetchPromise: Promise<unknown> | null = null;
@@ -354,7 +358,7 @@ function AvatarCircle({
     const initials = getInitials(label);
 
     return (
-        <div className="relative" style={{ width: size, height: size }} title={label}>
+        <div className="relative" style={{ width: size, height: size }} title={user?.id ? undefined : label} {...profileHoverAttrs(user?.id, user?.full_name)}>
             <div
                 className="rounded-full overflow-hidden flex items-center justify-center border border-[#E5E7EB] bg-white"
                 style={{ width: size, height: size }}
@@ -384,7 +388,39 @@ function AvatarCircle({
     );
 }
 
-const DRAWER_BOOKERS_PREVIEW = 6;
+const DRAWER_BOOKERS_PREVIEW = 12;
+const DRAWER_LIVE_PREVIEW = 12;
+
+// Session details tiles: "type" uses the session type's colors (set inline),
+// "on" is green, "rule" is a blue requirement, "off" is gray.
+type DrawerDetailTone = "type" | "neutral" | "on" | "rule" | "off";
+type DrawerDetail = {
+    key: string;
+    label: string;
+    value: string;
+    sub?: string;
+    tone: DrawerDetailTone;
+    icon: ReactNode;
+    meter?: number;
+};
+const DETAIL_TONE_CLASSES: Record<DrawerDetailTone, string> = {
+    type: "",
+    neutral: "bg-[#F3F4F6] text-[#2F2F2F]",
+    on: "bg-[#65D46C]/15 text-[#2F8F35]",
+    rule: "bg-[#EEF3FE] text-[#3F6FD8]",
+    off: "bg-[#F6F6F6] text-[#A3A3A3]",
+};
+
+// The room's own control icons (bottom bar, people panel), tinted with the chip's color.
+function RoomIcon({ src, size = 15 }: { src: string; size?: number }) {
+    const mask = `url('${src}') center / contain no-repeat`;
+    return <span className="block shrink-0" style={{ width: size, height: size, backgroundColor: "currentColor", mask, WebkitMask: mask }} />;
+}
+
+// Keeps only the details that are switched on (falsy entries are dropped).
+function optionalDetails(details: Array<DrawerDetail | false | null | undefined>): DrawerDetail[] {
+    return details.filter((detail): detail is DrawerDetail => !!detail);
+}
 
 function formatStartsIn(ms: number): string {
     if (!Number.isFinite(ms)) return "Upcoming";
@@ -4939,6 +4975,102 @@ export default function SessionCard({
     const isHidden = session?.is_hidden === true;
     const isPinned = session?.is_pinned === true;
 
+    // Everything the card shows, spelled out for the session details modal.
+    const drawerPolicies = getSessionCardPolicyState(cardRoomPolicies);
+    const drawerMediaRequired = drawerPolicies.camera || drawerPolicies.screen;
+    const drawerSeatsTaken = isInfinite ? liveNowCount : bookedCount;
+    // Short form for the header: "Fri, Oct 16" and "9:00 – 10:00 AM".
+    const drawerStartShort = (() => {
+        const start = session?.start_time ? new Date(session.start_time) : null;
+        if (isInfinite || !start || Number.isNaN(start.getTime())) return null;
+        const minutes = Number(session?.duration_minutes || 0);
+        const end = minutes > 0 ? new Date(start.getTime() + minutes * 60_000) : null;
+        const time = (d: Date, withPeriod: boolean) => {
+            const text = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+            return withPeriod ? text : text.replace(/\s?[AP]M$/, "");
+        };
+        const samePeriod = !!end && (start.getHours() < 12) === (end.getHours() < 12);
+        return {
+            date: start.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }),
+            time: end ? `${time(start, !samePeriod)} – ${time(end, true)}` : time(start, true),
+        };
+    })();
+    const drawerDetails: DrawerDetail[] = [
+
+
+        {
+            key: "capacity",
+            label: "Capacity",
+            value: `${displayedMaxParticipants} seats`,
+            sub: isInfinite
+                ? `${liveNowCount} in room`
+                : `${Math.max(0, displayedMaxParticipants - bookedCount)} open`,
+            tone: "rule",
+            icon: <RoomIcon src="/icons/participants-light.svg" />,
+            meter: displayedMaxParticipants > 0 ? Math.min(1, drawerSeatsTaken / displayedMaxParticipants) : 0,
+        },
+        // Everything below appears only when it is switched on; defaults are left out.
+        ...optionalDetails([
+            session?.is_private && {
+                key: "access",
+                label: "Access",
+                value: "Private",
+                sub: "invite only",
+                tone: "rule",
+                icon: <Lock size={14} strokeWidth={2.2} />,
+            },
+            isHidden && {
+                key: "listing",
+                label: "Hidden from Sessions; direct links still work",
+                value: "Hidden",
+                tone: "rule",
+                icon: <EyeOff size={14} strokeWidth={2.2} />,
+            },
+            isInfinite && isPinned && {
+                key: "pinned",
+                label: "Pinned to the top of the list",
+                value: "Pinned",
+                tone: "rule",
+                icon: <Pin size={14} strokeWidth={2.2} />,
+            },
+            drawerMediaRequired && {
+                key: "media",
+                label: "Camera and screen rules",
+                value: drawerPolicies.either
+                    ? "Camera or screen"
+                    : drawerPolicies.camera && drawerPolicies.screen
+                        ? "Camera + screen"
+                        : drawerPolicies.camera
+                            ? "Camera on"
+                            : "Screen share",
+                sub: "required",
+                tone: "rule",
+                icon: drawerPolicies.screen && !drawerPolicies.camera ? <MonitorUp size={14} strokeWidth={2.2} /> : <RoomIcon src="/icons/camera-on-light.svg" />,
+            },
+            drawerPolicies.chat && {
+                key: "chat",
+                label: "Public chat is off; DMs to the host still work",
+                value: "Chat off",
+                tone: "rule",
+                icon: <MessageSquareOff size={14} strokeWidth={2.2} />,
+            },
+            cardRoomPolicies.microphoneLocked && {
+                key: "mic",
+                label: "Microphones are locked by the host",
+                value: "Mics muted",
+                tone: "rule",
+                icon: <MicOff size={14} strokeWidth={2.2} />,
+            },
+            musicPlaying && {
+                key: "music",
+                label: "Shared room audio is playing",
+                value: "Music on",
+                tone: "type",
+                icon: <span className="flex scale-[0.72] items-center justify-center"><SessionMusicIndicator color={t.color} /></span>,
+            },
+        ]),
+    ];
+
     const hasPrettySessionSlug = !!getSessionPublicSlug(session);
     const hasHostSlug = !!String(resolvedHostSlug || "").trim();
     const publicSessionUrl = buildPrettySessionUrl(session, resolvedHostSlug);
@@ -5701,65 +5833,73 @@ export default function SessionCard({
                         onClick={() => setIsBookersModalOpen(false)}
                     />
 
-                    <aside className="session-booking-drawer relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[28px] bg-white shadow-[0_24px_80px_rgba(17,24,39,0.22)] sm:max-h-[min(86vh,780px)] sm:max-w-[540px] sm:rounded-[28px]">
+                    <aside className="session-booking-drawer relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[28px] bg-white shadow-[0_24px_80px_rgba(17,24,39,0.22)] sm:max-h-[min(90vh,900px)] sm:max-w-[1280px] sm:rounded-[32px]">
                         <div className="flex justify-center pt-2.5 sm:hidden" aria-hidden="true">
                             <span className="h-1 w-10 rounded-full bg-[#DBD8D8]" />
                         </div>
-                        <header className="shrink-0 px-6 pb-5 pt-3 sm:pt-5">
-                            <div className="flex items-center justify-between gap-3">
-                                <span
-                                    className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-[12px] font-semibold"
-                                    style={{ backgroundColor: t.bg, color: t.color }}
-                                >
-                                    <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: t.color }} aria-hidden="true" />
-                                    {isInfinite ? "Infinite room" : resolvedType}
+                        {/* One line: title, start date and time, status. */}
+                        <header className="flex shrink-0 items-center gap-4 px-6 pb-4 pt-3 sm:px-10 sm:py-6">
+                            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2">
+                                <h3 className="flex min-w-0 items-center gap-2 text-[22px] font-bold leading-tight text-[#111827] sm:text-[28px]">
+                                    {session?.is_private ? <Lock size={22} className="shrink-0 text-[#606060]" aria-label="Private session" /> : null}
+                                    <span className="min-w-0 break-words">{session.title}</span>
+                                </h3>
+                                <span className="whitespace-nowrap text-[14px] font-semibold text-[#3F6FD8] sm:text-[16px]">
+                                    {isInfinite ? "Always open" : drawerStartShort ? `${drawerStartShort.date} · ${drawerStartShort.time}` : drawerWhen.date}
                                 </span>
-                                <button
-                                    type="button"
-                                    onClick={() => setIsBookersModalOpen(false)}
-                                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#E5E7EB] text-[22px] leading-none text-[#606060] transition hover:border-[#A3A3A3] hover:text-[#111827]"
-                                    aria-label="Close session details"
-                                >
-                                    ×
-                                </button>
+                                <span className="flex flex-wrap items-center gap-2">
+                                    {drawerStatus.live ? (
+                                        <span className="inline-flex items-center gap-2 rounded-full bg-[#65D46C]/15 px-3 py-1 text-[12px] font-semibold text-[#2F8F35]">
+                                            <span className="h-2 w-2 rounded-full bg-[#65D46C]" aria-hidden="true" />
+                                            {drawerStatus.label}
+                                        </span>
+                                    ) : (
+                                        <span className="inline-flex items-center rounded-full bg-[#F3F4F6] px-3 py-1 text-[12px] font-semibold text-[#2F2F2F]">
+                                            {drawerStatus.label}
+                                        </span>
+                                    )}
+                                    {isBookingConfirmed ? (
+                                        <span className="inline-flex items-center gap-1.5 rounded-full border border-[#65D46C] px-3 py-1 text-[12px] font-semibold text-[#2F8F35]">
+                                            <img src="/icons/book-session-green.svg" className="h-3.5 w-3.5" alt="" aria-hidden="true" />
+                                            You're booked
+                                        </span>
+                                    ) : null}
+                                </span>
                             </div>
-
-                            <h3 className="mt-4 text-[24px] font-bold leading-[1.15] text-[#111827]">{session.title}</h3>
-
-                            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-[#606060]">
-                                {drawerWhen.date ? <span className="font-semibold text-[#2F2F2F]">{drawerWhen.date}</span> : null}
-                                {drawerWhen.date && drawerWhen.time ? <span aria-hidden="true">·</span> : null}
-                                {drawerWhen.time ? <span>{drawerWhen.time}</span> : null}
-                            </div>
-
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                                {drawerStatus.live ? (
-                                    <span className="inline-flex items-center gap-2 rounded-full bg-[#65D46C]/15 px-3 py-1 text-[12px] font-semibold text-[#2F8F35]">
-                                        <span className="h-2 w-2 rounded-full bg-[#65D46C]" aria-hidden="true" />
-                                        {drawerStatus.label}
-                                    </span>
-                                ) : (
-                                    <span className="inline-flex items-center rounded-full bg-[#F3F4F6] px-3 py-1 text-[12px] font-semibold text-[#2F2F2F]">
-                                        {drawerStatus.label}
-                                    </span>
-                                )}
-                                {isBookingConfirmed ? (
-                                    <span className="inline-flex items-center gap-1.5 rounded-full border border-[#65D46C] px-3 py-1 text-[12px] font-semibold text-[#2F8F35]">
-                                        <img src="/icons/book-session-green.svg" className="h-3.5 w-3.5" alt="" aria-hidden="true" />
-                                        You're booked
-                                    </span>
-                                ) : null}
-                            </div>
+                            <button
+                                type="button"
+                                onClick={() => void handleCopyInviteLink()}
+                                title={publicSessionUrl}
+                                aria-label="Copy session link"
+                                className={`inline-flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 self-start rounded-full border text-[13px] font-semibold transition sm:w-auto sm:self-center sm:px-4 ${copyInviteState === "copied" ? "border-[#65D46C] bg-[#65D46C]/10 text-[#2F8F35]" : "border-[#E5E7EB] text-[#2F2F2F] hover:border-[#A3A3A3]"}`}
+                            >
+                                {copyInviteState === "copied" ? <CheckIcon size={14} strokeWidth={2.4} aria-hidden="true" /> : <Link2 size={14} strokeWidth={2} aria-hidden="true" />}
+                                <span className="hidden sm:inline">
+                                    {copyInviteState === "copied" ? "Link copied" : copyInviteState === "error" ? "Copy failed" : "Copy link"}
+                                </span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setIsBookersModalOpen(false)}
+                                className="flex h-10 w-10 shrink-0 items-center justify-center self-start rounded-full border border-[#E5E7EB] text-[#606060] transition hover:border-[#A3A3A3] hover:text-[#111827] sm:self-center"
+                                aria-label="Close session details"
+                            >
+                                <XIcon size={18} strokeWidth={2.2} aria-hidden="true" />
+                            </button>
                         </header>
 
-                        <div className="min-h-0 flex-1 overflow-y-auto border-t border-[#F0F0F0] px-6 pb-6">
-                            <section className="flex items-center justify-between gap-3 py-5">
+                        {/* Phones scroll the whole body; from 1024px the two columns scroll on their own. */}
+                        <div className="min-h-0 flex-1 overflow-y-auto border-t border-[#F0F0F0] lg:grid lg:grid-cols-[minmax(0,1fr)_440px] lg:grid-rows-[minmax(0,1fr)] lg:overflow-hidden">
+                        <div className="px-6 pb-6 sm:px-10 sm:pb-8 lg:min-h-0 lg:overflow-y-auto">
+                            {/* Host and session flow share one line. */}
+                            <section className="flex flex-col gap-3 pt-5 sm:flex-row sm:items-center sm:gap-5">
                                 <Link
                                     to={`/profile/${displayedHostId}`}
+                                    {...profileHoverAttrs(String(displayedHostId || ""), hostCardUser.full_name)}
                                     onClick={() => setIsBookersModalOpen(false)}
-                                    className="group flex min-w-0 items-center gap-3"
+                                    className="group flex min-w-0 shrink-0 items-center gap-3 sm:max-w-[220px]"
                                 >
-                                    <AvatarCircle user={hostCardUser} size={42} isLive={false} showLiveDot={false} />
+                                    <AvatarCircle user={hostCardUser} size={40} isLive={false} showLiveDot={false} />
                                     <span className="min-w-0">
                                         <span className="block text-[11px] font-medium text-[#7A7A7A]">Hosted by</span>
                                         <span className="block truncate text-[14px] font-semibold text-[#111827] group-hover:underline">
@@ -5767,53 +5907,7 @@ export default function SessionCard({
                                         </span>
                                     </span>
                                 </Link>
-                                {cardRoomPolicies.cameraRequired || cardRoomPolicies.publicChatDisabled ? (
-                                    <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
-                                        {cardRoomPolicies.cameraRequired ? (
-                                            <span
-                                                className="inline-flex items-center gap-1.5 rounded-full bg-[#F3F4F6] px-2.5 py-1 text-[11px] font-medium text-[#2F2F2F]"
-                                                title="Cameras are required in this session"
-                                            >
-                                                <Camera size={12} strokeWidth={1.9} aria-hidden="true" />
-                                                Camera on
-                                            </span>
-                                        ) : null}
-                                        {cardRoomPolicies.publicChatDisabled ? (
-                                            <span
-                                                className="inline-flex items-center gap-1.5 rounded-full bg-[#F3F4F6] px-2.5 py-1 text-[11px] font-medium text-[#2F2F2F]"
-                                                title="Public chat is disabled; participant-to-host DMs remain available"
-                                            >
-                                                <MessageSquareOff size={12} strokeWidth={1.9} aria-hidden="true" />
-                                                Chat off
-                                            </span>
-                                        ) : null}
-                                    </div>
-                                ) : null}
-                            </section>
-
-                            <section className="grid grid-cols-3 divide-x divide-[#E3E3E3] rounded-[18px] bg-[#F6F6F6] py-3">
-                                {[
-                                    { label: "Length", value: isInfinite ? "24/7" : `${session.duration_minutes} min` },
-                                    { label: isInfinite ? "Planned" : "Booked", value: String(bookedCount) },
-                                    { label: "In room", value: `${liveNowCount}/${displayedMaxParticipants}` },
-                                ].map((fact) => (
-                                    <div key={fact.label} className="min-w-0 px-4">
-                                        <div className="text-[11px] font-medium text-[#7A7A7A]">{fact.label}</div>
-                                        <div className="mt-0.5 truncate text-[18px] font-bold leading-6 text-[#111827]">{fact.value}</div>
-                                    </div>
-                                ))}
-                            </section>
-
-                            {description ? (
-                                <section className="pt-6">
-                                    <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">About</h4>
-                                    <p className="mt-2 whitespace-pre-wrap text-[14px] leading-[1.55] text-[#334155]">{description}</p>
-                                </section>
-                            ) : null}
-
-                            <section className="pt-6">
-                                <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">Session flow</h4>
-                                <div className="mt-2 rounded-[18px] border border-[#EEEEEE] px-3 py-3">
+                                <div className="min-w-0 flex-1 rounded-[16px] border border-[#EEEEEE] px-3 py-2.5" aria-label="Session flow">
                                     {stagesVisual?.length ? (
                                         <SessionStageBar
                                             {...({
@@ -5832,20 +5926,81 @@ export default function SessionCard({
                                 </div>
                             </section>
 
+                            <section className="mt-4 grid grid-cols-3 divide-x divide-[#E3E3E3] rounded-[18px] bg-[#F6F6F6] py-3">
+                                {[
+                                    { label: "Length", value: isInfinite ? "24/7" : `${session.duration_minutes} min` },
+                                    { label: isInfinite ? "Planned" : "Booked", value: String(bookedCount) },
+                                    { label: "In room", value: `${liveNowCount}/${displayedMaxParticipants}` },
+                                ].map((fact) => (
+                                    <div key={fact.label} className="min-w-0 px-4 sm:px-5">
+                                        <div className="text-[11px] font-medium text-[#7A7A7A]">{fact.label}</div>
+                                        <div className="mt-0.5 truncate text-[18px] font-bold leading-6 text-[#111827] sm:text-[20px]">{fact.value}</div>
+                                    </div>
+                                ))}
+                            </section>
+
+                            {/* Details in one line of chips. */}
+                            <section className="mt-3 flex flex-wrap items-center gap-2" aria-label="Details">
+                                {/* The session type uses the same badge as the session card. */}
+                                <span
+                                    className="inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] font-medium"
+                                    style={{ backgroundColor: t.bg, color: t.color, borderColor: t.color }}
+                                    title={isInfinite ? `${resolvedType} · 24/7 room` : resolvedType}
+                                >
+                                    <img
+                                        src={t.icon}
+                                        className="h-3.5 w-3.5"
+                                        alt=""
+                                        aria-hidden="true"
+                                        onError={(e) => { e.currentTarget.src = "/icons/deepwork.svg"; }}
+                                    />
+                                    {resolvedType}
+                                </span>
+                                {drawerDetails.map((detail) => (
+                                    <span
+                                        key={detail.key}
+                                        title={detail.sub ? `${detail.label}: ${detail.sub}` : detail.label}
+                                        className="inline-flex h-9 max-w-full items-center gap-2 rounded-full border border-[#EEEEEE] bg-white pl-1 pr-3 text-[13px]"
+                                    >
+                                        <span
+                                            className={`flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full ${DETAIL_TONE_CLASSES[detail.tone]}`}
+                                            style={detail.tone === "type" ? { backgroundColor: t.bg, color: t.color } : undefined}
+                                            aria-hidden="true"
+                                        >
+                                            {detail.icon}
+                                        </span>
+                                        <span className="truncate font-semibold text-[#111827]">{detail.value}</span>
+                                        {detail.sub ? <span className="hidden truncate text-[#8A8A8A] sm:inline">{detail.sub}</span> : null}
+                                        {detail.meter != null ? (
+                                            <span className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-[#F1F1F1]" aria-hidden="true">
+                                                <span className="block h-full rounded-full" style={{ width: `${Math.round(detail.meter * 100)}%`, backgroundColor: t.color }} />
+                                            </span>
+                                        ) : null}
+                                    </span>
+                                ))}
+
+                            </section>
+
+                            {description ? (
+                                <section className="pt-5">
+                                    <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">About</h4>
+                                    <p className="mt-1.5 whitespace-pre-wrap text-[14px] leading-[1.55] text-[#334155]">{description}</p>
+                                </section>
+                            ) : null}
+
                             {seriesList ? (
                                 <section className="pt-6" aria-label="This week">
-                                    <div className="flex items-end justify-between gap-3">
-                                        <div>
-                                            <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">This week</h4>
-                                            <p className="mt-1 text-[13px] text-[#606060]">
-                                                {isHost
-                                                    ? `You host ${seriesList.length} sessions of this series in the next ${SERIES_WINDOW_DAYS} days.`
-                                                    : `Same time, same host · ${seriesList.length} sessions in the next ${SERIES_WINDOW_DAYS} days.`}
-                                            </p>
-                                        </div>
+                                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                                        <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">This week</h4>
+                                        <p className="text-[12px] text-[#8A8A8A]">
+                                            {isHost
+                                                ? `You host ${seriesList.length} sessions in the next ${SERIES_WINDOW_DAYS} days`
+                                                : `Same time, same host · ${seriesList.length} sessions in the next ${SERIES_WINDOW_DAYS} days`}
+                                        </p>
                                     </div>
 
-                                    <div className="mt-3 grid grid-cols-7 gap-1.5">
+                                    {/* Compact day chips with the booking action at the end of the same line. */}
+                                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                                         {seriesList.map((occurrence) => {
                                             const start = new Date(occurrence.startTime);
                                             const isCurrent = occurrence.id === String(session.id);
@@ -5865,54 +6020,91 @@ export default function SessionCard({
                                                     aria-pressed={occurrence.booked}
                                                     aria-label={`${fullLabel}: ${occurrence.booked ? "booked, click to cancel" : "not booked, click to book"}`}
                                                     title={isCurrent ? `${fullLabel} · this session` : fullLabel}
-                                                    className={`relative flex h-[66px] w-full min-w-0 flex-col items-center justify-center rounded-[16px] border transition disabled:cursor-default ${occurrence.booked
+                                                    className={`inline-flex h-9 items-center gap-1 rounded-full border px-3 text-[12px] transition disabled:cursor-default ${occurrence.booked
                                                         ? "border-[#65D46C] bg-[#65D46C]/10 text-[#2F8F35]"
-                                                        : "border-[#E5E7EB] bg-white text-[#111827] enabled:hover:border-[#A3A3A3]"
-                                                        } ${isCurrent ? "ring-2 ring-[#2F2F2F] ring-offset-2" : ""} ${pending ? "opacity-50" : ""}`}
+                                                        : "border-[#E5E7EB] bg-white text-[#2F2F2F] enabled:hover:border-[#A3A3A3]"
+                                                        } ${isCurrent ? "ring-1 ring-[#2F2F2F] ring-offset-1" : ""} ${pending ? "opacity-50" : ""}`}
                                                 >
-                                                    <span className="text-[10px] font-semibold uppercase tracking-[0.06em] opacity-70">{dayLabel}</span>
-                                                    <span className="text-[18px] font-bold leading-6">{start.getDate()}</span>
-                                                    <span className="text-[9px] font-semibold">{occurrence.booked ? "Booked" : "Open"}</span>
+                                                    {occurrence.booked ? <CheckIcon size={12} strokeWidth={2.6} aria-hidden="true" /> : null}
+                                                    <span className="opacity-70">{dayLabel}</span>
+                                                    <span className="font-semibold tabular-nums">{start.getDate()}</span>
                                                 </button>
                                             );
                                         })}
-                                    </div>
 
-                                    {!isHost ? (
-                                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                                            {seriesOpenIds.length ? (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => void handleBookWholeSeries()}
-                                                    disabled={!!seriesPending}
-                                                    className="h-10 rounded-full bg-[#2F2F2F] px-4 text-[13px] font-semibold text-white transition hover:bg-[#111827] disabled:opacity-60"
-                                                >
-                                                    {seriesPending === "all"
-                                                        ? "Booking…"
-                                                        : seriesBookedIds.length
-                                                            ? `Book the other ${seriesOpenIds.length}`
-                                                            : `Book all ${seriesOpenIds.length}`}
-                                                </button>
-                                            ) : (
-                                                <span className="text-[13px] font-semibold text-[#2F8F35]">You're booked for the whole week.</span>
-                                            )}
-                                            {seriesBookedIds.length > 1 ? (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => void handleCancelWholeSeries()}
-                                                    disabled={!!seriesPending}
-                                                    className="h-10 rounded-full px-3 text-[13px] font-semibold text-[#606060] transition hover:text-[#D83F3F] disabled:opacity-60"
-                                                >
-                                                    {seriesPending === "cancel" ? "Cancelling…" : `Cancel all ${seriesBookedIds.length}`}
-                                                </button>
-                                            ) : null}
-                                        </div>
-                                    ) : null}
+                                        {!isHost ? (
+                                            <span className="ml-auto flex items-center gap-1">
+                                                {seriesBookedIds.length > 1 ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void handleCancelWholeSeries()}
+                                                        disabled={!!seriesPending}
+                                                        className="h-9 rounded-full px-3 text-[12px] font-semibold text-[#7A7A7A] transition hover:text-[#D83F3F] disabled:opacity-60"
+                                                    >
+                                                        {seriesPending === "cancel" ? "Cancelling…" : `Cancel all ${seriesBookedIds.length}`}
+                                                    </button>
+                                                ) : null}
+                                                {seriesOpenIds.length ? (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void handleBookWholeSeries()}
+                                                        disabled={!!seriesPending}
+                                                        className="inline-flex h-9 items-center gap-1.5 rounded-full bg-[#2F2F2F] px-4 text-[13px] font-semibold text-white transition hover:bg-[#111827] disabled:opacity-60"
+                                                    >
+                                                        <img src="/icons/book-session-green.svg" className="h-3.5 w-3.5 brightness-0 invert" alt="" aria-hidden="true" />
+                                                        {seriesPending === "all"
+                                                            ? "Booking…"
+                                                            : seriesBookedIds.length
+                                                                ? `Book the other ${seriesOpenIds.length}`
+                                                                : `Book all ${seriesOpenIds.length}`}
+                                                    </button>
+                                                ) : (
+                                                    <span className="px-1 text-[12px] font-semibold text-[#2F8F35]">Booked for the whole week</span>
+                                                )}
+                                            </span>
+                                        ) : null}
+                                    </div>
                                     {seriesMessage ? (
                                         <p className="mt-2 text-[12px] font-medium text-[#D83F3F]" role="status">{seriesMessage}</p>
                                     ) : null}
                                 </section>
                             ) : null}
+                        </div>
+
+                        <div className="border-t border-[#F0F0F0] px-6 pb-6 sm:px-10 sm:pb-8 lg:min-h-0 lg:overflow-y-auto lg:border-l lg:border-t-0 lg:bg-[#FAFAFA] lg:px-8">
+                            <section className="pt-6">
+                                <div className="flex items-center justify-between gap-3">
+                                    <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">In the room now</h4>
+                                    <span className="text-[12px] font-semibold text-[#606060]">{liveNowCount}</span>
+                                </div>
+                                {liveUsers.length === 0 ? (
+                                    <p className="mt-2 text-[13px] text-[#7A7A7A]">
+                                        {liveNowCount > 0 ? `${liveNowCount} ${liveNowCount === 1 ? "person is" : "people are"} focusing right now.` : "No one is in the room right now."}
+                                    </p>
+                                ) : (
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        {liveUsers.slice(0, DRAWER_LIVE_PREVIEW).map((u) => (
+                                            <Link
+                                                key={u.id}
+                                                to={`/profile/${u.id}`}
+                                                {...profileHoverAttrs(u.id, u.full_name)}
+                                                onClick={() => setIsBookersModalOpen(false)}
+                                                className="flex max-w-full items-center gap-2 rounded-full border border-[#EEEEEE] bg-white py-1 pl-1 pr-3 transition hover:border-[#A3A3A3]"
+                                            >
+                                                <AvatarCircle user={u} size={28} isLive={true} showLiveDot={true} />
+                                                <span className="min-w-0 truncate text-[12px] font-semibold text-[#111827]">
+                                                    {u.id === userId ? "You" : u.full_name || "Participant"}
+                                                </span>
+                                            </Link>
+                                        ))}
+                                        {liveNowCount > Math.min(liveUsers.length, DRAWER_LIVE_PREVIEW) ? (
+                                            <span className="flex items-center rounded-full bg-[#F1F1F1] px-3 text-[12px] font-semibold text-[#606060]">
+                                                +{liveNowCount - Math.min(liveUsers.length, DRAWER_LIVE_PREVIEW)}
+                                            </span>
+                                        ) : null}
+                                    </div>
+                                )}
+                            </section>
 
                             {isInfinite ? (
                                 <section className="pt-6">
@@ -5984,26 +6176,27 @@ export default function SessionCard({
                                     {bookers.length === 0 ? (
                                         <p className="mt-2 text-[13px] text-[#7A7A7A]">No one has booked yet. Be the first.</p>
                                     ) : (
-                                        <div className="mt-2 flex flex-col">
+                                        <div className="mt-3 flex flex-wrap gap-2">
                                             {(showAllDrawerBookers ? bookers : bookers.slice(0, DRAWER_BOOKERS_PREVIEW)).map((booking) => {
                                                 const label = booking.full_name || booking.id || "Participant";
                                                 const isLive = liveIdSet.has(booking.id);
+                                                const isBookingHost = booking.id === effectiveHostId;
 
                                                 return (
                                                     <Link
                                                         key={booking.id}
                                                         to={`/profile/${booking.id}`}
+                                                        {...profileHoverAttrs(booking.id, label)}
                                                         onClick={() => setIsBookersModalOpen(false)}
-                                                        className="-mx-2 flex items-center gap-3 rounded-[14px] px-2 py-2 transition hover:bg-[#F6F6F6]"
+                                                        className={`flex max-w-full items-center gap-2 rounded-full border bg-white py-1 pl-1 pr-3 transition hover:border-[#A3A3A3] ${isLive ? "border-[#65D46C]" : "border-[#EEEEEE]"}`}
                                                     >
-                                                        <AvatarCircle user={booking} size={34} isLive={isLive} showLiveDot={isLive} />
-                                                        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-[#111827]">
-                                                            {booking.id === userId ? `${label} (you)` : label}
+                                                        <AvatarCircle user={booking} size={28} isLive={isLive} showLiveDot={isLive} />
+                                                        <span className="min-w-0 truncate text-[12px] font-semibold text-[#111827]">
+                                                            {booking.id === userId ? "You" : label}
                                                         </span>
-                                                        {booking.id === effectiveHostId ? (
-                                                            <span className="shrink-0 rounded-full bg-[#2F2F2F] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Host</span>
+                                                        {isBookingHost ? (
+                                                            <span className="shrink-0 rounded-full bg-[#2F2F2F] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">Host</span>
                                                         ) : null}
-                                                        {isLive ? <span className="shrink-0 text-[11px] font-semibold text-[#2F8F35]">In room</span> : null}
                                                     </Link>
                                                 );
                                             })}
@@ -6011,19 +6204,19 @@ export default function SessionCard({
                                                 <button
                                                     type="button"
                                                     onClick={() => setShowAllDrawerBookers((value) => !value)}
-                                                    className="mt-1 self-start rounded-full px-2 py-1 text-[12px] font-semibold text-[#606060] transition hover:text-[#111827]"
+                                                    className="flex h-9 items-center rounded-full bg-[#F1F1F1] px-3 text-[12px] font-semibold text-[#606060] transition hover:text-[#111827]"
                                                 >
-                                                    {showAllDrawerBookers ? "Show less" : `Show all ${bookers.length}`}
+                                                    {showAllDrawerBookers ? "Show less" : `+${bookers.length - DRAWER_BOOKERS_PREVIEW} more`}
                                                 </button>
                                             ) : null}
-                                        </div>
-                                    )}
+                                        </div>                                    )}
                                 </section>
                             )}
                         </div>
+                        </div>
 
-                        <footer className="shrink-0 border-t border-[#EEEEEE] px-6 py-4">
-                            <div className="flex gap-2">
+                        <footer className="shrink-0 border-t border-[#EEEEEE] px-6 py-4 sm:px-10">
+                            <div className="flex gap-2 sm:justify-end sm:[&>button]:max-w-[240px]">
                                 {isBookingConfirmed ? (
                                     isInfinite ? (
                                         <button
