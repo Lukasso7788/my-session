@@ -666,14 +666,13 @@ export default function Header() {
                         </div>
                     </div>
                 )}
-            </header>
 
-            {location.pathname === "/sessions" ? (
-                // Edge to edge, directly under the header.
-                <div className="w-full">
-                    <FreeSessionsNotice state={entitlementState} />
-                </div>
-            ) : null}
+                {location.pathname === "/sessions" ? (
+                    // Inside the sticky header so it stays attached while scrolling. Edge to
+                    // edge; -mb-px lays its red bottom line over the header's own border.
+                    <FreeSessionsNotice state={entitlementState} className="relative -mb-px border-t border-t-borderGray" />
+                ) : null}
+            </header>
 
             <PaywallModal
                 open={paywallOpen}
