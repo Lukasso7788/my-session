@@ -491,8 +491,38 @@ async function fetchInfiniteHostingSlots(env: Env, start: Date, end: Date) {
       `&booked_start_time=lt.${encodeURIComponent(iso(end))}` +
       `&booked_end_time=gt.${encodeURIComponent(iso(start))}` +
       `&order=booked_start_time.asc`;
-    const bookings = await supabaseFetch(env, path, { method: "GET" });
-    if (!Array.isArray(bookings) || bookings.length === 0) return [] as InfiniteHostingSlot[];
+    const firstDays = await supabaseFetch(env, path, { method: "GET" });
+    // "Every day for 7 days" keeps the other days in infinite_room_host_slots.
+    // Optional: without that table the message uses session_bookings only.
+    let extraDays: any[] = [];
+    try {
+      const slots = await supabaseFetch(
+        env,
+        `infinite_room_host_slots?select=session_id,user_id,starts_at,ends_at` +
+          `&starts_at=lt.${encodeURIComponent(iso(end))}` +
+          `&ends_at=gt.${encodeURIComponent(iso(start))}` +
+          `&order=starts_at.asc`,
+        { method: "GET" },
+      );
+      if (Array.isArray(slots)) {
+        extraDays = slots.map((slot: any) => ({
+          session_id: slot.session_id,
+          user_id: slot.user_id,
+          booked_start_time: slot.starts_at,
+          booked_end_time: slot.ends_at,
+        }));
+      }
+    } catch (error) {
+      console.warn("[discord] extra infinite host slots unavailable", error);
+    }
+    const seen = new Set<string>();
+    const bookings = [...(Array.isArray(firstDays) ? firstDays : []), ...extraDays].filter((row: any) => {
+      const key = `${row.session_id}|${row.user_id}|${Date.parse(String(row.booked_start_time || ""))}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    if (bookings.length === 0) return [] as InfiniteHostingSlot[];
 
     const sessionIds = Array.from(new Set(bookings.map((row: any) => String(row.session_id || "")).filter(Boolean)));
     const userIds = Array.from(new Set(bookings.map((row: any) => String(row.user_id || "")).filter(Boolean)));

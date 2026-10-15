@@ -1202,6 +1202,48 @@ function isInfiniteScheduleSession(session: DailyScheduleSessionRow) {
   return mode.includes("infinite");
 }
 
+// Extra hosting days from infinite_room_host_slots (migration 20261014150000).
+// Optional: if the table is not there yet or the read fails, the email goes
+// out with the session_bookings days only.
+async function loadExtraInfiniteHostSlots(params: {
+  sb: SupabaseClient;
+  startIso: string;
+  endIso: string;
+  existing: HostBookingRow[];
+}): Promise<HostBookingRow[]> {
+  const { sb, startIso, endIso, existing } = params;
+  const seen = new Set(existing.map((row) => `${row.session_id}|${row.user_id}|${Date.parse(row.booked_start_time)}`));
+  const rows: HostBookingRow[] = [];
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await sb
+      .from("infinite_room_host_slots")
+      .select("id,session_id,user_id,starts_at,ends_at")
+      .lt("starts_at", endIso)
+      .gt("ends_at", startIso)
+      .order("starts_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(offset, offset + 999);
+    if (error) {
+      console.warn("[daily-email] extra infinite host slots unavailable", error);
+      return rows;
+    }
+    for (const slot of (data || []) as Array<{ id: string; session_id: string; user_id: string; starts_at: string; ends_at: string }>) {
+      const key = `${slot.session_id}|${slot.user_id}|${Date.parse(slot.starts_at)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({
+        id: String(slot.id),
+        session_id: String(slot.session_id),
+        user_id: String(slot.user_id),
+        booked_start_time: String(slot.starts_at),
+        booked_end_time: String(slot.ends_at),
+      });
+    }
+    if (!data || data.length < 1000) break;
+  }
+  return rows;
+}
+
 async function loadInfiniteHostingSlots(params: {
   sb: SupabaseClient;
   startIso: string;
@@ -1223,6 +1265,11 @@ async function loadInfiniteHostingSlots(params: {
     bookingRows.push(...((data || []) as HostBookingRow[]));
     if (!data || data.length < 1000) break;
   }
+
+  // A host who books "every day for 7 days" keeps the first day in
+  // session_bookings and the other days in infinite_room_host_slots, so read
+  // both; each day's email still shows only that day's hosts.
+  bookingRows.push(...(await loadExtraInfiniteHostSlots({ sb, startIso, endIso, existing: bookingRows })));
 
   const sessionIds = Array.from(new Set(bookingRows.map((row) => String(row.session_id || "")).filter(Boolean)));
   if (sessionIds.length === 0) return [] as InfiniteHostingSlot[];
