@@ -100,6 +100,17 @@ Proof screenshot is saved beside the indexing ledger as
 
 ## Safe continuation
 
+### Main integration requested on 16 October
+
+The user explicitly requested pushing all of this SEO repair to main. Fetch
+before integration; the latest observed main is e3d2405, a concurrent billing
+notice fix which must be preserved. Merge it into this isolated branch, run the
+full build, then use a normal non-force `git push origin HEAD:main`. A successful
+Git push does not prove Vercel production promotion: verify the live sitemap and
+articles separately before Search Console requests. Domain redirect and root
+sitemap report remain unresolved until separately verified. Do not include
+unrelated uncommitted changes from the primary checkout.
+
 Worktree: `C:/Users/misha/.codex/worktrees/seo-indexability-repair/my-session`.
 Branch: `codex/seo-indexability-repair`, initially based on d4962d3.
 On 16 October, fetched origin/main was a3e118e (one separate room fix newer).
