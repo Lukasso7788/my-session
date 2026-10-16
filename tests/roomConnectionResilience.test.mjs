@@ -24,19 +24,12 @@ test("desktop recovers a dropped room while hidden; phones and tablets still wai
   assert.doesNotMatch(room, /attempt < 2 && !roomIsActuallyConnected\(\); attempt \+= 1\) \{\s*if \(document\.visibilityState !== "visible"\) return;/);
 });
 
-test("a dropped participant keeps a Reconnecting tile and returns without join or leave sounds", () => {
-  assert.match(room, /const RECONNECT_GRACE_MS = 60_000;/);
-  assert.match(room, /const returning = userKey \? reconnectingParticipantsRef\.current\.get\(userKey\) : undefined;\s*if \(returning\) \{[\s\S]*\} else if \(joinSoundEnabledRef\.current\) \{/);
-  assert.match(room, /status: "reconnecting",\s*videoTrack: undefined,\s*audioTrack: undefined,/);
-  assert.match(room, /\}, RECONNECT_GRACE_MS\);/);
-  assert.match(room, /if \(!presentUserKeys\.has\(userKey\)\) next\.push\(entry\.tile\);/);
-  assert.match(room, /clearReconnectingParticipants\(\);\s*setTiles\(\[\]\);/);
-  assert.match(tile, /if \(key === "reconnecting"\) return "Reconnecting…";/);
-});
-
-test("an intentional Leave is announced and handled as a leave right away", () => {
-  assert.match(room, /const PRESENCE_TOPIC = "mysession\.presence\.v1";/);
-  assert.match(room, /new TextEncoder\(\)\.encode\(JSON\.stringify\(\{ type: "leaving" \}\)\),\s*\{ reliable: true, topic: PRESENCE_TOPIC \},/);
-  assert.match(room, /if \(topic === PRESENCE_TOPIC && sender\) \{[\s\S]*intentionalLeaveAtRef\.current\.set\(leavingUserId, Date\.now\(\)\);/);
-  assert.match(room, /Date\.now\(\) - \(intentionalLeaveAtRef\.current\.get\(userKey\) \|\| 0\) < 15_000/);
+test("a participant who drops or leaves disappears right away, with no Reconnecting status", () => {
+  assert.doesNotMatch(room, /RECONNECT_GRACE_MS|reconnectingParticipantsRef|intentionalLeaveAtRef/);
+  assert.doesNotMatch(room, /status: "reconnecting"/);
+  assert.doesNotMatch(tile, /Reconnecting…/);
+  assert.match(room, /r\.on\(RoomEvent\.ParticipantConnected, \(\) => \{\s*if \(joinSoundEnabledRef\.current\) \{/);
+  assert.match(room, /if \(!stillPresent && leaveSoundEnabledRef\.current\) \{\s*playOneShotFromCandidates\(LEAVE_SOUND_CANDIDATES, 0\.8\);/);
+  // Leave announcements from other clients are still accepted and ignored.
+  assert.match(room, /if \(topic === PRESENCE_TOPIC\) return;/);
 });

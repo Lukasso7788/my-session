@@ -119,7 +119,7 @@ test("gentle camera reminder in every room except camera-required ones", () => {
   const reminder = readFileSync("src/pages/livekit/CameraOffReminder.tsx", "utf8");
   assert.match(reminder, /export const CAMERA_OFF_REMINDER_DELAY_MS = 5 \* 60_000;/);
   // Not shown where the strict camera policy already reminds and disconnects.
-  assert.match(room, /const strictCameraPolicy =\s*roomPolicies\.cameraRequired && shouldEnforceMediaPolicyForRole/);
+  assert.match(room, /const strictCameraPolicy = roomPolicies\.cameraRequired;/);
   assert.match(room, /strictCameraPolicy \|\|\s*cameraReminderStayOff \|\|\s*cameraOffReminderOpen/);
   // Camera on resets the countdown; "stay off" holds for the session.
   assert.match(room, /if \(camOn \|\| !connected\) \{\s*cameraOffStartedAtRef\.current = null;/);
@@ -132,4 +132,16 @@ test("gentle camera reminder in every room except camera-required ones", () => {
   assert.match(reminder, />\s*Stay off this session\s*</);
   assert.match(reminder, />\s*Remind me in 5 min\s*</);
   assert.match(reminder, />\s*Turn camera on\s*</);
+});
+test("camera and screen rules are the same for everyone, hosts and moderators included", () => {
+  const room = readFileSync("src/pages/RoomPageLiveKit.tsx", "utf8");
+  const policies = readFileSync("src/lib/roomPolicies.ts", "utf8");
+  const settings = readFileSync("src/pages/livekit/RoomSettingsModalLiveKit.tsx", "utf8");
+  const create = readFileSync("src/components/CreateSessionModal.tsx", "utf8");
+  assert.doesNotMatch(policies, /shouldEnforceMediaPolicyForRole/);
+  assert.doesNotMatch(room, /shouldEnforceMediaPolicyForRole/);
+  // No toggle that exempts staff anywhere in the UI.
+  for (const source of [settings, create, card, room]) assert.doesNotMatch(source, /Apply media rules to hosts and moderators/);
+  // The strict camera reminder starts from the room setting alone.
+  assert.match(room, /!connected \|\|\s*!roomPolicies\.cameraRequired \|\|\s*camOn \|\|/);
 });

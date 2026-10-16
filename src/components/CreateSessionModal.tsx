@@ -1335,7 +1335,6 @@ export function CreateSessionModal({
   const [cameraRequired, setCameraRequired] = useState(false);
   const [screenShareRequired, setScreenShareRequired] = useState(false);
   const [cameraOrScreenShareRequired, setCameraOrScreenShareRequired] = useState(false);
-  const [mediaRequirementsApplyToStaff, setMediaRequirementsApplyToStaff] = useState(false);
   const [publicChatDisabled, setPublicChatDisabled] = useState(false);
 
   // ---------- Scheduling in advance ----------
@@ -1432,7 +1431,6 @@ export function CreateSessionModal({
     setCameraRequired(false);
     setScreenShareRequired(false);
     setCameraOrScreenShareRequired(false);
-    setMediaRequirementsApplyToStaff(false);
     setPublicChatDisabled(false);
 
     setMaxParticipants(DEFAULT_MAX_PARTICIPANTS);
@@ -2662,7 +2660,6 @@ export function CreateSessionModal({
         cameraRequired,
         screenShareRequired,
         cameraOrScreenShareRequired,
-        mediaRequirementsApplyToStaff,
         publicChatDisabled,
       });
 
@@ -4050,17 +4047,7 @@ export function CreateSessionModal({
                         Participants can only use private messages with the host.
                       </div>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setMediaRequirementsApplyToStaff((value) => !value)}
-                      className={`rounded-[14px] px-4 py-3 text-left transition ${mediaRequirementsApplyToStaff ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EBEBEB]"}`}
-                      aria-pressed={mediaRequirementsApplyToStaff}
-                    >
-                      <div className="font-inter text-[13px] font-semibold">Apply media rules to hosts and moderators</div>
-                      <div className={`mt-1 font-inter text-[11px] leading-4 ${mediaRequirementsApplyToStaff ? "text-white/70" : "text-[#667085]"}`}>
-                        Hosts, moderators and admins also get camera/screen reminders and disconnects.
-                      </div>
-                    </button>
+
                   </div>
                 </section>
 

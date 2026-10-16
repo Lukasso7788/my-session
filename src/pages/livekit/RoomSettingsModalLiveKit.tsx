@@ -1123,12 +1123,10 @@ export function RoomSettingsModalLiveKit({
     cameraRequired = false,
     screenShareRequired = false,
     cameraOrScreenShareRequired = false,
-    mediaRequirementsApplyToStaff = false,
     publicChatDisabled = false,
     onChangeCameraRequired,
     onChangeScreenShareRequired,
     onChangeCameraOrScreenShareRequired,
-    onChangeMediaRequirementsApplyToStaff,
     onChangePublicChatDisabled,
 
     devices,
@@ -1215,12 +1213,10 @@ export function RoomSettingsModalLiveKit({
     cameraRequired?: boolean;
     screenShareRequired?: boolean;
     cameraOrScreenShareRequired?: boolean;
-    mediaRequirementsApplyToStaff?: boolean;
     publicChatDisabled?: boolean;
     onChangeCameraRequired?: (value: boolean) => void;
     onChangeScreenShareRequired?: (value: boolean) => void;
     onChangeCameraOrScreenShareRequired?: (value: boolean) => void;
-    onChangeMediaRequirementsApplyToStaff?: (value: boolean) => void;
     onChangePublicChatDisabled?: (value: boolean) => void;
 
 
@@ -1603,13 +1599,7 @@ export function RoomSettingsModalLiveKit({
                                                 onChange={(value) => onChangePublicChatDisabled?.(value)}
                                                 isLight={isLight}
                                             />
-                                            <CompactToggleTile
-                                                label="Apply media rules to hosts and moderators"
-                                                description="Hosts, moderators and admins get the same camera/screen reminders and disconnects."
-                                                checked={mediaRequirementsApplyToStaff}
-                                                onChange={(value) => onChangeMediaRequirementsApplyToStaff?.(value)}
-                                                isLight={isLight}
-                                            />
+
                                         </div>
                                     </div>
                                 </section>

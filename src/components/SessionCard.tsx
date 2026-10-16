@@ -2796,7 +2796,6 @@ function EditSessionStudioModal(props: {
     const [editCameraRequired, setEditCameraRequired] = useState(initialRoomPolicies.cameraRequired);
     const [editScreenShareRequired, setEditScreenShareRequired] = useState(initialRoomPolicies.screenShareRequired === true);
     const [editCameraOrScreenShareRequired, setEditCameraOrScreenShareRequired] = useState(initialRoomPolicies.cameraOrScreenShareRequired === true);
-    const [editMediaRequirementsApplyToStaff, setEditMediaRequirementsApplyToStaff] = useState(initialRoomPolicies.mediaRequirementsApplyToStaff === true);
     const [editPublicChatDisabled, setEditPublicChatDisabled] = useState(initialRoomPolicies.publicChatDisabled);
 
     const [studioBlocks, setStudioBlocks] = useState<StudioBlock[]>([]);
@@ -2882,7 +2881,6 @@ function EditSessionStudioModal(props: {
         setEditCameraRequired(nextPolicies.cameraRequired);
         setEditScreenShareRequired(nextPolicies.screenShareRequired === true);
         setEditCameraOrScreenShareRequired(nextPolicies.cameraOrScreenShareRequired === true);
-        setEditMediaRequirementsApplyToStaff(nextPolicies.mediaRequirementsApplyToStaff === true);
         setEditPublicChatDisabled(nextPolicies.publicChatDisabled);
         setStudioBlocks(normalizeStudioBlocksFromSession({
             ...session,
@@ -2927,7 +2925,6 @@ function EditSessionStudioModal(props: {
                 setEditCameraRequired(policies.cameraRequired);
                 setEditScreenShareRequired(policies.screenShareRequired === true);
                 setEditCameraOrScreenShareRequired(policies.cameraOrScreenShareRequired === true);
-                setEditMediaRequirementsApplyToStaff(policies.mediaRequirementsApplyToStaff === true);
                 setEditPublicChatDisabled(policies.publicChatDisabled);
             });
 
@@ -3291,7 +3288,6 @@ function EditSessionStudioModal(props: {
                                     cameraRequired: editCameraRequired,
                                     screenShareRequired: editScreenShareRequired,
                                     cameraOrScreenShareRequired: editCameraOrScreenShareRequired,
-                                    mediaRequirementsApplyToStaff: editMediaRequirementsApplyToStaff,
                                     publicChatDisabled: editPublicChatDisabled,
                                 });
                                 updates.duration_minutes = studioTotal || null;
@@ -3440,17 +3436,7 @@ function EditSessionStudioModal(props: {
                                 Keep only private participant-to-host messages available.
                             </div>
                         </button>
-                        <button
-                            type="button"
-                            onClick={() => setEditMediaRequirementsApplyToStaff((value) => !value)}
-                            className={`rounded-[16px] px-4 py-3 text-left transition ${editMediaRequirementsApplyToStaff ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EAEAEA]"}`}
-                            aria-pressed={editMediaRequirementsApplyToStaff}
-                        >
-                            <div className="text-[13px] font-semibold">Apply media rules to hosts and moderators</div>
-                            <div className={`mt-1 text-[11px] leading-4 ${editMediaRequirementsApplyToStaff ? "text-white/70" : "text-[#667085]"}`}>
-                                Hosts, moderators and admins also get camera/screen reminders and disconnects.
-                            </div>
-                        </button>
+
                     </div>
 
                     <div className="mt-4 border border-[#DBD8D8] rounded-[18px] bg-[#FAFAFA] p-3 sm:p-4">

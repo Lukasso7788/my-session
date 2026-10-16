@@ -53,7 +53,6 @@ function getStatusLabel(status: unknown): string {
         .toLowerCase();
 
     if (key === "afk") return "AFK";
-    if (key === "reconnecting") return "Reconnecting…";
     if (key === "break") return "Break";
     if (key === "skip" || key === "skip_deafened") return "Skip me";
     if (key === "call") return "On a call";
@@ -68,7 +67,7 @@ function getStatusClass(status: unknown, isLight: boolean): string {
         .trim()
         .toLowerCase();
 
-    if (key === "afk" || key === "reconnecting") {
+    if (key === "afk") {
         return isLight
             ? "bg-neutral-200 text-neutral-700 border-[#D8D0D0]"
             : "bg-white/10 text-white/80 border-[#2B2B2B]";

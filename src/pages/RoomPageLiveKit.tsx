@@ -41,7 +41,7 @@ import { updateTileSpeakingState } from "../lib/roomSpeakingState";
 import { createPiPAvatarCache } from "../lib/pipAvatarCache";
 import { invalidateHostLeaseCache } from "../lib/supabaseFetchOptimizer";
 import { withTimeout } from "../lib/promiseTimeout";
-import { readSessionRoomPolicies, shouldEnforceMediaPolicyForRole, withRoomPolicies, type RoomPolicies } from "../lib/roomPolicies";
+import { readSessionRoomPolicies, withRoomPolicies, type RoomPolicies } from "../lib/roomPolicies";
 import { installBackgroundSafeLiveKitTimers } from "../lib/backgroundSafeTimers";
 import {
   type VideoQualityChoice,
@@ -213,9 +213,6 @@ const PARTICIPANT_CONTROL_TOPIC = "mysession.participant-control.v1";
 // Sent just before an intentional Leave, so others can tell it from a dropped
 // connection (LiveKit does not tell remote participants why someone left).
 const PRESENCE_TOPIC = "mysession.presence.v1";
-// How long others keep a dropped participant's tile, marked Reconnecting,
-// before treating it as leaving.
-const RECONNECT_GRACE_MS = 60_000;
 
 // Keep LiveKit's keep-alive pings on time in hidden tabs (see the module).
 installBackgroundSafeLiveKitTimers();
@@ -13906,17 +13903,7 @@ export function RoomPageLiveKit({
 
   // RAF-scheduled rebuild
   const rebuildRafRef = useRef<number | null>(null);
-  // Dropped participants waiting out the reconnect grace period, by user.
-  const reconnectingParticipantsRef = useRef(new Map<string, { tile: TileModel; timer: number }>());
-  // When each user announced an intentional Leave (see PRESENCE_TOPIC).
-  const intentionalLeaveAtRef = useRef(new Map<string, number>());
-  const lastRemoteTilesRef = useRef<TileModel[]>([]);
-  const clearReconnectingParticipants = () => {
-    reconnectingParticipantsRef.current.forEach((entry) => window.clearTimeout(entry.timer));
-    reconnectingParticipantsRef.current.clear();
-    intentionalLeaveAtRef.current.clear();
-    lastRemoteTilesRef.current = [];
-  };
+
   const scheduleRebuildTiles = () => {
     if (rebuildRafRef.current) return;
     rebuildRafRef.current = window.requestAnimationFrame(() => {
@@ -14180,17 +14167,6 @@ export function RoomPageLiveKit({
       }
     });
 
-    // People whose connection dropped keep their tile (no video, marked
-    // Reconnecting) until they return or the grace period ends.
-    const presentUserKeys = new Set(
-      Array.from(room.remoteParticipants.values())
-        .map((rp) => extractBaseUserIdFromIdentity(String(rp.identity || "")))
-        .filter(Boolean),
-    );
-    reconnectingParticipantsRef.current.forEach((entry, userKey) => {
-      if (!presentUserKeys.has(userKey)) next.push(entry.tile);
-    });
-    lastRemoteTilesRef.current = next;
 
     setTiles((prev) => (areTileListsEqual(prev, next) ? prev : next));
 
@@ -14241,7 +14217,6 @@ export function RoomPageLiveKit({
       setMicOn(false);
       setCamOn(false);
       setScreenShareOn(false);
-      clearReconnectingParticipants();
       setTiles([]);
       setScreenShareTiles([]);
       setFxStatusText("");
@@ -14697,70 +14672,23 @@ export function RoomPageLiveKit({
         setMediaWarning("");
         refresh();
       });
-      r.on(RoomEvent.ParticipantConnected, (participant: RemoteParticipant) => {
-        // Someone coming back from a dropped connection just takes their tile
-        // back: no join sound.
-        const userKey = extractBaseUserIdFromIdentity(String(participant?.identity || ""));
-        const returning = userKey ? reconnectingParticipantsRef.current.get(userKey) : undefined;
-        if (returning) {
-          window.clearTimeout(returning.timer);
-          reconnectingParticipantsRef.current.delete(userKey);
-        } else if (joinSoundEnabledRef.current) {
+      r.on(RoomEvent.ParticipantConnected, () => {
+        if (joinSoundEnabledRef.current) {
           playOneShotFromCandidates(JOIN_SOUND_CANDIDATES, 0.8);
         }
         refresh();
       });
       r.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
-        const identity = String(participant?.identity || "");
-        const userKey = extractBaseUserIdFromIdentity(identity);
-        const leftOnPurpose =
-          !!userKey && Date.now() - (intentionalLeaveAtRef.current.get(userKey) || 0) < 15_000;
-        if (userKey) intentionalLeaveAtRef.current.delete(userKey);
+        // A person who left disappears right away (no "Reconnecting" tile).
         // The same person still here in another tab has not gone anywhere.
+        const userKey = extractBaseUserIdFromIdentity(String(participant?.identity || ""));
         const stillPresent = !!userKey && Array.from(r.remoteParticipants.values())
           .some((rp) => extractBaseUserIdFromIdentity(String(rp.identity || "")) === userKey);
-        const snapshot = !leftOnPurpose && !stillPresent && roomRef.current === r
-          ? lastRemoteTilesRef.current.find((tile) => !tile.isLocal && tile.participantIdentity === identity)
-          : undefined;
-
-        if (snapshot && userKey) {
-          // A drop rather than a Leave: keep their tile, marked Reconnecting,
-          // for a grace period, and only then treat it as a leave.
-          const previous = reconnectingParticipantsRef.current.get(userKey);
-          if (previous) window.clearTimeout(previous.timer);
-          const timer = window.setTimeout(() => {
-            const entry = reconnectingParticipantsRef.current.get(userKey);
-            if (!entry || entry.timer !== timer) return;
-            reconnectingParticipantsRef.current.delete(userKey);
-            if (leaveSoundEnabledRef.current && roomRef.current === r) {
-              playOneShotFromCandidates(LEAVE_SOUND_CANDIDATES, 0.8);
-            }
-            scheduleRebuildTiles();
-          }, RECONNECT_GRACE_MS);
-          reconnectingParticipantsRef.current.set(userKey, {
-            timer,
-            tile: {
-              ...snapshot,
-              status: "reconnecting",
-              videoTrack: undefined,
-              audioTrack: undefined,
-              audioLevel: 0,
-              isSpeaking: false,
-              micMuted: true,
-              micTrackSid: undefined,
-              camTrackSid: undefined,
-              remoteMicPubSid: undefined,
-              camPubExists: false,
-              camPubHasTrack: false,
-              camPubMuted: true,
-            },
-          });
-        } else if (!stillPresent && leaveSoundEnabledRef.current) {
+        if (!stillPresent && leaveSoundEnabledRef.current) {
           playOneShotFromCandidates(LEAVE_SOUND_CANDIDATES, 0.8);
         }
         refresh();
-      });
-      const refreshRemoteAudioState = () => {
+      });      const refreshRemoteAudioState = () => {
         if (selfDeafenedRef.current) {
           applySelfDeafenToRoom(r, true);
         }
@@ -14788,13 +14716,8 @@ export function RoomPageLiveKit({
       r.on(
         RoomEvent.DataReceived,
         ((payload: Uint8Array, sender?: RemoteParticipant, _kind?: unknown, topic?: string) => {
-          if (topic === PRESENCE_TOPIC && sender) {
-            // The sender is leaving on purpose: their disconnect is a real
-            // leave, not a dropped connection to wait for.
-            const leavingUserId = extractBaseUserIdFromIdentity(String(sender.identity || ""));
-            if (leavingUserId) intentionalLeaveAtRef.current.set(leavingUserId, Date.now());
-            return;
-          }
+          // Leave announcements on the presence topic need no handling here.
+          if (topic === PRESENCE_TOPIC) return;
           if (topic !== PARTICIPANT_CONTROL_TOPIC || !sender) return;
 
           const senderIdentity = String(sender.identity || "").trim();
@@ -15624,7 +15547,6 @@ export function RoomPageLiveKit({
     if (
       !connected ||
       !roomPolicies.cameraRequired ||
-      !shouldEnforceMediaPolicyForRole(roomPolicies, isHost || isSelfModerator) ||
       camOn ||
       kickRedirecting ||
       // Phones stop the camera in the background and restart it on return.
@@ -15700,16 +15622,15 @@ export function RoomPageLiveKit({
     isSelfModerator,
     kickRedirecting,
     roomPolicies.cameraRequired,
-    roomPolicies.mediaRequirementsApplyToStaff,
     pageVisible,
     livekitReconnecting,
     mobileMediaRestoreOpen,
   ]);
 
-  // Gentle camera reminder for every room. Camera-required rooms keep the
-  // stricter reminders above (they disconnect), so this one stays out of them.
-  const strictCameraPolicy =
-    roomPolicies.cameraRequired && shouldEnforceMediaPolicyForRole(roomPolicies, isHost || isSelfModerator);
+  // Gentle camera reminder for every room and everyone, hosts and moderators
+  // included. Camera-required rooms keep the stricter reminders above (they
+  // disconnect), so this one stays out of them.
+  const strictCameraPolicy = roomPolicies.cameraRequired;
   const cameraReminderStorageKey = `mysession:camera-reminder-off:${sessionId || "room"}`;
   const [cameraOffReminderOpen, setCameraOffReminderOpen] = useState(false);
   const [cameraOffReminderMinutes, setCameraOffReminderMinutes] = useState(5);
@@ -15784,7 +15705,6 @@ export function RoomPageLiveKit({
     if (
       !connected ||
       (!roomPolicies.screenShareRequired && !roomPolicies.cameraOrScreenShareRequired) ||
-      !shouldEnforceMediaPolicyForRole(roomPolicies, isHost || isSelfModerator) ||
       screenShareOn ||
       (roomPolicies.cameraOrScreenShareRequired && camOn) ||
       kickRedirecting ||
@@ -15894,7 +15814,6 @@ export function RoomPageLiveKit({
     kickRedirecting,
     roomPolicies.screenShareRequired,
     roomPolicies.cameraOrScreenShareRequired,
-    roomPolicies.mediaRequirementsApplyToStaff,
     camOn,
     screenShareOn,
     pageVisible,
@@ -21567,8 +21486,7 @@ export function RoomPageLiveKit({
 
     if (
       roomPolicies.screenShareRequired &&
-      !supportsScreenShareCapture() &&
-      shouldEnforceMediaPolicyForRole(roomPolicies, isHost || isSelfModerator)
+      !supportsScreenShareCapture()
     ) {
       // Joining would only end in the screen-share policy removing them.
       setDeviceError(
@@ -22819,7 +22737,7 @@ export function RoomPageLiveKit({
           cameraRequired={roomPolicies.cameraRequired}
           screenShareRequired={roomPolicies.screenShareRequired === true}
           cameraOrScreenShareRequired={roomPolicies.cameraOrScreenShareRequired === true}
-          mediaRequirementsApplyToStaff={roomPolicies.mediaRequirementsApplyToStaff === true}
+
           publicChatDisabled={roomPolicies.publicChatDisabled}
           onChangeCameraRequired={(value) => {
             void updateRoomPolicies({
@@ -22843,12 +22761,7 @@ export function RoomPageLiveKit({
               screenShareRequired: value ? false : roomPolicies.screenShareRequired,
             });
           }}
-          onChangeMediaRequirementsApplyToStaff={(value) => {
-            void updateRoomPolicies({
-              ...roomPolicies,
-              mediaRequirementsApplyToStaff: value,
-            });
-          }}
+
           onChangePublicChatDisabled={(value) => {
             void updateRoomPolicies({
               ...roomPolicies,

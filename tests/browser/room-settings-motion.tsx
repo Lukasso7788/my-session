@@ -44,7 +44,7 @@ function Preview() {
       onChangeVideoTileLayoutPreset={change("videoTileLayoutPreset")} onChangeVideoTileLayoutColumns={change("videoTileLayoutColumns")} onChangeVideoTileLayoutRows={change("videoTileLayoutRows")}
       onChangeShowMobileLayoutSwitcher={change("showMobileLayoutSwitcher")} onChangeVoiceUiHotkey={change("voiceUiHotkey")}
       onChangeCameraRequired={change("cameraRequired")} onChangeScreenShareRequired={change("screenShareRequired")} onChangeCameraOrScreenShareRequired={change("cameraOrScreenShareRequired")}
-      onChangePublicChatDisabled={change("publicChatDisabled")} onChangeMediaRequirementsApplyToStaff={change("mediaRequirementsApplyToStaff")}
+      onChangePublicChatDisabled={change("publicChatDisabled")}
       onChangeAudioInput={change("selectedAudioInputId")} onChangeVideoInput={change("selectedVideoInputId")} onChangeAudioOutput={change("selectedAudioOutputId")}
       onChangeEchoCancellation={change("echoCancellationEnabled")} onChangeNoiseSuppression={change("noiseSuppressionEnabled")} onChangeAutoGainControl={change("autoGainControlEnabled")}
       onChangeJoinSoundEnabled={change("joinSoundEnabled")} onChangeLeaveSoundEnabled={change("leaveSoundEnabled")} onChangeStageSoundsEnabled={change("stageSoundsEnabled")}

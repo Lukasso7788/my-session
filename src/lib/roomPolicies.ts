@@ -16,12 +16,6 @@ export const DEFAULT_ROOM_POLICIES: RoomPolicies = {
   microphoneLocked: false,
 };
 
-export function shouldEnforceMediaPolicyForRole(
-  policies: RoomPolicies,
-  isHostOrModerator: boolean,
-): boolean {
-  return !isHostOrModerator || policies.mediaRequirementsApplyToStaff === true;
-}
 
 function parseSchedule(raw: unknown): unknown {
   if (typeof raw !== "string") return raw;
