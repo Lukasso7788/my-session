@@ -136,6 +136,7 @@ import { downscaleImageFile, downscaleImageSrc, isLargeDataUrl } from "../lib/ba
 import { prefetchBackgroundFxAssets } from "../lib/prefetchBackgroundFx";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
 import { profileHoverAttrs } from "../components/ProfileHoverLayer";
+import CameraOffReminder, { CAMERA_OFF_REMINDER_DELAY_MS } from "./livekit/CameraOffReminder";
 import "./livekit/roomSidePanelTheme.css";
 import "./livekit/room-chrome-motion.css";
 import {
@@ -15705,6 +15706,75 @@ export function RoomPageLiveKit({
     mobileMediaRestoreOpen,
   ]);
 
+  // Gentle camera reminder for every room. Camera-required rooms keep the
+  // stricter reminders above (they disconnect), so this one stays out of them.
+  const strictCameraPolicy =
+    roomPolicies.cameraRequired && shouldEnforceMediaPolicyForRole(roomPolicies, isHost || isSelfModerator);
+  const cameraReminderStorageKey = `mysession:camera-reminder-off:${sessionId || "room"}`;
+  const [cameraOffReminderOpen, setCameraOffReminderOpen] = useState(false);
+  const [cameraOffReminderMinutes, setCameraOffReminderMinutes] = useState(5);
+  const [cameraReminderStayOff, setCameraReminderStayOff] = useState(() => {
+    try {
+      return sessionStorage.getItem(cameraReminderStorageKey) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const cameraOffStartedAtRef = useRef<number | null>(null);
+  const cameraReminderNextDelayRef = useRef(CAMERA_OFF_REMINDER_DELAY_MS);
+
+  useEffect(() => {
+    if (camOn || !connected) {
+      cameraOffStartedAtRef.current = null;
+      cameraReminderNextDelayRef.current = CAMERA_OFF_REMINDER_DELAY_MS;
+      setCameraOffReminderOpen(false);
+      return;
+    }
+    if (cameraOffStartedAtRef.current === null) cameraOffStartedAtRef.current = Date.now();
+    if (
+      strictCameraPolicy ||
+      cameraReminderStayOff ||
+      cameraOffReminderOpen ||
+      kickRedirecting ||
+      // Count only while the room is visible and stable; start over after.
+      !pageVisible ||
+      livekitReconnecting ||
+      mobileMediaRestoreOpen
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const startedAt = cameraOffStartedAtRef.current ?? Date.now();
+      setCameraOffReminderMinutes(Math.max(1, Math.round((Date.now() - startedAt) / 60_000)));
+      setCameraOffReminderOpen(true);
+    }, cameraReminderNextDelayRef.current);
+    return () => window.clearTimeout(timer);
+  }, [
+    camOn,
+    connected,
+    strictCameraPolicy,
+    cameraReminderStayOff,
+    cameraOffReminderOpen,
+    kickRedirecting,
+    pageVisible,
+    livekitReconnecting,
+    mobileMediaRestoreOpen,
+  ]);
+
+  const snoozeCameraReminder = (delayMs: number) => {
+    cameraReminderNextDelayRef.current = delayMs;
+    setCameraOffReminderOpen(false);
+  };
+  const stayCameraOffForSession = () => {
+    setCameraReminderStayOff(true);
+    setCameraOffReminderOpen(false);
+    try {
+      sessionStorage.setItem(cameraReminderStorageKey, "1");
+    } catch {
+      // The choice still holds for this page view.
+    }
+  };
+
   useEffect(() => {
     if (screenSharePolicyTimerRef.current !== null) {
       window.clearTimeout(screenSharePolicyTimerRef.current);
@@ -22557,6 +22627,24 @@ export function RoomPageLiveKit({
               >
                 Open Picture-in-Picture
               </button>
+            </div>
+          </div>
+        ) : null}
+
+        {cameraOffReminderOpen ? (
+          <div className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+88px)] z-[85] flex justify-center px-4 sm:px-6">
+            <div className="w-full max-w-[620px]">
+              <CameraOffReminder
+                theme={theme}
+                minutesOff={cameraOffReminderMinutes}
+                onRemindLater={() => snoozeCameraReminder(CAMERA_OFF_REMINDER_DELAY_MS)}
+                onTurnOn={() => {
+                  setCameraOffReminderOpen(false);
+                  void toggleCamRef.current(true);
+                }}
+                onStayOff={stayCameraOffForSession}
+                onClose={() => snoozeCameraReminder(2 * CAMERA_OFF_REMINDER_DELAY_MS)}
+              />
             </div>
           </div>
         ) : null}

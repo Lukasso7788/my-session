@@ -114,3 +114,22 @@ test("tile hover shade shows with the camera off in dark rooms only", () => {
   const tile = readFileSync("src/pages/livekit/VideoTileLiveKitLegacy.tsx", "utf8");
   assert.match(tile, /!hasCameraOn && isLight\s*\?\s*""\s*:\s*showAllTasks\s*\?\s*"bg-gradient-to-t from-black\/90 via-black\/72 to-black\/20 opacity-100"\s*:\s*"group-hover:bg-gradient-to-t/);
 });
+test("gentle camera reminder in every room except camera-required ones", () => {
+  const room = readFileSync("src/pages/RoomPageLiveKit.tsx", "utf8");
+  const reminder = readFileSync("src/pages/livekit/CameraOffReminder.tsx", "utf8");
+  assert.match(reminder, /export const CAMERA_OFF_REMINDER_DELAY_MS = 5 \* 60_000;/);
+  // Not shown where the strict camera policy already reminds and disconnects.
+  assert.match(room, /const strictCameraPolicy =\s*roomPolicies\.cameraRequired && shouldEnforceMediaPolicyForRole/);
+  assert.match(room, /strictCameraPolicy \|\|\s*cameraReminderStayOff \|\|\s*cameraOffReminderOpen/);
+  // Camera on resets the countdown; "stay off" holds for the session.
+  assert.match(room, /if \(camOn \|\| !connected\) \{\s*cameraOffStartedAtRef\.current = null;/);
+  assert.match(room, /sessionStorage\.setItem\(cameraReminderStorageKey, "1"\)/);
+  assert.match(room, /onRemindLater=\{\(\) => snoozeCameraReminder\(CAMERA_OFF_REMINDER_DELAY_MS\)\}/);
+  // MySession style: a rounded label instead of an uppercase eyebrow; three full-width buttons.
+  assert.doesNotMatch(reminder, /uppercase/);
+  assert.match(reminder, /Camera off for \{minutesOff\} min/);
+  assert.equal((reminder.match(/sm:flex-1/g) || []).length, 2);
+  assert.match(reminder, />\s*Stay off this session\s*</);
+  assert.match(reminder, />\s*Remind me in 5 min\s*</);
+  assert.match(reminder, />\s*Turn camera on\s*</);
+});
