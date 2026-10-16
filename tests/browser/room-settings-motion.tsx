@@ -13,7 +13,7 @@ const initial = {
   cameraRequired: false, screenShareRequired: false, cameraOrScreenShareRequired: false, publicChatDisabled: false, mediaRequirementsApplyToStaff: false,
   selectedAudioInputId: "mic-1", selectedVideoInputId: "cam-1", selectedAudioOutputId: "default",
   echoCancellationEnabled: true, noiseSuppressionEnabled: true, autoGainControlEnabled: true,
-  joinSoundEnabled: true, stageSoundsEnabled: true, stageSoundsVolume: 100,
+  joinSoundEnabled: true, leaveSoundEnabled: true, stageSoundsEnabled: true, stageSoundsVolume: 100,
   colorCorrectionEnabled: false, brightness: 100, contrast: 100, saturate: 100,
 };
 function device(deviceId: string, label: string, kind: MediaDeviceKind): MediaDeviceInfo {
@@ -47,7 +47,7 @@ function Preview() {
       onChangePublicChatDisabled={change("publicChatDisabled")}
       onChangeAudioInput={change("selectedAudioInputId")} onChangeVideoInput={change("selectedVideoInputId")} onChangeAudioOutput={change("selectedAudioOutputId")}
       onChangeEchoCancellation={change("echoCancellationEnabled")} onChangeNoiseSuppression={change("noiseSuppressionEnabled")} onChangeAutoGainControl={change("autoGainControlEnabled")}
-      onChangeJoinSoundEnabled={change("joinSoundEnabled")} onChangeStageSoundsEnabled={change("stageSoundsEnabled")}
+      onChangeJoinSoundEnabled={change("joinSoundEnabled")} onChangeLeaveSoundEnabled={change("leaveSoundEnabled")} onChangeStageSoundsEnabled={change("stageSoundsEnabled")}
       onChangeStageSoundsVolume={change("stageSoundsVolume")} onToggleColorCorrection={change("colorCorrectionEnabled")}
       onChangeBrightness={change("brightness")} onChangeContrast={change("contrast")} onChangeSaturate={change("saturate")} />
   </main>;

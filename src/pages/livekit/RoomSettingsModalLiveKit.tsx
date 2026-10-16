@@ -1146,6 +1146,8 @@ export function RoomSettingsModalLiveKit({
 
     joinSoundEnabled,
     onChangeJoinSoundEnabled,
+    leaveSoundEnabled,
+    onChangeLeaveSoundEnabled,
     stageSoundsEnabled,
     onChangeStageSoundsEnabled,
     stageSoundsVolume,
@@ -1239,6 +1241,8 @@ export function RoomSettingsModalLiveKit({
 
     joinSoundEnabled: boolean;
     onChangeJoinSoundEnabled: (v: boolean) => void;
+    leaveSoundEnabled: boolean;
+    onChangeLeaveSoundEnabled: (v: boolean) => void;
     stageSoundsEnabled: boolean;
     onChangeStageSoundsEnabled: (v: boolean) => void;
     stageSoundsVolume: number;
@@ -1856,7 +1860,13 @@ export function RoomSettingsModalLiveKit({
                                             onChange={onChangeJoinSoundEnabled}
                                             isLight={isLight}
                                         />
-
+                                        <CompactToggleTile
+                                            label="Participant left"
+                                            description="Play a leave notification."
+                                            checked={leaveSoundEnabled}
+                                            onChange={onChangeLeaveSoundEnabled}
+                                            isLight={isLight}
+                                        />
                                         <CompactToggleTile
                                             label="Timeline sounds"
                                             description="Play stage transition sounds."
