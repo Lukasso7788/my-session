@@ -24,12 +24,14 @@ test("desktop recovers a dropped room while hidden; phones and tablets still wai
   assert.doesNotMatch(room, /attempt < 2 && !roomIsActuallyConnected\(\); attempt \+= 1\) \{\s*if \(document\.visibilityState !== "visible"\) return;/);
 });
 
-test("a participant who drops or leaves disappears right away, with no Reconnecting status", () => {
+test("a participant who drops or leaves disappears right away and silently, with no Reconnecting status", () => {
   assert.doesNotMatch(room, /RECONNECT_GRACE_MS|reconnectingParticipantsRef|intentionalLeaveAtRef/);
   assert.doesNotMatch(room, /status: "reconnecting"/);
   assert.doesNotMatch(tile, /Reconnecting…/);
   assert.match(room, /r\.on\(RoomEvent\.ParticipantConnected, \(\) => \{\s*if \(joinSoundEnabledRef\.current\) \{/);
-  assert.match(room, /if \(!stillPresent && leaveSoundEnabledRef\.current\) \{\s*playOneShotFromCandidates\(LEAVE_SOUND_CANDIDATES, 0\.8\);/);
+  // Leaving is silent; only joins have a sound.
+  assert.match(room, /r\.on\(RoomEvent\.ParticipantDisconnected, \(\) => \{\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*refresh\(\);/);
+  assert.doesNotMatch(room, /LEAVE_SOUND_CANDIDATES|leaveSoundEnabled|leave_sound_on/);
   // Leave announcements from other clients are still accepted and ignored.
   assert.match(room, /if \(topic === PRESENCE_TOPIC\) return;/);
 });

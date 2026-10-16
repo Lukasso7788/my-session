@@ -320,8 +320,6 @@ type VoiceUiCommand =
   | "auto_gain_off"
   | "join_sound_on"
   | "join_sound_off"
-  | "leave_sound_on"
-  | "leave_sound_off"
   | "stage_sounds_on"
   | "stage_sounds_off"
   | "task_timers_on"
@@ -631,8 +629,6 @@ const VOICE_UI_COMMAND_DEFINITIONS: readonly VoiceUiCommandDefinition[] = [
   { command: "auto_gain_off", group: "tools", phrase: "Disable auto gain", aliases: ["Auto gain off", "Disable automatic gain control"] },
   { command: "join_sound_on", group: "tools", phrase: "Enable join sound", aliases: ["Join sound on"] },
   { command: "join_sound_off", group: "tools", phrase: "Disable join sound", aliases: ["Join sound off"] },
-  { command: "leave_sound_on", group: "tools", phrase: "Enable leave sound", aliases: ["Leave sound on"] },
-  { command: "leave_sound_off", group: "tools", phrase: "Disable leave sound", aliases: ["Leave sound off"] },
   { command: "stage_sounds_on", group: "tools", phrase: "Enable stage sounds", aliases: ["Stage sounds on"] },
   { command: "stage_sounds_off", group: "tools", phrase: "Disable stage sounds", aliases: ["Stage sounds off"] },
   { command: "stage_volume_50", group: "tools", phrase: "Stage volume 50" },
@@ -2039,7 +2035,6 @@ const KICK_EVENTS_CHANNEL_PREFIX = "mysession_lk_kick_events";
 
 const ROOM_SOUNDS_PREF_KEY = "mysession_lk_room_sounds";
 const JOIN_SOUND_PREF_KEY = "mysession_lk_join_sound";
-const LEAVE_SOUND_PREF_KEY = "mysession_lk_leave_sound";
 const STAGE_SOUNDS_PREF_KEY = "mysession_lk_stage_sounds";
 const ROOM_SOUNDS_VOLUME_PREF_KEY = "mysession_lk_room_sounds_volume";
 const BACKGROUND_SOUNDSCAPE_PREF_KEY = "mysession_lk_background_soundscape";
@@ -2061,11 +2056,7 @@ const JOIN_SOUND_CANDIDATES = [
   "/sounds/joined.mp3",
   "/sounds/user_joined.mp3",
 ];
-const LEAVE_SOUND_CANDIDATES = [
-  "/sounds/jitsi/left.mp3",
-  "/sounds/left.mp3",
-  "/sounds/user_left.mp3",
-];
+
 
 function readAudioProcessingPreferences(): AudioProcessingPreferences {
   if (typeof window === "undefined") return DEFAULT_AUDIO_PROCESSING;
@@ -6732,10 +6723,6 @@ export function RoomPageLiveKit({
   );
   const joinSoundEnabledRef = useRef(joinSoundEnabled);
 
-  const [leaveSoundEnabled, setLeaveSoundEnabled] = useState<boolean>(() =>
-    readSoundPreference(LEAVE_SOUND_PREF_KEY),
-  );
-  const leaveSoundEnabledRef = useRef(leaveSoundEnabled);
 
   const [stageSoundsEnabled, setStageSoundsEnabled] = useState<boolean>(() =>
     readSoundPreference(STAGE_SOUNDS_PREF_KEY),
@@ -6817,12 +6804,6 @@ export function RoomPageLiveKit({
     } catch { }
   }, [joinSoundEnabled]);
 
-  useEffect(() => {
-    leaveSoundEnabledRef.current = leaveSoundEnabled;
-    try {
-      localStorage.setItem(LEAVE_SOUND_PREF_KEY, String(leaveSoundEnabled));
-    } catch { }
-  }, [leaveSoundEnabled]);
 
   useEffect(() => {
     stageSoundsEnabledRef.current = stageSoundsEnabled;
@@ -14678,15 +14659,9 @@ export function RoomPageLiveKit({
         }
         refresh();
       });
-      r.on(RoomEvent.ParticipantDisconnected, (participant: RemoteParticipant) => {
-        // A person who left disappears right away (no "Reconnecting" tile).
-        // The same person still here in another tab has not gone anywhere.
-        const userKey = extractBaseUserIdFromIdentity(String(participant?.identity || ""));
-        const stillPresent = !!userKey && Array.from(r.remoteParticipants.values())
-          .some((rp) => extractBaseUserIdFromIdentity(String(rp.identity || "")) === userKey);
-        if (!stillPresent && leaveSoundEnabledRef.current) {
-          playOneShotFromCandidates(LEAVE_SOUND_CANDIDATES, 0.8);
-        }
+      r.on(RoomEvent.ParticipantDisconnected, () => {
+        // A person who left disappears right away, silently: only joins
+        // have a sound.
         refresh();
       });      const refreshRemoteAudioState = () => {
         if (selfDeafenedRef.current) {
@@ -16252,13 +16227,7 @@ export function RoomPageLiveKit({
         setVoiceUiLastCommand(`Join sound ${enabled ? "enabled" : "disabled"}`);
         break;
       }
-      case "leave_sound_on":
-      case "leave_sound_off": {
-        const enabled = command === "leave_sound_on";
-        setLeaveSoundEnabled(enabled);
-        setVoiceUiLastCommand(`Leave sound ${enabled ? "enabled" : "disabled"}`);
-        break;
-      }
+
       case "stage_sounds_on":
       case "stage_sounds_off": {
         const enabled = command === "stage_sounds_on";
@@ -22905,8 +22874,7 @@ export function RoomPageLiveKit({
           }}
           joinSoundEnabled={joinSoundEnabled}
           onChangeJoinSoundEnabled={setJoinSoundEnabled}
-          leaveSoundEnabled={leaveSoundEnabled}
-          onChangeLeaveSoundEnabled={setLeaveSoundEnabled}
+
           stageSoundsEnabled={stageSoundsEnabled}
           onChangeStageSoundsEnabled={setStageSoundsEnabled}
           stageSoundsVolume={roomSoundsVolume}
