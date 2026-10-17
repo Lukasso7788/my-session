@@ -9594,7 +9594,10 @@ export function RoomPageLiveKit({
         : mode === "blur"
           ? `blur:${normalizedBlur}`
           : `bg:${String(bgUrl || DEFAULT_BG_DATA_URL)}`;
-    const signature = `${effectSignature}:color:${publishedColorCorrectionSignature(correction)}`;
+    // Include the capture itself: phones replace the camera's MediaStreamTrack
+    // inside the same LiveKit track after the tab was hidden, and the effect
+    // has to be applied to the new capture too.
+    const signature = `${track.mediaStreamTrack.id}:${effectSignature}:color:${publishedColorCorrectionSignature(correction)}`;
     if (activeFxSignaturesRef.current.get(track) === signature) return;
 
     const pendingOperation = pendingFxOperationsRef.current.get(track);
@@ -14719,6 +14722,10 @@ export function RoomPageLiveKit({
           ? updateTileSpeakingState(current, activeIds) : current);
       });
       r.on(RoomEvent.LocalTrackPublished as any, refresh as any);
+      r.on(RoomEvent.LocalTrackPublished, (publication: LocalTrackPublication) => {
+        if (publication?.source !== Track.Source.Camera) return;
+        window.setTimeout(() => ensureVideoFxRef.current(), 300);
+      });
       r.on(RoomEvent.LocalTrackUnpublished as any, refresh as any);
       r.on(
         RoomEvent.DataReceived,
@@ -18208,6 +18215,51 @@ export function RoomPageLiveKit({
     colorCorrection.warmth,
     colorCorrectionEnabled,
   ]);
+
+  // Keep the chosen blur/background on the camera after a phone puts the tab in
+  // the background and back, or after a reconnect. LiveKit tries to carry the
+  // processor over to the new camera capture, but on phones that can fail
+  // quietly and publish the raw camera. Check that the processor is there and
+  // its output is live; otherwise apply the effect again.
+  const ensureVideoFxRef = useRef<() => void>(() => { });
+  ensureVideoFxRef.current = () => {
+    const track = getLocalCameraTrack();
+    if (!track || track.mediaStreamTrack.readyState !== "live") return;
+    const wantsProcessor =
+      videoFxMode !== "off" || !isPublishedColorCorrectionIdentity(effectiveColorCorrection);
+    if (!wantsProcessor) return;
+
+    const processor = (track as any).getProcessor?.() as
+      | { processedTrack?: MediaStreamTrack }
+      | undefined;
+    const processorHealthy =
+      !!processor && processor.processedTrack?.readyState === "live";
+
+    void (async () => {
+      if (!processorHealthy) {
+        activeFxSignaturesRef.current.delete(track);
+        if (processor) await stopAnyProcessor(track).catch(() => { });
+      }
+      await safeApplyProcessor(
+        track,
+        videoFxMode,
+        blurStrength,
+        bgImageUrl,
+        effectiveColorCorrection,
+      );
+    })().catch((error) => {
+      console.warn("[video-fx] could not restore the effect:", error);
+    });
+  };
+
+  useEffect(() => {
+    if (!connected || !pageVisible) return;
+    // The camera restarts a moment after the tab becomes visible again.
+    const timers = [700, 2500].map((ms) =>
+      window.setTimeout(() => ensureVideoFxRef.current(), ms),
+    );
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [connected, pageVisible]);
 
   // chat unread
   const hostUserIdForChat = useMemo(() => {

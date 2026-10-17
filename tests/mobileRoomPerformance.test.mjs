@@ -145,3 +145,14 @@ test("camera and screen rules are the same for everyone, hosts and moderators in
   // The strict camera reminder starts from the room setting alone.
   assert.match(room, /!connected \|\|\s*!roomPolicies\.cameraRequired \|\|\s*camOn \|\|/);
 });
+test("blur/background comes back after a phone hides and shows the room", () => {
+  const room = readFileSync("src/pages/RoomPageLiveKit.tsx", "utf8");
+  // The applied-effect cache is per camera capture, so a new capture gets the effect again.
+  assert.match(room, /const signature = `\$\{track\.mediaStreamTrack\.id\}:\$\{effectSignature\}:color:/);
+  // A dead or missing processor is replaced.
+  assert.match(room, /const processorHealthy =\s*!!processor && processor\.processedTrack\?\.readyState === "live";/);
+  assert.match(room, /if \(!processorHealthy\) \{\s*activeFxSignaturesRef\.current\.delete\(track\);/);
+  // Checked when the tab is visible again and when the camera is (re)published.
+  assert.match(room, /if \(!connected \|\| !pageVisible\) return;\s*\/\/[^\n]*\n\s*const timers = \[700, 2500\]/);
+  assert.match(room, /if \(publication\?\.source !== Track\.Source\.Camera\) return;\s*window\.setTimeout\(\(\) => ensureVideoFxRef\.current\(\), 300\);/);
+});
