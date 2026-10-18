@@ -1770,10 +1770,10 @@ export function ChatPanel({
     const sendBtnActive = "bg-[#5286F6] hover:bg-[#5286F6] text-black";
     const sendBtnDisabled = isLight ? "bg-[#DCDCDC] text-black/35" : "bg-[#353B42] text-[#AEB6BF]";
     const composerInputCls =
-        "flex-1 min-h-[44px] max-h-[140px] rounded-xl resize-none px-3 py-3 text-[13px] outline-none focus:ring-1 focus:ring-[#5286F6] focus:border-[#5286F6] " +
+        "flex-1 min-w-0 min-h-[36px] max-h-[140px] rounded-[10px] resize-none px-3 py-[7px] text-[13px] leading-5 outline-none focus:ring-1 focus:ring-[#5286F6] focus:border-[#5286F6] " +
         (isLight ? "bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35" : "bg-[#292D32] border border-[#4C5259] text-[#F4F5F6] placeholder:text-[#ABB3BE]");
     const composerEmojiBtnCls =
-        "w-11 h-11 rounded-xl flex items-center justify-center transition border " +
+        "w-9 h-9 shrink-0 rounded-[10px] flex items-center justify-center transition border " +
         (isLight ? "bg-[#F3F1F1] border-[#D8D0D0] text-black/60 hover:bg-[#E8E8E8] hover:text-black/80" : "bg-[#292929] border-[#484848] text-[#D9DEE4] hover:bg-[#353B42] hover:text-white");
     const portalBoxCls =
         "rounded-2xl border shadow-2xl overflow-hidden " +
@@ -3672,9 +3672,10 @@ export function ChatPanel({
                     </div>
                 ) : null}
 
-                <div className="flex items-end gap-2">
+                <div className="flex items-end gap-1.5">
                     <textarea
                         ref={composerRef}
+                        rows={1}
                         value={text}
                         onChange={(e) => setText(e.target.value)}
                         placeholder={
@@ -3709,7 +3710,7 @@ export function ChatPanel({
                             aria-pressed={dictation.listening}
                             className={
                                 dictation.listening
-                                    ? "relative w-11 h-11 rounded-xl flex items-center justify-center transition border border-[#F65252] bg-[#F65252]/15 text-[#F65252]"
+                                    ? "relative w-9 h-9 shrink-0 rounded-[10px] flex items-center justify-center transition border border-[#F65252] bg-[#F65252]/15 text-[#F65252]"
                                     : composerEmojiBtnCls
                             }
                             onMouseDown={(e) => e.preventDefault()}
@@ -3722,11 +3723,11 @@ export function ChatPanel({
                         >
                             {dictation.listening ? (
                                 <>
-                                    <span className="absolute inset-0 rounded-xl border-2 border-[#F65252]/60 motion-safe:animate-ping" aria-hidden="true" />
-                                    <Square size={14} fill="currentColor" />
+                                    <span className="absolute inset-0 rounded-[10px] border-2 border-[#F65252]/60 motion-safe:animate-ping" aria-hidden="true" />
+                                    <Square size={12} fill="currentColor" />
                                 </>
                             ) : (
-                                <Mic size={18} />
+                                <Mic size={16} />
                             )}
                         </button>
                     ) : null}
@@ -3741,14 +3742,14 @@ export function ChatPanel({
                             onClick={() => setComposerEmojiOpen((v) => !v)}
                             disabled={generalChatLocked}
                         >
-                            <Smile size={18} />
+                            <Smile size={16} />
                         </button>
                     </div>
 
                     <button
                         onClick={() => void send()}
                         className={
-                            "w-11 h-11 rounded-xl flex items-center justify-center transition border " +
+                            "w-9 h-9 shrink-0 rounded-[10px] flex items-center justify-center transition border " +
                             (text.trim() &&
                                 !generalChatLocked &&
                                 !(activeMode === "direct" && isHost && !activeDirectPeerId)
@@ -3763,7 +3764,7 @@ export function ChatPanel({
                         }
                         title="Send"
                     >
-                        <SendHorizontal size={18} />
+                        <SendHorizontal size={16} />
                     </button>
                 </div>
 
