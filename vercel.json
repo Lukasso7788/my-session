@@ -1,5 +1,14 @@
 {
   "routes": [
+    { "src": "/help/?", "status": 308, "headers": { "Location": "/faq" } },
+    { "src": "/focus-sessions/?", "status": 308, "headers": { "Location": "/group-focus-sessions" } },
+    { "src": "/adhd-body-doubling/?", "status": 308, "headers": { "Location": "/body-doubling-for-adhd" } },
+    { "src": "/online-coworking/?", "status": 308, "headers": { "Location": "/virtual-coworking" } },
+    { "src": "/study-together/?", "status": 308, "headers": { "Location": "/body-doubling-for-studying" } },
+    { "src": "/procrastination/?", "status": 308, "headers": { "Location": "/body-doubling-for-procrastination" } },
+    { "src": "/focusmate-alternatives/?", "status": 308, "headers": { "Location": "/blog/best-focusmate-alternatives" } },
+    { "src": "/blog/what-is-body-doubling/?", "status": 308, "headers": { "Location": "/guides/what-is-body-doubling" } },
+    { "src": "/status/?", "dest": "/404.html", "status": 404 },
     {
       "handle": "filesystem"
     },
