@@ -354,7 +354,8 @@ function PanelSmartIcon({
   | "pin"
   | "encouragement"
   | "in-progress"
-  | "accountability-wall";
+  | "accountability-wall"
+  | "completed-tasks";
   theme: RoomTheme;
   className?: string;
   alt?: string;
@@ -3563,6 +3564,31 @@ export function TasksPanel({
     ];
   }, [panelTaskOrder, panelTasks, pinnedTaskIds]);
 
+  // Completed tasks live in their own section (the green header button), so
+  // the main list only shows what is still to do. A task that was just ticked
+  // stays in place briefly so its check animation can finish.
+  const [completedTasksOpen, setCompletedTasksOpen] = useState(false);
+  const [justCompletedTaskIds, setJustCompletedTaskIds] = useState<string[]>([]);
+  const completedPanelTaskCount = useMemo(
+    () => panelTasks.filter((task) => Boolean(task.completed)).length,
+    [panelTasks],
+  );
+  const visiblePanelTasks = useMemo(
+    () =>
+      orderedPanelTasks.filter((task) =>
+        completedTasksOpen
+          ? Boolean(task.completed)
+          : !task.completed || justCompletedTaskIds.includes(task.id),
+      ),
+    [completedTasksOpen, justCompletedTaskIds, orderedPanelTasks],
+  );
+  const keepJustCompletedTask = useCallback((taskId: string) => {
+    setJustCompletedTaskIds((ids) => (ids.includes(taskId) ? ids : [...ids, taskId]));
+    window.setTimeout(() => {
+      setJustCompletedTaskIds((ids) => ids.filter((id) => id !== taskId));
+    }, 700);
+  }, []);
+
   const renderTaskTimerControls = useCallback(
     ({
       ownerUserId,
@@ -4498,7 +4524,7 @@ export function TasksPanel({
       <div className="px-4 pt-4 pb-2 shrink-0">
         <div
           className={
-            "rounded-[22px] border px-4 py-3 " + headerBorder + " " + headerBg
+            "ms-tasks-header rounded-[22px] border px-4 py-3 " + headerBorder + " " + headerBg
           }
         >
           <div className="flex items-center justify-between gap-3">
@@ -4508,12 +4534,12 @@ export function TasksPanel({
               >
                 Tasks
               </div>
-              <div className={"text-[10px] leading-[12px] font-inter " + titleText}>
+              <div className={"ms-tasks-header-subtitle text-[10px] leading-[12px] font-inter " + titleText}>
                 Keep it visible while you work
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0 font-inter">
+            <div className="flex items-center gap-1.5 shrink-0 font-inter">
               <div
                 className={
                   "inline-flex items-center gap-2 px-3 py-2 rounded-xl " +
@@ -4556,11 +4582,11 @@ export function TasksPanel({
               {pictureInPictureSupported && onOpenPictureInPicture ? (
                 <IconButton
                   theme={panelTheme}
-                  className="border border-[#81DB86] bg-[#81DB86]/10 text-[#81DB86] hover:bg-[#81DB86]/15"
+                  className="border border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
                   title={
                     pictureInPictureOpen
-                      ? "Close Picture-in-Picture video"
-                      : "Open video Picture-in-Picture"
+                      ? "Close the floating video window"
+                      : "Picture-in-Picture: keep the room video in a floating window"
                   }
                   onClick={(e) => {
                     e.preventDefault();
@@ -4572,10 +4598,37 @@ export function TasksPanel({
                     theme={panelTheme}
                     className="w-4 h-4"
                     alt="Picture-in-Picture"
-                    tint="#81DB86"
+                    tint="#5286F6"
                   />
                 </IconButton>
               ) : null}
+
+              <IconButton
+                theme={panelTheme}
+                className={
+                  "border border-[#81DB86] text-[#81DB86] " +
+                  (completedTasksOpen
+                    ? "bg-[#81DB86]/30 hover:bg-[#81DB86]/35"
+                    : "bg-[#81DB86]/10 hover:bg-[#81DB86]/15")
+                }
+                title={
+                  completedTasksOpen
+                    ? "Back to your tasks"
+                    : `Completed tasks (${completedPanelTaskCount})`
+                }
+                onClick={(e) => {
+                  e.preventDefault();
+                  setCompletedTasksOpen((open) => !open);
+                }}
+              >
+                <PanelSmartIcon
+                  name="completed-tasks"
+                  theme={panelTheme}
+                  className="w-4 h-4"
+                  alt="Completed tasks"
+                  tint="#81DB86"
+                />
+              </IconButton>
 
               <IconButton
                 theme={panelTheme}
@@ -4608,8 +4661,13 @@ export function TasksPanel({
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <div className={titleText + " font-inter font-bold text-[17px]"}>
-                  {oneOnOneMode ? "Your Tasks" : "My Tasks"}
+                  {completedTasksOpen ? "Completed tasks" : oneOnOneMode ? "Your Tasks" : "My Tasks"}
                 </div>
+                {completedTasksOpen ? (
+                  <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full border border-[#81DB86] bg-[#81DB86]/15 px-1.5 text-[11px] font-bold leading-none text-[#2F7F3D]">
+                    {completedPanelTaskCount}
+                  </span>
+                ) : (
                 <button
                   type="button"
                   onClick={openImportModal}
@@ -4623,12 +4681,23 @@ export function TasksPanel({
                     strokeWidth={2.25}
                   />
                 </button>
+                )}
               </div>
+              {completedTasksOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setCompletedTasksOpen(false)}
+                  className="mt-0.5 text-[10px] font-semibold text-black/45 underline-offset-2 transition hover:text-black/70 hover:underline"
+                >
+                  Back to my tasks
+                </button>
+              ) : (
               <div className="mt-0.5 flex items-center gap-1 text-[10px] text-black/40">
                 <Sparkles size={10} className="text-[#2F2F2F]" />
                 <span>Click a task for AI advice</span>
                 <span className="ml-0.5 inline-flex items-center justify-center rounded-[8px] border border-[#2F2F2F] bg-white px-[5px] py-[2px] font-bold leading-none text-[#2F2F2F] shadow-[0_2px_8px_rgba(0,0,0,0.06)]">Pro</span>
               </div>
+              )}
             </div>
 
             {onToggleAccountabilityWall ? (
@@ -4656,7 +4725,7 @@ export function TasksPanel({
             ) : null}
           </div>
 
-          <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_48px_auto] items-center gap-2 mb-3">
+          <div className={(completedTasksOpen ? "hidden " : "") + "grid w-full min-w-0 grid-cols-[minmax(0,1fr)_48px_auto] items-center gap-2 mb-3"}>
             <div className="relative min-w-0">
               <input
                 type="text"
@@ -4766,13 +4835,17 @@ export function TasksPanel({
             <div className={"text-[12px] italic font-inter " + mutedText}>
               Loading...
             </div>
-          ) : panelTasks.length === 0 ? (
+          ) : visiblePanelTasks.length === 0 ? (
             <div className={"text-[12px] italic font-inter " + mutedText}>
-              No panel tasks yet. Add one from Tasks or create it manually.
+              {completedTasksOpen
+                ? "No completed tasks yet. Tasks you tick off move here."
+                : panelTasks.length === 0
+                  ? "No panel tasks yet. Add one from Tasks or create it manually."
+                  : "All done. Your completed tasks are under the green button above."}
             </div>
           ) : (
             <div className="flex flex-col gap-0.5">
-              {orderedPanelTasks.map((i) => {
+              {visiblePanelTasks.map((i) => {
                 const isEditing = editingId === i.id;
                 const isPersistedTask = UUID_RE.test(String(i.id || ""));
 
@@ -4860,6 +4933,7 @@ export function TasksPanel({
                         className="flex h-[18px] w-[18px] shrink-0 self-center items-center justify-center leading-none"
                         onClick={(event) => {
                           event.stopPropagation();
+                          if (!i.completed && !completedTasksOpen && editingId !== i.id) keepJustCompletedTask(i.id);
                           void togglePanelCompleted(i);
                         }}
                         title={i.completed ? "Mark task incomplete" : "Complete task"}

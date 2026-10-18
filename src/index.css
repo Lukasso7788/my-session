@@ -291,3 +291,15 @@ body {
     animation: none;
   }
 }
+
+/* Task panel header: with all four buttons (Sync, Picture-in-Picture,
+   Completed tasks, Pin) a narrow panel has no room for the subtitle. */
+.ms-tasks-header {
+  container-type: inline-size;
+}
+
+@container (max-width: 340px) {
+  .ms-tasks-header-subtitle {
+    display: none;
+  }
+}
