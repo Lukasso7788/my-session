@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import {
@@ -11,6 +11,8 @@ import {
   type ActiveBan,
 } from "../lib/bans";
 import BanUserModal from "../components/BanUserModal";
+import RetentionStreaksSection from "../components/admin/RetentionStreaksSection";
+import { ArrowLeft, Bell, Mail, PenSquare, RefreshCw, Send } from "lucide-react";
 import {
   ensurePushSubscription,
   getPushPermission,
@@ -809,132 +811,68 @@ function MiniMetricChart({
       ? formatPercent(activeValue)
       : formatNumber(activeValue, decimals);
 
+  const gradientId = `metric-fill-${String(dataKey)}-${color.replace("#", "")}`;
+
   return (
     <div className="mt-4">
-      <div className="mb-2 flex items-center justify-between rounded-xl bg-white/70 px-3 py-2 text-[11px]">
-        <span className="font-semibold text-[#777]">
-          {activePoint?.dateKey || "—"}
-        </span>
+      <div className="relative h-14">
+        <svg viewBox="0 0 100 40" preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible">
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+              <stop offset="100%" stopColor={color} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <line x1="0" y1="34" x2="100" y2="34" stroke="rgba(0,0,0,0.08)" vectorEffect="non-scaling-stroke" />
+          <polygon points={`0,34 ${points} 100,34`} fill={`url(#${gradientId})`} />
+          <polyline
+            fill="none"
+            stroke={color}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+            points={points}
+          />
+          {hoverIndex !== null && (
+            <line x1={activeX} y1="2" x2={activeX} y2="38" stroke={color} strokeOpacity="0.35" strokeDasharray="2 2" vectorEffect="non-scaling-stroke" />
+          )}
+          {values.map((_, index) => (
+            <rect
+              key={`${String(dataKey)}-${index}`}
+              x={getX(index) - 50 / Math.max(1, values.length)}
+              y="0"
+              width={100 / Math.max(1, values.length)}
+              height="40"
+              fill="transparent"
+              className="cursor-pointer"
+              onClick={() => data[index] && openDrilldown?.(dataKey, data[index])}
+              onMouseEnter={() => setHoverIndex(index)}
+              onMouseLeave={() => setHoverIndex(null)}
+            />
+          ))}
+        </svg>
+        {activePoint ? (
+          <span
+            className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 bg-white"
+            style={{ left: `${activeX}%`, top: `${(activeY / 40) * 100}%`, borderColor: color }}
+            aria-hidden="true"
+          />
+        ) : null}
+      </div>
+
+      <div className="mt-2 flex items-center justify-between text-[11px] text-[#8A908B]">
+        <span>{hoverIndex === null ? `${data[0]?.label || "—"} – ${data[data.length - 1]?.label || "—"}` : activePoint?.dateKey || "—"}</span>
         <button
           type="button"
           disabled={!activePoint || !openDrilldown}
           onClick={() => activePoint && openDrilldown?.(dataKey, activePoint)}
-          className="rounded-full px-2 py-0.5 font-bold transition-colors hover:bg-black/[0.05] disabled:cursor-default"
+          className="rounded-full px-2 py-0.5 font-semibold transition-colors hover:bg-black/[0.05] disabled:cursor-default"
           style={{ color }}
           title="Open details for this day"
         >
           {displayValue}
         </button>
-      </div>
-
-      <svg viewBox="0 0 100 40" className="h-20 w-full overflow-visible">
-        <defs>
-          <linearGradient id={`metric-fill-${String(dataKey)}-${color.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity="0.2" />
-            <stop offset="100%" stopColor={color} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <line x1="0" y1="34" x2="100" y2="34" stroke="rgba(0,0,0,0.12)" />
-        <line x1="0" y1="20" x2="100" y2="20" stroke="rgba(0,0,0,0.06)" />
-        <line x1="0" y1="6" x2="100" y2="6" stroke="rgba(0,0,0,0.06)" />
-
-        <polygon
-          points={`0,34 ${points} 100,34`}
-          fill={`url(#metric-fill-${String(dataKey)}-${color.replace("#", "")})`}
-          opacity="0.9"
-        />
-
-        <polyline
-          fill="none"
-          stroke={color}
-          strokeWidth="8"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          points={points}
-          opacity="0.12"
-        />
-
-        <polyline
-          fill="none"
-          stroke={color}
-          strokeWidth="2.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          points={points}
-        />
-
-        {hoverIndex !== null && (
-          <line
-            x1={activeX}
-            y1="4"
-            x2={activeX}
-            y2="36"
-            stroke={color}
-            strokeWidth="0.8"
-            strokeDasharray="2 2"
-          />
-        )}
-
-        {values.map((value, index) => {
-          const x = getX(index);
-          const y = getY(value);
-          const active = index === activeIndex;
-
-          return (
-            <g key={`${String(dataKey)}-${index}`}>
-              <circle
-                cx={x}
-                cy={y}
-                r={active ? 3.4 : 2.2}
-                fill="white"
-                stroke={color}
-                strokeWidth={active ? 2.4 : 1.7}
-              />
-
-              <rect
-                x={x - 4}
-                y="0"
-                width="8"
-                height="40"
-                fill="transparent"
-                className="cursor-pointer"
-                onClick={() => data[index] && openDrilldown?.(dataKey, data[index])}
-                onMouseEnter={() => setHoverIndex(index)}
-                onMouseLeave={() => setHoverIndex(null)}
-              />
-            </g>
-          );
-        })}
-
-        {hoverIndex !== null && (
-          <g>
-            <rect
-              x={Math.min(Math.max(activeX - 15, 0), 70)}
-              y={Math.max(activeY - 14, 1)}
-              width="30"
-              height="9"
-              rx="3"
-              fill="white"
-              stroke={color}
-              strokeWidth="0.8"
-            />
-            <text
-              x={Math.min(Math.max(activeX, 15), 85)}
-              y={Math.max(activeY - 8, 8)}
-              textAnchor="middle"
-              fontSize="3.2"
-              fontWeight="700"
-              fill={color}
-            >
-              {displayValue}
-            </text>
-          </g>
-        )}
-      </svg>
-
-      <div className="mt-1 flex justify-between text-[10px] text-[#999]">
-        <span>{data[0]?.label || "—"}</span>
-        <span>{data[data.length - 1]?.label || "—"}</span>
       </div>
     </div>
   );
@@ -962,16 +900,17 @@ function MetricCard({
   decimals?: number;
 }) {
   return (
-    <div className="rounded-[24px] border border-black/[0.07] bg-gradient-to-b from-white to-[#F7F8F8] p-5 transition-transform duration-200 hover:-translate-y-0.5">
-      <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
+    <div className="group rounded-[22px] border border-black/[0.06] bg-white p-5 shadow-[0_1px_2px_rgba(16,24,20,0.04)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(16,24,20,0.07)]">
+      <div className="flex items-center gap-2 text-[13px] font-semibold text-[#5E665F]">
+        <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />
         {label}
       </div>
 
-      <div className="mt-2 text-[30px] font-bold text-[#2F2F2F]">
+      <div className="mt-2 text-[32px] font-bold leading-none tracking-[-0.04em] text-[#1F2328]">
         {value}
       </div>
 
-      <p className="mt-1 text-[12px] leading-5 text-[#777]">{hint}</p>
+      <p className="mt-2 text-[12px] leading-5 text-[#8A908B]">{hint}</p>
 
       <MiniMetricChart
         data={data}
@@ -982,6 +921,18 @@ function MetricCard({
         decimals={decimals}
       />
     </div>
+  );
+}
+
+function DashboardGroup({ title, description, children }: { title: string; description: string; children: ReactNode }) {
+  return (
+    <section className="mt-10">
+      <div className="mb-4">
+        <h2 className="text-[22px] font-bold tracking-[-0.03em] text-[#1F2328]">{title}</h2>
+        <p className="mt-1 text-[13px] text-[#6B726D]">{description}</p>
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">{children}</div>
+    </section>
   );
 }
 
@@ -1157,10 +1108,10 @@ function MonthlyAttendanceChart({
   const rangeLabel = rangeMonths === 12 ? "12 months" : rangeMonths === 24 ? "2 years" : "3 years";
 
   return (
-    <section className="mt-8 overflow-hidden rounded-[28px] bg-[#1F2328] p-6 text-white">
+    <section className="mt-10 overflow-hidden rounded-[28px] bg-[#1F2328] p-6 text-white shadow-[0_12px_40px_rgba(16,24,20,0.18)]">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/50">
+          <div className="text-[13px] font-semibold text-white/60">
             Retention pulse
           </div>
           <h2 className="mt-1 text-[22px] font-bold">Unique attendance by month</h2>
@@ -1246,10 +1197,10 @@ function RecordsSection({
   onOpen: (record: AdminRecordMetric) => void;
 }) {
   return (
-    <section className="mt-8 rounded-[28px] bg-[#F4F5F4] p-5 sm:p-6">
+    <section className="mt-10 rounded-[28px] border border-black/[0.06] bg-white p-5 sm:p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#7B817D]">
+          <div className="text-[13px] font-semibold text-[#5E665F]">
             Historical records
           </div>
           <h2 className="mt-1 text-[22px] font-bold tracking-[-0.03em]">
@@ -1259,7 +1210,7 @@ function RecordsSection({
             Peaks across the last 36 calendar months. Click a record to see the people behind it.
           </p>
         </div>
-        <span className="rounded-full bg-white px-3 py-1.5 text-[11px] font-bold text-[#69706B]">
+        <span className="rounded-full bg-[#F1F3F1] px-3 py-1.5 text-[11px] font-semibold text-[#69706B]">
           Rolling 3-year view
         </span>
       </div>
@@ -1271,13 +1222,13 @@ function RecordsSection({
             type="button"
             disabled={record.value === 0}
             onClick={() => onOpen(record)}
-            className="group min-h-[150px] rounded-[22px] bg-white p-5 text-left transition duration-200 hover:-translate-y-0.5 hover:bg-[#FCFCFC] disabled:cursor-default disabled:opacity-55"
+            className="group min-h-[150px] rounded-[22px] border border-black/[0.05] bg-[#FAFAF9] p-5 text-left transition duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-[0_8px_24px_rgba(16,24,20,0.07)] disabled:cursor-default disabled:opacity-55"
           >
             <span
               className="block h-1.5 w-10 rounded-full transition-all duration-200 group-hover:w-16"
               style={{ backgroundColor: record.accent }}
             />
-            <span className="mt-4 block text-[11px] font-bold uppercase tracking-[0.12em] text-[#7C827E]">
+            <span className="mt-4 block text-[13px] font-semibold text-[#5E665F]">
               {record.label}
             </span>
             <span className="mt-1 flex items-baseline justify-between gap-3">
@@ -1510,8 +1461,8 @@ function UsageAnalyticsCards({ data }: { data: UsageAnalytics }) {
 
   return (
     <>
-      <div className="rounded-[24px] border border-black/[0.07] bg-gradient-to-b from-white to-[#F7F8F8] p-5">
-        <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
+      <div className="rounded-[22px] border border-black/[0.06] bg-white p-5 shadow-[0_1px_2px_rgba(16,24,20,0.04)]">
+        <div className="text-[13px] font-semibold text-[#5E665F]">
           Hosted hours · 7d
         </div>
         <div className="mt-2 text-[30px] font-bold text-[#2F2F2F]">
@@ -1522,16 +1473,16 @@ function UsageAnalyticsCards({ data }: { data: UsageAnalytics }) {
         </p>
 
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <div className="rounded-xl bg-white px-3 py-2.5">
-            <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#8A94A6]">
+          <div className="rounded-xl bg-[#F5F6F4] px-3 py-2.5">
+            <div className="text-[11px] font-semibold text-[#8A908B]">
               Host presence
             </div>
             <div className="mt-1 text-[17px] font-bold">
               {formatNumber(data.summary.host_presence_hours_7d, 1)} h
             </div>
           </div>
-          <div className="rounded-xl bg-white px-3 py-2.5">
-            <div className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#8A94A6]">
+          <div className="rounded-xl bg-[#F5F6F4] px-3 py-2.5">
+            <div className="text-[11px] font-semibold text-[#8A908B]">
               Member hours
             </div>
             <div className="mt-1 text-[17px] font-bold">
@@ -1545,10 +1496,10 @@ function UsageAnalyticsCards({ data }: { data: UsageAnalytics }) {
         </div>
       </div>
 
-      <div className="rounded-[24px] border border-black/[0.07] bg-gradient-to-b from-white to-[#F7F8F8] p-5">
+      <div className="rounded-[22px] border border-black/[0.06] bg-white p-5 shadow-[0_1px_2px_rgba(16,24,20,0.04)]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
+            <div className="text-[13px] font-semibold text-[#5E665F]">
               Hourly load · 30d
             </div>
             <div className="mt-2 text-[18px] font-bold text-[#2F2F2F]">
@@ -1579,10 +1530,10 @@ function UsageAnalyticsCards({ data }: { data: UsageAnalytics }) {
         </div>
       </div>
 
-      <div className="rounded-[24px] border border-black/[0.07] bg-gradient-to-b from-white to-[#F7F8F8] p-5">
+      <div className="rounded-[22px] border border-black/[0.06] bg-white p-5 shadow-[0_1px_2px_rgba(16,24,20,0.04)]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <div className="text-[12px] font-bold uppercase tracking-[0.12em] text-[#777]">
+            <div className="text-[13px] font-semibold text-[#5E665F]">
               Member geography
             </div>
             <div className="mt-2 text-[18px] font-bold text-[#2F2F2F]">
@@ -2861,93 +2812,79 @@ export default function AdminPage() {
 
   return (
     <ChartDrilldownContext.Provider value={openChartDrilldown}>
-    <main className="min-h-screen bg-white px-6 py-10 font-inter text-[#2F2F2F]">
+    <main className="min-h-screen bg-[#F4F5F3] px-4 py-6 font-inter text-[#2F2F2F] sm:px-6 sm:py-8">
       <div className="mx-auto max-w-7xl">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="text-[12px] font-bold uppercase tracking-[0.14em] text-[#666]">
-                MySession Admin
+        <header className="rounded-[28px] border border-black/[0.06] bg-white px-5 py-5 shadow-[0_1px_2px_rgba(16,24,20,0.04)] sm:px-7">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2.5">
+                <span className="rounded-full bg-[#1F2328] px-2.5 py-1 text-[11px] font-semibold text-white">MySession admin</span>
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${unreadNotifications ? "bg-[#FFF1E6] text-[#C2410C]" : "bg-[#F1F3F1] text-[#6B726D]"}`}
+                  title="Unread admin notifications"
+                >
+                  <Bell className="h-3.5 w-3.5" aria-hidden="true" />
+                  {unreadNotifications}
+                </span>
               </div>
-
-              <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-black/10 bg-white px-3 text-[13px] font-bold">
-                🔔 {unreadNotifications}
-              </span>
+              <h1 className="mt-3 text-[30px] font-bold leading-tight tracking-[-0.04em] text-[#1F2328] sm:text-[34px]">
+                {tab === "dashboard" ? "Dashboard" : tab === "reports" ? "Session reports" : "Moderation"}
+              </h1>
+              <p className="mt-1 max-w-2xl text-[13px] leading-5 text-[#6B726D]">
+                {tab === "dashboard"
+                  ? "Attendance, retention, growth and money at a glance."
+                  : tab === "reports"
+                    ? "Reports people sent about sessions and participants."
+                    : "Bans and account restrictions."}
+              </p>
             </div>
 
-            <h1 className="mt-2 text-[34px] font-bold">
-              {tab === "dashboard" ? "Admin dashboard" : tab === "reports" ? "Session reports" : "Moderation"}
-            </h1>
-
-            <p className="mt-2 max-w-3xl text-[14px] leading-6 text-[#666]">
-              Attendance uses durable visit/day history captured from live presence. Returning members no longer overwrite previous-day analytics.
-            </p>
+            <div className="flex flex-col gap-3 lg:items-end">
+              <div className="inline-flex w-fit rounded-full bg-[#EEF0ED] p-1" role="tablist" aria-label="Admin sections">
+                {([
+                  ["dashboard", "Dashboard"],
+                  ["reports", "Reports"],
+                  ["moderation", "Moderation"],
+                ] as const).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === key}
+                    onClick={() => setTab(key)}
+                    className={`rounded-full px-4 py-2 text-[13px] font-semibold transition ${tab === key ? "bg-[#1F2328] text-white shadow-sm" : "text-[#5E665F] hover:text-[#1F2328]"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <nav className="flex flex-wrap gap-1.5" aria-label="Admin tools">
+                {([
+                  ["/admin/daily-schedule-email", "Scheduled emails", Mail],
+                  ["/admin/plunk-email", "Plunk email", Send],
+                  ["/admin/blog", "Blog editor", PenSquare],
+                ] as const).map(([to, label, Icon]) => (
+                  <Link
+                    key={to}
+                    to={to}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#3F4541] transition hover:border-black/20 hover:bg-[#F5F6F4]"
+                  >
+                    <Icon className="h-3.5 w-3.5 text-[#6B726D]" aria-hidden="true" />
+                    {label}
+                  </Link>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => navigate("/sessions")}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white px-3 py-1.5 text-[12px] font-semibold text-[#3F4541] transition hover:border-black/20 hover:bg-[#F5F6F4]"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5 text-[#6B726D]" aria-hidden="true" />
+                  Back to sessions
+                </button>
+              </nav>
+            </div>
           </div>
-
-          <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => setTab("dashboard")}
-              className={`rounded-full border px-5 py-2.5 text-[14px] font-semibold ${tab === "dashboard"
-                  ? "border-[#2F2F2F] bg-[#2F2F2F] text-white"
-                  : "border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white"
-                }`}
-            >
-              Dashboard
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTab("reports")}
-              className={`rounded-full border px-5 py-2.5 text-[14px] font-semibold ${tab === "reports"
-                  ? "border-[#2F2F2F] bg-[#2F2F2F] text-white"
-                  : "border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white"
-                }`}
-            >
-              Reports
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setTab("moderation")}
-              className={`rounded-full border px-5 py-2.5 text-[14px] font-semibold ${tab === "moderation"
-                  ? "border-[#2F2F2F] bg-[#2F2F2F] text-white"
-                  : "border-[#2F2F2F] text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white"
-                }`}
-            >
-              Moderation
-            </button>
-
-            <Link
-              to="/admin/daily-schedule-email"
-              className="rounded-full border border-[#5286F6] px-5 py-2.5 text-[14px] font-semibold text-[#2F2F2F] hover:bg-[#5286F6] hover:text-white"
-            >
-              Scheduled emails
-            </Link>
-
-            <Link
-              to="/admin/plunk-email"
-              className="rounded-full border border-[#57C964] px-5 py-2.5 text-[14px] font-semibold text-[#2F2F2F] hover:bg-[#57C964] hover:text-white"
-            >
-              Plunk email
-            </Link>
-
-            <Link
-              to="/admin/blog"
-              className="rounded-full border border-[#2F2F2F] px-5 py-2.5 text-[14px] font-semibold text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white"
-            >
-              Blog editor
-            </Link>
-
-            <button
-              type="button"
-              onClick={() => navigate("/sessions")}
-              className="rounded-full border border-[#2F2F2F] px-5 py-2.5 text-[14px] font-semibold hover:bg-[#2F2F2F] hover:text-white"
-            >
-              Back to sessions
-            </button>
-          </div>
-        </div>
+        </header>
 
         {error ? (
           <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-[13px] text-red-700">
@@ -2957,44 +2894,55 @@ export default function AdminPage() {
 
         {tab === "dashboard" && (
           <>
-            <div className="mt-8 flex justify-end">
+            <div className="mt-6 flex items-center justify-between gap-3">
+              <span className="text-[12px] text-[#7C827E]">
+                {dashboardLoading ? "Loading the latest numbers…" : "Updated when you open or refresh the dashboard."}
+              </span>
               <button
                 type="button"
                 onClick={() => void loadDashboard()}
-                className="rounded-full border border-black/10 px-4 py-2 text-[13px] font-semibold hover:bg-black/[0.04]"
+                className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 text-[12px] font-semibold text-[#3F4541] hover:bg-[#F5F6F4]"
               >
-                {dashboardLoading ? "Refreshing..." : "Refresh dashboard"}
+                <RefreshCw className={`h-3.5 w-3.5 ${dashboardLoading ? "animate-spin" : ""}`} aria-hidden="true" />
+                {dashboardLoading ? "Refreshing…" : "Refresh"}
               </button>
             </div>
 
-            <section className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <DashboardGroup title="Attendance" description="Durable visit and day history captured from live presence.">
+              <MetricCard label="Unique attendees today" value={stats.uniqueAttendeesToday} hint="Distinct people from durable attendance history today." data={chartData} dataKey="uniqueAttendees" color="#BE123C" />
+              <MetricCard label="Unique attendees 7d" value={stats.uniqueAttendeesWeek} hint="Distinct people from durable attendance history in 7 days." data={chartData} dataKey="uniqueAttendees" color="#BE123C" />
+              <MetricCard label="Unique attendance 30d" value={stats.uniqueAttendeesMonth} hint="Distinct people with attendance during the last 30 days." data={chartData} dataKey="uniqueAttendees" color="#16803B" />
+              <MetricCard label="Attendance records today" value={stats.attendanceRecordsToday} hint="Durable attendance visits recorded today." data={chartData} dataKey="attendanceRecords" color="#DC2626" />
+              <MetricCard label="Attended sessions today" value={stats.attendedSessionsToday} hint="Distinct sessions from durable attendance history today." data={chartData} dataKey="attendedSessions" color="#4338CA" />
+              <MetricCard label="Booked users 7d" value={stats.uniqueBookedUsersWeek} hint="Distinct users from session_bookings in 7 days." data={chartData} dataKey="bookedUsers" color="#0891B2" />
+              <MetricCard label="Booked → attended 7d" value={formatPercent(stats.bookedToAttendedConversionWeek)} hint="Unique attendees divided by booked users." data={chartData} dataKey="avgAttendeesPerSession" color="#C2410C" percent />
+              <MetricCard label="Avg attendees/session 7d" value={formatNumber(stats.avgAttendeesPerHostedSessionWeek, 2)} hint="Unique attendees divided by attended sessions." data={chartData} dataKey="avgAttendeesPerSession" color="#C2410C" decimals={2} />
+            </DashboardGroup>
+
+            <RetentionStreaksSection />
+
+            <DashboardGroup title="Growth and hosting" description="New members, sessions and the people who host them.">
               <MetricCard label="Registrations today" value={stats.registrationsToday} hint="New profiles created today." data={chartData} dataKey="registrations" color="#2563EB" />
               <MetricCard label="Registrations 7d" value={stats.registrationsWeek} hint="New profiles in the last 7 days." data={chartData} dataKey="registrations" color="#2563EB" />
               <MetricCard label="Registrations 30d" value={stats.registrationsMonth} hint="New profiles in the last 30 days." data={chartData} dataKey="registrations" color="#2563EB" />
-
-              <MetricCard label="Sessions created today" value={stats.sessionsCreatedToday} hint="Rows created in sessions table today." data={chartData} dataKey="sessionsCreated" color="#7C3AED" />
-              <MetricCard label="Sessions hosted today" value={stats.sessionsHostedToday} hint="Sessions whose start_time already happened today." data={chartData} dataKey="sessionsHosted" color="#059669" />
               <MetricCard label="Active hosts 7d" value={stats.activeHostsWeek} hint="Unique hosts who created sessions in 7 days." data={chartData} dataKey="activeHosts" color="#EA580C" />
+              <MetricCard label="Sessions created today" value={stats.sessionsCreatedToday} hint="Rows created in sessions table today." data={chartData} dataKey="sessionsCreated" color="#7C3AED" />
+              <MetricCard label="Sessions created 30d" value={stats.sessionsCreatedMonth} hint="Rows created in sessions table in 30 days." data={chartData} dataKey="sessionsCreated" color="#7C3AED" />
+              <MetricCard label="Sessions hosted today" value={stats.sessionsHostedToday} hint="Sessions whose start_time already happened today." data={chartData} dataKey="sessionsHosted" color="#059669" />
+              <MetricCard label="Sessions hosted 30d" value={stats.sessionsHostedMonth} hint="Sessions started in the last 30 days." data={chartData} dataKey="sessionsHosted" color="#059669" />
+            </DashboardGroup>
 
-              <MetricCard label="Unique attendees today" value={stats.uniqueAttendeesToday} hint="Distinct people from durable attendance history today." data={chartData} dataKey="uniqueAttendees" color="#BE123C" />
-              <MetricCard label="Attendance records today" value={stats.attendanceRecordsToday} hint="Durable attendance visits recorded today." data={chartData} dataKey="attendanceRecords" color="#DC2626" />
-              <MetricCard label="Attended sessions today" value={stats.attendedSessionsToday} hint="Distinct sessions from durable attendance history today." data={chartData} dataKey="attendedSessions" color="#4338CA" />
+            <DashboardGroup title="Usage and reach" description="When people show up, how long they stay, and where they are.">
+              <UsageAnalyticsCards data={usageAnalytics} />
+            </DashboardGroup>
 
-              <MetricCard label="Unique attendees 7d" value={stats.uniqueAttendeesWeek} hint="Distinct people from durable attendance history in 7 days." data={chartData} dataKey="uniqueAttendees" color="#BE123C" />
-              <MetricCard label="Unique attendance 30d" value={stats.uniqueAttendeesMonth} hint="Distinct people with attendance during the last 30 days." data={chartData} dataKey="uniqueAttendees" color="#16803B" />
-              <MetricCard label="Booked users 7d" value={stats.uniqueBookedUsersWeek} hint="Distinct users from session_bookings in 7 days." data={chartData} dataKey="bookedUsers" color="#0891B2" />
-              <MetricCard label="Booked → attended 7d" value={formatPercent(stats.bookedToAttendedConversionWeek)} hint="Unique attendees divided by booked users." data={chartData} dataKey="avgAttendeesPerSession" color="#C2410C" percent />
-
-              <MetricCard label="Avg attendees/session 7d" value={formatNumber(stats.avgAttendeesPerHostedSessionWeek, 2)} hint="Unique attendees divided by attended sessions." data={chartData} dataKey="avgAttendeesPerSession" color="#C2410C" decimals={2} />
+            <DashboardGroup title="Host money" description="Support balance and the manual payout queue.">
               <MetricCard label="Available host balance" value={formatMoney(stats.availableHostBalanceUsd)} hint="Available host support balance." data={chartData} dataKey="supportUsd" color="#16A34A" money />
               <MetricCard label="Pending payouts" value={formatMoney(stats.pendingPayoutUsd)} hint="Requested or processing payouts." data={chartData} dataKey="pendingPayoutUsd" color="#CA8A04" money />
-
               <MetricCard label="Open payout requests" value={stats.openPayoutRequests} hint="Requested or processing payout requests." data={chartData} dataKey="openPayoutRequests" color="#0F766E" />
-              <MetricCard label="Sessions created 30d" value={stats.sessionsCreatedMonth} hint="Rows created in sessions table in 30 days." data={chartData} dataKey="sessionsCreated" color="#7C3AED" />
-              <MetricCard label="Sessions hosted 30d" value={stats.sessionsHostedMonth} hint="Sessions started in the last 30 days." data={chartData} dataKey="sessionsHosted" color="#059669" />
-              <UsageAnalyticsCards data={usageAnalytics} />
-            </section>
-                        <RecordsSection records={recordMetrics} onOpen={(record) => void openRecordMetric(record)} />
+            </DashboardGroup>
+
+            <RecordsSection records={recordMetrics} onOpen={(record) => void openRecordMetric(record)} />
             <MonthlyAttendanceChart data={monthlyAttendance} onMonthClick={(point) => void openMonthlyAttendance(point)} />
             <ActivityExplorer activity={activity} />
 
