@@ -4559,26 +4559,6 @@ export function TasksPanel({
                 </span>
               </div>
 
-              <IconButton
-                theme={panelTheme}
-                className={
-                  "border border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
-                }
-                title="Sync with Tasks"
-                onClick={(e) => {
-                  e.preventDefault();
-                  openImportModal();
-                }}
-              >
-                <PanelSmartIcon
-                  name="focus-plan"
-                  theme={panelTheme}
-                  className="w-4 h-4"
-                  alt="Tasks"
-                  tint="#5286F6"
-                />
-              </IconButton>
-
               {pictureInPictureSupported && onOpenPictureInPicture ? (
                 <IconButton
                   theme={panelTheme}

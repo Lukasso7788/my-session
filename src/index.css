@@ -292,13 +292,13 @@ body {
   }
 }
 
-/* Task panel header: with all four buttons (Sync, Picture-in-Picture,
-   Completed tasks, Pin) a narrow panel has no room for the subtitle. */
+/* Task panel header: a very narrow panel has no room for the subtitle next
+   to the timer and the Picture-in-Picture, Completed tasks and Pin buttons. */
 .ms-tasks-header {
   container-type: inline-size;
 }
 
-@container (max-width: 340px) {
+@container (max-width: 300px) {
   .ms-tasks-header-subtitle {
     display: none;
   }
