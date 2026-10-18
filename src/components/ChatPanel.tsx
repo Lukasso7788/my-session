@@ -1767,14 +1767,19 @@ export function ChatPanel({
     const replyingText = isLight ? "text-black/55" : "text-[#C6CDD5]";
     const cancelBtnCls = isLight ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60" : "bg-[#353B42] hover:bg-[#444B53] text-[#D9DEE4]";
     const hintText = isLight ? "text-black/40" : "text-[#B5BCC6]";
-    const sendBtnActive = "bg-[#5286F6] hover:bg-[#5286F6] text-black";
-    const sendBtnDisabled = isLight ? "bg-[#DCDCDC] text-black/35" : "bg-[#353B42] text-[#AEB6BF]";
+    const sendBtnActive = "bg-[#5286F6] hover:bg-[#6B98FA] text-black";
+    const sendBtnDisabled = isLight ? "text-black/30" : "text-[#AEB6BF]/50";
     const composerInputCls =
         "flex-1 min-w-0 min-h-[36px] max-h-[140px] rounded-[10px] resize-none px-3 py-[7px] text-[13px] leading-5 outline-none focus:ring-1 focus:ring-[#5286F6] focus:border-[#5286F6] " +
         (isLight ? "bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35" : "bg-[#292D32] border border-[#4C5259] text-[#F4F5F6] placeholder:text-[#ABB3BE]");
+    // One bar for mic, emoji and send: same surface as the message field.
+    const composerBarCls =
+        "flex h-9 shrink-0 items-stretch overflow-hidden rounded-[10px] border " +
+        (isLight ? "bg-[#F3F1F1] border-[#D8D0D0]" : "bg-[#292D32] border-[#4C5259]");
+    const composerBarDividerCls = "my-2 w-px shrink-0 " + (isLight ? "bg-[#D8D0D0]" : "bg-[#4C5259]");
     const composerEmojiBtnCls =
-        "w-9 h-9 shrink-0 rounded-[10px] flex items-center justify-center transition border " +
-        (isLight ? "bg-[#F3F1F1] border-[#D8D0D0] text-black/60 hover:bg-[#E8E8E8] hover:text-black/80" : "bg-[#292929] border-[#484848] text-[#D9DEE4] hover:bg-[#353B42] hover:text-white");
+        "w-8 self-stretch shrink-0 flex items-center justify-center transition disabled:opacity-40 " +
+        (isLight ? "text-black/60 hover:bg-black/[0.05] hover:text-black/80" : "text-[#D9DEE4] hover:bg-white/[0.06] hover:text-white");
     const portalBoxCls =
         "rounded-2xl border shadow-2xl overflow-hidden " +
         (isLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#484848] bg-[#292929] text-[#F4F5F6]");
@@ -3591,7 +3596,7 @@ export function ChatPanel({
                 </div>
             )}
 
-            <div className={"p-4 border-t " + headerBorder}>
+            <div className={"px-2.5 pt-2.5 pb-2 border-t " + headerBorder}>
                 {generalChatLocked && (
                     <div className={"mb-3 rounded-xl px-3 py-2 text-[12px] leading-5 " + (isLight ? "bg-[#F0F0F0] text-black/60" : "bg-white/[0.06] text-[#D0D6DD]")}>
                         Public chat is disabled by the host. Use DMs to message the host privately.
@@ -3672,7 +3677,7 @@ export function ChatPanel({
                     </div>
                 ) : null}
 
-                <div className="flex items-end gap-1.5">
+                <div className="flex items-end gap-1">
                     <textarea
                         ref={composerRef}
                         rows={1}
@@ -3702,73 +3707,79 @@ export function ChatPanel({
                         disabled={generalChatLocked || (activeMode === "direct" && isHost && !activeDirectPeerId)}
                     />
 
-                    {dictation.supported ? (
-                        <button
-                            type="button"
-                            title={dictation.listening ? "Stop dictation" : "Dictate a message (your room mic is muted while you speak)"}
-                            aria-label={dictation.listening ? "Stop dictation" : "Dictate a message"}
-                            aria-pressed={dictation.listening}
-                            className={
-                                dictation.listening
-                                    ? "relative w-9 h-9 shrink-0 rounded-[10px] flex items-center justify-center transition border border-[#F65252] bg-[#F65252]/15 text-[#F65252]"
-                                    : composerEmojiBtnCls
-                            }
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => {
-                                dictation.clearError();
-                                dictation.toggle();
-                                composerRef.current?.focus();
-                            }}
-                            disabled={generalChatLocked || (activeMode === "direct" && isHost && !activeDirectPeerId)}
-                        >
-                            {dictation.listening ? (
-                                <>
-                                    <span className="absolute inset-0 rounded-[10px] border-2 border-[#F65252]/60 motion-safe:animate-ping" aria-hidden="true" />
-                                    <Square size={12} fill="currentColor" />
-                                </>
-                            ) : (
-                                <Mic size={16} />
-                            )}
-                        </button>
-                    ) : null}
+                    {/* Mic, emoji and send share one bar split by thin dividers, so the
+                        message field keeps as much width as possible. */}
+                    <div className={composerBarCls}>
+                        {dictation.supported ? (
+                            <>
+                                <button
+                                    type="button"
+                                    title={dictation.listening ? "Stop dictation" : "Dictate a message (your room mic is muted while you speak)"}
+                                    aria-label={dictation.listening ? "Stop dictation" : "Dictate a message"}
+                                    aria-pressed={dictation.listening}
+                                    className={
+                                        dictation.listening
+                                            ? "w-8 self-stretch shrink-0 flex items-center justify-center transition bg-[#F65252]/15 text-[#F65252]"
+                                            : composerEmojiBtnCls
+                                    }
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => {
+                                        dictation.clearError();
+                                        dictation.toggle();
+                                        composerRef.current?.focus();
+                                    }}
+                                    disabled={generalChatLocked || (activeMode === "direct" && isHost && !activeDirectPeerId)}
+                                >
+                                    {dictation.listening ? (
+                                        <Square size={12} fill="currentColor" className="motion-safe:animate-pulse" />
+                                    ) : (
+                                        <Mic size={16} />
+                                    )}
+                                </button>
+                                <span className={composerBarDividerCls} aria-hidden="true" />
+                            </>
+                        ) : null}
 
-                    <div className="relative" ref={composerEmojiWrapRef}>
+                        <div className="relative flex self-stretch" ref={composerEmojiWrapRef}>
+                            <button
+                                ref={emojiButtonRef}
+                                type="button"
+                                title="Add emoji"
+                                className={composerEmojiBtnCls}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => setComposerEmojiOpen((v) => !v)}
+                                disabled={generalChatLocked}
+                            >
+                                <Smile size={16} />
+                            </button>
+                        </div>
+
+                        <span className={composerBarDividerCls} aria-hidden="true" />
+
                         <button
-                            ref={emojiButtonRef}
+                            onClick={() => void send()}
+                            className={
+                                "w-9 self-stretch shrink-0 flex items-center justify-center transition " +
+                                (text.trim() &&
+                                    !generalChatLocked &&
+                                    !(activeMode === "direct" && isHost && !activeDirectPeerId)
+                                    ? sendBtnActive
+                                    : sendBtnDisabled + " cursor-not-allowed")
+                            }
                             type="button"
-                            title="Add emoji"
-                            className={composerEmojiBtnCls}
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => setComposerEmojiOpen((v) => !v)}
-                            disabled={generalChatLocked}
+                            disabled={
+                                !text.trim() ||
+                                generalChatLocked ||
+                                (activeMode === "direct" && isHost && !activeDirectPeerId)
+                            }
+                            title="Send"
                         >
-                            <Smile size={16} />
+                            <SendHorizontal size={16} />
                         </button>
                     </div>
-
-                    <button
-                        onClick={() => void send()}
-                        className={
-                            "w-9 h-9 shrink-0 rounded-[10px] flex items-center justify-center transition border " +
-                            (text.trim() &&
-                                !generalChatLocked &&
-                                !(activeMode === "direct" && isHost && !activeDirectPeerId)
-                                ? sendBtnActive + " border-[#5286F6]/50"
-                                : sendBtnDisabled + " border-transparent cursor-not-allowed")
-                        }
-                        type="button"
-                        disabled={
-                            !text.trim() ||
-                            generalChatLocked ||
-                            (activeMode === "direct" && isHost && !activeDirectPeerId)
-                        }
-                        title="Send"
-                    >
-                        <SendHorizontal size={16} />
-                    </button>
                 </div>
 
-                <div className={"mt-2 text-[11px] " + (dictation.error ? "text-[#F65252]" : hintText)} aria-live="polite">
+                <div className={"mt-1.5 px-0.5 text-[11px] " + (dictation.error ? "text-[#F65252]" : hintText)} aria-live="polite">
                     {dictation.error
                         ? dictation.error
                         : dictation.listening
