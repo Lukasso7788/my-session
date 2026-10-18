@@ -4644,8 +4644,11 @@ export function TasksPanel({
                   {completedTasksOpen ? "Completed tasks" : oneOnOneMode ? "Your Tasks" : "My Tasks"}
                 </div>
                 {completedTasksOpen ? (
-                  <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full border border-[#81DB86] bg-[#81DB86]/15 px-1.5 text-[11px] font-bold leading-none text-[#2F7F3D]">
-                    {completedPanelTaskCount}
+                  // Same colors as the plus button. A true 18px circle for one
+                  // digit (a pill for more); Inter digits sit 0.5px high in a
+                  // flex box, so the number is nudged to the optical center.
+                  <span className="inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded-full border border-[#2F2F2F] bg-white px-[3px] text-[11px] font-bold leading-none text-[#2F2F2F]">
+                    <span className="relative top-[0.5px]">{completedPanelTaskCount}</span>
                   </span>
                 ) : (
                 <button
