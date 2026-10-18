@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import { EmojiPickerPopover } from "./EmojiPickerPopover";
 import { supabase } from "../lib/supabase";
 import { useLatestCallback } from "../hooks/useLatestCallback";
+import { useSpeechDictation } from "../hooks/useSpeechDictation";
 import { boundChatMessages, reconcileChatSnapshot, CHAT_PAGE_SIZE, CHAT_WINDOW_LIMIT } from "../lib/chatMessageWindow";
 import { createChatProfileLoader } from "../lib/chatProfileLoader";
 import { createPanelSnapshotCache } from "../lib/panelSnapshotCache";
@@ -18,7 +19,9 @@ import {
     Check,
     CheckCheck,
     CornerUpLeft,
+    Mic,
     Pencil,
+    Square,
     SendHorizontal,
     Smile,
     Trash2,
@@ -1368,6 +1371,13 @@ export function ChatPanel({
 
     const [text, setText] = useState("");
     const [voiceMessagePreview, setVoiceMessagePreview] = useState(false);
+    const textForDictationRef = useRef(text);
+    textForDictationRef.current = text;
+    const dictation = useSpeechDictation({
+        win: chatWindow,
+        getText: () => textForDictationRef.current,
+        setText,
+    });
 
     const [loading, setLoading] = useState(true);
     const [hasOlderMessages, setHasOlderMessages] = useState(false);
@@ -2741,6 +2751,8 @@ export function ChatPanel({
         if (generalChatLocked) return;
         const raw = text.trim();
         if (!raw || !userId || !sessionId) return;
+        // Sending ends dictation, so late words do not land in the next message.
+        dictation.stop();
 
         const outgoingScope: ChatMode =
             activeMode === "direct" ? "direct" : "general";
@@ -3689,6 +3701,36 @@ export function ChatPanel({
                         disabled={generalChatLocked || (activeMode === "direct" && isHost && !activeDirectPeerId)}
                     />
 
+                    {dictation.supported ? (
+                        <button
+                            type="button"
+                            title={dictation.listening ? "Stop dictation" : "Dictate a message (your room mic is muted while you speak)"}
+                            aria-label={dictation.listening ? "Stop dictation" : "Dictate a message"}
+                            aria-pressed={dictation.listening}
+                            className={
+                                dictation.listening
+                                    ? "relative w-11 h-11 rounded-xl flex items-center justify-center transition border border-[#F65252] bg-[#F65252]/15 text-[#F65252]"
+                                    : composerEmojiBtnCls
+                            }
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                                dictation.clearError();
+                                dictation.toggle();
+                                composerRef.current?.focus();
+                            }}
+                            disabled={generalChatLocked || (activeMode === "direct" && isHost && !activeDirectPeerId)}
+                        >
+                            {dictation.listening ? (
+                                <>
+                                    <span className="absolute inset-0 rounded-xl border-2 border-[#F65252]/60 motion-safe:animate-ping" aria-hidden="true" />
+                                    <Square size={14} fill="currentColor" />
+                                </>
+                            ) : (
+                                <Mic size={18} />
+                            )}
+                        </button>
+                    ) : null}
+
                     <div className="relative" ref={composerEmojiWrapRef}>
                         <button
                             ref={emojiButtonRef}
@@ -3725,8 +3767,12 @@ export function ChatPanel({
                     </button>
                 </div>
 
-                <div className={"mt-2 text-[11px] " + hintText}>
-                    Enter — send • Shift+Enter — new line
+                <div className={"mt-2 text-[11px] " + (dictation.error ? "text-[#F65252]" : hintText)} aria-live="polite">
+                    {dictation.error
+                        ? dictation.error
+                        : dictation.listening
+                            ? "Listening… your room mic is muted. Tap ■ to stop, Enter to send."
+                            : "Enter — send • Shift+Enter — new line"}
                 </div>
             </div>
 

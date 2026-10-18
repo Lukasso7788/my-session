@@ -15445,6 +15445,32 @@ export function RoomPageLiveKit({
     await toggleMic();
   };
 
+  // Chat dictation (useSpeechDictation): the room mic is muted while someone
+  // dictates a chat message, so the room does not hear it, and turned back on
+  // afterwards only if dictation was what muted it.
+  const toggleMicForDictationRef = useRef(toggleMic);
+  toggleMicForDictationRef.current = toggleMic;
+  const micOnForDictationRef = useRef(micOn);
+  micOnForDictationRef.current = micOn;
+  const dictationMutedMicRef = useRef(false);
+  useEffect(() => {
+    const onDictation = (event: Event) => {
+      const active = Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active);
+      if (active) {
+        if (micOnForDictationRef.current && !dictationMutedMicRef.current) {
+          dictationMutedMicRef.current = true;
+          void toggleMicForDictationRef.current();
+        }
+        return;
+      }
+      if (!dictationMutedMicRef.current) return;
+      dictationMutedMicRef.current = false;
+      if (!micOnForDictationRef.current) void toggleMicForDictationRef.current();
+    };
+    window.addEventListener("mysession:chat-dictation", onDictation);
+    return () => window.removeEventListener("mysession:chat-dictation", onDictation);
+  }, []);
+
   // Toggle camera with a deterministic default-device fallback. Safari can
   // invalidate a previously enumerated deviceId after permission changes, and
   // useTrackToggle otherwise keeps retrying that stale id on every click.
