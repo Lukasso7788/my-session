@@ -24,6 +24,7 @@ import {
   MoreVertical,
   Pin,
   PinOff,
+  ArrowLeft,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useNavigate, useParams } from "react-router-dom";
@@ -4670,8 +4671,11 @@ export function TasksPanel({
                 <button
                   type="button"
                   onClick={() => setCompletedTasksOpen(false)}
-                  className="mt-0.5 text-[10px] font-semibold text-black/45 underline-offset-2 transition hover:text-black/70 hover:underline"
+                  className="group/back mt-1 inline-flex items-center gap-1.5 rounded-full border border-[#2F2F2F]/20 bg-white py-[2px] pl-[2px] pr-2.5 text-[11px] font-semibold leading-none text-[#2F2F2F]/80 transition hover:border-[#2F2F2F]/45 hover:text-[#2F2F2F] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/40"
                 >
+                  <span className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-[#2F2F2F] text-white transition-transform duration-200 group-hover/back:-translate-x-0.5" aria-hidden="true">
+                    <ArrowLeft size={12} strokeWidth={2.75} />
+                  </span>
                   Back to my tasks
                 </button>
               ) : (
