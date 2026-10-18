@@ -10,6 +10,9 @@ const vite = await createServer({ appType: 'custom', logLevel: 'error', optimize
 const entries = [
   ['/contact', 'ContactPage', 'Contact Information | MySession', 'Contact MySession support and find seller details.'],
   ['/rules', 'RulesPage', 'Community Rules | MySession', 'Read the community rules for MySession focus rooms.'],
+  ['/terms', 'Terms', 'Terms and Conditions | MySession', 'Read the terms and conditions for using MySession.'],
+  ['/privacy', 'PrivacyPage', 'Privacy Policy | MySession', 'Read how MySession collects, uses, and protects information.'],
+  ['/refund-policy', 'RefundPolicyPage', 'Refund Policy | MySession', 'Read the MySession refund policy for purchases and refund requests.'],
   ['/group-focus-sessions', 'seo/GroupFocusSessionsPage'],
   ['/silent-coworking', 'seo/SilentCoworkingPage'],
   ['/adhd-productivity', 'seo/AdhdProductivityPage'],

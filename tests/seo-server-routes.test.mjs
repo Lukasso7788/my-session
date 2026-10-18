@@ -4,6 +4,18 @@ import { readFile } from 'node:fs/promises';
 const { routes } = JSON.parse(await readFile(new URL('../vercel.json', import.meta.url)));
 const redirects = routes.filter(r => r.status === 308);
 const ruleFor = p => routes.find(r => r.src && new RegExp(`^(?:${r.src})$`).test(p));
+
+test('every sitemap landing page has real HTML and exactly one H1 without JavaScript', async () => {
+  for (const map of ['pages', 'guides', 'comparisons']) {
+    const xml = await readFile(new URL(`../dist/sitemap-${map}.xml`, import.meta.url), 'utf8');
+    for (const [, url] of xml.matchAll(/<loc>(.*?)<\/loc>/g)) {
+      const pathname = new URL(url).pathname.replace(/\/$/, '');
+      const html = await readFile(new URL(`../dist${pathname}/index.html`, import.meta.url), 'utf8');
+      assert.equal((html.match(/<h1\b/g) || []).length, 1, url);
+      assert.ok(html.includes(`href="${url}"`), url);
+    }
+  }
+});
 test('legacy paths use permanent redirects before SPA fallback, preserving real destinations', async () => {
   for (const r of redirects) {
     assert.ok(routes.indexOf(r) < routes.findIndex(r => r.handle === 'filesystem'));
