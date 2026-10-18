@@ -2757,7 +2757,7 @@ export function ChatPanel({
         const raw = text.trim();
         if (!raw || !userId || !sessionId) return;
         // Sending ends dictation, so late words do not land in the next message.
-        dictation.stop();
+        dictation.stop({ discard: true });
 
         const outgoingScope: ChatMode =
             activeMode === "direct" ? "direct" : "general";
@@ -3682,7 +3682,12 @@ export function ChatPanel({
                         ref={composerRef}
                         rows={1}
                         value={text}
-                        onChange={(e) => setText(e.target.value)}
+                        onChange={(e) => {
+                            // Typing or deleting while dictating: keep the edit and
+                            // only add speech that comes after it.
+                            dictation.manualEdit(e.target.value);
+                            setText(e.target.value);
+                        }}
                         placeholder={
                             generalChatLocked
                                 ? "Public chat is disabled for this session"

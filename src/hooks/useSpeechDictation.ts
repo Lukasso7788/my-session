@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  composeDictation,
+  createDictationBuffer,
   dictationErrorMessage,
   getSpeechRecognitionConstructor,
-  readTranscripts,
   type SpeechRecognitionLike,
 } from "../lib/speechDictation";
 
@@ -22,6 +21,7 @@ export function useSpeechDictation(params: {
   const [listening, setListening] = useState(false);
   const [error, setError] = useState("");
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const bufferRef = useRef<ReturnType<typeof createDictationBuffer> | null>(null);
   const latest = useRef(params);
   latest.current = params;
 
@@ -34,9 +34,14 @@ export function useSpeechDictation(params: {
     }
   }, []);
 
-  const stop = useCallback(() => {
+  /**
+   * discard: the text was just sent, so words the browser finalises after
+   * stopping must not refill the emptied field. A plain stop keeps them.
+   */
+  const stop = useCallback((options: { discard?: boolean } = {}) => {
     const recognition = recognitionRef.current;
     if (!recognition) return;
+    if (options.discard) recognition.onresult = null;
     try {
       recognition.stop();
     } catch {
@@ -55,10 +60,10 @@ export function useSpeechDictation(params: {
     const nav = latest.current.win.navigator || navigator;
     recognition.lang = (nav.languages && nav.languages[0]) || nav.language || "en-US";
 
-    const base = latest.current.getText();
+    const buffer = createDictationBuffer(latest.current.getText());
+    bufferRef.current = buffer;
     recognition.onresult = (event) => {
-      const { finals, interim } = readTranscripts(event);
-      latest.current.setText(composeDictation(base, finals.join(" "), interim));
+      latest.current.setText(buffer.onResult(event));
     };
     recognition.onerror = (event) => {
       const message = dictationErrorMessage(event?.error);
@@ -66,6 +71,7 @@ export function useSpeechDictation(params: {
     };
     recognition.onend = () => {
       recognitionRef.current = null;
+      bufferRef.current = null;
       setListening(false);
       announce(false);
     };
@@ -103,5 +109,10 @@ export function useSpeechDictation(params: {
     [announce],
   );
 
-  return { supported, listening, error, start, stop, toggle, clearError: () => setError("") };
+  /** Call from the field's onChange: the person typed or deleted while dictating. */
+  const manualEdit = useCallback((nextText: string) => {
+    bufferRef.current?.manualEdit(nextText);
+  }, []);
+
+  return { supported, listening, error, start, stop, toggle, manualEdit, clearError: () => setError("") };
 }
