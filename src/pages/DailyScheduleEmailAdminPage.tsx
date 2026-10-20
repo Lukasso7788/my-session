@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import FoundingThanksEmailPanel from "../components/FoundingThanksEmailPanel";
+import YesterdayInvitePanel from "../components/YesterdayInvitePanel";
 
 type PreviewRecipient = {
   userId: string;
@@ -678,6 +679,8 @@ export default function DailyScheduleEmailAdminPage() {
               <iframe title="Plunk upcoming sessions email preview" sandbox="" srcDoc={plunkPreview.html} className="h-[600px] w-full rounded-xl border bg-white" />
             </>}
           </section>
+
+          <YesterdayInvitePanel />
 
           <FoundingThanksEmailPanel />
 

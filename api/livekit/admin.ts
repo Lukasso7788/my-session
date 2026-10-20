@@ -4,6 +4,7 @@ import { RoomServiceClient } from "livekit-server-sdk";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { missingPlunkEnvironment, sendPlunkEmail } from "../_lib/plunk.js";
 import { buildFoundingThanksEmail, FOUNDING_THANKS_CAMPAIGN } from "../_lib/foundingThanksEmail.js";
+import { classifyYesterdayAudience, previousDateKey, utcDayBounds, yesterdayIntro, type YesterdayIntro, type YesterdayKind } from "../_lib/yesterdayInvite.js";
 import { canReceiveDailyDigest, isLocalMorning, isPlausibleEmail } from "../_lib/dailyScheduleAudience.js";
 import { dateKeyInTimeZone, hostSlotOverlapsLocalDate, normalizeEmailBaseUrl, renderInfiniteHostingSlots, sampleInfiniteHostingSlot, type DailyHostingSlot } from "../_lib/dailyScheduleHosting.js";
 import {
@@ -33,7 +34,9 @@ type EmailAdminAction =
   | "daily_schedule_saved_audience_get"
   | "daily_schedule_saved_audience_set"
   | "daily_schedule_send_saved_audience"
-  | "daily_schedule_send_all_active";
+  | "daily_schedule_send_all_active"
+  | "daily_schedule_yesterday_preview"
+  | "daily_schedule_send_yesterday";
 
 type SenderAdminAction =
   | "sender_outbox_list"
@@ -390,6 +393,8 @@ function normalizeEmailAction(raw: unknown): EmailAdminAction | "" {
   if (a === "daily_schedule_saved_audience_set") return "daily_schedule_saved_audience_set";
   if (a === "daily_schedule_send_saved_audience") return "daily_schedule_send_saved_audience";
   if (a === "daily_schedule_send_all_active") return "daily_schedule_send_all_active";
+  if (a === "daily_schedule_yesterday_preview") return "daily_schedule_yesterday_preview";
+  if (a === "daily_schedule_send_yesterday") return "daily_schedule_send_yesterday";
 
   return "";
 }
@@ -1328,6 +1333,8 @@ function buildDailyScheduleEmail(params: {
   recipientName: string;
   recipientTimeZone: string | null;
   unsubscribeToken: string;
+  /** Replaces the default subject, heading and greeting (yesterday invite). */
+  intro?: YesterdayIntro | null;
 }) {
   const appUrl = getAppUrl();
   const unsubscribeUrl = `${appUrl}/email/unsubscribe?token=${encodeURIComponent(params.unsubscribeToken)}`;
@@ -1340,7 +1347,10 @@ function buildDailyScheduleEmail(params: {
     ? `Times are shown in your timezone (${params.recipientTimeZone}), followed by key regions.`
     : "Times are shown in UTC, followed by US, European, Indian, and Australian times.";
 
-  const subject = `Today on MySession — ${dateLabel}`;
+  const subject = params.intro?.subject || `Today on MySession — ${dateLabel}`;
+  const greetingText = params.intro
+    ? params.intro.lead
+    : `Hey ${params.recipientName || "there"},\n\nHere is today's MySession schedule:`;
 
   const scheduledSessionsText = groups
     .map((group) => {
@@ -1355,9 +1365,7 @@ function buildDailyScheduleEmail(params: {
   const sessionListText = [scheduledSessionsText, infiniteHostsText].filter(Boolean).join("\n\n")
     || "No scheduled sessions today yet. Check the sessions page for updates.";
 
-  const text = `Hey ${params.recipientName || "there"},
-
-Here is today's MySession schedule:
+  const text = `${greetingText}
 
 ${timeZoneIntro}
 
@@ -1420,8 +1428,10 @@ ${unsubscribeUrl}
   const html = `
     <div style="font-family:Inter,Arial,sans-serif;line-height:1.55;color:#111827;max-width:640px;margin:0 auto;padding:24px;">
       <div style="font-size:13px;text-transform:uppercase;letter-spacing:0.12em;color:#6b7280;font-weight:700;">MySession</div>
-      <h1 style="font-size:28px;line-height:1.15;margin:10px 0 8px;">Today’s focus sessions</h1>
-      <p style="margin:0 0 22px;color:#555;">Hey ${escapeHtml(params.recipientName || "there")}, here’s today’s schedule for ${escapeHtml(dateLabel)}.</p>
+      <h1 style="font-size:28px;line-height:1.15;margin:10px 0 8px;">${escapeHtml(params.intro?.heading || "Today’s focus sessions")}</h1>
+      <p style="margin:0 0 22px;color:#555;">${params.intro
+        ? `${escapeHtml(params.intro.lead)} <span style="color:#6b7280;">Today: ${escapeHtml(dateLabel)}.</span>`
+        : `Hey ${escapeHtml(params.recipientName || "there")}, here’s today’s schedule for ${escapeHtml(dateLabel)}.`}</p>
       <p style="margin:-12px 0 22px;color:#6b7280;font-size:13px;">${escapeHtml(timeZoneIntro)}</p>
 
       ${htmlGroups}
@@ -2166,8 +2176,11 @@ async function handleDailyScheduleEmailAction(params: {
   body: Body;
   action: EmailAdminAction;
   skipAdminCheck?: boolean;
+  /** Yesterday invite: intro per selected user (server-computed, never from the request). */
+  introKinds?: Map<string, YesterdayKind>;
+  extraResponse?: Record<string, unknown>;
 }) {
-  const { res, sb, accessToken, body, action, skipAdminCheck } = params;
+  const { res, sb, accessToken, body, action, skipAdminCheck, introKinds, extraResponse = {} } = params;
 
   if (!skipAdminCheck) {
     await assertAppAdmin({ sb, accessToken });
@@ -2364,6 +2377,23 @@ async function handleDailyScheduleEmailAction(params: {
   const selected = candidates.slice(0, limit);
 
   if (dryRun) {
+    // Yesterday invite: tag each recipient and render one sample per intro.
+    const samples = introKinds
+      ? (["new", "returning"] as const).flatMap((kind) => {
+          const recipient = selected.find((item) => introKinds.get(item.userId) === kind);
+          if (!recipient) return [];
+          const email = buildDailyScheduleEmail({
+            scheduleDate: recipient.scheduleDate,
+            sessions: sessionsForDate(recipient.scheduleDate, recipient.timeZone || "UTC"),
+            infiniteHostingSlots: hostingSlotsForDate(recipient.scheduleDate, recipient.timeZone || "UTC"),
+            recipientName: recipient.name,
+            recipientTimeZone: recipient.timeZone || "UTC",
+            unsubscribeToken: "",
+            intro: yesterdayIntro(kind, recipient.name, formatDateForSubject(recipient.scheduleDate)),
+          });
+          return [{ kind, subject: email.subject, html: email.html }];
+        })
+      : undefined;
     return res.status(200).json({
       ok: true,
       dryRun: true,
@@ -2373,7 +2403,11 @@ async function handleDailyScheduleEmailAction(params: {
       infiniteHostingSlots: previewHostingSlots,
       candidatesCount: candidates.length,
       selectedCount: selected.length,
-      selected,
+      selected: introKinds
+        ? selected.map((item) => ({ ...item, introKind: introKinds.get(item.userId) || null }))
+        : selected,
+      samples,
+      ...extraResponse,
     });
   }
 
@@ -2393,6 +2427,7 @@ async function handleDailyScheduleEmailAction(params: {
     const recipient = selected[i];
     const recipientDate = recipient.scheduleDate;
     const recipientTimeZone = recipient.timeZone || "UTC";
+    const introKind = introKinds?.get(recipient.userId);
     const email = buildDailyScheduleEmail({
       scheduleDate: recipientDate,
       sessions: sessionsForDate(recipientDate, recipientTimeZone),
@@ -2400,6 +2435,7 @@ async function handleDailyScheduleEmailAction(params: {
       recipientName: recipient.name,
       recipientTimeZone,
       unsubscribeToken: recipient.unsubscribeToken,
+      intro: introKind ? yesterdayIntro(introKind, recipient.name, formatDateForSubject(recipientDate)) : null,
     });
 
     try {
@@ -2409,7 +2445,7 @@ async function handleDailyScheduleEmailAction(params: {
         subject: email.subject,
         body: email.html,
         headers: {
-          "X-MySession-Email-Type": "daily_schedule",
+          "X-MySession-Email-Type": introKind ? `daily_schedule_yesterday_${introKind}` : "daily_schedule",
           "X-MySession-Schedule-Date": recipientDate.replaceAll("-", "_"),
         },
         idempotencyKey: `mysession-daily-schedule-${recipient.userId}-${recipientDate}`,
@@ -2479,6 +2515,7 @@ async function handleDailyScheduleEmailAction(params: {
     sentCount: results.filter((r) => r.status === "sent").length,
     failedCount: results.filter((r) => r.status === "failed").length,
     results,
+    ...extraResponse,
   });
 }
 
@@ -2486,6 +2523,69 @@ function getQueryParam(req: VercelRequest, name: string) {
   const raw = (req.query as any)?.[name];
   if (Array.isArray(raw)) return String(raw[0] || "").trim();
   return String(raw || "").trim();
+}
+
+// "Come back today": people who signed up or attended yesterday (UTC days) get
+// today's schedule with an intro written for them. Admin preview/send, or the
+// morning cron (cronAction=daily_schedule_send_yesterday). The daily ledger
+// keeps it to one schedule email per person per day.
+async function handleYesterdayInviteAction(params: {
+  req: VercelRequest;
+  res: VercelResponse;
+  sb: SupabaseClient;
+  accessToken: string;
+  body: Body;
+  preview: boolean;
+  fromCron: boolean;
+}) {
+  const { req, res, sb, accessToken, body, preview, fromCron } = params;
+  if (!fromCron) await assertAppAdmin({ sb, accessToken });
+
+  const scheduleDate = body.scheduleDate ? parseScheduleDate(body.scheduleDate) : dateKeyInTimeZone(new Date(), "Europe/Kyiv");
+  const yesterday = previousDateKey(scheduleDate);
+  const { startIso, endIso } = utcDayBounds(yesterday);
+
+  const [registered, attended] = await Promise.all([
+    sb.from("profiles").select("id").gte("created_at", startIso).lt("created_at", endIso).limit(5000),
+    sb.from("attendance_daily_users").select("user_id").eq("attendance_date", yesterday).limit(5000),
+  ]);
+  if (registered.error || attended.error) {
+    console.error("[yesterday-invite] audience load failed", registered.error || attended.error);
+    return res.status(500).json({ error: "yesterday_audience_unavailable" });
+  }
+
+  const introKinds = classifyYesterdayAudience({
+    registeredYesterday: (registered.data || []).map((row: any) => String(row.id || "")),
+    attendedYesterday: (attended.data || []).map((row: any) => String(row.user_id || "")),
+  });
+  const counts = {
+    registeredYesterday: (registered.data || []).length,
+    attendedYesterday: (attended.data || []).length,
+    newcomers: [...introKinds.values()].filter((kind) => kind === "new").length,
+    returning: [...introKinds.values()].filter((kind) => kind === "returning").length,
+  };
+
+  if (introKinds.size === 0) {
+    return res.status(200).json({ ok: true, dryRun: preview, scheduleDate, yesterday, counts, selectedCount: 0, sentCount: 0, failedCount: 0, selected: [] });
+  }
+
+  return await handleDailyScheduleEmailAction({
+    req,
+    res,
+    sb,
+    accessToken,
+    body: {
+      action: preview ? "daily_schedule_preview" : "daily_schedule_send",
+      scheduleDate,
+      limit: clampDailyEmailLimit(body.limit || DAILY_EMAIL_DEFAULT_LIMIT),
+      selectedUserIds: [...introKinds.keys()],
+      useRecipientLocalDate: false,
+    },
+    action: preview ? "daily_schedule_preview" : "daily_schedule_send",
+    skipAdminCheck: true,
+    introKinds,
+    extraResponse: { yesterday, counts },
+  });
 }
 
 async function handleDailyScheduleSavedAudienceCronAction(params: {
@@ -3146,7 +3246,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         : "";
 
     const isDailyEmailCron = req.method === "GET" &&
-      (cronAction === "daily_schedule_send_saved_audience" || cronAction === "daily_schedule_send_all_active");
+      (cronAction === "daily_schedule_send_saved_audience" ||
+        cronAction === "daily_schedule_send_all_active" ||
+        cronAction === "daily_schedule_send_yesterday");
     const senderCronAction = getQueryParam(req, "senderAction").toLowerCase();
     const isSenderLifecycleCron =
       req.method === "POST" &&
@@ -3181,6 +3283,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (isPlunkUnsubscribeWebhook) {
       return await handlePlunkUnsubscribeWebhook({ req, res, sb });
+    }
+
+    if (isDailyEmailCron && cronAction === "daily_schedule_send_yesterday") {
+      const expectedSecret = env("DAILY_SCHEDULE_CRON_SECRET");
+      const suppliedSecret = String(req.headers["x-cron-secret"] || "").trim();
+      if (!expectedSecret || suppliedSecret !== expectedSecret) {
+        return res.status(401).json({ error: "cron_unauthorized" });
+      }
+      return await handleYesterdayInviteAction({
+        req,
+        res,
+        sb,
+        accessToken: "",
+        body: { limit: Number(getQueryParam(req, "limit")) || undefined },
+        preview: false,
+        fromCron: true,
+      });
     }
 
     if (isDailyEmailCron) {
@@ -3307,6 +3426,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         res,
         sb,
         accessToken,
+      });
+    }
+
+    if (rawEmailAction === "daily_schedule_yesterday_preview" || rawEmailAction === "daily_schedule_send_yesterday") {
+      return await handleYesterdayInviteAction({
+        req,
+        res,
+        sb,
+        accessToken,
+        body,
+        preview: rawEmailAction === "daily_schedule_yesterday_preview",
+        fromCron: false,
       });
     }
 
