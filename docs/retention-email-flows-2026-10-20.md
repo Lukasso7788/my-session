@@ -48,3 +48,10 @@ Vercel connector can access correct project; local CLI identity could not access
 Release order: tested code commit/push; Vercel production deployment READY; verify unauth endpoint 401 and unsubscribe invalid token 400; Cloudflare deploy --keep-vars; set retention_email_config.enabled=true only after both deployments succeed. Then verify scheduled counts and DB outcome ledger without triggering an arbitrary bulk send.
 Pause: update public.retention_email_config set enabled=false where id=true. Do not toggle existing daily/Sender cron secrets.
 See final chat response for actual release status and remaining blockers. A source commit is not proof production or cron was deployed.
+
+## Current handoff status
+Implementation commit caed82e is pushed only to codex/retention-email-flows. Automatic approval review rejected the main push because the current request did not explicitly authorize the production release. No connector/alternate route was used to bypass that rejection. Vercel and Cloudflare releases remain pending; config.enabled remains false, so no new retention email was sent.
+Production Vercel metadata confirms PLUNK_API_URL, PLUNK_SECRET_KEY, PLUNK_FROM_EMAIL, PLUNK_FROM_NAME, DAILY_SCHEDULE_CRON_SECRET, SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set. No secret values were printed. The Cloudflare CLI can deploy the expected account once release is approved.
+Additional rollback-only SQL fixture passed: first atomic claim succeeds, second concurrent/logical claim is blocked, accepted email is not offered again. All synthetic auth/profile/preference/ledger changes rolled back. Security advisors report RLS-without-policies on the three new tables: intentional deny-all for client roles, service_role-only access independently verified. No new exposed public SECURITY DEFINER routine was introduced; private routines have restricted EXECUTE.
+The older RLS/security findings in unrelated database tables/functions were not changed by this feature.
+Preview gallery verified HTTP 200 at port 4212; port 4211 attempt was replaced. Open outputs/retention-email-previews/index.html or rerun the generator/server if needed.
