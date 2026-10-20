@@ -2303,10 +2303,17 @@ async function handleDailyScheduleEmailAction(params: {
 
   const candidates: RecipientCandidate[] = [];
 
+  // A due personal invitation replaces today's general digest. Recent sends
+  // also share the 24-hour marketing cap with the retention delivery ledger.
+  const { data: retentionExclusions, error: retentionExclusionsError } = await sb.rpc("retention_digest_exclusions");
+  if (retentionExclusionsError) throw new Error("retention_digest_coordination_failed");
+  const retentionExcludedIds = new Set((retentionExclusions || []).map((row: { user_id: string }) => row.user_id));
+
   for (const user of users) {
     const userId = String(user.id || "").trim();
     const email = String(user.email || "").trim().toLowerCase();
     if (!userId) continue;
+    if (retentionExcludedIds.has(userId)) continue;
 
     if (selectedUserIds.length && !selectedUserIds.includes(userId)) continue;
 

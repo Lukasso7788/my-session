@@ -4,9 +4,23 @@ export interface Env {
   DAILY_SCHEDULE_CRON_LIMIT?: string;
   SENDER_LIFECYCLE_URL?: string;
   SENDER_CRON_SECRET?: string;
+  RETENTION_EMAIL_URL?: string;
 }
 
 const DAILY_SCHEDULE_CRON = "0 4,5 * * *";
+
+export async function runRetentionEmailCron(env: Env) {
+  const url = String(env.RETENTION_EMAIL_URL || "").trim();
+  if (!url) return { skipped: true, reason: "retention_not_configured" };
+  const secret = String(env.DAILY_SCHEDULE_CRON_SECRET || "").trim();
+  if (!secret) return { skipped: true, reason: "retention_secret_missing" };
+  const response = await fetch(url, { method: "POST", headers: { "x-cron-secret": secret }, signal: AbortSignal.timeout(270_000) });
+  const result = await response.json().catch(() => ({})) as Record<string, unknown>;
+  // Counts and error codes only, never recipient data or raw upstream bodies.
+  return { ok: response.ok && result.ok === true, status: response.status,
+    enabled: result.enabled, eligible: result.eligible, accepted: result.accepted,
+    skipped: result.skipped, failed: result.failed, error: result.error };
+}
 
 function isSevenAmInKyiv(scheduledTime: number) {
   const hour = new Intl.DateTimeFormat("en-US", {
@@ -113,6 +127,7 @@ export default {
       : event.cron === "0 4 * * *"
       ? [runSenderLifecycleCron(env, "scheduled", "evaluate").then((result) => console.log("[sender-lifecycle-evaluate] result", result))]
       : event.cron === "*/5 * * * *" ? [
+          runRetentionEmailCron(env).then((result) => console.log("[retention-email-cron] result", result)),
           runSenderLifecycleCron(env, "scheduled", "process").then((result) => console.log("[sender-outbox-process] result", result)),
         ] : [];
 

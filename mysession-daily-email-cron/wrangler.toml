@@ -9,3 +9,4 @@ crons = ["0 4,5 * * *", "0 4 * * *", "*/5 * * * *"]
 MYSESSION_DAILY_EMAIL_CRON_URL = "https://www.mysession.club/api/livekit/admin"
 DAILY_SCHEDULE_CRON_LIMIT = "100"
 SENDER_LIFECYCLE_URL = "https://www.mysession.club/api/livekit/admin?senderAction=evaluate"
+RETENTION_EMAIL_URL = "https://mysession.club/api/retention"
