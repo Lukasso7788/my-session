@@ -88,4 +88,32 @@ begin
 end;
 $$;
 
+-- Profile: a person sees only their own streaks (real clock, so only shape and
+-- relative facts are checked).
+do $$
+declare
+  me uuid := 'f0000000-0000-4000-8000-000000000010';
+  today date := (statement_timestamp() at time zone 'UTC')::date;
+  r jsonb;
+  failed boolean := false;
+begin
+  insert into public.profiles (id, full_name) values (me, 'Profile Me');
+  perform rs_test.days(me, today - 2, today - 1, today);
+  perform rs_test.days('f0000000-0000-4000-8000-000000000001', today);
+
+  perform set_config('test.uid', me::text, true);
+  r := public.get_my_streaks();
+  perform rs_test.ok((r->'streaks'->'day'->>'current')::int = 3, 'profile: my 3-day streak');
+  perform rs_test.ok((r->>'attended_today')::boolean, 'profile: attended today');
+  perform rs_test.ok((r->>'days_this_month')::int >= 1 and r->'streaks' ? 'week' and r->'streaks' ? 'year', 'profile: all units present');
+
+  perform set_config('test.uid', '', true);
+  begin
+    perform public.get_my_streaks();
+  exception when others then failed := true;
+  end;
+  perform rs_test.ok(failed, 'profile: signed-out callers are refused');
+end;
+$$;
+
 rollback;

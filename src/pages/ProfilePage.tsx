@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import TimeZonePicker from "../components/TimeZonePicker";
+import ProfileStreaksPanel from "../components/ProfileStreaksPanel";
 import {
   formatTimeZoneLabel,
   getDetectedTimeZone,
@@ -737,6 +738,8 @@ export default function ProfilePage() {
           </span>
         </div>
       </div>
+
+      <ProfileStreaksPanel />
 
       <div className="mt-10 border-t border-gray-200" />
 

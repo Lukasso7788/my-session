@@ -24,6 +24,7 @@ const db = new PGlite();
 const notices = [];
 await db.exec(stubs);
 await db.exec(read("supabase/migrations/20261018130000_admin_retention_streaks.sql"));
+await db.exec(read("supabase/migrations/20261021090000_profile_streaks.sql"));
 
 // Only admins may call the public function.
 let refused = false;
