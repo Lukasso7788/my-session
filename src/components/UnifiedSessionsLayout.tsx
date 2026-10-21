@@ -4,7 +4,7 @@ import { SessionsDateFilter } from "./SessionsDateFilter";
 import { SessionTypeSwitcher } from "./SessionTypeSwitcher";
 
 const SECTION_LINKS = [
-  { id: "infinite" as const, href: "#infinite-rooms", label: "Infinite rooms" },
+  { id: "infinite" as const, href: "#infinite-rooms", label: "24/7 sessions" },
   { id: "group" as const, href: "#group-sessions", label: "Group sessions" },
 ];
 
@@ -26,7 +26,7 @@ type Props = {
   liveCounts: Partial<Record<"group" | "infinite", number>>;
   onSectionChange: (section: "group" | "infinite") => void;
   toolbar?: ReactNode;
-  emptyAction?: ReactNode;
+  emptyAction: ReactNode;
   onDateChange: (value: string | null) => void;
   isLoading: boolean;
   error: string | null;
@@ -230,16 +230,13 @@ export default function UnifiedSessionsLayout({
                     ))}
                   </div>
                 ) : (
-                  <p className="py-8 text-center text-sm text-[#606060]">
-                    No group sessions {dateFilter ? "for this date" : "scheduled yet"}.
-                  </p>
+                  <div className="py-8 text-center">{emptyAction}</div>
                 )}
               </section>
             </div>
           )}
         </div>
 
-        {!scheduledGroups.length && !isLoading ? emptyAction : null}
       </main>
 
     </div>

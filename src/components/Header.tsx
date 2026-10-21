@@ -22,7 +22,7 @@ const tabs = [
     },
     {
         id: "infinite",
-        label: "Infinite rooms",
+        label: "24/7 sessions",
         iconActive: "/icons/infinite-active-black.svg",
         iconInactive: "/icons/infinite-inactive.svg",
     },
@@ -295,11 +295,6 @@ export default function Header() {
             return;
         }
 
-        if (activeSessionsTab === "infinite" && location.pathname === "/sessions") {
-            window.dispatchEvent(new Event("mysession:open-infinite-room-creator"));
-            return;
-        }
-
         modal.open();
     };
 
@@ -469,11 +464,7 @@ export default function Header() {
                                                 className="w-5 h-5"
                                                 alt=""
                                             />
-                                            <span>
-                                                {activeSessionsTab === "infinite" && location.pathname === "/sessions"
-                                                    ? "Create infinite room"
-                                                    : "Create a session"}
-                                            </span>
+                                            <span>Create session</span>
                                         </button>
 
                                         <button onClick={() => setShowUserMenu((v) => !v)} className="hidden sm:flex items-center">
@@ -618,13 +609,7 @@ export default function Header() {
                                     <>
                                         <button
                                             onClick={() => {
-                                                if (paywallDecision?.blocked) {
-                                                    setPaywallOpen(true);
-                                                    setMobileMenu(false);
-                                                    return;
-                                                }
-
-                                                modal.open();
+                                                handleCreateSessionClick();
                                                 setMobileMenu(false);
                                             }}
                                             className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-brandBlack text-base hover:bg-slate-100 w-full justify-center"

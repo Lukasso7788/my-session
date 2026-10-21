@@ -4208,6 +4208,31 @@ export default function SessionCard({
     }, [session?.id, session?.description, isBookersModalOpen, isEditModalOpen]);
 
     const isInfinite = sessionIsInfinite;
+    const isGroupSession = resolveSessionType(session) === "group";
+    const presenceOpensAt = isGroupSession ? Date.parse(String(session?.start_time || "")) - 10 * 60_000 : Number.NaN;
+    const [presenceTime, setPresenceTime] = useState(Date.now);
+
+    useEffect(() => {
+        if (!Number.isFinite(presenceOpensAt)) return;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const refresh = () => {
+            if (timer) clearTimeout(timer);
+            const now = Date.now();
+            setPresenceTime(now);
+            const remaining = presenceOpensAt - now;
+            if (remaining > 0) timer = setTimeout(refresh, Math.min(remaining, 2_147_483_647));
+        };
+        refresh();
+        window.addEventListener("focus", refresh);
+        document.addEventListener("visibilitychange", refresh);
+        return () => {
+            if (timer) clearTimeout(timer);
+            window.removeEventListener("focus", refresh);
+            document.removeEventListener("visibilitychange", refresh);
+        };
+    }, [presenceOpensAt]);
+
+    const showLivePresence = !isGroupSession || (Number.isFinite(presenceOpensAt) && presenceTime >= presenceOpensAt);
     useEffect(() => {
         if (!isBookersModalOpen) return;
         const onKeyDown = (event: KeyboardEvent) => {
@@ -5064,7 +5089,7 @@ export default function SessionCard({
                                         {resolvedType}
                                     </div>
 
-                                    {peopleInline}
+                                    {showLivePresence && peopleInline}
 
 
 
@@ -5114,7 +5139,7 @@ export default function SessionCard({
                     </div>
 
                     <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_48px] items-center gap-3 min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end">
-                        <button
+                        {showLivePresence && <button
                             type="button"
                             onClick={() => setIsLiveUsersModalOpen(true)}
                             className="hidden xl:flex items-center gap-5 xl:mr-3 transition-opacity hover:opacity-70"
@@ -5148,7 +5173,7 @@ export default function SessionCard({
                                     </div>
                                 </div>
                             </div>
-                        </button>
+                        </button>}
 
                         {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
 

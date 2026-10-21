@@ -1696,29 +1696,6 @@ export function SessionsPage() {
   }, [modal, fetchSessions]);
 
   useEffect(() => {
-    const openInfiniteRoomCreator = () => {
-      if (sessionTypeTab !== "infinite") return;
-      if (!user?.id) {
-        navigate(`/login?next=${encodeURIComponent("/sessions?tab=infinite")}`);
-        return;
-      }
-      setOverflowCreateError("");
-      setInfiniteRoomCreatorOpen(true);
-    };
-
-    window.addEventListener(
-      "mysession:open-infinite-room-creator",
-      openInfiniteRoomCreator,
-    );
-    return () => {
-      window.removeEventListener(
-        "mysession:open-infinite-room-creator",
-        openInfiniteRoomCreator,
-      );
-    };
-  }, [navigate, sessionTypeTab, user?.id]);
-
-  useEffect(() => {
     if (!user?.id) {
       setInfiniteCreatorEligibility(null);
       return;
@@ -2505,7 +2482,7 @@ const visibleSessions = useMemo(() => {
             isLoading={isLoading}
             error={sessionsLoadError}
             onRetry={() => void fetchSessions()}
-            emptyAction={user ? <button type="button" onClick={openCreate} className="mb-4 text-sm underline underline-offset-4">Create the first session</button> : null}
+            emptyAction={<button type="button" onClick={openCreate} className="rounded-full border border-brandBlack px-5 py-2.5 text-[13px] font-medium transition hover:bg-black/5">Create the first session</button>}
             toolbar={user?.id ? (
               <button type="button" onClick={() => setTasksSidebarOpen(true)} className="mb-5 inline-flex h-11 items-center gap-2 rounded-full bg-[#F1F1F1] px-4 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8]">
                 <ListChecks size={17} /> Tasks{unfinishedTaskCount > 0 ? <span className="rounded-full bg-white px-2 py-1 text-[10px]">{unfinishedTaskCount} unfinished</span> : null}
