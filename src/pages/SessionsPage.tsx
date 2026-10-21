@@ -2646,7 +2646,7 @@ const visibleSessions = useMemo(() => {
             isLoading={isLoading}
             error={sessionsLoadError}
             onRetry={() => void fetchSessions()}
-            emptyAction={<button type="button" onClick={openCreate} className="py-2 text-[13px] font-medium underline underline-offset-4 transition hover:text-[#3478C7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4">Create the first session</button>}
+            emptyAction={user ? <button type="button" onClick={openCreate} className="text-sm underline underline-offset-4">Create the first session</button> : null}
             toolbar={user?.id ? (
               <div className="flex justify-end">
               <button type="button" onClick={() => setTasksSidebarOpen(true)} className="mb-5 inline-flex h-11 items-center gap-2 rounded-full bg-[#F1F1F1] px-4 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8]">

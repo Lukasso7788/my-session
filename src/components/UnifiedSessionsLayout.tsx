@@ -230,7 +230,14 @@ export default function UnifiedSessionsLayout({
                     ))}
                   </div>
                 ) : (
-                  <div className="py-8 text-center">{emptyAction}</div>
+                  <div className="rounded-[24px] px-3 py-3 md:border md:border-[#DBD8D8] md:p-8">
+                    <div className="p-2 text-center">
+                      <p className="mb-4 text-sm text-slate-600">
+                        No active sessions {dateFilter ? "for this date" : "available"}
+                      </p>
+                      {emptyAction}
+                    </div>
+                  </div>
                 )}
               </section>
             </div>
