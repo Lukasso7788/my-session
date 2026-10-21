@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import TimeZonePicker from "../components/TimeZonePicker";
-import ProfileStreaksPanel from "../components/ProfileStreaksPanel";
 import {
   formatTimeZoneLabel,
   getDetectedTimeZone,
@@ -721,8 +720,6 @@ export default function ProfilePage() {
             <img src="/icons/session_count.svg" alt="Total sessions attended" className="w-[24px] h-[24px]" />
             <span className="text-[14px] font-medium text-[#2F2F2F]">{attendedCount} sessions</span>
           </span>
-
-          <ProfileStreaksPanel userId={String(user?.id || "")} />
 
           <span className="flex items-center gap-2">
             <img src="/icons/followers_profile.svg" alt="Followers" className="w-[24px] h-[24px]" />
