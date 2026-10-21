@@ -32,6 +32,18 @@
   transition-timing-function: var(--switcher-easing);
 }
 
+.session-section-switcher__live {
+  height: 20px;
+  padding: 0 6px;
+  font-size: 10px;
+  transition: height var(--switcher-duration) var(--switcher-easing), font-size var(--switcher-duration) var(--switcher-easing);
+}
+
+.session-section-switcher[data-compact="true"] .session-section-switcher__live {
+  height: 16px;
+  font-size: 9px;
+}
+
 /* The track shares the buttons' geometry without measuring animated widths in JS. */
 .session-section-switcher__track {
   position: absolute;

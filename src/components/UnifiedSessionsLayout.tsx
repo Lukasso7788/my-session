@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
-import { SessionsDateFilter } from "../components/SessionsDateFilter";
-import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { SessionsDateFilter } from "./SessionsDateFilter";
+import { SessionTypeSwitcher } from "./SessionTypeSwitcher";
 
 const SECTION_LINKS = [
   { id: "infinite" as const, href: "#infinite-rooms", label: "Infinite rooms" },
@@ -22,25 +23,32 @@ type Props = {
     cards: ReactNode[];
   }[];
   dateFilter: string | null;
-  exampleSchedule: boolean;
+  liveCounts: Partial<Record<"group" | "infinite", number>>;
+  onSectionChange: (section: "group" | "infinite") => void;
+  toolbar?: ReactNode;
+  emptyAction?: ReactNode;
   onDateChange: (value: string | null) => void;
   isLoading: boolean;
   error: string | null;
   onRetry: () => void;
 };
 
-export default function UnifiedSessionsConceptPage({
+export default function UnifiedSessionsLayout({
   infiniteRoomsIntro,
   alwaysOpenCards,
   scheduledGroups,
   dateFilter,
-  exampleSchedule,
+  liveCounts,
+  onSectionChange,
+  toolbar,
+  emptyAction,
   onDateChange,
   isLoading,
   error,
   onRetry,
 }: Props) {
-  const [showPreviewNotice, setShowPreviewNotice] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<"infinite" | "group">("infinite");
   const [isSwitcherSticky, setIsSwitcherSticky] = useState(false);
   const switcherSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -50,7 +58,6 @@ export default function UnifiedSessionsConceptPage({
   const [headerHeight, setHeaderHeight] = useState(80);
   // Anchor destinations use the final sticky size even when scrolling from the full switcher.
   const anchorOffset = headerHeight + COMPACT_SWITCHER_HEIGHT + SWITCHER_VERTICAL_PADDING + 16;
-  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasSessions = alwaysOpenCards.length > 0 || scheduledGroups.some((group) => group.cards.length > 0);
 
   useLayoutEffect(() => {
@@ -93,43 +100,30 @@ export default function UnifiedSessionsConceptPage({
   }, [anchorOffset, headerHeight, isLoading, dateFilter]);
 
   useEffect(() => {
+    onSectionChange(activeSection);
+  }, [activeSection, onSectionChange]);
+
+  useEffect(() => {
     if (isLoading) return;
-    const followHash = () => {
-      const target = window.location.hash === "#group-sessions"
-        ? groupRef.current
-        : window.location.hash === "#infinite-rooms" ? infiniteRef.current : null;
-      target?.scrollIntoView({ block: "start", behavior: "instant" });
-    };
-    if (!initialAnchorApplied.current && (infiniteRef.current || groupRef.current)) {
-      initialAnchorApplied.current = true;
-      followHash();
+    const section = location.hash === "#group-sessions" || (!location.hash && new URLSearchParams(location.search).get("tab") === "group") ? "group" : "infinite";
+    const hasAnchor = Boolean(location.hash) || new URLSearchParams(location.search).get("tab") === "group";
+    const target = section === "group" ? groupRef.current : infiniteRef.current;
+    if (hasAnchor && target) {
+      target.scrollIntoView({ block: "start", behavior: !initialAnchorApplied.current || window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
     }
-    window.addEventListener("hashchange", followHash);
-    return () => window.removeEventListener("hashchange", followHash);
-  }, [isLoading, hasSessions, anchorOffset]);
+    initialAnchorApplied.current = true;
+  }, [location.hash, location.search, isLoading, hasSessions, anchorOffset]);
 
   const goToSection = (section: "infinite" | "group" | "one-on-one") => {
     if (section === "one-on-one") return;
-    const target = section === "infinite" ? infiniteRef.current : groupRef.current;
-    if (!target) return;
-    const href = section === "infinite" ? "#infinite-rooms" : "#group-sessions";
-    window.history.replaceState(window.history.state, "", href);
-    target.scrollIntoView({
-      block: "start",
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
-    });
-  };
-
-  useEffect(() => () => {
-    if (noticeTimer.current) clearTimeout(noticeTimer.current);
-  }, []);
-
-  const keepCardInteractionLocal = (event: MouseEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    setShowPreviewNotice(true);
-    if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    noticeTimer.current = setTimeout(() => setShowPreviewNotice(false), 3600);
+    const hash = section === "group" ? "#group-sessions" : "#infinite-rooms";
+    if (location.hash === hash) {
+      (section === "group" ? groupRef.current : infiniteRef.current)?.scrollIntoView({ block: "start", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+      return;
+    }
+    const params = new URLSearchParams(location.search);
+    params.delete("tab");
+    navigate({ pathname: "/sessions", search: params.toString(), hash }, { replace: true });
   };
 
   return (
@@ -158,8 +152,11 @@ export default function UnifiedSessionsConceptPage({
             value={activeSection}
             onChange={goToSection}
             sectionLinks={SECTION_LINKS}
+            liveCounts={liveCounts}
           />
         </nav>
+
+        {toolbar}
 
         <div className="rounded-[24px] px-3 py-3 md:border md:border-[#DBD8D8] md:p-8">
           {isLoading && !hasSessions ? (
@@ -187,8 +184,6 @@ export default function UnifiedSessionsConceptPage({
                 {alwaysOpenCards.length > 0 ? (
                   <div
                     className="space-y-3 md:space-y-6"
-                    onClickCapture={keepCardInteractionLocal}
-                    onAuxClickCapture={keepCardInteractionLocal}
                   >
                     {alwaysOpenCards}
                   </div>
@@ -207,12 +202,6 @@ export default function UnifiedSessionsConceptPage({
                   </div>
                   <span className="text-[13px] text-[#606060]">Join a focus session to stay accountable</span>
                 </div>
-                {exampleSchedule && (
-                  <p className="mb-4 text-[12px] text-[#606060]">
-                    No upcoming sessions right now. Example sessions below show how the combined page would look.
-                  </p>
-                )}
-
                 <div className="mb-6 w-full">
                   <SessionsDateFilter value={dateFilter} onChange={onDateChange} weeksAhead={3} />
                 </div>
@@ -234,11 +223,7 @@ export default function UnifiedSessionsConceptPage({
                             {group.cards.length} {group.cards.length === 1 ? "session" : "sessions"}
                           </div>
                         </div>
-                        <div
-                          className="space-y-3 md:space-y-6"
-                          onClickCapture={keepCardInteractionLocal}
-                          onAuxClickCapture={keepCardInteractionLocal}
-                        >
+                        <div className="space-y-3 md:space-y-6">
                           {group.cards}
                         </div>
                       </section>
@@ -254,17 +239,9 @@ export default function UnifiedSessionsConceptPage({
           )}
         </div>
 
-        <p className="mt-6 text-center text-[12px] text-[#8A8A8A]">Local preview</p>
+        {!scheduledGroups.length && !isLoading ? emptyAction : null}
       </main>
 
-      {showPreviewNotice && (
-        <div
-          role="status"
-          className="fixed bottom-6 left-1/2 z-[1000] w-max max-w-[calc(100vw-32px)] -translate-x-1/2 rounded-2xl bg-[#2F2F2F] px-5 py-3 text-center text-[13px] leading-5 text-white shadow-lg"
-        >
-          Local preview. Session actions are available on the Sessions page.
-        </div>
-      )}
     </div>
   );
 }

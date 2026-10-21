@@ -99,8 +99,8 @@ function getPlanPopoverText(state: EntitlementState | null): string {
 export default function Header() {
     const navigate = useNavigate();
     const location = useLocation();
-    const isUnifiedPreview = import.meta.env.DEV && location.pathname === "/sessions-concept";
-    const sessionTabs = isUnifiedPreview ? tabs.filter((tab) => tab.id !== "one-on-one") : tabs;
+    const isUnifiedSessions = location.pathname === "/sessions";
+    const sessionTabs = tabs;
     const modal = useCreateSessionModal();
     const { user, profile, loading, signOut } = useAuth();
 
@@ -124,7 +124,7 @@ export default function Header() {
         `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
 
     const activeSessionsTab: SessionTabId = useMemo(() => {
-        if (isUnifiedPreview) return location.hash === "#group-sessions" ? "group" : "infinite";
+        if (isUnifiedSessions && new URLSearchParams(location.search).get("tab") !== "one-on-one") return location.hash === "#group-sessions" ? "group" : "infinite";
         if (location.pathname === "/one-on-one") return "one-on-one";
 
         const params = new URLSearchParams(location.search);
@@ -132,7 +132,7 @@ export default function Header() {
 
         if (tab === "infinite" || tab === "one-on-one" || tab === "group") return tab as SessionTabId;
         return "group";
-    }, [isUnifiedPreview, location.hash, location.pathname, location.search]);
+    }, [isUnifiedSessions, location.hash, location.pathname, location.search]);
 
     const planBadgeLabel = useMemo(() => getPlanBadgeLabel(entitlementState), [entitlementState]);
     const planPopoverTitle = useMemo(() => getPlanPopoverTitle(entitlementState), [entitlementState]);
@@ -250,8 +250,8 @@ export default function Header() {
     }, []);
 
     const goToSessions = (tabId: SessionTabId) => {
-        if (isUnifiedPreview) {
-            window.location.hash = tabId === "infinite" ? "infinite-rooms" : "group-sessions";
+        if (tabId !== "one-on-one") {
+            navigate(`/sessions#${tabId === "infinite" ? "infinite-rooms" : "group-sessions"}`);
         } else {
             navigate(`/sessions?tab=${tabId}`);
         }
@@ -554,7 +554,7 @@ export default function Header() {
                                 <div className="flex flex-col gap-3 w-full min-w-0">
                                     <button
                                         onClick={() => {
-                                            navigate(isUnifiedPreview ? "/sessions-concept" : "/sessions");
+                                            navigate("/sessions");
                                             setMobileMenu(false);
                                         }}
                                         className="text-left"

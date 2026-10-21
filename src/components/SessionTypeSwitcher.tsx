@@ -91,7 +91,7 @@ export function SessionTypeSwitcher({ value, onChange, liveCounts, className = "
           compact ? "h-11" : "h-[72px]",
           compact ? "w-fit max-w-full" : "w-full md:w-fit",
         ].join(" "),
-        "overflow-hidden",
+        sectionLinks ? "overflow-visible" : "overflow-hidden",
         className,
       ].join(" ")}
       style={sectionLinks ? {
@@ -156,13 +156,14 @@ export function SessionTypeSwitcher({ value, onChange, liveCounts, className = "
               <span
                 aria-hidden="true"
                 className={[
-                  "pointer-events-none absolute -top-3 right-0 z-20 inline-flex h-6 items-center gap-1 rounded-full border border-white px-2.5 text-[12px] font-semibold leading-none text-white whitespace-nowrap",
+                  "pointer-events-none absolute -top-3 right-0 z-20 inline-flex items-center gap-1 rounded-full border border-white font-semibold leading-none text-white whitespace-nowrap",
+                  sectionLinks ? "session-section-switcher__live" : "h-6 px-2.5 text-[12px]",
                   t.id === "group" ? "bg-[#57D264]" : "bg-[#EF4444]",
                 ].join(" ")}
               >
                 <span
                   aria-hidden="true"
-                  className="h-[15px] w-[15px] shrink-0"
+                  className={sectionLinks ? "h-3 w-3 shrink-0" : "h-[15px] w-[15px] shrink-0"}
                   style={{
                     backgroundColor: "#FFFFFF",
                     mask: "url('/icons/group-active.svg') center / contain no-repeat",

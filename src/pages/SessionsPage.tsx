@@ -2,14 +2,12 @@ const DEBUG = false;
 
 import { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
 import ActiveBanModal from "../components/ActiveBanModal";
 import SupportMySessionModal from "../components/SupportMySessionModal";
 import HostSessionPromptModal, { type HostPromptKind } from "../components/HostSessionPromptModal";
 import CommunityPromptModal from "../components/CommunityPromptModal";
 import InviteFriendsModal from "../components/InviteFriendsModal";
-import { SessionsDateFilter } from "../components/SessionsDateFilter";
 import { supabase } from "../lib/supabase";
 import {
   getCurrentUserActiveBan,
@@ -33,7 +31,7 @@ import {
 
 const OneOnOnePage = lazy(() => import("./OneOnOnePage"));
 const SessionsTasksSidebar = lazy(() => import("../components/SessionsTasksSidebar"));
-const UnifiedSessionsConceptPage = lazy(() => import("./UnifiedSessionsConceptPage"));
+const UnifiedSessionsLayout = lazy(() => import("../components/UnifiedSessionsLayout"));
 
 type BookingProfile = {
   id: string;
@@ -450,38 +448,6 @@ function InfiniteRoomsIntroCard({ headingId }: { headingId?: string } = {}) {
   );
 }
 
-function SessionsDateGroupHeader({
-  ymd,
-  count,
-}: {
-  ymd: string;
-  count: number;
-}) {
-  const meta = getDateGroupMeta(ymd);
-
-  return (
-    <div className="flex items-center gap-3 mb-4 md:mb-5">
-      <div className="inline-flex items-center gap-2 rounded-full border border-[#DBD8D8] bg-[#F8F8F8] px-4 py-2">
-        <span className="text-[11px] uppercase tracking-[0.12em] font-semibold text-[#606060]">
-          {meta.label}
-        </span>
-        <span className="text-[#BDBDBD]">•</span>
-        <span className="text-[13px] font-semibold text-brandBlack">
-          {meta.pretty}
-        </span>
-      </div>
-
-      <div className="hidden sm:block h-px flex-1 bg-[#EAEAEA]" />
-
-      <div className="hidden md:inline-flex items-center rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-[12px] text-[#606060]">
-        {count} {count === 1 ? "session" : "sessions"}
-      </div>
-    </div>
-  );
-}
-
-
-
 const SESSIONS_BASE_TIMEOUT_MS = 12_000;
 const SESSIONS_ENRICHMENT_TIMEOUT_MS = 10_000;
 
@@ -509,7 +475,7 @@ function withTimeout<T>(
 }
 
 
-export function SessionsPage({ unifiedPreview = false }: { unifiedPreview?: boolean } = {}) {
+export function SessionsPage() {
   const navigate = useNavigate();
   const modal = useCreateSessionModal();
   const { user } = useAuth();
@@ -1877,10 +1843,7 @@ export function SessionsPage({ unifiedPreview = false }: { unifiedPreview?: bool
     );
   }, [sessionTypeTab, privacyFilteredSessions]);
 
-  const isAllDatesMode =
-    sessionTypeTab === "group" && isAllDatesValue(dateFilter);
-
-  const visibleSessions = useMemo(() => {
+const visibleSessions = useMemo(() => {
     if (sessionTypeTab === "infinite") {
       return typeFilteredSessions
         .map((session, index) => ({ session, index }))
@@ -2026,27 +1989,6 @@ export function SessionsPage({ unifiedPreview = false }: { unifiedPreview?: bool
       user?.id,
     ],
   );
-
-  const groupedVisibleSessions = useMemo(() => {
-    if (!isAllDatesMode) return [];
-
-    const map = new Map<string, SessionWithRelations[]>();
-
-    for (const s of visibleSessions) {
-      const key = s.start_time
-        ? toLocalYMDFromISO(s.start_time) || "__undated__"
-        : "__undated__";
-
-      const prev = map.get(key) || [];
-      prev.push(s);
-      map.set(key, prev);
-    }
-
-    return Array.from(map.entries()).map(([ymd, items]) => ({
-      ymd,
-      sessions: items,
-    }));
-  }, [visibleSessions, isAllDatesMode]);
 
   const join = (id: string) => {
     const next = `/room-livekit/${id}`;
@@ -2492,11 +2434,6 @@ export function SessionsPage({ unifiedPreview = false }: { unifiedPreview?: bool
   }, []);
 
 
-  const topPad =
-    sessionTypeTab === "group"
-      ? "pt-[100px] pb-[50px]"
-      : "pt-[56px] pb-[18px]";
-
   const renderSessionCard = (s: SessionWithRelations) => (
     <SessionCard
       key={s.id}
@@ -2528,74 +2465,19 @@ export function SessionsPage({ unifiedPreview = false }: { unifiedPreview?: bool
     />
   );
 
-  if (unifiedPreview) {
-    const alwaysOpen = privacyFilteredSessions
-      .filter((session) => resolveSessionType(session) === "infinite")
-      .sort((a, b) => Number(b.is_pinned === true) - Number(a.is_pinned === true));
-    const scheduled = privacyFilteredSessions
-      .filter((session) => resolveSessionType(session) === "group")
-      .sort((a, b) => String(a.start_time || "").localeCompare(String(b.start_time || "")));
-    // If the live catalogue is empty, demonstrate the original scheduled card
-    // with clearly labelled local examples. These never enter the saved list.
-    const exampleSchedule = !isLoading && !sessionsLoadError && scheduled.length === 0;
-    if (exampleSchedule) {
-      for (const [index, title] of ["1 Hour — Pomodoro 25/5", "1 Hour — Uninterrupted Focus"].entries()) {
-        const start = new Date(Date.now() + (index * 24 + 1) * 60 * 60_000);
-        start.setMinutes(0, 0, 0);
-        scheduled.push({
-          id: `local-schedule-example-${index}`,
-          title,
-          host: "Example host",
-          host_name: "Example host",
-          duration_minutes: 60,
-          format: index === 0 ? "pomodoro_25_5" : "uninterrupted",
-          session_format_type: "group",
-          start_time: start.toISOString(),
-          scheduled_at: start.toISOString(),
-          created_at: start.toISOString(),
-          status: "scheduled",
-          description: "Example session for this local layout preview.",
-          max_participants: 8,
-          live_count: 0,
-          participant_count: 0,
-          daily_room_url: null,
-          focus_blocks: [],
-          session_bookings: [],
-          schedule: index === 0
-            ? [{ kind: "focus", minutes: 25 }, { kind: "break", minutes: 5 }, { kind: "focus", minutes: 25 }, { kind: "break", minutes: 5 }]
-            : [{ kind: "focus", minutes: 60 }],
-        });
-      }
-    }
-    const groups = new Map<string, SessionWithRelations[]>();
-    for (const session of scheduled) {
-      const key = session.start_time
-        ? toLocalYMDFromISO(session.start_time) || "__undated__"
-        : "__undated__";
-      if (dateFilter && key !== dateFilter) continue;
-      const items = groups.get(key) || [];
-      items.push(session);
-      groups.set(key, items);
-    }
-    return (
-      <Suspense fallback={<div className="py-12 text-center text-sm text-[#606060]">Loading sessions…</div>}>
-        <UnifiedSessionsConceptPage
-          infiniteRoomsIntro={<InfiniteRoomsIntroCard headingId="always-open-heading" />}
-          alwaysOpenCards={alwaysOpen.map(renderSessionCard)}
-          scheduledGroups={Array.from(groups, ([key, items]) => ({
-            key,
-            ...getDateGroupMeta(key),
-            cards: items.map(renderSessionCard),
-          }))}
-          dateFilter={dateFilter}
-          exampleSchedule={exampleSchedule}
-          onDateChange={setDateFilter}
-          isLoading={isLoading}
-          error={sessionsLoadError}
-          onRetry={() => void fetchSessions()}
-        />
-      </Suspense>
-    );
+  const alwaysOpen = privacyFilteredSessions
+    .filter((session) => resolveSessionType(session) === "infinite")
+    .sort((a, b) => Number(b.is_pinned === true) - Number(a.is_pinned === true));
+  const scheduled = privacyFilteredSessions
+    .filter((session) => resolveSessionType(session) === "group")
+    .sort((a, b) => String(a.start_time || "").localeCompare(String(b.start_time || "")));
+  const groups = new Map<string, SessionWithRelations[]>();
+  for (const session of scheduled) {
+    const key = session.start_time ? toLocalYMDFromISO(session.start_time) || "__undated__" : "__undated__";
+    if (!isAllDatesValue(dateFilter) && key !== dateFilter) continue;
+    const items = groups.get(key) || [];
+    items.push(session);
+    groups.set(key, items);
   }
 
   return (
@@ -2606,169 +2488,32 @@ export function SessionsPage({ unifiedPreview = false }: { unifiedPreview?: bool
         </div>
       ) : null}
 
-      <main className="w-full px-3 md:px-6 lg:px-10 pb-12">
-        <div className={`text-center ${topPad}`}>
-          {sessionTypeTab === "group" && (
-            <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
-              Join a focus session to stay accountable
-            </h1>
-          )}
-        </div>
-
-        <div className="w-full">
-          {sessionTypeTab === "infinite" && <InfiniteRoomsIntroCard />}
-
-
-          <div className="relative w-full flex justify-center mb-[55px]">
-            <SessionTypeSwitcher
-              value={sessionTypeTab}
-              liveCounts={switcherLiveCounts}
-              onChange={(v) => {
-                setSessionTypeTab(v);
-                navigate(`/sessions?tab=${v}`);
-
-                if (v === "infinite" || v === "one-on-one") setDateFilter(null);
-              }}
-            />
-            {user?.id ? (
-              <button
-                type="button"
-                onClick={() => setTasksSidebarOpen(true)}
-                className="absolute right-0 top-1/2 hidden h-11 -translate-y-1/2 items-center gap-2 rounded-full bg-[#F1F1F1] px-4 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8] md:flex"
-              >
-                <ListChecks size={17} />
-                Tasks
-                {unfinishedTaskCount > 0 ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-[#4B4B4B]">
-                    <span className="relative flex h-2 w-2">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#67CE70] opacity-60" />
-                      <span className="relative inline-flex h-2 w-2 rounded-full bg-[#55C95F]" />
-                    </span>
-                    {unfinishedTaskCount} unfinished
-                  </span>
-                ) : null}
+      <Suspense fallback={<div className="py-12 text-center text-sm text-[#606060]">Loading sessions…</div>}>
+        {sessionTypeTab === "one-on-one" ? <OneOnOnePage embedded /> : (
+          <UnifiedSessionsLayout
+            infiniteRoomsIntro={<InfiniteRoomsIntroCard headingId="always-open-heading" />}
+            alwaysOpenCards={alwaysOpen.map(renderSessionCard)}
+            scheduledGroups={Array.from(groups, ([key, items]) => ({
+              key,
+              ...getDateGroupMeta(key),
+              cards: items.map(renderSessionCard),
+            }))}
+            dateFilter={isAllDatesValue(dateFilter) ? null : dateFilter}
+            onDateChange={setDateFilter}
+            liveCounts={switcherLiveCounts}
+            onSectionChange={setSessionTypeTab}
+            isLoading={isLoading}
+            error={sessionsLoadError}
+            onRetry={() => void fetchSessions()}
+            emptyAction={user ? <button type="button" onClick={openCreate} className="mb-4 text-sm underline underline-offset-4">Create the first session</button> : null}
+            toolbar={user?.id ? (
+              <button type="button" onClick={() => setTasksSidebarOpen(true)} className="mb-5 inline-flex h-11 items-center gap-2 rounded-full bg-[#F1F1F1] px-4 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8]">
+                <ListChecks size={17} /> Tasks{unfinishedTaskCount > 0 ? <span className="rounded-full bg-white px-2 py-1 text-[10px]">{unfinishedTaskCount} unfinished</span> : null}
               </button>
             ) : null}
-          </div>
-
-          {user?.id ? (
-            <button
-              type="button"
-              onClick={() => setTasksSidebarOpen(true)}
-              className="mb-5 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#F1F1F1] text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8] md:hidden"
-            >
-              <ListChecks size={17} />
-              Tasks
-              {unfinishedTaskCount > 0 ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-[#4B4B4B]">
-                  <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#67CE70] opacity-60" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[#55C95F]" />
-                  </span>
-                  {unfinishedTaskCount} unfinished
-                </span>
-              ) : null}
-            </button>
-          ) : null}
-
-          {sessionTypeTab === "one-on-one" ? (
-            <Suspense fallback={<div className="py-12 text-center text-sm text-[#606060]">Loading sessions…</div>}>
-            <OneOnOnePage embedded />
-            </Suspense>
-          ) : (
-            <>
-              {sessionTypeTab === "group" && (
-                <div className="mb-6 w-full">
-                  <SessionsDateFilter
-                    value={dateFilter}
-                    onChange={setDateFilter}
-                    weeksAhead={3}
-                  />
-                </div>
-              )}
-
-              <div className="rounded-[24px] px-3 py-3 md:border md:border-[#DBD8D8] md:p-8">
-                {isLoading ? (
-                  <div className="text-center py-12">
-                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brandBlack" />
-
-                    <p className="mt-4 text-[13px] text-[#606060]">
-                      Loading sessions...
-                    </p>
-                  </div>
-                ) : sessionsLoadError && sessions.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                    <div className="text-[16px] font-semibold text-brandBlack">
-                      Couldn't load sessions
-                    </div>
-
-                    <p className="mt-2 max-w-[420px] text-[13px] leading-relaxed text-[#606060]">
-                      The connection took too long or something interrupted the request.
-                    </p>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void fetchSessions();
-                      }}
-                      className="
-                        mt-5
-                        rounded-full
-                        bg-[#111827]
-                        px-5 py-2.5
-                        text-[13px] font-semibold text-white
-                        transition
-                        hover:opacity-90
-                      "
-                    >
-                      Try again
-                    </button>
-                  </div>
-                ) : visibleSessions.length === 0 ? (
-                  <div className="p-2 text-center">
-                    <p className="text-sm text-slate-600 mb-4">
-                      No active sessions{" "}
-                      {dateFilter &&
-                        !isAllDatesValue(dateFilter) &&
-                        sessionTypeTab === "group"
-                        ? "for this date"
-                        : "available"}
-                    </p>
-
-                    {user && (
-                      <button
-                        onClick={openCreate}
-                        className="text-sm underline underline-offset-4"
-                      >
-                        Create the first session
-                      </button>
-                    )}
-                  </div>
-                ) : isAllDatesMode ? (
-                  <div className="space-y-8 md:space-y-10">
-                    {groupedVisibleSessions.map((group) => (
-                      <section key={group.ymd}>
-                        <SessionsDateGroupHeader
-                          ymd={group.ymd}
-                          count={group.sessions.length}
-                        />
-
-                        <div className="space-y-3 md:space-y-6">
-                          {group.sessions.map(renderSessionCard)}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="space-y-3 md:space-y-6">
-                    {visibleSessions.map(renderSessionCard)}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </main>
+          />
+        )}
+      </Suspense>
 
       {user?.id ? (
         <button
