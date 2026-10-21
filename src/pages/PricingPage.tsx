@@ -175,7 +175,6 @@ export default function PricingPage() {
                     "Join and host without limits",
                     "All formats: Group sessions, Infinite rooms, Body tripling",
                     "Priority access to new features",
-                    "7-day free trial",
                 ],
                 ctaLabel: checkingAuth
                     ? "Checking account..."
@@ -197,7 +196,6 @@ export default function PricingPage() {
                     "Join and host without limits",
                     "All formats: Group sessions, Infinite rooms, Body tripling",
                     "Priority access to new features",
-                    "7-day free trial",
                 ],
                 ctaLabel: checkingAuth
                     ? "Checking account..."
@@ -250,7 +248,7 @@ export default function PricingPage() {
                         Start free. Upgrade when you want unlimited access.
                     </p>
                     <p className="mt-2 text-[14px] text-black/50">
-                        Monthly and yearly plans include a 7-day free trial.
+                        Your first 15 sessions are free. No credit card needed.
                     </p>
                 </div>
 
@@ -502,10 +500,11 @@ export default function PricingPage() {
 
                         <div>
                             <div className="text-sm font-medium">
-                                Do monthly and yearly include a trial?
+                                Can I try MySession before paying?
                             </div>
                             <p className="mt-1 text-sm text-black/60">
-                                Yes. Monthly and yearly plans include a 7-day free trial.
+                                Yes. Your first 15 sessions are free on the Free plan, no credit card
+                                needed. Upgrade to Pro whenever you want unlimited sessions.
                             </p>
                         </div>
 
