@@ -1,0 +1,119 @@
+.session-section-switcher,
+.session-section-nav {
+  --switcher-duration: 280ms;
+  --switcher-easing: cubic-bezier(0.22, 1, 0.36, 1);
+  transition-duration: var(--switcher-duration);
+  transition-timing-function: var(--switcher-easing);
+}
+
+.session-section-nav {
+  transition-property: margin-bottom;
+}
+
+.session-section-switcher {
+  --switcher-padding: 8px;
+  --switcher-gap: 8px;
+  display: flex;
+  align-items: center;
+  gap: var(--switcher-gap);
+  width: 100%;
+  max-width: 100%;
+  height: 72px;
+  padding: 8px var(--switcher-padding);
+  transition-property: width, height, padding, gap;
+}
+
+.session-section-switcher__track,
+.session-section-switcher__indicator,
+.session-section-switcher__button,
+.session-section-switcher__icon,
+.session-section-switcher__label {
+  transition-duration: var(--switcher-duration);
+  transition-timing-function: var(--switcher-easing);
+}
+
+/* The track shares the buttons' geometry without measuring animated widths in JS. */
+.session-section-switcher__track {
+  position: absolute;
+  pointer-events: none;
+  top: 50%;
+  left: var(--switcher-padding);
+  right: var(--switcher-padding);
+  height: 48px;
+  transform: translateY(-50%);
+  transition-property: left, right, height;
+}
+
+.session-section-switcher__indicator {
+  height: 100%;
+  width: calc((100% - (var(--section-count) - 1) * var(--switcher-gap)) / var(--section-count));
+  transform: translateX(calc(var(--active-section) * (100% + var(--switcher-gap))));
+  transition-property: width, transform;
+}
+
+.session-section-switcher__button {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 48px;
+  padding: 0 4px;
+  gap: 6px;
+  font-weight: 400;
+  transition-property: height, padding, gap, color;
+}
+
+.session-section-switcher__icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  transition-property: width, height;
+}
+
+.session-section-switcher__label {
+  font-size: 13px;
+  transition-property: font-size;
+}
+
+@media (min-width: 640px) {
+  .session-section-switcher__button { gap: 8px; padding: 0 16px; }
+  .session-section-switcher__icon { width: 24px; height: 24px; }
+  .session-section-switcher__label { font-size: 16px; }
+}
+
+@media (min-width: 768px) {
+  .session-section-switcher { --switcher-padding: 12px; width: 428px; }
+  .session-section-switcher__button { padding: 0 24px; }
+}
+
+.session-section-switcher[data-compact="true"] {
+  --switcher-padding: 4px;
+  --switcher-gap: 2px;
+  width: 292px;
+  height: 44px;
+  padding-block: 4px;
+}
+
+.session-section-switcher[data-compact="true"] .session-section-switcher__track,
+.session-section-switcher[data-compact="true"] .session-section-switcher__button {
+  height: 32px;
+}
+
+.session-section-switcher[data-compact="true"] .session-section-switcher__button {
+  gap: 6px;
+  padding: 0 10px;
+}
+
+.session-section-switcher[data-compact="true"] .session-section-switcher__icon {
+  width: 16px;
+  height: 16px;
+}
+
+.session-section-switcher[data-compact="true"] .session-section-switcher__label {
+  font-size: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-section-switcher,
+  .session-section-nav {
+    --switcher-duration: 0ms;
+  }
+}

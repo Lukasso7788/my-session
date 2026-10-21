@@ -33,6 +33,7 @@ import {
 
 const OneOnOnePage = lazy(() => import("./OneOnOnePage"));
 const SessionsTasksSidebar = lazy(() => import("../components/SessionsTasksSidebar"));
+const UnifiedSessionsConceptPage = lazy(() => import("./UnifiedSessionsConceptPage"));
 
 type BookingProfile = {
   id: string;
@@ -359,7 +360,7 @@ type Feature = {
   Icon: (p: { className?: string }) => JSX.Element;
 };
 
-function InfiniteRoomsIntroCard() {
+function InfiniteRoomsIntroCard({ headingId }: { headingId?: string } = {}) {
   const features: Feature[] = [
     {
       title: "Always Open",
@@ -400,7 +401,7 @@ function InfiniteRoomsIntroCard() {
               <InfinityIcon className="w-5 h-5" />
             </div>
 
-            <h2 className="font-inter font-semibold text-[20px] sm:text-[24px] text-brandBlack">
+            <h2 id={headingId} className="font-inter font-semibold text-[20px] sm:text-[24px] text-brandBlack">
               24/7 Focus Rooms
             </h2>
           </div>
@@ -508,7 +509,7 @@ function withTimeout<T>(
 }
 
 
-export function SessionsPage() {
+export function SessionsPage({ unifiedPreview = false }: { unifiedPreview?: boolean } = {}) {
   const navigate = useNavigate();
   const modal = useCreateSessionModal();
   const { user } = useAuth();
@@ -2526,6 +2527,76 @@ export function SessionsPage() {
       onPinnedChange={isSuperAdmin ? setSessionPinned : undefined}
     />
   );
+
+  if (unifiedPreview) {
+    const alwaysOpen = privacyFilteredSessions
+      .filter((session) => resolveSessionType(session) === "infinite")
+      .sort((a, b) => Number(b.is_pinned === true) - Number(a.is_pinned === true));
+    const scheduled = privacyFilteredSessions
+      .filter((session) => resolveSessionType(session) === "group")
+      .sort((a, b) => String(a.start_time || "").localeCompare(String(b.start_time || "")));
+    // If the live catalogue is empty, demonstrate the original scheduled card
+    // with clearly labelled local examples. These never enter the saved list.
+    const exampleSchedule = !isLoading && !sessionsLoadError && scheduled.length === 0;
+    if (exampleSchedule) {
+      for (const [index, title] of ["1 Hour — Pomodoro 25/5", "1 Hour — Uninterrupted Focus"].entries()) {
+        const start = new Date(Date.now() + (index * 24 + 1) * 60 * 60_000);
+        start.setMinutes(0, 0, 0);
+        scheduled.push({
+          id: `local-schedule-example-${index}`,
+          title,
+          host: "Example host",
+          host_name: "Example host",
+          duration_minutes: 60,
+          format: index === 0 ? "pomodoro_25_5" : "uninterrupted",
+          session_format_type: "group",
+          start_time: start.toISOString(),
+          scheduled_at: start.toISOString(),
+          created_at: start.toISOString(),
+          status: "scheduled",
+          description: "Example session for this local layout preview.",
+          max_participants: 8,
+          live_count: 0,
+          participant_count: 0,
+          daily_room_url: null,
+          focus_blocks: [],
+          session_bookings: [],
+          schedule: index === 0
+            ? [{ kind: "focus", minutes: 25 }, { kind: "break", minutes: 5 }, { kind: "focus", minutes: 25 }, { kind: "break", minutes: 5 }]
+            : [{ kind: "focus", minutes: 60 }],
+        });
+      }
+    }
+    const groups = new Map<string, SessionWithRelations[]>();
+    for (const session of scheduled) {
+      const key = session.start_time
+        ? toLocalYMDFromISO(session.start_time) || "__undated__"
+        : "__undated__";
+      if (dateFilter && key !== dateFilter) continue;
+      const items = groups.get(key) || [];
+      items.push(session);
+      groups.set(key, items);
+    }
+    return (
+      <Suspense fallback={<div className="py-12 text-center text-sm text-[#606060]">Loading sessions…</div>}>
+        <UnifiedSessionsConceptPage
+          infiniteRoomsIntro={<InfiniteRoomsIntroCard headingId="always-open-heading" />}
+          alwaysOpenCards={alwaysOpen.map(renderSessionCard)}
+          scheduledGroups={Array.from(groups, ([key, items]) => ({
+            key,
+            ...getDateGroupMeta(key),
+            cards: items.map(renderSessionCard),
+          }))}
+          dateFilter={dateFilter}
+          exampleSchedule={exampleSchedule}
+          onDateChange={setDateFilter}
+          isLoading={isLoading}
+          error={sessionsLoadError}
+          onRetry={() => void fetchSessions()}
+        />
+      </Suspense>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
