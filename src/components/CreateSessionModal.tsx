@@ -47,9 +47,11 @@ import {
 import { supabase } from "../lib/supabase";
 import { assignServerForSession } from "../lib/livekitPlacement";
 import { useAuth } from "../context/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { resolveStageVisual } from "./SessionStageBar";
 import { withRoomPolicies } from "../lib/roomPolicies";
+import { isCurrentUserAdmin } from "../lib/bans";
+import CreateKindSwitch, { requestInfiniteRoomCreator } from "./CreateKindSwitch";
 
 interface CreateSessionModalProps {
   isOpen: boolean;
@@ -1318,6 +1320,21 @@ export function CreateSessionModal({
 }: CreateSessionModalProps) {
   const { user, profile, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Admins can switch to creating a 24/7 (Infinite) room. Server-checked via
+  // is_app_admin(); the database still decides what may be created.
+  const [isAppAdmin, setIsAppAdmin] = useState(false);
+  useEffect(() => {
+    if (!isOpen || !user?.id) return;
+    let cancelled = false;
+    void isCurrentUserAdmin().then((ok) => {
+      if (!cancelled) setIsAppAdmin(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, user?.id]);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -3473,6 +3490,16 @@ export function CreateSessionModal({
               <p className="mt-1 font-inter text-[15px] text-[#667085]">Set up your focus session in a few steps</p>
             </div>
           </div>
+          {isAppAdmin ? (
+            <CreateKindSwitch
+              value="group"
+              className="ml-auto mr-4 hidden sm:inline-flex"
+              onChange={() => {
+                onClose();
+                requestInfiniteRoomCreator(navigate, location.pathname);
+              }}
+            />
+          ) : null}
           <button
             type="button"
             onClick={onClose}

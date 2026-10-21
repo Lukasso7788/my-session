@@ -2,14 +2,12 @@ const DEBUG = false;
 
 import { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { SessionTypeSwitcher } from "../components/SessionTypeSwitcher";
 import SessionCard from "../components/SessionCard";
 import ActiveBanModal from "../components/ActiveBanModal";
 import SupportMySessionModal from "../components/SupportMySessionModal";
 import HostSessionPromptModal, { type HostPromptKind } from "../components/HostSessionPromptModal";
 import CommunityPromptModal from "../components/CommunityPromptModal";
 import InviteFriendsModal from "../components/InviteFriendsModal";
-import { SessionsDateFilter } from "../components/SessionsDateFilter";
 import { supabase } from "../lib/supabase";
 import {
   getCurrentUserActiveBan,
@@ -20,6 +18,7 @@ import { loadEntitlementState, type EntitlementState } from "../lib/entitlements
 import { PRICING } from "../lib/billing";
 import { PAYWALL_ENABLED } from "../lib/flags";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
+import CreateKindSwitch, { OPEN_INFINITE_ROOM_CREATOR_EVENT, takePendingInfiniteRoomCreator } from "../components/CreateKindSwitch";
 import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
 import { ListChecks, UserPlus } from "lucide-react";
@@ -34,6 +33,7 @@ import {
 
 const OneOnOnePage = lazy(() => import("./OneOnOnePage"));
 const SessionsTasksSidebar = lazy(() => import("../components/SessionsTasksSidebar"));
+const UnifiedSessionsLayout = lazy(() => import("../components/UnifiedSessionsLayout"));
 
 type BookingProfile = {
   id: string;
@@ -360,7 +360,7 @@ type Feature = {
   Icon: (p: { className?: string }) => JSX.Element;
 };
 
-function InfiniteRoomsIntroCard() {
+function InfiniteRoomsIntroCard({ headingId }: { headingId?: string } = {}) {
   const features: Feature[] = [
     {
       title: "Always Open",
@@ -401,7 +401,7 @@ function InfiniteRoomsIntroCard() {
               <InfinityIcon className="w-5 h-5" />
             </div>
 
-            <h2 className="font-inter font-semibold text-[20px] sm:text-[24px] text-brandBlack">
+            <h2 id={headingId} className="font-inter font-semibold text-[20px] sm:text-[24px] text-brandBlack">
               24/7 Focus Rooms
             </h2>
           </div>
@@ -449,38 +449,6 @@ function InfiniteRoomsIntroCard() {
     </div>
   );
 }
-
-function SessionsDateGroupHeader({
-  ymd,
-  count,
-}: {
-  ymd: string;
-  count: number;
-}) {
-  const meta = getDateGroupMeta(ymd);
-
-  return (
-    <div className="flex items-center gap-3 mb-4 md:mb-5">
-      <div className="inline-flex items-center gap-2 rounded-full border border-[#DBD8D8] bg-[#F8F8F8] px-4 py-2">
-        <span className="text-[11px] uppercase tracking-[0.12em] font-semibold text-[#606060]">
-          {meta.label}
-        </span>
-        <span className="text-[#BDBDBD]">•</span>
-        <span className="text-[13px] font-semibold text-brandBlack">
-          {meta.pretty}
-        </span>
-      </div>
-
-      <div className="hidden sm:block h-px flex-1 bg-[#EAEAEA]" />
-
-      <div className="hidden md:inline-flex items-center rounded-full border border-[#EAEAEA] bg-white px-3 py-1 text-[12px] text-[#606060]">
-        {count} {count === 1 ? "session" : "sessions"}
-      </div>
-    </div>
-  );
-}
-
-
 
 const SESSIONS_BASE_TIMEOUT_MS = 12_000;
 const SESSIONS_ENRICHMENT_TIMEOUT_MS = 10_000;
@@ -1778,29 +1746,6 @@ export function SessionsPage() {
   }, [modal, fetchSessions]);
 
   useEffect(() => {
-    const openInfiniteRoomCreator = () => {
-      if (sessionTypeTab !== "infinite") return;
-      if (!user?.id) {
-        navigate(`/login?next=${encodeURIComponent("/sessions?tab=infinite")}`);
-        return;
-      }
-      setOverflowCreateError("");
-      setInfiniteRoomCreatorOpen(true);
-    };
-
-    window.addEventListener(
-      "mysession:open-infinite-room-creator",
-      openInfiniteRoomCreator,
-    );
-    return () => {
-      window.removeEventListener(
-        "mysession:open-infinite-room-creator",
-        openInfiniteRoomCreator,
-      );
-    };
-  }, [navigate, sessionTypeTab, user?.id]);
-
-  useEffect(() => {
     if (!user?.id) {
       setInfiniteCreatorEligibility(null);
       return;
@@ -1933,10 +1878,7 @@ export function SessionsPage() {
     );
   }, [sessionTypeTab, privacyFilteredSessions]);
 
-  const isAllDatesMode =
-    sessionTypeTab === "group" && isAllDatesValue(dateFilter);
-
-  const visibleSessions = useMemo(() => {
+const visibleSessions = useMemo(() => {
     if (sessionTypeTab === "infinite") {
       return typeFilteredSessions
         .map((session, index) => ({ session, index }))
@@ -1992,7 +1934,17 @@ export function SessionsPage() {
   // Keep the action visible for signed-in users. The database trigger is the
   // source of truth and counts hosted sessions across every session format.
   const hasInfiniteCreatorAccess = Boolean(user?.id);
-  const canCreateFreeFlow = hasInfiniteCreatorAccess && !freeFlowRoomAvailable;
+  const canCreateFreeFlow = hasInfiniteCreatorAccess && (isSuperAdmin || !freeFlowRoomAvailable);
+  const standardCreatorRooms = useMemo(() => {
+    if (!isSuperAdmin) return fullStandardInfiniteRooms;
+    const seen = new Set<string>();
+    return sessions.filter((session) => {
+      const format = String(session.title || "").match(/\b(15\/3|25\/5|50\/10|100\/20)\b/i)?.[1];
+      if (resolveSessionType(session) !== "infinite" || !format || seen.has(format)) return false;
+      seen.add(format);
+      return true;
+    });
+  }, [isSuperAdmin, sessions, fullStandardInfiniteRooms]);
 
   const createInfiniteOverflow = useCallback(
     async (source: SessionWithRelations | null, freeFlow = false) => {
@@ -2045,7 +1997,8 @@ export function SessionsPage() {
         session_format_type: "infinite",
         start_time: new Date().toISOString(),
         status: "active",
-        is_silent: false,
+        is_silent: freeFlow ? false : Boolean(source?.is_silent),
+        camera_required: freeFlow ? false : Boolean(source?.camera_required),
         is_private: false,
         is_hidden: false,
         max_participants: source?.max_participants || 8,
@@ -2082,27 +2035,6 @@ export function SessionsPage() {
       user?.id,
     ],
   );
-
-  const groupedVisibleSessions = useMemo(() => {
-    if (!isAllDatesMode) return [];
-
-    const map = new Map<string, SessionWithRelations[]>();
-
-    for (const s of visibleSessions) {
-      const key = s.start_time
-        ? toLocalYMDFromISO(s.start_time) || "__undated__"
-        : "__undated__";
-
-      const prev = map.get(key) || [];
-      prev.push(s);
-      map.set(key, prev);
-    }
-
-    return Array.from(map.entries()).map(([ymd, items]) => ({
-      ymd,
-      sessions: items,
-    }));
-  }, [visibleSessions, isAllDatesMode]);
 
   const join = (id: string) => {
     const next = `/room-livekit/${id}`;
@@ -2432,6 +2364,19 @@ export function SessionsPage() {
     )}?subject=${subject}&body=${body}`;
   };
 
+  // The admin "24/7 room" switch in the Create session modal opens the
+  // Infinite room creator here (directly, or after navigating to this page).
+  useEffect(() => {
+    const open = () => {
+      if (!user?.id || showBanModal()) return;
+      setOverflowCreateError("");
+      setInfiniteRoomCreatorOpen(true);
+    };
+    if (user?.id && takePendingInfiniteRoomCreator()) open();
+    window.addEventListener(OPEN_INFINITE_ROOM_CREATOR_EVENT, open);
+    return () => window.removeEventListener(OPEN_INFINITE_ROOM_CREATOR_EVENT, open);
+  }, [user?.id, showBanModal]);
+
   const openCreate = () => {
     if (showBanModal()) return;
 
@@ -2626,11 +2571,6 @@ export function SessionsPage() {
   }, []);
 
 
-  const topPad =
-    sessionTypeTab === "group"
-      ? "pt-[100px] pb-[50px]"
-      : "pt-[56px] pb-[18px]";
-
   const renderSessionCard = (s: SessionWithRelations) => (
     <SessionCard
       key={s.id}
@@ -2666,6 +2606,21 @@ export function SessionsPage() {
     />
   );
 
+  const alwaysOpen = privacyFilteredSessions
+    .filter((session) => resolveSessionType(session) === "infinite")
+    .sort((a, b) => Number(b.is_pinned === true) - Number(a.is_pinned === true));
+  const scheduled = privacyFilteredSessions
+    .filter((session) => resolveSessionType(session) === "group")
+    .sort((a, b) => String(a.start_time || "").localeCompare(String(b.start_time || "")));
+  const groups = new Map<string, SessionWithRelations[]>();
+  for (const session of scheduled) {
+    const key = session.start_time ? toLocalYMDFromISO(session.start_time) || "__undated__" : "__undated__";
+    if (!isAllDatesValue(dateFilter) && key !== dateFilter) continue;
+    const items = groups.get(key) || [];
+    items.push(session);
+    groups.set(key, items);
+  }
+
   return (
     <div className="min-h-screen bg-white text-brandBlack font-inter">
       {activeBan ? (
@@ -2674,169 +2629,34 @@ export function SessionsPage() {
         </div>
       ) : null}
 
-      <main className="w-full px-3 md:px-6 lg:px-10 pb-12">
-        <div className={`text-center ${topPad}`}>
-          {sessionTypeTab === "group" && (
-            <h1 className="text-[24px] md:text-[28px] xl:text-[36px] font-normal leading-tight mx-auto">
-              Join a focus session to stay accountable
-            </h1>
-          )}
-        </div>
-
-        <div className="w-full">
-          {sessionTypeTab === "infinite" && <InfiniteRoomsIntroCard />}
-
-
-          <div className="relative w-full flex justify-center mb-[55px]">
-            <SessionTypeSwitcher
-              value={sessionTypeTab}
-              liveCounts={switcherLiveCounts}
-              onChange={(v) => {
-                setSessionTypeTab(v);
-                navigate(`/sessions?tab=${v}`);
-
-                if (v === "infinite" || v === "one-on-one") setDateFilter(null);
-              }}
-            />
-            {user?.id ? (
-              <button
-                type="button"
-                onClick={() => setTasksSidebarOpen(true)}
-                className="absolute right-0 top-1/2 hidden h-11 -translate-y-1/2 items-center gap-2 rounded-full bg-[#F1F1F1] px-4 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8] md:flex"
-              >
-                <ListChecks size={17} />
-                Tasks
-                {unfinishedTaskCount > 0 ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-[#4B4B4B]">
-                    <span className="relative flex h-2 w-2">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#67CE70] opacity-60" />
-                      <span className="relative inline-flex h-2 w-2 rounded-full bg-[#55C95F]" />
-                    </span>
-                    {unfinishedTaskCount} unfinished
-                  </span>
-                ) : null}
+      <Suspense fallback={<div className="py-12 text-center text-sm text-[#606060]">Loading sessions…</div>}>
+        {sessionTypeTab === "one-on-one" ? <OneOnOnePage embedded /> : (
+          <UnifiedSessionsLayout
+            infiniteRoomsIntro={<InfiniteRoomsIntroCard headingId="always-open-heading" />}
+            alwaysOpenCards={alwaysOpen.map(renderSessionCard)}
+            scheduledGroups={Array.from(groups, ([key, items]) => ({
+              key,
+              ...getDateGroupMeta(key),
+              cards: items.map(renderSessionCard),
+            }))}
+            dateFilter={isAllDatesValue(dateFilter) ? null : dateFilter}
+            onDateChange={setDateFilter}
+            liveCounts={switcherLiveCounts}
+            onSectionChange={setSessionTypeTab}
+            isLoading={isLoading}
+            error={sessionsLoadError}
+            onRetry={() => void fetchSessions()}
+            emptyAction={<button type="button" onClick={openCreate} className="py-2 text-[13px] font-medium underline underline-offset-4 transition hover:text-[#3478C7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4">Create the first session</button>}
+            toolbar={user?.id ? (
+              <div className="flex justify-end">
+              <button type="button" onClick={() => setTasksSidebarOpen(true)} className="mb-5 inline-flex h-11 items-center gap-2 rounded-full bg-[#F1F1F1] px-4 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8]">
+                <ListChecks size={17} /> Tasks{unfinishedTaskCount > 0 ? <span className="rounded-full bg-white px-2 py-1 text-[10px]">{unfinishedTaskCount} unfinished</span> : null}
               </button>
-            ) : null}
-          </div>
-
-          {user?.id ? (
-            <button
-              type="button"
-              onClick={() => setTasksSidebarOpen(true)}
-              className="mb-5 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-[#F1F1F1] text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8] md:hidden"
-            >
-              <ListChecks size={17} />
-              Tasks
-              {unfinishedTaskCount > 0 ? (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2 py-1 text-[10px] font-medium text-[#4B4B4B]">
-                  <span className="relative flex h-2 w-2">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#67CE70] opacity-60" />
-                    <span className="relative inline-flex h-2 w-2 rounded-full bg-[#55C95F]" />
-                  </span>
-                  {unfinishedTaskCount} unfinished
-                </span>
-              ) : null}
-            </button>
-          ) : null}
-
-          {sessionTypeTab === "one-on-one" ? (
-            <Suspense fallback={<div className="py-12 text-center text-sm text-[#606060]">Loading sessions…</div>}>
-            <OneOnOnePage embedded />
-            </Suspense>
-          ) : (
-            <>
-              {sessionTypeTab === "group" && (
-                <div className="mb-6 w-full">
-                  <SessionsDateFilter
-                    value={dateFilter}
-                    onChange={setDateFilter}
-                    weeksAhead={3}
-                  />
-                </div>
-              )}
-
-              <div className="rounded-[24px] px-3 py-3 md:border md:border-[#DBD8D8] md:p-8">
-                {isLoading ? (
-                  <div className="text-center py-12">
-                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brandBlack" />
-
-                    <p className="mt-4 text-[13px] text-[#606060]">
-                      Loading sessions...
-                    </p>
-                  </div>
-                ) : sessionsLoadError && sessions.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-                    <div className="text-[16px] font-semibold text-brandBlack">
-                      Couldn't load sessions
-                    </div>
-
-                    <p className="mt-2 max-w-[420px] text-[13px] leading-relaxed text-[#606060]">
-                      The connection took too long or something interrupted the request.
-                    </p>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void fetchSessions();
-                      }}
-                      className="
-                        mt-5
-                        rounded-full
-                        bg-[#111827]
-                        px-5 py-2.5
-                        text-[13px] font-semibold text-white
-                        transition
-                        hover:opacity-90
-                      "
-                    >
-                      Try again
-                    </button>
-                  </div>
-                ) : visibleSessions.length === 0 ? (
-                  <div className="p-2 text-center">
-                    <p className="text-sm text-slate-600 mb-4">
-                      No active sessions{" "}
-                      {dateFilter &&
-                        !isAllDatesValue(dateFilter) &&
-                        sessionTypeTab === "group"
-                        ? "for this date"
-                        : "available"}
-                    </p>
-
-                    {user && (
-                      <button
-                        onClick={openCreate}
-                        className="text-sm underline underline-offset-4"
-                      >
-                        Create the first session
-                      </button>
-                    )}
-                  </div>
-                ) : isAllDatesMode ? (
-                  <div className="space-y-8 md:space-y-10">
-                    {groupedVisibleSessions.map((group) => (
-                      <section key={group.ymd}>
-                        <SessionsDateGroupHeader
-                          ymd={group.ymd}
-                          count={group.sessions.length}
-                        />
-
-                        <div className="space-y-3 md:space-y-6">
-                          {group.sessions.map(renderSessionCard)}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="space-y-3 md:space-y-6">
-                    {visibleSessions.map(renderSessionCard)}
-                  </div>
-                )}
               </div>
-            </>
-          )}
-        </div>
-      </main>
+            ) : null}
+          />
+        )}
+      </Suspense>
 
       {user?.id ? (
         <button
@@ -2904,7 +2724,7 @@ export function SessionsPage() {
             onClick={() => setInfiniteRoomCreatorOpen(false)}
             aria-label="Close infinite room creator"
           />
-          <section className="relative w-full max-w-[520px] rounded-[26px] bg-white p-6 text-[#2F2F2F] shadow-[0_24px_80px_rgba(0,0,0,0.24)] md:p-7">
+          <section role="dialog" aria-modal="true" aria-label="Create infinite room" className="relative max-h-[calc(100dvh-48px)] w-full max-w-[520px] overflow-y-auto rounded-[26px] bg-white p-6 text-[#2F2F2F] shadow-[0_24px_80px_rgba(0,0,0,0.24)] md:p-7">
             <button
               type="button"
               onClick={() => setInfiniteRoomCreatorOpen(false)}
@@ -2915,15 +2735,25 @@ export function SessionsPage() {
             </button>
 
             <div className="pr-12">
+              {isSuperAdmin ? (
+                <CreateKindSwitch
+                  value="infinite"
+                  className="mb-4"
+                  onChange={() => {
+                    setInfiniteRoomCreatorOpen(false);
+                    modal.open();
+                  }}
+                />
+              ) : null}
               <h2 className="text-[21px] font-semibold">Create infinite room</h2>
               <p className="mt-1.5 text-[13px] leading-5 text-[#6B6B6B]">
-                Available room formats are based on what the community needs right now.
+                {isSuperAdmin ? "Admin access: create a room even when existing rooms have space." : "Available room formats are based on what the community needs right now."}
               </p>
             </div>
 
             <div className="mt-6 grid gap-2.5">
               {hasInfiniteCreatorAccess
-                ? fullStandardInfiniteRooms.map((room) => {
+                ? standardCreatorRooms.map((room) => {
                     const format = String(room.title || "").match(/\b(15\/3|25\/5|50\/10|100\/20)\b/i)?.[1] || "Infinite";
                     const busy = overflowCreatingKey === String(room.id);
                     return (
@@ -2936,7 +2766,7 @@ export function SessionsPage() {
                       >
                         <span>
                           <span className="block text-[14px] font-semibold">{format} room</span>
-                          <span className="mt-0.5 block text-[11px] text-[#777]">The current room is full</span>
+                          <span className="mt-0.5 block text-[11px] text-[#777]">{isSuperAdmin ? "Create another room in this format" : "The current room is full"}</span>
                         </span>
                         <span className="text-[12px] font-medium">{busy ? "Creating…" : "Create"}</span>
                       </button>
@@ -2961,7 +2791,7 @@ export function SessionsPage() {
                 </button>
               ) : null}
 
-              {hasInfiniteCreatorAccess && availableFreeFlowRoom ? (
+              {hasInfiniteCreatorAccess && availableFreeFlowRoom && !isSuperAdmin ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -2981,7 +2811,7 @@ export function SessionsPage() {
               ) : null}
 
               {(!hasInfiniteCreatorAccess ||
-                (fullStandardInfiniteRooms.length === 0 &&
+                (standardCreatorRooms.length === 0 &&
                   !canCreateFreeFlow &&
                   !availableFreeFlowRoom)) ? (
                 <div className="rounded-[16px] bg-[#F4F4F4] px-4 py-5 text-center text-[13px] text-[#666]">

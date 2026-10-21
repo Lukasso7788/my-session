@@ -26,7 +26,7 @@ const tabs = [
     },
     {
         id: "infinite",
-        label: "Infinite rooms",
+        label: "24/7 sessions",
         iconActive: "/icons/infinite-active-black.svg",
         iconInactive: "/icons/infinite-inactive.svg",
     },
@@ -77,6 +77,8 @@ function getPlanPopoverText(state: EntitlementState | null): string {
 export default function Header() {
     const navigate = useNavigate();
     const location = useLocation();
+    const isUnifiedSessions = location.pathname === "/sessions";
+    const sessionTabs = tabs;
     const modal = useCreateSessionModal();
     const { user, profile, loading, signOut } = useAuth();
 
@@ -100,6 +102,7 @@ export default function Header() {
         `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
 
     const activeSessionsTab: SessionTabId = useMemo(() => {
+        if (isUnifiedSessions && new URLSearchParams(location.search).get("tab") !== "one-on-one") return location.hash === "#group-sessions" ? "group" : "infinite";
         if (location.pathname === "/one-on-one") return "one-on-one";
 
         const params = new URLSearchParams(location.search);
@@ -107,7 +110,7 @@ export default function Header() {
 
         if (tab === "infinite" || tab === "one-on-one" || tab === "group") return tab as SessionTabId;
         return "group";
-    }, [location.pathname, location.search]);
+    }, [isUnifiedSessions, location.hash, location.pathname, location.search]);
 
     const planBadgeLabel = getMembershipBadge({
         isLoggedIn: Boolean(entitlementState?.isLoggedIn),
@@ -201,7 +204,11 @@ export default function Header() {
     }, []);
 
     const goToSessions = (tabId: SessionTabId) => {
-        navigate(`/sessions?tab=${tabId}`);
+        if (tabId !== "one-on-one") {
+            navigate(`/sessions#${tabId === "infinite" ? "infinite-rooms" : "group-sessions"}`);
+        } else {
+            navigate(`/sessions?tab=${tabId}`);
+        }
         setSessionsOpen(false);
         setMobileMenu(false);
     };
@@ -242,11 +249,6 @@ export default function Header() {
             return;
         }
 
-        if (activeSessionsTab === "infinite" && location.pathname === "/sessions") {
-            window.dispatchEvent(new Event("mysession:open-infinite-room-creator"));
-            return;
-        }
-
         modal.open();
     };
 
@@ -278,7 +280,7 @@ export default function Header() {
                                         setSessionsOpen(false);
                                     }}
                                 >
-                                    {tabs.map((t) => {
+                                    {sessionTabs.map((t) => {
                                         const isHover = hoveredSessionTab === t.id;
                                         const isActive = activeSessionsTab === t.id;
                                         const showActiveIcon = isHover || isActive;
@@ -415,11 +417,7 @@ export default function Header() {
                                                 className="w-5 h-5"
                                                 alt=""
                                             />
-                                            <span>
-                                                {activeSessionsTab === "infinite" && location.pathname === "/sessions"
-                                                    ? "Create infinite room"
-                                                    : "Create a session"}
-                                            </span>
+                                            <span>Create session</span>
                                         </button>
 
                                         <button onClick={() => setShowUserMenu((v) => !v)} className="hidden sm:flex items-center">
@@ -514,7 +512,7 @@ export default function Header() {
                                     </button>
 
                                     <div className="pl-2 flex flex-col gap-2 w-full min-w-0">
-                                        {tabs.map((t) => (
+                                        {sessionTabs.map((t) => (
                                             <button
                                                 key={t.id}
                                                 onClick={() => goToSessions(t.id)}
@@ -589,13 +587,7 @@ export default function Header() {
                                     <>
                                         <button
                                             onClick={() => {
-                                                if (paywallDecision?.blocked) {
-                                                    setPaywallOpen(true);
-                                                    setMobileMenu(false);
-                                                    return;
-                                                }
-
-                                                modal.open();
+                                                handleCreateSessionClick();
                                                 setMobileMenu(false);
                                             }}
                                             className="inline-flex items-center gap-2 px-5 py-3 rounded-full border border-brandBlack text-base hover:bg-slate-100 w-full justify-center"

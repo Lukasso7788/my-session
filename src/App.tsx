@@ -128,6 +128,7 @@ export default function App() {
           <Route path="/one-on-one" element={<Navigate to="/sessions?tab=one-on-one" replace />} />
 
           <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/sessions-concept" element={<Navigate to="/sessions" replace />} />
           <Route path="/hosts" element={<HostsPage />} />
           <Route path="/leaderboard" element={<LeaderboardPage />} />
           <Route path="/pricing" element={<PricingPage />} />
