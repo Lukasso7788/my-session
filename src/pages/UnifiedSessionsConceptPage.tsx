@@ -41,7 +41,6 @@ export default function UnifiedSessionsConceptPage({
   onRetry,
 }: Props) {
   const [showPreviewNotice, setShowPreviewNotice] = useState(false);
-  const [showAllRooms, setShowAllRooms] = useState(false);
   const [activeSection, setActiveSection] = useState<"infinite" | "group">("infinite");
   const [isSwitcherSticky, setIsSwitcherSticky] = useState(false);
   const switcherSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -53,7 +52,6 @@ export default function UnifiedSessionsConceptPage({
   const anchorOffset = headerHeight + COMPACT_SWITCHER_HEIGHT + SWITCHER_VERTICAL_PADDING + 16;
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasSessions = alwaysOpenCards.length > 0 || scheduledGroups.some((group) => group.cards.length > 0);
-  const visibleRooms = showAllRooms ? alwaysOpenCards : alwaysOpenCards.slice(0, 2);
 
   useLayoutEffect(() => {
     const header = document.querySelector("header");
@@ -92,7 +90,7 @@ export default function UnifiedSessionsConceptPage({
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
     };
-  }, [anchorOffset, headerHeight, isLoading, showAllRooms, dateFilter]);
+  }, [anchorOffset, headerHeight, isLoading, dateFilter]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -192,20 +190,10 @@ export default function UnifiedSessionsConceptPage({
                     onClickCapture={keepCardInteractionLocal}
                     onAuxClickCapture={keepCardInteractionLocal}
                   >
-                    {visibleRooms}
+                    {alwaysOpenCards}
                   </div>
                 ) : (
                   <p className="py-8 text-center text-sm text-[#606060]">No 24/7 rooms available right now.</p>
-                )}
-                {alwaysOpenCards.length > 2 && (
-                  <button
-                    type="button"
-                    aria-expanded={showAllRooms}
-                    onClick={() => setShowAllRooms((current) => !current)}
-                    className="mt-4 rounded-full border border-[#DBD8D8] px-4 py-2 text-[13px] text-brandBlack transition hover:bg-black/5"
-                  >
-                    {showAllRooms ? "Show fewer rooms" : `Show all ${alwaysOpenCards.length} rooms`}
-                  </button>
                 )}
               </section>
 
