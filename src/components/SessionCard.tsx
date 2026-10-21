@@ -4210,6 +4210,36 @@ export default function SessionCard({
     const sessionType = resolveSessionType(session);
     const isInfinite = sessionIsInfinite;
     const isStandardGroupSession = sessionType === "group";
+    const groupJoinOpensAt = isStandardGroupSession
+        ? Date.parse(String(session?.start_time || "")) - 10 * 60_000
+        : Number.NaN;
+    const [actionTime, setActionTime] = useState(Date.now);
+
+    useEffect(() => {
+        if (!Number.isFinite(groupJoinOpensAt)) return;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const refresh = () => {
+            if (timer) clearTimeout(timer);
+            const now = Date.now();
+            setActionTime(now);
+            const remaining = groupJoinOpensAt - now;
+            if (remaining > 0) {
+                timer = setTimeout(refresh, Math.min(remaining, 2_147_483_647));
+            }
+        };
+        refresh();
+        window.addEventListener("focus", refresh);
+        document.addEventListener("visibilitychange", refresh);
+        return () => {
+            if (timer) clearTimeout(timer);
+            window.removeEventListener("focus", refresh);
+            document.removeEventListener("visibilitychange", refresh);
+        };
+    }, [groupJoinOpensAt]);
+
+    const isGroupJoinOpen = Number.isFinite(groupJoinOpensAt) && actionTime >= groupJoinOpensAt;
+    const showBookingAction = !isStandardGroupSession || !isGroupJoinOpen;
+    const showJoinAction = !isStandardGroupSession || isGroupJoinOpen;
     useEffect(() => {
         if (!isBookersModalOpen) return;
         const onKeyDown = (event: KeyboardEvent) => {
@@ -4924,7 +4954,7 @@ export default function SessionCard({
                 className="w-4 h-4"
                 alt=""
             />
-            <span className="hidden min-[1024px]:inline">Book session</span>
+            <span className={isStandardGroupSession ? "inline" : "hidden min-[1024px]:inline"}>Book session</span>
         </button>
     );
 
@@ -5115,7 +5145,7 @@ export default function SessionCard({
                         )}
                     </div>
 
-                    <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_48px] items-center gap-3 min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end">
+                    <div className={`grid w-full ${isStandardGroupSession ? "grid-cols-[minmax(0,1fr)_48px]" : "grid-cols-[auto_minmax(0,1fr)_48px]"} items-center gap-3 min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end`}>
                         <button
                             type="button"
                             onClick={() => setIsLiveUsersModalOpen(true)}
@@ -5152,9 +5182,9 @@ export default function SessionCard({
                             </div>
                         </button>
 
-                        {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
+                        {showBookingAction && (isBookingConfirmed ? confirmedBookingButton : bookSessionButton)}
 
-                        <button
+                        {showJoinAction && <button
                             onClick={handleJoinRoom}
                             onMouseEnter={() => {
                                 setIsHoveringJoinIframe(true);
@@ -5181,7 +5211,7 @@ export default function SessionCard({
                             aria-label={!canManageSession && isSessionFull ? "Session full" : "Join session"}
                         >
                             {!canManageSession && isSessionFull ? "Full" : "Join session"}
-                        </button>
+                        </button>}
 
                         <div ref={optionsRef} className={`relative w-12 ${isOptionsOpen ? "z-[230]" : "z-0"}`}>
                             <button
