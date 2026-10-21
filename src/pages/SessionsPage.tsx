@@ -1876,7 +1876,17 @@ const visibleSessions = useMemo(() => {
   // Keep the action visible for signed-in users. The database trigger is the
   // source of truth and counts hosted sessions across every session format.
   const hasInfiniteCreatorAccess = Boolean(user?.id);
-  const canCreateFreeFlow = hasInfiniteCreatorAccess && !freeFlowRoomAvailable;
+  const canCreateFreeFlow = hasInfiniteCreatorAccess && (isSuperAdmin || !freeFlowRoomAvailable);
+  const standardCreatorRooms = useMemo(() => {
+    if (!isSuperAdmin) return fullStandardInfiniteRooms;
+    const seen = new Set<string>();
+    return sessions.filter((session) => {
+      const format = String(session.title || "").match(/\b(15\/3|25\/5|50\/10|100\/20)\b/i)?.[1];
+      if (resolveSessionType(session) !== "infinite" || !format || seen.has(format)) return false;
+      seen.add(format);
+      return true;
+    });
+  }, [isSuperAdmin, sessions, fullStandardInfiniteRooms]);
 
   const createInfiniteOverflow = useCallback(
     async (source: SessionWithRelations | null, freeFlow = false) => {
@@ -1929,7 +1939,8 @@ const visibleSessions = useMemo(() => {
         session_format_type: "infinite",
         start_time: new Date().toISOString(),
         status: "active",
-        is_silent: false,
+        is_silent: freeFlow ? false : Boolean(source?.is_silent),
+        camera_required: freeFlow ? false : Boolean(source?.camera_required),
         is_private: false,
         is_hidden: false,
         max_participants: source?.max_participants || 8,
@@ -2482,11 +2493,13 @@ const visibleSessions = useMemo(() => {
             isLoading={isLoading}
             error={sessionsLoadError}
             onRetry={() => void fetchSessions()}
-            emptyAction={<button type="button" onClick={openCreate} className="rounded-full border border-brandBlack px-5 py-2.5 text-[13px] font-medium transition hover:bg-black/5">Create the first session</button>}
+            emptyAction={<button type="button" onClick={openCreate} className="py-2 text-[13px] font-medium underline underline-offset-4 transition hover:text-[#3478C7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4">Create the first session</button>}
             toolbar={user?.id ? (
+              <div className="flex justify-end">
               <button type="button" onClick={() => setTasksSidebarOpen(true)} className="mb-5 inline-flex h-11 items-center gap-2 rounded-full bg-[#F1F1F1] px-4 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8]">
                 <ListChecks size={17} /> Tasks{unfinishedTaskCount > 0 ? <span className="rounded-full bg-white px-2 py-1 text-[10px]">{unfinishedTaskCount} unfinished</span> : null}
               </button>
+              </div>
             ) : null}
           />
         )}
@@ -2558,7 +2571,7 @@ const visibleSessions = useMemo(() => {
             onClick={() => setInfiniteRoomCreatorOpen(false)}
             aria-label="Close infinite room creator"
           />
-          <section className="relative w-full max-w-[520px] rounded-[26px] bg-white p-6 text-[#2F2F2F] shadow-[0_24px_80px_rgba(0,0,0,0.24)] md:p-7">
+          <section role="dialog" aria-modal="true" aria-label="Create infinite room" className="relative max-h-[calc(100dvh-48px)] w-full max-w-[520px] overflow-y-auto rounded-[26px] bg-white p-6 text-[#2F2F2F] shadow-[0_24px_80px_rgba(0,0,0,0.24)] md:p-7">
             <button
               type="button"
               onClick={() => setInfiniteRoomCreatorOpen(false)}
@@ -2571,13 +2584,13 @@ const visibleSessions = useMemo(() => {
             <div className="pr-12">
               <h2 className="text-[21px] font-semibold">Create infinite room</h2>
               <p className="mt-1.5 text-[13px] leading-5 text-[#6B6B6B]">
-                Available room formats are based on what the community needs right now.
+                {isSuperAdmin ? "Admin access: create a room even when existing rooms have space." : "Available room formats are based on what the community needs right now."}
               </p>
             </div>
 
             <div className="mt-6 grid gap-2.5">
               {hasInfiniteCreatorAccess
-                ? fullStandardInfiniteRooms.map((room) => {
+                ? standardCreatorRooms.map((room) => {
                     const format = String(room.title || "").match(/\b(15\/3|25\/5|50\/10|100\/20)\b/i)?.[1] || "Infinite";
                     const busy = overflowCreatingKey === String(room.id);
                     return (
@@ -2590,7 +2603,7 @@ const visibleSessions = useMemo(() => {
                       >
                         <span>
                           <span className="block text-[14px] font-semibold">{format} room</span>
-                          <span className="mt-0.5 block text-[11px] text-[#777]">The current room is full</span>
+                          <span className="mt-0.5 block text-[11px] text-[#777]">{isSuperAdmin ? "Create another room in this format" : "The current room is full"}</span>
                         </span>
                         <span className="text-[12px] font-medium">{busy ? "Creating…" : "Create"}</span>
                       </button>
@@ -2615,7 +2628,7 @@ const visibleSessions = useMemo(() => {
                 </button>
               ) : null}
 
-              {hasInfiniteCreatorAccess && availableFreeFlowRoom ? (
+              {hasInfiniteCreatorAccess && availableFreeFlowRoom && !isSuperAdmin ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -2635,7 +2648,7 @@ const visibleSessions = useMemo(() => {
               ) : null}
 
               {(!hasInfiniteCreatorAccess ||
-                (fullStandardInfiniteRooms.length === 0 &&
+                (standardCreatorRooms.length === 0 &&
                   !canCreateFreeFlow &&
                   !availableFreeFlowRoom)) ? (
                 <div className="rounded-[16px] bg-[#F4F4F4] px-4 py-5 text-center text-[13px] text-[#666]">
