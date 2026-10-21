@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Flame, RefreshCw, Repeat2, Trophy } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { buildRetentionReport, monthStartKey } from "../../lib/retentionReport";
 
 // Admin dashboard: who keeps coming back. Data: admin_retention_streaks
 // (migration 20261018130000), from the durable per-day attendance cache.
@@ -244,8 +245,47 @@ export function RetentionStreaksView({ report }: { report: RetentionReport }) {
   );
 }
 
+async function buildReportInBrowser(): Promise<RetentionReport> {
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const start = monthStartKey(todayKey, 35);
+  const end = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  const { data, error } = await supabase.rpc("admin_daily_attendance_history", { p_start_date: start, p_end_date: end });
+  if (error) throw error;
+  const days = ((data || []) as { attendance_date: string; attendee_ids: string[] | null }[]).map((row) => ({
+    date: String(row.attendance_date || "").slice(0, 10),
+    userIds: Array.isArray(row.attendee_ids) ? row.attendee_ids.map(String) : [],
+  }));
+  const report = buildRetentionReport(days, todayKey);
+
+  // Names and avatars for the people shown.
+  const ids = new Set<string>();
+  Object.values(report.returning.top).forEach((list) => list.forEach((p) => ids.add(p.user_id)));
+  Object.values(report.streaks).forEach((unit) => {
+    unit.top.forEach((p) => ids.add(p.user_id));
+    if (unit.record) ids.add(unit.record.user_id);
+  });
+  if (ids.size) {
+    const { data: profiles } = await supabase.from("profiles").select("id, full_name, avatar_url").in("id", [...ids]);
+    const byId = new Map(((profiles || []) as { id: string; full_name: string | null; avatar_url: string | null }[]).map((p) => [p.id, p]));
+    const fill = <T extends { user_id: string; full_name: string | null; avatar_url: string | null }>(p: T): T => ({
+      ...p,
+      full_name: byId.get(p.user_id)?.full_name ?? null,
+      avatar_url: byId.get(p.user_id)?.avatar_url ?? null,
+    });
+    (Object.keys(report.returning.top) as (keyof typeof report.returning.top)[]).forEach((key) => {
+      report.returning.top[key] = report.returning.top[key].map(fill);
+    });
+    (Object.keys(report.streaks) as Unit[]).forEach((unit) => {
+      report.streaks[unit].top = report.streaks[unit].top.map(fill);
+      report.streaks[unit].record = report.streaks[unit].record ? fill(report.streaks[unit].record!) : null;
+    });
+  }
+  return report as RetentionReport;
+}
+
 export default function RetentionStreaksSection() {
   const [report, setReport] = useState<RetentionReport | null>(null);
+  const [source, setSource] = useState<"database" | "browser">("database");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -253,15 +293,18 @@ export default function RetentionStreaksSection() {
     setLoading(true);
     setError("");
     const { data, error: rpcError } = await supabase.rpc("admin_retention_streaks");
-    if (rpcError) {
-      const code = String(rpcError.code || "");
-      setError(
-        code === "PGRST202" || code === "42883"
-          ? "Apply migration 20261018130000_admin_retention_streaks.sql to see returning people and streaks."
-          : "Could not load returning people and streaks.",
-      );
-    } else {
+    if (!rpcError && data) {
       setReport(data as RetentionReport);
+      setSource("database");
+    } else {
+      // Not applied yet (or failed): count it here from the per-day attendee
+      // lists the dashboard already uses.
+      try {
+        setReport(await buildReportInBrowser());
+        setSource("browser");
+      } catch {
+        setError("Could not load returning people and streaks.");
+      }
     }
     setLoading(false);
   };
@@ -291,7 +334,14 @@ export default function RetentionStreaksSection() {
       {error ? (
         <div className="rounded-[24px] border border-black/[0.06] bg-white p-5 text-[13px] text-[#6B726D]">{error}</div>
       ) : report ? (
-        <RetentionStreaksView report={report} />
+        <>
+          <RetentionStreaksView report={report} />
+          {source === "browser" ? (
+            <p className="mt-2 text-[11px] text-[#8A908B]">
+              Counted in the browser from daily attendance. Apply migration 20261018130000_admin_retention_streaks.sql to compute it in the database.
+            </p>
+          ) : null}
+        </>
       ) : (
         <div className="grid min-h-40 place-items-center rounded-[24px] border border-black/[0.06] bg-white text-[13px] text-[#7C827E]">Loading…</div>
       )}

@@ -722,6 +722,8 @@ export default function ProfilePage() {
             <span className="text-[14px] font-medium text-[#2F2F2F]">{attendedCount} sessions</span>
           </span>
 
+          <ProfileStreaksPanel userId={String(user?.id || "")} />
+
           <span className="flex items-center gap-2">
             <img src="/icons/followers_profile.svg" alt="Followers" className="w-[24px] h-[24px]" />
             <span className="text-[14px] font-medium text-[#2F2F2F]">{followersCount} followers</span>
@@ -738,8 +740,6 @@ export default function ProfilePage() {
           </span>
         </div>
       </div>
-
-      <ProfileStreaksPanel />
 
       <div className="mt-10 border-t border-gray-200" />
 
