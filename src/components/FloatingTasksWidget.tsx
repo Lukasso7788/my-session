@@ -88,6 +88,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
   const [draft, setDraft] = useState("");
   const [assigningId, setAssigningId] = useState("");
   const [actionsId, setActionsId] = useState("");
+  const [expandedId, setExpandedId] = useState("");
   const [editingId, setEditingId] = useState("");
   const [editingText, setEditingText] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -178,6 +179,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
     if (open) return;
     setAssigningId("");
     setActionsId("");
+    setExpandedId("");
     setEditingId("");
   }, [open]);
 
@@ -249,22 +251,29 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
     const peerIndex = peers.findIndex((task) => task.id === item.id);
     const busy = tasks.busyId === item.id;
 
+    // Rows are one line; hovering (or tapping the text, or opening ⋯) shows
+    // the full text and the session details.
+    const pinnedOpen = expandedId === item.id || actionsId === item.id || editingId === item.id;
+    const showWhenOpen = pinnedOpen ? "flex" : "hidden group-hover:flex group-focus-within:flex";
+    const showWhenClosed = pinnedOpen ? "hidden" : "group-hover:hidden group-focus-within:hidden";
+    const hasDetails = !item.completed && !inSessionGroup;
+
     return (
-      <li key={item.id} className="rounded-[16px] px-2 py-2.5 hover:bg-[#F6F9FF]">
-        <div className="flex items-start gap-3">
+      <li key={item.id} className="group rounded-[12px] px-2 py-[5px] hover:bg-[#F6F9FF]">
+        <div className="flex items-start gap-2.5">
           <button
             type="button"
             onClick={() => void tasks.toggleTask(item)}
             disabled={busy}
             aria-label={item.completed ? "Mark task as not done" : "Mark task as done"}
             className={[
-              "mt-[1px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-[1.5px]",
+              "mt-[2px] flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-[1.5px]",
               item.completed
                 ? "border-[#5286F6] bg-[#5286F6] text-white"
                 : "border-[#B9CBF5] bg-white text-transparent hover:border-[#5286F6] hover:text-[#B9CBF5]",
             ].join(" ")}
           >
-            <Check size={12} strokeWidth={3} />
+            <Check size={10} strokeWidth={3} />
           </button>
 
           <div className="min-w-0 flex-1">
@@ -278,25 +287,41 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                   if (event.key === "Enter") saveEdit(item);
                   if (event.key === "Escape") setEditingId("");
                 }}
-                className="h-8 w-full rounded-[10px] border border-[#5286F6] px-2 text-[13px] outline-none"
+                className="h-7 w-full rounded-[8px] border border-[#5286F6] px-2 text-[13px] outline-none"
               />
             ) : (
-              <p
-                className={[
-                  "break-words text-[13.5px] leading-5",
-                  item.completed ? "text-[#9A9A9A] line-through decoration-[#C4C4C4]" : "text-[#2F2F2F]",
-                ].join(" ")}
-              >
-                {item.text}
-              </p>
+              <div className="flex min-w-0 items-center gap-1.5">
+                <p
+                  onClick={() => setExpandedId((value) => (value === item.id ? "" : item.id))}
+                  className={[
+                    "min-w-0 flex-1 cursor-default text-[13px] leading-5",
+                    pinnedOpen
+                      ? "whitespace-normal break-words"
+                      : "truncate group-hover:whitespace-normal group-hover:break-words group-focus-within:whitespace-normal",
+                    item.completed ? "text-[#9A9A9A] line-through decoration-[#C4C4C4]" : "text-[#2F2F2F]",
+                  ].join(" ")}
+                >
+                  {item.text}
+                </p>
+                {hasDetails && assigned ? (
+                  <span
+                    className={`${showWhenClosed} shrink-0 text-[11px] text-[#5286F6]`}
+                    title={sessionLabel(assigned)}
+                    aria-hidden
+                  >
+                    {isInfiniteTaskSession(assigned) ? "∞" : <CalendarDays size={12} />}
+                  </span>
+                ) : null}
+              </div>
             )}
 
-            {!item.completed && !inSessionGroup ? (
-              assigned ? (
+            {hasDetails ? (
+              <div className={`${showWhenOpen} pb-0.5`}>
+              {assigned ? (
                 <button
                   type="button"
                   onClick={() => setAssigningId(item.id)}
-                  className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[#D3E0FC] bg-[#EEF3FE] px-2.5 py-[3px] text-[11.5px] font-medium text-[#3F6FD8] hover:bg-[#E4EDFF]"
+                  className="mt-1 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[#D3E0FC] bg-[#EEF3FE] px-2.5 py-[2px] text-[11.5px] font-medium text-[#3F6FD8] hover:bg-[#E4EDFF]"
                   title="Change session"
                 >
                   {isInfiniteTaskSession(assigned) ? <span aria-hidden>∞</span> : <CalendarDays size={12} />}
@@ -309,12 +334,13 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                 <button
                   type="button"
                   onClick={() => setAssigningId(item.id)}
-                  className="mt-1 inline-flex items-center gap-1 text-[12px] font-medium text-[#8A9BC0] hover:text-[#3F6FD8]"
+                  className="mt-0.5 inline-flex items-center gap-1 text-[12px] font-medium text-[#8A9BC0] hover:text-[#3F6FD8]"
                 >
                   <Plus size={13} />
                   {assignmentEnded ? "Session ended · add to another" : "Add to a session"}
                 </button>
-              )
+              )}
+              </div>
             ) : null}
           </div>
 
@@ -325,7 +351,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
             aria-label={`More actions for ${item.text}`}
             aria-expanded={actionsId === item.id}
             className={[
-              "-mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#8A9BC0] hover:bg-[#E4EDFF] hover:text-[#3F6FD8] disabled:opacity-50",
+              "-mr-1 flex h-5 w-6 shrink-0 items-center justify-center rounded-full text-[#8A9BC0] hover:bg-[#E4EDFF] hover:text-[#3F6FD8] disabled:opacity-50",
               actionsId === item.id ? "bg-[#E4EDFF] text-[#3F6FD8]" : "",
             ].join(" ")}
           >
@@ -334,7 +360,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
         </div>
 
         {actionsId === item.id ? (
-          <div className="ml-8 mt-2 flex flex-wrap gap-1.5">
+          <div className="ml-[26px] mt-1.5 pb-1 flex flex-wrap gap-1.5">
             {[
               { label: "Edit", icon: <Pencil size={12} />, onClick: () => { setEditingId(item.id); setEditingText(item.text); setActionsId(""); } },
               { label: "Up", icon: <ArrowUp size={12} />, disabled: peerIndex <= 0, onClick: () => void tasks.moveTask(item, -1) },
@@ -377,7 +403,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
     return tasks.sessions
       .filter((session) => groups.has(String(session.id)))
       .map((session) => (
-        <div key={session.id} className="mb-3 last:mb-0">
+        <div key={session.id} className="mb-2 last:mb-0">
           <div className="flex items-center gap-2 px-2 pb-1 pt-1">
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#5286F6] text-[11px] text-white">
               {isInfiniteTaskSession(session) ? "∞" : <CalendarDays size={12} />}
