@@ -1,0 +1,21 @@
+/* The Tasks pill settles in when the window collapses back into it. */
+@keyframes ms-tasks-pill-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ms-tasks-pill-in {
+  animation: ms-tasks-pill-in 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ms-tasks-pill-in {
+    animation: none;
+  }
+}

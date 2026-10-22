@@ -1,13 +1,18 @@
-import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
   ArrowUpRight,
+  CalendarClock,
   CalendarDays,
   Check,
+  CheckCheck,
+  ChevronDown,
+  ChevronUp,
   GripVertical,
   ListChecks,
+  ListTodo,
   Minus,
   MoreHorizontal,
   Pencil,
@@ -17,6 +22,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import { isInfiniteTaskSession, type TaskSessionOption } from "../lib/taskSessionEligibility";
 import { useSessionTasks, type SessionTask } from "../hooks/useSessionTasks";
+import "./floating-tasks-widget.css";
 
 // A movable Tasks pill that floats over the Sessions page. Drag it anywhere;
 // click it to open a small Tasks window (drag that by its header). Position
@@ -29,6 +35,7 @@ const STORAGE_KEY = "mysession:tasks-widget:v1";
 const EDGE = 12;
 const CARD_WIDTH = 368;
 const DRAG_THRESHOLD = 4;
+const COLLAPSE_MS = 200;
 
 function readStored(): { pos: Position | null; open: boolean } {
   try {
@@ -139,14 +146,33 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
     if (pos) writeStored(pos, open);
   }, [pos, open]);
 
+  // The window grows out of the pill and shrinks back into it.
+  const [entered, setEntered] = useState(false);
+  const collapseTimerRef = useRef(0);
+  useEffect(() => {
+    if (!open) {
+      setEntered(false);
+      return;
+    }
+    // A timeout (not requestAnimationFrame) so it also runs in a background tab.
+    const timer = window.setTimeout(() => setEntered(true), 20);
+    return () => window.clearTimeout(timer);
+  }, [open]);
+  useEffect(() => () => window.clearTimeout(collapseTimerRef.current), []);
+  const collapse = useCallback(() => {
+    setEntered(false);
+    window.clearTimeout(collapseTimerRef.current);
+    collapseTimerRef.current = window.setTimeout(() => setOpen(false), COLLAPSE_MS);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") collapse();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open]);
+  }, [open, collapse]);
 
   useEffect(() => {
     if (open) return;
@@ -224,7 +250,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
     const busy = tasks.busyId === item.id;
 
     return (
-      <li key={item.id} className="rounded-[16px] px-2 py-2.5 hover:bg-[#F7F7F7]">
+      <li key={item.id} className="rounded-[16px] px-2 py-2.5 hover:bg-[#F6F9FF]">
         <div className="flex items-start gap-3">
           <button
             type="button"
@@ -235,7 +261,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
               "mt-[1px] flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-[1.5px]",
               item.completed
                 ? "border-[#5286F6] bg-[#5286F6] text-white"
-                : "border-[#BDBDBD] bg-white text-transparent hover:border-[#2F2F2F] hover:text-[#BDBDBD]",
+                : "border-[#B9CBF5] bg-white text-transparent hover:border-[#5286F6] hover:text-[#B9CBF5]",
             ].join(" ")}
           >
             <Check size={12} strokeWidth={3} />
@@ -252,7 +278,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                   if (event.key === "Enter") saveEdit(item);
                   if (event.key === "Escape") setEditingId("");
                 }}
-                className="h-8 w-full rounded-[10px] border border-[#2F2F2F] px-2 text-[13px] outline-none"
+                className="h-8 w-full rounded-[10px] border border-[#5286F6] px-2 text-[13px] outline-none"
               />
             ) : (
               <p
@@ -270,20 +296,20 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                 <button
                   type="button"
                   onClick={() => setAssigningId(item.id)}
-                  className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full bg-[#F1F1F1] px-2.5 py-1 text-[11.5px] font-medium text-[#2F2F2F] hover:bg-[#E8E8E8]"
+                  className="mt-1.5 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[#D3E0FC] bg-[#EEF3FE] px-2.5 py-[3px] text-[11.5px] font-medium text-[#3F6FD8] hover:bg-[#E4EDFF]"
                   title="Change session"
                 >
                   {isInfiniteTaskSession(assigned) ? <span aria-hidden>∞</span> : <CalendarDays size={12} />}
                   <span className="truncate">{sessionLabel(assigned)}</span>
                   {!isInfiniteTaskSession(assigned) ? (
-                    <span className="shrink-0 text-[#8A8A8A]">· {formatSessionTime(assigned.start_time)}</span>
+                    <span className="shrink-0 text-[#7C9BDF]">· {formatSessionTime(assigned.start_time)}</span>
                   ) : null}
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => setAssigningId(item.id)}
-                  className="mt-1 inline-flex items-center gap-1 text-[12px] font-medium text-[#8A8A8A] hover:text-[#2F2F2F]"
+                  className="mt-1 inline-flex items-center gap-1 text-[12px] font-medium text-[#8A9BC0] hover:text-[#3F6FD8]"
                 >
                   <Plus size={13} />
                   {assignmentEnded ? "Session ended · add to another" : "Add to a session"}
@@ -299,8 +325,8 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
             aria-label={`More actions for ${item.text}`}
             aria-expanded={actionsId === item.id}
             className={[
-              "-mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#8A8A8A] hover:bg-[#EAEAEA] hover:text-[#2F2F2F] disabled:opacity-50",
-              actionsId === item.id ? "bg-[#EAEAEA] text-[#2F2F2F]" : "",
+              "-mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#8A9BC0] hover:bg-[#E4EDFF] hover:text-[#3F6FD8] disabled:opacity-50",
+              actionsId === item.id ? "bg-[#E4EDFF] text-[#3F6FD8]" : "",
             ].join(" ")}
           >
             <MoreHorizontal size={16} />
@@ -319,7 +345,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                 type="button"
                 disabled={action.disabled}
                 onClick={action.onClick}
-                className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[#E5E5E5] bg-white px-3 text-[12px] font-medium text-[#2F2F2F] hover:border-[#2F2F2F] disabled:opacity-35"
+                className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[#D3E0FC] bg-white px-3 text-[12px] font-medium text-[#3F6FD8] hover:bg-[#EEF3FE] disabled:opacity-35"
               >
                 {action.icon}
                 {action.label}
@@ -353,12 +379,12 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
       .map((session) => (
         <div key={session.id} className="mb-3 last:mb-0">
           <div className="flex items-center gap-2 px-2 pb-1 pt-1">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#2F2F2F] text-[11px] text-white">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#5286F6] text-[11px] text-white">
               {isInfiniteTaskSession(session) ? "∞" : <CalendarDays size={12} />}
             </span>
             <div className="min-w-0">
               <div className="truncate text-[12.5px] font-semibold text-[#2F2F2F]">{sessionLabel(session)}</div>
-              <div className="truncate text-[11px] text-[#8A8A8A]">{sessionMeta(session)}</div>
+              <div className="truncate text-[11px] text-[#7C9BDF]">{sessionMeta(session)}</div>
             </div>
           </div>
           <ul>{(groups.get(String(session.id)) || []).map((item) => renderRow(item, true))}</ul>
@@ -391,7 +417,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
           style={{ left: current.x, top: current.y, touchAction: "none" }}
           className={[
             // Styled like the "Deep work" label on session cards: a soft blue tint, not a solid button.
-            "fixed z-[45] inline-flex h-9 select-none items-center gap-1.5 rounded-full border border-[#D3E0FC] bg-[#EEF3FE]/95 pl-2 pr-3 font-inter text-[12.5px] font-medium text-[#3F6FD8] shadow-[0_4px_14px_rgba(82,134,246,0.12)] backdrop-blur hover:bg-[#E4EDFF]",
+            "ms-tasks-pill-in fixed z-[45] inline-flex h-9 select-none items-center gap-1.5 rounded-full border border-[#D3E0FC] bg-[#EEF3FE]/95 pl-2 pr-3 font-inter text-[12.5px] font-medium text-[#3F6FD8] shadow-[0_4px_14px_rgba(82,134,246,0.12)] backdrop-blur hover:bg-[#E4EDFF]",
             dragging ? "cursor-grabbing" : "cursor-grab",
           ].join(" ")}
           aria-label={`Tasks, ${openItems.length} to do${currentTask ? `, current: ${currentTask.text}` : ""}. Drag to move.`}
@@ -412,8 +438,11 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
         <section
           role="dialog"
           aria-label="Tasks"
-          style={cardStyle}
-          className="fixed z-[45] flex flex-col overflow-hidden rounded-[24px] border border-[#DBD8D8] bg-white font-inter text-[#2F2F2F] shadow-[0_24px_60px_rgba(0,0,0,0.18)]"
+          style={{ ...cardStyle, transformOrigin: `${opensUp ? "bottom" : "top"} ${alignsRight ? "right" : "left"}` }}
+          className={[
+            "fixed z-[45] flex flex-col overflow-hidden rounded-[24px] border border-[#D3E0FC] bg-white font-inter text-[#2F2F2F] shadow-[0_24px_60px_rgba(63,111,216,0.18)] transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none",
+            entered ? "scale-100 opacity-100" : `scale-[0.92] opacity-0 ${opensUp ? "translate-y-2" : "-translate-y-2"}`,
+          ].join(" ")}
         >
           <header
             {...dragHandlers}
@@ -423,53 +452,54 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
             }}
             style={{ touchAction: "none" }}
             className={[
-              "flex shrink-0 select-none items-center gap-3 px-4 pb-3 pt-4",
+              "flex shrink-0 select-none items-center gap-3 border-b border-[#DCE6FC] bg-[#EEF3FE] px-4 py-3",
               dragging ? "cursor-grabbing" : "cursor-grab",
             ].join(" ")}
           >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#2F2F2F] text-white">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#5286F6] text-white">
               <ListChecks size={17} />
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[15px] font-semibold leading-5">Tasks</div>
-              <div className="text-[12px] text-[#606060]">
+              <div className="text-[12px] text-[#5C7FCF]">
                 {openItems.length} to do · {doneItems.length} done
               </div>
             </div>
             <button
               type="button"
               onClick={() => navigate("/tasks")}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F1F1F1] hover:bg-[#E8E8E8]"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-[#D3E0FC] bg-white text-[#3F6FD8] hover:bg-[#E4EDFF]"
               aria-label="Open the full task plan"
               title="Open the full task plan"
             >
-              <ArrowUpRight size={16} />
+              <ArrowUpRight size={15} />
             </button>
             <button
               type="button"
-              onClick={() => setOpen(false)}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F1F1F1] hover:bg-[#E8E8E8]"
-              aria-label="Minimize tasks"
-              title="Minimize"
+              onClick={collapse}
+              className="inline-flex h-8 items-center gap-1 rounded-full border border-[#D3E0FC] bg-white pl-2.5 pr-3 text-[12px] font-semibold text-[#3F6FD8] hover:bg-[#E4EDFF]"
+              aria-label="Hide tasks"
+              title="Hide (Esc)"
             >
-              <Minus size={16} />
+              {opensUp ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+              Hide
             </button>
           </header>
 
           {assigningTask ? (
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="flex shrink-0 items-start gap-2 border-t border-[#EFEFEF] px-4 pb-3 pt-3">
+              <div className="flex shrink-0 items-start gap-2 px-4 pb-3 pt-3">
                 <button
                   type="button"
                   onClick={() => setAssigningId("")}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F1F1F1] hover:bg-[#E8E8E8]"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#D3E0FC] bg-white text-[#3F6FD8] hover:bg-[#E4EDFF]"
                   aria-label="Back to tasks"
                 >
                   <ArrowLeft size={16} />
                 </button>
                 <div className="min-w-0 pt-0.5">
                   <div className="text-[13.5px] font-semibold">Add to a session</div>
-                  <div className="truncate text-[12px] text-[#606060]">{assigningTask.text}</div>
+                  <div className="truncate text-[12px] text-[#5C7FCF]">{assigningTask.text}</div>
                 </div>
               </div>
               <ul className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
@@ -486,19 +516,19 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                         }}
                         className={[
                           "flex w-full items-center gap-3 rounded-[14px] px-2.5 py-2.5 text-left",
-                          selected ? "bg-[#F1F1F1]" : "hover:bg-[#F7F7F7]",
+                          selected ? "bg-[#EEF3FE]" : "hover:bg-[#F6F9FF]",
                         ].join(" ")}
                       >
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#E5E5E5] text-[13px]">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#D3E0FC] bg-white text-[13px] text-[#3F6FD8]">
                           {!session ? <Minus size={14} /> : isInfiniteTaskSession(session) ? "∞" : <CalendarDays size={14} />}
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[13px] font-medium">{session ? sessionLabel(session) : "No session"}</span>
-                          <span className="block truncate text-[11.5px] text-[#8A8A8A]">
+                          <span className="block truncate text-[11.5px] text-[#7C9BDF]">
                             {session ? sessionMeta(session) : "Keep it on your list for later"}
                           </span>
                         </span>
-                        {selected ? <Check size={16} className="shrink-0" /> : null}
+                        {selected ? <Check size={16} className="shrink-0 text-[#5286F6]" /> : null}
                       </button>
                     </li>
                   );
@@ -512,37 +542,37 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
             </div>
           ) : (
             <>
-              <div className="shrink-0 px-4">
+              <div className="shrink-0 px-4 pt-3">
                 <form
                   onSubmit={(event) => {
                     event.preventDefault();
                     void submitDraft();
                   }}
-                  className="flex items-center gap-2 rounded-full border border-[#DBD8D8] bg-white py-1 pl-4 pr-1 focus-within:border-[#2F2F2F]"
+                  className="flex items-center gap-2 rounded-full border border-[#D3E0FC] bg-white py-1 pl-4 pr-1 focus-within:border-[#5286F6]"
                 >
                   <input
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
                     placeholder="Add a task"
                     aria-label="New task"
-                    className="h-9 min-w-0 flex-1 bg-transparent text-[13.5px] outline-none placeholder:text-[#A3A3A3]"
+                    className="h-9 min-w-0 flex-1 bg-transparent text-[13.5px] outline-none placeholder:text-[#9DB0D8]"
                   />
                   <button
                     type="submit"
                     disabled={!draft.trim() || !!tasks.busyId}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#2F2F2F] text-white hover:bg-[#1F1F1F] disabled:opacity-25"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#5286F6] text-white hover:bg-[#4677EC] disabled:opacity-30"
                     aria-label="Add task"
                   >
                     <Plus size={18} />
                   </button>
                 </form>
 
-                <div role="tablist" aria-label="Task lists" className="mt-3 grid grid-cols-3 rounded-full bg-[#F1F1F1] p-1">
+                <div role="tablist" aria-label="Task lists" className="mt-3 grid grid-cols-3 rounded-full border border-[#DCE6FC] bg-[#EEF3FE] p-1">
                   {([
-                    ["todo", "To do", openItems.length],
-                    ["planned", "Planned", plannedItems.length],
-                    ["done", "Done", doneItems.length],
-                  ] as const).map(([key, label, count]) => (
+                    ["todo", "To do", openItems.length, ListTodo],
+                    ["planned", "Planned", plannedItems.length, CalendarClock],
+                    ["done", "Done", doneItems.length, CheckCheck],
+                  ] as const).map(([key, label, count, Icon]) => (
                     <button
                       key={key}
                       type="button"
@@ -553,12 +583,15 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                         setActionsId("");
                       }}
                       className={[
-                        "inline-flex h-8 items-center justify-center gap-1.5 rounded-full text-[12.5px] font-semibold",
-                        tab === key ? "bg-[#2F2F2F] text-white" : "text-[#606060] hover:text-[#2F2F2F]",
+                        "inline-flex h-8 items-center justify-center gap-1.5 rounded-full text-[12px] font-semibold",
+                        tab === key
+                          ? "bg-white text-[#3F6FD8] shadow-[0_1px_4px_rgba(63,111,216,0.18)]"
+                          : "text-[#6E86BD] hover:text-[#3F6FD8]",
                       ].join(" ")}
                     >
+                      <Icon size={14} />
                       {label}
-                      <span className={tab === key ? "text-white/60" : "text-[#A3A3A3]"}>{count}</span>
+                      <span className={tab === key ? "text-[#7C9BDF]" : "text-[#9DB0D8]"}>{count}</span>
                     </button>
                   ))}
                 </div>
@@ -575,11 +608,11 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                 {tasks.loading ? (
                   <div className="space-y-2 px-2 pt-2">
                     {[0, 1, 2].map((index) => (
-                      <div key={index} className="h-10 rounded-[14px] bg-[#F4F4F4]" />
+                      <div key={index} className="h-10 rounded-[14px] bg-[#F3F6FE]" />
                     ))}
                   </div>
                 ) : visibleItems.length === 0 ? (
-                  <p className="px-6 py-8 text-center text-[12.5px] leading-5 text-[#8A8A8A]">{emptyText}</p>
+                  <p className="px-6 py-8 text-center text-[12.5px] leading-5 text-[#7C9BDF]">{emptyText}</p>
                 ) : tab === "planned" ? (
                   renderPlanned()
                 ) : (
