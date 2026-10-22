@@ -75,6 +75,11 @@ type ReactionRow = {
 const MSG_TABLE = "session_chat_messages";
 const REACTIONS_TABLE = "session_chat_message_reactions";
 const CHAT_READ_RECEIPT_EVENT = "message-read";
+// Sent when a chat view opens: people in the session answer with the ids of
+// the requester's messages they have read, so receipts missed while the chat
+// was closed come back.
+const CHAT_READ_RECEIPT_REQUEST_EVENT = "message-read-request";
+const CHAT_READ_RECEIPT_MAX_MESSAGES = 500;
 const CHAT_READ_RECEIPT_CHANNEL_PREFIX = "chat-read-receipts";
 const CHAT_READ_RECEIPT_STORAGE_PREFIX = "mysession_chat_read_receipts_v1";
 
@@ -1241,6 +1246,7 @@ export function ChatPanel({
     const [readersByMessage, setReadersByMessage] = useState<ReadReceiptMap>({});
     const readReceiptChannelRef = useRef<any>(null);
     const readReceiptReadyRef = useRef(false);
+    const [readReceiptReady, setReadReceiptReady] = useState(false);
     const reportedReadIdsRef = useRef<Set<string>>(new Set());
 
     const readReceiptStorageKey = useMemo(() => {
@@ -1257,7 +1263,11 @@ export function ChatPanel({
         }
 
         try {
-            const raw = chatWindow.sessionStorage.getItem(readReceiptStorageKey);
+            // Kept in localStorage so receipts survive closing the chat or the tab
+            // (older builds used sessionStorage; read that once as a fallback).
+            const raw =
+                window.localStorage.getItem(readReceiptStorageKey) ||
+                window.sessionStorage.getItem(readReceiptStorageKey);
             const parsed = raw ? JSON.parse(raw) : {};
 
             // Backward compatibility with the previous format, which stored only message ids.
@@ -1299,7 +1309,7 @@ export function ChatPanel({
         } catch {
             setReadersByMessage({});
         }
-    }, [chatWindow, readReceiptStorageKey]);
+    }, [readReceiptStorageKey]);
 
     const rememberMessageReaders = useCallback(
         (messageIds: string[], reader: ReadReceiptReader) => {
@@ -1338,20 +1348,22 @@ export function ChatPanel({
                         .slice(-100);
                 });
 
+                const entries = Object.entries(next);
+                const capped =
+                    entries.length > CHAT_READ_RECEIPT_MAX_MESSAGES
+                        ? Object.fromEntries(entries.slice(-CHAT_READ_RECEIPT_MAX_MESSAGES))
+                        : next;
+
                 if (readReceiptStorageKey) {
                     try {
-                        const entries = Object.entries(next).slice(-500);
-                        chatWindow.sessionStorage.setItem(
-                            readReceiptStorageKey,
-                            JSON.stringify(Object.fromEntries(entries)),
-                        );
+                        window.localStorage.setItem(readReceiptStorageKey, JSON.stringify(capped));
                     } catch { }
                 }
 
-                return next;
+                return capped;
             });
         },
-        [chatWindow, readReceiptStorageKey],
+        [readReceiptStorageKey],
     );
 
     const [reactions, setReactions] = useState<
@@ -1555,18 +1567,82 @@ export function ChatPanel({
                     });
                 },
             )
+            .on(
+                "broadcast",
+                { event: CHAT_READ_RECEIPT_REQUEST_EVENT },
+                (payload: any) => {
+                    const data = payload?.payload || payload || {};
+                    const requesterUserId = String(data?.requesterUserId || "").trim();
+                    if (!requesterUserId || requesterUserId === userId) return;
+
+                    // Answer with the requester's messages this user has already read.
+                    const messageIds = messagesRef.current
+                        .filter(
+                            (message) =>
+                                message.user_id === requesterUserId &&
+                                reportedReadIdsRef.current.has(message.id),
+                        )
+                        .map((message) => message.id);
+                    if (!messageIds.length) return;
+
+                    // Spread the replies out so a busy room does not answer at once.
+                    window.setTimeout(() => {
+                        if (!readReceiptReadyRef.current) return;
+                        try {
+                            void channel.send({
+                                type: "broadcast",
+                                event: CHAT_READ_RECEIPT_EVENT,
+                                payload: {
+                                    readerUserId: userId,
+                                    readerName:
+                                        String(meProfileRef.current?.full_name || "").trim() ||
+                                        "Participant",
+                                    readerAvatarUrl:
+                                        String(meProfileRef.current?.avatar_url || "").trim() ||
+                                        null,
+                                    messageIds,
+                                    at: Date.now(),
+                                },
+                            });
+                        } catch { }
+                    }, 150 + Math.random() * 650);
+                },
+            )
             .subscribe((status: string) => {
                 readReceiptReadyRef.current = status === "SUBSCRIBED";
+                setReadReceiptReady(status === "SUBSCRIBED");
             });
 
         readReceiptChannelRef.current = channel;
 
         return () => {
             readReceiptReadyRef.current = false;
+            setReadReceiptReady(false);
             readReceiptChannelRef.current = null;
             void supabase.removeChannel(channel);
         };
     }, [sessionId, userId, rememberMessageReaders]);
+
+    // Once this view has my messages loaded, ask the room who has read them.
+    const requestedReadReceiptsRef = useRef("");
+    const hasOwnMessages = messages.some(
+        (message) => message.user_id === userId && !String(message.id).startsWith("optimistic-"),
+    );
+    useEffect(() => {
+        if (!readReceiptReady || !hasOwnMessages || !userId) return;
+        const key = `${activeViewKey}|${userId}`;
+        if (requestedReadReceiptsRef.current === key) return;
+        const channel = readReceiptChannelRef.current;
+        if (!channel) return;
+        requestedReadReceiptsRef.current = key;
+        try {
+            void channel.send({
+                type: "broadcast",
+                event: CHAT_READ_RECEIPT_REQUEST_EVENT,
+                payload: { requesterUserId: userId, at: Date.now() },
+            });
+        } catch { }
+    }, [readReceiptReady, hasOwnMessages, activeViewKey, userId]);
 
     const activeSubtitle = useMemo(() => {
         if (activeMode === "general") return subtitle;
@@ -3121,7 +3197,9 @@ export function ChatPanel({
         };
         setReactions(prune);
         setMyReactions(prune);
-        setReadersByMessage(prune);
+        // Read receipts are not pruned: they belong to messages that may only be
+        // out of view (another chat tab, or not loaded yet) and are capped in
+        // rememberMessageReaders instead.
         reportedReadIdsRef.current = new Set([...reportedReadIdsRef.current].filter((id) => retainedIds.has(id)));
     }, [messages]);
 
