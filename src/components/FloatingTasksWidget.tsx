@@ -390,20 +390,20 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
           }}
           style={{ left: current.x, top: current.y, touchAction: "none" }}
           className={[
-            // Same blue as the "Deep work" label on session cards.
-            "fixed z-[45] inline-flex h-9 select-none items-center gap-1.5 rounded-full bg-[#5286F6] pl-2 pr-3 font-inter text-[12.5px] font-semibold text-white shadow-[0_8px_22px_rgba(82,134,246,0.35)] hover:bg-[#4677EC]",
+            // Styled like the "Deep work" label on session cards: a soft blue tint, not a solid button.
+            "fixed z-[45] inline-flex h-9 select-none items-center gap-1.5 rounded-full border border-[#D3E0FC] bg-[#EEF3FE]/95 pl-2 pr-3 font-inter text-[12.5px] font-medium text-[#3F6FD8] shadow-[0_4px_14px_rgba(82,134,246,0.12)] backdrop-blur hover:bg-[#E4EDFF]",
             dragging ? "cursor-grabbing" : "cursor-grab",
           ].join(" ")}
           aria-label={`Tasks, ${openItems.length} to do${currentTask ? `, current: ${currentTask.text}` : ""}. Drag to move.`}
           title={currentTask?.text}
         >
-          <GripVertical size={13} className="shrink-0 text-white/60" />
-          <ListChecks size={15} className="shrink-0 text-white" />
+          <GripVertical size={13} className="shrink-0 text-[#5286F6]/50" />
+          <ListChecks size={15} className="shrink-0 text-[#5286F6]" />
           <span className="max-w-[min(200px,calc(100vw-130px))] truncate">
             {currentTask ? currentTask.text : tasks.loading ? "Tasks" : "Add your first task"}
           </span>
           {openItems.length > 1 ? (
-            <span className="inline-flex h-5 shrink-0 items-center justify-center rounded-full bg-white/20 px-1.5 text-[11px] font-semibold text-white">
+            <span className="inline-flex h-5 shrink-0 items-center justify-center rounded-full bg-white px-1.5 text-[11px] font-semibold text-[#5286F6]">
               +{openItems.length - 1}
             </span>
           ) : null}
