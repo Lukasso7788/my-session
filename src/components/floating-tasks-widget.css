@@ -1,4 +1,6 @@
-/* The Tasks pill settles in when the window collapses back into it. */
+/* Motion for the floating Tasks widget. All of it is off with reduced motion. */
+
+/* The pill settles in when the window collapses back into it. */
 @keyframes ms-tasks-pill-in {
   from {
     opacity: 0;
@@ -14,8 +16,133 @@
   animation: ms-tasks-pill-in 180ms ease-out;
 }
 
+/* Rows slide in (staggered by an inline animation-delay). */
+@keyframes ms-tasks-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ms-tasks-row-in {
+  animation: ms-tasks-row-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* A finished (or reopened) task holds for a beat, then slides out and folds away. */
+@keyframes ms-tasks-row-out {
+  0%,
+  40% {
+    opacity: 1;
+    transform: none;
+    max-height: 120px;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(14px);
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+
+.ms-tasks-row-out {
+  animation: ms-tasks-row-out 420ms ease-in forwards;
+}
+
+/* The checkbox pops when it gets checked. */
+@keyframes ms-tasks-check-pop {
+  0% {
+    transform: scale(0.6);
+  }
+  55% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.ms-tasks-check-pop {
+  animation: ms-tasks-check-pop 320ms cubic-bezier(0.3, 1.4, 0.6, 1);
+}
+
+/* "Add to a session" slides in from the right; the list slides back from the left. */
+@keyframes ms-tasks-view-in {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ms-tasks-view-back {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ms-tasks-view-in {
+  animation: ms-tasks-view-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.ms-tasks-view-back {
+  animation: ms-tasks-view-back 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* The ⋯ actions drop in under a row. */
+@keyframes ms-tasks-strip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ms-tasks-strip-in {
+  animation: ms-tasks-strip-in 180ms ease-out both;
+}
+
+/* Counters bump when the number changes. */
+@keyframes ms-tasks-bump {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.25);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.ms-tasks-bump {
+  animation: ms-tasks-bump 280ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .ms-tasks-pill-in {
+  .ms-tasks-pill-in,
+  .ms-tasks-row-in,
+  .ms-tasks-row-out,
+  .ms-tasks-check-pop,
+  .ms-tasks-view-in,
+  .ms-tasks-view-back,
+  .ms-tasks-strip-in,
+  .ms-tasks-bump {
     animation: none;
   }
 }

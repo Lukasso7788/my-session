@@ -36,6 +36,7 @@ const EDGE = 12;
 const CARD_WIDTH = 368;
 const DRAG_THRESHOLD = 4;
 const COLLAPSE_MS = 200;
+const ROW_OUT_MS = 420;
 
 function readStored(): { pos: Position | null; open: boolean } {
   try {
@@ -89,6 +90,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
   const [assigningId, setAssigningId] = useState("");
   const [actionsId, setActionsId] = useState("");
   const [expandedId, setExpandedId] = useState("");
+  const [leavingIds, setLeavingIds] = useState<string[]>([]);
   const [editingId, setEditingId] = useState("");
   const [editingText, setEditingText] = useState("");
   const [dragging, setDragging] = useState(false);
@@ -244,33 +246,58 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
     void tasks.renameTask(item, editingText);
   };
 
-  const renderRow = (item: SessionTask, inSessionGroup = false) => {
+  // Finishing a task in To do / Planned (or reopening one in Done) lets the
+  // row check, hold for a beat and slide out before it moves lists.
+  const handleToggle = (item: SessionTask) => {
+    if (tasks.busyId || leavingIds.includes(item.id)) return;
+    const leavesList = tab === "done" ? item.completed : !item.completed;
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (!leavesList || reducedMotion) {
+      void tasks.toggleTask(item);
+      return;
+    }
+    setLeavingIds((ids) => [...ids, item.id]);
+    window.setTimeout(() => {
+      void tasks.toggleTask(item).finally(() => {
+        setLeavingIds((ids) => ids.filter((id) => id !== item.id));
+      });
+    }, ROW_OUT_MS);
+  };
+
+  const renderRow = (item: SessionTask, index: number, inSessionGroup = false) => {
     const assigned = item.session_id ? tasks.sessionById.get(String(item.session_id)) : null;
     const assignmentEnded = !!item.session_id && !assigned;
     const peers = tasks.items.filter((task) => task.completed === item.completed);
     const peerIndex = peers.findIndex((task) => task.id === item.id);
     const busy = tasks.busyId === item.id;
+    const leaving = leavingIds.includes(item.id);
+    const checked = leaving ? !item.completed : item.completed;
 
-    // Rows are one line; hovering (or tapping the text, or opening ⋯) shows
-    // the full text and the session details.
+    // Rows are one line; hovering (or tapping the text, or opening ⋯) eases
+    // them open to the full text and the session details.
     const pinnedOpen = expandedId === item.id || actionsId === item.id || editingId === item.id;
-    const showWhenOpen = pinnedOpen ? "flex" : "hidden group-hover:flex group-focus-within:flex";
-    const showWhenClosed = pinnedOpen ? "hidden" : "group-hover:hidden group-focus-within:hidden";
-    const hasDetails = !item.completed && !inSessionGroup;
+    const hasDetails = !checked && !inSessionGroup;
 
     return (
-      <li key={item.id} className="group rounded-[12px] px-2 py-[5px] hover:bg-[#F6F9FF]">
+      <li
+        key={item.id}
+        style={{ animationDelay: leaving ? undefined : `${Math.min(index, 10) * 28}ms` }}
+        className={[
+          "group rounded-[12px] px-2 py-[5px] transition-colors duration-150 hover:bg-[#F6F9FF]",
+          leaving ? "ms-tasks-row-out pointer-events-none overflow-hidden" : "ms-tasks-row-in",
+        ].join(" ")}
+      >
         <div className="flex items-start gap-2.5">
           <button
             type="button"
-            onClick={() => void tasks.toggleTask(item)}
+            onClick={() => handleToggle(item)}
             disabled={busy}
             aria-label={item.completed ? "Mark task as not done" : "Mark task as done"}
             className={[
-              "mt-[2px] flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-[1.5px]",
-              item.completed
-                ? "border-[#5286F6] bg-[#5286F6] text-white"
-                : "border-[#B9CBF5] bg-white text-transparent hover:border-[#5286F6] hover:text-[#B9CBF5]",
+              "mt-[2px] flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-[1.5px] transition-[background-color,border-color,color,transform] duration-200 active:scale-75 motion-reduce:transition-none",
+              checked
+                ? "ms-tasks-check-pop border-[#5286F6] bg-[#5286F6] text-white"
+                : "border-[#B9CBF5] bg-white text-transparent hover:scale-110 hover:border-[#5286F6] hover:text-[#B9CBF5]",
             ].join(" ")}
           >
             <Check size={10} strokeWidth={3} />
@@ -294,18 +321,21 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                 <p
                   onClick={() => setExpandedId((value) => (value === item.id ? "" : item.id))}
                   className={[
-                    "min-w-0 flex-1 cursor-default text-[13px] leading-5",
+                    "min-w-0 flex-1 cursor-default overflow-hidden text-[13px] leading-5 transition-[max-height,color] duration-300 ease-out motion-reduce:transition-none",
                     pinnedOpen
-                      ? "whitespace-normal break-words"
-                      : "truncate group-hover:whitespace-normal group-hover:break-words group-focus-within:whitespace-normal",
-                    item.completed ? "text-[#9A9A9A] line-through decoration-[#C4C4C4]" : "text-[#2F2F2F]",
+                      ? "max-h-[200px] whitespace-normal break-words"
+                      : "max-h-5 truncate group-focus-within:max-h-[200px] group-focus-within:whitespace-normal group-hover:max-h-[200px] group-hover:whitespace-normal group-hover:break-words",
+                    checked ? "text-[#9A9A9A] line-through decoration-[#C4C4C4]" : "text-[#2F2F2F]",
                   ].join(" ")}
                 >
                   {item.text}
                 </p>
                 {hasDetails && assigned ? (
                   <span
-                    className={`${showWhenClosed} shrink-0 text-[11px] text-[#5286F6]`}
+                    className={[
+                      "shrink-0 text-[11px] text-[#5286F6] transition-[opacity,transform] duration-200",
+                      pinnedOpen ? "scale-75 opacity-0" : "group-focus-within:scale-75 group-focus-within:opacity-0 group-hover:scale-75 group-hover:opacity-0",
+                    ].join(" ")}
                     title={sessionLabel(assigned)}
                     aria-hidden
                   >
@@ -316,12 +346,20 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
             )}
 
             {hasDetails ? (
-              <div className={`${showWhenOpen} pb-0.5`}>
+              <div
+                className={[
+                  "grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none",
+                  pinnedOpen
+                    ? "grid-rows-[1fr] opacity-100"
+                    : "grid-rows-[0fr] opacity-0 group-focus-within:grid-rows-[1fr] group-focus-within:opacity-100 group-hover:grid-rows-[1fr] group-hover:opacity-100",
+                ].join(" ")}
+              >
+              <div className="min-h-0 overflow-hidden pb-0.5">
               {assigned ? (
                 <button
                   type="button"
                   onClick={() => setAssigningId(item.id)}
-                  className="mt-1 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[#D3E0FC] bg-[#EEF3FE] px-2.5 py-[2px] text-[11.5px] font-medium text-[#3F6FD8] hover:bg-[#E4EDFF]"
+                  className="mt-1 inline-flex max-w-full items-center gap-1.5 rounded-full border border-[#D3E0FC] bg-[#EEF3FE] px-2.5 py-[2px] text-[11.5px] font-medium text-[#3F6FD8] transition-colors hover:bg-[#E4EDFF]"
                   title="Change session"
                 >
                   {isInfiniteTaskSession(assigned) ? <span aria-hidden>∞</span> : <CalendarDays size={12} />}
@@ -334,12 +372,13 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                 <button
                   type="button"
                   onClick={() => setAssigningId(item.id)}
-                  className="mt-0.5 inline-flex items-center gap-1 text-[12px] font-medium text-[#8A9BC0] hover:text-[#3F6FD8]"
+                  className="group/add mt-0.5 inline-flex items-center gap-1 text-[12px] font-medium text-[#8A9BC0] transition-colors hover:text-[#3F6FD8]"
                 >
-                  <Plus size={13} />
+                  <Plus size={13} className="transition-transform duration-300 group-hover/add:rotate-90" />
                   {assignmentEnded ? "Session ended · add to another" : "Add to a session"}
                 </button>
               )}
+              </div>
               </div>
             ) : null}
           </div>
@@ -351,8 +390,8 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
             aria-label={`More actions for ${item.text}`}
             aria-expanded={actionsId === item.id}
             className={[
-              "-mr-1 flex h-5 w-6 shrink-0 items-center justify-center rounded-full text-[#8A9BC0] hover:bg-[#E4EDFF] hover:text-[#3F6FD8] disabled:opacity-50",
-              actionsId === item.id ? "bg-[#E4EDFF] text-[#3F6FD8]" : "",
+              "-mr-1 flex h-5 w-6 shrink-0 items-center justify-center rounded-full text-[#8A9BC0] transition-[background-color,color,transform] duration-200 hover:bg-[#E4EDFF] hover:text-[#3F6FD8] active:scale-90 disabled:opacity-50",
+              actionsId === item.id ? "rotate-90 bg-[#E4EDFF] text-[#3F6FD8]" : "",
             ].join(" ")}
           >
             <MoreHorizontal size={16} />
@@ -360,7 +399,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
         </div>
 
         {actionsId === item.id ? (
-          <div className="ml-[26px] mt-1.5 pb-1 flex flex-wrap gap-1.5">
+          <div className="ms-tasks-strip-in ml-[26px] mt-1.5 flex flex-wrap gap-1.5 pb-1">
             {[
               { label: "Edit", icon: <Pencil size={12} />, onClick: () => { setEditingId(item.id); setEditingText(item.text); setActionsId(""); } },
               { label: "Up", icon: <ArrowUp size={12} />, disabled: peerIndex <= 0, onClick: () => void tasks.moveTask(item, -1) },
@@ -371,7 +410,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                 type="button"
                 disabled={action.disabled}
                 onClick={action.onClick}
-                className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[#D3E0FC] bg-white px-3 text-[12px] font-medium text-[#3F6FD8] hover:bg-[#EEF3FE] disabled:opacity-35"
+                className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[#D3E0FC] bg-white px-3 text-[12px] font-medium text-[#3F6FD8] transition-[background-color,transform] duration-150 hover:bg-[#EEF3FE] active:scale-95 disabled:opacity-35"
               >
                 {action.icon}
                 {action.label}
@@ -383,7 +422,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                 setActionsId("");
                 void tasks.deleteTask(item);
               }}
-              className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[#F2D4D4] bg-white px-3 text-[12px] font-medium text-[#C93C3C] hover:bg-red-50"
+              className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[#F2D4D4] bg-white px-3 text-[12px] font-medium text-[#C93C3C] transition-[background-color,transform] duration-150 hover:bg-red-50 active:scale-95"
             >
               <Trash2 size={12} />
               Delete
@@ -402,9 +441,9 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
     }
     return tasks.sessions
       .filter((session) => groups.has(String(session.id)))
-      .map((session) => (
+      .map((session, groupIndex) => (
         <div key={session.id} className="mb-2 last:mb-0">
-          <div className="flex items-center gap-2 px-2 pb-1 pt-1">
+          <div className="ms-tasks-row-in flex items-center gap-2 px-2 pb-1 pt-1" style={{ animationDelay: `${groupIndex * 60}ms` }}>
             <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#5286F6] text-[11px] text-white">
               {isInfiniteTaskSession(session) ? "∞" : <CalendarDays size={12} />}
             </span>
@@ -413,7 +452,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
               <div className="truncate text-[11px] text-[#7C9BDF]">{sessionMeta(session)}</div>
             </div>
           </div>
-          <ul>{(groups.get(String(session.id)) || []).map((item) => renderRow(item, true))}</ul>
+          <ul>{(groups.get(String(session.id)) || []).map((item, index) => renderRow(item, groupIndex * 2 + index + 1, true))}</ul>
         </div>
       ));
   };
@@ -443,19 +482,21 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
           style={{ left: current.x, top: current.y, touchAction: "none" }}
           className={[
             // Styled like the "Deep work" label on session cards: a soft blue tint, not a solid button.
-            "ms-tasks-pill-in fixed z-[45] inline-flex h-9 select-none items-center gap-1.5 rounded-full border border-[#D3E0FC] bg-[#EEF3FE]/95 pl-2 pr-3 font-inter text-[12.5px] font-medium text-[#3F6FD8] shadow-[0_4px_14px_rgba(82,134,246,0.12)] backdrop-blur hover:bg-[#E4EDFF]",
-            dragging ? "cursor-grabbing" : "cursor-grab",
+            "ms-tasks-pill-in group/pill fixed z-[45] inline-flex h-9 select-none items-center gap-1.5 rounded-full border border-[#D3E0FC] bg-[#EEF3FE]/95 pl-2 pr-3 font-inter text-[12.5px] font-medium text-[#3F6FD8] shadow-[0_4px_14px_rgba(82,134,246,0.12)] backdrop-blur transition-[background-color,box-shadow,transform] duration-200 ease-out hover:bg-[#E4EDFF] motion-reduce:transition-none",
+            dragging
+              ? "scale-[1.04] cursor-grabbing shadow-[0_12px_28px_rgba(82,134,246,0.28)]"
+              : "cursor-grab hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(82,134,246,0.2)] active:scale-[0.97]",
           ].join(" ")}
           aria-label={`Tasks, ${openItems.length} to do${currentTask ? `, current: ${currentTask.text}` : ""}. Drag to move.`}
           title={currentTask?.text}
         >
-          <GripVertical size={13} className="shrink-0 text-[#5286F6]/50" />
+          <GripVertical size={13} className="shrink-0 text-[#5286F6]/50 transition-colors group-hover/pill:text-[#5286F6]" />
           <ListChecks size={15} className="shrink-0 text-[#5286F6]" />
-          <span className="max-w-[min(200px,calc(100vw-130px))] truncate">
+          <span key={currentTask?.id || "none"} className="ms-tasks-strip-in max-w-[min(200px,calc(100vw-130px))] truncate">
             {currentTask ? currentTask.text : tasks.loading ? "Tasks" : "Add your first task"}
           </span>
           {openItems.length > 1 ? (
-            <span className="inline-flex h-5 shrink-0 items-center justify-center rounded-full bg-white px-1.5 text-[11px] font-semibold text-[#5286F6]">
+            <span key={openItems.length} className="ms-tasks-bump inline-flex h-5 shrink-0 items-center justify-center rounded-full bg-white px-1.5 text-[11px] font-semibold text-[#5286F6]">
               +{openItems.length - 1}
             </span>
           ) : null}
@@ -488,40 +529,45 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
             <div className="min-w-0 flex-1">
               <div className="text-[15px] font-semibold leading-5">Tasks</div>
               <div className="text-[12px] text-[#5C7FCF]">
-                {openItems.length} to do · {doneItems.length} done
+                <span key={`o${openItems.length}`} className="ms-tasks-bump inline-block">{openItems.length}</span> to do ·{" "}
+                <span key={`d${doneItems.length}`} className="ms-tasks-bump inline-block">{doneItems.length}</span> done
               </div>
             </div>
             <button
               type="button"
               onClick={() => navigate("/tasks")}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-[#D3E0FC] bg-white text-[#3F6FD8] hover:bg-[#E4EDFF]"
+              className="group/open flex h-8 w-8 items-center justify-center rounded-full border border-[#D3E0FC] bg-white text-[#3F6FD8] transition-[background-color,transform] duration-150 hover:bg-[#E4EDFF] active:scale-90"
               aria-label="Open the full task plan"
               title="Open the full task plan"
             >
-              <ArrowUpRight size={15} />
+              <ArrowUpRight size={15} className="transition-transform duration-200 group-hover/open:-translate-y-px group-hover/open:translate-x-px" />
             </button>
             <button
               type="button"
               onClick={collapse}
-              className="inline-flex h-8 items-center gap-1 rounded-full border border-[#D3E0FC] bg-white pl-2.5 pr-3 text-[12px] font-semibold text-[#3F6FD8] hover:bg-[#E4EDFF]"
+              className="group/hide inline-flex h-8 items-center gap-1 rounded-full border border-[#D3E0FC] bg-white pl-2.5 pr-3 text-[12px] font-semibold text-[#3F6FD8] transition-[background-color,transform] duration-150 hover:bg-[#E4EDFF] active:scale-95"
               aria-label="Hide tasks"
               title="Hide (Esc)"
             >
-              {opensUp ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+              {opensUp ? (
+                <ChevronDown size={15} className="transition-transform duration-200 group-hover/hide:translate-y-0.5" />
+              ) : (
+                <ChevronUp size={15} className="transition-transform duration-200 group-hover/hide:-translate-y-0.5" />
+              )}
               Hide
             </button>
           </header>
 
           {assigningTask ? (
-            <div className="flex min-h-0 flex-1 flex-col">
+            <div className="ms-tasks-view-in flex min-h-0 flex-1 flex-col">
               <div className="flex shrink-0 items-start gap-2 px-4 pb-3 pt-3">
                 <button
                   type="button"
                   onClick={() => setAssigningId("")}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#D3E0FC] bg-white text-[#3F6FD8] hover:bg-[#E4EDFF]"
+                  className="group/back flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#D3E0FC] bg-white text-[#3F6FD8] transition-[background-color,transform] duration-150 hover:bg-[#E4EDFF] active:scale-90"
                   aria-label="Back to tasks"
                 >
-                  <ArrowLeft size={16} />
+                  <ArrowLeft size={16} className="transition-transform duration-200 group-hover/back:-translate-x-0.5" />
                 </button>
                 <div className="min-w-0 pt-0.5">
                   <div className="text-[13.5px] font-semibold">Add to a session</div>
@@ -529,11 +575,11 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                 </div>
               </div>
               <ul className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-                {[null, ...tasks.sessions].map((session) => {
+                {[null, ...tasks.sessions].map((session, index) => {
                   const id = session ? String(session.id) : "";
                   const selected = String(assigningTask.session_id || "") === id;
                   return (
-                    <li key={id || "none"}>
+                    <li key={id || "none"} className="ms-tasks-row-in" style={{ animationDelay: `${80 + Math.min(index, 8) * 35}ms` }}>
                       <button
                         type="button"
                         onClick={() => {
@@ -541,11 +587,11 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                           if (!selected) void tasks.assignTask(assigningTask, id);
                         }}
                         className={[
-                          "flex w-full items-center gap-3 rounded-[14px] px-2.5 py-2.5 text-left",
+                          "group/opt flex w-full items-center gap-3 rounded-[14px] px-2.5 py-2.5 text-left transition-[background-color,transform] duration-150 active:scale-[0.98]",
                           selected ? "bg-[#EEF3FE]" : "hover:bg-[#F6F9FF]",
                         ].join(" ")}
                       >
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#D3E0FC] bg-white text-[13px] text-[#3F6FD8]">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#D3E0FC] bg-white text-[13px] text-[#3F6FD8] transition-[transform,background-color] duration-200 group-hover/opt:scale-110 group-hover/opt:bg-[#EEF3FE]">
                           {!session ? <Minus size={14} /> : isInfiniteTaskSession(session) ? "∞" : <CalendarDays size={14} />}
                         </span>
                         <span className="min-w-0 flex-1">
@@ -554,7 +600,7 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                             {session ? sessionMeta(session) : "Keep it on your list for later"}
                           </span>
                         </span>
-                        {selected ? <Check size={16} className="shrink-0 text-[#5286F6]" /> : null}
+                        {selected ? <Check size={16} className="ms-tasks-check-pop shrink-0 text-[#5286F6]" /> : null}
                       </button>
                     </li>
                   );
@@ -567,14 +613,14 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
               </ul>
             </div>
           ) : (
-            <>
+            <div className="ms-tasks-view-back flex min-h-0 flex-1 flex-col">
               <div className="shrink-0 px-4 pt-3">
                 <form
                   onSubmit={(event) => {
                     event.preventDefault();
                     void submitDraft();
                   }}
-                  className="flex items-center gap-2 rounded-full border border-[#D3E0FC] bg-white py-1 pl-4 pr-1 focus-within:border-[#5286F6]"
+                  className="flex items-center gap-2 rounded-full border border-[#D3E0FC] bg-white py-1 pl-4 pr-1 transition-[border-color,box-shadow] duration-200 focus-within:border-[#5286F6] focus-within:shadow-[0_0_0_4px_rgba(82,134,246,0.12)]"
                 >
                   <input
                     value={draft}
@@ -586,14 +632,23 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                   <button
                     type="submit"
                     disabled={!draft.trim() || !!tasks.busyId}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#5286F6] text-white hover:bg-[#4677EC] disabled:opacity-30"
+                    className="group/plus flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#5286F6] text-white transition-[background-color,opacity,transform] duration-200 hover:bg-[#4677EC] active:scale-90 disabled:opacity-30"
                     aria-label="Add task"
                   >
-                    <Plus size={18} />
+                    <Plus size={18} className="transition-transform duration-300 group-hover/plus:rotate-90" />
                   </button>
                 </form>
 
-                <div role="tablist" aria-label="Task lists" className="mt-3 grid grid-cols-3 rounded-full border border-[#DCE6FC] bg-[#EEF3FE] p-1">
+                <div role="tablist" aria-label="Task lists" className="relative mt-3 grid grid-cols-3 rounded-full border border-[#DCE6FC] bg-[#EEF3FE] p-1">
+                  {/* The white highlight slides to the selected tab. */}
+                  <span
+                    aria-hidden
+                    className="absolute bottom-1 left-1 top-1 rounded-full bg-white shadow-[0_1px_4px_rgba(63,111,216,0.18)] transition-transform duration-300 ease-[cubic-bezier(0.34,1.36,0.64,1)] motion-reduce:transition-none"
+                    style={{
+                      width: "calc((100% - 8px) / 3)",
+                      transform: `translateX(${(tab === "todo" ? 0 : tab === "planned" ? 1 : 2) * 100}%)`,
+                    }}
+                  />
                   {([
                     ["todo", "To do", openItems.length, ListTodo],
                     ["planned", "Planned", plannedItems.length, CalendarClock],
@@ -609,15 +664,16 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                         setActionsId("");
                       }}
                       className={[
-                        "inline-flex h-8 items-center justify-center gap-1.5 rounded-full text-[12px] font-semibold",
-                        tab === key
-                          ? "bg-white text-[#3F6FD8] shadow-[0_1px_4px_rgba(63,111,216,0.18)]"
-                          : "text-[#6E86BD] hover:text-[#3F6FD8]",
+                        "group/tab relative z-[1] inline-flex h-8 items-center justify-center gap-1.5 rounded-full text-[12px] font-semibold transition-colors duration-200 active:scale-95",
+                        tab === key ? "text-[#3F6FD8]" : "text-[#6E86BD] hover:text-[#3F6FD8]",
                       ].join(" ")}
                     >
-                      <Icon size={14} />
+                      <Icon
+                        size={14}
+                        className={`transition-transform duration-300 ${tab === key ? "scale-110" : "group-hover/tab:scale-110"}`}
+                      />
                       {label}
-                      <span className={tab === key ? "text-[#7C9BDF]" : "text-[#9DB0D8]"}>{count}</span>
+                      <span key={count} className={`ms-tasks-bump inline-block ${tab === key ? "text-[#7C9BDF]" : "text-[#9DB0D8]"}`}>{count}</span>
                     </button>
                   ))}
                 </div>
@@ -630,22 +686,23 @@ export default function FloatingTasksWidget({ userId }: { userId: string }) {
                 </div>
               ) : null}
 
-              <div className="mt-2 min-h-[120px] flex-1 overflow-y-auto px-2 pb-3">
+              {/* Keyed by tab so switching tabs replays the rows sliding in. */}
+              <div key={tab} className="mt-2 min-h-[120px] flex-1 overflow-y-auto px-2 pb-3">
                 {tasks.loading ? (
-                  <div className="space-y-2 px-2 pt-2">
+                  <div className="space-y-1.5 px-2 pt-1">
                     {[0, 1, 2].map((index) => (
-                      <div key={index} className="h-10 rounded-[14px] bg-[#F3F6FE]" />
+                      <div key={index} className="h-7 animate-pulse rounded-[10px] bg-[#F3F6FE]" />
                     ))}
                   </div>
                 ) : visibleItems.length === 0 ? (
-                  <p className="px-6 py-8 text-center text-[12.5px] leading-5 text-[#7C9BDF]">{emptyText}</p>
+                  <p className="ms-tasks-row-in px-6 py-8 text-center text-[12.5px] leading-5 text-[#7C9BDF]">{emptyText}</p>
                 ) : tab === "planned" ? (
                   renderPlanned()
                 ) : (
-                  <ul>{visibleItems.map((item) => renderRow(item))}</ul>
+                  <ul>{visibleItems.map((item, index) => renderRow(item, index))}</ul>
                 )}
               </div>
-            </>
+            </div>
           )}
         </section>
       )}
