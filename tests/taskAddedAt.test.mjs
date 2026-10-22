@@ -26,10 +26,10 @@ test("task added-at label is just the time, with the day when it is not today", 
 
 test("the room task panel shows the added time only on hover", () => {
   const panel = readFileSync("src/components/TasksPanel.tsx", "utf8");
-  const sidebar = readFileSync("src/components/SessionsTasksSidebar.tsx", "utf8");
+  const sidebar = readFileSync("src/components/FloatingTasksWidget.tsx", "utf8");
   assert.match(panel, /const taskAddedAtCls =[\s\S]*max-h-0[\s\S]*opacity-0[\s\S]*group-hover:max-h-4 group-hover:opacity-100/);
   assert.equal((panel.match(/<span className=\{taskAddedAtCls\}>\{formatTaskAddedAt\((i|item)\.created_at\)\}<\/span>/g) || []).length, 2);
-  // The Sessions page sidebar keeps its own layout without it.
+  // The Sessions page Tasks widget keeps its own layout without it.
   assert.doesNotMatch(sidebar, /formatTaskAddedAt/);
 });
 

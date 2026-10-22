@@ -3,8 +3,8 @@ import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import "../../src/index.css";
 
-// Dev-only preview of the Tasks sidebar with fixture tasks, to check the
-// "Added …" line that appears on hover. Supabase points at a dead local port;
+// Dev-only preview of the floating Tasks widget with fixture tasks.
+// Supabase points at a dead local port;
 // the two task tables are answered here and everything else returns [].
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
 const plan = { id: "plan-1", user_id: "me", title: "My tasks", created_at: minutesAgo(60 * 24 * 40), updated_at: minutesAgo(5) };
@@ -41,9 +41,9 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   return realFetch(input, init);
 };
 
-const { default: SessionsTasksSidebar } = await import("../../src/components/SessionsTasksSidebar");
-const Sidebar = SessionsTasksSidebar as ComponentType<{ open: boolean; userId: string; onClose: () => void }>;
+const { default: FloatingTasksWidget } = await import("../../src/components/FloatingTasksWidget");
+const Widget = FloatingTasksWidget as ComponentType<{ userId: string }>;
 
 createRoot(document.getElementById("root")!).render(
-  createElement(MemoryRouter, null, createElement(Sidebar, { open: true, userId: "me", onClose: () => {} }))
+  createElement(MemoryRouter, null, createElement(Widget, { userId: "me" }))
 );

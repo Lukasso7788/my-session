@@ -21,7 +21,7 @@ import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import CreateKindSwitch, { OPEN_INFINITE_ROOM_CREATOR_EVENT, takePendingInfiniteRoomCreator } from "../components/CreateKindSwitch";
 import { useAuth } from "../context/AuthContext";
 import type { Session } from "../types/session";
-import { ListChecks, UserPlus } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import { captureProductEvent } from "../lib/analytics";
 import { buildSessionSeries } from "../lib/sessionSeries";
 import {
@@ -32,7 +32,7 @@ import {
 } from "../lib/roomMusicPresence";
 
 const OneOnOnePage = lazy(() => import("./OneOnOnePage"));
-const SessionsTasksSidebar = lazy(() => import("../components/SessionsTasksSidebar"));
+const FloatingTasksWidget = lazy(() => import("../components/FloatingTasksWidget"));
 const UnifiedSessionsLayout = lazy(() => import("../components/UnifiedSessionsLayout"));
 
 type BookingProfile = {
@@ -515,12 +515,6 @@ export function SessionsPage() {
   const [hostPromptOpen, setHostPromptOpen] = useState(false);
   const [hostPromptKind, setHostPromptKind] = useState<HostPromptKind>("never_hosted");
   const [communityPromptOpen, setCommunityPromptOpen] = useState(false);
-  const [tasksSidebarOpen, setTasksSidebarOpen] = useState(false);
-  const [tasksSidebarActivated, setTasksSidebarActivated] = useState(false);
-  useEffect(() => {
-    if (tasksSidebarOpen) setTasksSidebarActivated(true);
-  }, [tasksSidebarOpen]);
-  const [unfinishedTaskCount, setUnfinishedTaskCount] = useState(0);
   const [inviteFriendsOpen, setInviteFriendsOpen] = useState(false);
   const [inviteFriendsLink, setInviteFriendsLink] = useState("");
   const [overflowCreatingKey, setOverflowCreatingKey] = useState("");
@@ -1136,32 +1130,6 @@ export function SessionsPage() {
     };
   }, [user?.id]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const refreshUnfinishedTasks = async () => {
-      if (!user?.id) {
-        if (!cancelled) setUnfinishedTaskCount(0);
-        return;
-      }
-
-      const { count, error } = await supabase
-        .from("focus_plan_items")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("completed", false);
-
-      if (!cancelled && !error) setUnfinishedTaskCount(Math.max(0, count || 0));
-    };
-
-    void refreshUnfinishedTasks();
-    const onTasksUpdated = () => void refreshUnfinishedTasks();
-    window.addEventListener("mysession:tasks-updated", onTasksUpdated);
-    return () => {
-      cancelled = true;
-      window.removeEventListener("mysession:tasks-updated", onTasksUpdated);
-    };
-  }, [user?.id]);
 
   const fetchLiveCounts = useCallback(async (groupIds: string[], infiniteIds: string[]) => {
     const generation = ++liveCountsGenerationRef.current;
@@ -2648,10 +2616,9 @@ const visibleSessions = useMemo(() => {
             onRetry={() => void fetchSessions()}
             emptyAction={user ? <button type="button" onClick={openCreate} className="text-sm underline underline-offset-4">Create the first session</button> : null}
             toolbar={user?.id ? (
+              // Where the floating Tasks pill starts until it is dragged elsewhere.
               <div className="flex justify-end">
-              <button type="button" onClick={() => setTasksSidebarOpen(true)} className="mb-5 inline-flex h-11 items-center gap-2 rounded-full bg-[#F1F1F1] px-4 text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#E8E8E8]">
-                <ListChecks size={17} /> Tasks{unfinishedTaskCount > 0 ? <span className="rounded-full bg-white px-2 py-1 text-[10px]">{unfinishedTaskCount} unfinished</span> : null}
-              </button>
+                <div data-tasks-pill-anchor className="mb-5 h-9 w-px" aria-hidden />
               </div>
             ) : null}
           />
@@ -2677,15 +2644,11 @@ const visibleSessions = useMemo(() => {
         onSendEmail={sendFriendInvite}
       />
 
-      {(tasksSidebarOpen || tasksSidebarActivated) && (
+      {user?.id ? (
         <Suspense fallback={null}>
-          <SessionsTasksSidebar
-            open={tasksSidebarOpen}
-            userId={user?.id || ""}
-            onClose={() => setTasksSidebarOpen(false)}
-          />
+          <FloatingTasksWidget userId={user.id} />
         </Suspense>
-      )}
+      ) : null}
 
 
 
