@@ -10,7 +10,7 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock, Eye, EyeOff, Pin, PinOff, MessageSquareOff } from "lucide-react";
-import { MonitorUp, MicOff, Link2, Check as CheckIcon, X as XIcon, Plus as PlusIcon } from "lucide-react";
+import { MonitorUp, MicOff, Link2, Check as CheckIcon, X as XIcon, Plus as PlusIcon, GripVertical, ChevronDown as ChevronDownIcon, Copy as CopyIcon } from "lucide-react";
 import { SessionStageBar } from "./SessionStageBar";
 import { supabase } from "../lib/supabase";
 import { isFreeFlowSchedule } from "../lib/freeFlowSession";
@@ -2262,10 +2262,13 @@ function formatMinutes(total: number) {
 }
 
 /**
- * Quick timeline editing for hosts, opened by double-clicking a session's
- * timeline: rename blocks, change their minutes, add or remove blocks, with a
- * live bar on top. It saves the schedule the same way the full editor does
- * (keeping the room policies) and links to the full editor for the rest.
+ * Timeline editing for hosts, opened by double-clicking a session's timeline.
+ * It does everything the full timeline editor does (reorder, resize, rename,
+ * change kind, minutes, note, color, duplicate, add, remove) in a compact
+ * panel: a segment bar on top (drag or ← → to reorder, pull a segment's right
+ * edge to resize) and the blocks as rows below (drag by the grip to reorder,
+ * open a row for the rest). It saves the schedule the same way the full
+ * editor does, keeping the room policies.
  */
 function QuickTimelineEditor({
     session,
@@ -2287,9 +2290,14 @@ function QuickTimelineEditor({
     onOpenFullEditor: () => void;
 }) {
     const [blocks, setBlocks] = useState<StudioBlock[] | null>(null);
+    const [selectedId, setSelectedId] = useState<string | null>(null);
     const [adding, setAdding] = useState(false);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState("");
+    // Bar and list drags share one "being dragged" id; rows only drag from their grip.
+    const [dragId, setDragId] = useState<string | null>(null);
+    const [gripArmedId, setGripArmedId] = useState<string | null>(null);
+    const barRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         if (blocks || isLoading) return;
@@ -2304,13 +2312,89 @@ function QuickTimelineEditor({
         return () => document.removeEventListener("keydown", onKeyDown);
     }, [onClose]);
 
-    const total = (blocks || []).reduce((sum, block) => sum + (Number(block.minutes) || 0), 0);
+    const list = blocks || [];
+    const total = list.reduce((sum, block) => sum + (Number(block.minutes) || 0), 0);
+
+    const setList = (next: StudioBlock[]) => setBlocks(next);
     const update = (id: string, patch: Partial<StudioBlock>) =>
         setBlocks((current) => (current || []).map((block) => (block.id === id ? { ...block, ...patch } : block)));
     const setMinutes = (id: string, minutes: number) => update(id, { minutes: clamp(Math.round(minutes) || 1, 1, 24 * 60) });
+    const moveTo = (id: string, toIndex: number) => {
+        const from = list.findIndex((block) => block.id === id);
+        if (from < 0 || toIndex < 0 || toIndex >= list.length || from === toIndex) return;
+        const copy = [...list];
+        const [item] = copy.splice(from, 1);
+        copy.splice(toIndex, 0, item);
+        setList(copy);
+    };
+    const moveBy = (id: string, delta: -1 | 1) => moveTo(id, list.findIndex((block) => block.id === id) + delta);
+    const remove = (id: string) => {
+        if (list.length <= 1) return;
+        const index = list.findIndex((block) => block.id === id);
+        const copy = list.filter((block) => block.id !== id);
+        setList(copy);
+        if (selectedId === id) setSelectedId((copy[index] || copy[index - 1])?.id || null);
+    };
+    const insertAt = (index: number, block: StudioBlock) => {
+        const copy = [...list];
+        copy.splice(index, 0, block);
+        setList(copy);
+        setSelectedId(block.id);
+    };
+    const duplicate = (id: string) => {
+        const index = list.findIndex((block) => block.id === id);
+        if (index >= 0) insertAt(index + 1, { ...list[index], id: uid() });
+    };
+    const addAfter = (id: string) => {
+        const index = list.findIndex((block) => block.id === id);
+        insertAt(index + 1, { id: uid(), kind: "focus", title: "New block", note: "", minutes: 25, color: getDefaultBlockColor("focus") });
+    };
+
+    // While dragging over another block, move into its place once the pointer
+    // passes its middle (so blocks of different sizes do not flicker).
+    const dragOverBlock = (event: React.DragEvent<HTMLElement>, targetId: string, axis: "x" | "y") => {
+        if (!dragId || dragId === targetId) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        const from = list.findIndex((block) => block.id === dragId);
+        const to = list.findIndex((block) => block.id === targetId);
+        const rect = event.currentTarget.getBoundingClientRect();
+        const pos = axis === "x" ? event.clientX - rect.left : event.clientY - rect.top;
+        const mid = (axis === "x" ? rect.width : rect.height) / 2;
+        if ((from < to && pos < mid) || (from > to && pos > mid)) return;
+        moveTo(dragId, to);
+    };
+    const endDrag = () => {
+        setDragId(null);
+        setGripArmedId(null);
+    };
+
+    // Pull a segment's right edge: minutes follow the pointer at the bar's scale.
+    const startResize = (event: React.PointerEvent<HTMLSpanElement>, block: StudioBlock) => {
+        event.preventDefault();
+        event.stopPropagation();
+        const barWidth = barRef.current?.getBoundingClientRect().width || 1;
+        const minutesPerPx = Math.max(total, 1) / barWidth;
+        const startX = event.clientX;
+        const startMinutes = Number(block.minutes) || 1;
+        const handle = event.currentTarget;
+        try {
+            handle.setPointerCapture(event.pointerId);
+        } catch { }
+        setSelectedId(block.id);
+        const onMove = (ev: PointerEvent) => setMinutes(block.id, startMinutes + (ev.clientX - startX) * minutesPerPx);
+        const onUp = () => {
+            handle.removeEventListener("pointermove", onMove);
+            handle.removeEventListener("pointerup", onUp);
+            handle.removeEventListener("pointercancel", onUp);
+        };
+        handle.addEventListener("pointermove", onMove);
+        handle.addEventListener("pointerup", onUp);
+        handle.addEventListener("pointercancel", onUp);
+    };
 
     const save = async () => {
-        if (!blocks?.length || saving) return;
+        if (!list.length || saving) return;
         setSaving(true);
         setError("");
         try {
@@ -2326,7 +2410,7 @@ function QuickTimelineEditor({
                 if (data) policySource = data;
             }
             const schedule = withRoomPolicies(
-                exportStudioToSchedule(blocks, isInfinite, session?.start_time || session?.created_at || new Date().toISOString()),
+                exportStudioToSchedule(list, isInfinite, session?.start_time || session?.created_at || new Date().toISOString()),
                 readSessionRoomPolicies(policySource),
             );
             await onSave({ schedule, duration_minutes: total || null });
@@ -2340,6 +2424,13 @@ function QuickTimelineEditor({
 
     const stepBtn =
         "flex h-6 w-6 items-center justify-center rounded-full text-[14px] leading-none text-[#606060] transition-[background-color,transform] duration-150 hover:bg-[#EAEAEA] hover:text-[#2F2F2F] active:scale-90";
+    // Base chip without colors, so active and plain chips do not fight over classes.
+    const chipBase =
+        "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[12px] font-medium transition-[background-color,border-color,color,transform] duration-150 active:scale-95 disabled:opacity-35";
+    const chipPlain = "border-[#E5E5E5] bg-white hover:bg-[#F1F1F1]";
+    const chipBtn = `${chipBase} ${chipPlain}`;
+
+    let elapsed = 0;
 
     return (
         <div
@@ -2351,7 +2442,7 @@ function QuickTimelineEditor({
             className={[
                 "session-quick-timeline cursor-default rounded-[20px] border border-[#E5E5E5] bg-white p-3 text-left font-inter text-[#2F2F2F]",
                 variant === "popover"
-                    ? "absolute left-0 top-full z-[40] mt-2 w-[440px] max-w-[calc(100vw-48px)] shadow-[0_18px_48px_rgba(0,0,0,0.16)]"
+                    ? "absolute left-0 top-full z-[40] mt-2 w-[480px] max-w-[calc(100vw-48px)] shadow-[0_18px_48px_rgba(0,0,0,0.16)]"
                     : "w-full shadow-[0_6px_20px_rgba(0,0,0,0.06)]",
             ].join(" ")}
         >
@@ -2360,69 +2451,272 @@ function QuickTimelineEditor({
                 <span className="text-[12px] text-[#7A7A7A]">Total {formatMinutes(total)}</span>
             </div>
 
-            {/* Live preview of the blocks. */}
-            <div className="mb-3 flex h-2.5 w-full gap-[3px] overflow-hidden rounded-full bg-[#F1F1F1]">
-                {(blocks || []).map((block) => (
-                    <span
-                        key={block.id}
-                        className="h-full rounded-full transition-[flex-grow] duration-300 ease-out"
-                        style={{ flexGrow: Math.max(1, Number(block.minutes) || 1), flexBasis: 0, backgroundColor: getBlockColor(block) }}
-                        title={`${block.title} · ${block.minutes} min`}
-                    />
-                ))}
+            {/* Segment bar, like the full editor's timeline but without labels. */}
+            <div
+                ref={barRef}
+                role="listbox"
+                aria-label="Timeline blocks. Drag or use the arrow keys to reorder."
+                className="flex h-7 w-full overflow-hidden rounded-full border border-[#E5E5E5] bg-[#F6F6F6]"
+            >
+                {list.map((block) => {
+                    const mins = clamp(Number(block.minutes) || 1, 1, 24 * 60);
+                    const selected = selectedId === block.id;
+                    return (
+                        <button
+                            key={block.id}
+                            type="button"
+                            role="option"
+                            aria-selected={selected}
+                            draggable
+                            onDragStart={(event) => {
+                                event.dataTransfer.effectAllowed = "move";
+                                event.dataTransfer.setData("text/plain", block.id);
+                                setDragId(block.id);
+                                setSelectedId(block.id);
+                            }}
+                            onDragOver={(event) => dragOverBlock(event, block.id, "x")}
+                            onDrop={(event) => {
+                                event.preventDefault();
+                                endDrag();
+                            }}
+                            onDragEnd={endDrag}
+                            onClick={() => setSelectedId(selected ? null : block.id)}
+                            onKeyDown={(event) => {
+                                if (event.key === "ArrowLeft") {
+                                    event.preventDefault();
+                                    moveBy(block.id, -1);
+                                } else if (event.key === "ArrowRight") {
+                                    event.preventDefault();
+                                    moveBy(block.id, 1);
+                                } else if (event.key === "Delete" || event.key === "Backspace") {
+                                    event.preventDefault();
+                                    remove(block.id);
+                                }
+                            }}
+                            title={`${block.title} · ${mins} min — drag or ← → to move`}
+                            className={[
+                                "group/seg relative h-full min-w-0 cursor-grab border-r-2 border-white outline-none transition-[flex-grow,filter,opacity] duration-200 ease-out last:border-r-0 hover:brightness-105 focus-visible:brightness-110 active:cursor-grabbing",
+                                dragId === block.id ? "opacity-50" : "",
+                            ].join(" ")}
+                            style={{
+                                flexGrow: mins,
+                                flexBasis: 0,
+                                minWidth: TIMELINE_MIN_SEGMENT_WIDTH * 2,
+                                ...blockColorStyle(block),
+                                boxShadow: selected ? "inset 0 0 0 2px rgba(17,24,39,0.45)" : "none",
+                            }}
+                        >
+                            <span
+                                aria-hidden="true"
+                                onPointerDown={(event) => startResize(event, block)}
+                                className="absolute bottom-1 right-0.5 top-1 w-1.5 cursor-ew-resize rounded-full bg-black/0 transition-colors group-hover/seg:bg-black/20"
+                            />
+                        </button>
+                    );
+                })}
+            </div>
+            <div className="mt-1 flex justify-between px-1 text-[10.5px] tabular-nums text-[#9A9A9A]">
+                <span>0m</span>
+                <span>Drag to reorder · pull an edge to resize</span>
+                <span>{formatMinutes(total)}</span>
             </div>
 
             {!blocks ? (
-                <div className="space-y-1.5 px-1 py-1">
+                <div className="mt-2 space-y-1.5 px-1 py-1">
                     {[0, 1, 2].map((index) => (
                         <div key={index} className="h-8 animate-pulse rounded-[10px] bg-[#F4F4F4]" />
                     ))}
                 </div>
             ) : (
-                <ul className="max-h-[260px] space-y-0.5 overflow-y-auto">
-                    {blocks.map((block) => (
-                        <li key={block.id} className="group flex items-center gap-2 rounded-[12px] px-1.5 py-1 transition-colors hover:bg-[#F7F7F7]">
-                            <span className="h-3 w-3 shrink-0 rounded-full" style={blockColorStyle(block)} aria-hidden="true" />
-                            <input
-                                value={block.title}
-                                onChange={(event) => update(block.id, { title: event.target.value })}
-                                onKeyDown={(event) => {
-                                    if (event.key === "Enter") void save();
+                <ul className="mt-2 max-h-[320px] space-y-0.5 overflow-y-auto">
+                    {list.map((block, index) => {
+                        const open = selectedId === block.id;
+                        const start = elapsed;
+                        elapsed += Number(block.minutes) || 0;
+                        return (
+                            <li
+                                key={block.id}
+                                draggable={gripArmedId === block.id}
+                                onDragStart={(event) => {
+                                    event.dataTransfer.effectAllowed = "move";
+                                    event.dataTransfer.setData("text/plain", block.id);
+                                    setDragId(block.id);
                                 }}
-                                aria-label="Block name"
-                                className="h-7 min-w-0 flex-1 rounded-[8px] border border-transparent bg-transparent px-1.5 text-[13px] outline-none transition-colors hover:border-[#E5E5E5] focus:border-[#2F2F2F] focus:bg-white"
-                            />
-                            <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-[#E5E5E5] bg-white px-0.5">
-                                <button type="button" className={stepBtn} onClick={() => setMinutes(block.id, block.minutes - 5)} aria-label={`Shorten ${block.title}`}>
-                                    −
-                                </button>
-                                <input
-                                    type="number"
-                                    min={1}
-                                    value={block.minutes}
-                                    onChange={(event) => setMinutes(block.id, Number(event.target.value))}
-                                    onKeyDown={(event) => {
-                                        if (event.key === "Enter") void save();
-                                    }}
-                                    aria-label={`${block.title} minutes`}
-                                    className="h-6 w-9 bg-transparent text-center text-[12px] font-semibold tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                                />
-                                <button type="button" className={stepBtn} onClick={() => setMinutes(block.id, block.minutes + 5)} aria-label={`Lengthen ${block.title}`}>
-                                    +
-                                </button>
-                            </div>
-                            <span className="w-6 shrink-0 text-[11px] text-[#9A9A9A]">min</span>
-                            <button
-                                type="button"
-                                onClick={() => setBlocks((current) => (current || []).filter((item) => item.id !== block.id))}
-                                disabled={blocks.length <= 1}
-                                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[#A3A3A3] opacity-0 transition-[opacity,background-color,color] duration-150 hover:bg-red-50 hover:text-[#C93C3C] group-hover:opacity-100 focus-visible:opacity-100 disabled:hidden"
-                                aria-label={`Remove ${block.title}`}
+                                onDragOver={(event) => dragOverBlock(event, block.id, "y")}
+                                onDrop={(event) => {
+                                    event.preventDefault();
+                                    endDrag();
+                                }}
+                                onDragEnd={endDrag}
+                                className={[
+                                    "group rounded-[12px] transition-[background-color,opacity] duration-150",
+                                    open ? "bg-[#F6F6F6]" : "hover:bg-[#F7F7F7]",
+                                    dragId === block.id ? "opacity-40" : "",
+                                ].join(" ")}
                             >
-                                <XIcon size={13} />
-                            </button>
-                        </li>
-                    ))}
+                                <div className="flex items-center gap-1.5 px-1 py-1">
+                                    <span
+                                        onPointerDown={() => setGripArmedId(block.id)}
+                                        onPointerUp={() => setGripArmedId(null)}
+                                        className="flex h-6 w-4 shrink-0 cursor-grab items-center justify-center text-[#B5B5B5] transition-colors hover:text-[#2F2F2F] active:cursor-grabbing"
+                                        title="Drag to reorder"
+                                        aria-hidden="true"
+                                    >
+                                        <GripVertical size={14} />
+                                    </span>
+                                    <span className="h-3 w-3 shrink-0 rounded-full" style={blockColorStyle(block)} aria-hidden="true" />
+                                    <input
+                                        value={block.title}
+                                        onChange={(event) => update(block.id, { title: event.target.value })}
+                                        onFocus={() => setSelectedId(block.id)}
+                                        onKeyDown={(event) => {
+                                            if (event.key === "Enter") void save();
+                                        }}
+                                        aria-label="Block name"
+                                        className="h-7 min-w-0 flex-1 rounded-[8px] border border-transparent bg-transparent px-1.5 text-[13px] outline-none transition-colors hover:border-[#E5E5E5] focus:border-[#2F2F2F] focus:bg-white"
+                                    />
+                                    <span className="hidden shrink-0 text-[10.5px] tabular-nums text-[#A3A3A3] sm:inline">
+                                        {start}–{start + (Number(block.minutes) || 0)}m
+                                    </span>
+                                    <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-[#E5E5E5] bg-white px-0.5">
+                                        <button type="button" className={stepBtn} onClick={() => setMinutes(block.id, block.minutes - 1)} aria-label={`Shorten ${block.title}`}>
+                                            −
+                                        </button>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            max={24 * 60}
+                                            value={block.minutes}
+                                            onChange={(event) => setMinutes(block.id, Number(event.target.value))}
+                                            onKeyDown={(event) => {
+                                                if (event.key === "Enter") void save();
+                                            }}
+                                            aria-label={`${block.title} minutes`}
+                                            className="h-6 w-9 bg-transparent text-center text-[12px] font-semibold tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                        />
+                                        <button type="button" className={stepBtn} onClick={() => setMinutes(block.id, block.minutes + 1)} aria-label={`Lengthen ${block.title}`}>
+                                            +
+                                        </button>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedId(open ? null : block.id)}
+                                        aria-expanded={open}
+                                        aria-label={`More for ${block.title}`}
+                                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[#8A8A8A] transition-[background-color,color,transform] duration-200 hover:bg-[#EAEAEA] hover:text-[#2F2F2F]"
+                                    >
+                                        <ChevronDownIcon size={14} className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+                                    </button>
+                                </div>
+
+                                {open ? (
+                                    <div className="space-y-2.5 px-2 pb-2.5 pt-1">
+                                        {/* Kind */}
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {STUDIO_KIND_OPTIONS.map((option) => {
+                                                const active = block.kind === option.value;
+                                                return (
+                                                    <button
+                                                        key={option.value}
+                                                        type="button"
+                                                        onClick={() =>
+                                                            update(block.id, {
+                                                                kind: option.value,
+                                                                title:
+                                                                    !String(block.title || "").trim() || block.title === defaultStudioTitle(block.kind)
+                                                                        ? defaultStudioTitle(option.value)
+                                                                        : block.title,
+                                                                color: getDefaultBlockColor(option.value),
+                                                            })
+                                                        }
+                                                        className={[
+                                                            chipBase,
+                                                            active ? "border-[#2F2F2F] bg-[#2F2F2F] text-white" : chipPlain,
+                                                        ].join(" ")}
+                                                    >
+                                                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: getDefaultBlockColor(option.value) }} aria-hidden="true" />
+                                                        {option.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Quick minutes */}
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                            {QUICK_MINUTES.map((minutes) => (
+                                                <button
+                                                    key={minutes}
+                                                    type="button"
+                                                    onClick={() => setMinutes(block.id, minutes)}
+                                                    className={[chipBase, "px-2", block.minutes === minutes ? "border-[#2F2F2F] bg-[#F1F1F1]" : chipPlain].join(" ")}
+                                                >
+                                                    {minutes}m
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        {/* Color */}
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                            {BLOCK_COLOR_PRESETS.map((color) => {
+                                                const active = getBlockColor(block).toLowerCase() === color.toLowerCase();
+                                                return (
+                                                    <button
+                                                        key={color}
+                                                        type="button"
+                                                        onClick={() => update(block.id, { color })}
+                                                        className={[
+                                                            "h-5 w-5 rounded-full border transition-transform duration-150 hover:scale-110",
+                                                            active ? "border-[#2F2F2F] ring-2 ring-black/15" : "border-white",
+                                                        ].join(" ")}
+                                                        style={{ backgroundColor: color }}
+                                                        aria-label={`Color ${color}`}
+                                                    />
+                                                );
+                                            })}
+                                            <input
+                                                type="color"
+                                                value={getBlockColor(block)}
+                                                onChange={(event) => update(block.id, { color: event.target.value })}
+                                                className="h-5 w-7 cursor-pointer rounded-md border border-[#E5E5E5] bg-white p-0.5"
+                                                aria-label="Custom color"
+                                            />
+                                        </div>
+
+                                        <textarea
+                                            value={block.note || ""}
+                                            onChange={(event) => update(block.id, { note: event.target.value })}
+                                            placeholder="Note for this block (optional)"
+                                            rows={2}
+                                            className="w-full resize-none rounded-[12px] border border-[#E5E5E5] bg-white px-2.5 py-1.5 text-[12px] outline-none transition-colors focus:border-[#2F2F2F]"
+                                        />
+
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                            <button type="button" className={chipBtn} disabled={index === 0} onClick={() => moveBy(block.id, -1)}>
+                                                <ArrowUp size={12} /> Earlier
+                                            </button>
+                                            <button type="button" className={chipBtn} disabled={index === list.length - 1} onClick={() => moveBy(block.id, 1)}>
+                                                <ArrowDown size={12} /> Later
+                                            </button>
+                                            <button type="button" className={chipBtn} onClick={() => duplicate(block.id)}>
+                                                <CopyIcon size={12} /> Duplicate
+                                            </button>
+                                            <button type="button" className={chipBtn} onClick={() => addAfter(block.id)}>
+                                                <PlusIcon size={12} /> Add after
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={[chipBase, "border-[#F2D4D4] bg-white text-[#C93C3C] hover:bg-red-50"].join(" ")}
+                                                disabled={list.length <= 1}
+                                                onClick={() => remove(block.id)}
+                                            >
+                                                <Trash2 size={12} /> Delete
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : null}
+                            </li>
+                        );
+                    })}
                 </ul>
             )}
 
@@ -2435,10 +2729,10 @@ function QuickTimelineEditor({
                                     key={item.id}
                                     type="button"
                                     onClick={() => {
-                                        setBlocks((current) => [...(current || []), { ...item, id: uid(), color: getBlockColor(item) }]);
+                                        insertAt(list.length, { ...item, id: uid(), color: getBlockColor(item) });
                                         setAdding(false);
                                     }}
-                                    className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[#E5E5E5] bg-white px-2.5 text-[12px] font-medium transition-[background-color,transform] duration-150 hover:bg-[#F1F1F1] active:scale-95"
+                                    className={chipBtn}
                                 >
                                     <span className="h-2 w-2 rounded-full" style={{ backgroundColor: getBlockColor(item) }} aria-hidden="true" />
                                     {item.title}
@@ -2479,7 +2773,7 @@ function QuickTimelineEditor({
                     <button
                         type="button"
                         onClick={() => void save()}
-                        disabled={!blocks?.length || saving}
+                        disabled={!list.length || saving}
                         className="h-8 rounded-full bg-[#2F2F2F] px-4 text-[12px] font-semibold text-white transition-[background-color,transform,opacity] duration-150 hover:bg-[#1F1F1F] active:scale-95 disabled:opacity-50"
                     >
                         {saving ? "Saving…" : "Save"}
