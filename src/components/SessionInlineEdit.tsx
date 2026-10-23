@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { Check, Pencil, X } from "lucide-react";
 
 // In-place editing on a session card for its host: double-click the title or
@@ -97,50 +97,75 @@ export function InlineEditableTitle({
 
   return (
     <span className="min-w-0 break-words">
-      <span className="group/edit relative inline-block max-w-full align-bottom">
+      <CursorEditHintArea label="Rename session" onActivate={startEditing} className="max-w-full align-bottom">
         <span data-inline-edit onDoubleClick={startEditing} title="Double-click to rename">
           {shown}
         </span>
-        <EditHint label="Rename session" size="md" onClick={startEditing} />
-      </span>
+      </CursorEditHintArea>
       <InlineError message={error} />
     </span>
   );
 }
 
-// A small floating pencil that appears beside an editable value on hover.
-function EditHint({
+type HintPoint = { x: number; y: number };
+
+/**
+ * Wraps an editable value: while the pointer moves over it, a small pencil
+ * chip trails the cursor (hosts only render this). The value itself is
+ * edited by double-click; a screen-reader/keyboard button starts it too.
+ */
+export function CursorEditHintArea({
   label,
-  size,
-  onClick,
-  inset = false,
+  onActivate,
+  className = "",
+  block = false,
+  children,
 }: {
   label: string;
-  size: "sm" | "md";
-  onClick: () => void;
-  /** Sit inside the wrapper's right padding instead of past its edge. */
-  inset?: boolean;
+  onActivate: () => void;
+  className?: string;
+  /** Use a block wrapper (for full-width things like a timeline bar). */
+  block?: boolean;
+  children: ReactNode;
 }) {
+  const [point, setPoint] = useState<HintPoint | null>(null);
+  const lastPointRef = useRef<HintPoint>({ x: 0, y: 0 });
+  if (point) lastPointRef.current = point;
+  const at = point || lastPointRef.current;
+  const Wrapper = block ? "div" : "span";
+
   return (
-    <button
-      type="button"
-      onClick={(event) => {
-        event.stopPropagation();
-        onClick();
+    <Wrapper
+      className={`relative ${block ? "block" : "inline-block"} ${className}`}
+      onMouseMove={(event: MouseEvent<HTMLElement>) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        setPoint({ x: event.clientX - rect.left, y: event.clientY - rect.top });
       }}
-      aria-label={label}
-      title={label}
-      className={[
-        "absolute top-1/2 z-[1] flex -translate-y-1/2 items-center justify-center rounded-full border border-[#E5E5E5] bg-white text-[#2F2F2F] shadow-[0_4px_12px_rgba(0,0,0,0.12)]",
-        inset ? "right-0" : "left-full",
-        "pointer-events-none scale-75 opacity-0 transition-[opacity,transform,background-color] duration-200 ease-out",
-        "group-hover/edit:pointer-events-auto group-hover/edit:scale-100 group-hover/edit:opacity-100 hover:bg-[#F1F1F1] focus-visible:pointer-events-auto focus-visible:scale-100 focus-visible:opacity-100 active:scale-90",
-        "motion-reduce:transition-none",
-        size === "md" ? "ml-2 h-7 w-7" : "h-5 w-5",
-      ].join(" ")}
+      onMouseLeave={() => setPoint(null)}
     >
-      <Pencil size={size === "md" ? 13 : 10} strokeWidth={2.25} />
-    </button>
+      {children}
+      <span
+        aria-hidden="true"
+        className={[
+          "pointer-events-none absolute left-0 top-0 z-[5] flex h-6 w-6 items-center justify-center rounded-full border border-[#E5E5E5] bg-white text-[#2F2F2F] shadow-[0_4px_12px_rgba(0,0,0,0.14)]",
+          "transition-[transform,opacity] duration-100 ease-out motion-reduce:transition-none",
+          point ? "opacity-100" : "opacity-0",
+        ].join(" ")}
+        style={{ transform: `translate(${at.x + 14}px, ${at.y - 26}px) scale(${point ? 1 : 0.7})` }}
+      >
+        <Pencil size={11} strokeWidth={2.25} />
+      </span>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onActivate();
+        }}
+        className="sr-only"
+      >
+        {label}
+      </button>
+    </Wrapper>
   );
 }
 
@@ -279,13 +304,11 @@ export function InlineEditableStart({
 
   return (
     <span>
-      {/* The date sits in a tight row, so it keeps room for its pencil. */}
-      <span className="group/edit relative inline-block pr-6">
+      <CursorEditHintArea label="Change date and time" onActivate={startEditing}>
         <span data-inline-edit onDoubleClick={startEditing} title="Double-click to change the date and time">
           {pendingLabel ?? label}
         </span>
-        <EditHint label="Change date and time" size="sm" onClick={startEditing} inset />
-      </span>
+      </CursorEditHintArea>
       <InlineError message={error} />
     </span>
   );

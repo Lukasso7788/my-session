@@ -10,7 +10,7 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock, Eye, EyeOff, Pin, PinOff, MessageSquareOff } from "lucide-react";
-import { MonitorUp, MicOff, Link2, Check as CheckIcon, X as XIcon } from "lucide-react";
+import { MonitorUp, MicOff, Link2, Check as CheckIcon, X as XIcon, Plus as PlusIcon } from "lucide-react";
 import { SessionStageBar } from "./SessionStageBar";
 import { supabase } from "../lib/supabase";
 import { isFreeFlowSchedule } from "../lib/freeFlowSession";
@@ -28,7 +28,7 @@ import SessionMusicIndicator from "./SessionMusicIndicator";
 import { profileHoverAttrs } from "./ProfileHoverLayer";
 import { getSessionCardPolicyState } from "../lib/sessionCardIndicators";
 import { SERIES_WINDOW_DAYS, type SeriesOccurrence } from "../lib/sessionSeries";
-import { InlineEditableStart, InlineEditableTitle } from "./SessionInlineEdit";
+import { CursorEditHintArea, InlineEditableStart, InlineEditableTitle } from "./SessionInlineEdit";
 
 let roomPagePrefetchPromise: Promise<unknown> | null = null;
 function prefetchRoomPage() {
@@ -2261,6 +2261,235 @@ function formatMinutes(total: number) {
     return `${m}m`;
 }
 
+/**
+ * Quick timeline editing for hosts, opened by double-clicking a session's
+ * timeline: rename blocks, change their minutes, add or remove blocks, with a
+ * live bar on top. It saves the schedule the same way the full editor does
+ * (keeping the room policies) and links to the full editor for the rest.
+ */
+function QuickTimelineEditor({
+    session,
+    stages,
+    isLoading,
+    isInfinite,
+    variant,
+    onSave,
+    onClose,
+    onOpenFullEditor,
+}: {
+    session: any;
+    stages: any[];
+    isLoading: boolean;
+    isInfinite: boolean;
+    variant: "popover" | "inline";
+    onSave: (updates: { schedule: any; duration_minutes: number | null }) => Promise<unknown> | void;
+    onClose: () => void;
+    onOpenFullEditor: () => void;
+}) {
+    const [blocks, setBlocks] = useState<StudioBlock[] | null>(null);
+    const [adding, setAdding] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState("");
+
+    useEffect(() => {
+        if (blocks || isLoading) return;
+        setBlocks(normalizeStudioBlocksFromSession({ ...session, session_stages: stages.length ? stages : session?.session_stages }));
+    }, [blocks, isLoading, session, stages]);
+
+    useEffect(() => {
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key === "Escape") onClose();
+        };
+        document.addEventListener("keydown", onKeyDown);
+        return () => document.removeEventListener("keydown", onKeyDown);
+    }, [onClose]);
+
+    const total = (blocks || []).reduce((sum, block) => sum + (Number(block.minutes) || 0), 0);
+    const update = (id: string, patch: Partial<StudioBlock>) =>
+        setBlocks((current) => (current || []).map((block) => (block.id === id ? { ...block, ...patch } : block)));
+    const setMinutes = (id: string, minutes: number) => update(id, { minutes: clamp(Math.round(minutes) || 1, 1, 24 * 60) });
+
+    const save = async () => {
+        if (!blocks?.length || saving) return;
+        setSaving(true);
+        setError("");
+        try {
+            // Room policies live in the schedule JSON; read them fresh so saving
+            // the timeline never resets camera or chat rules.
+            let policySource: any = session;
+            if (looksLikeUuid(session?.id)) {
+                const { data } = await supabase
+                    .from("sessions")
+                    .select("camera_required, screen_share_required, public_chat_disabled, schedule")
+                    .eq("id", session.id)
+                    .maybeSingle();
+                if (data) policySource = data;
+            }
+            const schedule = withRoomPolicies(
+                exportStudioToSchedule(blocks, isInfinite, session?.start_time || session?.created_at || new Date().toISOString()),
+                readSessionRoomPolicies(policySource),
+            );
+            await onSave({ schedule, duration_minutes: total || null });
+            onClose();
+        } catch (cause) {
+            setError(cause instanceof Error && cause.message ? cause.message : "Timeline was not saved.");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const stepBtn =
+        "flex h-6 w-6 items-center justify-center rounded-full text-[14px] leading-none text-[#606060] transition-[background-color,transform] duration-150 hover:bg-[#EAEAEA] hover:text-[#2F2F2F] active:scale-90";
+
+    return (
+        <div
+            data-inline-editing
+            role="dialog"
+            aria-label="Edit timeline"
+            onClick={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            className={[
+                "session-quick-timeline cursor-default rounded-[20px] border border-[#E5E5E5] bg-white p-3 text-left font-inter text-[#2F2F2F]",
+                variant === "popover"
+                    ? "absolute left-0 top-full z-[40] mt-2 w-[440px] max-w-[calc(100vw-48px)] shadow-[0_18px_48px_rgba(0,0,0,0.16)]"
+                    : "w-full shadow-[0_6px_20px_rgba(0,0,0,0.06)]",
+            ].join(" ")}
+        >
+            <div className="mb-2 flex items-center justify-between gap-2 px-1">
+                <span className="text-[13px] font-semibold">Timeline</span>
+                <span className="text-[12px] text-[#7A7A7A]">Total {formatMinutes(total)}</span>
+            </div>
+
+            {/* Live preview of the blocks. */}
+            <div className="mb-3 flex h-2.5 w-full gap-[3px] overflow-hidden rounded-full bg-[#F1F1F1]">
+                {(blocks || []).map((block) => (
+                    <span
+                        key={block.id}
+                        className="h-full rounded-full transition-[flex-grow] duration-300 ease-out"
+                        style={{ flexGrow: Math.max(1, Number(block.minutes) || 1), flexBasis: 0, backgroundColor: getBlockColor(block) }}
+                        title={`${block.title} · ${block.minutes} min`}
+                    />
+                ))}
+            </div>
+
+            {!blocks ? (
+                <div className="space-y-1.5 px-1 py-1">
+                    {[0, 1, 2].map((index) => (
+                        <div key={index} className="h-8 animate-pulse rounded-[10px] bg-[#F4F4F4]" />
+                    ))}
+                </div>
+            ) : (
+                <ul className="max-h-[260px] space-y-0.5 overflow-y-auto">
+                    {blocks.map((block) => (
+                        <li key={block.id} className="group flex items-center gap-2 rounded-[12px] px-1.5 py-1 transition-colors hover:bg-[#F7F7F7]">
+                            <span className="h-3 w-3 shrink-0 rounded-full" style={blockColorStyle(block)} aria-hidden="true" />
+                            <input
+                                value={block.title}
+                                onChange={(event) => update(block.id, { title: event.target.value })}
+                                onKeyDown={(event) => {
+                                    if (event.key === "Enter") void save();
+                                }}
+                                aria-label="Block name"
+                                className="h-7 min-w-0 flex-1 rounded-[8px] border border-transparent bg-transparent px-1.5 text-[13px] outline-none transition-colors hover:border-[#E5E5E5] focus:border-[#2F2F2F] focus:bg-white"
+                            />
+                            <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-[#E5E5E5] bg-white px-0.5">
+                                <button type="button" className={stepBtn} onClick={() => setMinutes(block.id, block.minutes - 5)} aria-label={`Shorten ${block.title}`}>
+                                    −
+                                </button>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    value={block.minutes}
+                                    onChange={(event) => setMinutes(block.id, Number(event.target.value))}
+                                    onKeyDown={(event) => {
+                                        if (event.key === "Enter") void save();
+                                    }}
+                                    aria-label={`${block.title} minutes`}
+                                    className="h-6 w-9 bg-transparent text-center text-[12px] font-semibold tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                />
+                                <button type="button" className={stepBtn} onClick={() => setMinutes(block.id, block.minutes + 5)} aria-label={`Lengthen ${block.title}`}>
+                                    +
+                                </button>
+                            </div>
+                            <span className="w-6 shrink-0 text-[11px] text-[#9A9A9A]">min</span>
+                            <button
+                                type="button"
+                                onClick={() => setBlocks((current) => (current || []).filter((item) => item.id !== block.id))}
+                                disabled={blocks.length <= 1}
+                                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[#A3A3A3] opacity-0 transition-[opacity,background-color,color] duration-150 hover:bg-red-50 hover:text-[#C93C3C] group-hover:opacity-100 focus-visible:opacity-100 disabled:hidden"
+                                aria-label={`Remove ${block.title}`}
+                            >
+                                <XIcon size={13} />
+                            </button>
+                        </li>
+                    ))}
+                </ul>
+            )}
+
+            {blocks ? (
+                <div className="mt-1.5 px-1">
+                    {adding ? (
+                        <div className="flex flex-wrap gap-1.5">
+                            {STUDIO_LIBRARY.map((item) => (
+                                <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => {
+                                        setBlocks((current) => [...(current || []), { ...item, id: uid(), color: getBlockColor(item) }]);
+                                        setAdding(false);
+                                    }}
+                                    className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[#E5E5E5] bg-white px-2.5 text-[12px] font-medium transition-[background-color,transform] duration-150 hover:bg-[#F1F1F1] active:scale-95"
+                                >
+                                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: getBlockColor(item) }} aria-hidden="true" />
+                                    {item.title}
+                                    <span className="text-[#9A9A9A]">{item.minutes}m</span>
+                                </button>
+                            ))}
+                        </div>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => setAdding(true)}
+                            className="inline-flex h-7 items-center gap-1 rounded-full px-1.5 text-[12px] font-medium text-[#606060] transition-colors hover:text-[#2F2F2F]"
+                        >
+                            <PlusIcon size={13} /> Add block
+                        </button>
+                    )}
+                </div>
+            ) : null}
+
+            {error ? <div className="mx-1 mt-2 rounded-[10px] bg-red-50 px-2.5 py-1.5 text-[12px] text-red-700">{error}</div> : null}
+
+            <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#F0F0F0] px-1 pt-3">
+                <button
+                    type="button"
+                    onClick={onOpenFullEditor}
+                    className="text-[12px] font-medium text-[#606060] underline-offset-4 transition-colors hover:text-[#2F2F2F] hover:underline"
+                >
+                    All settings
+                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="h-8 rounded-full border border-[#E5E5E5] px-3.5 text-[12px] font-semibold transition-[background-color,transform] duration-150 hover:bg-[#F3F4F6] active:scale-95"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => void save()}
+                        disabled={!blocks?.length || saving}
+                        className="h-8 rounded-full bg-[#2F2F2F] px-4 text-[12px] font-semibold text-white transition-[background-color,transform,opacity] duration-150 hover:bg-[#1F1F1F] active:scale-95 disabled:opacity-50"
+                    >
+                        {saving ? "Saving…" : "Save"}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function SessionTimeline({
     blocks,
     onChange,
@@ -4043,6 +4272,8 @@ export default function SessionCard({
     const [isHoveringCard, setIsHoveringCard] = useState(false);
     const pendingDetailsOpenRef = useRef(0);
     useEffect(() => () => window.clearTimeout(pendingDetailsOpenRef.current), []);
+    // Where the quick timeline editor is open: on the card, in the details, or nowhere.
+    const [quickTimeline, setQuickTimeline] = useState<"card" | "drawer" | null>(null);
     const [isSavingVisibility, setIsSavingVisibility] = useState(false);
     const [isSavingPinned, setIsSavingPinned] = useState(false);
 
@@ -4495,7 +4726,7 @@ export default function SessionCard({
 
         // Stage/timeline data can include large schedule/template JSON, so load
         // and fully normalize it only when the drawer or editor is opened.
-        if (!isBookersModalOpen && !isEditModalOpen) {
+        if (!isBookersModalOpen && !isEditModalOpen && !quickTimeline) {
             setStages([]);
             setIsStagesLoading(false);
             return;
@@ -4524,8 +4755,14 @@ export default function SessionCard({
         session?.template_id,
         isBookersModalOpen,
         isEditModalOpen,
+        quickTimeline,
         isInfinite,
     ]);
+
+    // Closing the details also closes a timeline edit that was open there.
+    useEffect(() => {
+        if (!isBookersModalOpen) setQuickTimeline((value) => (value === "drawer" ? null : value));
+    }, [isBookersModalOpen]);
 
     const stagesVisual = useMemo(() => {
         return (stages || []).map((s) => {
@@ -5313,7 +5550,7 @@ export default function SessionCard({
                     px-5 py-4 sm:px-6 sm:py-[18px]
                     flex flex-col
                     w-full gap-4
-                    ${isOptionsOpen ? "z-[220]" : "z-0"}
+                    ${isOptionsOpen || quickTimeline === "card" ? "z-[220]" : "z-0"}
                 `}
             >
                 <div className="flex flex-col min-[1024px]:flex-row min-[1024px]:items-center w-full gap-3 min-[1024px]:gap-3 xl:gap-4">
@@ -5431,27 +5668,53 @@ export default function SessionCard({
                     </div>
 
                                         <div
-                        className={`hidden min-[1024px]:block min-[1024px]:min-w-0 min-[1024px]:flex-1 min-[1024px]:px-0 transition-opacity duration-200 ${
-                            isHoveringCard ? "min-[1024px]:opacity-100" : "min-[1024px]:opacity-0"
+                        className={`relative hidden min-[1024px]:block min-[1024px]:min-w-0 min-[1024px]:flex-1 min-[1024px]:px-0 transition-opacity duration-200 ${
+                            isHoveringCard || quickTimeline === "card" ? "min-[1024px]:opacity-100" : "min-[1024px]:opacity-0"
                         }`}
-                        aria-hidden={!isHoveringCard}
+                        aria-hidden={!isHoveringCard && quickTimeline !== "card"}
                     >
-                        {cardStages.length > 0 ? (
-                            <SessionStageBar
-                                stages={cardStages}
-                                startTime={timelineStartTime}
-                                cycleSeconds={cycleSeconds}
-                                progressStyle="tick"
-                                tickEveryMs={tickEveryMs}
-                                theme="light"
-                                size="card"
+                        {(() => {
+                            const bar = cardStages.length > 0 ? (
+                                <SessionStageBar
+                                    stages={cardStages}
+                                    startTime={timelineStartTime}
+                                    cycleSeconds={cycleSeconds}
+                                    progressStyle="tick"
+                                    tickEveryMs={tickEveryMs}
+                                    theme="light"
+                                    size="card"
+                                />
+                            ) : (
+                                <div
+                                    className="h-[10px] w-full rounded-full bg-[#E7E7E7]"
+                                    aria-label="Session timeline"
+                                />
+                            );
+                            if (!canEdit) return bar;
+                            // Hosts double-click the timeline to edit it in place.
+                            return (
+                                <CursorEditHintArea label="Edit timeline" onActivate={() => setQuickTimeline("card")} block>
+                                    <div data-inline-edit onDoubleClick={() => setQuickTimeline("card")} title="Double-click to edit the timeline">
+                                        {bar}
+                                    </div>
+                                </CursorEditHintArea>
+                            );
+                        })()}
+                        {quickTimeline === "card" ? (
+                            <QuickTimelineEditor
+                                session={session}
+                                stages={stages}
+                                isLoading={isStagesLoading}
+                                isInfinite={isInfinite}
+                                variant="popover"
+                                onSave={(updates) => onEditSession?.(session.id, updates)}
+                                onClose={() => setQuickTimeline(null)}
+                                onOpenFullEditor={() => {
+                                    setQuickTimeline(null);
+                                    setIsEditModalOpen(true);
+                                }}
                             />
-                        ) : (
-                            <div
-                                className="h-[10px] w-full rounded-full bg-[#E7E7E7]"
-                                aria-label="Session timeline"
-                            />
-                        )}
+                        ) : null}
                     </div>
 
                     <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_48px] items-center gap-3 min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end">
@@ -5936,25 +6199,53 @@ export default function SessionCard({
                                         </span>
                                     </span>
                                 </Link>
-                                <div className="min-w-0 flex-1 rounded-[16px] border border-[#EEEEEE] px-3 py-2.5" aria-label="Session flow">
-                                    {stagesVisual?.length ? (
-                                        <SessionStageBar
-                                            {...({
-                                                stages: stagesVisual,
-                                                startTime: timelineStartTime,
-                                                cycleSeconds,
-                                                progressStyle: "tick",
-                                                tickEveryMs,
-                                                // The modal's column scrolls and would clip the tooltip.
-                                                tooltipPortal: true,
-                                            } as any)}
+                                {quickTimeline === "drawer" ? (
+                                    <div className="min-w-0 flex-1">
+                                        <QuickTimelineEditor
+                                            session={session}
+                                            stages={stages}
+                                            isLoading={isStagesLoading}
+                                            isInfinite={isInfinite}
+                                            variant="inline"
+                                            onSave={(updates) => onEditSession?.(session.id, updates)}
+                                            onClose={() => setQuickTimeline(null)}
+                                            onOpenFullEditor={() => {
+                                                setQuickTimeline(null);
+                                                setIsEditModalOpen(true);
+                                            }}
                                         />
-                                    ) : (
-                                        <div className="text-[12px] text-[#8A8A8A]">
-                                            {isStagesLoading ? "Loading session stages…" : "No timeline stages configured."}
-                                        </div>
-                                    )}
+                                    </div>
+                                ) : (
+                                <div className="min-w-0 flex-1 rounded-[16px] border border-[#EEEEEE] px-3 py-2.5" aria-label="Session flow">
+                                    {(() => {
+                                        const flow = stagesVisual?.length ? (
+                                            <SessionStageBar
+                                                {...({
+                                                    stages: stagesVisual,
+                                                    startTime: timelineStartTime,
+                                                    cycleSeconds,
+                                                    progressStyle: "tick",
+                                                    tickEveryMs,
+                                                    // The modal's column scrolls and would clip the tooltip.
+                                                    tooltipPortal: true,
+                                                } as any)}
+                                            />
+                                        ) : (
+                                            <div className="text-[12px] text-[#8A8A8A]">
+                                                {isStagesLoading ? "Loading session stages…" : "No timeline stages configured."}
+                                            </div>
+                                        );
+                                        if (!canEdit) return flow;
+                                        return (
+                                            <CursorEditHintArea label="Edit timeline" onActivate={() => setQuickTimeline("drawer")} block>
+                                                <div onDoubleClick={() => setQuickTimeline("drawer")} title="Double-click to edit the timeline">
+                                                    {flow}
+                                                </div>
+                                            </CursorEditHintArea>
+                                        );
+                                    })()}
                                 </div>
+                                )}
                             </section>
 
                             <section className="mt-4 grid grid-cols-3 divide-x divide-[#E3E3E3] rounded-[18px] bg-[#F6F6F6] py-3">
