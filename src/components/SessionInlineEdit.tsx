@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FocusEvent, type KeyboardEvent } from "react";
-import { Check, X } from "lucide-react";
+import { Check, Pencil, X } from "lucide-react";
 
 // In-place editing on a session card for its host: double-click the title or
 // the start date/time to change it right there. Enter or clicking away saves,
@@ -88,23 +88,59 @@ export function InlineEditableTitle({
     );
   }
 
+  const startEditing = () => {
+    window.getSelection()?.removeAllRanges();
+    doneRef.current = false;
+    setDraft(shown);
+    setEditing(true);
+  };
+
   return (
     <span className="min-w-0 break-words">
-      <span
-        data-inline-edit
-        onDoubleClick={() => {
-          window.getSelection()?.removeAllRanges();
-          doneRef.current = false;
-          setDraft(shown);
-          setEditing(true);
-        }}
-        title="Double-click to rename"
-        className="cursor-text rounded-[8px] decoration-[#A3A3A3] decoration-dashed underline-offset-[6px] transition-colors hover:underline"
-      >
-        {shown}
+      <span className="group/edit relative inline-block max-w-full align-bottom">
+        <span data-inline-edit onDoubleClick={startEditing} title="Double-click to rename">
+          {shown}
+        </span>
+        <EditHint label="Rename session" size="md" onClick={startEditing} />
       </span>
       <InlineError message={error} />
     </span>
+  );
+}
+
+// A small floating pencil that appears beside an editable value on hover.
+function EditHint({
+  label,
+  size,
+  onClick,
+  inset = false,
+}: {
+  label: string;
+  size: "sm" | "md";
+  onClick: () => void;
+  /** Sit inside the wrapper's right padding instead of past its edge. */
+  inset?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick();
+      }}
+      aria-label={label}
+      title={label}
+      className={[
+        "absolute top-1/2 z-[1] flex -translate-y-1/2 items-center justify-center rounded-full border border-[#E5E5E5] bg-white text-[#2F2F2F] shadow-[0_4px_12px_rgba(0,0,0,0.12)]",
+        inset ? "right-0" : "left-full",
+        "pointer-events-none scale-75 opacity-0 transition-[opacity,transform,background-color] duration-200 ease-out",
+        "group-hover/edit:pointer-events-auto group-hover/edit:scale-100 group-hover/edit:opacity-100 hover:bg-[#F1F1F1] focus-visible:pointer-events-auto focus-visible:scale-100 focus-visible:opacity-100 active:scale-90",
+        "motion-reduce:transition-none",
+        size === "md" ? "ml-2 h-7 w-7" : "h-5 w-5",
+      ].join(" ")}
+    >
+      <Pencil size={size === "md" ? 13 : 10} strokeWidth={2.25} />
+    </button>
   );
 }
 
@@ -234,20 +270,21 @@ export function InlineEditableStart({
     );
   }
 
+  const startEditing = () => {
+    window.getSelection()?.removeAllRanges();
+    doneRef.current = false;
+    setDraft(toLocalParts(startTime));
+    setEditing(true);
+  };
+
   return (
     <span>
-      <span
-        data-inline-edit
-        onDoubleClick={() => {
-          window.getSelection()?.removeAllRanges();
-          doneRef.current = false;
-          setDraft(toLocalParts(startTime));
-          setEditing(true);
-        }}
-        title="Double-click to change the date and time"
-        className="cursor-text decoration-[#A3A3A3] decoration-dashed underline-offset-[3px] hover:underline"
-      >
-        {pendingLabel ?? label}
+      {/* The date sits in a tight row, so it keeps room for its pencil. */}
+      <span className="group/edit relative inline-block pr-6">
+        <span data-inline-edit onDoubleClick={startEditing} title="Double-click to change the date and time">
+          {pendingLabel ?? label}
+        </span>
+        <EditHint label="Change date and time" size="sm" onClick={startEditing} inset />
       </span>
       <InlineError message={error} />
     </span>
