@@ -18,5 +18,6 @@ test('the agreement is saved on the account with its time and version', () => {
 
 test('the rules, terms and privacy pages stay readable while the agreement is open', () => {
   assert.match(gate, /terms\|privacy\|rules/);
-  for (const href of ['/rules', '/terms', '/privacy']) assert.match(gate, new RegExp(`href="${href}"`));
+  for (const href of ['/rules', '/terms', '/privacy']) assert.match(gate, new RegExp(`href: "${href}"`));
+  assert.match(gate, /target="_blank"/);
 });
