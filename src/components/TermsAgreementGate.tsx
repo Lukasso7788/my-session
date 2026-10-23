@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ShieldCheck } from "lucide-react";
+import { ArrowUpRight, Check, FileText, Lock, ShieldCheck, Users } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
@@ -88,8 +88,6 @@ export default function TermsAgreementGate() {
     }
   };
 
-  const linkCls = "font-semibold text-[#2F2F2F] underline underline-offset-2 hover:text-black";
-
   return (
     <div
       className="fixed inset-0 z-[10090] flex items-center justify-center bg-black/45 px-4 py-6 font-inter backdrop-blur-[3px] animate-[fadeIn_220ms_ease-out]"
@@ -97,31 +95,59 @@ export default function TermsAgreementGate() {
       aria-modal="true"
       aria-labelledby="terms-agreement-title"
     >
-      <div className="w-full max-w-[470px] rounded-[28px] bg-white p-6 text-[#2F2F2F] shadow-[0_26px_90px_rgba(0,0,0,0.24)] animate-[postSessionIn_300ms_cubic-bezier(0.22,1,0.36,1)] sm:p-8">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#F0F1F2] text-[#2F2F2F]">
-          <ShieldCheck className="h-6 w-6" aria-hidden="true" />
+      <div className="w-full max-w-[420px] rounded-[26px] bg-white p-5 text-[#2F2F2F] shadow-[0_26px_80px_rgba(0,0,0,0.22)] animate-[postSessionIn_300ms_cubic-bezier(0.22,1,0.36,1)] sm:p-6">
+        {/* Icon and title in one row, the line under the title */}
+        <div className="flex items-center gap-3.5">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-[#2F2F2F] text-white shadow-[0_6px_16px_rgba(47,47,47,0.25)]">
+            <ShieldCheck className="h-[22px] w-[22px]" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h2 id="terms-agreement-title" className="text-[20px] font-bold leading-6 tracking-[-0.02em]">
+              Before you start
+            </h2>
+            <p className="mt-0.5 text-[13px] leading-5 text-black/55">
+              A shared space for focused work, built on trust.
+            </p>
+          </div>
         </div>
 
-        <h2 id="terms-agreement-title" className="mt-5 text-[26px] font-bold tracking-[-0.035em]">
-          Before you start
-        </h2>
-        <p className="mt-2 text-[14px] leading-6 text-black/58">
-          MySession is a shared space for focused work, built on trust and respect. Please read and agree to how it works.
-        </p>
-
-        <ul className="mt-5 space-y-2 rounded-2xl bg-[#F6F6F6] p-4 text-[13px] leading-5 text-black/70">
-          <li>
-            <a href="/rules" target="_blank" rel="noreferrer" className={linkCls}>Community rules</a>: how we treat each other in sessions and chat
-          </li>
-          <li>
-            <a href="/terms" target="_blank" rel="noreferrer" className={linkCls}>Terms of Service</a>: using MySession and your account
-          </li>
-          <li>
-            <a href="/privacy" target="_blank" rel="noreferrer" className={linkCls}>Privacy Policy</a>: what we collect and why
-          </li>
+        {/* The three documents, each opens in a new tab */}
+        <ul className="mt-5 divide-y divide-black/[0.06] overflow-hidden rounded-[18px] border border-black/[0.08]">
+          {[
+            { href: "/rules", icon: <Users className="h-4 w-4" aria-hidden="true" />, title: "Community rules", hint: "How we treat each other" },
+            { href: "/terms", icon: <FileText className="h-4 w-4" aria-hidden="true" />, title: "Terms of Service", hint: "Using MySession and your account" },
+            { href: "/privacy", icon: <Lock className="h-4 w-4" aria-hidden="true" />, title: "Privacy Policy", hint: "What we collect and why" },
+          ].map((doc) => (
+            <li key={doc.href}>
+              <a
+                href={doc.href}
+                target="_blank"
+                rel="noreferrer"
+                className="group flex items-center gap-3 px-3.5 py-2.5 transition-colors hover:bg-[#F7F7F7]"
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[#F1F1F1] text-[#2F2F2F]">
+                  {doc.icon}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13.5px] font-semibold leading-5">{doc.title}</span>
+                  <span className="block truncate text-[12px] leading-4 text-black/50">{doc.hint}</span>
+                </span>
+                <ArrowUpRight
+                  className="h-4 w-4 shrink-0 text-black/35 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-[#2F2F2F]"
+                  aria-hidden="true"
+                />
+              </a>
+            </li>
+          ))}
         </ul>
 
-        <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-2xl border border-black/10 p-4 transition-colors hover:bg-[#FAFAFA] has-[:checked]:border-[#2F2F2F]">
+        {/* Agreement checkbox */}
+        <label
+          className={[
+            "mt-3 flex cursor-pointer items-start gap-3 rounded-[16px] px-3.5 py-3 transition-colors",
+            agreed ? "bg-[#F1F1F1]" : "hover:bg-[#F7F7F7]",
+          ].join(" ")}
+        >
           <input
             type="checkbox"
             checked={agreed}
@@ -129,33 +155,44 @@ export default function TermsAgreementGate() {
               setAgreed(event.target.checked);
               setMessage("");
             }}
-            className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer rounded-md accent-[#2F2F2F]"
+            className="peer sr-only"
             autoFocus
           />
-          <span className="text-[13.5px] leading-5">
-            I agree to the MySession Community rules and Terms of Service, and I have read the Privacy Policy.
+          <span
+            aria-hidden="true"
+            className={[
+              "mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border-[1.5px] transition-[background-color,border-color,transform] duration-150 peer-focus-visible:ring-2 peer-focus-visible:ring-[#2F2F2F]/30",
+              agreed ? "scale-105 border-[#2F2F2F] bg-[#2F2F2F] text-white" : "border-black/25 bg-white text-transparent",
+            ].join(" ")}
+          >
+            <Check className="h-3.5 w-3.5" strokeWidth={3} />
+          </span>
+          <span className="text-[13px] leading-5 text-black/75">
+            I agree to the Community rules and Terms of Service, and I have read the Privacy Policy.
           </span>
         </label>
 
         {message ? (
-          <p className="mt-4 rounded-2xl bg-[#FFF1F1] px-4 py-3 text-[12px] font-medium text-[#B42318]">{message}</p>
+          <p className="mt-3 rounded-[14px] bg-[#FFF1F1] px-3.5 py-2.5 text-[12px] font-medium text-[#B42318]">{message}</p>
         ) : null}
 
-        <button
-          type="button"
-          onClick={() => void accept()}
-          disabled={!agreed || saving}
-          className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-2xl bg-[#2F2F2F] px-5 text-[14px] font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {saving ? "Saving…" : "Agree and continue"}
-        </button>
-        <button
-          type="button"
-          onClick={() => void signOut()}
-          className="mt-3 w-full text-center text-[12px] font-medium text-black/45 transition hover:text-black/70"
-        >
-          I don't agree, sign me out
-        </button>
+        <div className="mt-4 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            className="h-11 rounded-[14px] px-4 text-[13px] font-semibold text-black/50 transition-colors hover:bg-[#F3F3F3] hover:text-black/75"
+          >
+            Sign out
+          </button>
+          <button
+            type="button"
+            onClick={() => void accept()}
+            disabled={!agreed || saving}
+            className="ml-auto inline-flex h-11 flex-1 items-center justify-center rounded-[14px] bg-[#2F2F2F] px-5 text-[13.5px] font-semibold text-white transition-[background-color,opacity,transform] duration-150 hover:bg-black active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            {saving ? "Saving…" : "Agree and continue"}
+          </button>
+        </div>
       </div>
     </div>
   );
