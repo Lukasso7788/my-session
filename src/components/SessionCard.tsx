@@ -4918,6 +4918,8 @@ export default function SessionCard({
     );
 
     const bookedCount = isInfinite ? sortedBookingTimeline.length : bookers.length;
+    // The booked button shows the head count only once a session has some momentum.
+    const BOOKED_COUNT_SHOW_FROM = 4;
     const liveUsersCount = liveUsers.length;
 
     const liveNowDisplay =
@@ -5823,7 +5825,14 @@ export default function SessionCard({
 
     const confirmedBookingButton = (
         <button
-            aria-label={isInfinite ? "View booking details" : "Booked session"}
+            aria-label={
+                isInfinite
+                    ? "View booking details"
+                    : bookedCount >= BOOKED_COUNT_SHOW_FROM
+                        ? `Booked session, ${bookedCount} people going`
+                        : "Booked session"
+            }
+            title={!isInfinite && bookedCount >= BOOKED_COUNT_SHOW_FROM ? `${bookedCount} people going` : undefined}
             onClick={isInfinite
                 ? () => {
                     setIsBookersModalOpen(true);
@@ -5851,7 +5860,15 @@ export default function SessionCard({
                     Cancel booking
                 </>
             ) : (
-                <img src="/icons/book-session-green.svg" className="w-6 h-6" alt="" />
+                <>
+                    <img src="/icons/book-session-green.svg" className="w-6 h-6" alt="" />
+                    {/* From a few people up, show how many are going. */}
+                    {!isInfinite && bookedCount >= BOOKED_COUNT_SHOW_FROM ? (
+                        <span className="ml-1.5 tabular-nums">
+                            {bookedCount}
+                        </span>
+                    ) : null}
+                </>
             )}
         </button>
     );
