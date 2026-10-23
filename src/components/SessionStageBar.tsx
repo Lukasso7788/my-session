@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { SessionStage } from "../SessionConfig";
 import { serverNow } from "../lib/serverClock";
+import { CHECK_IN_BREAK_TITLE, isCheckInBreakName } from "../lib/checkInBreak";
 
 type RoomTheme = "dark" | "light";
 
@@ -205,7 +206,14 @@ function inferKindFromText(textAny: any): StageKind | null {
   return null;
 }
 
+function stageTitle(stage: any): string {
+  return String(stage?.title ?? stage?.label ?? stage?.displayName ?? stage?.name ?? "");
+}
+
 function getStageKind(stage: any): StageKind {
+  // "Check-in & break" shows as a check-in (Intentions color) whatever kind it saved.
+  if (isCheckInBreakName(stageTitle(stage))) return "checkin";
+
   const rawKind =
     stage?.kind ??
     stage?.type ??
@@ -228,9 +236,8 @@ function getStageKind(stage: any): StageKind {
 }
 
 function getDisplayName(stage: any, kind: StageKind) {
-  const name = String(
-    stage?.title ?? stage?.label ?? stage?.displayName ?? stage?.name ?? ""
-  ).trim();
+  const name = stageTitle(stage).trim();
+  if (isCheckInBreakName(name)) return CHECK_IN_BREAK_TITLE;
 
   return name || KIND_META[kind].label;
 }

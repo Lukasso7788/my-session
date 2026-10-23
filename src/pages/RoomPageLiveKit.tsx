@@ -134,6 +134,7 @@ import { buildScreenShareTiles } from "./livekit/screenShareHelpers";
 import { FX_BG_PRESETS } from "./livekit/backgroundPresets";
 import { downscaleImageFile, downscaleImageSrc, isLargeDataUrl } from "../lib/backgroundImageDownscale";
 import { prefetchBackgroundFxAssets } from "../lib/prefetchBackgroundFx";
+import { CHECK_IN_BREAK_TITLE, INTENTIONS_COLOR, isCheckInBreakName } from "../lib/checkInBreak";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
 import { profileHoverAttrs } from "../components/ProfileHoverLayer";
 import CameraOffReminder, { CAMERA_OFF_REMINDER_DELAY_MS } from "./livekit/CameraOffReminder";
@@ -1211,6 +1212,14 @@ function phaseToStageType(phaseName: string): Stage["type"] {
   )
     return "focus";
   return "focus";
+}
+
+// "Break & check-in" from older schedules shows as "Check-in & break"
+// in the Intentions color, like every other timeline in the app.
+function canonicalRoomStage<T extends { name: string; color?: string }>(stage: T): T {
+  return isCheckInBreakName(stage.name)
+    ? { ...stage, name: CHECK_IN_BREAK_TITLE, color: INTENTIONS_COLOR }
+    : stage;
 }
 
 const STAGE_COLORS: Record<string, string> = {
@@ -7776,7 +7785,7 @@ export function RoomPageLiveKit({
         })
         .filter((x): x is Stage => !!x);
 
-      setStages(formatted);
+      setStages(formatted.map(canonicalRoomStage));
       setStagebarStartTime(String(session.start_time || fallbackStart));
       setStagebarCycleSeconds(undefined);
     }
@@ -7824,7 +7833,7 @@ export function RoomPageLiveKit({
         };
       });
 
-      setStages(formatted);
+      setStages(formatted.map(canonicalRoomStage));
 
       const anchor = String(
         str((parsed as any).anchor_ts) ||
@@ -7968,7 +7977,7 @@ export function RoomPageLiveKit({
           })
           .filter((x): x is Stage => !!x);
 
-        setStages(formatted);
+        setStages(formatted.map(canonicalRoomStage));
         setStagebarStartTime(String(nextSession.start_time || fallbackStart));
         setStagebarCycleSeconds(undefined);
         return;
@@ -8017,7 +8026,7 @@ export function RoomPageLiveKit({
           };
         });
 
-        setStages(formatted);
+        setStages(formatted.map(canonicalRoomStage));
 
         const anchor = String(
           str((parsed as any).anchor_ts) ||

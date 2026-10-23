@@ -439,7 +439,7 @@ export default function BugReportModal({
                                 <option value="prejoin">In the pre-join screen</option>
                                 <option value="inside_live_room">Inside the live room</option>
                                 <option value="focus_block">During a focus block</option>
-                                <option value="break_checkin">During a break/check-in</option>
+                                <option value="break_checkin">During a check-in &amp; break</option>
                                 <option value="leaving_and_returning">When leaving and coming back</option>
                                 <option value="sessions_page">On the sessions page</option>
                                 <option value="payment">Payment / subscription</option>

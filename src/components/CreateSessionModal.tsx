@@ -50,6 +50,7 @@ import { useAuth } from "../context/AuthContext";
 import { useLocation, useNavigate } from "react-router-dom";
 import { resolveStageVisual } from "./SessionStageBar";
 import { withRoomPolicies } from "../lib/roomPolicies";
+import { CHECK_IN_BREAK_TITLE, INTENTIONS_COLOR, isCheckInBreakName } from "../lib/checkInBreak";
 import { isCurrentUserAdmin } from "../lib/bans";
 import CreateKindSwitch, { requestInfiniteRoomCreator } from "./CreateKindSwitch";
 
@@ -368,10 +369,10 @@ function buildPresetCycleBlocks(
     blocks.push({
       id: `preset-${preset.key}-break-${index + 1}`,
       kind: "break",
-      title: index === safeCycles - 1 ? "Break & check-in" : "Break & check-in",
-      note: `${preset.breakMinutes}-minute break and quick check-in`,
+      title: CHECK_IN_BREAK_TITLE,
+      note: `${preset.breakMinutes}-minute quick check-in and break`,
       minutes: preset.breakMinutes,
-      color: getDefaultBlockColor("break"),
+      color: INTENTIONS_COLOR,
     });
   }
 
@@ -603,6 +604,19 @@ function normalizeTemplateBlocks(rawBlocks: any): StudioBlock[] {
 
     const kind = inferStudioBlockKind(b);
 
+    // Templates saved "Break & check-in" in the break color; it is now
+    // "Check-in & break" in the Intentions color.
+    if (isCheckInBreakName(title)) {
+      return {
+        id: uid(),
+        kind,
+        title: CHECK_IN_BREAK_TITLE,
+        note: String(b?.note || b?.description || b?.details || "").trim() || undefined,
+        minutes,
+        color: INTENTIONS_COLOR,
+      };
+    }
+
     const rawColor = String(
       b?.color || b?.colour || b?.bgColor || b?.backgroundColor || "",
     ).trim();
@@ -678,7 +692,8 @@ function getDefaultBlockColor(kind: StudioBlockKind) {
   }
 }
 
-function getBlockColor(block: Pick<StudioBlock, "kind" | "color">) {
+function getBlockColor(block: Pick<StudioBlock, "kind" | "color"> & { title?: string }) {
+  if (isCheckInBreakName(block.title)) return INTENTIONS_COLOR;
   const raw = String(block.color || "").trim();
   return isValidHexColor(raw) ? raw : getDefaultBlockColor(block.kind);
 }
@@ -3901,7 +3916,7 @@ export function CreateSessionModal({
                           Number of cycles
                         </div>
                         <div className="mt-1 font-inter text-[12px] text-[#667085]">
-                          Each cycle adds {selectedPreset.focusMinutes} minutes of focus and a {selectedPreset.breakMinutes}-minute break &amp; check-in.
+                          Each cycle adds {selectedPreset.focusMinutes} minutes of focus and a {selectedPreset.breakMinutes}-minute check-in &amp; break.
                         </div>
                       </div>
 

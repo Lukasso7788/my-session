@@ -23,6 +23,7 @@ import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "./PaywallModal";
 import type { SessionStage } from "../SessionConfig";
 import { readSessionRoomPolicies, withRoomPolicies } from "../lib/roomPolicies";
+import { CHECK_IN_BREAK_TITLE, INTENTIONS_COLOR, isCheckInBreakName } from "../lib/checkInBreak";
 import SessionRoomPolicyIndicator from "./SessionRoomPolicyIndicator";
 import SessionMusicIndicator from "./SessionMusicIndicator";
 import { profileHoverAttrs } from "./ProfileHoverLayer";
@@ -1569,6 +1570,9 @@ function resolveStageColor(stage: any, kind: StageKind) {
 function resolveStageVisualLocal(stage: any) {
     const kind = getStageKind(stage);
     const name = getDisplayName(stage, kind);
+    if (isCheckInBreakName(name)) {
+        return { kind: "checkin" as StageKind, name: CHECK_IN_BREAK_TITLE, color: INTENTIONS_COLOR };
+    }
     const color = resolveStageColor(stage, kind);
     return { kind, name, color };
 }
@@ -1989,7 +1993,8 @@ function getDefaultBlockColor(kind: StudioBlockKind) {
         case "break":
             return "#F9ADA2";
         case "checkin":
-            return "#38BDF8";
+            // Check-ins share the Intentions color.
+            return INTENTIONS_COLOR;
         case "recap":
             return "#A78BFA";
         case "celebrate":
@@ -2014,6 +2019,7 @@ function getRawStudioBlockColor(block: any): string {
 }
 
 function getBlockColor(block: Pick<StudioBlock, "kind" | "color"> | any) {
+    if (isCheckInBreakName(block?.title ?? block?.name)) return INTENTIONS_COLOR;
     const raw = getRawStudioBlockColor(block);
     return isValidHexColor(raw) ? raw : getDefaultBlockColor(block?.kind || "custom");
 }
@@ -2102,6 +2108,16 @@ function studioMinutesFromAny(raw: any) {
     return 0;
 }
 function normalizeStudioBlocksFromSession(session: any): StudioBlock[] {
+    // Older sessions saved "Break & check-in" in the break color; editors show
+    // the canonical "Check-in & break" in the Intentions color (and save it so).
+    return readStudioBlocksFromSession(session).map((block) =>
+        isCheckInBreakName(block.title)
+            ? { ...block, title: CHECK_IN_BREAK_TITLE, color: INTENTIONS_COLOR }
+            : block
+    );
+}
+
+function readStudioBlocksFromSession(session: any): StudioBlock[] {
     const rawStages =
         session?.session_stages ??
         session?.stages;

@@ -1,4 +1,6 @@
 // Pure timeline data and serialization. Keep the editor UI out of room entry.
+import { CHECK_IN_BREAK_TITLE, INTENTIONS_COLOR, isCheckInBreakName } from "./checkInBreak";
+
 export type RoomTimelineBlockKind =
     | "welcome"
     | "intentions"
@@ -62,7 +64,8 @@ function getRawBlockColor(raw: any) {
     ).trim();
 }
 
-export function getBlockColor(block: Pick<RoomTimelineBlock, "kind" | "color">) {
+export function getBlockColor(block: Pick<RoomTimelineBlock, "kind" | "color"> & { title?: string }) {
+    if (isCheckInBreakName(block.title)) return INTENTIONS_COLOR;
     const raw = String(block.color || "").trim();
     return isValidHexColor(raw) ? raw : getDefaultBlockColor(block.kind);
 }
@@ -363,6 +366,16 @@ export function getTimelineTotalMinutes(blocks: RoomTimelineBlock[]) {
 }
 
 export function timelineBlocksFromSchedule(rawSchedule: any): RoomTimelineBlock[] {
+    // "Break & check-in" from older schedules is edited (and saved) as
+    // "Check-in & break" in the Intentions color.
+    return readTimelineBlocksFromSchedule(rawSchedule).map((block) =>
+        isCheckInBreakName(block.title)
+            ? { ...block, title: CHECK_IN_BREAK_TITLE, color: INTENTIONS_COLOR }
+            : block
+    );
+}
+
+function readTimelineBlocksFromSchedule(rawSchedule: any): RoomTimelineBlock[] {
     let parsed: any = safeParseJson(rawSchedule);
 
     if (!parsed) {
