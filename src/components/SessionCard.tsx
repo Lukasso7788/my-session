@@ -28,6 +28,7 @@ import SessionMusicIndicator from "./SessionMusicIndicator";
 import { profileHoverAttrs } from "./ProfileHoverLayer";
 import { getSessionCardPolicyState } from "../lib/sessionCardIndicators";
 import { SERIES_WINDOW_DAYS, type SeriesOccurrence } from "../lib/sessionSeries";
+import { InlineEditableStart, InlineEditableTitle } from "./SessionInlineEdit";
 
 let roomPagePrefetchPromise: Promise<unknown> | null = null;
 function prefetchRoomPage() {
@@ -4040,6 +4041,8 @@ export default function SessionCard({
     const [isHoveringJoinIframe, setIsHoveringJoinIframe] = useState(false);
     const [isHoveringOptions, setIsHoveringOptions] = useState(false);
     const [isHoveringCard, setIsHoveringCard] = useState(false);
+    const pendingDetailsOpenRef = useRef(0);
+    useEffect(() => () => window.clearTimeout(pendingDetailsOpenRef.current), []);
     const [isSavingVisibility, setIsSavingVisibility] = useState(false);
     const [isSavingPinned, setIsSavingPinned] = useState(false);
 
@@ -5289,9 +5292,17 @@ export default function SessionCard({
                 onMouseLeave={() => setIsHoveringCard(false)}
                 onClick={(event) => {
                     const target = event.target as HTMLElement;
-                    if (target.closest("button, a, input, select, textarea, [role='button']")) return;
+                    if (target.closest("button, a, input, select, textarea, [role='button'], [data-inline-editing]")) return;
+                    // A host's title or date may be the first click of a double-click
+                    // (inline edit), so wait a moment before opening the details.
+                    if (canEdit && target.closest("[data-inline-edit]")) {
+                        window.clearTimeout(pendingDetailsOpenRef.current);
+                        pendingDetailsOpenRef.current = window.setTimeout(() => setIsBookersModalOpen(true), 260);
+                        return;
+                    }
                     setIsBookersModalOpen(true);
                 }}
+                onDoubleClick={() => window.clearTimeout(pendingDetailsOpenRef.current)}
                 className={`
                     relative
                     border rounded-[30px] sm:rounded-[36px] min-[1024px]:rounded-[42px] bg-white
@@ -5336,7 +5347,11 @@ export default function SessionCard({
                                             Hidden
                                         </span>
                                     )}
-                                    <span className="min-w-0 break-words">{session.title}</span>
+                                    <InlineEditableTitle
+                                        value={String(session.title || "")}
+                                        canEdit={canEdit}
+                                        onSave={(title) => onEditSession?.(session.id, { title })}
+                                    />
                                 </h3>
 
                                 <SessionRoomPolicyIndicator policies={cardRoomPolicies} color={t.color} background={t.bg} />
@@ -5352,7 +5367,12 @@ export default function SessionCard({
                                 {!isInfinite && (
                                     <div className="flex items-center gap-1">
                                         <img src="/icons/date.svg" className="w-4 h-4 opacity-70" alt="" />
-                                        <span>{startDateString}</span>
+                                        <InlineEditableStart
+                                            startTime={session.start_time}
+                                            label={startDateString}
+                                            canEdit={canEdit}
+                                            onSave={(start_time) => onEditSession?.(session.id, { start_time })}
+                                        />
                                     </div>
                                 )}
 
