@@ -2451,12 +2451,12 @@ function QuickTimelineEditor({
                 <span className="text-[12px] text-[#7A7A7A]">Total {formatMinutes(total)}</span>
             </div>
 
-            {/* Segment bar, like the full editor's timeline but without labels. */}
+            {/* Thin live bar of the blocks: drag or ← → to reorder, pull a right edge to resize. */}
             <div
                 ref={barRef}
                 role="listbox"
                 aria-label="Timeline blocks. Drag or use the arrow keys to reorder."
-                className="flex h-7 w-full overflow-hidden rounded-full border border-[#E5E5E5] bg-[#F6F6F6]"
+                className="mb-3 flex h-2.5 w-full overflow-hidden rounded-full bg-[#F1F1F1] transition-[height] duration-200 ease-out hover:h-3.5"
             >
                 {list.map((block) => {
                     const mins = clamp(Number(block.minutes) || 1, 1, 24 * 60);
@@ -2495,30 +2495,27 @@ function QuickTimelineEditor({
                             }}
                             title={`${block.title} · ${mins} min — drag or ← → to move`}
                             className={[
-                                "group/seg relative h-full min-w-0 cursor-grab border-r-2 border-white outline-none transition-[flex-grow,filter,opacity] duration-200 ease-out last:border-r-0 hover:brightness-105 focus-visible:brightness-110 active:cursor-grabbing",
-                                dragId === block.id ? "opacity-50" : "",
+                                // Blocks sit flush against each other, like the card's timeline.
+                                "relative h-full min-w-0 cursor-grab outline-none transition-[flex-grow,filter,opacity,box-shadow] duration-300 ease-out hover:brightness-105 focus-visible:brightness-110 active:cursor-grabbing",
+                                // A selected block stays vivid while the others fade back.
+                                dragId === block.id ? "opacity-50" : selectedId && !selected ? "opacity-35 saturate-50" : "opacity-100",
                             ].join(" ")}
                             style={{
                                 flexGrow: mins,
                                 flexBasis: 0,
-                                minWidth: TIMELINE_MIN_SEGMENT_WIDTH * 2,
+                                minWidth: TIMELINE_MIN_SEGMENT_WIDTH,
                                 ...blockColorStyle(block),
-                                boxShadow: selected ? "inset 0 0 0 2px rgba(17,24,39,0.45)" : "none",
                             }}
                         >
+                            {/* Invisible grab area on the right edge for resizing. */}
                             <span
                                 aria-hidden="true"
                                 onPointerDown={(event) => startResize(event, block)}
-                                className="absolute bottom-1 right-0.5 top-1 w-1.5 cursor-ew-resize rounded-full bg-black/0 transition-colors group-hover/seg:bg-black/20"
+                                className="absolute bottom-0 right-0 top-0 w-2 cursor-ew-resize"
                             />
                         </button>
                     );
                 })}
-            </div>
-            <div className="mt-1 flex justify-between px-1 text-[10.5px] tabular-nums text-[#9A9A9A]">
-                <span>0m</span>
-                <span>Drag to reorder · pull an edge to resize</span>
-                <span>{formatMinutes(total)}</span>
             </div>
 
             {!blocks ? (
@@ -2528,7 +2525,7 @@ function QuickTimelineEditor({
                     ))}
                 </div>
             ) : (
-                <ul className="mt-2 max-h-[320px] space-y-0.5 overflow-y-auto">
+                <ul className="max-h-[320px] space-y-0.5 overflow-y-auto">
                     {list.map((block, index) => {
                         const open = selectedId === block.id;
                         const start = elapsed;
@@ -2549,22 +2546,33 @@ function QuickTimelineEditor({
                                 }}
                                 onDragEnd={endDrag}
                                 className={[
-                                    "group rounded-[12px] transition-[background-color,opacity] duration-150",
-                                    open ? "bg-[#F6F6F6]" : "hover:bg-[#F7F7F7]",
+                                    "group rounded-[14px] border transition-[background-color,border-color,box-shadow,opacity] duration-200",
+                                    open
+                                        ? "border-[#EDEDED] bg-white shadow-[0_6px_18px_rgba(0,0,0,0.07)]"
+                                        : "border-transparent hover:bg-[#F7F7F7]",
                                     dragId === block.id ? "opacity-40" : "",
                                 ].join(" ")}
                             >
-                                <div className="flex items-center gap-1.5 px-1 py-1">
+                                <div className="flex items-center gap-1.5 py-1 pl-0 pr-1">
+                                    {/* Grip shows on hover; rows drag from it. */}
                                     <span
                                         onPointerDown={() => setGripArmedId(block.id)}
                                         onPointerUp={() => setGripArmedId(null)}
-                                        className="flex h-6 w-4 shrink-0 cursor-grab items-center justify-center text-[#B5B5B5] transition-colors hover:text-[#2F2F2F] active:cursor-grabbing"
+                                        className="-mr-0.5 flex h-6 w-3.5 shrink-0 cursor-grab items-center justify-center text-[#B5B5B5] opacity-0 transition-[opacity,color] duration-150 hover:text-[#2F2F2F] group-hover:opacity-100 active:cursor-grabbing"
                                         title="Drag to reorder"
                                         aria-hidden="true"
                                     >
-                                        <GripVertical size={14} />
+                                        <GripVertical size={13} />
                                     </span>
-                                    <span className="h-3 w-3 shrink-0 rounded-full" style={blockColorStyle(block)} aria-hidden="true" />
+                                    <span
+                                        className="h-3 w-3 shrink-0 rounded-full transition-shadow duration-200"
+                                        style={{
+                                            ...blockColorStyle(block),
+                                            // The open block's dot gets a soft halo in its own color.
+                                            boxShadow: open ? `0 0 0 3px #fff, 0 0 0 5px ${getBlockColor(block)}55` : "none",
+                                        }}
+                                        aria-hidden="true"
+                                    />
                                     <input
                                         value={block.title}
                                         onChange={(event) => update(block.id, { title: event.target.value })}
@@ -2575,11 +2583,11 @@ function QuickTimelineEditor({
                                         aria-label="Block name"
                                         className="h-7 min-w-0 flex-1 rounded-[8px] border border-transparent bg-transparent px-1.5 text-[13px] outline-none transition-colors hover:border-[#E5E5E5] focus:border-[#2F2F2F] focus:bg-white"
                                     />
-                                    <span className="hidden shrink-0 text-[10.5px] tabular-nums text-[#A3A3A3] sm:inline">
-                                        {start}–{start + (Number(block.minutes) || 0)}m
-                                    </span>
-                                    <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-[#E5E5E5] bg-white px-0.5">
-                                        <button type="button" className={stepBtn} onClick={() => setMinutes(block.id, block.minutes - 1)} aria-label={`Shorten ${block.title}`}>
+                                    <div
+                                        className="flex shrink-0 items-center gap-0.5 rounded-full border border-[#E5E5E5] bg-white px-0.5"
+                                        title={`${start}–${start + (Number(block.minutes) || 0)} min`}
+                                    >
+                                        <button type="button" className={stepBtn} onClick={() => setMinutes(block.id, block.minutes - 5)} aria-label={`Shorten ${block.title}`}>
                                             −
                                         </button>
                                         <input
@@ -2594,16 +2602,29 @@ function QuickTimelineEditor({
                                             aria-label={`${block.title} minutes`}
                                             className="h-6 w-9 bg-transparent text-center text-[12px] font-semibold tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                                         />
-                                        <button type="button" className={stepBtn} onClick={() => setMinutes(block.id, block.minutes + 1)} aria-label={`Lengthen ${block.title}`}>
+                                        <button type="button" className={stepBtn} onClick={() => setMinutes(block.id, block.minutes + 5)} aria-label={`Lengthen ${block.title}`}>
                                             +
                                         </button>
                                     </div>
+                                    <span className="w-6 shrink-0 text-[11px] text-[#9A9A9A]">min</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => remove(block.id)}
+                                        disabled={list.length <= 1}
+                                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[#A3A3A3] opacity-0 transition-[opacity,background-color,color] duration-150 hover:bg-red-50 hover:text-[#C93C3C] group-hover:opacity-100 focus-visible:opacity-100 disabled:hidden"
+                                        aria-label={`Remove ${block.title}`}
+                                    >
+                                        <XIcon size={13} />
+                                    </button>
                                     <button
                                         type="button"
                                         onClick={() => setSelectedId(open ? null : block.id)}
                                         aria-expanded={open}
                                         aria-label={`More for ${block.title}`}
-                                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[#8A8A8A] transition-[background-color,color,transform] duration-200 hover:bg-[#EAEAEA] hover:text-[#2F2F2F]"
+                                        className={[
+                                            "-ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[#8A8A8A] transition-[opacity,background-color,color] duration-150 hover:bg-[#EAEAEA] hover:text-[#2F2F2F] focus-visible:opacity-100",
+                                            open ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                                        ].join(" ")}
                                     >
                                         <ChevronDownIcon size={14} className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
                                     </button>
@@ -2648,7 +2669,7 @@ function QuickTimelineEditor({
                                                     key={minutes}
                                                     type="button"
                                                     onClick={() => setMinutes(block.id, minutes)}
-                                                    className={[chipBase, "px-2", block.minutes === minutes ? "border-[#2F2F2F] bg-[#F1F1F1]" : chipPlain].join(" ")}
+                                                    className={[chipBase, "px-2", block.minutes === minutes ? "border-[#2F2F2F] bg-[#2F2F2F] text-white" : chipPlain].join(" ")}
                                                 >
                                                     {minutes}m
                                                 </button>
@@ -2665,10 +2686,13 @@ function QuickTimelineEditor({
                                                         type="button"
                                                         onClick={() => update(block.id, { color })}
                                                         className={[
-                                                            "h-5 w-5 rounded-full border transition-transform duration-150 hover:scale-110",
-                                                            active ? "border-[#2F2F2F] ring-2 ring-black/15" : "border-white",
+                                                            "h-5 w-5 rounded-full transition-[transform,box-shadow] duration-150 hover:scale-110",
+                                                            active ? "scale-110" : "",
                                                         ].join(" ")}
-                                                        style={{ backgroundColor: color }}
+                                                        style={{
+                                                            backgroundColor: color,
+                                                            boxShadow: active ? `0 0 0 2px #fff, 0 0 0 4px ${color}` : "inset 0 0 0 1px rgba(0,0,0,0.06)",
+                                                        }}
                                                         aria-label={`Color ${color}`}
                                                     />
                                                 );
