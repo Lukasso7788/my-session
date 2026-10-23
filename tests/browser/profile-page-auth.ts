@@ -13,6 +13,8 @@ const user = {
   user_metadata: { full_name: "Anna Fischer", timezone: "Europe/Berlin" },
   created_at: "2025-03-02T10:00:00Z",
 };
+// Harness pages can adjust the signed-in user before this module runs.
+Object.assign(user, (globalThis as any).__harnessUserPatch || {});
 
 localStorage.setItem(
   "mysession-auth",

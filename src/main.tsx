@@ -9,6 +9,7 @@ import "./free-flow-intro.css";
 import { AuthProvider } from "./context/AuthContext";
 import AnalyticsProvider from "./components/AnalyticsProvider";
 import ProfileCompletionGate from "./components/ProfileCompletionGate";
+import TermsAgreementGate from "./components/TermsAgreementGate";
 import ProfileHoverLayer from "./components/ProfileHoverLayer";
 import InAppBrowserMediaGate from "./components/InAppBrowserMediaGate";
 import { initializeAnalytics } from "./lib/analytics";
@@ -32,6 +33,7 @@ createRoot(document.getElementById("root")!).render(
           <AuthProvider>
             <AnalyticsProvider>
               <ProfileCompletionGate />
+              <TermsAgreementGate />
               <App />
               <ProfileHoverLayer />
             </AnalyticsProvider>
