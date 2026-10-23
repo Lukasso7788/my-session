@@ -6452,10 +6452,24 @@ export default function SessionCard({
                             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-2">
                                 <h3 className="flex min-w-0 items-center gap-2 text-[22px] font-bold leading-tight text-[#111827] sm:text-[28px]">
                                     {session?.is_private ? <Lock size={22} className="shrink-0 text-[#606060]" aria-label="Private session" /> : null}
-                                    <span className="min-w-0 break-words">{session.title}</span>
+                                    {/* Hosts rename and reschedule here too, by double-click. */}
+                                    <InlineEditableTitle
+                                        value={String(session.title || "")}
+                                        canEdit={canEdit}
+                                        onSave={(title) => onEditSession?.(session.id, { title })}
+                                    />
                                 </h3>
                                 <span className="whitespace-nowrap text-[14px] font-semibold text-[#3F6FD8] sm:text-[16px]">
-                                    {isInfinite ? "Always open" : drawerStartShort ? `${drawerStartShort.date} · ${drawerStartShort.time}` : drawerWhen.date}
+                                    {isInfinite ? (
+                                        "Always open"
+                                    ) : (
+                                        <InlineEditableStart
+                                            startTime={session.start_time}
+                                            label={drawerStartShort ? `${drawerStartShort.date} · ${drawerStartShort.time}` : drawerWhen.date}
+                                            canEdit={canEdit}
+                                            onSave={(start_time) => onEditSession?.(session.id, { start_time })}
+                                        />
+                                    )}
                                 </span>
                                 <span className="flex flex-wrap items-center gap-2">
                                     {drawerStatus.live ? (
