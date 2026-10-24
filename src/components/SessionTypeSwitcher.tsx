@@ -31,12 +31,14 @@ type Props = {
   value: TabId;
   onChange: (next: TabId) => void;
   liveCounts?: Partial<Record<"group" | "infinite", number>>;
+  /** Blur the live head count (signed-out visitors). */
+  blurLiveCounts?: boolean;
   className?: string;
   sectionLinks?: { id: TabId; href: string; label: string }[];
   compact?: boolean;
 };
 
-export function SessionTypeSwitcher({ value, onChange, liveCounts, className = "", sectionLinks, compact = false }: Props) {
+export function SessionTypeSwitcher({ value, onChange, liveCounts, blurLiveCounts = false, className = "", sectionLinks, compact = false }: Props) {
   const isSectionSwitcher = Boolean(sectionLinks);
   const visibleTabs = sectionLinks
     ? sectionLinks.map((link) => ({ ...tabs.find((tab) => tab.id === link.id)!, ...link }))
@@ -133,7 +135,7 @@ export function SessionTypeSwitcher({ value, onChange, liveCounts, className = "
               }
               onChange(t.id);
             }}
-            aria-label={liveCount > 0 ? `${t.label}, ${liveCount} people live` : t.label}
+            aria-label={liveCount > 0 && !blurLiveCounts ? `${t.label}, ${liveCount} people live` : t.label}
             aria-current={t.href && isActive ? "location" : undefined}
             className={[
               "relative z-10",
@@ -170,7 +172,7 @@ export function SessionTypeSwitcher({ value, onChange, liveCounts, className = "
                     WebkitMask: "url('/icons/group-active.svg') center / contain no-repeat",
                   }}
                 />
-                {liveCount} LIVE
+                <span className={blurLiveCounts ? "select-none blur-[3px]" : undefined}>{liveCount}</span> LIVE
               </span>
             )}
             <img src={isActive ? t.iconActive : t.iconInactive} className={sectionLinks ? "session-section-switcher__icon" : compact ? "w-4 h-4 shrink-0" : "w-6 h-6 shrink-0"} alt="" />

@@ -2610,6 +2610,7 @@ const visibleSessions = useMemo(() => {
             dateFilter={isAllDatesValue(dateFilter) ? null : dateFilter}
             onDateChange={setDateFilter}
             liveCounts={switcherLiveCounts}
+            blurLiveCounts={!user?.id}
             onSectionChange={setSessionTypeTab}
             isLoading={isLoading}
             error={sessionsLoadError}

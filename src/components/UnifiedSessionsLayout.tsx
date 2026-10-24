@@ -24,6 +24,8 @@ type Props = {
   }[];
   dateFilter: string | null;
   liveCounts: Partial<Record<"group" | "infinite", number>>;
+  /** Signed-out visitors see live head counts blurred. */
+  blurLiveCounts?: boolean;
   onSectionChange: (section: "group" | "infinite") => void;
   toolbar?: ReactNode;
   emptyAction: ReactNode;
@@ -39,6 +41,7 @@ export default function UnifiedSessionsLayout({
   scheduledGroups,
   dateFilter,
   liveCounts,
+  blurLiveCounts = false,
   onSectionChange,
   toolbar,
   emptyAction,
@@ -153,6 +156,7 @@ export default function UnifiedSessionsLayout({
             onChange={goToSection}
             sectionLinks={SECTION_LINKS}
             liveCounts={liveCounts}
+            blurLiveCounts={blurLiveCounts}
           />
         </nav>
 

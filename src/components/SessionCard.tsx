@@ -30,6 +30,7 @@ import { profileHoverAttrs } from "./ProfileHoverLayer";
 import { getSessionCardPolicyState } from "../lib/sessionCardIndicators";
 import { SERIES_WINDOW_DAYS, type SeriesOccurrence } from "../lib/sessionSeries";
 import { CursorEditHintArea, InlineEditableStart, InlineEditableTitle } from "./SessionInlineEdit";
+import GuestBlur, { GUEST_BLUR_HINT } from "./GuestBlur";
 
 let roomPagePrefetchPromise: Promise<unknown> | null = null;
 function prefetchRoomPage() {
@@ -4581,6 +4582,8 @@ export default function SessionCard({
 
     const effectiveHostId = hostIdOverride || session.host_id;
     const isHost = !!userId && effectiveHostId === userId;
+    // Signed-out visitors see participant counts and people blurred.
+    const isGuest = !userId;
     const canManageSession = isHost || canManageAnySession;
     const sessionIsInfinite = resolveSessionType(session) === "infinite";
     const cardRoomPolicies = readSessionRoomPolicies(session);
@@ -5546,10 +5549,10 @@ export default function SessionCard({
 
     const drawerStatus = isInfinite
         ? hasLiveNow
-            ? { live: true, label: `${liveNowCount} in the room now` }
+            ? { live: true, label: isGuest ? "People in the room now" : `${liveNowCount} in the room now` }
             : { live: false, label: "Open 24/7" }
         : hasStarted
-            ? { live: true, label: hasLiveNow ? `Happening now · ${liveNowCount} in the room` : "Happening now" }
+            ? { live: true, label: hasLiveNow && !isGuest ? `Happening now · ${liveNowCount} in the room` : "Happening now" }
             : { live: false, label: formatStartsIn(Date.parse(String(session?.start_time || "")) - Date.now()) };
 
     const canEdit = canManageSession && !!onEditSession;
@@ -5684,11 +5687,12 @@ export default function SessionCard({
             <button
                 type="button"
                 onClick={() => {
-                    setIsLiveUsersModalOpen(true);
+                    if (!isGuest) setIsLiveUsersModalOpen(true);
                 }}
-                className="inline-flex items-center gap-2 hover:opacity-80 transition text-left whitespace-nowrap"
-                title="People in the session now"
+                className={`inline-flex items-center gap-2 transition text-left whitespace-nowrap ${isGuest ? "cursor-default" : "hover:opacity-80"}`}
+                title={isGuest ? GUEST_BLUR_HINT : "People in the session now"}
             >
+                <GuestBlur active={isGuest}>
                 {liveNowCount === 0 ? (
                     <div className="text-[12px] text-[#606060] whitespace-nowrap">
                         In session: <span className="font-medium">0</span>
@@ -5725,6 +5729,7 @@ export default function SessionCard({
                         </div>
                     </>
                 )}
+                </GuestBlur>
             </button>
 
         </div>
@@ -6071,12 +6076,15 @@ export default function SessionCard({
                     <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_48px] items-center gap-3 min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end">
                         {showLivePresence && <button
                             type="button"
-                            onClick={() => setIsLiveUsersModalOpen(true)}
-                            className="hidden xl:flex items-center gap-5 xl:mr-3 transition-opacity hover:opacity-70"
-                            title="People in the session now"
-                            aria-label={`${liveNowCount} of ${displayedMaxParticipants} slots occupied${isSessionFull ? ", session full" : ""}`}
+                            onClick={() => {
+                                if (!isGuest) setIsLiveUsersModalOpen(true);
+                            }}
+                            className={`hidden xl:flex items-center gap-5 xl:mr-3 transition-opacity ${isGuest ? "cursor-default" : "hover:opacity-70"}`}
+                            title={isGuest ? GUEST_BLUR_HINT : "People in the session now"}
+                            aria-label={isGuest ? GUEST_BLUR_HINT : `${liveNowCount} of ${displayedMaxParticipants} slots occupied${isSessionFull ? ", session full" : ""}`}
                         >
                             <div className="w-px h-10 bg-[#D9D9D9]" />
+                            <GuestBlur active={isGuest} block>
                             <div className="w-fit min-w-[74px] text-center">
                                 <div className="relative flex min-h-[22px] items-baseline justify-center">
                                     <div className="text-[29px] font-bold leading-[0.92] text-brandBlack">
@@ -6103,6 +6111,7 @@ export default function SessionCard({
                                     </div>
                                 </div>
                             </div>
+                            </GuestBlur>
                         </button>}
 
                         {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
@@ -6616,12 +6625,14 @@ export default function SessionCard({
                             <section className="mt-4 grid grid-cols-3 divide-x divide-[#E3E3E3] rounded-[18px] bg-[#F6F6F6] py-3">
                                 {[
                                     { label: "Length", value: isInfinite ? "24/7" : `${session.duration_minutes} min` },
-                                    { label: isInfinite ? "Planned" : "Booked", value: String(bookedCount) },
-                                    { label: "In room", value: `${liveNowCount}/${displayedMaxParticipants}` },
+                                    { label: isInfinite ? "Planned" : "Booked", value: String(bookedCount), people: true },
+                                    { label: "In room", value: `${liveNowCount}/${displayedMaxParticipants}`, people: true },
                                 ].map((fact) => (
                                     <div key={fact.label} className="min-w-0 px-4 sm:px-5">
                                         <div className="text-[11px] font-medium text-[#7A7A7A]">{fact.label}</div>
-                                        <div className="mt-0.5 truncate text-[18px] font-bold leading-6 text-[#111827] sm:text-[20px]">{fact.value}</div>
+                                        <div className="mt-0.5 truncate text-[18px] font-bold leading-6 text-[#111827] sm:text-[20px]">
+                                            <GuestBlur active={isGuest && !!fact.people}>{fact.value}</GuestBlur>
+                                        </div>
                                     </div>
                                 ))}
                             </section>
@@ -6657,12 +6668,15 @@ export default function SessionCard({
                                             {detail.icon}
                                         </span>
                                         <span className="truncate font-semibold text-[#111827]">{detail.value}</span>
+                                        {/* How many seats are taken is participant info: blurred for guests. */}
+                                        <GuestBlur active={isGuest && detail.key === "capacity"} className="inline-flex items-center gap-2">
                                         {detail.sub ? <span className="hidden truncate text-[#8A8A8A] sm:inline">{detail.sub}</span> : null}
                                         {detail.meter != null ? (
-                                            <span className="h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-[#F1F1F1]" aria-hidden="true">
+                                            <span className="inline-block h-1.5 w-12 shrink-0 overflow-hidden rounded-full bg-[#F1F1F1] align-middle" aria-hidden="true">
                                                 <span className="block h-full rounded-full" style={{ width: `${Math.round(detail.meter * 100)}%`, backgroundColor: t.color }} />
                                             </span>
                                         ) : null}
+                                        </GuestBlur>
                                     </span>
                                 ))}
 
@@ -6762,8 +6776,11 @@ export default function SessionCard({
                             <section className="pt-6">
                                 <div className="flex items-center justify-between gap-3">
                                     <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">In the room now</h4>
-                                    <span className="text-[12px] font-semibold text-[#606060]">{liveNowCount}</span>
+                                    <GuestBlur active={isGuest}>
+                                        <span className="text-[12px] font-semibold text-[#606060]">{liveNowCount}</span>
+                                    </GuestBlur>
                                 </div>
+                                <GuestBlur active={isGuest} block>
                                 {liveUsers.length === 0 ? (
                                     <p className="mt-2 text-[13px] text-[#7A7A7A]">
                                         {liveNowCount > 0 ? `${liveNowCount} ${liveNowCount === 1 ? "person is" : "people are"} focusing right now.` : "No one is in the room right now."}
@@ -6791,6 +6808,7 @@ export default function SessionCard({
                                         ) : null}
                                     </div>
                                 )}
+                                </GuestBlur>
                             </section>
 
                             {isInfinite ? (
@@ -6858,8 +6876,11 @@ export default function SessionCard({
                                 <section className="pt-6">
                                     <div className="flex items-center justify-between gap-3">
                                         <h4 className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[#7A7A7A]">Who's coming</h4>
-                                        <span className="text-[12px] font-semibold text-[#606060]">{bookedCount}</span>
+                                        <GuestBlur active={isGuest}>
+                                            <span className="text-[12px] font-semibold text-[#606060]">{bookedCount}</span>
+                                        </GuestBlur>
                                     </div>
+                                    <GuestBlur active={isGuest} block>
                                     {bookers.length === 0 ? (
                                         <p className="mt-2 text-[13px] text-[#7A7A7A]">No one has booked yet. Be the first.</p>
                                     ) : (
@@ -6897,6 +6918,7 @@ export default function SessionCard({
                                                 </button>
                                             ) : null}
                                         </div>                                    )}
+                                    </GuestBlur>
                                 </section>
                             )}
                         </div>
