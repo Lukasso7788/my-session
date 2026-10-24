@@ -2078,6 +2078,14 @@ const LEAVE_SOUND_CANDIDATES = [
   "/sounds/user_left.mp3",
 ];
 
+// Reconnects are silent. Someone who drops and is back within this window
+// reconnected (no join sound); the leave sound waits a moment to see if they
+// return; and this client stays quiet while it reconnects and just after.
+const PRESENCE_RECONNECT_WINDOW_MS = 30_000;
+const PRESENCE_LEAVE_SOUND_DELAY_MS = 5_000;
+const PRESENCE_SOUNDS_RECONNECT_MUTE_MS = 20_000;
+const PRESENCE_SOUNDS_AFTER_CONNECT_MUTE_MS = 5_000;
+
 function readAudioProcessingPreferences(): AudioProcessingPreferences {
   if (typeof window === "undefined") return DEFAULT_AUDIO_PROCESSING;
 
@@ -6752,6 +6760,18 @@ export function RoomPageLiveKit({
     }
   });
   const leaveSoundEnabledRef = useRef(leaveSoundEnabled);
+
+  // Join/leave sounds stay quiet around reconnects (ours or someone else's).
+  const presenceSoundsMutedUntilRef = useRef(0);
+  const recentDeparturesRef = useRef(new Map<string, number>());
+  const pendingLeaveSoundTimersRef = useRef(new Map<string, number>());
+  const mutePresenceSounds = (ms: number) => {
+    presenceSoundsMutedUntilRef.current = Math.max(presenceSoundsMutedUntilRef.current, Date.now() + ms);
+  };
+  useEffect(() => () => {
+    pendingLeaveSoundTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    pendingLeaveSoundTimersRef.current.clear();
+  }, []);
 
   const [stageSoundsEnabled, setStageSoundsEnabled] = useState<boolean>(() =>
     readSoundPreference(STAGE_SOUNDS_PREF_KEY),
@@ -14543,6 +14563,8 @@ export function RoomPageLiveKit({
         if (roomRef.current !== r || connectAttemptIdRef.current !== attemptId) {
           return;
         }
+        // A (re)connection learns about people already here; none of that is news.
+        mutePresenceSounds(PRESENCE_SOUNDS_AFTER_CONNECT_MUTE_MS);
         captureProductEvent("room_connected", { recovered: false });
         void writeConnectionDiagnostic("livekit.connected", {
           roomState: String((r as any)?.state || ""),
@@ -14599,6 +14621,8 @@ export function RoomPageLiveKit({
         setOpenTileAdminMenuId(null);
 
         if (!terminalDisconnect) {
+          // Our recovery flow reconnects next; keep its presence sounds quiet.
+          mutePresenceSounds(PRESENCE_SOUNDS_RECONNECT_MUTE_MS);
           // A final LiveKit Disconnected event can arrive after Safari has already
           // made the page visible again. Treat network/OS disconnects as recoverable
           // regardless of the current visibility state; they are not user intent.
@@ -14647,6 +14671,8 @@ export function RoomPageLiveKit({
       });
 
       const handleLiveKitReconnecting = (eventType: string) => {
+        // While this client reconnects, the room re-announces everyone: stay quiet.
+        mutePresenceSounds(PRESENCE_SOUNDS_RECONNECT_MUTE_MS);
         if (roomRef.current === r) setLivekitReconnecting(true);
         captureProductEvent("room_reconnecting", {
           signal_only: eventType === "livekit.signal_reconnecting",
@@ -14672,6 +14698,7 @@ export function RoomPageLiveKit({
       });
 
       r.on(RoomEvent.Reconnected, () => {
+        mutePresenceSounds(PRESENCE_SOUNDS_AFTER_CONNECT_MUTE_MS);
         captureProductEvent("room_connected", { recovered: true });
         void writeConnectionDiagnostic("livekit.reconnected", {
           roomState: String((r as any)?.state || ""),
@@ -14691,8 +14718,25 @@ export function RoomPageLiveKit({
         setMediaWarning("");
         refresh();
       });
-      r.on(RoomEvent.ParticipantConnected, () => {
-        if (joinSoundEnabledRef.current) {
+      // Reconnects are silent: no join/leave sound when someone (or this
+      // client) drops and comes back, only when people really arrive or go.
+      r.on(RoomEvent.ParticipantConnected, (participant: RemoteParticipant) => {
+        const userKey = extractBaseUserIdFromIdentity(String(participant?.identity || ""));
+        const now = Date.now();
+        const pendingLeave = userKey ? pendingLeaveSoundTimersRef.current.get(userKey) : undefined;
+        if (pendingLeave !== undefined) {
+          window.clearTimeout(pendingLeave);
+          pendingLeaveSoundTimersRef.current.delete(userKey);
+        }
+        const departedAt = userKey ? recentDeparturesRef.current.get(userKey) : undefined;
+        if (departedAt !== undefined) recentDeparturesRef.current.delete(userKey);
+        const alreadyHereInAnotherConnection = !!userKey && Array.from(r.remoteParticipants.values())
+          .some((rp) => rp !== participant && extractBaseUserIdFromIdentity(String(rp.identity || "")) === userKey);
+        const isReconnect =
+          pendingLeave !== undefined ||
+          (departedAt !== undefined && now - departedAt < PRESENCE_RECONNECT_WINDOW_MS) ||
+          alreadyHereInAnotherConnection;
+        if (!isReconnect && now >= presenceSoundsMutedUntilRef.current && joinSoundEnabledRef.current) {
           playOneShotFromCandidates(JOIN_SOUND_CANDIDATES, 0.8);
         }
         refresh();
@@ -14703,8 +14747,19 @@ export function RoomPageLiveKit({
         const userKey = extractBaseUserIdFromIdentity(String(participant?.identity || ""));
         const stillPresent = !!userKey && Array.from(r.remoteParticipants.values())
           .some((rp) => extractBaseUserIdFromIdentity(String(rp.identity || "")) === userKey);
-        if (!stillPresent && leaveSoundEnabledRef.current) {
-          playOneShotFromCandidates(LEAVE_SOUND_CANDIDATES, 0.8);
+        if (!stillPresent && userKey) {
+          recentDeparturesRef.current.set(userKey, Date.now());
+          // Wait briefly before the leave sound: if they are back by then, it
+          // was a reconnect and neither sound plays.
+          if (Date.now() >= presenceSoundsMutedUntilRef.current && leaveSoundEnabledRef.current) {
+            const previous = pendingLeaveSoundTimersRef.current.get(userKey);
+            if (previous !== undefined) window.clearTimeout(previous);
+            pendingLeaveSoundTimersRef.current.set(userKey, window.setTimeout(() => {
+              pendingLeaveSoundTimersRef.current.delete(userKey);
+              if (roomRef.current !== r || Date.now() < presenceSoundsMutedUntilRef.current) return;
+              if (leaveSoundEnabledRef.current) playOneShotFromCandidates(LEAVE_SOUND_CANDIDATES, 0.8);
+            }, PRESENCE_LEAVE_SOUND_DELAY_MS));
+          }
         }
         refresh();
       });      const refreshRemoteAudioState = () => {

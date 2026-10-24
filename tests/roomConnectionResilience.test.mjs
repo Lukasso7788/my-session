@@ -28,8 +28,12 @@ test("a participant who drops or leaves disappears right away, with no Reconnect
   assert.doesNotMatch(room, /RECONNECT_GRACE_MS|reconnectingParticipantsRef|intentionalLeaveAtRef/);
   assert.doesNotMatch(room, /status: "reconnecting"/);
   assert.doesNotMatch(tile, /Reconnecting…/);
-  assert.match(room, /r\.on\(RoomEvent\.ParticipantConnected, \(\) => \{\s*if \(joinSoundEnabledRef\.current\) \{/);
-  assert.match(room, /if \(!stillPresent && leaveSoundEnabledRef\.current\) \{\s*playOneShotFromCandidates\(LEAVE_SOUND_CANDIDATES, 0\.8\);/);
+  // The join sound respects the preference (reconnects stay silent).
+  assert.match(room, /r\.on\(RoomEvent\.ParticipantConnected, \(participant: RemoteParticipant\) => \{/);
+  assert.match(room, /if \(!isReconnect && now >= presenceSoundsMutedUntilRef\.current && joinSoundEnabledRef\.current\) \{/);
+  // The tile goes away at once; only the leave sound waits to rule out a reconnect.
+  assert.match(room, /if \(!stillPresent && userKey\) \{/);
+  assert.match(room, /if \(leaveSoundEnabledRef\.current\) playOneShotFromCandidates\(LEAVE_SOUND_CANDIDATES, 0\.8\);/);
   // Leave announcements from other clients are still accepted and ignored.
   assert.match(room, /if \(topic === PRESENCE_TOPIC\) return;/);
 });
@@ -39,5 +43,6 @@ test("the leave sound is off by default for everyone; the join sound stays on", 
   assert.match(room, /useState<boolean>\(\(\) => \{\s*try \{\s*return localStorage\.getItem\(LEAVE_SOUND_PREF_KEY\) === "true";\s*\} catch \{\s*return false;/);
   assert.match(room, /readSoundPreference\(JOIN_SOUND_PREF_KEY\)/);
   // Still available as an opt-in.
-  assert.match(room, /if \(!stillPresent && leaveSoundEnabledRef\.current\) \{\s*playOneShotFromCandidates\(LEAVE_SOUND_CANDIDATES, 0\.8\);/);
+  assert.match(room, /Date\.now\(\) >= presenceSoundsMutedUntilRef\.current && leaveSoundEnabledRef\.current/);
+  assert.match(room, /if \(leaveSoundEnabledRef\.current\) playOneShotFromCandidates\(LEAVE_SOUND_CANDIDATES, 0\.8\);/);
 });
