@@ -172,7 +172,7 @@ export function SessionTypeSwitcher({ value, onChange, liveCounts, blurLiveCount
                     WebkitMask: "url('/icons/group-active.svg') center / contain no-repeat",
                   }}
                 />
-                <span className={blurLiveCounts ? "select-none blur-[3px]" : undefined}>{liveCount}</span> LIVE
+                <span className={blurLiveCounts ? "select-none" : undefined} style={blurLiveCounts ? { filter: "blur(6px)", opacity: 0.6 } : undefined}>{liveCount}</span> LIVE
               </span>
             )}
             <img src={isActive ? t.iconActive : t.iconInactive} className={sectionLinks ? "session-section-switcher__icon" : compact ? "w-4 h-4 shrink-0" : "w-6 h-6 shrink-0"} alt="" />

@@ -20,5 +20,7 @@ test('guests cannot open the list of people in a session', () => {
 
 test('the live head count on the session switcher is blurred for guests', () => {
   assert.match(page, /blurLiveCounts=\{!user\?\.id\}/);
-  assert.match(switcher, /blurLiveCounts \? "select-none blur-\[3px\]"/);
+  assert.match(switcher, /blurLiveCounts \? \{ filter: "blur\(6px\)", opacity: 0\.6 \}/);
+  const blur = readFileSync(new URL('../src/components/GuestBlur.tsx', import.meta.url), 'utf8');
+  assert.match(blur, /GUEST_BLUR_PX = 14;/);
 });
