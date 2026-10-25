@@ -321,15 +321,19 @@ export default function Header() {
                             Tasks
                         </button>
 
-                        {/* Until the right side has room (wider when signed in,
-                            because of Create a session and the avatar) these stay here. */}
-                        <button onClick={() => navigate("/hosts")} className={`hover:text-[#2F2F2F] ${user ? "2xl:hidden" : "xl:hidden"}`}>
-                            Hosts
-                        </button>
+                        {/* Hosts and Leaderboard are for signed-in members. Until the right
+                            side has room (Create a session and the avatar) they stay here. */}
+                        {user ? (
+                            <>
+                                <button onClick={() => navigate("/hosts")} className="hover:text-[#2F2F2F] 2xl:hidden">
+                                    Hosts
+                                </button>
 
-                        <button onClick={() => navigate("/leaderboard")} className={`hover:text-[#2F2F2F] ${user ? "2xl:hidden" : "xl:hidden"}`}>
-                            Leaderboard
-                        </button>
+                                <button onClick={() => navigate("/leaderboard")} className="hover:text-[#2F2F2F] 2xl:hidden">
+                                    Leaderboard
+                                </button>
+                            </>
+                        ) : null}
                     </nav>
 
                     <div className="flex-1 flex justify-start lg:flex-none lg:justify-center">
@@ -360,8 +364,8 @@ export default function Header() {
                     </div>
 
                     <div className="flex items-center justify-end gap-3 flex-1">
-                        <div className={`mr-1 hidden items-center gap-1 ${user ? "2xl:flex" : "xl:flex"}`}>
-                            {([
+                        <div className={`mr-1 hidden items-center gap-1 ${user ? "2xl:flex" : ""}`}>
+                            {user && ([
                                 ["/hosts", "Hosts"],
                                 ["/leaderboard", "Leaderboard"],
                             ] as const).map(([path, label]) => {
@@ -552,25 +556,29 @@ export default function Header() {
                                     Tasks
                                 </button>
 
-                                <button
-                                    onClick={() => {
-                                        navigate("/hosts");
-                                        setMobileMenu(false);
-                                    }}
-                                    className="text-left"
-                                >
-                                    Hosts
-                                </button>
+                                {user ? (
+                                    <>
+                                        <button
+                                            onClick={() => {
+                                                navigate("/hosts");
+                                                setMobileMenu(false);
+                                            }}
+                                            className="text-left"
+                                        >
+                                            Hosts
+                                        </button>
 
-                                <button
-                                    onClick={() => {
-                                        navigate("/leaderboard");
-                                        setMobileMenu(false);
-                                    }}
-                                    className="text-left"
-                                >
-                                    Leaderboard
-                                </button>
+                                        <button
+                                            onClick={() => {
+                                                navigate("/leaderboard");
+                                                setMobileMenu(false);
+                                            }}
+                                            className="text-left"
+                                        >
+                                            Leaderboard
+                                        </button>
+                                    </>
+                                ) : null}
 
                                 <button
                                     onClick={() => {

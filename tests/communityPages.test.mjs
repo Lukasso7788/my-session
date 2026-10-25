@@ -26,14 +26,23 @@ test("display helpers", () => {
   assert.equal(formatCount(1234), "1,234");
 });
 
-test("hosts and leaderboard are linked from the header on desktop and mobile", () => {
+test("hosts and leaderboard are linked from the header for signed-in members only", () => {
   // Left nav (narrower desktops) and mobile menu; the right-side pair is a mapped list.
   assert.equal((header.match(/navigate\("\/hosts"\)/g) || []).length, 2);
   assert.equal((header.match(/navigate\("\/leaderboard"\)/g) || []).length, 2);
-  assert.match(header, /\["\/hosts", "Hosts"\],\s*\["\/leaderboard", "Leaderboard"\],/);
-  // Signed-in headers need more room before the links move right.
-  assert.match(header, /\$\{user \? "2xl:flex" : "xl:flex"\}/);
-  assert.match(header, /\$\{user \? "2xl:hidden" : "xl:hidden"\}/);
+  assert.match(header, /\{user && \(\[\s*\["\/hosts", "Hosts"\],\s*\["\/leaderboard", "Leaderboard"\],/);
+  assert.match(header, /\$\{user \? "2xl:flex" : ""\}/);
+  // The left-nav pair and the mobile-menu pair render only with a user.
+  assert.equal((header.match(/\{user \? \(\s*<>\s*<button\s+onClick=\{\(\) => (?:\{\s*)?navigate\("\/hosts"\)/g) || []).length, 2);
+  assert.match(header, /className="hover:text-\[#2F2F2F\] 2xl:hidden"/);
+});
+
+test("the hosts and leaderboard pages send signed-out visitors to sign in", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const guard = readFileSync("src/components/RequireSignIn.tsx", "utf8");
+  assert.match(app, /path="\/hosts" element=\{<RequireSignIn><HostsPage \/><\/RequireSignIn>\}/);
+  assert.match(app, /path="\/leaderboard" element=\{<RequireSignIn><LeaderboardPage \/><\/RequireSignIn>\}/);
+  assert.match(guard, /<Navigate to=\{`\/login\?next=\$\{encodeURIComponent\(`\$\{pathname\}\$\{search\}`\)\}`\} replace \/>/);
 });
 
 test("community pages keep the data sources and the app's flat style", () => {

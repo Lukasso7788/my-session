@@ -18,6 +18,7 @@ import RefundPolicyPage from "./pages/RefundPolicyPage";
 import ContactPage from "./pages/ContactPage";
 
 import AppLayout from "./layouts/AppLayout";
+import RequireSignIn from "./components/RequireSignIn";
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
 import { storeReferralCodeFromUrl } from "./lib/referrals";
 import AppBootstrapGate from "./components/AppBootstrapGate";
@@ -129,8 +130,9 @@ export default function App() {
 
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/sessions-concept" element={<Navigate to="/sessions" replace />} />
-          <Route path="/hosts" element={<HostsPage />} />
-          <Route path="/leaderboard" element={<LeaderboardPage />} />
+          {/* Community pages are for signed-in members only. */}
+          <Route path="/hosts" element={<RequireSignIn><HostsPage /></RequireSignIn>} />
+          <Route path="/leaderboard" element={<RequireSignIn><LeaderboardPage /></RequireSignIn>} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/pricing/success" element={<PricingSuccessPage />} />
           <Route path="/updates" element={<UpdatesPage />} />
