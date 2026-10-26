@@ -84,6 +84,9 @@ test("hovering any person's avatar opens the shared profile card", () => {
   assert.match(layer, /const statsCache = new Map/);
   assert.match(layer, /timeZone: timezone/);
   assert.match(layer, />\s*Check account\s*</);
+  // The profile opens in a new tab, marked with an external-link icon.
+  assert.match(layer, /to=\{`\/profile\/\$\{target\.userId\}`\}\s*target="_blank"\s*rel="noopener noreferrer"/);
+  assert.match(layer, /<ExternalLink/);
   // Avatars across the app are marked.
   for (const file of [
     "src/components/SessionCard.tsx",

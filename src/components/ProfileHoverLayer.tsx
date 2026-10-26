@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
-import { CalendarDays, Clock } from "lucide-react";
+import { CalendarDays, Clock, ExternalLink } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
 // Account preview for every avatar in the app.
@@ -293,12 +293,21 @@ export default function ProfileHoverLayer() {
                         ))}
                     </div>
 
+                    {/* Opens in a new tab so a room or session in progress is never left. */}
                     <Link
                         to={`/profile/${target.userId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
                         onClick={close}
-                        className="mt-3 flex h-10 w-full items-center justify-center rounded-full bg-[#2F2F2F] text-[13px] font-semibold text-white transition hover:bg-[#111827]"
+                        title="Opens in a new tab"
+                        className="group/open mt-3 flex h-10 w-full items-center justify-center gap-1.5 rounded-full bg-[#2F2F2F] text-[13px] font-semibold text-white transition hover:bg-[#111827]"
                     >
                         Check account
+                        <ExternalLink
+                            className="h-3.5 w-3.5 opacity-70 transition-[transform,opacity] duration-200 group-hover/open:-translate-y-px group-hover/open:translate-x-px group-hover/open:opacity-100"
+                            aria-hidden="true"
+                        />
+                        <span className="sr-only">(opens in a new tab)</span>
                     </Link>
                 </div>
             </div>
