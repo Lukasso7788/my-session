@@ -4,14 +4,13 @@ import { useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 
-// After signing up, people agree to the community rules and terms before they
-// use MySession. The agreement is kept on the account (auth user metadata)
-// with the time and the terms version, so it follows them across devices.
+// Everyone agrees to the community rules and terms before using MySession:
+// new accounts right after signing up, existing accounts on their next visit.
+// The agreement is kept on the account (auth user metadata) with the time and
+// the terms version, so it follows them across devices.
 
 /** Bump when the rules or terms change in a way people should agree to again. */
 export const TERMS_VERSION = "2026-10-23";
-/** Accounts created before this agreed at signup under the old flow and are not asked. */
-const TERMS_GATE_SINCE = Date.parse("2026-10-23T00:00:00Z");
 
 // Sign-in screens and the pages the agreement links to stay readable.
 const SKIP_ROUTE = /^\/(?:auth\/callback|login|register|update-password|terms|privacy|rules)\/?$/;
@@ -20,11 +19,10 @@ function acceptedKey(userId: string) {
   return `mysession:terms-accepted:${userId}`;
 }
 
-export function needsTermsAgreement(user: { id?: string; created_at?: string; user_metadata?: Record<string, unknown> } | null) {
+export function needsTermsAgreement(user: { id?: string; user_metadata?: Record<string, unknown> } | null) {
   if (!user?.id) return false;
-  if (user.user_metadata?.terms_accepted_at) return false;
-  const createdAt = Date.parse(String(user.created_at || ""));
-  return Number.isFinite(createdAt) && createdAt >= TERMS_GATE_SINCE;
+  const metadata = user.user_metadata || {};
+  return !metadata.terms_accepted_at || metadata.terms_version !== TERMS_VERSION;
 }
 
 export default function TermsAgreementGate() {

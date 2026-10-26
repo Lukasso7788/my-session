@@ -5,15 +5,17 @@ import { readFileSync } from 'node:fs';
 const gate = readFileSync(new URL('../src/components/TermsAgreementGate.tsx', import.meta.url), 'utf8');
 const main = readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
 
-test('new accounts must tick the box before they can continue', () => {
+test('every account must tick the box before it can continue', () => {
   assert.match(main, /<TermsAgreementGate \/>/);
   assert.match(gate, /disabled=\{!agreed \|\| saving\}/);
   assert.match(gate, /type="checkbox"/);
+  // No exemption for older accounts.
+  assert.doesNotMatch(gate, /TERMS_GATE_SINCE|created_at/);
 });
 
-test('the agreement is saved on the account with its time and version', () => {
+test('the agreement is saved on the account with its time and version, and a new version asks again', () => {
   assert.match(gate, /supabase\.auth\.updateUser\(\{\s*data: \{ terms_accepted_at: now, terms_version: TERMS_VERSION \},/);
-  assert.match(gate, /if \(user\.user_metadata\?\.terms_accepted_at\) return false;/);
+  assert.match(gate, /return !metadata\.terms_accepted_at \|\| metadata\.terms_version !== TERMS_VERSION;/);
 });
 
 test('the rules, terms and privacy pages stay readable while the agreement is open', () => {
