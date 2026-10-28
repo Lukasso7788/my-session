@@ -91,53 +91,80 @@ export function isPaidPlan(plan: BillingPlanCode | null | undefined): boolean {
   return plan === "pro_monthly" || plan === "pro_yearly" || plan === "lifetime";
 }
 
+type AccessFields = Pick<UserEntitlement, "plan" | "status"> &
+  Partial<Pick<UserEntitlement, "current_period_end" | "trial_ends_at">>;
+
+/** Parsed timestamp in ms, or null for a missing or unparseable value. */
+export function parseEntitlementDate(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const ms = Date.parse(String(value));
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** Permanent memberships: purchased Lifetime and Founding Member Pro. */
+export function isPermanentPlan(plan: BillingPlanCode | string | null | undefined): boolean {
+  return plan === "lifetime" || plan === "founding_free";
+}
+
+export function isRecurringProPlan(plan: BillingPlanCode | string | null | undefined): boolean {
+  return plan === "pro_monthly" || plan === "pro_yearly";
+}
+
+/**
+ * Monthly/yearly Pro needs a paid period that has not ended yet: `active`
+ * alone is not enough, and a missing or invalid end date never grants access.
+ */
+export function hasPaidProPeriod(
+  entitlement: AccessFields | null | undefined,
+  now = new Date()
+): boolean {
+  if (!entitlement || !isRecurringProPlan(entitlement.plan)) return false;
+  if (entitlement.status !== "active") return false;
+  const endsAt = parseEntitlementDate(entitlement.current_period_end);
+  return endsAt !== null && endsAt > now.getTime();
+}
+
+/**
+ * The single access rule for Pro features, used by the app and the server.
+ * - Lifetime / Founding Member Pro: active (or legacy trialing) rows, no dates.
+ * - Monthly/yearly Pro: a current paid period (see hasPaidProPeriod).
+ * - Trials: their own end date (see isTrialActive), never the paid period.
+ */
 export function hasUnlimitedAccess(
-  entitlement: Pick<UserEntitlement, "plan" | "status"> | null | undefined
+  entitlement: AccessFields | null | undefined,
+  now = new Date()
 ): boolean {
   if (!entitlement) return false;
-  if (entitlement.status !== "active" && entitlement.status !== "trialing") return false;
 
-  return (
-    entitlement.plan === "pro_monthly" ||
-    entitlement.plan === "pro_yearly" ||
-    entitlement.plan === "lifetime" ||
-    entitlement.plan === "founding_free"
-  );
+  if (isPermanentPlan(entitlement.plan)) {
+    return entitlement.status === "active" || entitlement.status === "trialing";
+  }
+
+  if (!isRecurringProPlan(entitlement.plan)) return false;
+  if (entitlement.status === "trialing") return isTrialActive(entitlement, now);
+  return hasPaidProPeriod(entitlement, now);
 }
 
 export function isTrialActive(
-  entitlement: Pick<UserEntitlement, "status" | "trial_ends_at"> | null | undefined,
+  entitlement: Pick<UserEntitlement, "status"> & Partial<Pick<UserEntitlement, "trial_ends_at">> | null | undefined,
   now = new Date()
 ): boolean {
   if (!entitlement) return false;
   if (entitlement.status !== "trialing") return false;
-  if (!entitlement.trial_ends_at) return false;
 
-  const endsAt = new Date(entitlement.trial_ends_at);
-  if (Number.isNaN(endsAt.getTime())) return false;
-
-  return endsAt.getTime() > now.getTime();
+  const endsAt = parseEntitlementDate(entitlement.trial_ends_at);
+  return endsAt !== null && endsAt > now.getTime();
 }
 
 export function isEntitlementActive(
-  entitlement: Pick<UserEntitlement, "status" | "current_period_end" | "plan"> | null | undefined,
+  entitlement: AccessFields | null | undefined,
   now = new Date()
 ): boolean {
   if (!entitlement) return false;
-
-  if (entitlement.status === "trialing") return true;
+  if (entitlement.status === "trialing") return isTrialActive(entitlement, now);
   if (entitlement.status !== "active") return false;
-
-  if (entitlement.plan === "lifetime" || entitlement.plan === "founding_free") {
-    return true;
-  }
-
-  if (!entitlement.current_period_end) return true;
-
-  const endsAt = new Date(entitlement.current_period_end);
-  if (Number.isNaN(endsAt.getTime())) return false;
-
-  return endsAt.getTime() > now.getTime();
+  if (isPermanentPlan(entitlement.plan)) return true;
+  return hasPaidProPeriod(entitlement, now);
 }
 
 export function getWeeklyLimitState(args: {

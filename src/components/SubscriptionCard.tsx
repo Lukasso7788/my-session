@@ -35,8 +35,10 @@ export default function SubscriptionCard({ state, loading, error, summary, summa
   const usage = state ? getFreeSessionUsage({ ...state, enabled: paywallEnabled }) : null;
   const recurring = plan === "pro_monthly" || plan === "pro_yearly";
   const linked = Boolean(entitlement?.stripe_customer_id && entitlement.stripe_subscription_id);
-  const ended = summary?.status === "canceled" || summary?.status === "incomplete_expired" || entitlement?.status === "canceled" || entitlement?.status === "expired";
-  const statusLabel = summary?.cancellationScheduled ? "Cancellation scheduled" : ended ? "Ended" : entitlement?.status === "trialing" ? "Trial" : plan === "free" ? "Free" : "Active";
+  // A monthly/yearly row whose paid period is over has ended even if its status still reads active.
+  const lapsed = recurring && Boolean(state) && !state?.isUnlimited;
+  const ended = summary?.status === "canceled" || summary?.status === "incomplete_expired" || entitlement?.status === "canceled" || entitlement?.status === "expired" || lapsed;
+  const statusLabel = summary?.cancellationScheduled ? "Cancellation scheduled" : summary?.status === "past_due" || summary?.status === "unpaid" ? "Payment failed" : ended ? "Ended" : entitlement?.status === "trialing" ? "Trial" : plan === "free" ? "Free" : "Active";
   const periodEnd = displayDate(summary?.currentPeriodEnd ?? null);
   const accessEnds = displayDate(summary?.accessEndsAt ?? null);
   const complimentaryEnds = displayDate(entitlement?.current_period_end ?? null);
@@ -47,6 +49,7 @@ export default function SubscriptionCard({ state, loading, error, summary, summa
     ? `Your complimentary Pro access has ended${complimentaryEnds ? ` on ${complimentaryEnds}` : ""}. No recurring payments were set up.`
     : `Free Pro access${complimentaryEnds ? ` until ${complimentaryEnds}` : ""}. No recurring payments or automatic renewal.`;
   else if (recurring && !linked) description = "This Pro access has no linked auto-renewing subscription. There is nothing to cancel here.";
+  else if (summary?.status === "past_due" || summary?.status === "unpaid") description = "Your last renewal payment did not go through, so Pro is paused. Update your payment method in billing settings to restore it.";
   else if (summary?.cancellationScheduled) description = accessEnds ? `Your subscription will not renew. Pro access ends on ${accessEnds}.` : "Your subscription will not renew. Stripe shows the exact end date in billing settings.";
   else if (ended) description = "Your subscription has ended. You can still view your billing history.";
   else if (recurring && linked) description = periodEnd

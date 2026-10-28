@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
+import { hasUnlimitedAccess, type UserEntitlement } from "../src/lib/billing.js";
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL!;
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY!;
@@ -64,29 +65,16 @@ async function hasPaidTaskAiAccess(userId: string) {
   });
   const { data, error } = await serviceSupabase
     .from("user_entitlements")
-    .select("plan,status")
+    .select("plan,status,current_period_end,trial_ends_at")
     .eq("user_id", userId)
     .maybeSingle();
 
   if (error) throw error;
   if (!data) return false;
 
-  const status = String(data.status || "").toLowerCase();
-  if (status !== "active" && status !== "trialing") return false;
-
-  const plan = String(data.plan || "").toLowerCase();
-  const hasProAccess = [
-    "pro_monthly",
-    "pro_yearly",
-    "lifetime",
-    "founding_free",
-  ].includes(plan);
-  if (!hasProAccess) return false;
-
-  // `status` is the canonical access flag across MySession. Billing lifecycle
-  // code is responsible for changing it when access ends; period timestamps
-  // can remain historical between synchronization runs.
-  return true;
+  // Same rule as the app (src/lib/billing.ts): monthly/yearly Pro needs a
+  // current paid period, not just status=active.
+  return hasUnlimitedAccess(data as Pick<UserEntitlement, "plan" | "status" | "current_period_end" | "trial_ends_at">);
 }
 
 function makeFallback(phase: string, userName: string, debugReason?: string) {

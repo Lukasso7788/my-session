@@ -1,8 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
+import { invalidateEntitlementStateCache } from "../lib/entitlements";
 
-type ConfirmState = "idle" | "loading" | "success" | "error";
+type ConfirmState = "idle" | "loading" | "success" | "pending" | "error";
+
+// Card payments confirm within seconds; delayed methods can take days.
+const PENDING_RECHECKS = 5;
+const PENDING_RECHECK_MS = 4000;
 
 export default function PricingSuccessPage() {
     const [searchParams] = useSearchParams();
@@ -23,7 +28,7 @@ export default function PricingSuccessPage() {
 
             try {
                 setConfirmState("loading");
-                setMessage("Confirming your payment and activating Pro...");
+                setMessage("Checking your payment with Stripe...");
 
                 const {
                     data: { session },
@@ -37,25 +42,38 @@ export default function PricingSuccessPage() {
                     return;
                 }
 
-                const response = await fetch("/api/billing/confirm-checkout-session", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${accessToken}`,
-                    },
-                    body: JSON.stringify({ sessionId }),
-                });
+                for (let attempt = 0; attempt <= PENDING_RECHECKS; attempt += 1) {
+                    const response = await fetch("/api/billing/confirm-checkout-session", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            Authorization: `Bearer ${accessToken}`,
+                        },
+                        body: JSON.stringify({ sessionId }),
+                    });
 
-                const data = await response.json();
+                    const data = await response.json().catch(() => ({}));
 
-                if (!response.ok) {
-                    throw new Error(data?.details || data?.error || "Failed to confirm checkout");
+                    if (!response.ok) {
+                        throw new Error(data?.error || "Failed to confirm checkout");
+                    }
+
+                    if (cancelled) return;
+
+                    if (data?.access === "active") {
+                        invalidateEntitlementStateCache();
+                        setConfirmState("success");
+                        setMessage("Your payment is confirmed and Pro is active.");
+                        return;
+                    }
+
+                    setConfirmState("pending");
+                    setMessage("Your payment is still processing. Pro turns on as soon as Stripe confirms it — you can leave this page.");
+                    if (attempt < PENDING_RECHECKS) {
+                        await new Promise((resolve) => setTimeout(resolve, PENDING_RECHECK_MS));
+                        if (cancelled) return;
+                    }
                 }
-
-                if (cancelled) return;
-
-                setConfirmState("success");
-                setMessage("Your Pro access has been activated.");
             } catch (error) {
                 console.error("confirmCheckout error", error);
 
@@ -82,11 +100,11 @@ export default function PricingSuccessPage() {
             <main className="mx-auto w-full max-w-[840px] px-4 py-12 sm:px-6">
                 <div className="rounded-[28px] border border-black/10 bg-white p-8 shadow-sm">
                     <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700">
-                        Checkout completed
+                        Checkout submitted
                     </div>
 
                     <h1 className="mt-5 text-[34px] font-semibold tracking-[-0.03em] sm:text-[42px]">
-                        Payment flow completed
+                        Thanks for upgrading
                     </h1>
 
                     <p className="mt-3 text-[15px] text-black/65">
@@ -105,7 +123,7 @@ export default function PricingSuccessPage() {
 
                         <div className="mt-3 text-sm text-black/65">
                             {confirmState === "loading" && "Confirming checkout..."}
-                            {confirmState === "success" && message}
+                            {(confirmState === "success" || confirmState === "pending") && message}
                             {confirmState === "error" && message}
                             {confirmState === "idle" && "Waiting to confirm checkout..."}
                         </div>

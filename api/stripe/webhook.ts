@@ -1,7 +1,19 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import { timingSafeEqual } from "crypto";
 import { isRecurringBillingPlan, subscriptionPeriodEnd } from "../_lib/stripeSubscriptionPortal.js";
+import {
+  CHECKOUT_EVENTS,
+  ENTITLEMENT_EVENT_TYPES,
+  checkoutIsPaid,
+  createSupabaseBillingStore,
+  createSupabaseEventLedger,
+  invoiceSubscriptionId,
+  syncEntitlementForEvent,
+  type SyncResult,
+} from "../_lib/stripeEntitlementSync.js";
+import { reconcileStripeEntitlements } from "../_lib/stripeReconcile.js";
 import {
   AFFILIATE_TERMS_VERSION,
   LEGACY_AFFILIATE_TERMS_VERSION,
@@ -26,7 +38,8 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-type PaidPlan = "pro_monthly" | "pro_yearly" | "lifetime";
+const billingStore = createSupabaseBillingStore(supabaseAdmin);
+const eventLedger = createSupabaseEventLedger(supabaseAdmin);
 
 async function readRawBody(req: VercelRequest): Promise<Buffer> {
   const chunks: Buffer[] = [];
@@ -38,74 +51,7 @@ async function readRawBody(req: VercelRequest): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-function normalizePaidPlan(plan: string | undefined | null): PaidPlan | null {
-  if (plan === "india_upi_monthly") return "pro_monthly";
-  if (plan === "pro_monthly") return "pro_monthly";
-  if (plan === "pro_yearly") return "pro_yearly";
-  if (plan === "lifetime") return "lifetime";
-  return null;
-}
-
-async function upsertEntitlement(params: {
-  userId: string;
-  plan: PaidPlan;
-  source: string;
-  stripeCustomerId?: string;
-  stripeSubscriptionId?: string;
-}) {
-  const { userId, plan, source, stripeCustomerId, stripeSubscriptionId } = params;
-  const nowIso = new Date().toISOString();
-
-  const payload: Record<string, unknown> = {
-    user_id: userId,
-    plan,
-    status: "active",
-    source,
-    force_paywall: false,
-    updated_at: nowIso,
-    notes: `Activated via Stripe webhook at ${nowIso}`,
-  };
-
-  if (stripeCustomerId) payload.stripe_customer_id = stripeCustomerId;
-  if (stripeSubscriptionId) payload.stripe_subscription_id = stripeSubscriptionId;
-
-  if (plan === "pro_monthly") {
-    payload.current_period_start = nowIso;
-    payload.current_period_end = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    payload.trial_started_at = null;
-    payload.trial_ends_at = null;
-    payload.lifetime_granted_at = null;
-    payload.founding_granted_at = null;
-  }
-
-  if (plan === "pro_yearly") {
-    payload.current_period_start = nowIso;
-    payload.current_period_end = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
-    payload.trial_started_at = null;
-    payload.trial_ends_at = null;
-    payload.lifetime_granted_at = null;
-    payload.founding_granted_at = null;
-  }
-
-  if (plan === "lifetime") {
-    payload.lifetime_granted_at = nowIso;
-    payload.current_period_start = null;
-    payload.current_period_end = null;
-    payload.trial_started_at = null;
-    payload.trial_ends_at = null;
-    payload.founding_granted_at = null;
-  }
-
-  const { error } = await supabaseAdmin
-    .from("user_entitlements")
-    .upsert(payload, { onConflict: "user_id" });
-
-  if (error) throw error;
-
-  return payload;
-}
-
-type AffiliatePlan = PaidPlan | "india_upi_monthly";
+type AffiliatePlan = "pro_monthly" | "pro_yearly" | "lifetime" | "india_upi_monthly";
 
 function normalizeAffiliatePlan(plan: string | undefined | null): AffiliatePlan | null {
   if (plan === "india_upi_monthly") return "india_upi_monthly";
@@ -589,21 +535,234 @@ async function enqueueStripeLifecycleEvent(params: {
   }
 }
 
-async function findEntitlementByStripeObject(object: any) {
-  const subscriptionId =
-    typeof object?.subscription === "string"
-      ? object.subscription
-      : object?.subscription?.id || (object?.object === "subscription" ? object.id : "");
-  const customerId = typeof object?.customer === "string" ? object.customer : object?.customer?.id || "";
-  let query = supabaseAdmin
-    .from("user_entitlements")
-    .select("user_id,plan,status,stripe_subscription_id,stripe_customer_id");
-  if (subscriptionId) query = query.eq("stripe_subscription_id", subscriptionId);
-  else if (customerId) query = query.eq("stripe_customer_id", customerId);
-  else return null;
-  const { data, error } = await query.maybeSingle();
-  if (error) throw error;
-  return data;
+type StripeEvent = ReturnType<typeof stripe.webhooks.constructEvent>;
+
+const syncDeps = { stripe, store: billingStore };
+
+async function rewardLifetimeCheckout(event: StripeEvent, result: SyncResult & { session?: any }) {
+  const session = result.session;
+  if (!session || !result.userId || session.mode !== "payment") return;
+  if (String(session.metadata?.entitlement_plan || session.metadata?.plan || "") !== "lifetime") return;
+  if (!checkoutIsPaid(session) || Number(session.amount_total || 0) <= 0) return;
+
+  const paidAt = new Date(Number(event.created || Math.floor(Date.now() / 1000)) * 1000).toISOString();
+  const amountUsd = await resolvePaidAmountUsd({
+    amountMinor: session.amount_total,
+    currency: session.currency,
+    paymentIntentId: stripeObjectId(session.payment_intent),
+  });
+
+  await rewardReferrerForPaidPayment({
+    referredUserId: result.userId,
+    sourcePaymentKey: `stripe:checkout:${session.id}`,
+    plan: "lifetime",
+    amountUsd,
+    paidAt,
+    providerPaymentRef: stripeObjectId(session.payment_intent) || session.id,
+  });
+}
+
+async function rewardPaidInvoice(event: StripeEvent, invoice: any, userId: string, fallbackPlan: string | null) {
+  if (Number(invoice.amount_paid || 0) <= 0) return;
+  const paymentIntentId = await resolveInvoicePaymentIntentId(invoice);
+  const affiliatePlan = await resolveInvoicePlan(invoice, fallbackPlan);
+  if (!affiliatePlan) return;
+
+  const paidAtSeconds =
+    Number(invoice?.status_transitions?.paid_at || 0) ||
+    Number(event.created || Math.floor(Date.now() / 1000));
+  const amountUsd = await resolvePaidAmountUsd({
+    amountMinor: invoice.amount_paid,
+    currency: invoice.currency,
+    paymentIntentId,
+  });
+
+  await rewardReferrerForPaidPayment({
+    referredUserId: userId,
+    sourcePaymentKey: `stripe:invoice:${invoice.id}`,
+    plan: affiliatePlan,
+    amountUsd,
+    paidAt: new Date(paidAtSeconds * 1000).toISOString(),
+    providerInvoiceRef: String(invoice.id || ""),
+    providerPaymentRef: paymentIntentId || String(invoice.id || ""),
+  });
+}
+
+/**
+ * Everything one event does. Access always comes from the current Stripe
+ * object (see api/_lib/stripeEntitlementSync.ts); emails and partner rewards
+ * are idempotent by their own keys, so a replay is harmless.
+ */
+export async function processStripeEvent(event: StripeEvent): Promise<Record<string, unknown>> {
+  const object = event.data.object as any;
+
+  if (CHECKOUT_EVENTS.has(event.type)) {
+    const kind = String(object?.metadata?.checkout_kind || object?.metadata?.kind || "").trim();
+    if (kind === "host_support") {
+      if (event.type === "checkout.session.async_payment_failed") return { kind: "host_support", paid: false };
+      // Fresh state: a "completed" session with a delayed payment is not paid yet.
+      const session = await stripe.checkout.sessions.retrieve(String(object.id));
+      if (session.payment_status !== "paid") return { kind: "host_support", paid: false };
+      await markHostSupportPaymentAvailable(session);
+      return { kind: "host_support", paid: true };
+    }
+  }
+
+  const result = (await syncEntitlementForEvent(syncDeps, event)) as (SyncResult & { session?: any; plan?: string | null }) | null;
+  if (result && ["user_mismatch", "unlinked"].includes(result.outcome)) {
+    // Not retryable: the Stripe object is not (safely) tied to one MySession user.
+    console.error("Stripe webhook: subscription not linked to a single user", {
+      eventId: event.id,
+      type: event.type,
+      outcome: result.outcome,
+    });
+  }
+
+  if (CHECKOUT_EVENTS.has(event.type) && result?.userId) {
+    await rewardLifetimeCheckout(event, result);
+    if (result.hasAccess && ["granted", "updated", "unchanged", "lifetime_granted"].includes(result.outcome)) {
+      await enqueueStripeLifecycleEvent({
+        userId: result.userId,
+        eventType: "subscription_started",
+        idempotencyKey: `subscription_started:${object.id}`,
+        properties: { plan: result.plan || "pro_monthly", stripe_checkout_session_id: object.id },
+      });
+    }
+  }
+
+  if ((event.type === "invoice.paid" || event.type === "invoice.payment_failed") && result?.userId && invoiceSubscriptionId(object)) {
+    const entitlement = await billingStore.getEntitlement(result.userId);
+    if (event.type === "invoice.paid") await rewardPaidInvoice(event, object, result.userId, entitlement?.plan ?? null);
+    await enqueueStripeLifecycleEvent({
+      userId: result.userId,
+      eventType: event.type === "invoice.payment_failed" ? "payment_failed" : "payment_recovered",
+      idempotencyKey: `${event.type}:${object.id}`,
+      properties: { plan: entitlement?.plan || "free", invoice_id: object.id },
+    });
+  }
+
+  // Cancellation emails only for the subscription that this user's row follows.
+  const recurringUser = result?.userId && ["granted", "updated", "revoked", "unchanged"].includes(result.outcome) ? result.userId : null;
+
+  if (event.type === "customer.subscription.deleted" && recurringUser) {
+    await enqueueStripeLifecycleEvent({
+      userId: recurringUser,
+      eventType: "subscription_cancelled",
+      idempotencyKey: `subscription_cancelled:${object.id}:${object.canceled_at || event.created}`,
+      properties: { plan: "free", access_ends_at: result?.accessEndsAt || subscriptionPeriodEnd(object) || "" },
+    });
+  }
+
+  if (event.type === "customer.subscription.updated" && recurringUser) {
+    const previous = (event.data as any)?.previous_attributes || {};
+    if (Object.prototype.hasOwnProperty.call(previous, "cancel_at_period_end")) {
+      const entitlement = await billingStore.getEntitlement(recurringUser);
+      const plan = isRecurringBillingPlan(entitlement?.plan) ? entitlement!.plan! : null;
+      if (plan && object.cancel_at_period_end === true) {
+        await enqueueStripeLifecycleEvent({
+          userId: recurringUser,
+          eventType: "subscription_cancelled",
+          idempotencyKey: `subscription_cancelled:${event.id}`,
+          properties: { plan, access_ends_at: result?.accessEndsAt || subscriptionPeriodEnd(object) || "" },
+        });
+      }
+      if (plan && previous.cancel_at_period_end === true && object.cancel_at_period_end === false) {
+        await enqueueStripeLifecycleEvent({
+          userId: recurringUser,
+          eventType: "subscription_reactivated",
+          idempotencyKey: `subscription_reactivated:${event.id}`,
+          properties: { plan },
+        });
+      }
+    }
+  }
+
+  if (event.type === "charge.refunded") {
+    await reversePartnerCommission({
+      sourcePaymentKey: `stripe:refund:${object.id}:${Number(object.amount_refunded || 0)}`,
+      paymentIntentId: stripeObjectId(object.payment_intent),
+      chargeId: String(object.id || ""),
+      grossAmountMinor: Number(object.amount || 0),
+      reversedAmountMinor: Number(object.amount_refunded || 0),
+    });
+  }
+
+  if (event.type === "charge.dispute.created") {
+    const chargeId = stripeObjectId(object.charge);
+    let paymentIntentId = "";
+    if (chargeId) {
+      try {
+        const charge = await stripe.charges.retrieve(chargeId);
+        paymentIntentId = stripeObjectId((charge as any).payment_intent);
+      } catch (error) {
+        console.error("Stripe webhook: dispute charge lookup failed", { disputeId: object.id, chargeId, error });
+      }
+    }
+    await reversePartnerCommission({
+      sourcePaymentKey: `stripe:dispute:${object.id}`,
+      paymentIntentId,
+      chargeId,
+      grossAmountMinor: Number(object.amount || 0),
+      reversedAmountMinor: Number(object.amount || 0),
+    });
+  }
+
+  return result
+    ? { outcome: result.outcome, hasAccess: result.hasAccess, accessEndsAt: result.accessEndsAt, subscriptionStatus: result.subscriptionStatus ?? null }
+    : { outcome: "no_entitlement_effect" };
+}
+
+/**
+ * Claim the event in the ledger, process it, then mark it processed. Returns
+ * the HTTP status for Stripe: any non-2xx makes Stripe retry the delivery.
+ */
+export async function handleStripeEvent(event: StripeEvent): Promise<{ status: number; body: Record<string, unknown> }> {
+  const claim = await eventLedger.claim({ id: event.id, type: event.type, created: event.created, livemode: event.livemode });
+  if (claim === "duplicate") return { status: 200, body: { received: true, duplicate: true } };
+  if (claim === "in_progress") return { status: 409, body: { error: "event_in_progress" } };
+
+  try {
+    const outcome = await processStripeEvent(event);
+    // Only now, with every effect saved, is the event processed.
+    if (claim === "claimed") await eventLedger.complete(event.id, outcome);
+    return { status: 200, body: { received: true, ...outcome } };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Stripe webhook processing failed", { eventId: event.id, type: event.type, error });
+    if (claim === "claimed") await eventLedger.fail(event.id, message);
+    return { status: 500, body: { error: "processing_failed" } };
+  }
+}
+
+function secretsMatch(supplied: string, expected: string) {
+  const a = Buffer.from(supplied);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/**
+ * Periodic recovery after missed webhooks, called by the existing Cloudflare
+ * Worker cron (cloudflare-worker/src/index.ts) with x-billing-reconcile-secret.
+ * Kept in this function file because the project is at its function limit.
+ */
+async function handleReconcile(req: VercelRequest, res: VercelResponse) {
+  const expected = String(process.env.BILLING_RECONCILE_SECRET || "").trim();
+  const supplied = String(req.headers["x-billing-reconcile-secret"] || "").trim();
+  if (!expected || !supplied || !secretsMatch(supplied, expected)) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  const url = new URL(String(req.url || "/"), "http://localhost");
+  const dryRun = url.searchParams.get("dryRun") === "1";
+  const summary = await reconcileStripeEntitlements({
+    stripe,
+    store: billingStore,
+    db: supabaseAdmin,
+    dryRun,
+    handleEvent: handleStripeEvent,
+    eventTypes: ENTITLEMENT_EVENT_TYPES,
+  });
+  res.setHeader("Cache-Control", "no-store");
+  return res.status(summary.errors.length ? 500 : 200).json(summary);
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -611,250 +770,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).send("Method not allowed");
   }
 
-  const signature = req.headers["stripe-signature"];
+  if (req.headers["x-billing-reconcile-secret"] !== undefined) {
+    try {
+      return await handleReconcile(req, res);
+    } catch (error) {
+      console.error("Stripe reconcile failed", error);
+      return res.status(500).json({ error: "reconcile_failed" });
+    }
+  }
 
+  const signature = req.headers["stripe-signature"];
   if (!signature || typeof signature !== "string") {
     return res.status(400).send("Missing stripe-signature header");
   }
 
+  let event: StripeEvent;
   try {
+    // The signature covers the exact bytes Stripe sent: bodyParser is off.
     const rawBody = await readRawBody(req);
-
-    const event = stripe.webhooks.constructEvent(
-      rawBody,
-      signature,
-      process.env.STRIPE_WEBHOOK_SECRET!
-    );
-
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object as any;
-      const checkoutKind = String(session.metadata?.checkout_kind || session.metadata?.kind || "").trim();
-
-      if (checkoutKind === "host_support") {
-        await markHostSupportPaymentAvailable(session);
-        return res.status(200).json({ received: true, kind: "host_support" });
-      }
-
-      const rawMetadataPlan = session.metadata?.entitlement_plan || session.metadata?.plan;
-      const metadataPlan = normalizePaidPlan(rawMetadataPlan);
-      const metadataUserId = session.metadata?.supabase_user_id || session.client_reference_id || "";
-
-      if (!metadataPlan) {
-        console.error("Stripe webhook: missing or invalid metadata plan", {
-          sessionId: session.id,
-          rawMetadataPlan,
-          metadata: session.metadata,
-        });
-        return res.status(400).send("Missing or invalid metadata plan");
-      }
-
-      if (!metadataUserId) {
-        console.error("Stripe webhook: missing user id metadata", {
-          sessionId: session.id,
-          clientReferenceId: session.client_reference_id,
-          metadata: session.metadata,
-        });
-        return res.status(400).send("Missing user id metadata");
-      }
-
-      const stripeCustomerId =
-        typeof session.customer === "string" ? session.customer : session.customer?.id || "";
-
-      const stripeSubscriptionId =
-        typeof session.subscription === "string"
-          ? session.subscription
-          : session.subscription?.id || "";
-
-      const payload = await upsertEntitlement({
-        userId: metadataUserId,
-        plan: metadataPlan,
-        source: "stripe_webhook",
-        stripeCustomerId,
-        stripeSubscriptionId,
-      });
-
-      if (
-        metadataPlan === "lifetime" &&
-        String(session.payment_status || "").toLowerCase() === "paid" &&
-        Number(session.amount_total || 0) > 0
-      ) {
-        const paidAt = new Date(Number(event.created || Math.floor(Date.now() / 1000)) * 1000).toISOString();
-        const amountUsd = await resolvePaidAmountUsd({
-          amountMinor: session.amount_total,
-          currency: session.currency,
-          paymentIntentId: stripeObjectId(session.payment_intent),
-        });
-
-        await rewardReferrerForPaidPayment({
-          referredUserId: metadataUserId,
-          sourcePaymentKey: `stripe:checkout:${session.id}`,
-          plan: "lifetime",
-          amountUsd,
-          paidAt,
-          providerPaymentRef: stripeObjectId(session.payment_intent) || session.id,
-        });
-      }
-
-      await enqueueStripeLifecycleEvent({
-        userId: metadataUserId,
-        eventType: "subscription_started",
-        idempotencyKey: `subscription_started:${session.id}`,
-        properties: { plan: metadataPlan, stripe_checkout_session_id: session.id },
-      });
-
-      console.log("Stripe webhook entitlement updated", {
-        sessionId: session.id,
-        userId: metadataUserId,
-        plan: metadataPlan,
-        rawMetadataPlan,
-        stripeCustomerId,
-        stripeSubscriptionId,
-        force_paywall: payload.force_paywall,
-      });
-    }
-
-    if (event.type === "invoice.payment_failed" || event.type === "invoice.paid") {
-      const invoice = event.data.object as any;
-      const entitlement = await findEntitlementByStripeObject(invoice);
-      if (entitlement?.user_id) {
-        if (event.type === "invoice.paid" && Number(invoice.amount_paid || 0) > 0) {
-          const paymentIntentId = await resolveInvoicePaymentIntentId(invoice);
-          const affiliatePlan = await resolveInvoicePlan(invoice, entitlement.plan);
-          const paidAtSeconds =
-            Number(invoice?.status_transitions?.paid_at || 0) ||
-            Number(event.created || Math.floor(Date.now() / 1000));
-          const paidAt = new Date(paidAtSeconds * 1000).toISOString();
-
-          if (affiliatePlan) {
-            const amountUsd = await resolvePaidAmountUsd({
-              amountMinor: invoice.amount_paid,
-              currency: invoice.currency,
-              paymentIntentId,
-            });
-
-            await rewardReferrerForPaidPayment({
-              referredUserId: entitlement.user_id,
-              sourcePaymentKey: `stripe:invoice:${invoice.id}`,
-              plan: affiliatePlan,
-              amountUsd,
-              paidAt,
-              providerInvoiceRef: String(invoice.id || ""),
-              providerPaymentRef: paymentIntentId || String(invoice.id || ""),
-            });
-          }
-        }
-
-        await enqueueStripeLifecycleEvent({
-          userId: entitlement.user_id,
-          eventType: event.type === "invoice.payment_failed" ? "payment_failed" : "payment_recovered",
-          idempotencyKey: `${event.type}:${invoice.id}`,
-          properties: { plan: entitlement.plan || "free", invoice_id: invoice.id },
-        });
-      }
-    }
-
-    if (event.type === "charge.refunded") {
-      const charge = event.data.object as any;
-      await reversePartnerCommission({
-        sourcePaymentKey: `stripe:refund:${charge.id}:${Number(charge.amount_refunded || 0)}`,
-        paymentIntentId: stripeObjectId(charge.payment_intent),
-        chargeId: String(charge.id || ""),
-        grossAmountMinor: Number(charge.amount || 0),
-        reversedAmountMinor: Number(charge.amount_refunded || 0),
-      });
-    }
-
-    if (event.type === "charge.dispute.created") {
-      const dispute = event.data.object as any;
-      const chargeId = stripeObjectId(dispute.charge);
-      let paymentIntentId = "";
-
-      if (chargeId) {
-        try {
-          const charge = await stripe.charges.retrieve(chargeId);
-          paymentIntentId = stripeObjectId((charge as any).payment_intent);
-        } catch (error) {
-          console.error("Stripe webhook: dispute charge lookup failed", {
-            disputeId: dispute.id,
-            chargeId,
-            error,
-          });
-        }
-      }
-
-      await reversePartnerCommission({
-        sourcePaymentKey: `stripe:dispute:${dispute.id}`,
-        paymentIntentId,
-        chargeId,
-        grossAmountMinor: Number(dispute.amount || 0),
-        reversedAmountMinor: Number(dispute.amount || 0),
-      });
-    }
-
-    if (event.type === "customer.subscription.deleted") {
-      const subscription = event.data.object as any;
-      const entitlement = await findEntitlementByStripeObject(subscription);
-      if (entitlement?.user_id && isRecurringBillingPlan(entitlement.plan)) {
-        const { error: cancellationError } = await supabaseAdmin
-          .from("user_entitlements")
-          .update({ status: "canceled", updated_at: new Date().toISOString() })
-          .eq("user_id", entitlement.user_id);
-        if (cancellationError) throw cancellationError;
-        await enqueueStripeLifecycleEvent({
-          userId: entitlement.user_id,
-          eventType: "subscription_cancelled",
-          idempotencyKey: `subscription_cancelled:${subscription.id}:${subscription.canceled_at || event.created}`,
-          properties: {
-            plan: "free",
-            access_ends_at: subscriptionPeriodEnd(subscription) || "",
-          },
-        });
-      }
-    }
-
-    if (event.type === "customer.subscription.updated") {
-      const subscription = event.data.object as any;
-      const previous = (event.data as any)?.previous_attributes || {};
-      const cancellationChanged = Object.prototype.hasOwnProperty.call(
-        previous,
-        "cancel_at_period_end",
-      );
-      const matchingEntitlement = cancellationChanged
-        ? await findEntitlementByStripeObject(subscription)
-        : null;
-      const entitlement = matchingEntitlement && isRecurringBillingPlan(matchingEntitlement.plan)
-        ? matchingEntitlement
-        : null;
-
-      if (entitlement?.user_id && subscription.cancel_at_period_end === true) {
-        await enqueueStripeLifecycleEvent({
-          userId: entitlement.user_id,
-          eventType: "subscription_cancelled",
-          idempotencyKey: `subscription_cancelled:${event.id}`,
-          properties: {
-            plan: entitlement.plan || "free",
-            access_ends_at: subscriptionPeriodEnd(subscription) || "",
-          },
-        });
-      }
-
-      if (
-        entitlement?.user_id &&
-        previous.cancel_at_period_end === true &&
-        subscription.cancel_at_period_end === false
-      ) {
-        await enqueueStripeLifecycleEvent({
-          userId: entitlement.user_id,
-          eventType: "subscription_reactivated",
-          idempotencyKey: `subscription_reactivated:${event.id}`,
-          properties: { plan: entitlement.plan || "free" },
-        });
-      }
-    }
-
-    return res.status(200).json({ received: true });
+    event = stripe.webhooks.constructEvent(rawBody, signature, process.env.STRIPE_WEBHOOK_SECRET!);
   } catch (error) {
-    console.error("Stripe webhook error", error);
-    return res.status(400).send(`Webhook Error: ${(error as Error).message}`);
+    console.error("Stripe webhook signature verification failed", (error as Error).message);
+    return res.status(400).send("Webhook signature verification failed");
   }
+
+  const { status, body } = await handleStripeEvent(event);
+  return res.status(status).json(body);
 }

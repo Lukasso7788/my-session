@@ -28,7 +28,16 @@ test("disabled paywall, signed-out and unknown usage do not promise a free-sessi
   assert.equal(allowance(-1).used, 0);
 });
 test("active Pro, Lifetime and Founding Free are excluded from upgrade warning", () => {
-  for (const plan of ["pro_monthly", "pro_yearly", "lifetime", "founding_free"]) {
+  const future = new Date(Date.now() + 86_400_000).toISOString();
+  const past = new Date(Date.now() - 86_400_000).toISOString();
+  for (const plan of ["pro_monthly", "pro_yearly"]) {
+    assert.equal(allowance(12, { entitlement: { plan, status: "active", current_period_end: future } }), null);
+    assert.equal(allowance(12, { entitlement: { plan, status: "trialing", trial_ends_at: future } }), null);
+    // A paid period that has ended, or none at all, is not Pro.
+    assert.equal(allowance(12, { entitlement: { plan, status: "active", current_period_end: past } }).remaining, 3);
+    assert.equal(allowance(12, { entitlement: { plan, status: "active" } }).remaining, 3);
+  }
+  for (const plan of ["lifetime", "founding_free"]) {
     for (const status of ["active", "trialing"]) assert.equal(allowance(12, { entitlement: { plan, status } }), null);
   }
   assert.equal(allowance(12, { entitlement: { plan: "free", status: "trialing" } }).remaining, 3);
@@ -241,54 +250,4 @@ test("client rejects malformed/external portal URLs and maps configuration error
   } finally { globalThis.fetch = previousFetch; globalThis.window = previousWindow; }
 });
 
-const webhookUpdates = [];
-const webhookFixture = { plan: "pro_monthly", updateError: null, event: null };
-globalThis.__webhookAdapter = {
-  stripe: { webhooks: { constructEvent: () => webhookFixture.event } },
-  db: {
-    auth: { admin: { getUserById: async () => ({ data: { user: { email: null } } }) } },
-    from: (table) => {
-      assert.equal(table, "user_entitlements");
-      const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: { ...identity, user_id: "owner", plan: webhookFixture.plan }, error: null }), update: (value) => ({ eq: async (column, user) => { webhookUpdates.push({ value, column, user }); return { error: webhookFixture.updateError }; } }) };
-      return query;
-    },
-  },
-};
-const webhookMockPlugin = {
-  name: "isolated-webhook-adapters",
-  setup(builder) {
-    builder.onResolve({ filter: /^(stripe|@supabase\/supabase-js)$/ }, (args) => ({ path: args.path, namespace: "webhook-mock" }));
-    builder.onLoad({ filter: /.*/, namespace: "webhook-mock" }, (args) => ({ contents: args.path === "stripe" ? 'export default class Stripe {constructor(){return globalThis.__webhookAdapter.stripe}}' : 'export function createClient(){return globalThis.__webhookAdapter.db}', loader: "js" }));
-  },
-};
-const { default: webhookHandler } = await importTs("api/stripe/webhook.ts", { plugins: [webhookMockPlugin] });
-async function deletedSubscriptionResponse(plan, updateError = null) {
-  webhookFixture.plan = plan;
-  webhookFixture.updateError = updateError;
-  webhookFixture.event = { type: "customer.subscription.deleted", id: "event_test", created: 1800000000, data: { object: { ...fixture().subscription, object: "subscription", status: "canceled" } } };
-  const response = responseRecorder();
-  response.send = function (value) { this.body = value; return this; };
-  await webhookHandler({ method: "POST", headers: { "stripe-signature": "isolated-test-signature" }, async *[Symbol.asyncIterator]() { yield Buffer.from("isolated test"); } }, response);
-  return response;
-}
-test("terminal Stripe webhook writes the database-supported canceled status", async () => {
-  webhookUpdates.length = 0;
-  const response = await deletedSubscriptionResponse("pro_monthly");
-  assert.equal(response.statusCode, 200);
-  assert.equal(webhookUpdates[0].value.status, "canceled");
-  assert.equal(webhookUpdates[0].column, "user_id");
-  assert.equal(webhookUpdates[0].user, "owner");
-});
-test("failed terminal entitlement update is not acknowledged as webhook success", async () => {
-  const previousError = console.error;
-  console.error = () => {};
-  try {
-    const response = await deletedSubscriptionResponse("pro_yearly", new Error("fixture database failure"));
-    assert.equal(response.statusCode, 400);
-  } finally { console.error = previousError; }
-});
-test("an old recurring subscription deletion cannot revoke a later lifetime/founding grant", async () => {
-  webhookUpdates.length = 0;
-  for (const plan of ["lifetime", "founding_free"]) assert.equal((await deletedSubscriptionResponse(plan)).statusCode, 200);
-  assert.equal(webhookUpdates.length, 0);
-});
+// Webhook and entitlement-sync behavior: tests/stripeEntitlements.test.mjs.

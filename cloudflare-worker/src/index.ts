@@ -7,6 +7,7 @@ export interface Env {
   PUSH_DISPATCH_SECRET?: string;
   PUSH_PRESENCE_MIN_PARTICIPANTS?: string;
   PUSH_PRESENCE_COOLDOWN_MINUTES?: string;
+  BILLING_RECONCILE_SECRET?: string;
 }
 
 type SessionRow = {
@@ -756,6 +757,30 @@ async function maybeSendSessionReminders(env: Env, now: Date, dryRun = false) {
   return { sessionsScanned: sessions.length, results };
 }
 
+// Stripe -> entitlement recovery after missed webhooks, once an hour (the
+// first 5-minute tick of each UTC hour). The work happens in the app's
+// /api/stripe/webhook function; see docs/billing/stripe-entitlements-handoff.md.
+async function maybeReconcileBilling(env: Env, now: Date, dryRun = false) {
+  if (!env.BILLING_RECONCILE_SECRET) {
+    return { skipped: true, reason: "missing_billing_reconcile_secret" };
+  }
+  if (!dryRun && now.getUTCMinutes() >= 5) {
+    return { skipped: true, reason: "not_this_tick" };
+  }
+
+  const res = await fetch(`${appUrl(env)}/api/stripe/webhook${dryRun ? "?dryRun=1" : ""}`, {
+    method: "POST",
+    headers: { "x-billing-reconcile-secret": String(env.BILLING_RECONCILE_SECRET) },
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Billing reconcile ${res.status}: ${text.slice(0, 300)}`);
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return { raw: text.slice(0, 300) };
+  }
+}
+
 async function runAll(env: Env, dryRun = false) {
   const now = new Date();
   let expiredBookingsCleaned: number | null = null;
@@ -792,6 +817,16 @@ async function runAll(env: Env, dryRun = false) {
     };
   }
 
+  let billingReconcile: any;
+  try {
+    billingReconcile = await maybeReconcileBilling(env, now, dryRun);
+  } catch (error: any) {
+    billingReconcile = {
+      ok: false,
+      error: String(error?.message || error || "billing_reconcile_failed"),
+    };
+  }
+
   return {
     ok: true,
     now: now.toISOString(),
@@ -802,6 +837,7 @@ async function runAll(env: Env, dryRun = false) {
     reminders,
     infiniteRoomPresence,
     infiniteRoomPresencePush,
+    billingReconcile,
   };
 }
 
