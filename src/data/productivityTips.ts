@@ -1,7 +1,8 @@
 // Productivity tips shown while a person joins a coworking room
-// (see src/components/RoomJoiningTip.tsx). Exactly 48, grouped as:
+// (see src/components/RoomJoiningTip.tsx). Exactly 96, grouped as:
 // 1–24 general productivity, 25–36 MySession features and body doubling,
-// 37–48 practical focus techniques. Session formats mentioned here must exist
+// 37–48 practical focus techniques, 49–72 momentum and mindset,
+// 73–84 more MySession habits, 85–96 breaks and energy. Session formats mentioned here must exist
 // in the product (25/5 and 50/10 do; 90/20 is no longer offered).
 export const PRODUCTIVITY_TIPS = [
   // General productivity
@@ -55,6 +56,57 @@ export const PRODUCTIVITY_TIPS = [
   "Write down your ideas first, then decide which ones to use.",
   "Notice what distracts you and remove its trigger.",
   "Adjust your goal when energy is low, but keep moving.",
+  // Momentum & mindset
+  "Name the very first action, then do only that.",
+  "Set a timer and try to beat it.",
+  "Finish one small thing to build momentum.",
+  "Pick up where you left off by rereading your last line.",
+  "Leave a note for future you before you stop.",
+  "Estimate how long a task takes, then check yourself.",
+  "Say no to one thing that isn't a priority today.",
+  "Answer quick messages together in one short block.",
+  "Do the hardest part first while your mind is fresh.",
+  "Make the next step so small it feels easy.",
+  "Write your goal where you can see it.",
+  "Celebrate small wins; they add up.",
+  "Decide what you'll ignore during this session.",
+  "Rewrite vague tasks as concrete actions.",
+  "Clarity comes from doing, not from more planning.",
+  "Track your time to see where it really goes.",
+  "Block time in your calendar for deep work.",
+  "Make the first sentence easy to write.",
+  "Keep only the files you need open.",
+  "Use full screen to hide everything else.",
+  "Ask yourself what would make today a win.",
+  "Write a three-item list, not a thirty-item one.",
+  "Take one slow breath before you dive in.",
+  "Momentum beats motivation, so just begin.",
+  // More MySession habits
+  "Turn on a soundscape to block out background noise.",
+  "Try Gentle rain or Brown Noise for calm focus.",
+  "Keep your streak going with one session a day.",
+  "Pick your next session time before you leave the room.",
+  "Say hello in chat; a quick greeting builds connection.",
+  "Post your goal in chat so the room knows your plan.",
+  "Cheer others on; encouragement comes back around.",
+  "Come back at the same time each day to build a habit.",
+  "Mute your mic during focus, unmute for check-ins.",
+  "Invite a friend to cowork with you next time.",
+  "Before you leave, share what you got done.",
+  "Glance at others working when your focus starts to drift.",
+  // Breaks & energy
+  "Every 20 minutes, look 20 feet away for 20 seconds.",
+  "Roll your shoulders and relax your jaw.",
+  "Step away from the screen during breaks.",
+  "Get some fresh air on your break.",
+  "Have a healthy snack before a long session.",
+  "Check your posture: feet flat, screen at eye level.",
+  "Adjust your lighting to reduce eye strain.",
+  "Walk around for a minute to reset your mind.",
+  "Don't skip breaks; they keep your focus sharp.",
+  "Have caffeine earlier in the day to protect your sleep.",
+  "A good night's sleep is the best productivity tool.",
+  "End your day by writing down any unfinished loops.",
 ] as const;
 
 /**
