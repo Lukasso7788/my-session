@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 const card = readFileSync("src/components/SessionCard.tsx", "utf8");
+const hostPicker = readFileSync("src/components/HostTimePicker.tsx", "utf8");
 const page = readFileSync("src/pages/SessionsPage.tsx", "utf8");
 const leaderboard = readFileSync("src/pages/LeaderboardPage.tsx", "utf8");
 const migration = readFileSync("supabase/migrations/20261014150000_infinite_room_host_slots.sql", "utf8");
@@ -15,7 +16,7 @@ test("infinite rooms are booked to host only, with no participant option", () =>
 });
 
 test("a host can repeat the window every day for a week", () => {
-  assert.match(card, /Repeat every day for 7 days/);
+  assert.match(hostPicker, /Repeat every day for 7 days/);
   assert.match(card, /Array\.from\(\{ length: 6 \}, \(_, index\) => \(\{\s*starts_at: new Date\(startMs \+ \(index \+ 1\) \* DAY_MS\)/);
   assert.match(card, /const result = await onBookHostSlots\(session\.id, extraSlots\);/);
   assert.match(page, /supabase\.rpc\("save_infinite_room_host_slots", \{\s*p_session_id: id,\s*p_slots: slots,/);

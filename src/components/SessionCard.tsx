@@ -31,6 +31,8 @@ import { getSessionCardPolicyState } from "../lib/sessionCardIndicators";
 import { SERIES_WINDOW_DAYS, type SeriesOccurrence } from "../lib/sessionSeries";
 import { CursorEditHintArea, InlineEditableStart, InlineEditableTitle } from "./SessionInlineEdit";
 import GuestBlur, { GUEST_BLUR_HINT } from "./GuestBlur";
+import HostTimePicker from "./HostTimePicker";
+import { HOST_DEFAULT_DURATION_MINUTES, hostWindowFromDraft, type HostBusyWindow } from "../lib/hostTimePicker";
 
 let roomPagePrefetchPromise: Promise<unknown> | null = null;
 function prefetchRoomPage() {
@@ -194,55 +196,6 @@ function roundDateToNextQuarterHour(date = new Date()) {
         d.setMinutes(next, 0, 0);
     }
     return d;
-}
-
-function combineLocalDateAndTimeToIso(dateYMD: string, timeHHMM: string) {
-    const date = String(dateYMD || "").trim();
-    const time = String(timeHHMM || "").trim();
-    if (!date || !time) return null;
-
-    const d = new Date(`${date}T${time}:00`);
-    if (Number.isNaN(d.getTime())) return null;
-    return d.toISOString();
-}
-
-function formatBookingRangeFromIso(startIso?: string | null, endIso?: string | null) {
-    const startRaw = String(startIso || "").trim();
-    const endRaw = String(endIso || "").trim();
-
-    if (!startRaw && !endRaw) return "Any time — this room is always open";
-
-    const start = startRaw ? new Date(startRaw) : null;
-    const end = endRaw ? new Date(endRaw) : null;
-
-    const hasStart = !!start && !Number.isNaN(start.getTime());
-    const hasEnd = !!end && !Number.isNaN(end.getTime());
-
-    if (!hasStart && !hasEnd) return "Any time — this room is always open";
-
-    const dateFmt: Intl.DateTimeFormatOptions = {
-        month: "short",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-    };
-
-    if (hasStart && hasEnd) {
-        const sameDay =
-            start!.getFullYear() === end!.getFullYear() &&
-            start!.getMonth() === end!.getMonth() &&
-            start!.getDate() === end!.getDate();
-
-        const startText = start!.toLocaleString("en-US", dateFmt);
-        const endText = sameDay
-            ? end!.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
-            : end!.toLocaleString("en-US", dateFmt);
-
-        return `${startText} — ${endText}`;
-    }
-
-    if (hasStart) return `From ${start!.toLocaleString("en-US", dateFmt)}`;
-    return `Until ${end!.toLocaleString("en-US", dateFmt)}`;
 }
 
 async function persistInfiniteBookingTimeRangeFallback(args: {
@@ -4656,6 +4609,17 @@ export default function SessionCard({
             });
     }, [bookers, session?.host_slots]);
 
+    // Hosting windows already planned, marked as taken in the host picker.
+    const hostBusyWindows = useMemo<HostBusyWindow[]>(
+        () =>
+            sortedBookingTimeline.map((booking) => ({
+                startMs: Date.parse(String(booking.booked_start_time)),
+                endMs: Date.parse(String(booking.booked_end_time)),
+                name: userId && booking.id === userId ? "You" : booking.full_name || "A host",
+            })),
+        [sortedBookingTimeline, userId]
+    );
+
     // Infinite rooms: hosting windows grouped by local day for the drawer.
     const scheduleNowMs = Date.now();
     const hostingScheduleDays = useMemo(() => {
@@ -4697,20 +4661,12 @@ export default function SessionCard({
         const start = roundDateToNextQuarterHour();
         return toLocalDateInputValue(start);
     });
-    const [bookingEndDateDraft, setBookingEndDateDraft] = useState(() => {
-        const start = roundDateToNextQuarterHour();
-        const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
-        return toLocalDateInputValue(end);
-    });
     const [bookingStartTimeDraft, setBookingStartTimeDraft] = useState(() => {
         const start = roundDateToNextQuarterHour();
         return toLocalTimeInputValue(start);
     });
-    const [bookingEndTimeDraft, setBookingEndTimeDraft] = useState(() => {
-        const start = roundDateToNextQuarterHour();
-        const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
-        return toLocalTimeInputValue(end);
-    });
+    const [bookingDurationDraft, setBookingDurationDraft] = useState<number>(HOST_DEFAULT_DURATION_MINUTES);
+    const [isSavingHostBooking, setIsSavingHostBooking] = useState(false);
     const [bookingDraftError, setBookingDraftError] = useState("");
     // Infinite rooms are booked to host; there is no participant booking.
     const bookingRoleDraft = "host" as const;
@@ -5266,12 +5222,10 @@ export default function SessionCard({
             setBookingDraftError("");
 
             const start = roundDateToNextQuarterHour();
-            const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
 
             setBookingDateDraft(toLocalDateInputValue(start));
-            setBookingEndDateDraft(toLocalDateInputValue(end));
             setBookingStartTimeDraft(toLocalTimeInputValue(start));
-            setBookingEndTimeDraft(toLocalTimeInputValue(end));
+            setBookingDurationDraft(HOST_DEFAULT_DURATION_MINUTES);
             setRepeatWeekDraft(false);
             setIsBookingTimeModalOpen(true);
             setIsHoveringBook(false);
@@ -5291,21 +5245,21 @@ export default function SessionCard({
             return;
         }
 
-        const startIso = combineLocalDateAndTimeToIso(bookingDateDraft, bookingStartTimeDraft);
-        const endIso = combineLocalDateAndTimeToIso(bookingEndDateDraft, bookingEndTimeDraft);
+        if (isSavingHostBooking) return;
 
-        if (!startIso || !endIso) {
-            setBookingDraftError("Choose a valid start and end time.");
+        const hostWindow = hostWindowFromDraft(bookingDateDraft, bookingStartTimeDraft, bookingDurationDraft);
+        if (!hostWindow) {
+            setBookingDraftError("Choose a day, a start time and how long you will host.");
             return;
         }
 
-        const startMs = new Date(startIso).getTime();
-        const endMs = new Date(endIso).getTime();
-
-        if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
-            setBookingDraftError("End time should be after start time.");
+        const { startMs, endMs } = hostWindow;
+        if (endMs <= Date.now()) {
+            setBookingDraftError("That time has already passed. Pick a later one.");
             return;
         }
+        const startIso = new Date(startMs).toISOString();
+        const endIso = new Date(endMs).toISOString();
 
         setBookingDraftError("");
 
@@ -5322,6 +5276,19 @@ export default function SessionCard({
             return;
         }
 
+        setIsSavingHostBooking(true);
+        try {
+            await saveInfiniteBooking(startIso, endIso, extraSlots);
+        } finally {
+            setIsSavingHostBooking(false);
+        }
+    };
+
+    const saveInfiniteBooking = async (
+        startIso: string,
+        endIso: string,
+        extraSlots: Array<{ starts_at: string; ends_at: string }>,
+    ) => {
         const saved = await Promise.resolve(onBook(session.id, {
             booked_start_time: startIso,
             booked_end_time: endIso,
@@ -6332,103 +6299,57 @@ export default function SessionCard({
                 title="Host this room"
                 isOpen={isBookingTimeModalOpen}
                 onClose={() => setIsBookingTimeModalOpen(false)}
-                widthClass="max-w-[500px]"
-            >
-                <div className="space-y-4">
-                    <div className="rounded-[18px] border border-[#DBEAFE] bg-[#EFF6FF] px-4 py-3 text-[13px] leading-5 text-[#1E3A8A]">
-                        Pick when you will host this 24/7 room. Your name and hosting window appear in the room's schedule so people know when to join.
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <label className="flex flex-col gap-1.5">
-                            <span className="text-[12px] font-semibold text-[#606060]">Start date</span>
-                            <input
-                                type="date"
-                                value={bookingDateDraft}
-                                onChange={(e) => setBookingDateDraft(e.target.value)}
-                                className="h-11 rounded-[14px] border border-[#E5E7EB] px-3 text-[13px] outline-none focus:border-[#111827]"
-                            />
-                        </label>
-
-                        <label className="flex flex-col gap-1.5">
-                            <span className="text-[12px] font-semibold text-[#606060]">Start time</span>
-                            <input
-                                type="time"
-                                value={bookingStartTimeDraft}
-                                onChange={(e) => setBookingStartTimeDraft(e.target.value)}
-                                className="h-11 rounded-[14px] border border-[#E5E7EB] px-3 text-[13px] outline-none focus:border-[#111827]"
-                            />
-                        </label>
-
-                        <label className="flex flex-col gap-1.5">
-                            <span className="text-[12px] font-semibold text-[#606060]">End date</span>
-                            <input
-                                type="date"
-                                value={bookingEndDateDraft}
-                                onChange={(e) => setBookingEndDateDraft(e.target.value)}
-                                className="h-11 rounded-[14px] border border-[#E5E7EB] px-3 text-[13px] outline-none focus:border-[#111827]"
-                            />
-                        </label>
-
-                        <label className="flex flex-col gap-1.5">
-                            <span className="text-[12px] font-semibold text-[#606060]">End time</span>
-                            <input
-                                type="time"
-                                value={bookingEndTimeDraft}
-                                onChange={(e) => setBookingEndTimeDraft(e.target.value)}
-                                className="h-11 rounded-[14px] border border-[#E5E7EB] px-3 text-[13px] outline-none focus:border-[#111827]"
-                            />
-                        </label>
-                    </div>
-
-                    <button
-                        type="button"
-                        role="switch"
-                        aria-checked={repeatWeekDraft}
-                        onClick={() => setRepeatWeekDraft((value) => !value)}
-                        className={`flex w-full items-center justify-between gap-3 rounded-[16px] border px-4 py-3 text-left transition ${repeatWeekDraft ? "border-[#5286F6] bg-[#EEF3FE]" : "border-[#E5E7EB] bg-white hover:border-[#A3A3A3]"}`}
-                    >
-                        <span>
-                            <span className="block text-[13px] font-semibold text-[#111827]">Repeat every day for 7 days</span>
-                            <span className="mt-0.5 block text-[11px] leading-4 text-[#7A7A7A]">Same time window, starting on the date above.</span>
-                        </span>
-                        <span className={`relative h-6 w-10 shrink-0 rounded-full transition ${repeatWeekDraft ? "bg-[#5286F6]" : "bg-[#D1D5DB]"}`} aria-hidden="true">
-                            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-all ${repeatWeekDraft ? "left-[18px]" : "left-0.5"}`} />
-                        </span>
-                    </button>
-
-                    {bookingDraftError ? (
-                        <div className="rounded-[14px] border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
-                            {bookingDraftError}
+                widthClass="max-w-[560px]"
+                footer={
+                    <div className="space-y-3">
+                        {bookingDraftError ? (
+                            <div className="rounded-[14px] border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700" role="alert">
+                                {bookingDraftError}
+                            </div>
+                        ) : null}
+                        <div className="flex gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setIsBookingTimeModalOpen(false)}
+                                className="h-11 rounded-full border border-[#E5E7EB] bg-white px-5 text-[14px] font-semibold text-[#111827] transition hover:bg-[#F3F4F6]"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => void handleConfirmInfiniteBooking()}
+                                disabled={isSavingHostBooking}
+                                className="h-11 flex-1 rounded-full bg-[#111827] px-4 text-[14px] font-semibold text-white transition hover:bg-[#2F2F2F] disabled:cursor-wait disabled:opacity-70"
+                            >
+                                {isSavingHostBooking ? "Saving…" : repeatWeekDraft ? "Host every day" : "Host this time"}
+                            </button>
                         </div>
-                    ) : null}
-
-                    <div className="rounded-[16px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-2 text-[12px] text-[#606060]">
-                        Preview: <span className="font-semibold text-[#111827]">
-                            {formatBookingRangeFromIso(
-                                combineLocalDateAndTimeToIso(bookingDateDraft, bookingStartTimeDraft),
-                                combineLocalDateAndTimeToIso(bookingEndDateDraft, bookingEndTimeDraft)
-                            )}
-                        </span>
-                        {repeatWeekDraft ? <span className="text-[#3F6FD8]"> · every day for 7 days</span> : null}
                     </div>
-
-                    <div className="flex flex-col sm:flex-row gap-2">
-                        <button
-                            type="button"
-                            onClick={() => setIsBookingTimeModalOpen(false)}
-                            className="h-11 flex-1 rounded-full border border-[#111827] bg-white px-4 text-[14px] font-semibold text-[#111827] transition hover:bg-[#F3F4F6]"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => void handleConfirmInfiniteBooking()}
-                            className="h-11 flex-1 rounded-full bg-[#111827] px-4 text-[14px] font-semibold text-white transition hover:bg-[#2F2F2F]"
-                        >
-                            {repeatWeekDraft ? "Host every day" : "Host this time"}
-                        </button>
-                    </div>
-                </div>
+                }
+            >
+                <p className="-mt-1 mb-5 text-[13px] leading-5 text-[#6B7280]">
+                    Your name and time show in the room's schedule, so people know when to join.
+                </p>
+                <HostTimePicker
+                    dayYmd={bookingDateDraft}
+                    startHhmm={bookingStartTimeDraft}
+                    durationMinutes={bookingDurationDraft}
+                    repeatWeek={repeatWeekDraft}
+                    busy={hostBusyWindows}
+                    onDayChange={(ymd) => {
+                        setBookingDateDraft(ymd);
+                        setBookingDraftError("");
+                    }}
+                    onStartChange={(hhmm) => {
+                        setBookingStartTimeDraft(hhmm);
+                        setBookingDraftError("");
+                    }}
+                    onDurationChange={(minutes) => {
+                        setBookingDurationDraft(minutes);
+                        setBookingDraftError("");
+                    }}
+                    onRepeatWeekChange={setRepeatWeekDraft}
+                />
             </ModalShell>
 
             <ModalShell
