@@ -4,9 +4,9 @@ import { lazy, Suspense, useState, useEffect, useMemo, useCallback, useRef } fro
 import { useNavigate, useSearchParams } from "react-router-dom";
 import SessionCard from "../components/SessionCard";
 import ActiveBanModal from "../components/ActiveBanModal";
-import SupportMySessionModal from "../components/SupportMySessionModal";
-import HostSessionPromptModal, { type HostPromptKind } from "../components/HostSessionPromptModal";
-import CommunityPromptModal from "../components/CommunityPromptModal";
+import SessionsNoticeBar, { type SessionsNotice } from "../components/SessionsNoticeBar";
+import { prioritySlotsFor } from "../lib/hostPrioritySlots";
+import { getFreeSessionUsage } from "../lib/freeSessionNotice";
 import InviteFriendsModal from "../components/InviteFriendsModal";
 import { supabase } from "../lib/supabase";
 import {
@@ -118,6 +118,8 @@ type HostPromptStats = {
   hostedTotal: number;
   upcomingHosted: number;
 };
+
+type HostPromptKind = "never_hosted" | "inactive_host";
 
 type InfiniteCreatorEligibility = {
   attendedCount: number;
@@ -480,7 +482,7 @@ function withTimeout<T>(
 export function SessionsPage() {
   const navigate = useNavigate();
   const modal = useCreateSessionModal();
-  const { user } = useAuth();
+  const { user, profile: authProfile } = useAuth();
   const [searchParams] = useSearchParams();
 
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
@@ -765,19 +767,14 @@ export function SessionsPage() {
 
     if (lastDismissed && Date.now() - lastDismissed < sevenDaysMs) return;
 
-    const timer = window.setTimeout(() => {
-      setSupportModalOpen(true);
-    }, 1200);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
+    setSupportModalOpen(true);
   }, [user?.id, entitlementState, lifetimeSessionsCount]);
 
+  // Notices below are pinned lines under the header; the bar shows one at a
+  // time (hosts, then community, then support), so they no longer wait on each other.
   useEffect(() => {
     if (!user?.id) return;
     if (activeBan) return;
-    if (supportModalOpen) return;
     if (postSessionPrompt.open) return;
 
     if (!hostPromptStats) return;
@@ -819,18 +816,11 @@ export function SessionsPage() {
 
     if (lastDismissed && Date.now() - lastDismissed < cooldownMs) return;
 
-    const timer = window.setTimeout(() => {
-      setHostPromptKind(kind);
-      setHostPromptOpen(true);
-    }, 2200);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
+    setHostPromptKind(kind);
+    setHostPromptOpen(true);
   }, [
     user?.id,
     activeBan,
-    supportModalOpen,
     postSessionPrompt.open,
     hostPromptStats,
     sessions,
@@ -840,8 +830,6 @@ export function SessionsPage() {
   useEffect(() => {
     if (!user?.id) return;
     if (activeBan) return;
-    if (supportModalOpen) return;
-    if (hostPromptOpen) return;
     if (postSessionPrompt.open) return;
 
     const now = Date.now();
@@ -856,18 +844,10 @@ export function SessionsPage() {
     );
     if (dismissedAt && now - dismissedAt < sevenDaysMs) return;
 
-    const timer = window.setTimeout(() => {
-      setCommunityPromptOpen(true);
-    }, 3600);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
+    setCommunityPromptOpen(true);
   }, [
     user?.id,
     activeBan,
-    supportModalOpen,
-    hostPromptOpen,
     postSessionPrompt.open,
   ]);
 
@@ -2538,6 +2518,30 @@ const visibleSessions = useMemo(() => {
     setCommunityPromptOpen(false);
   }, []);
 
+  // One pinned line under the header at a time. The free sessions line
+  // (Header) wins over all of these.
+  const freeSessionsNoticeShown = !!(
+    entitlementState && getFreeSessionUsage({ ...entitlementState, enabled: PAYWALL_ENABLED })?.showWarning
+  );
+  const headerNotice: SessionsNotice | null = freeSessionsNoticeShown || activeBan
+    ? null
+    : hostPromptOpen
+      ? "hosts"
+      : communityPromptOpen
+        ? "community"
+        : supportModalOpen
+          ? "support"
+          : null;
+  const hostPrioritySlots = useMemo(
+    () => prioritySlotsFor(authProfile?.timezone),
+    [authProfile?.timezone],
+  );
+  const dismissHeaderNotice = useCallback((notice: SessionsNotice) => {
+    if (notice === "hosts") closeHostPromptModal();
+    else if (notice === "community") closeCommunityPromptModal();
+    else closeSupportModal();
+  }, [closeCommunityPromptModal, closeHostPromptModal, closeSupportModal]);
+
 
   const renderSessionCard = (s: SessionWithRelations) => (
     <SessionCard
@@ -2653,24 +2657,13 @@ const visibleSessions = useMemo(() => {
 
 
 
-      <SupportMySessionModal
-        open={supportModalOpen}
-        onClose={closeSupportModal}
-      />
-
-
-      <HostSessionPromptModal
-        open={hostPromptOpen}
-        kind={hostPromptKind}
-        onClose={closeHostPromptModal}
-        onHostSession={openCreateFromHostPrompt}
-      />
-
-      <CommunityPromptModal
-        open={communityPromptOpen}
+      <SessionsNoticeBar
+        notice={headerNotice}
+        slots={hostPrioritySlots}
         whatsappUrl={COMMUNITY_WHATSAPP_URL}
         discordUrl={COMMUNITY_DISCORD_URL}
-        onClose={closeCommunityPromptModal}
+        onApplyToHost={openCreateFromHostPrompt}
+        onDismiss={dismissHeaderNotice}
         onJoinedCommunity={markCommunityPromptJoined}
       />
 

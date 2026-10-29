@@ -9,6 +9,7 @@ import {
 import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "./PaywallModal";
 import FreeSessionsNotice from "./FreeSessionsNotice";
+import { HEADER_NOTICE_SLOT_ID } from "../lib/headerNoticeSlot";
 import HeaderPlanBadge from "./HeaderPlanBadge";
 import { useAccountEntitlement } from "../hooks/useAccountEntitlement";
 import { getFreeSessionUsage } from "../lib/freeSessionNotice";
@@ -672,6 +673,8 @@ export default function Header() {
                     // edge; -mb-px lays its red bottom line over the header's own border.
                     <FreeSessionsNotice state={entitlementState} className="relative -mb-px border-t border-t-borderGray" />
                 ) : null}
+                {/* Pages pin their notice line here (SessionsNoticeBar). */}
+                <div id={HEADER_NOTICE_SLOT_ID} />
             </header>
 
             <PaywallModal
