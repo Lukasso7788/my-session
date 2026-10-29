@@ -94,10 +94,14 @@ function combineScheduledDateTime(args: {
 }
 
 // ===============================
-// Form layout: one nav item and one card per section.
-const CREATE_STEPS = ["Details", "Date & time", "Structure", "Guests"] as const;
-type CreateStep = 0 | 1 | 2 | 3;
-const SECTION_CARD = "scroll-mt-16 rounded-[18px] border border-[#ECECEE] bg-white p-4 sm:p-5";
+// Form layout.
+
+
+const SECTION_CARD = "min-w-0";
+const PRESET_TILE = "flex h-[52px] min-w-0 items-center gap-2.5 rounded-[12px] border px-2.5 text-left transition ";
+const PRESET_TILE_ON = "border-[#2F2F2F] bg-[#2F2F2F] text-white";
+const PRESET_TILE_OFF = "border-[#E3E5E8] bg-white text-[#15171A] hover:border-[#2F2F2F]/50";
+const PRESET_TILE_ICON = "flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px]";
 const FIELD_LABEL = "block font-inter text-[12.5px] font-semibold text-[#15171A]";
 const FIELD_INPUT =
   "h-11 w-full rounded-[12px] border border-[#D8DCE3] bg-white px-3.5 font-inter text-[14px] text-[#344054] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10";
@@ -1361,7 +1365,7 @@ export function CreateSessionModal({
   const [isSavingUserTemplate, setIsSavingUserTemplate] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [activeStep, setActiveStep] = useState<CreateStep>(0);
+
   const [selectedPresetKey, setSelectedPresetKey] = useState<PresetKey | null>(null);
   const [presetCycles, setPresetCycles] = useState<number>(3);
   const [accessMode, setAccessMode] = useState<AccessMode>("public");
@@ -1458,7 +1462,6 @@ export function CreateSessionModal({
     setIsSavingUserTemplate(false);
     setError(null);
     setNotice(null);
-    setActiveStep(0);
     setSelectedPresetKey(null);
     setPresetCycles(3);
     setAccessMode("public");
@@ -2487,37 +2490,6 @@ export function CreateSessionModal({
     };
   }, [isOpen]);
 
-  const sectionRefs = [basicSectionRef, scheduleSectionRef, structureSectionRef, guestsSectionRef];
-
-  const goToStep = useCallback((step: CreateStep) => {
-    setActiveStep(step);
-
-    window.requestAnimationFrame(() => {
-      sectionRefs[step].current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Highlight the section being read: the last one whose top has passed the pinned nav.
-  useEffect(() => {
-    const container = modalScrollRef.current;
-    if (!isOpen || !container) return;
-    // Four rect reads per scroll event; cheap enough without frame batching.
-    const onScroll = () => {
-      const top = container.getBoundingClientRect().top + 96;
-      let current: CreateStep = 0;
-      sectionRefs.forEach((ref, index) => {
-        const el = ref.current;
-        if (el && el.getBoundingClientRect().top <= top) current = index as CreateStep;
-      });
-      // At the very bottom the last section is the one in view.
-      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 4) current = 3;
-      setActiveStep(current);
-    };
-    container.addEventListener("scroll", onScroll, { passive: true });
-    return () => container.removeEventListener("scroll", onScroll);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, loading, user]);
 
   const dynamicMaxOccurrences = useMemo(() => {
     const hardCap =
@@ -3527,7 +3499,7 @@ export function CreateSessionModal({
         <div className="flex h-[72px] shrink-0 items-center justify-between border-b border-[#E6E8EC] px-6 sm:px-8">
           <div className="flex items-center gap-3.5">
             <div className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#2F2F2F] text-white">
-              <UiIcon name="calendar-plus" size={19} />
+              <UiIcon name="calendar-plus-filled" size={20} />
             </div>
             <div>
               <h2 className="font-inter text-[20px] font-bold leading-tight tracking-[-0.4px] text-[#15171A]">Create session</h2>
@@ -3562,53 +3534,20 @@ export function CreateSessionModal({
           <div ref={modalScrollRef} className="min-h-0 flex-1 overflow-y-auto">
             <div className="grid min-h-full grid-cols-1 lg:grid-cols-[minmax(0,1.82fr)_minmax(360px,1fr)]">
               {/* Left column */}
-              <div className="border-b border-[#E6E8EC] px-6 pb-8 sm:px-8 lg:border-b-0 lg:border-r">
-                {/* Section nav: one item per section below, pinned while the form scrolls. */}
-                <div className="sticky top-0 z-20 -mx-6 bg-white/95 px-6 py-2.5 backdrop-blur sm:-mx-8 sm:px-8">
-                  <div className="grid grid-cols-4 gap-1 rounded-full bg-[#F2F2F3] p-1">
-                    {CREATE_STEPS.map((label, index) => {
-                      const step = index as CreateStep;
-                      const isActive = activeStep === step;
-
-                      return (
-                        <button
-                          key={label}
-                          type="button"
-                          onClick={() => goToStep(step)}
-                          className={
-                            "flex h-8 min-w-0 items-center justify-center gap-2 rounded-full px-2 font-inter text-[12.5px] font-semibold transition " +
-                            (isActive
-                              ? "bg-white text-[#15171A] shadow-[0_1px_3px_rgba(0,0,0,0.12)]"
-                              : "text-[#667085] hover:text-[#2F2F2F]")
-                          }
-                          aria-current={isActive ? "step" : undefined}
-                        >
-                          <span
-                            className={
-                              "hidden h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] sm:flex " +
-                              (isActive ? "bg-[#2F2F2F] text-white" : "bg-[#E2E3E6] text-[#667085]")
-                            }
-                          >
-                            {index + 1}
-                          </span>
-                          <span className="truncate">{label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
+              <div className="border-b border-[#E6E8EC] px-6 pb-6 pt-5 sm:px-8 lg:border-b-0 lg:border-r">
                 {notice && (
-                  <div className="mt-5 rounded-[12px] border border-[#2F2F2F]/20 bg-[#2F2F2F]/[0.05] px-4 py-3 font-inter text-[13px] text-[#2F2F2F]">
+                  <div className="mb-4 rounded-[12px] border border-[#2F2F2F]/20 bg-[#2F2F2F]/[0.05] px-4 py-3 font-inter text-[13px] text-[#2F2F2F]">
                     {notice}
                   </div>
                 )}
 
+                {/* Details and date side by side; structure and guests below. */}
+                <div className="grid grid-cols-1 gap-x-7 gap-y-5 lg:grid-cols-2">
                 {/* 1. Session details */}
-                <section ref={basicSectionRef} className={`mt-1.5 ${SECTION_CARD}`}>
+                <section ref={basicSectionRef} className={SECTION_CARD}>
                   <SectionHeading step={1} title="Session details" />
 
-                  <label htmlFor="create-session-title" className={`mt-4 ${FIELD_LABEL}`}>
+                  <label htmlFor="create-session-title" className={`mt-3 ${FIELD_LABEL}`}>
                     Title <span className="text-[#E5484D]">*</span>
                   </label>
                   <input
@@ -3620,7 +3559,7 @@ export function CreateSessionModal({
                     className={`mt-1.5 ${FIELD_INPUT} text-[#15171A]`}
                   />
 
-                  <label htmlFor="create-session-description" className={`mt-3.5 ${FIELD_LABEL}`}>Description (optional)</label>
+                  <label htmlFor="create-session-description" className={`mt-3 ${FIELD_LABEL}`}>Description (optional)</label>
                   <div className="relative mt-1.5">
                     <textarea
                       id="create-session-description"
@@ -3638,15 +3577,13 @@ export function CreateSessionModal({
                 {/* 2. Date & scheduling */}
                 <section
                   ref={scheduleSectionRef}
-                  className={`mt-3 ${SECTION_CARD}`}
+                  className={SECTION_CARD}
                   aria-labelledby="create-session-schedule-heading"
                 >
-                  <SectionHeading step={2} title="Date & scheduling" id="create-session-schedule-heading">
-                    Choose when the session starts and whether to schedule more sessions in advance.
-                  </SectionHeading>
+                  <SectionHeading step={2} title="Date & scheduling" id="create-session-schedule-heading" />
 
-                  {/* Date, start time (any minute) and repeat on one row. */}
-                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_auto]">
+                  {/* Date and start time (any minute), then repeat. */}
+                  <div className="mt-3 grid grid-cols-2 gap-3">
                     <div>
                       <label htmlFor="create-session-date" className={FIELD_LABEL}>
                         Date <span className="text-[#E5484D]">*</span>
@@ -3689,9 +3626,9 @@ export function CreateSessionModal({
                       />
                     </div>
 
-                    <fieldset>
+                    <fieldset className="col-span-2">
                       <legend className={FIELD_LABEL}>Repeat</legend>
-                      <div className="mt-1.5 flex h-11 gap-1 rounded-[12px] bg-[#F2F2F3] p-1">
+                      <div className="mt-1.5 grid h-11 grid-cols-3 gap-1 rounded-[12px] bg-[#F2F2F3] p-1">
                         {([
                           ["single", "Once", "Create it once"],
                           ["daily", "Daily", "Schedule daily sessions in advance"],
@@ -3703,10 +3640,7 @@ export function CreateSessionModal({
                               key={mode}
                               type="button"
                               title={helper}
-                              onClick={() => {
-                                setScheduleMode(mode);
-                                setActiveStep(1);
-                              }}
+                              onClick={() => setScheduleMode(mode)}
                               className={[
                                 "rounded-[9px] px-3.5 font-inter text-[13px] font-semibold transition",
                                 selected
@@ -3807,9 +3741,10 @@ export function CreateSessionModal({
                     </div>
                   ) : null}
                 </section>
+                </div>
 
                 {/* 3. Choose a structure */}
-                <section ref={structureSectionRef} className={`mt-3 ${SECTION_CARD}`}>
+                <section ref={structureSectionRef} className={`mt-5 border-t border-[#F0F0F1] pt-5 ${SECTION_CARD}`}>
                   <SectionHeading step={3} title="Choose a structure">
                     <span className="inline-flex items-center gap-2">
                       <span>Pick a proven flow or build your own in Session Studio.</span>
@@ -3822,7 +3757,7 @@ export function CreateSessionModal({
                     </span>
                   </SectionHeading>
 
-                  <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                     {presetMeta.map((preset) => {
                       const template = presetTemplateMap[preset.key];
                       const isSelected =
@@ -3837,30 +3772,24 @@ export function CreateSessionModal({
                             setSelectedPresetKey(preset.key);
                             setStudioEnabled(false);
                           }}
-                          className={
-                            "relative flex min-h-[108px] flex-col items-center justify-center rounded-[14px] border bg-white px-3 py-3 text-center transition " +
-                            (isSelected
-                              ? "border-[#2F2F2F] shadow-[inset_0_0_0_1px_#2F2F2F]"
-                              : "border-[#D8DCE3] hover:border-[#2F2F2F]/55")
-                          }
+                          className={PRESET_TILE + (isSelected ? PRESET_TILE_ON : PRESET_TILE_OFF)}
+                          aria-pressed={isSelected}
                         >
-                          <span className={"absolute left-2.5 top-2.5 h-4 w-4 rounded-full border " + (isSelected ? "border-[#2F2F2F] bg-[#2F2F2F]" : "border-[#B8C0CC]")}>
-                            {isSelected && <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />}
-                          </span>
-                          <div className="mb-1 flex h-8 items-center justify-center text-[#2F2F2F]">
+                          <span className={PRESET_TILE_ICON + (isSelected ? " bg-white/15 text-white" : " bg-[#F2F2F3] text-[#2F2F2F]")}>
                             {preset.icon === "zap" ? (
-                              <UiIcon name="bolt" size={22} />
+                              <UiIcon name="bolt" size={17} />
                             ) : preset.icon === "target" ? (
-                              <UiIcon name="bullseye" size={22} />
+                              <UiIcon name="bullseye" size={17} />
                             ) : (
-                              <span className="text-[24px] leading-none" aria-hidden="true">🍅</span>
+                              <span className="text-[17px] leading-none" aria-hidden="true">🍅</span>
                             )}
-                          </div>
-                          <div className="font-inter text-[15px] font-bold text-[#15171A]">{preset.label}</div>
-                          <div className="mt-0.5 font-inter text-[11.5px] leading-[18px] text-[#667085]">
-                            <div>{preset.focus}</div>
-                            <div>{preset.breakLabel}</div>
-                          </div>
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block font-inter text-[14px] font-bold leading-5">{preset.label}</span>
+                            <span className={"block truncate font-inter text-[11.5px] leading-4 " + (isSelected ? "text-white/70" : "text-[#667085]")}>
+                              {preset.focus.replace(" focus", "")} · {preset.breakLabel.replace(" break", "")}
+                            </span>
+                          </span>
                         </button>
                       );
                     })}
@@ -3868,26 +3797,21 @@ export function CreateSessionModal({
                     <button
                       type="button"
                       onClick={openSessionStudio}
-                      className={
-                        "relative flex min-h-[108px] flex-col items-center justify-center rounded-[14px] border bg-white px-3 py-3 text-center transition " +
-                        (studioEnabled
-                          ? "border-[#2F2F2F] shadow-[inset_0_0_0_1px_#2F2F2F]"
-                          : "border-[#D8DCE3] hover:border-[#2F2F2F]/55")
-                      }
+                      className={PRESET_TILE + (studioEnabled ? PRESET_TILE_ON : PRESET_TILE_OFF)}
+                      aria-pressed={studioEnabled}
                     >
-                      <span className={"absolute left-2.5 top-2.5 h-4 w-4 rounded-full border " + (studioEnabled ? "border-[#2F2F2F] bg-[#2F2F2F]" : "border-[#B8C0CC]")}>
-                        {studioEnabled && <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />}
-                      </span>
-                      <div className="mb-1.5 flex h-8 w-8 items-center justify-center rounded-[10px] bg-[#2F2F2F]/[0.08] text-[#2F2F2F]">
+                      <span className={PRESET_TILE_ICON + (studioEnabled ? " bg-white/15 text-white" : " bg-[#F2F2F3] text-[#2F2F2F]")}>
                         <UiIcon name="layers" size={16} />
-                      </div>
-                      <div className="font-inter text-[15px] font-bold text-[#15171A]">Custom</div>
-                      <div className="mt-0.5 font-inter text-[11.5px] text-[#667085]">Session Studio</div>
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block font-inter text-[14px] font-bold leading-5">Custom</span>
+                        <span className={"block truncate font-inter text-[11.5px] leading-4 " + (studioEnabled ? "text-white/70" : "text-[#667085]")}>Session Studio</span>
+                      </span>
                     </button>
                   </div>
 
                   {selectedPreset && !studioEnabled && (
-                    <div className="mt-4 flex flex-col gap-3 rounded-[14px] border border-[#E3E3E3] bg-[#F7F7F7] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="mt-3 flex flex-col gap-3 rounded-[12px] bg-[#F7F7F7] px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <div className="font-inter text-[13px] font-semibold text-[#15171A]">
                           Number of cycles
@@ -3934,15 +3858,15 @@ export function CreateSessionModal({
                   <button
                     type="button"
                     onClick={openSessionStudio}
-                    className="mt-4 flex w-full items-center gap-3 rounded-[14px] border border-[#2F2F2F]/15 bg-[#2F2F2F]/[0.045] px-4 py-3 text-left font-inter text-[13px] text-[#344054]"
+                    className="mt-2.5 inline-flex items-center gap-2 font-inter text-[12.5px] text-[#667085] transition hover:text-[#2F2F2F]"
                   >
-                    <UiIcon name="sparkles" size={16} className="text-[#2F2F2F]" />
+                    <UiIcon name="sparkles" size={14} className="text-[#2F2F2F]" />
                     <span>Add check-ins, intentions, and more in <span className="font-semibold underline">Session Studio</span>.</span>
                   </button>
                 </section>
 
                 {/* 4. Guests & capacity */}
-                <section ref={guestsSectionRef} className={`mt-3 ${SECTION_CARD}`}>
+                <section ref={guestsSectionRef} className={`mt-5 border-t border-[#F0F0F1] pt-5 ${SECTION_CARD}`}>
                   <SectionHeading step={4} title="Guests & capacity" />
                   {/* Capacity, access and room rules on one row; rules are icon toggles. */}
                   <div className="mt-4 flex flex-wrap items-end gap-x-4 gap-y-3">
@@ -4088,8 +4012,8 @@ export function CreateSessionModal({
                 </section>
 
                 {/* Optional settings */}
-                <details className="mt-6 rounded-[18px] border border-[#E3E5E8] bg-[#FAFAFA]">
-                  <summary className="cursor-pointer list-none px-5 py-4 font-inter text-[13px] font-semibold text-[#344054] marker:hidden">
+                <details className="mt-5 rounded-[12px] bg-[#F7F7F8]">
+                  <summary className="cursor-pointer list-none px-4 py-2.5 font-inter text-[13px] font-semibold text-[#344054] marker:hidden">
                     <span className="flex items-center justify-between gap-3">
                       More options
                       <ChevronDown size={16} className="text-[#667085]" />
@@ -4223,7 +4147,7 @@ export function CreateSessionModal({
                 <div className="mt-3 rounded-[14px] border border-[#E6E8EC] bg-white p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 font-inter text-[14px] font-medium text-[#344054]">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2F2F2F] text-white"><UiIcon name="users-alt" size={17} /></span>
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2F2F2F] text-white"><UiIcon name="users-filled" size={18} /></span>
                       Group session
                     </div>
                     <span className="rounded-full bg-[#2F2F2F]/[0.10] px-2.5 py-1 font-inter text-[11px] font-semibold text-[#2F2F2F]">Structured</span>
@@ -4258,14 +4182,17 @@ export function CreateSessionModal({
 
                 {/* The flow as a timeline: one segment per stage, sized by its minutes. */}
                 <div className="mt-3 rounded-[14px] border border-[#E6E8EC] bg-white p-3.5">
-                  <div className="flex h-3 gap-[3px]">
+                  {/* Same look as SessionStageBar: one continuous track, rounded only at its ends. */}
+                  <div className="flex h-[10px] overflow-hidden rounded-full bg-[#E9EAEC]">
                     {previewBlocks.map((block, index) => {
                       const visual = resolveStageVisual(block);
+                      const minutes = Number(block.minutes) || 0;
+                      if (minutes <= 0 || previewTotalMinutes <= 0) return null;
                       return (
                         <span
                           key={`${block.id}-${index}`}
-                          className="h-full min-w-[4px] rounded-full"
-                          style={{ flexGrow: Math.max(1, Number(block.minutes) || 1), flexBasis: 0, backgroundColor: visual.color }}
+                          className="h-full"
+                          style={{ width: `${(minutes / previewTotalMinutes) * 100}%`, backgroundColor: visual.color }}
                           title={`${visual.name || block.title} · ${block.minutes} min`}
                         />
                       );
