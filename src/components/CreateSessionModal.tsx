@@ -20,27 +20,18 @@ import {
 } from "react";
 import {
   X,
-  Layers,
   ArrowUp,
   ArrowDown,
   Trash2,
-  Wand2,
   RotateCcw,
   Eraser,
   Link2,
-  Users,
   CalendarDays,
-  Repeat,
   Bookmark,
   Save,
   History,
-  Zap,
-  Target,
   Info,
-  Pencil,
   ChevronDown,
-  Lock,
-  Globe2,
   Minus,
   Plus,
 } from "lucide-react";
@@ -53,6 +44,7 @@ import { withRoomPolicies } from "../lib/roomPolicies";
 import { CHECK_IN_BREAK_TITLE, INTENTIONS_COLOR, isCheckInBreakName } from "../lib/checkInBreak";
 import { isCurrentUserAdmin } from "../lib/bans";
 import CreateKindSwitch, { requestInfiniteRoomCreator } from "./CreateKindSwitch";
+import UiIcon from "./UiIcon";
 
 interface CreateSessionModalProps {
   isOpen: boolean;
@@ -101,20 +93,29 @@ function combineScheduledDateTime(args: {
   return `${date || fallback.slice(0, 10)}T${time || fallback.slice(11, 16)}`;
 }
 
-const SESSION_TIME_OPTIONS = Array.from({ length: 96 }, (_, index) => {
-  const totalMinutes = index * 15;
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  const value = `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
-  const label = new Date(2000, 0, 1, hours, minutes).toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-
-  return { value, label };
-});
-
 // ===============================
+// Form layout: one nav item and one card per section.
+const CREATE_STEPS = ["Details", "Date & time", "Structure", "Guests"] as const;
+type CreateStep = 0 | 1 | 2 | 3;
+const SECTION_CARD = "scroll-mt-16 rounded-[18px] border border-[#ECECEE] bg-white p-4 sm:p-5";
+const FIELD_LABEL = "block font-inter text-[12.5px] font-semibold text-[#15171A]";
+const FIELD_INPUT =
+  "h-11 w-full rounded-[12px] border border-[#D8DCE3] bg-white px-3.5 font-inter text-[14px] text-[#344054] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10";
+
+function SectionHeading({ step, title, id, children }: { step: number; title: string; id?: string; children?: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#2F2F2F] font-inter text-[11px] font-semibold text-white">
+        {step}
+      </span>
+      <div className="min-w-0 flex-1">
+        <h3 id={id} className="font-inter text-[15.5px] font-bold leading-6 text-[#15171A]">{title}</h3>
+        {children ? <div className="font-inter text-[12.5px] leading-5 text-[#667085]">{children}</div> : null}
+      </div>
+    </div>
+  );
+}
+
 // Scheduling in advance helpers
 // ===============================
 type ScheduleMode = "single" | "daily" | "weekly";
@@ -1360,7 +1361,7 @@ export function CreateSessionModal({
   const [isSavingUserTemplate, setIsSavingUserTemplate] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [activeStep, setActiveStep] = useState<0 | 1 | 2>(0);
+  const [activeStep, setActiveStep] = useState<CreateStep>(0);
   const [selectedPresetKey, setSelectedPresetKey] = useState<PresetKey | null>(null);
   const [presetCycles, setPresetCycles] = useState<number>(3);
   const [accessMode, setAccessMode] = useState<AccessMode>("public");
@@ -1424,7 +1425,8 @@ export function CreateSessionModal({
   const modalScrollRef = useRef<HTMLDivElement | null>(null);
   const basicSectionRef = useRef<HTMLElement | null>(null);
   const scheduleSectionRef = useRef<HTMLElement | null>(null);
-  const summarySectionRef = useRef<HTMLElement | null>(null);
+  const structureSectionRef = useRef<HTMLElement | null>(null);
+  const guestsSectionRef = useRef<HTMLElement | null>(null);
 
   // Auto-scroll while dragging
   const autoScrollRafRef = useRef<number | null>(null);
@@ -2485,20 +2487,37 @@ export function CreateSessionModal({
     };
   }, [isOpen]);
 
-  const goToStep = useCallback((step: 0 | 1 | 2) => {
+  const sectionRefs = [basicSectionRef, scheduleSectionRef, structureSectionRef, guestsSectionRef];
+
+  const goToStep = useCallback((step: CreateStep) => {
     setActiveStep(step);
 
     window.requestAnimationFrame(() => {
-      const target =
-        step === 0
-          ? basicSectionRef.current
-          : step === 1
-            ? scheduleSectionRef.current
-            : summarySectionRef.current;
-
-      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+      sectionRefs[step].current?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Highlight the section being read: the last one whose top has passed the pinned nav.
+  useEffect(() => {
+    const container = modalScrollRef.current;
+    if (!isOpen || !container) return;
+    // Four rect reads per scroll event; cheap enough without frame batching.
+    const onScroll = () => {
+      const top = container.getBoundingClientRect().top + 96;
+      let current: CreateStep = 0;
+      sectionRefs.forEach((ref, index) => {
+        const el = ref.current;
+        if (el && el.getBoundingClientRect().top <= top) current = index as CreateStep;
+      });
+      // At the very bottom the last section is the one in view.
+      if (container.scrollTop + container.clientHeight >= container.scrollHeight - 4) current = 3;
+      setActiveStep(current);
+    };
+    container.addEventListener("scroll", onScroll, { passive: true });
+    return () => container.removeEventListener("scroll", onScroll);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, loading, user]);
 
   const dynamicMaxOccurrences = useMemo(() => {
     const hardCap =
@@ -3437,6 +3456,16 @@ export function CreateSessionModal({
     0,
   );
 
+  // Timeline legend: one entry per kind of stage ("Focus 1/2/3" -> "Focus"), in order.
+  const previewFlowLegend: { name: string; color: string; minutes: number }[] = [];
+  for (const block of previewBlocks) {
+    const visual = resolveStageVisual(block);
+    const name = String(visual.name || block.title || "").replace(/\s+\d+$/, "");
+    const existing = previewFlowLegend.find((item) => item.name === name);
+    if (existing) existing.minutes += Number(block.minutes) || 0;
+    else previewFlowLegend.push({ name, color: visual.color, minutes: Number(block.minutes) || 0 });
+  }
+
   const previewDate = scheduledAt ? new Date(scheduledAt) : null;
   const previewDateLabel =
     previewDate && !Number.isNaN(previewDate.getTime())
@@ -3495,14 +3524,14 @@ export function CreateSessionModal({
 
       <div className="flex h-[min(96vh,1080px)] w-full max-w-[1280px] flex-col overflow-hidden rounded-[24px] bg-white shadow-[0_30px_90px_rgba(0,0,0,0.35)]">
         {/* Header */}
-        <div className="flex h-[108px] shrink-0 items-center justify-between border-b border-[#E6E8EC] px-7 sm:px-10">
-          <div className="flex items-center gap-5">
-            <div className="flex h-16 w-16 items-center justify-center rounded-[18px] bg-[#2F2F2F]/[0.10] text-[#2F2F2F]">
-              <CalendarDays size={34} strokeWidth={1.8} />
+        <div className="flex h-[72px] shrink-0 items-center justify-between border-b border-[#E6E8EC] px-6 sm:px-8">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#2F2F2F] text-white">
+              <UiIcon name="calendar-plus" size={19} />
             </div>
             <div>
-              <h2 className="font-inter text-[27px] font-bold tracking-[-0.7px] text-[#15171A]">Create session</h2>
-              <p className="mt-1 font-inter text-[15px] text-[#667085]">Set up your focus session in a few steps</p>
+              <h2 className="font-inter text-[20px] font-bold leading-tight tracking-[-0.4px] text-[#15171A]">Create session</h2>
+              <p className="font-inter text-[13px] text-[#667085]">Set up your focus session in a few steps</p>
             </div>
           </div>
           {isAppAdmin ? (
@@ -3518,10 +3547,10 @@ export function CreateSessionModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-11 w-11 items-center justify-center rounded-full text-[#344054] hover:bg-[#F4F4F5]"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-[#344054] hover:bg-[#F4F4F5]"
             aria-label="Close"
           >
-            <X size={25} strokeWidth={1.8} />
+            <X size={22} strokeWidth={1.8} />
           </button>
         </div>
 
@@ -3533,45 +3562,40 @@ export function CreateSessionModal({
           <div ref={modalScrollRef} className="min-h-0 flex-1 overflow-y-auto">
             <div className="grid min-h-full grid-cols-1 lg:grid-cols-[minmax(0,1.82fr)_minmax(360px,1fr)]">
               {/* Left column */}
-              <div className="border-b border-[#E6E8EC] px-7 py-7 sm:px-10 lg:border-b-0 lg:border-r">
-                {/* Steps */}
-                <div className="grid grid-cols-3 border-b border-[#E6E8EC]">
-                  {[
-                    ["1", "Basic"],
-                    ["2", "Schedule"],
-                    ["3", "Summary"],
-                  ].map(([number, label], index) => {
-                    const step = index as 0 | 1 | 2;
-                    const isActive = activeStep === step;
+              <div className="border-b border-[#E6E8EC] px-6 pb-8 sm:px-8 lg:border-b-0 lg:border-r">
+                {/* Section nav: one item per section below, pinned while the form scrolls. */}
+                <div className="sticky top-0 z-20 -mx-6 bg-white/95 px-6 py-2.5 backdrop-blur sm:-mx-8 sm:px-8">
+                  <div className="grid grid-cols-4 gap-1 rounded-full bg-[#F2F2F3] p-1">
+                    {CREATE_STEPS.map((label, index) => {
+                      const step = index as CreateStep;
+                      const isActive = activeStep === step;
 
-                    return (
-                      <button
-                        key={label}
-                        type="button"
-                        onClick={() => goToStep(step)}
-                        className={
-                          "relative flex items-center justify-center gap-2.5 pb-5 font-inter text-[14px] font-semibold transition-colors " +
-                          (isActive ? "text-[#2F2F2F]" : "text-[#667085] hover:text-[#2F2F2F]")
-                        }
-                        aria-current={isActive ? "step" : undefined}
-                      >
-                        <span
+                      return (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => goToStep(step)}
                           className={
-                            "flex h-6 w-6 items-center justify-center rounded-full border text-[12px] transition-colors " +
+                            "flex h-8 min-w-0 items-center justify-center gap-2 rounded-full px-2 font-inter text-[12.5px] font-semibold transition " +
                             (isActive
-                              ? "border-[#2F2F2F] text-[#2F2F2F]"
-                              : "border-[#98A2B3] text-[#667085]")
+                              ? "bg-white text-[#15171A] shadow-[0_1px_3px_rgba(0,0,0,0.12)]"
+                              : "text-[#667085] hover:text-[#2F2F2F]")
                           }
+                          aria-current={isActive ? "step" : undefined}
                         >
-                          {number}
-                        </span>
-                        {label}
-                        {isActive && (
-                          <span className="absolute bottom-[-1px] left-0 right-0 h-[3px] bg-[#2F2F2F]" />
-                        )}
-                      </button>
-                    );
-                  })}
+                          <span
+                            className={
+                              "hidden h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] sm:flex " +
+                              (isActive ? "bg-[#2F2F2F] text-white" : "bg-[#E2E3E6] text-[#667085]")
+                            }
+                          >
+                            {index + 1}
+                          </span>
+                          <span className="truncate">{label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {notice && (
@@ -3581,33 +3605,32 @@ export function CreateSessionModal({
                 )}
 
                 {/* 1. Session details */}
-                <section ref={basicSectionRef} className="mt-8 scroll-mt-6">
-                  <h3 className="font-inter text-[18px] font-bold text-[#15171A]">1. Session details</h3>
+                <section ref={basicSectionRef} className={`mt-1.5 ${SECTION_CARD}`}>
+                  <SectionHeading step={1} title="Session details" />
 
-                  <label className="mt-5 block font-inter text-[13px] font-semibold text-[#15171A]">
+                  <label htmlFor="create-session-title" className={`mt-4 ${FIELD_LABEL}`}>
                     Title <span className="text-[#E5484D]">*</span>
                   </label>
-                  <div className="relative mt-2">
-                    <input
-                      type="text"
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="e.g. Deep Work Session"
-                      className="h-[52px] w-full rounded-[14px] border border-[#D8DCE3] bg-white px-4 pr-12 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
-                    />
-                    <Pencil className="absolute right-4 top-1/2 -translate-y-1/2 text-[#2F2F2F]" size={18} />
-                  </div>
+                  <input
+                    id="create-session-title"
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g. Deep Work Session"
+                    className={`mt-1.5 ${FIELD_INPUT} text-[#15171A]`}
+                  />
 
-                  <label className="mt-5 block font-inter text-[13px] font-semibold text-[#15171A]">Description (optional)</label>
-                  <div className="relative mt-2">
+                  <label htmlFor="create-session-description" className={`mt-3.5 ${FIELD_LABEL}`}>Description (optional)</label>
+                  <div className="relative mt-1.5">
                     <textarea
+                      id="create-session-description"
                       value={description}
                       onChange={(e) => setDescription(e.target.value.slice(0, 300))}
                       placeholder="What will you focus on together?"
-                      rows={4}
-                      className="min-h-[108px] w-full resize-none rounded-[14px] border border-[#D8DCE3] bg-white px-4 py-3 pb-8 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
+                      rows={2}
+                      className="min-h-[76px] w-full resize-none rounded-[12px] border border-[#D8DCE3] bg-white px-3.5 py-2.5 pr-16 font-inter text-[14px] text-[#15171A] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
                     />
-                    <span className="absolute bottom-3 right-4 font-inter text-[12px] text-[#667085]">{description.length}/300</span>
+                    <span className="absolute bottom-2.5 right-3.5 font-inter text-[11px] text-[#98A2B3]">{description.length}/300</span>
                   </div>
                 </section>
 
@@ -3615,137 +3638,90 @@ export function CreateSessionModal({
                 {/* 2. Date & scheduling */}
                 <section
                   ref={scheduleSectionRef}
-                  className="mt-7 scroll-mt-6 rounded-[20px] border border-[#E3E5E8] bg-[#FAFAFA] p-5 sm:p-6"
+                  className={`mt-3 ${SECTION_CARD}`}
                   aria-labelledby="create-session-schedule-heading"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3
-                        id="create-session-schedule-heading"
-                        className="font-inter text-[18px] font-bold text-[#15171A]"
-                      >
-                        2. Date &amp; scheduling
-                      </h3>
-                      <p className="mt-1 font-inter text-[12px] leading-5 text-[#667085]">
-                        Choose when the session starts and whether to schedule more sessions in advance.
-                      </p>
-                    </div>
-                    <CalendarDays size={20} className="mt-0.5 text-[#667085]" />
-                  </div>
+                  <SectionHeading step={2} title="Date & scheduling" id="create-session-schedule-heading">
+                    Choose when the session starts and whether to schedule more sessions in advance.
+                  </SectionHeading>
 
-                  <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {/* Date, start time (any minute) and repeat on one row. */}
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)_auto]">
                     <div>
-                      <label
-                        htmlFor="create-session-date"
-                        className="block font-inter text-[13px] font-semibold text-[#15171A]"
-                      >
+                      <label htmlFor="create-session-date" className={FIELD_LABEL}>
                         Date <span className="text-[#E5484D]">*</span>
                       </label>
-                      <div className="relative mt-2">
-                        <CalendarDays
-                          size={18}
-                          className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#667085]"
-                        />
-                        <input
-                          id="create-session-date"
-                          type="date"
-                          value={scheduledDatePart}
-                          min={minScheduleDate}
-                          onChange={(event) =>
-                            setScheduledAt(
-                              combineScheduledDateTime({
-                                current: scheduledAt,
-                                date: event.target.value,
-                              }),
-                            )
-                          }
-                          className="h-[50px] w-full rounded-[14px] border border-[#D8DCE3] bg-white pl-11 pr-4 font-inter text-[14px] text-[#344054] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
-                        />
-                      </div>
+                      <input
+                        id="create-session-date"
+                        type="date"
+                        value={scheduledDatePart}
+                        min={minScheduleDate}
+                        onChange={(event) =>
+                          setScheduledAt(
+                            combineScheduledDateTime({
+                              current: scheduledAt,
+                              date: event.target.value,
+                            }),
+                          )
+                        }
+                        className={`mt-1.5 ${FIELD_INPUT}`}
+                      />
                     </div>
 
                     <div>
-                      <label
-                        htmlFor="create-session-time"
-                        className="block font-inter text-[13px] font-semibold text-[#15171A]"
-                      >
+                      <label htmlFor="create-session-time" className={FIELD_LABEL}>
                         Start time <span className="text-[#E5484D]">*</span>
                       </label>
-                      <div className="relative mt-2">
-                        <select
-                          id="create-session-time"
-                          value={scheduledTimePart}
-                          onChange={(event) =>
-                            setScheduledAt(
-                              combineScheduledDateTime({
-                                current: scheduledAt,
-                                time: event.target.value,
-                              }),
-                            )
-                          }
-                          className="h-[50px] w-full appearance-none rounded-[14px] border border-[#D8DCE3] bg-white px-4 pr-11 font-inter text-[14px] text-[#344054] outline-none transition focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
-                        >
-                          <option value="">Choose time</option>
-                          {SESSION_TIME_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        <ChevronDown
-                          size={17}
-                          className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#667085]"
-                        />
-                      </div>
+                      <input
+                        id="create-session-time"
+                        type="time"
+                        step={60}
+                        value={scheduledTimePart}
+                        onChange={(event) =>
+                          setScheduledAt(
+                            combineScheduledDateTime({
+                              current: scheduledAt,
+                              time: event.target.value,
+                            }),
+                          )
+                        }
+                        className={`mt-1.5 ${FIELD_INPUT}`}
+                      />
                     </div>
-                  </div>
 
-                  <fieldset className="mt-5">
-                    <legend className="font-inter text-[13px] font-semibold text-[#15171A]">
-                      Scheduling
-                    </legend>
-                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      {([
-                        ["single", "Single session", "Create it once"],
-                        ["daily", "Daily", "Schedule in advance"],
-                        ["weekly", "Weekly", "Schedule in advance"],
-                      ] as Array<[ScheduleMode, string, string]>).map(
-                        ([mode, label, helper]) => {
+                    <fieldset>
+                      <legend className={FIELD_LABEL}>Repeat</legend>
+                      <div className="mt-1.5 flex h-11 gap-1 rounded-[12px] bg-[#F2F2F3] p-1">
+                        {([
+                          ["single", "Once", "Create it once"],
+                          ["daily", "Daily", "Schedule daily sessions in advance"],
+                          ["weekly", "Weekly", "Schedule weekly sessions in advance"],
+                        ] as Array<[ScheduleMode, string, string]>).map(([mode, label, helper]) => {
                           const selected = scheduleMode === mode;
-
                           return (
                             <button
                               key={mode}
                               type="button"
+                              title={helper}
                               onClick={() => {
                                 setScheduleMode(mode);
                                 setActiveStep(1);
                               }}
                               className={[
-                                "min-h-[60px] rounded-[14px] border px-4 py-3 text-left transition",
+                                "rounded-[9px] px-3.5 font-inter text-[13px] font-semibold transition",
                                 selected
-                                  ? "border-[#2F2F2F] bg-[#2F2F2F] text-white shadow-sm"
-                                  : "border-[#D8DCE3] bg-white text-[#344054] hover:border-[#AEB4BD]",
+                                  ? "bg-[#2F2F2F] text-white shadow-sm"
+                                  : "text-[#667085] hover:text-[#2F2F2F]",
                               ].join(" ")}
                               aria-pressed={selected}
                             >
-                              <span className="block font-inter text-[13px] font-semibold">
-                                {label}
-                              </span>
-                              <span
-                                className={[
-                                  "mt-0.5 block font-inter text-[11px]",
-                                  selected ? "text-white/70" : "text-[#98A2B3]",
-                                ].join(" ")}
-                              >
-                                {helper}
-                              </span>
+                              {label}
                             </button>
                           );
-                        },
-                      )}
-                    </div>
-                  </fieldset>
+                        })}
+                      </div>
+                    </fieldset>
+                  </div>
 
                   {scheduleMode !== "single" && (
                     <div className="mt-4 grid grid-cols-1 gap-4 rounded-[16px] border border-[#E3E5E8] bg-white p-4 sm:grid-cols-2">
@@ -3833,17 +3809,18 @@ export function CreateSessionModal({
                 </section>
 
                 {/* 3. Choose a structure */}
-                <section className="mt-8">
-                  <h3 className="font-inter text-[18px] font-bold text-[#15171A]">3. Choose a structure</h3>
-                  <div className="mt-1.5 flex items-center gap-2 font-inter text-[13px] text-[#667085]">
-                    <span>Pick a proven flow or build your own in Session Studio.</span>
-                    <span className="group relative inline-flex">
-                      <Info size={16} className="cursor-help" />
-                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[260px] -translate-x-1/2 rounded-[14px] bg-[#2F2F2F] px-3 py-2 text-center text-[11px] leading-4 text-white shadow-xl group-hover:block">
-                        Session Studio lets you create a custom structure with your own focus blocks, breaks, check-ins, intentions, and recap stages.
+                <section ref={structureSectionRef} className={`mt-3 ${SECTION_CARD}`}>
+                  <SectionHeading step={3} title="Choose a structure">
+                    <span className="inline-flex items-center gap-2">
+                      <span>Pick a proven flow or build your own in Session Studio.</span>
+                      <span className="group relative inline-flex">
+                        <Info size={16} className="cursor-help" />
+                        <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[260px] -translate-x-1/2 rounded-[14px] bg-[#2F2F2F] px-3 py-2 text-center text-[11px] leading-4 text-white shadow-xl group-hover:block">
+                          Session Studio lets you create a custom structure with your own focus blocks, breaks, check-ins, intentions, and recap stages.
+                        </span>
                       </span>
                     </span>
-                  </div>
+                  </SectionHeading>
 
                   <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
                     {presetMeta.map((preset) => {
@@ -3861,26 +3838,26 @@ export function CreateSessionModal({
                             setStudioEnabled(false);
                           }}
                           className={
-                            "relative flex min-h-[150px] flex-col items-center justify-center rounded-[14px] border bg-white px-3 py-4 text-center transition " +
+                            "relative flex min-h-[108px] flex-col items-center justify-center rounded-[14px] border bg-white px-3 py-3 text-center transition " +
                             (isSelected
                               ? "border-[#2F2F2F] shadow-[inset_0_0_0_1px_#2F2F2F]"
                               : "border-[#D8DCE3] hover:border-[#2F2F2F]/55")
                           }
                         >
-                          <span className={"absolute left-3 top-3 h-5 w-5 rounded-full border " + (isSelected ? "border-[#2F2F2F] bg-[#2F2F2F]" : "border-[#B8C0CC]")}>
+                          <span className={"absolute left-2.5 top-2.5 h-4 w-4 rounded-full border " + (isSelected ? "border-[#2F2F2F] bg-[#2F2F2F]" : "border-[#B8C0CC]")}>
                             {isSelected && <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />}
                           </span>
-                          <div className="mb-2 flex h-10 items-center justify-center text-[#2F2F2F]">
+                          <div className="mb-1 flex h-8 items-center justify-center text-[#2F2F2F]">
                             {preset.icon === "zap" ? (
-                              <Zap size={30} strokeWidth={1.9} />
+                              <UiIcon name="bolt" size={22} />
                             ) : preset.icon === "target" ? (
-                              <Target size={30} strokeWidth={1.9} />
+                              <UiIcon name="bullseye" size={22} />
                             ) : (
-                              <span className="text-[31px] leading-none" aria-hidden="true">🍅</span>
+                              <span className="text-[24px] leading-none" aria-hidden="true">🍅</span>
                             )}
                           </div>
-                          <div className="font-inter text-[17px] font-bold text-[#15171A]">{preset.label}</div>
-                          <div className="mt-1.5 font-inter text-[12px] leading-5 text-[#667085]">
+                          <div className="font-inter text-[15px] font-bold text-[#15171A]">{preset.label}</div>
+                          <div className="mt-0.5 font-inter text-[11.5px] leading-[18px] text-[#667085]">
                             <div>{preset.focus}</div>
                             <div>{preset.breakLabel}</div>
                           </div>
@@ -3892,20 +3869,20 @@ export function CreateSessionModal({
                       type="button"
                       onClick={openSessionStudio}
                       className={
-                        "relative flex min-h-[150px] flex-col items-center justify-center rounded-[14px] border bg-white px-3 py-4 text-center transition " +
+                        "relative flex min-h-[108px] flex-col items-center justify-center rounded-[14px] border bg-white px-3 py-3 text-center transition " +
                         (studioEnabled
                           ? "border-[#2F2F2F] shadow-[inset_0_0_0_1px_#2F2F2F]"
                           : "border-[#D8DCE3] hover:border-[#2F2F2F]/55")
                       }
                     >
-                      <span className={"absolute left-3 top-3 h-5 w-5 rounded-full border " + (studioEnabled ? "border-[#2F2F2F] bg-[#2F2F2F]" : "border-[#B8C0CC]")}>
+                      <span className={"absolute left-2.5 top-2.5 h-4 w-4 rounded-full border " + (studioEnabled ? "border-[#2F2F2F] bg-[#2F2F2F]" : "border-[#B8C0CC]")}>
                         {studioEnabled && <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />}
                       </span>
-                      <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-[14px] bg-[#2F2F2F]/[0.10] text-[#2F2F2F]">
-                        <Layers size={23} />
+                      <div className="mb-1.5 flex h-8 w-8 items-center justify-center rounded-[10px] bg-[#2F2F2F]/[0.08] text-[#2F2F2F]">
+                        <UiIcon name="layers" size={16} />
                       </div>
-                      <div className="font-inter text-[16px] font-bold text-[#15171A]">Custom</div>
-                      <div className="mt-1.5 font-inter text-[12px] text-[#667085]">Session Studio</div>
+                      <div className="font-inter text-[15px] font-bold text-[#15171A]">Custom</div>
+                      <div className="mt-0.5 font-inter text-[11.5px] text-[#667085]">Session Studio</div>
                     </button>
                   </div>
 
@@ -3959,20 +3936,22 @@ export function CreateSessionModal({
                     onClick={openSessionStudio}
                     className="mt-4 flex w-full items-center gap-3 rounded-[14px] border border-[#2F2F2F]/15 bg-[#2F2F2F]/[0.045] px-4 py-3 text-left font-inter text-[13px] text-[#344054]"
                   >
-                    <Wand2 size={17} className="text-[#2F2F2F]" />
+                    <UiIcon name="sparkles" size={16} className="text-[#2F2F2F]" />
                     <span>Add check-ins, intentions, and more in <span className="font-semibold underline">Session Studio</span>.</span>
                   </button>
                 </section>
 
                 {/* 4. Guests & capacity */}
-                <section className="mt-8">
-                  <h3 className="font-inter text-[18px] font-bold text-[#15171A]">4. Guests &amp; capacity</h3>
-                  <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className="block font-inter text-[13px] font-semibold text-[#15171A]">Max participants</label>
-                      <div className="relative mt-2">
-                        <Users className="absolute left-4 top-1/2 -translate-y-1/2 text-[#667085]" size={18} />
+                <section ref={guestsSectionRef} className={`mt-3 ${SECTION_CARD}`}>
+                  <SectionHeading step={4} title="Guests & capacity" />
+                  {/* Capacity, access and room rules on one row; rules are icon toggles. */}
+                  <div className="mt-4 flex flex-wrap items-end gap-x-4 gap-y-3">
+                    <div className="w-[132px]">
+                      <label htmlFor="create-session-capacity" className={FIELD_LABEL}>Max participants</label>
+                      <div className="relative mt-1.5">
+                        <UiIcon name="users" size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#98A2B3]" />
                         <input
+                          id="create-session-capacity"
                           type="number"
                           min={MIN_PARTICIPANTS}
                           max={MAX_PARTICIPANTS}
@@ -3996,101 +3975,116 @@ export function CreateSessionModal({
                               ),
                             )
                           }
-                          className="h-[48px] w-full rounded-[14px] border border-[#D8DCE3] bg-white pl-11 pr-4 font-inter text-[13px] text-[#344054] outline-none focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
+                          className={`${FIELD_INPUT} pl-10`}
                           aria-label="Maximum participants"
+                          title={`Any number from ${MIN_PARTICIPANTS} to ${MAX_PARTICIPANTS}`}
                         />
                       </div>
-                      <p className="mt-1.5 font-inter text-[11px] text-[#98A2B3]">
-                        Enter any number from {MIN_PARTICIPANTS} to {MAX_PARTICIPANTS}.
-                      </p>
                     </div>
 
-                    <div>
-                      <label className="block font-inter text-[13px] font-semibold text-[#15171A]">Who can join</label>
-                      <div className="relative mt-2">
-                        {accessMode === "private" ? (
-                          <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-[#667085]" size={18} />
-                        ) : (
-                          <Globe2 className="absolute left-4 top-1/2 -translate-y-1/2 text-[#667085]" size={18} />
-                        )}
-                        <select
-                          value={accessMode}
-                          onChange={(event) => setAccessMode(event.target.value as AccessMode)}
-                          className="h-[48px] w-full appearance-none rounded-[14px] border border-[#D8DCE3] bg-white pl-11 pr-10 font-inter text-[13px] text-[#344054] outline-none focus:border-[#2F2F2F] focus:ring-2 focus:ring-[#2F2F2F]/10"
-                        >
-                          <option value="public">Anyone with the link</option>
-                          <option value="private">Private · link only</option>
-                        </select>
-                        <ChevronDown className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#667085]" size={16} />
+                    <fieldset>
+                      <legend className={FIELD_LABEL}>Who can join</legend>
+                      <div className="mt-1.5 flex h-11 gap-1 rounded-[12px] bg-[#F2F2F3] p-1">
+                        {([
+                          ["public", "Public", "earth-americas", "Visible on the sessions page and joinable through its link."],
+                          ["private", "Private", "lock", "Hidden from the public sessions list. Share the direct link to invite someone."],
+                        ] as const).map(([mode, label, icon, helper]) => {
+                          const selected = accessMode === mode;
+                          return (
+                            <button
+                              key={mode}
+                              type="button"
+                              title={helper}
+                              onClick={() => setAccessMode(mode as AccessMode)}
+                              className={[
+                                "inline-flex items-center gap-1.5 rounded-[9px] px-3 font-inter text-[13px] font-semibold transition",
+                                selected ? "bg-[#2F2F2F] text-white shadow-sm" : "text-[#667085] hover:text-[#2F2F2F]",
+                              ].join(" ")}
+                              aria-pressed={selected}
+                            >
+                              <UiIcon name={icon} size={14} />
+                              {label}
+                            </button>
+                          );
+                        })}
                       </div>
-                      <p className="mt-1.5 font-inter text-[11px] text-[#98A2B3]">
-                        {accessMode === "private"
-                          ? "Hidden from the public sessions list. Share the direct link to invite someone."
-                          : "Visible on the sessions page and joinable through its link."}
-                      </p>
-                    </div>
+                    </fieldset>
+
+                    <fieldset>
+                      <legend className={FIELD_LABEL}>Room rules</legend>
+                      <div className="mt-1.5 flex h-11 gap-1.5">
+                        {([
+                          {
+                            key: "camera",
+                            on: cameraRequired,
+                            label: "Cameras required",
+                            helper: "Two reminders, then disconnect if the camera stays off.",
+                            icons: ["webcam"],
+                            toggle: () => { setCameraRequired((v) => !v); setCameraOrScreenShareRequired(false); },
+                          },
+                          {
+                            key: "screen",
+                            on: screenShareRequired,
+                            label: "Screen share required",
+                            helper: "Two reminders, then disconnect if screen sharing stays off.",
+                            icons: ["screencast"],
+                            toggle: () => { setScreenShareRequired((v) => !v); setCameraOrScreenShareRequired(false); },
+                          },
+                          {
+                            key: "either",
+                            on: cameraOrScreenShareRequired,
+                            label: "Camera or screen share required",
+                            helper: "Either one is enough. Two reminders, then disconnect only if both stay off.",
+                            icons: ["webcam", "screencast"],
+                            toggle: () => { setCameraOrScreenShareRequired((v) => !v); setCameraRequired(false); setScreenShareRequired(false); },
+                          },
+                          {
+                            key: "chat",
+                            on: publicChatDisabled,
+                            label: "Public chat off",
+                            helper: "Participants can only send private messages to the host.",
+                            icons: ["comment-slash"],
+                            toggle: () => setPublicChatDisabled((v) => !v),
+                          },
+                        ] as const).map((rule) => (
+                          <button
+                            key={rule.key}
+                            type="button"
+                            onClick={rule.toggle}
+                            title={`${rule.label}. ${rule.helper}`}
+                            aria-label={rule.label}
+                            aria-pressed={rule.on}
+                            className={[
+                              "inline-flex min-w-11 items-center justify-center gap-1 rounded-[12px] border px-2.5 transition",
+                              rule.on
+                                ? "border-[#2F2F2F] bg-[#2F2F2F] text-white"
+                                : "border-[#D8DCE3] bg-white text-[#667085] hover:border-[#2F2F2F]/50 hover:text-[#2F2F2F]",
+                            ].join(" ")}
+                          >
+                            {rule.icons.map((icon, i) => (
+                              <span key={icon} className="inline-flex items-center gap-1">
+                                {i > 0 ? <span className="font-inter text-[10px] font-semibold opacity-70">or</span> : null}
+                                <UiIcon name={icon} size={17} />
+                              </span>
+                            ))}
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
                   </div>
 
-                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCameraRequired((value) => !value);
-                        setCameraOrScreenShareRequired(false);
-                      }}
-                      className={`rounded-[14px] px-4 py-3 text-left transition ${cameraRequired ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EBEBEB]"}`}
-                      aria-pressed={cameraRequired}
-                    >
-                      <div className="font-inter text-[13px] font-semibold">Cameras required</div>
-                      <div className={`mt-1 font-inter text-[11px] leading-4 ${cameraRequired ? "text-white/70" : "text-[#667085]"}`}>
-                        Participants get two reminders, then are disconnected if their camera stays off.
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setScreenShareRequired((value) => !value);
-                        setCameraOrScreenShareRequired(false);
-                      }}
-                      className={`rounded-[14px] px-4 py-3 text-left transition ${screenShareRequired ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EBEBEB]"}`}
-                      aria-pressed={screenShareRequired}
-                    >
-                      <div className="font-inter text-[13px] font-semibold">Screen share required</div>
-                      <div className={`mt-1 font-inter text-[11px] leading-4 ${screenShareRequired ? "text-white/70" : "text-[#667085]"}`}>
-                        Participants get two reminders, then are disconnected if screen sharing stays off.
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCameraOrScreenShareRequired((value) => !value);
-                        setCameraRequired(false);
-                        setScreenShareRequired(false);
-                      }}
-                      className={`rounded-[14px] px-4 py-3 text-left transition ${cameraOrScreenShareRequired ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EBEBEB]"}`}
-                      aria-pressed={cameraOrScreenShareRequired}
-                    >
-                      <div className="font-inter text-[13px] font-semibold">Camera or screen share required</div>
-                      <div className={`mt-1 font-inter text-[11px] leading-4 ${cameraOrScreenShareRequired ? "text-white/70" : "text-[#667085]"}`}>
-                        Either one is enough. Two reminders, then disconnect only if both stay off.
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setPublicChatDisabled((value) => !value)}
-                      className={`rounded-[14px] px-4 py-3 text-left transition ${publicChatDisabled ? "bg-[#2F2F2F] text-white" : "bg-[#F3F3F3] text-[#344054] hover:bg-[#EBEBEB]"}`}
-                      aria-pressed={publicChatDisabled}
-                    >
-                      <div className="font-inter text-[13px] font-semibold">Disable public chat</div>
-                      <div className={`mt-1 font-inter text-[11px] leading-4 ${publicChatDisabled ? "text-white/70" : "text-[#667085]"}`}>
-                        Participants can only use private messages with the host.
-                      </div>
-                    </button>
-
-                  </div>
+                  <p className="mt-2.5 font-inter text-[12px] leading-5 text-[#667085]">
+                    {accessMode === "private"
+                      ? "Private: hidden from the sessions list, join by direct link."
+                      : "Public: listed on the sessions page."}
+                    {" "}
+                    {[
+                      cameraRequired && "Cameras required.",
+                      screenShareRequired && "Screen share required.",
+                      cameraOrScreenShareRequired && "Camera or screen share required.",
+                      publicChatDisabled && "Public chat off.",
+                    ].filter(Boolean).join(" ") || "No room rules. Hover an icon to see what it does."}
+                  </p>
                 </section>
 
                 {/* Optional settings */}
@@ -4221,33 +4215,35 @@ export function CreateSessionModal({
               </div>
 
               {/* Right column */}
-              <aside ref={summarySectionRef} className="scroll-mt-6 bg-[#FCFCFD] px-7 py-8 sm:px-8">
-                <h3 className="font-inter text-[17px] font-bold text-[#15171A]">Session preview</h3>
+              <aside className="bg-[#FAFAFB] px-6 py-5 sm:px-7">
+                {/* Stays in view while the form on the left scrolls. */}
+                <div className="lg:sticky lg:top-6">
+                <h3 className="font-inter text-[15.5px] font-bold text-[#15171A]">Session preview</h3>
 
-                <div className="mt-5 rounded-[12px] border border-[#2F2F2F]/25 bg-[#2F2F2F]/[0.035] p-5">
+                <div className="mt-3 rounded-[14px] border border-[#E6E8EC] bg-white p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 font-inter text-[14px] font-medium text-[#344054]">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2F2F2F]/[0.10] text-[#2F2F2F]"><Users size={18} /></span>
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2F2F2F] text-white"><UiIcon name="users-alt" size={17} /></span>
                       Group session
                     </div>
                     <span className="rounded-full bg-[#2F2F2F]/[0.10] px-2.5 py-1 font-inter text-[11px] font-semibold text-[#2F2F2F]">Structured</span>
                   </div>
-                  <div className="mt-5 space-y-3 font-inter text-[13px] text-[#344054]">
-                    <div className="flex items-center gap-3"><CalendarDays size={18} className="text-[#667085]" /><span>{previewDateLabel} · {previewTimeLabel}</span></div>
-                    <div className="flex items-center gap-3"><Repeat size={18} className="text-[#667085]" /><span>{studioEnabled
+                  <div className="mt-3.5 space-y-2.5 font-inter text-[13px] text-[#344054]">
+                    <div className="flex items-center gap-3"><UiIcon name="calendar" size={16} className="text-[#98A2B3]" /><span>{previewDateLabel} · {previewTimeLabel}</span></div>
+                    <div className="flex items-center gap-3"><UiIcon name="arrows-repeat" size={16} className="text-[#98A2B3]" /><span>{studioEnabled
                       ? "Custom structure"
                       : selectedPreset
                         ? `Based on ${selectedPreset.label} · ${presetCycles} ${presetCycles === 1 ? "cycle" : "cycles"}`
                         : "Based on selected structure"}</span></div>
-                    <div className="flex items-center gap-3"><Users size={18} className="text-[#667085]" /><span>Up to {maxParticipants} participants</span></div>
+                    <div className="flex items-center gap-3"><UiIcon name="users" size={16} className="text-[#98A2B3]" /><span>Up to {maxParticipants} participants</span></div>
                     <div className="flex items-center gap-3">
-                      {accessMode === "private" ? <Lock size={18} className="text-[#667085]" /> : <Globe2 size={18} className="text-[#667085]" />}
+                      <UiIcon name={accessMode === "private" ? "lock" : "earth-americas"} size={16} className="text-[#98A2B3]" />
                       <span>{accessMode === "private" ? "Private · direct link only" : "Public session"}</span>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-7 flex items-center justify-between gap-3">
+                <div className="mt-5 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <h4 className="font-inter text-[15px] font-bold text-[#15171A]">Session Flow</h4>
                     <span className="group relative inline-flex text-[#667085]">
@@ -4255,39 +4251,52 @@ export function CreateSessionModal({
                       <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[230px] -translate-x-1/2 rounded-[12px] bg-[#2F2F2F] px-3 py-2 text-center font-inter text-[11px] leading-4 text-white group-hover:block">Edit the structure, durations, breaks, check-ins, and recap in Session Studio.</span>
                     </span>
                   </div>
-                  <button type="button" onClick={openSessionStudio} className="inline-flex h-10 items-center gap-2 rounded-[12px] border border-[#D8DCE3] bg-white px-3.5 font-inter text-[12px] font-semibold text-[#344054] hover:border-[#2F2F2F]">
-                    <Pencil size={15} /> Edit
+                  <button type="button" onClick={openSessionStudio} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#D8DCE3] bg-white px-3 font-inter text-[12px] font-semibold text-[#344054] hover:border-[#2F2F2F]">
+                    <UiIcon name="pencil" size={13} /> Edit
                   </button>
                 </div>
 
-                <div className="mt-4 space-y-3.5">
-                  {previewBlocks.map((block, index) => {
-                    const visual = resolveStageVisual(block);
-                    return (
-                      <div key={`${block.id}-${index}`} className="flex items-center justify-between gap-4 font-inter text-[13px]">
-                        <div className="flex min-w-0 items-center gap-3 text-[#344054]">
-                          <span
-                            className="h-2.5 w-2.5 shrink-0 rounded-full"
-                            style={{ backgroundColor: visual.color }}
-                          />
-                          <span className="truncate">{visual.name || block.title}</span>
-                        </div>
-                        <span className="shrink-0 text-[#667085]">{block.minutes} min</span>
-                      </div>
-                    );
-                  })}
+                {/* The flow as a timeline: one segment per stage, sized by its minutes. */}
+                <div className="mt-3 rounded-[14px] border border-[#E6E8EC] bg-white p-3.5">
+                  <div className="flex h-3 gap-[3px]">
+                    {previewBlocks.map((block, index) => {
+                      const visual = resolveStageVisual(block);
+                      return (
+                        <span
+                          key={`${block.id}-${index}`}
+                          className="h-full min-w-[4px] rounded-full"
+                          style={{ flexGrow: Math.max(1, Number(block.minutes) || 1), flexBasis: 0, backgroundColor: visual.color }}
+                          title={`${visual.name || block.title} · ${block.minutes} min`}
+                        />
+                      );
+                    })}
+                  </div>
+                  <div className="mt-1.5 flex justify-between font-inter text-[11px] tabular-nums text-[#98A2B3]">
+                    <span>0 min</span>
+                    <span>{previewTotalMinutes} min</span>
+                  </div>
+                  <div className="mt-2.5 flex flex-wrap gap-x-3 gap-y-1.5 font-inter text-[12px] text-[#344054]">
+                    {previewFlowLegend.map((item) => (
+                      <span key={item.name} className="inline-flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} />
+                        {item.name}
+                        <span className="text-[#98A2B3]">{item.minutes}m</span>
+                      </span>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="my-6 h-px bg-[#E6E8EC]" />
+                <div className="my-4 h-px bg-[#E6E8EC]" />
 
-                <h4 className="mt-6 font-inter text-[14px] font-bold text-[#15171A]">Quick summary</h4>
-                <div className="mt-3 rounded-[14px] border border-[#E0E3E8] bg-white p-4">
+                <h4 className="font-inter text-[14px] font-bold text-[#15171A]">Quick summary</h4>
+                <div className="mt-2.5 rounded-[14px] border border-[#E6E8EC] bg-white p-3.5">
                   <div className="space-y-2 font-inter text-[12px] text-[#667085]">
                     <div className="flex justify-between gap-4"><span>Focus time</span><strong className="font-medium text-[#344054]">{previewFocusMinutes} min</strong></div>
                     <div className="flex justify-between gap-4"><span>Break time</span><strong className="font-medium text-[#344054]">{previewBreakMinutes} min</strong></div>
                     <div className="flex justify-between gap-4"><span>Total time (per session)</span><strong className="font-medium text-[#344054]">{previewTotalMinutes} min</strong></div>
                     <div className="flex justify-between gap-4"><span>Max participants</span><strong className="font-medium text-[#344054]">{maxParticipants} people</strong></div>
                   </div>
+                </div>
                 </div>
               </aside>
             </div>
@@ -4296,13 +4305,16 @@ export function CreateSessionModal({
 
         {/* Footer */}
         {!loading && user && (
-          <div className="flex h-[76px] shrink-0 items-center justify-between border-t border-[#E6E8EC] bg-white px-7 sm:px-10">
-            <button type="button" onClick={onClose} className="h-11 rounded-[12px] border border-[#D8DCE3] bg-white px-5 font-inter text-[13px] font-semibold text-[#344054] hover:bg-[#F7F7F7]">Cancel</button>
+          <div className="flex h-[72px] shrink-0 items-center justify-between gap-4 border-t border-[#E6E8EC] bg-white px-6 sm:px-8">
+            <button type="button" onClick={onClose} className="h-11 rounded-full border border-[#D8DCE3] bg-white px-5 font-inter text-[13px] font-semibold text-[#344054] hover:bg-[#F7F7F7]">Cancel</button>
+            <div className="ml-auto hidden min-w-0 truncate font-inter text-[13px] text-[#667085] md:block">
+              {previewDateLabel} · {previewTimeLabel} · <span className="font-semibold text-[#344054]">{previewTotalMinutes} min</span>
+            </div>
             <button
               type="button"
               onClick={handleCreate}
               disabled={createDisabled}
-              className="inline-flex h-11 items-center gap-2 rounded-[12px] bg-[#2F2F2F] px-5 font-inter text-[13px] font-semibold text-white hover:bg-[#1F1F1F] disabled:cursor-not-allowed disabled:bg-[#D0D5DD]"
+              className="inline-flex h-11 shrink-0 items-center gap-2 rounded-full bg-[#2F2F2F] px-6 font-inter text-[13px] font-semibold text-white hover:bg-[#1F1F1F] disabled:cursor-not-allowed disabled:bg-[#2F2F2F]/25"
             >
               <CalendarDays size={16} />
               {isCreating ? "Creating..." : scheduleMode === "single" ? "Schedule it" : "Schedule series"}
