@@ -30,15 +30,12 @@ export default function SessionsNoticeBar(props: Props) {
   return createPortal(<NoticeLine {...props} notice={props.notice} />, slot);
 }
 
-const ACCENT: Record<SessionsNotice, string> = {
-  hosts: "#5286F6",
-  community: "#22C55E",
-  support: "#F5B300",
-};
+// Only the hosts line keeps a color; the others are neutral white and #2F2F2F.
+const HOSTS_ACCENT = "#5286F6";
 
 function NoticeLine({ notice, slots, whatsappUrl, discordUrl, onApplyToHost, onDismiss, onJoinedCommunity }: Props & { notice: SessionsNotice }) {
   const navigate = useNavigate();
-  const accent = ACCENT[notice];
+  const isHosts = notice === "hosts";
   const openCommunity = (url: string) => {
     onJoinedCommunity();
     window.open(url, "_blank", "noopener,noreferrer");
@@ -54,13 +51,13 @@ function NoticeLine({ notice, slots, whatsappUrl, discordUrl, onApplyToHost, onD
     title = "We're looking for hosts";
     body = (
       <>
-        Apply for the host role. Priority slots: <b className="whitespace-nowrap font-semibold">{slots.start}–{slots.end}</b> your time
+        Host a session. Priority slots: <b className="whitespace-nowrap font-semibold">{slots.start}–{slots.end}</b> your time
         {slots.isKyiv ? "" : <> <span className="whitespace-nowrap">(06:00–16:00 Kyiv)</span></>}.
       </>
     );
     actions = (
-      <button type="button" onClick={onApplyToHost} className={primaryCls} style={{ background: accent }}>
-        Apply for host role <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+      <button type="button" onClick={onApplyToHost} className={primaryCls} style={{ background: HOSTS_ACCENT }}>
+        Create a session <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
       </button>
     );
   } else if (notice === "community") {
@@ -70,7 +67,6 @@ function NoticeLine({ notice, slots, whatsappUrl, discordUrl, onApplyToHost, onD
       <>
         <button type="button" onClick={() => openCommunity(whatsappUrl)} className={secondaryCls}>WhatsApp</button>
         <button type="button" onClick={() => openCommunity(discordUrl)} className={secondaryCls}>Discord</button>
-        <button type="button" onClick={onJoinedCommunity} className="text-[12px] font-medium text-brandBlack/60 underline-offset-2 hover:underline">I'm already in</button>
       </>
     );
   } else {
@@ -88,11 +84,11 @@ function NoticeLine({ notice, slots, whatsappUrl, discordUrl, onApplyToHost, onD
   return (
     <aside
       aria-label={title}
-      className="relative -mb-px flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-2 border-b border-t border-t-borderGray py-2 pl-4 pr-12 font-inter text-brandBlack"
-      style={{ borderBottomColor: accent, background: `${accent}33` }}
+      className={`relative -mb-px flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-2 border-b border-t border-t-borderGray py-2 pl-4 pr-12 font-inter text-brandBlack ${isHosts ? "" : "border-b-borderGray bg-white"}`}
+      style={isHosts ? { borderBottomColor: HOSTS_ACCENT, background: `${HOSTS_ACCENT}33` } : undefined}
     >
       <p className="flex min-w-0 items-center gap-2.5 text-[13.5px] leading-snug">
-        {icon ? <span className="shrink-0" style={{ color: accent }} aria-hidden="true">{icon}</span> : null}
+        {icon ? <span className="shrink-0" style={{ color: HOSTS_ACCENT }} aria-hidden="true">{icon}</span> : null}
         <span>
           <b className="font-semibold">{title}.</b> <span className="text-brandBlack/75">{body}</span>
         </span>
@@ -119,4 +115,4 @@ function MegaphoneIcon() {
 const primaryCls =
   "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-full px-4 text-[13px] font-semibold text-white transition hover:brightness-95";
 const secondaryCls =
-  "inline-flex min-h-9 items-center justify-center rounded-full border border-brandBlack/15 bg-white px-4 text-[13px] font-semibold text-brandBlack transition hover:bg-white/70";
+  "inline-flex min-h-9 items-center justify-center rounded-full border border-brandBlack bg-white px-4 text-[13px] font-semibold text-brandBlack transition hover:bg-brandBlack hover:text-white";
