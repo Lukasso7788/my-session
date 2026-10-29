@@ -13,5 +13,12 @@ export default defineConfig({
   base: "/", // пусто
   build: {
     outDir: "dist",
+    rollupOptions: {
+      // The app, plus the standalone /host-guide page (src/hostGuide/main.tsx).
+      input: {
+        main: "index.html",
+        hostGuide: "host-guide/index.html",
+      },
+    },
   },
 });

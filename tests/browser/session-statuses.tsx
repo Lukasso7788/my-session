@@ -1,8 +1,8 @@
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
-import { GUIDE_PEOPLE } from "./host-guide-setup";
+import { GUIDE_PEOPLE } from "../../src/hostGuide/people";
 import "./profile-page-auth";
-import { STATUS_GUIDE, STATUS_RULE } from "./host-guide-statuses";
+import { STATUS_GUIDE, STATUS_RULE } from "../../src/hostGuide/statuses";
 import { VideoTile } from "../../src/pages/livekit/VideoTileLiveKit";
 import "../../src/index.css";
 import "../../src/pages/livekit/room-chrome-motion.css";
@@ -66,7 +66,7 @@ function StatusesPage() {
         <section className="ss-how">
           <h2>How people set a status</h2>
           <p>Open the menu on your own tile and pick a status. Pick "Clear status" when you're back. Everyone sees the badge next to your name.</p>
-          <a href="./host-guide.html">← Back to the host guide</a>
+          <a href="/host-guide/">← Back to the host guide</a>
         </section>
       </main>
     </div>

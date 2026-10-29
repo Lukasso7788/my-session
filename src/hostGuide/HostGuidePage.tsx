@@ -1,21 +1,18 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
-import { GUIDE_ME, GUIDE_PEOPLE, GUIDE_SESSION_ID } from "./host-guide-setup";
-import "./profile-page-auth";
-import { AuthProvider, useAuth } from "../../src/context/AuthContext";
-import { STATUS_GUIDE, STATUS_RULE, StatusBadge } from "./host-guide-statuses";
-import RoomTopBar from "../../src/components/RoomTopBar";
-import TasksPanel from "../../src/components/TasksPanel";
-import { VideoTile } from "../../src/pages/livekit/VideoTileLiveKit";
-import { LiveKitBottomBar } from "../../src/pages/livekit/LiveKitBottomBar";
-import "../../src/index.css";
-import "../../src/pages/livekit/room-chrome-motion.css";
+import { GUIDE_ME, GUIDE_PEOPLE, GUIDE_SESSION_ID, type GuidePerson } from "./people";
+import { demoTables } from "./demoClient";
+import type { GuideVisitor } from "./visitor";
+import { STATUS_GUIDE, STATUS_RULE, StatusBadge } from "./statuses";
+import RoomTopBar from "../components/RoomTopBar";
+import TasksPanel from "../components/TasksPanel";
+import { VideoTile } from "../pages/livekit/VideoTileLiveKit";
+import { LiveKitBottomBar } from "../pages/livekit/LiveKitBottomBar";
 
-// Dev-only concept of a /host-guide page: a compact, visual guide whose
-// walkthrough plays a session in the real room UI (the room's own top bar,
-// video tiles, chat and bottom bar) with fixture data. Local preview only,
-// not routed in the app yet. Page styles live in the CSS string below.
+// The /host-guide page (entry: src/hostGuide/main.tsx): a compact, visual
+// guide whose walkthrough plays a session in the real room UI (the room's own
+// top bar, video tiles, task panel and bottom bar) with fixture data from the
+// in-memory demo client. The signed-in visitor plays the host.
+// Page styles live in the CSS string below.
 
 type FormatId = "silent" | "bookends" | "verbal";
 type Voice = "talk" | "chat" | "quiet";
@@ -51,7 +48,6 @@ function stagesFor(format: FormatId): RoomStage[] {
   ];
 }
 
-type GuidePerson = (typeof GUIDE_PEOPLE)[number];
 type Host = { name: string; avatar?: string };
 
 // The visitor plays the host: their first name and photo on the host tile.
@@ -134,7 +130,7 @@ const taskId = (i: number) => `0000000${i}-6a1d-4c2b-9e3f-00000000000${i}`;
 // then asks the panel to reload, as a real task change in the room would.
 function setTasks(visible: number[], done: boolean) {
   const now = Date.now();
-  const tables = (globalThis as any).__harnessTables;
+  const tables = demoTables;
   tables.panel_intentions = visible.includes(0)
     ? [{
       id: taskId(0), user_id: GUIDE_ME, text: GUIDE_PEOPLE[0].task, focus_plan_item_id: null, completed: done,
@@ -176,10 +172,10 @@ function RoomScene({ format, scene, visible, people, musicOn }: { format: Format
           participantsCount={GUIDE_PEOPLE.length}
           maxParticipants={12}
           isSilentRoom={false}
-          stages={stages as any}
+          stages={stages}
           stagebarStartTime={start}
           remainingTime={remaining}
-          currentStage={current as any}
+          currentStage={current}
           onToggleTheme={noop}
         />
         <div className="relative z-0 grid min-h-0 flex-1 gap-3" style={{ gridTemplateColumns: "minmax(0, 1fr) 360px" /* room width at 1280px */ }}>
@@ -270,10 +266,9 @@ function RoomScene({ format, scene, visible, people, musicOn }: { format: Format
   );
 }
 
-// Recorded lines (generated once with OpenAI TTS by host-guide-tts.mjs):
-// "Speaker|text" -> mp3 file in ./host-guide-audio/.
-// Resolved from the page URL: Vite rewrites new URL(..., import.meta.url) as an asset.
-const AUDIO_BASE = new URL("./host-guide-audio/", window.location.href).href;
+// Recorded AI voices (generated once with OpenAI TTS by scripts/host-guide-tts.mjs):
+// "Speaker|text" -> mp3 file in public/host-guide/audio/.
+const AUDIO_BASE = "/host-guide/audio/";
 function useVoiceManifest() {
   const [manifest, setManifest] = useState<Record<string, string> | null>(null);
   useEffect(() => {
@@ -301,7 +296,7 @@ const VolumeUpIcon = () => (
 
 function Walkthrough({ format, host }: { format: FormatId; host: Host }) {
   const scenes = useMemo(() => scenesFor(format), [format]);
-  const people = useMemo(() => peopleWithHost(host), [host.name, host.avatar]);
+  const people = useMemo(() => peopleWithHost(host), [host]);
   const [index, setIndex] = useState(0);
   // Starts paused behind a big Play button; ?play=1 autoplays, ?scene=N opens a step.
   const [playing, setPlaying] = useState(new URLSearchParams(location.search).get("play") === "1");
@@ -481,6 +476,7 @@ function Walkthrough({ format, host }: { format: FormatId; host: Host }) {
             {soundOn ? "Voices on" : "Voices off"}
           </button>
         </div>
+        {hasRecordings ? <p className="hg-ai-note">Voices in this walkthrough are AI-generated.</p> : null}
       </div>
     </div>
   );
@@ -528,16 +524,14 @@ function CopyLine({ label, text }: { label: string; text: string }) {
   );
 }
 
-function HostGuide() {
+export default function HostGuide({ visitor }: { visitor: GuideVisitor }) {
   const [format, setFormat] = useState<FormatId>((new URLSearchParams(location.search).get("format") as FormatId) || "verbal");
   // The signed-in visitor plays the host in the walkthrough.
-  const { user, profile } = useAuth();
-  const fullName = String(profile?.full_name || user?.user_metadata?.full_name || "").trim();
-  const host: Host = { name: fullName ? fullName.split(/\s+/)[0] : "You", avatar: profile?.avatar_url || undefined };
+  const host = useMemo<Host>(() => ({ name: visitor.name, avatar: visitor.avatar || undefined }), [visitor.name, visitor.avatar]);
   return (
     <div className="hg">
       <style>{CSS}</style>
-      <header className="hg-header">MySession</header>
+      <header className="hg-header"><a href="/">MySession</a></header>
       <main className="hg-main">
         <section className="hg-hero">
           <div className="hg-hero-text">
@@ -591,10 +585,7 @@ function HostGuide() {
         </section>
 
         <section className="hg-card">
-          <div className="hg-sec-head">
-            <h2>Statuses in the room</h2>
-            <a className="hg-more" href="./session-statuses.html">All statuses →</a>
-          </div>
+          <h2>Statuses in the room</h2>
           <p className="hg-rule">{STATUS_RULE}</p>
           <div className="hg-statuses">
             {STATUS_GUIDE.map((st) => (
@@ -648,7 +639,7 @@ function HostGuide() {
         <section className="hg-card dark">
           <div className="hg-check-head">
             <h2>Host checklist</h2>
-            <button className="hg-cta">Host a session</button>
+            <a className="hg-cta" href="/sessions">Host a session</a>
           </div>
           <div className="hg-checklist">{CHECKLIST.map((c) => <span key={c}>✓ {c}</span>)}</div>
           <p className="hg-tools">Room tools: mute a mic · turn a camera off · remove and report (tile menu) · statuses (Skip me, On a call, Eating, Break, AFK) · room music · tasks on tiles · double-click the timeline to edit it.</p>
@@ -662,6 +653,8 @@ const CSS = `
 .hg { min-height: 100vh; background: #fff; color: #2F2F2F; font-family: Inter, system-ui, sans-serif; }
 .hg button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; text-align: left; }
 .hg-header { height: 64px; display: grid; place-items: center; font-size: 26px; font-weight: 800; border-bottom: 1px solid #EEE; }
+.hg-header a { color: inherit; text-decoration: none; }
+.hg-ai-note { margin: -4px 0 0; font-size: 11.5px; color: #8A8A8A; }
 .hg-main { max-width: 1080px; margin: 0 auto; padding: 36px 20px 72px; display: grid; gap: 16px; }
 .hg-hero { display: grid; grid-template-columns: 1fr; gap: 20px; margin-bottom: 8px; }
 .hg-hero-text { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; align-items: end; }
@@ -720,7 +713,8 @@ const CSS = `
 @keyframes hg-breathe { 50% { box-shadow: 0 0 0 14px rgba(255,255,255,.18), 0 10px 40px rgba(0,0,0,.35); } }
 .hg-player { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px; border: 1px solid #E6E6E6; border-radius: 20px; background: #fff; box-shadow: 0 6px 24px rgba(0,0,0,.06); color: #2F2F2F; }
 .hg-player-row { display: flex; align-items: center; gap: 18px; padding-top: 14px; border-top: 1px solid #F0F0F0; }
-.hg-player-row .hg-steps { flex: 1; min-width: 0; margin: 0; }
+.hg-player-row .hg-steps { flex: 1; min-width: 0; margin: 0; grid-template-columns: none; grid-auto-columns: minmax(0, 1fr); }
+.hg-player-row .hg-steps > li { min-width: 0; }
 .hg-video, .hg-hero > div { min-width: 0; }
 .hg-says { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: 80%; font-size: 13px; line-height: 1.4; background: rgba(255,255,255,.95); color: #2F2F2F; padding: 7px 12px; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.35); animation: hg-pop2 400ms ease both; }
 .hg-says b { margin-right: 4px; }
@@ -732,7 +726,7 @@ const CSS = `
 .hg-sound:disabled { opacity: .5; cursor: default; }
 .hg-music-scene button[aria-label="Mute music"] { animation: hg-ring 1.4s ease-in-out infinite; }
 @keyframes hg-ring { 0%, 100% { box-shadow: 0 0 0 0 rgba(173,211,255,0); } 50% { box-shadow: 0 0 0 4px rgba(173,211,255,.9); } }
-.hg-tasks .flex.flex-col.gap-0\.5 > div, .hg-tasks [draggable] { animation: hg-task-in 700ms cubic-bezier(.2,.8,.2,1) both; }
+.hg-tasks .flex.flex-col.gap-0\\.5 > div, .hg-tasks [draggable] { animation: hg-task-in 700ms cubic-bezier(.2,.8,.2,1) both; }
 @keyframes hg-task-in { 0% { opacity: 0; transform: translateX(28px) scale(.97); box-shadow: 0 0 0 0 rgba(82,134,246,0); } 55% { opacity: 1; transform: none; box-shadow: 0 0 0 3px rgba(82,134,246,.55); } 100% { box-shadow: 0 0 0 0 rgba(82,134,246,0); } }
 .hg-play { flex: none; display: inline-flex; align-items: center; justify-content: center; gap: 9px; width: 108px; height: 40px; border-radius: 99px; background: #2F2F2F !important; color: #fff !important; font-size: 14px !important; font-weight: 600; transition: transform 150ms, background 150ms; }
 
@@ -760,9 +754,6 @@ button.hg-row.on { background: #F1F1F1 !important; }
 .hg-step-icon { font-size: 20px; } .hg-step-n { font-size: 11px; font-weight: 700; color: #A3A3A3; }
 .hg-step b { font-size: 13.5px; } .hg-step p { font-size: 12px; line-height: 1.45; color: #6B6B6B; margin: 4px 0 0; }
 .hg-two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.hg-sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.hg-more { font-size: 13px; font-weight: 600; color: #5286F6; text-decoration: none; }
-.hg-more:hover { text-decoration: underline; }
 .hg-rule { margin: -4px 0 12px; font-size: 14px; color: #4A4A4A; }
 .hg-statuses { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .hg-st { display: flex; gap: 12px; align-items: flex-start; background: #F7F7F7; border-radius: 12px; padding: 12px; }
@@ -788,7 +779,7 @@ button.hg-row.on { background: #F1F1F1 !important; }
 .hg-tr > span { font-size: 16px; } .hg-tr b { font-size: 13px; } .hg-tr p { font-size: 12px; line-height: 1.4; color: #6B6B6B; margin: 2px 0 0; }
 .hg-check-head { display: flex; justify-content: space-between; align-items: center; }
 .hg-check-head h2 { margin: 0; }
-.hg-cta { background: #fff !important; color: #2F2F2F !important; padding: 10px 18px !important; border-radius: 99px; font-weight: 600; font-size: 13.5px; }
+.hg-cta { background: #fff !important; color: #2F2F2F !important; padding: 10px 18px !important; border-radius: 99px; font-weight: 600; font-size: 13.5px; text-decoration: none; }
 .hg-checklist { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
 .hg-checklist span { font-size: 12.5px; background: rgba(255,255,255,.1); padding: 6px 11px; border-radius: 99px; }
 .hg-tools { font-size: 12.5px; color: rgba(255,255,255,.7); margin: 14px 0 0; }
@@ -798,7 +789,16 @@ button.hg-row.on { background: #F1F1F1 !important; }
   .hg-row { grid-template-columns: 1.2fr repeat(4, 1fr) !important; } .hg-best, .hg-row.head > span:last-child { display: none; }
   .hg-trouble { grid-template-columns: 1fr; }
 }
+@media (max-width: 640px) {
+  .hg-main { padding: 24px 16px 56px; }
+  .hg-hero-text { grid-template-columns: 1fr; gap: 4px; }
+  .hg h1 { font-size: 30px; }
+  .hg-lead { margin: 6px 0 4px; }
+  .hg-formats { grid-template-columns: 1fr; }
+  .hg-card { padding: 16px; }
+  .hg-line { grid-template-columns: 1fr auto; }
+  .hg-line-label { grid-column: 1 / -1; }
+  .hg-check-head { flex-wrap: wrap; gap: 10px; }
+}
 @media (prefers-reduced-motion: reduce) { .hg * { animation-duration: 1ms !important; } }
 `;
-
-createRoot(document.getElementById("root")!).render(<MemoryRouter><AuthProvider><HostGuide /></AuthProvider></MemoryRouter>);

@@ -1,12 +1,12 @@
 // Generates the spoken lines of the host guide walkthrough with OpenAI TTS.
-// Local, one-off: run `node tests/browser/host-guide-tts.mjs` after putting
+// Local, one-off: run `node scripts/host-guide-tts.mjs` after putting
 // OPENAI_API_KEY in .env.tts.local (git-ignored) or the environment.
-// Writes mp3 files and a manifest to tests/browser/host-guide-audio/.
+// Writes mp3 files and a manifest to public/host-guide/audio/.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 
-const root = new URL("../../", import.meta.url);
-const outDir = new URL("tests/browser/host-guide-audio/", root);
+const root = new URL("../", import.meta.url);
+const outDir = new URL("public/host-guide/audio/", root);
 
 function readKey() {
   if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY.trim();
@@ -25,7 +25,7 @@ const SPEAKERS = {
   Jo: { voice: "echo", style: "A friendly guy on a video call, brief and relaxed." },
 };
 
-// Keep in sync with the `says` lines in host-guide.tsx.
+// Keep in sync with the `says` lines in src/hostGuide/HostGuidePage.tsx.
 const LINES = [
   ["Anna", "Hi Maya, hi Jo, hi Alex! Welcome, everyone. Goals first, then 50 minutes of focus with mics off, a break, another 50, and a recap."],
   ["Anna", "I'll go first: finishing the onboarding email. Maya, how about you?"],
@@ -76,4 +76,4 @@ for (const [speaker, text] of LINES) {
   console.log(`made  ${file}  (${speaker}, ${voice})`);
 }
 writeFileSync(new URL("manifest.json", outDir), JSON.stringify(manifest, null, 2));
-console.log(`Done: ${Object.keys(manifest).length} lines in tests/browser/host-guide-audio/`);
+console.log(`Done: ${Object.keys(manifest).length} lines in public/host-guide/audio/`);

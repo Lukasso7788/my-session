@@ -9,6 +9,7 @@
     { "src": "/focusmate-alternatives/?", "status": 308, "headers": { "Location": "/blog/best-focusmate-alternatives" } },
     { "src": "/blog/what-is-body-doubling/?", "status": 308, "headers": { "Location": "/guides/what-is-body-doubling" } },
     { "src": "/status/?", "dest": "/404.html", "status": 404 },
+    { "src": "/host-guide/?", "dest": "/host-guide/index.html" },
     {
       "handle": "filesystem"
     },

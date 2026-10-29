@@ -8,7 +8,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''; // Вернул _KEY как в твоем исходнике
 const AUTH_STORAGE_KEY = "mysession-auth";
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+const createAppClient = () => createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
@@ -23,6 +23,15 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     fetch: optimizedSupabaseFetch,
   },
 });
+
+// The /host-guide page installs an in-memory demo client before any app module
+// loads (src/hostGuide/demoClient.ts), so its fixture room never touches the
+// visitor's real session or data. Everywhere else this is undefined.
+const demoClient = typeof window !== "undefined"
+  ? (window as unknown as { __MYSESSION_DEMO_SUPABASE__?: ReturnType<typeof createAppClient> }).__MYSESSION_DEMO_SUPABASE__
+  : undefined;
+
+export const supabase = demoClient ?? createAppClient();
 
 const RECURRING_TASKS_MATERIALIZED_PREFIX = "mysession_recurring_tasks_materialized_v1";
 let recurringMaterializeInFlight: Promise<void> | null = null;
@@ -63,7 +72,7 @@ async function materializeRecurringTasksForCurrentUser() {
   return recurringMaterializeInFlight;
 }
 
-if (typeof window !== "undefined") {
+if (typeof window !== "undefined" && !demoClient) {
   // @ts-ignore
   window.supabase = supabase;
 
