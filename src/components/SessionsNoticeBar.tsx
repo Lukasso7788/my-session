@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { ArrowUpRight, HeartHandshake, Megaphone, MessagesSquare, X } from "lucide-react";
+import { ArrowUpRight, X } from "lucide-react";
 import { HEADER_NOTICE_SLOT_ID } from "../lib/headerNoticeSlot";
 import type { PrioritySlots } from "../lib/hostPrioritySlots";
 
@@ -44,13 +44,13 @@ function NoticeLine({ notice, slots, whatsappUrl, discordUrl, onApplyToHost, onD
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
-  let icon: ReactNode;
+  let icon: ReactNode = null;
   let title: string;
   let body: ReactNode;
   let actions: ReactNode;
 
   if (notice === "hosts") {
-    icon = <Megaphone className="h-5 w-5" strokeWidth={2} />;
+    icon = <MegaphoneIcon />;
     title = "We're looking for hosts";
     body = (
       <>
@@ -64,7 +64,6 @@ function NoticeLine({ notice, slots, whatsappUrl, discordUrl, onApplyToHost, onD
       </button>
     );
   } else if (notice === "community") {
-    icon = <MessagesSquare className="h-5 w-5" strokeWidth={2} />;
     title = "Join the MySession community";
     body = <>Session reminders, updates and an easier way to find people to focus with.</>;
     actions = (
@@ -75,7 +74,6 @@ function NoticeLine({ notice, slots, whatsappUrl, discordUrl, onApplyToHost, onD
       </>
     );
   } else {
-    icon = <HeartHandshake className="h-5 w-5" strokeWidth={2} />;
     title = "Support MySession";
     body = <>A small independent platform. Your support covers video, hosting and new features.</>;
     actions = (
@@ -86,30 +84,24 @@ function NoticeLine({ notice, slots, whatsappUrl, discordUrl, onApplyToHost, onD
     );
   }
 
+  // Icon, message and buttons on one line; it only wraps on narrow screens.
   return (
     <aside
       aria-label={title}
-      className="relative -mb-px flex w-full flex-col items-center justify-center gap-3 border-b border-t border-t-borderGray px-12 py-3 text-center font-inter text-brandBlack sm:flex-row sm:gap-6 sm:text-left"
+      className="relative -mb-px flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-2 border-b border-t border-t-borderGray py-2 pl-4 pr-12 font-inter text-brandBlack"
       style={{ borderBottomColor: accent, background: `${accent}33` }}
     >
-      <div className="flex min-w-0 flex-col items-center gap-2 sm:flex-row sm:gap-4">
-        <span
-          className="inline-flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-[13.5px] border bg-white"
-          style={{ borderColor: accent, color: accent }}
-          aria-hidden="true"
-        >
-          {icon}
+      <p className="flex min-w-0 items-center gap-2.5 text-[13.5px] leading-snug">
+        {icon ? <span className="shrink-0" style={{ color: accent }} aria-hidden="true">{icon}</span> : null}
+        <span>
+          <b className="font-semibold">{title}.</b> <span className="text-brandBlack/75">{body}</span>
         </span>
-        <div className="min-w-0">
-          <p className="text-[14px] font-semibold leading-snug">{title}</p>
-          <p className="mt-0.5 text-[12px] font-light leading-snug text-brandBlack/70">{body}</p>
-        </div>
-      </div>
-      <div className="flex shrink-0 flex-wrap items-center justify-center gap-2">{actions}</div>
+      </p>
+      <div className="flex shrink-0 items-center gap-2">{actions}</div>
       <button
         type="button"
         onClick={() => onDismiss(notice)}
-        className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full text-brandBlack/50 transition hover:bg-black/5 hover:text-brandBlack sm:top-1/2 sm:-translate-y-1/2"
+        className="absolute right-3 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-brandBlack/50 transition hover:bg-black/5 hover:text-brandBlack"
         aria-label="Dismiss"
       >
         <X className="h-4 w-4" />
@@ -118,7 +110,13 @@ function NoticeLine({ notice, slots, whatsappUrl, discordUrl, onApplyToHost, onD
   );
 }
 
+// public/icons/megaphone.svg, tinted with the line's accent color.
+function MegaphoneIcon() {
+  const mask = "url(/icons/megaphone.svg) center / contain no-repeat";
+  return <span className="block h-5 w-5" style={{ background: "currentColor", WebkitMask: mask, mask }} />;
+}
+
 const primaryCls =
-  "inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full px-5 text-sm font-semibold text-white transition hover:brightness-95";
+  "inline-flex min-h-9 items-center justify-center gap-1.5 rounded-full px-4 text-[13px] font-semibold text-white transition hover:brightness-95";
 const secondaryCls =
-  "inline-flex min-h-10 items-center justify-center rounded-full border border-brandBlack/15 bg-white px-4 text-sm font-semibold text-brandBlack transition hover:bg-white/70";
+  "inline-flex min-h-9 items-center justify-center rounded-full border border-brandBlack/15 bg-white px-4 text-[13px] font-semibold text-brandBlack transition hover:bg-white/70";
