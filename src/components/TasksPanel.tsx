@@ -4215,12 +4215,7 @@ export function TasksPanel({
                       {u.full_name || "Participant"}
                     </div>
                     <div className="shrink-0 h-8 min-w-8 rounded-full bg-[#E6E6E6] flex items-center justify-center px-2">
-                      <PanelSmartIcon
-                        name="encouragement"
-                        theme={panelTheme}
-                        className="w-5 h-5"
-                        alt="Encouragement"
-                      />
+                      <span aria-hidden="true" className="text-[16px] leading-none">💪</span>
                     </div>
                   </div>
                 ))}
@@ -5162,9 +5157,9 @@ export function TasksPanel({
         ) : (
           <div className="flex flex-col gap-0.5">
             {teamTasks.map((item) => {
-              const nameCls = "text-black/90";
-              const bodyActive = "text-black/85";
-              const bodyDone = "text-black/35 line-through";
+              const nameCls = isLight ? "text-black/90" : "text-white/90";
+              const bodyActive = isLight ? "text-black/85" : "text-[#F4F5F6]";
+              const bodyDone = isLight ? "text-black/35 line-through" : "text-white/35 line-through";
               const encouragementCount = encouragementCounts[item.id] || 0;
               const encouragedByMe = myEncouragedIds.has(item.id);
               const statusText = item.completed ? "Completed" : "In progress";
@@ -5266,12 +5261,7 @@ export function TasksPanel({
                         }
                         aria-label="Send encouragement"
                       >
-                        <PanelSmartIcon
-                          name="encouragement"
-                          theme={panelTheme}
-                          className="w-5 h-5"
-                          alt="Encouragement"
-                        />
+                        <span aria-hidden="true" className="text-[16px] leading-none">💪</span>
                         {encouragementCount > 0 ? (
                           <span
                             onClick={(e) => {

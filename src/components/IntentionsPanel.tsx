@@ -1831,12 +1831,7 @@ export function TasksPanel({
                       {u.full_name || "Participant"}
                     </div>
                     <div className="shrink-0 h-8 min-w-8 rounded-full bg-[#E6E6E6] flex items-center justify-center px-2">
-                      <PanelSmartIcon
-                        name="encouragement"
-                        theme={panelTheme}
-                        className="w-5 h-5"
-                        alt="Encouragement"
-                      />
+                      <span aria-hidden="true" className="text-[16px] leading-none">💪</span>
                     </div>
                   </div>
                 ))}
@@ -2279,12 +2274,7 @@ export function TasksPanel({
                         }
                         aria-label="Send encouragement"
                       >
-                        <PanelSmartIcon
-                          name="encouragement"
-                          theme={panelTheme}
-                          className="w-5 h-5"
-                          alt="Encouragement"
-                        />
+                        <span aria-hidden="true" className="text-[16px] leading-none">💪</span>
                         {encouragementCount > 0 ? (
                           <span
                             onClick={(e) => {
