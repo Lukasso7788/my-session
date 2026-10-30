@@ -31,8 +31,6 @@ import {
   ChevronDown,
   Minus,
   Plus,
-  MonitorUp,
-  MessageSquareOff,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { assignServerForSession } from "../lib/livekitPlacement";
@@ -687,12 +685,16 @@ function exportStudioToSchedule(blocks: StudioBlock[]) {
 
 const DEFAULT_CUSTOM_BLOCK_COLOR = "#F63135";
 
-// The same icons the session card uses for its room rules.
-function RoomRuleIcon({ name }: { name: "camera" | "screen" | "chat-off" }) {
-  if (name === "screen") return <MonitorUp size={17} strokeWidth={2.2} />;
-  if (name === "chat-off") return <MessageSquareOff size={17} strokeWidth={2.2} />;
-  const mask = "url('/icons/camera-on-light.svg') center / contain no-repeat";
-  return <span className="block h-[18px] w-[18px] shrink-0" style={{ backgroundColor: "currentColor", mask, WebkitMask: mask }} />;
+// The same icons the session card uses for its room rules (SessionRoomPolicyIndicator).
+const ROOM_RULE_ICON_ASSETS = {
+  camera: "/icons/camera-on-dark.svg",
+  screen: "/icons/screen-share-dark.svg",
+  "chat-off": "/icons/session-no-chat.svg",
+} as const;
+
+function RoomRuleIcon({ name }: { name: keyof typeof ROOM_RULE_ICON_ASSETS }) {
+  const mask = `url('${ROOM_RULE_ICON_ASSETS[name]}') center / contain no-repeat`;
+  return <span className="block h-[17px] w-[17px] shrink-0" style={{ backgroundColor: "currentColor", mask, WebkitMask: mask }} />;
 }
 
 function isValidHexColor(v: unknown) {
