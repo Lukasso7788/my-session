@@ -8,7 +8,7 @@ const supabaseAdmin = createClient(
 );
 
 webpush.setVapidDetails(
-  process.env.VAPID_SUBJECT || "mailto:support@mysession.club",
+  process.env.VAPID_SUBJECT || "mailto:yaroslav@mysession.club",
   process.env.VAPID_PUBLIC_KEY || "",
   process.env.VAPID_PRIVATE_KEY || ""
 );

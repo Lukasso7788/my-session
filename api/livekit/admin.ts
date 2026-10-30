@@ -1091,7 +1091,7 @@ async function handleFriendInviteAction(params: {
   const referralCode = await ensureReferralCodeForInvite(sb, user.id);
   const inviteUrl = `https://mysession.club/?ref=${encodeURIComponent(referralCode)}`;
   const missingPlunkEnv = missingPlunkEnvironment();
-  const replyTo = env("RESEND_REPLY_TO") || "support@mysession.club";
+  const replyTo = env("RESEND_REPLY_TO") || "yaroslav@mysession.club";
   if (missingPlunkEnv.length) {
     return res.status(500).json({
       error: "missing_plunk_env",
@@ -2062,7 +2062,7 @@ async function handleFoundingThanksAction(params: {
   const { res, sb, accessToken, body, action } = params;
   const admin = await assertAppAdmin({ sb, accessToken });
   const appUrl = getAppUrl();
-  const replyTo = env("RESEND_REPLY_TO") || "support@mysession.club";
+  const replyTo = env("RESEND_REPLY_TO") || "yaroslav@mysession.club";
   const missingEnv = missingPlunkEnvironment();
 
   const { data: adminProfile } = await sb.from("profiles").select("full_name").eq("id", admin.userId).maybeSingle();
@@ -2279,7 +2279,7 @@ async function handleDailyScheduleEmailAction(params: {
       return res.status(409).json({ error: "schedule_changed_preview_again" });
     }
     const { id } = await sendPlunkEmail({ to: recipient, subject, body: html,
-      replyTo: env("RESEND_REPLY_TO") || "support@mysession.club",
+      replyTo: env("RESEND_REPLY_TO") || "yaroslav@mysession.club",
       idempotencyKey: `mysession-plunk-test-${body.testRequestId}` });
     return res.status(200).json({ ok: true, accepted: true, provider: "Plunk", recipient, id });
   }
@@ -2412,7 +2412,7 @@ async function handleDailyScheduleEmailAction(params: {
   }
 
   const missingPlunkEnv = missingPlunkEnvironment();
-  const replyTo = env("RESEND_REPLY_TO") || "support@mysession.club";
+  const replyTo = env("RESEND_REPLY_TO") || "yaroslav@mysession.club";
 
   if (missingPlunkEnv.length) {
     return res.status(500).json({
