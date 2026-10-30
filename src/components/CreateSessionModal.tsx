@@ -40,6 +40,16 @@ import { resolveStageVisual } from "./SessionStageBar";
 import { withRoomPolicies } from "../lib/roomPolicies";
 import { CHECK_IN_BREAK_TITLE, INTENTIONS_COLOR, isCheckInBreakName } from "../lib/checkInBreak";
 import { isCurrentUserAdmin } from "../lib/bans";
+import {
+  DEFAULT_BOOKEND_MINUTES,
+  GOALS_PHASE_COLOR,
+  GOALS_PHASE_TITLE,
+  PROGRESS_PHASE_COLOR,
+  PROGRESS_PHASE_TITLE,
+  bookendIssueMessage,
+  bookendIssues,
+  withBookendPhases,
+} from "../lib/sessionBookends";
 import CreateKindSwitch, { requestInfiniteRoomCreator } from "./CreateKindSwitch";
 import UiIcon from "./UiIcon";
 import { QuickTimelineEditor } from "./SessionCard";
@@ -357,7 +367,16 @@ function buildPresetCycleBlocks(
   cycles: number,
 ): StudioBlock[] {
   const safeCycles = clamp(Math.round(Number(cycles) || 1), 1, 12);
-  const blocks: StudioBlock[] = [];
+  const blocks: StudioBlock[] = [
+    {
+      id: `preset-${preset.key}-goals`,
+      kind: "intentions",
+      title: GOALS_PHASE_TITLE,
+      note: "Everyone says what they'll work on",
+      minutes: DEFAULT_BOOKEND_MINUTES,
+      color: GOALS_PHASE_COLOR,
+    },
+  ];
 
   for (let index = 0; index < safeCycles; index += 1) {
     blocks.push({
@@ -369,6 +388,9 @@ function buildPresetCycleBlocks(
       color: getDefaultBlockColor("focus"),
     });
 
+    // The last focus block flows straight into sharing progress.
+    if (index === safeCycles - 1) break;
+
     blocks.push({
       id: `preset-${preset.key}-break-${index + 1}`,
       kind: "break",
@@ -378,6 +400,15 @@ function buildPresetCycleBlocks(
       color: INTENTIONS_COLOR,
     });
   }
+
+  blocks.push({
+    id: `preset-${preset.key}-progress`,
+    kind: "recap",
+    title: PROGRESS_PHASE_TITLE,
+    note: "Everyone shares what they got done",
+    minutes: DEFAULT_BOOKEND_MINUTES,
+    color: PROGRESS_PHASE_COLOR,
+  });
 
   return blocks;
 }
@@ -1986,6 +2017,11 @@ export function CreateSessionModal({
       return;
     }
 
+    if (bookendMessage) {
+      setError(bookendMessage);
+      return;
+    }
+
     if (scheduleAdvanceError) {
       setError(scheduleAdvanceError);
       return;
@@ -2720,18 +2756,6 @@ export function CreateSessionModal({
         ? "text-[#2F2F2F]"
         : "text-gray-500";
 
-  const createDisabled =
-    !title ||
-    !scheduledAt ||
-    (!studioEnabled && !selectedTemplate && !selectedPresetKey) ||
-    (studioEnabled && studioBlocks.length === 0) ||
-    (sanitizedSlug ? !slugValid : false) ||
-    (scheduleMode === "single" && sanitizedSlug
-      ? slugStatus === "taken" || slugStatus === "checking"
-      : false) ||
-    !!scheduleAdvanceError ||
-    isCreating;
-
   const selectedTemplateBlocks = (() => {
     if (!selectedTemplateObj) return [];
     const fromBlocks = normalizeTemplateBlocks((selectedTemplateObj as any)?.blocks);
@@ -2816,6 +2840,38 @@ export function CreateSessionModal({
     if (existing) existing.minutes += Number(block.minutes) || 0;
     else previewFlowLegend.push({ name, color: visual.color, minutes: Number(block.minutes) || 0 });
   }
+
+  // The blocks the session will actually be created with.
+  const flowBlocks: StudioBlock[] = studioEnabled
+    ? studioBlocks
+    : generatedPresetBlocks.length
+      ? generatedPresetBlocks
+      : selectedTemplateBlocks;
+  const hasFlow = studioEnabled || !!selectedPresetKey || !!selectedTemplate;
+  const bookendMessage = hasFlow ? bookendIssueMessage(bookendIssues(flowBlocks)) : null;
+
+  const addBookendPhases = () => {
+    applyStudioBlocks(
+      withBookendPhases(
+        flowBlocks.map((block) => ({ ...block, id: uid() })),
+        uid,
+      ),
+    );
+    setSelectedPresetKey(null);
+  };
+
+  const createDisabled =
+    !title ||
+    !scheduledAt ||
+    (!studioEnabled && !selectedTemplate && !selectedPresetKey) ||
+    (studioEnabled && studioBlocks.length === 0) ||
+    !!bookendMessage ||
+    (sanitizedSlug ? !slugValid : false) ||
+    (scheduleMode === "single" && sanitizedSlug
+      ? slugStatus === "taken" || slugStatus === "checking"
+      : false) ||
+    !!scheduleAdvanceError ||
+    isCreating;
 
   const previewDate = scheduledAt ? new Date(scheduledAt) : null;
   const previewDateLabel =
@@ -3231,7 +3287,7 @@ export function CreateSessionModal({
                           Number of cycles
                         </div>
                         <div className="mt-1 font-inter text-[12px] text-[#667085]">
-                          Each cycle adds {selectedPreset.focusMinutes} minutes of focus and a {selectedPreset.breakMinutes}-minute check-in &amp; break.
+                          Each cycle adds {selectedPreset.focusMinutes} minutes of focus and a {selectedPreset.breakMinutes}-minute check-in &amp; break. Opens with sharing goals, ends with sharing progress.
                         </div>
                       </div>
 
@@ -3599,6 +3655,24 @@ export function CreateSessionModal({
                     ))}
                   </div>
                 </button>
+                )}
+
+                {bookendMessage ? (
+                  <div role="alert" className="mt-2.5 flex items-start gap-2.5 rounded-[12px] bg-[#FEF3F2] px-3 py-2.5 font-inter text-[12px] leading-[17px] text-[#B42318]">
+                    <UiIcon name="info" size={15} className="mt-px shrink-0" />
+                    <span className="min-w-0 flex-1">{bookendMessage}</span>
+                    <button
+                      type="button"
+                      onClick={addBookendPhases}
+                      className="shrink-0 rounded-full bg-[#B42318] px-2.5 py-1 font-semibold text-white hover:bg-[#912018]"
+                    >
+                      Add
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-2 font-inter text-[11.5px] leading-4 text-[#667085]">
+                    Required: sharing goals at the start and sharing progress at the end, 2+ min each.
+                  </p>
                 )}
 
                 <div className="my-4 h-px bg-[#E6E8EC]" />
