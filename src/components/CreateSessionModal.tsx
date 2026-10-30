@@ -20,9 +20,6 @@ import {
 } from "react";
 import {
   X,
-  ArrowUp,
-  ArrowDown,
-  Trash2,
   RotateCcw,
   Eraser,
   Link2,
@@ -45,6 +42,7 @@ import { CHECK_IN_BREAK_TITLE, INTENTIONS_COLOR, isCheckInBreakName } from "../l
 import { isCurrentUserAdmin } from "../lib/bans";
 import CreateKindSwitch, { requestInfiniteRoomCreator } from "./CreateKindSwitch";
 import UiIcon from "./UiIcon";
+import { QuickTimelineEditor } from "./SessionCard";
 
 interface CreateSessionModalProps {
   isOpen: boolean;
@@ -655,22 +653,6 @@ function exportStudioToSchedule(blocks: StudioBlock[]) {
 
 const DEFAULT_CUSTOM_BLOCK_COLOR = "#F63135";
 
-const QUICK_MINUTES = [3, 5, 10, 15, 25, 50];
-const TIMELINE_MIN_SEGMENT_WIDTH = 6;
-const TIMELINE_RESIZE_PX_PER_MINUTE = 4;
-
-const BLOCK_COLOR_PRESETS = [
-  "#F63135", // red
-  "#4CA0FF", // blue
-  "#80DF86", // green
-  "#F9ADA2", // coral
-  "#ADD3FF", // light blue
-  "#A78BFA", // violet
-  "#FBBF24", // amber
-  "#22C55E", // emerald
-  "#111827", // dark
-];
-
 function isValidHexColor(v: unknown) {
   return /^#[0-9a-f]{6}$/i.test(String(v || "").trim());
 }
@@ -703,99 +685,6 @@ function getBlockColor(block: Pick<StudioBlock, "kind" | "color"> & { title?: st
   return isValidHexColor(raw) ? raw : getDefaultBlockColor(block.kind);
 }
 
-function defaultStudioTitle(kind: StudioBlockKind) {
-  switch (kind) {
-    case "welcome":
-      return "Welcome";
-    case "intentions":
-      return "Intentions";
-    case "focus":
-      return "Focus";
-    case "break":
-      return "Break";
-    case "checkin":
-      return "Check-in";
-    case "recap":
-      return "Recap";
-    case "celebrate":
-      return "Celebrate";
-    case "custom":
-    default:
-      return "Custom";
-  }
-}
-
-const STUDIO_KIND_OPTIONS: { value: StudioBlockKind; label: string }[] = [
-  { value: "welcome", label: "Welcome" },
-  { value: "intentions", label: "Intentions" },
-  { value: "focus", label: "Focus" },
-  { value: "break", label: "Break" },
-  { value: "checkin", label: "Check-in" },
-  { value: "recap", label: "Recap" },
-  { value: "celebrate", label: "Celebrate" },
-  { value: "custom", label: "Custom" },
-];
-
-const STUDIO_LIBRARY: StudioBlock[] = [
-  {
-    id: "lib_welcome",
-    kind: "welcome",
-    title: "Welcome",
-    note: "Quick intro / rules / vibe",
-    minutes: 3,
-  },
-  {
-    id: "lib_intentions",
-    kind: "intentions",
-    title: "Intentions",
-    note: "Say what you’ll finish",
-    minutes: 5,
-  },
-  {
-    id: "lib_focus",
-    kind: "focus",
-    title: "Focus",
-    note: "Deep work block",
-    minutes: 50,
-  },
-  {
-    id: "lib_break",
-    kind: "break",
-    title: "Break",
-    note: "Recharge / stretch",
-    minutes: 10,
-  },
-  {
-    id: "lib_checkin",
-    kind: "checkin",
-    title: "Check-in",
-    note: "Short accountability checkpoint",
-    minutes: 3,
-  },
-  {
-    id: "lib_recap",
-    kind: "recap",
-    title: "Recap",
-    note: "What got done / what’s next",
-    minutes: 5,
-  },
-  {
-    id: "lib_celebrate",
-    kind: "celebrate",
-    title: "Celebrate",
-    note: "Closure + positive finish",
-    minutes: 3,
-  },
-  {
-    id: "lib_custom",
-    kind: "custom",
-    title: "Custom",
-    note: "Any special block",
-    minutes: 5,
-    color: DEFAULT_CUSTOM_BLOCK_COLOR,
-  },
-];
-
 // ===============================
 // SESSION TIMELINE (visual)
 // ===============================
@@ -820,19 +709,6 @@ function kindBg(kind: StudioBlockKind) {
   }
 }
 
-function blockColorStyle(block: StudioBlock) {
-  return { backgroundColor: getBlockColor(block) };
-}
-
-function formatMinutes(min: number) {
-  const m = Math.max(0, Math.floor(min || 0));
-  const h = Math.floor(m / 60);
-  const mm = m % 60;
-  if (h <= 0) return `${mm}m`;
-  if (mm === 0) return `${h}h`;
-  return `${h}h ${mm}m`;
-}
-
 function formatShortDate(raw?: string | null) {
   if (!raw) return "";
   try {
@@ -845,492 +721,6 @@ function formatShortDate(raw?: string | null) {
   } catch {
     return String(raw);
   }
-}
-
-function SessionTimeline({
-  blocks,
-  onChange,
-  selectedBlockId,
-  setSelectedBlockId,
-}: {
-  blocks: StudioBlock[];
-  onChange: (blocks: StudioBlock[]) => void;
-  selectedBlockId: string | null;
-  setSelectedBlockId: (id: string | null) => void;
-}) {
-  const [dragId, setDragId] = useState<string | null>(null);
-
-  const total = blocks.reduce((s, b) => s + (Number(b.minutes) || 0), 0);
-
-  const selectedBlock = useMemo(
-    () => blocks.find((b) => b.id === selectedBlockId) || null,
-    [blocks, selectedBlockId],
-  );
-
-  const rows = useMemo(() => {
-    let acc = 0;
-    return blocks.map((b) => {
-      const start = acc;
-      const end = acc + (Number(b.minutes) || 0);
-      acc = end;
-      return { ...b, start, end };
-    });
-  }, [blocks]);
-
-  const move = useCallback(
-    (fromId: string, toId: string) => {
-      const from = blocks.findIndex((b) => b.id === fromId);
-      const to = blocks.findIndex((b) => b.id === toId);
-      if (from < 0 || to < 0 || from === to) return;
-
-      const copy = [...blocks];
-      const [item] = copy.splice(from, 1);
-      copy.splice(to, 0, item);
-      onChange(copy);
-      setSelectedBlockId(item.id);
-    },
-    [blocks, onChange, setSelectedBlockId],
-  );
-
-  const moveByDelta = useCallback(
-    (id: string, delta: -1 | 1) => {
-      const from = blocks.findIndex((b) => b.id === id);
-      if (from < 0) return;
-      const to = from + delta;
-      if (to < 0 || to >= blocks.length) return;
-
-      const copy = [...blocks];
-      const [item] = copy.splice(from, 1);
-      copy.splice(to, 0, item);
-      onChange(copy);
-      setSelectedBlockId(item.id);
-    },
-    [blocks, onChange, setSelectedBlockId],
-  );
-
-  const update = useCallback(
-    (id: string, patch: Partial<StudioBlock>) => {
-      onChange(blocks.map((b) => (b.id === id ? { ...b, ...patch } : b)));
-    },
-    [blocks, onChange],
-  );
-
-  const remove = useCallback(
-    (id: string) => {
-      const idx = blocks.findIndex((b) => b.id === id);
-      if (idx < 0) return;
-
-      const copy = blocks.filter((b) => b.id !== id);
-      onChange(copy);
-
-      const next = copy[idx] || copy[idx - 1] || null;
-      setSelectedBlockId(next ? next.id : null);
-    },
-    [blocks, onChange, setSelectedBlockId],
-  );
-
-  const duplicate = useCallback(
-    (id: string) => {
-      const idx = blocks.findIndex((b) => b.id === id);
-      if (idx < 0) return;
-
-      const clone: StudioBlock = {
-        ...blocks[idx],
-        id: uid(),
-      };
-
-      const copy = [...blocks];
-      copy.splice(idx + 1, 0, clone);
-      onChange(copy);
-      setSelectedBlockId(clone.id);
-    },
-    [blocks, onChange, setSelectedBlockId],
-  );
-
-  const insertAfter = useCallback(
-    (id: string) => {
-      const idx = blocks.findIndex((b) => b.id === id);
-      if (idx < 0) return;
-
-      const nextBlock: StudioBlock = {
-        id: uid(),
-        kind: "focus",
-        title: "New block",
-        note: "",
-        minutes: 25,
-        color: getDefaultBlockColor("focus"),
-      };
-
-      const copy = [...blocks];
-      copy.splice(idx + 1, 0, nextBlock);
-      onChange(copy);
-      setSelectedBlockId(nextBlock.id);
-    },
-    [blocks, onChange, setSelectedBlockId],
-  );
-
-  return (
-    <div className="mt-3">
-      <div className="flex items-center justify-between">
-        <div className="font-inter text-[12px] text-gray-600">
-          Session timeline
-        </div>
-        <div className="font-inter text-[12px] text-gray-600">
-          Total:{" "}
-          <span className="font-semibold text-brandBlack">
-            {formatMinutes(total)}
-          </span>
-        </div>
-      </div>
-
-      <div className="mt-2 border border-gray-200 rounded-[999px] overflow-hidden bg-gray-50">
-        <div className="flex h-3 w-full">
-          {blocks.length === 0 ? (
-            <div className="w-full h-full flex items-center justify-center text-[12px] text-gray-500 font-inter">
-              Add blocks to build a timeline
-            </div>
-          ) : (
-            blocks.map((b) => {
-              const mins = clamp(Number(b.minutes) || 1, 1, 24 * 60);
-              const showText = mins >= 10;
-              const isSelected = selectedBlockId === b.id;
-
-              return (
-                <button
-                  key={b.id}
-                  type="button"
-                  draggable
-                  onDragStart={() => {
-                    setDragId(b.id);
-                    setSelectedBlockId(b.id);
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    if (dragId && dragId !== b.id) {
-                      move(dragId, b.id);
-                    }
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (dragId && dragId !== b.id) {
-                      move(dragId, b.id);
-                    }
-                    setDragId(null);
-                  }}
-                  onDragEnd={() => setDragId(null)}
-                  onClick={() => setSelectedBlockId(b.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "ArrowLeft") {
-                      e.preventDefault();
-                      moveByDelta(b.id, -1);
-                    } else if (e.key === "ArrowRight") {
-                      e.preventDefault();
-                      moveByDelta(b.id, 1);
-                    } else if (e.key === "Delete" || e.key === "Backspace") {
-                      e.preventDefault();
-                      remove(b.id);
-                    }
-                  }}
-                  className="relative h-full min-w-0 border-r border-white/70 flex items-center justify-center outline-none"
-                  style={{
-                    flexGrow: mins,
-                    flexBasis: 0,
-                    minWidth: TIMELINE_MIN_SEGMENT_WIDTH,
-                    ...blockColorStyle(b),
-                    boxShadow: isSelected
-                      ? "inset 0 0 0 2px rgba(17,24,39,0.34)"
-                      : "none",
-                  }}
-                  title={`${b.title} • ${mins} min`}
-                >
-                  {showText ? (
-                    <span className="px-2 text-[11px] font-inter text-gray-800 truncate">
-                      {b.title} · {mins}m
-                    </span>
-                  ) : null}
-
-                  <span
-                    className="absolute right-0 top-0 bottom-0 w-[8px] cursor-ew-resize bg-black/10"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-
-                      const startX = e.clientX;
-                      const startMinutes = mins;
-
-                      const onMove = (ev: MouseEvent) => {
-                        const deltaPx = ev.clientX - startX;
-                        const next = clamp(
-                          Math.round(
-                            startMinutes +
-                            deltaPx / TIMELINE_RESIZE_PX_PER_MINUTE,
-                          ),
-                          1,
-                          24 * 60,
-                        );
-                        update(b.id, { minutes: next });
-                      };
-
-                      const onUp = () => {
-                        window.removeEventListener("mousemove", onMove);
-                        window.removeEventListener("mouseup", onUp);
-                      };
-
-                      window.addEventListener("mousemove", onMove);
-                      window.addEventListener("mouseup", onUp);
-                    }}
-                  />
-                </button>
-              );
-            })
-          )}
-        </div>
-      </div>
-
-      {selectedBlock && (
-        <div className="mt-3 rounded-[18px] border border-gray-200 bg-white p-3 shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-[13px] font-semibold text-brandBlack">
-                Edit selected block
-              </div>
-              <div className="mt-0.5 text-[11px] text-gray-500">
-                Click a segment to edit it. Drag to reorder. Pull the right edge
-                to resize.
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-              <button
-                type="button"
-                onClick={() => moveByDelta(selectedBlock.id, -1)}
-                className="h-9 w-9 rounded-[12px] border border-gray-200 bg-white text-gray-700 flex items-center justify-center hover:bg-gray-50"
-                title="Move left"
-              >
-                <ArrowUp className="rotate-[-90deg]" size={15} />
-              </button>
-              <button
-                type="button"
-                onClick={() => moveByDelta(selectedBlock.id, 1)}
-                className="h-9 w-9 rounded-[12px] border border-gray-200 bg-white text-gray-700 flex items-center justify-center hover:bg-gray-50"
-                title="Move right"
-              >
-                <ArrowDown className="rotate-[-90deg]" size={15} />
-              </button>
-              <button
-                type="button"
-                onClick={() => duplicate(selectedBlock.id)}
-                className="px-3 h-9 rounded-[12px] border border-gray-200 bg-white text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
-              >
-                Duplicate
-              </button>
-              <button
-                type="button"
-                onClick={() => insertAfter(selectedBlock.id)}
-                className="px-3 h-9 rounded-[12px] border border-gray-200 bg-white text-[12px] font-semibold text-gray-700 hover:bg-gray-50"
-              >
-                Add after
-              </button>
-              <button
-                type="button"
-                onClick={() => remove(selectedBlock.id)}
-                className="h-9 w-9 rounded-[12px] border border-gray-200 bg-white text-red-500 flex items-center justify-center hover:bg-red-50"
-                title="Delete"
-              >
-                <Trash2 size={15} />
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-3 grid grid-cols-1 sm:grid-cols-[160px,minmax(0,1fr),140px] gap-2">
-            <select
-              value={selectedBlock.kind}
-              onChange={(e) => {
-                const nextKind = e.target.value as StudioBlockKind;
-                update(selectedBlock.id, {
-                  kind: nextKind,
-                  title:
-                    String(selectedBlock.title || "").trim() ||
-                    defaultStudioTitle(nextKind),
-                  color: getDefaultBlockColor(nextKind),
-                });
-              }}
-              className="w-full px-3 py-2.5 rounded-[14px] border border-gray-200 bg-white text-[13px] font-inter text-brandBlack"
-            >
-              {STUDIO_KIND_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-
-            <input
-              value={selectedBlock.title}
-              onChange={(e) =>
-                update(selectedBlock.id, { title: e.target.value })
-              }
-              className="w-full px-3 py-2.5 rounded-[14px] border border-gray-200 bg-white text-[13px] font-inter text-brandBlack"
-              placeholder="Block title…"
-            />
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() =>
-                  update(selectedBlock.id, {
-                    minutes: clamp(
-                      (Number(selectedBlock.minutes) || 1) - 1,
-                      1,
-                      24 * 60,
-                    ),
-                  })
-                }
-                className="w-9 h-9 rounded-[12px] border border-gray-200 bg-white text-gray-700"
-              >
-                –
-              </button>
-              <input
-                type="number"
-                min={1}
-                max={24 * 60}
-                value={selectedBlock.minutes}
-                onChange={(e) =>
-                  update(selectedBlock.id, {
-                    minutes: clamp(Number(e.target.value) || 1, 1, 24 * 60),
-                  })
-                }
-                className="w-full h-9 px-2 rounded-[12px] border border-gray-200 bg-white text-center text-[13px] font-inter text-brandBlack"
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  update(selectedBlock.id, {
-                    minutes: clamp(
-                      (Number(selectedBlock.minutes) || 1) + 1,
-                      1,
-                      24 * 60,
-                    ),
-                  })
-                }
-                className="w-9 h-9 rounded-[12px] border border-gray-200 bg-white text-gray-700"
-              >
-                +
-              </button>
-            </div>
-          </div>
-
-          <textarea
-            value={selectedBlock.note || ""}
-            onChange={(e) => update(selectedBlock.id, { note: e.target.value })}
-            className="mt-2 w-full px-3 py-2.5 rounded-[14px] border border-gray-200 bg-white text-[13px] font-inter text-brandBlack"
-            placeholder="Block note…"
-            rows={2}
-          />
-
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {QUICK_MINUTES.map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => update(selectedBlock.id, { minutes: m })}
-                className="px-2.5 py-1.5 rounded-full border border-gray-200 bg-white text-[11px] font-inter text-gray-700 hover:bg-gray-50"
-              >
-                {m}m
-              </button>
-            ))}
-          </div>
-
-          {selectedBlock.kind === "custom" && (
-            <div className="mt-3 rounded-[14px] border border-gray-200 bg-gray-50 px-3 py-3">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <div>
-                  <div className="font-inter text-[12px] font-semibold text-brandBlack">
-                    Custom block color
-                  </div>
-                  <div className="font-inter text-[11px] text-gray-500">
-                    This color will be saved into the session timeline.
-                  </div>
-                </div>
-
-                <input
-                  type="color"
-                  value={getBlockColor(selectedBlock)}
-                  onChange={(e) =>
-                    update(selectedBlock.id, { color: e.target.value })
-                  }
-                  className="h-9 w-12 cursor-pointer rounded-lg border border-gray-200 bg-white p-1"
-                  title="Custom block color"
-                />
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                {BLOCK_COLOR_PRESETS.map((color) => {
-                  const selected =
-                    getBlockColor(selectedBlock).toLowerCase() ===
-                    color.toLowerCase();
-
-                  return (
-                    <button
-                      key={`${selectedBlock.id}-${color}`}
-                      type="button"
-                      onClick={() => update(selectedBlock.id, { color })}
-                      className={
-                        "h-7 w-7 rounded-full border transition " +
-                        (selected
-                          ? "border-brandBlack ring-2 ring-brandBlack/20"
-                          : "border-gray-200 hover:scale-105")
-                      }
-                      style={{ backgroundColor: color }}
-                      title={color}
-                      aria-label={`Set custom block color ${color}`}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {blocks.length > 0 && (
-        <details className="mt-2">
-          <summary className="cursor-pointer select-none text-[12px] text-gray-600 font-inter hover:text-gray-800">
-            Show breakdown
-          </summary>
-
-          <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2">
-            {rows.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => setSelectedBlockId(r.id)}
-                className={
-                  "border rounded-[14px] px-3 py-2 flex items-center justify-between gap-3 text-left " +
-                  (selectedBlockId === r.id
-                    ? "border-brandBlack bg-gray-50"
-                    : "border-gray-200 bg-white")
-                }
-              >
-                <div className="min-w-0 flex items-center gap-2">
-                  <span
-                    className="w-3 h-3 rounded-full shrink-0"
-                    style={blockColorStyle(r)}
-                  />
-                  <span className="text-[12px] font-inter text-brandBlack truncate">
-                    {r.title}
-                  </span>
-                </div>
-
-                <div className="text-[12px] font-inter text-gray-600 whitespace-nowrap">
-                  {r.start}–{r.end}m · {r.minutes}m
-                </div>
-              </button>
-            ))}
-          </div>
-        </details>
-      )}
-    </div>
-  );
 }
 
 export function CreateSessionModal({
@@ -1394,6 +784,7 @@ export function CreateSessionModal({
 
   // ---------- SESSION STUDIO ----------
   const [studioEnabled, setStudioEnabled] = useState(false);
+  const [flowEditing, setFlowEditing] = useState(false);
   const [studioBlocks, setStudioBlocks] = useState<StudioBlock[]>([]);
   const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
@@ -1462,6 +853,7 @@ export function CreateSessionModal({
     setIsSavingUserTemplate(false);
     setError(null);
     setNotice(null);
+    setFlowEditing(false);
     setSelectedPresetKey(null);
     setPresetCycles(3);
     setAccessMode("public");
@@ -1731,21 +1123,6 @@ export function CreateSessionModal({
     setSelectedBlockIds([]);
     setActiveBlockId(null);
     setSelectionAnchorId(null);
-  }, []);
-
-  const addFromLibrary = useCallback((b: StudioBlock) => {
-    const nextBlock = {
-      id: uid(),
-      kind: b.kind,
-      title: b.title,
-      note: b.note,
-      minutes: b.minutes,
-      color: getBlockColor(b),
-    };
-    setStudioBlocks((prev) => [...prev, nextBlock]);
-    setSelectedBlockIds([nextBlock.id]);
-    setActiveBlockId(nextBlock.id);
-    setSelectionAnchorId(nextBlock.id);
   }, []);
 
   const focusBlock = useCallback((id: string) => {
@@ -3364,14 +2741,16 @@ export function CreateSessionModal({
 
   const sessionFlowPreview = studioEnabled ? studioBlocks : selectedTemplateBlocks;
 
+  // The flow is edited in place, on the Session Flow timeline: editing turns
+  // the current preset (or template) into a custom flow the host can change.
   const openSessionStudio = () => {
+    if (!studioEnabled) {
+      applyStudioBlocks(
+        previewBlocks.map((block) => ({ ...block, id: uid() })) as StudioBlock[],
+      );
+    }
     setSelectedPresetKey(null);
-    setStudioEnabled(true);
-    window.requestAnimationFrame(() => {
-      document
-        .getElementById("session-studio")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
+    setFlowEditing(true);
   };
 
   const overlapError =
@@ -3571,6 +2950,40 @@ export function CreateSessionModal({
                     />
                     <span className="absolute bottom-2.5 right-3.5 font-inter text-[11px] text-[#98A2B3]">{description.length}/300</span>
                   </div>
+
+                  {/* Custom public link, always visible. */}
+                  <label htmlFor="create-session-slug" className={`mt-3 ${FIELD_LABEL}`}>Custom link (optional)</label>
+                  <div className="mt-1.5 flex gap-2">
+                    {ownedSlugValues.length > 0 && (
+                      <select
+                        value={ownedSlugSelectValue}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setCustomSlugInput(value === "__custom__" ? "" : value);
+                        }}
+                        aria-label="Your links"
+                        className="h-11 w-[132px] shrink-0 rounded-[12px] border border-[#D8DCE3] bg-white px-2.5 font-inter text-[13px] text-[#344054] outline-none focus:border-[#2F2F2F]"
+                      >
+                        <option value="">No link</option>
+                        {ownedSlugValues.map((slug) => <option key={slug} value={slug}>{slug}</option>)}
+                        <option value="__custom__">New link…</option>
+                      </select>
+                    )}
+                    <div className="flex h-11 min-w-0 flex-1 items-center rounded-[12px] border border-[#D8DCE3] bg-white pl-3.5 transition focus-within:border-[#2F2F2F] focus-within:ring-2 focus-within:ring-[#2F2F2F]/10">
+                      <span className="shrink-0 font-inter text-[13px] text-[#98A2B3]">mysession.club/</span>
+                      <input
+                        id="create-session-slug"
+                        type="text"
+                        value={customSlugInput}
+                        onChange={(e) => setCustomSlugInput(e.target.value)}
+                        placeholder="your-link"
+                        className="h-full min-w-0 flex-1 bg-transparent pr-3 font-inter text-[14px] text-[#15171A] outline-none"
+                      />
+                    </div>
+                  </div>
+                  {customSlugInput ? (
+                    <p className={"mt-1.5 truncate font-inter text-[11px] " + slugHintColor} title={linkPreview}>{slugHint}</p>
+                  ) : null}
                 </section>
 
 
@@ -3747,7 +3160,7 @@ export function CreateSessionModal({
                 <section ref={structureSectionRef} className={`mt-5 border-t border-[#F0F0F1] pt-5 ${SECTION_CARD}`}>
                   <SectionHeading step={3} title="Choose a structure">
                     <span className="inline-flex items-center gap-2">
-                      <span>Pick a proven flow or build your own in Session Studio.</span>
+                      <span>Pick a proven flow, then click the timeline on the right to change it.</span>
                       <span className="group relative inline-flex">
                         <Info size={16} className="cursor-help" />
                         <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[260px] -translate-x-1/2 rounded-[14px] bg-[#2F2F2F] px-3 py-2 text-center text-[11px] leading-4 text-white shadow-xl group-hover:block">
@@ -3771,6 +3184,7 @@ export function CreateSessionModal({
                             setSelectedTemplate(template?.id || templates[0]?.id || "");
                             setSelectedPresetKey(preset.key);
                             setStudioEnabled(false);
+                            setFlowEditing(false);
                           }}
                           className={PRESET_TILE + (isSelected ? PRESET_TILE_ON : PRESET_TILE_OFF)}
                           aria-pressed={isSelected}
@@ -3861,7 +3275,7 @@ export function CreateSessionModal({
                     className="mt-2.5 inline-flex items-center gap-2 font-inter text-[12.5px] text-[#667085] transition hover:text-[#2F2F2F]"
                   >
                     <UiIcon name="sparkles" size={14} className="text-[#2F2F2F]" />
-                    <span>Add check-ins, intentions, and more in <span className="font-semibold underline">Session Studio</span>.</span>
+                    <span>Add check-ins, intentions and more: <span className="font-semibold underline">edit the session flow</span>.</span>
                   </button>
                 </section>
 
@@ -4011,41 +3425,16 @@ export function CreateSessionModal({
                   </p>
                 </section>
 
-                {/* Optional settings */}
+                {/* Start from one of your templates or a previous session. */}
+                {(userTemplates.length > 0 || previousSessions.length > 0) && (
                 <details className="mt-5 rounded-[12px] bg-[#F7F7F8]">
                   <summary className="cursor-pointer list-none px-4 py-2.5 font-inter text-[13px] font-semibold text-[#344054] marker:hidden">
                     <span className="flex items-center justify-between gap-3">
-                      More options
+                      Start from a template or a past session
                       <ChevronDown size={16} className="text-[#667085]" />
                     </span>
                   </summary>
-                  <div className="space-y-5 border-t border-[#E3E5E8] p-5">
-                    <div>
-                      <label className="block font-inter text-[12px] font-semibold text-[#344054]">Custom public link</label>
-                      {ownedSlugValues.length > 0 && (
-                        <select
-                          value={ownedSlugSelectValue}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            setCustomSlugInput(value === "__custom__" ? "" : value);
-                          }}
-                          className="mt-2 h-11 w-full rounded-[12px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px]"
-                        >
-                          <option value="">No custom link</option>
-                          {ownedSlugValues.map((slug) => <option key={slug} value={slug}>{slug}</option>)}
-                          <option value="__custom__">Create another link</option>
-                        </select>
-                      )}
-                      <input
-                        type="text"
-                        value={customSlugInput}
-                        onChange={(e) => setCustomSlugInput(e.target.value)}
-                        placeholder="your-link"
-                        className="mt-2 h-11 w-full rounded-[12px] border border-[#D8DCE3] bg-white px-3 font-inter text-[13px] outline-none focus:border-[#2F2F2F]"
-                      />
-                      <p className={"mt-1.5 font-inter text-[11px] " + slugHintColor}>{slugHint}</p>
-                      <p className="mt-1 font-inter text-[11px] text-[#98A2B3]">{linkPreview}</p>
-                    </div>
+                  <div className="space-y-5 border-t border-[#E3E5E8] p-4">
 
                     {(userTemplates.length > 0 || previousSessions.length > 0) && (
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -4086,54 +3475,8 @@ export function CreateSessionModal({
 
                   </div>
                 </details>
-
-                {studioEnabled && (
-                  <section id="session-studio" className="mt-6 rounded-[14px] border border-[#D8DCE3] bg-white p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <h3 className="font-inter text-[17px] font-bold text-[#15171A]">Session Studio</h3>
-                        <p className="mt-1 font-inter text-[12px] text-[#667085]">Build a custom flow with your own blocks and durations.</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button type="button" onClick={importFromTemplate} className="rounded-[12px] border border-[#D8DCE3] px-3 py-2 font-inter text-[12px] font-semibold text-[#344054]">Import preset</button>
-                        <button type="button" onClick={resetDefaultStudio} className="rounded-[12px] border border-[#D8DCE3] px-3 py-2 font-inter text-[12px] font-semibold text-[#344054]">Reset</button>
-                        <button type="button" onClick={clearStudio} className="rounded-[12px] border border-[#D8DCE3] px-3 py-2 font-inter text-[12px] font-semibold text-[#344054]">Clear</button>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {STUDIO_LIBRARY.map((block) => (
-                        <button
-                          key={block.id}
-                          type="button"
-                          onClick={() => addFromLibrary(block)}
-                          className="rounded-full border border-[#D8DCE3] bg-white px-3 py-1.5 font-inter text-[11px] text-[#344054] hover:border-[#2F2F2F]"
-                        >
-                          + {block.title}
-                        </button>
-                      ))}
-                    </div>
-
-                    <SessionTimeline
-                      blocks={studioBlocks}
-                      onChange={setStudioBlocks}
-                      selectedBlockId={activeBlockId}
-                      setSelectedBlockId={(id) => {
-                        setActiveBlockId(id);
-                        setSelectedBlockIds(id ? [id] : []);
-                        setSelectionAnchorId(id);
-                      }}
-                    />
-
-                    <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_auto]">
-                      <input value={saveTemplateName} onChange={(e) => setSaveTemplateName(e.target.value)} placeholder="Template name" className="h-11 rounded-[12px] border border-[#D8DCE3] px-3 font-inter text-[13px]" />
-                      <input value={saveTemplateDescription} onChange={(e) => setSaveTemplateDescription(e.target.value)} placeholder="Template description" className="h-11 rounded-[12px] border border-[#D8DCE3] px-3 font-inter text-[13px]" />
-                      <button type="button" onClick={handleSaveCurrentAsUserTemplate} disabled={isSavingUserTemplate} className="h-11 rounded-[12px] bg-[#2F2F2F] px-4 font-inter text-[12px] font-semibold text-white disabled:opacity-50">
-                        {isSavingUserTemplate ? "Saving..." : "Save template"}
-                      </button>
-                    </div>
-                  </section>
                 )}
+
 
                 {error && !overlapError && <p className="mt-4 font-inter text-[13px] text-red-600">{error}</p>}
               </div>
@@ -4172,16 +3515,60 @@ export function CreateSessionModal({
                     <h4 className="font-inter text-[15px] font-bold text-[#15171A]">Session Flow</h4>
                     <span className="group relative inline-flex text-[#667085]">
                       <Info size={16} />
-                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[230px] -translate-x-1/2 rounded-[12px] bg-[#2F2F2F] px-3 py-2 text-center font-inter text-[11px] leading-4 text-white group-hover:block">Edit the structure, durations, breaks, check-ins, and recap in Session Studio.</span>
+                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[230px] -translate-x-1/2 rounded-[12px] bg-[#2F2F2F] px-3 py-2 text-center font-inter text-[11px] leading-4 text-white group-hover:block">Click the timeline to change stages, durations, colors and order right here.</span>
                     </span>
                   </div>
-                  <button type="button" onClick={openSessionStudio} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#D8DCE3] bg-white px-3 font-inter text-[12px] font-semibold text-[#344054] hover:border-[#2F2F2F]">
-                    <UiIcon name="pencil" size={13} /> Edit
-                  </button>
+                  {!flowEditing ? (
+                    <button type="button" onClick={openSessionStudio} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#D8DCE3] bg-white px-3 font-inter text-[12px] font-semibold text-[#344054] hover:border-[#2F2F2F]">
+                      <UiIcon name="pencil" size={13} /> Edit
+                    </button>
+                  ) : null}
                 </div>
 
-                {/* The flow as a timeline: one segment per stage, sized by its minutes. */}
-                <div className="mt-3 rounded-[14px] border border-[#E6E8EC] bg-white p-3.5">
+                {flowEditing ? (
+                  <div className="mt-3">
+                    {/* Same editor as the session card's quick timeline, on the form's blocks. */}
+                    <QuickTimelineEditor
+                      session={null}
+                      stages={[]}
+                      isLoading={false}
+                      isInfinite={false}
+                      variant="inline"
+                      value={studioBlocks}
+                      onValueChange={setStudioBlocks}
+                      onSave={() => undefined}
+                      onClose={() => setFlowEditing(false)}
+                      onOpenFullEditor={() => undefined}
+                      footerExtra={
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <input
+                            value={saveTemplateName}
+                            onChange={(e) => setSaveTemplateName(e.target.value)}
+                            placeholder="Save as template…"
+                            aria-label="Template name"
+                            className="h-8 min-w-0 flex-1 rounded-full border border-[#E5E5E5] bg-white px-3 font-inter text-[12px] outline-none focus:border-[#2F2F2F]"
+                          />
+                          {saveTemplateName.trim() ? (
+                            <button
+                              type="button"
+                              onClick={handleSaveCurrentAsUserTemplate}
+                              disabled={isSavingUserTemplate}
+                              className="h-8 shrink-0 rounded-full border border-[#E5E5E5] px-3 font-inter text-[12px] font-semibold text-[#344054] hover:bg-[#F3F4F6] disabled:opacity-50"
+                            >
+                              {isSavingUserTemplate ? "Saving…" : "Save"}
+                            </button>
+                          ) : null}
+                        </div>
+                      }
+                    />
+                  </div>
+                ) : (
+                <button
+                  type="button"
+                  onClick={openSessionStudio}
+                  title="Click to edit the flow"
+                  className="group/flow mt-3 block w-full rounded-[14px] border border-[#E6E8EC] bg-white p-3.5 text-left transition hover:border-[#2F2F2F]/40 hover:shadow-[0_4px_14px_rgba(0,0,0,0.06)]"
+                >
                   {/* Same look as SessionStageBar: one continuous track, rounded only at its ends. */}
                   <div className="flex h-[10px] overflow-hidden rounded-full bg-[#E9EAEC]">
                     {previewBlocks.map((block, index) => {
@@ -4211,7 +3598,8 @@ export function CreateSessionModal({
                       </span>
                     ))}
                   </div>
-                </div>
+                </button>
+                )}
 
                 <div className="my-4 h-px bg-[#E6E8EC]" />
 

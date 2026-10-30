@@ -2240,7 +2240,9 @@ function formatMinutes(total: number) {
  * open a row for the rest). It saves the schedule the same way the full
  * editor does, keeping the room policies.
  */
-function QuickTimelineEditor({
+// With `value` + `onValueChange` it edits blocks owned by the caller (the
+// create session form): no loading, no saving, "Done" closes it.
+export function QuickTimelineEditor({
     session,
     stages,
     isLoading,
@@ -2249,6 +2251,9 @@ function QuickTimelineEditor({
     onSave,
     onClose,
     onOpenFullEditor,
+    value,
+    onValueChange,
+    footerExtra,
 }: {
     session: any;
     stages: any[];
@@ -2258,8 +2263,25 @@ function QuickTimelineEditor({
     onSave: (updates: { schedule: any; duration_minutes: number | null }) => Promise<unknown> | void;
     onClose: () => void;
     onOpenFullEditor: () => void;
+    value?: StudioBlock[];
+    onValueChange?: (blocks: StudioBlock[]) => void;
+    footerExtra?: React.ReactNode;
 }) {
-    const [blocks, setBlocks] = useState<StudioBlock[] | null>(null);
+    const controlled = value !== undefined;
+    const valueRef = useRef(value);
+    valueRef.current = value;
+    const [ownBlocks, setOwnBlocks] = useState<StudioBlock[] | null>(null);
+    const blocks = controlled ? value : ownBlocks;
+    const setBlocks = (next: StudioBlock[] | ((current: StudioBlock[] | null) => StudioBlock[])) => {
+        if (controlled) {
+            const current = valueRef.current || [];
+            const resolved = typeof next === "function" ? next(current) : next;
+            valueRef.current = resolved;
+            onValueChange?.(resolved);
+        } else {
+            setOwnBlocks(next as any);
+        }
+    };
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [adding, setAdding] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -2270,9 +2292,9 @@ function QuickTimelineEditor({
     const barRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
-        if (blocks || isLoading) return;
-        setBlocks(normalizeStudioBlocksFromSession({ ...session, session_stages: stages.length ? stages : session?.session_stages }));
-    }, [blocks, isLoading, session, stages]);
+        if (controlled || ownBlocks || isLoading) return;
+        setOwnBlocks(normalizeStudioBlocksFromSession({ ...session, session_stages: stages.length ? stages : session?.session_stages }));
+    }, [controlled, ownBlocks, isLoading, session, stages]);
 
     useEffect(() => {
         const onKeyDown = (event: KeyboardEvent) => {
@@ -2364,6 +2386,10 @@ function QuickTimelineEditor({
     };
 
     const save = async () => {
+        if (controlled) {
+            onClose();
+            return;
+        }
         if (!list.length || saving) return;
         setSaving(true);
         setError("");
@@ -2748,6 +2774,18 @@ function QuickTimelineEditor({
 
             {error ? <div className="mx-1 mt-2 rounded-[10px] bg-red-50 px-2.5 py-1.5 text-[12px] text-red-700">{error}</div> : null}
 
+            {controlled ? (
+                <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#F0F0F0] px-1 pt-3">
+                    <div className="min-w-0 flex-1">{footerExtra}</div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="h-8 shrink-0 rounded-full bg-[#2F2F2F] px-4 text-[12px] font-semibold text-white transition-[background-color,transform] duration-150 hover:bg-[#1F1F1F] active:scale-95"
+                    >
+                        Done
+                    </button>
+                </div>
+            ) : (
             <div className="mt-3 flex items-center justify-between gap-2 border-t border-[#F0F0F0] px-1 pt-3">
                 <button
                     type="button"
@@ -2774,6 +2812,7 @@ function QuickTimelineEditor({
                     </button>
                 </div>
             </div>
+            )}
         </div>
     );
 }
