@@ -7,6 +7,7 @@ import RoomTopBar from "../components/RoomTopBar";
 import TasksPanel from "../components/TasksPanel";
 import { VideoTile } from "../pages/livekit/VideoTileLiveKit";
 import { LiveKitBottomBar } from "../pages/livekit/LiveKitBottomBar";
+import { GridLayoutSizing } from "../pages/livekit/sizing";
 
 // The /host-guide page (entry: src/hostGuide/main.tsx): a compact, visual
 // guide whose walkthrough plays a session in the real room UI (the room's own
@@ -163,9 +164,24 @@ function RoomScene({ format, scene, visible, people, musicOn }: { format: Format
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleKey, done]);
 
+  // The video stage's layout size (offset sizes ignore the guide's scale transform).
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  useLayoutEffect(() => {
+    const node = stageRef.current;
+    if (!node) return;
+    const update = () => setStageSize({ width: node.offsetWidth, height: node.offsetHeight });
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  // Mirrors RoomPageLiveKit: top bar, then the video stage and the side panel
+  // (grid gap-3, 360px panel at 1280px), tiles laid out by GridLayoutSizing.
   return (
     <div className={`ms-room-page relative h-full w-full overflow-hidden bg-[#1B1B1B] text-white ${scene.key === "music" ? "hg-music-scene" : ""}`} data-room-chrome="in">
-      <div className="relative isolate flex h-full w-full min-h-0 flex-col gap-2 px-3 pt-2" style={{ paddingBottom: 76 }}>
+      <div className="relative isolate h-full w-full px-3 pt-2 flex flex-col gap-2 min-h-0" style={{ paddingBottom: 72 }}>
         <RoomTopBar
           theme="dark"
           sessionTitle="50/10 Deep Work"
@@ -176,31 +192,58 @@ function RoomScene({ format, scene, visible, people, musicOn }: { format: Format
           stagebarStartTime={start}
           remainingTime={remaining}
           currentStage={current}
+          hostProfile={{ id: people[0].id, full_name: people[0].name, avatar_url: people[0].avatar || null }}
+          isInfiniteRoom={false}
+          canEditTimeline
+          onEditTimeline={noop}
+          onOpenHostProfile={noop}
           onToggleTheme={noop}
         />
-        <div className="relative z-0 grid min-h-0 flex-1 gap-3" style={{ gridTemplateColumns: "minmax(0, 1fr) 360px" /* room width at 1280px */ }}>
-          <div className="grid min-h-0 gap-2" style={{ gridTemplateColumns: "1fr 1fr", gridTemplateRows: "1fr 1fr" }}>
-            {people.map((p, i) => {
-              const speaking = !!scene.speaking?.includes(i);
-              const hasTask = visible.includes(i);
-              return (
-                <VideoTile
-                  key={p.id}
-                  tileId={`guide-${p.id}`}
-                  label={p.name}
-                  status={p.status || null}
-                  isLocal={i === 0}
-                  theme="dark"
-                  showBadge={i === 0 ? "Host (you)" : null}
-                  avatarUrl={p.avatar || undefined}
-                  micMuted={!speaking}
-                  isSpeaking={speaking}
-                  currentIntention={hasTask && !done ? p.task : null}
-                  taskList={hasTask && done ? [{ text: p.task, completed: true }] : []}
-                  participantTimeZone={p.tz}
-                />
-              );
-            })}
+        <div className="relative isolate z-0 grid grid-rows-1 gap-2 sm:gap-3 flex-1 min-h-0 h-full" style={{ gridTemplateColumns: "minmax(0, 1fr) 360px" /* room width at 1280px */ }}>
+          <div ref={stageRef} className="ms-video-stage relative rounded-2xl overflow-hidden min-h-0 h-full bg-[#1B1B1B] border border-[#252525]">
+            <div className="w-full h-full min-w-0 min-h-0 relative overflow-hidden">
+              <div className="h-full w-full min-w-0 min-h-0 overflow-hidden">
+                {stageSize.width > 0 ? (
+                  <GridLayoutSizing<GuidePerson>
+                    items={people}
+                    containerWidth={stageSize.width}
+                    containerHeight={stageSize.height}
+                    rightPanelOpen
+                    mobileOrTablet={false}
+                    renderItem={(p) => {
+                      const i = people.indexOf(p);
+                      const speaking = !!scene.speaking?.includes(i);
+                      const hasTask = visible.includes(i);
+                      return (
+                        <div className="relative group w-full min-w-0 min-h-0" style={{ aspectRatio: "16 / 9" }}>
+                          <div className="absolute inset-0">
+                            <VideoTile
+                              tileId={`guide-${p.id}`}
+                              label={p.name}
+                              status={p.status || null}
+                              isLocal={i === 0}
+                              theme="dark"
+                              showBadge={i === 0 ? "Host (you)" : null}
+                              avatarUrl={p.avatar || undefined}
+                              micMuted={!speaking}
+                              isSpeaking={speaking}
+                              currentIntention={hasTask && !done ? p.task : null}
+                              taskList={hasTask && done ? [{ text: p.task, completed: true }] : []}
+                              showTaskOverlay
+                              showBottomShade
+                              participantTimeZone={p.tz}
+                              showMenuButton
+                              onToggleMenu={noop}
+                              onOpenProfile={noop}
+                            />
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                ) : null}
+              </div>
+            </div>
           </div>
           {/* Same markup as the room's light Tasks side panel (RoomPageLiveKit, rightTab === "tasks"). */}
           <div className="ms-room-side hg-tasks min-h-0 h-full overflow-hidden">
@@ -258,6 +301,15 @@ function RoomScene({ format, scene, visible, people, musicOn }: { format: Format
         customBackgroundSlots={[]}
         onApplyVideoFx={noop}
         activePanel="tasks"
+        voiceUiMode="off"
+        onToggleVoiceUi={noop}
+        showPiP
+        pipActive={false}
+        onTogglePiP={noop}
+        cameraMirrored
+        onToggleCameraMirrored={noop}
+        onOpenBugReport={noop}
+        showAIHost={false}
         soundscapeActive={musicOn}
         onOpenSoundscapes={noop}
         onToggleSoundscapeMute={noop}
