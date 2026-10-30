@@ -31,6 +31,8 @@ import {
   ChevronDown,
   Minus,
   Plus,
+  MonitorUp,
+  MessageSquareOff,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { assignServerForSession } from "../lib/livekitPlacement";
@@ -683,6 +685,14 @@ function exportStudioToSchedule(blocks: StudioBlock[]) {
 }
 
 const DEFAULT_CUSTOM_BLOCK_COLOR = "#F63135";
+
+// The same icons the session card uses for its room rules.
+function RoomRuleIcon({ name }: { name: "camera" | "screen" | "chat-off" }) {
+  if (name === "screen") return <MonitorUp size={17} strokeWidth={2.2} />;
+  if (name === "chat-off") return <MessageSquareOff size={17} strokeWidth={2.2} />;
+  const mask = "url('/icons/camera-on-light.svg') center / contain no-repeat";
+  return <span className="block h-[18px] w-[18px] shrink-0" style={{ backgroundColor: "currentColor", mask, WebkitMask: mask }} />;
+}
 
 function isValidHexColor(v: unknown) {
   return /^#[0-9a-f]{6}$/i.test(String(v || "").trim());
@@ -3413,7 +3423,7 @@ export function CreateSessionModal({
                             on: cameraRequired,
                             label: "Cameras required",
                             helper: "Two reminders, then disconnect if the camera stays off.",
-                            icons: ["webcam"],
+                            icons: ["camera"],
                             toggle: () => { setCameraRequired((v) => !v); setCameraOrScreenShareRequired(false); },
                           },
                           {
@@ -3421,7 +3431,7 @@ export function CreateSessionModal({
                             on: screenShareRequired,
                             label: "Screen share required",
                             helper: "Two reminders, then disconnect if screen sharing stays off.",
-                            icons: ["screencast"],
+                            icons: ["screen"],
                             toggle: () => { setScreenShareRequired((v) => !v); setCameraOrScreenShareRequired(false); },
                           },
                           {
@@ -3429,7 +3439,7 @@ export function CreateSessionModal({
                             on: cameraOrScreenShareRequired,
                             label: "Camera or screen share required",
                             helper: "Either one is enough. Two reminders, then disconnect only if both stay off.",
-                            icons: ["webcam", "screencast"],
+                            icons: ["camera", "screen"],
                             toggle: () => { setCameraOrScreenShareRequired((v) => !v); setCameraRequired(false); setScreenShareRequired(false); },
                           },
                           {
@@ -3437,7 +3447,7 @@ export function CreateSessionModal({
                             on: publicChatDisabled,
                             label: "Public chat off",
                             helper: "Participants can only send private messages to the host.",
-                            icons: ["comment-slash"],
+                            icons: ["chat-off"],
                             toggle: () => setPublicChatDisabled((v) => !v),
                           },
                         ] as const).map((rule) => (
@@ -3445,11 +3455,10 @@ export function CreateSessionModal({
                             key={rule.key}
                             type="button"
                             onClick={rule.toggle}
-                            title={`${rule.label}. ${rule.helper}`}
-                            aria-label={rule.label}
+                            aria-label={`${rule.label}. ${rule.helper}`}
                             aria-pressed={rule.on}
                             className={[
-                              "inline-flex min-w-11 items-center justify-center gap-1 rounded-[12px] border px-2.5 transition",
+                              "group relative inline-flex min-w-11 items-center justify-center gap-1 rounded-[12px] border px-2.5 transition",
                               rule.on
                                 ? "border-[#2F2F2F] bg-[#2F2F2F] text-white"
                                 : "border-[#D8DCE3] bg-white text-[#667085] hover:border-[#2F2F2F]/50 hover:text-[#2F2F2F]",
@@ -3458,9 +3467,17 @@ export function CreateSessionModal({
                             {rule.icons.map((icon, i) => (
                               <span key={icon} className="inline-flex items-center gap-1">
                                 {i > 0 ? <span className="font-inter text-[10px] font-semibold opacity-70">or</span> : null}
-                                <UiIcon name={icon} size={17} />
+                                <RoomRuleIcon name={icon} />
                               </span>
                             ))}
+                            {/* Instant hover label: what the rule does. */}
+                            <span
+                              aria-hidden="true"
+                              className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden w-[220px] -translate-x-1/2 rounded-[10px] bg-[#2F2F2F] px-3 py-2 text-left font-inter text-[11px] font-normal leading-4 text-white shadow-[0_6px_18px_rgba(0,0,0,0.18)] group-hover:block group-focus-visible:block"
+                            >
+                              <span className="block font-semibold">{rule.label}{rule.on ? " · on" : ""}</span>
+                              <span className="mt-0.5 block text-white/75">{rule.helper}</span>
+                            </span>
                           </button>
                         ))}
                       </div>
