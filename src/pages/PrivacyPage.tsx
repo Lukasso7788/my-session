@@ -2,7 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 
 const APP_NAME = "MySession";
-const SUPPORT_EMAIL = "misha1915@live.ru"; // TODO: свой email
+const SUPPORT_EMAIL = "yaroslav@mysession.club";
 
 export default function PrivacyPage() {
     return (

@@ -98,7 +98,7 @@ export default function DailyScheduleUnsubscribePage() {
           </Link>
 
           <a
-            href="mailto:support@mysession.club"
+            href="mailto:yaroslav@mysession.club"
             className="rounded-full border border-black/10 bg-white px-5 py-3 text-[14px] font-semibold text-[#2F2F2F] hover:bg-black/[0.04]"
           >
             Contact support
