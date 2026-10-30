@@ -2290,6 +2290,8 @@ export function QuickTimelineEditor({
     const [dragId, setDragId] = useState<string | null>(null);
     const [gripArmedId, setGripArmedId] = useState<string | null>(null);
     const barRef = useRef<HTMLDivElement | null>(null);
+    // Instant hover label over the bar: the hovered block and its center (px from the bar's left).
+    const [barHover, setBarHover] = useState<{ id: string; x: number } | null>(null);
 
     useEffect(() => {
         if (controlled || ownBlocks || isLoading) return;
@@ -2448,11 +2450,28 @@ export function QuickTimelineEditor({
             </div>
 
             {/* Thin live bar of the blocks: drag or ← → to reorder, pull a right edge to resize. */}
+            <div className="relative">
+            {(() => {
+                const hovered = barHover && !dragId ? list.find((block) => block.id === barHover.id) : null;
+                if (!hovered || !barHover) return null;
+                const width = barRef.current?.offsetWidth || 0;
+                return (
+                    <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute bottom-full z-10 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-[8px] bg-[#2F2F2F] px-2 py-1 text-[11px] font-medium leading-4 text-white shadow-[0_4px_12px_rgba(0,0,0,0.18)]"
+                        // Keep the label inside the bar's width near its ends.
+                        style={{ left: clamp(barHover.x, 48, Math.max(48, width - 48)) }}
+                    >
+                        {hovered.title} · {clamp(Number(hovered.minutes) || 1, 1, 24 * 60)} min
+                    </span>
+                );
+            })()}
             <div
                 ref={barRef}
                 role="listbox"
                 aria-label="Timeline blocks. Drag or use the arrow keys to reorder."
-                className="mb-3 flex h-2.5 w-full overflow-hidden rounded-full bg-[#F1F1F1] transition-[height] duration-200 ease-out hover:h-3.5"
+                onMouseLeave={() => setBarHover(null)}
+                className="mb-1.5 flex h-2.5 w-full overflow-hidden rounded-full bg-[#F1F1F1] transition-[height] duration-200 ease-out hover:h-3.5"
             >
                 {list.map((block) => {
                     const mins = clamp(Number(block.minutes) || 1, 1, 24 * 60);
@@ -2489,7 +2508,11 @@ export function QuickTimelineEditor({
                                     remove(block.id);
                                 }
                             }}
-                            title={`${block.title} · ${mins} min — drag or ← → to move`}
+                            aria-label={`${block.title} · ${mins} min — drag or ← → to move`}
+                            onMouseEnter={(event) => {
+                                const el = event.currentTarget;
+                                setBarHover({ id: block.id, x: el.offsetLeft + el.offsetWidth / 2 });
+                            }}
                             className={[
                                 // Blocks sit flush against each other, like the card's timeline.
                                 "relative h-full min-w-0 cursor-grab outline-none transition-[flex-grow,filter,opacity,box-shadow] duration-300 ease-out hover:brightness-105 focus-visible:brightness-110 active:cursor-grabbing",
@@ -2513,6 +2536,10 @@ export function QuickTimelineEditor({
                     );
                 })}
             </div>
+            </div>
+            <p className="mb-2.5 px-1 text-[11px] leading-4 text-[#7A7A7A]">
+                Drag blocks on the timeline or use ← → to change their order.
+            </p>
 
             {!blocks ? (
                 <div className="mt-2 space-y-1.5 px-1 py-1">
