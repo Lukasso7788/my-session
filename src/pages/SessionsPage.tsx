@@ -482,7 +482,7 @@ function withTimeout<T>(
 export function SessionsPage() {
   const navigate = useNavigate();
   const modal = useCreateSessionModal();
-  const { user, profile: authProfile } = useAuth();
+  const { user, profile: authProfile, loading: authLoading } = useAuth();
   const [searchParams] = useSearchParams();
 
   const [sessions, setSessions] = useState<SessionWithRelations[]>([]);
@@ -2334,6 +2334,21 @@ const visibleSessions = useMemo(() => {
 
     modal.open();
   };
+
+  // /sessions?create=session (e.g. from the host guide) opens Create session right away.
+  useEffect(() => {
+    if (searchParams.get("create") !== "session" || authLoading) return;
+    const clean = new URLSearchParams(searchParams);
+    clean.delete("create");
+    const nextQuery = clean.toString();
+    if (!user) {
+      navigate(`/login?next=${encodeURIComponent("/sessions?create=session")}`, { replace: true });
+      return;
+    }
+    navigate(nextQuery ? `/sessions?${nextQuery}` : "/sessions", { replace: true });
+    openCreate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, authLoading, user?.id]);
 
   const submitPostSessionFeedback = useCallback(async () => {
     if (!user?.id) {

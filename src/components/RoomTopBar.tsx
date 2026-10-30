@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { resolveStageVisual, SessionStageBar } from "./SessionStageBar";
 import { Icon, ParticipantsSmartIcon, type RoomTheme } from "./VideoControls";
+import { HOST_GUIDE_PATH } from "../lib/hostGuideLinks";
 
 type HostProfile = {
     id: string;
@@ -191,6 +192,26 @@ export default function RoomTopBar(props: RoomTopBarProps) {
 
     const showEditTimeline =
         showStageBar && !!canEditTimeline && typeof onEditTimeline === "function";
+    // Hosts get a link to the host guide; it opens in a new tab so they stay in the room.
+    const showHostGuide = !!canEditTimeline;
+    const hostGuideLink = (compact: boolean) =>
+        showHostGuide ? (
+            <a
+                href={HOST_GUIDE_PATH}
+                target="_blank"
+                rel="noopener"
+                className={[
+                    "flex shrink-0 items-center border font-inter transition",
+                    compact ? "h-10 rounded-2xl px-3 text-[12px]" : "rounded-xl px-3 py-1.5 text-[13px]",
+                    isLight
+                        ? "border-[#CFCFCF] bg-[#E1E3E6] text-black/75 hover:bg-[#E0E0E0]"
+                        : "border-[#2B2B2B] bg-[#1B1B1B]/60 text-[#F1F1F1]/85 hover:bg-[#242424]",
+                ].join(" ")}
+                title="Host guide: how to run a body doubling session (opens in a new tab)"
+            >
+                Host guide
+            </a>
+        ) : null;
 
     const [showStepInPrompt, setShowStepInPrompt] = useState(false);
     const shouldRotateHostPrompt =
@@ -438,6 +459,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
 
                             {renderMobileMusicMute()}
 
+                            {hostGuideLink(false)}
+
                             {!isInfiniteRoom && !!hostProfile && (
                                 <button
                                     onClick={onOpenHostProfile}
@@ -487,6 +510,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                         </button>
 
                         {renderMobileMusicMute()}
+
+                        {hostGuideLink(true)}
 
                         {!isInfiniteRoom && !!hostProfile && (
                             <button

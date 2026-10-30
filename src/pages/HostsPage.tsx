@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { HOST_GUIDE_PATH, HOST_SESSION_URL } from "../lib/hostGuideLinks";
 import { profileHoverAttrs } from "../components/ProfileHoverLayer";
 import { CalendarDays, Search } from "lucide-react";
 import { supabase } from "../lib/supabase";
@@ -252,6 +253,15 @@ export default function HostsPage() {
               <span><b className="font-semibold text-[#5286F6]">{formatCount(totals.thisWeek)}</b> hosting this week</span>
             </div>
           ) : null}
+          <div className="mx-auto mt-4 flex max-w-[640px] flex-wrap items-center justify-center gap-x-3 gap-y-2 rounded-[18px] bg-[#F7F7F7] px-4 py-3 text-[14px] text-[#2F2F2F]">
+            <span>Want to host a session yourself?</span>
+            <a href={HOST_GUIDE_PATH} className="font-semibold underline decoration-[#2F2F2F]/30 underline-offset-2 hover:decoration-[#2F2F2F]">
+              Read the host guide
+            </a>
+            <Link to={HOST_SESSION_URL} className="inline-flex h-9 items-center rounded-full bg-brandBlack px-4 text-[13px] font-semibold text-white hover:bg-[#1F1F1F]">
+              Host your session
+            </Link>
+          </div>
         </header>
 
         <div className="mt-7 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

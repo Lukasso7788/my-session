@@ -8,6 +8,7 @@ import TasksPanel from "../components/TasksPanel";
 import { VideoTile } from "../pages/livekit/VideoTileLiveKit";
 import { LiveKitBottomBar } from "../pages/livekit/LiveKitBottomBar";
 import { GridLayoutSizing } from "../pages/livekit/sizing";
+import { HOST_SESSION_URL } from "../lib/hostGuideLinks";
 
 // The /host-guide page (entry: src/hostGuide/main.tsx): a compact, visual
 // guide whose walkthrough plays a session in the real room UI (the room's own
@@ -591,7 +592,13 @@ export default function HostGuide({ visitor }: { visitor: GuideVisitor }) {
               <p className="hg-kicker">Host guide</p>
               <h1>Host a focus session in 6 steps</h1>
             </div>
-            <p className="hg-lead">You keep time, set the tone and make people welcome. No teaching, no coaching. Pick a format and watch how it runs in the room.</p>
+            <div>
+              <p className="hg-lead">You keep time, set the tone and make people welcome. No teaching, no coaching. Pick a format and watch how it runs in the room.</p>
+              <div className="hg-ready-inline">
+                <span>Ready to host your session?</span>
+                <a className="hg-host-btn" href={HOST_SESSION_URL}>Host your session</a>
+              </div>
+            </div>
           </div>
           <div>
             <div className="hg-formats" role="tablist">
@@ -691,10 +698,17 @@ export default function HostGuide({ visitor }: { visitor: GuideVisitor }) {
         <section className="hg-card dark">
           <div className="hg-check-head">
             <h2>Host checklist</h2>
-            <a className="hg-cta" href="/sessions">Host a session</a>
           </div>
           <div className="hg-checklist">{CHECKLIST.map((c) => <span key={c}>✓ {c}</span>)}</div>
           <p className="hg-tools">Room tools: mute a mic · turn a camera off · remove and report (tile menu) · statuses (Skip me, On a call, Eating, Break, AFK) · room music · tasks on tiles · double-click the timeline to edit it.</p>
+        </section>
+
+        <section className="hg-ready">
+          <div>
+            <h2>Ready to host your session?</h2>
+            <p>Pick a time, choose a structure and share the link. Every session opens with people sharing their goals and ends with them sharing their progress.</p>
+          </div>
+          <a className="hg-host-btn" href={HOST_SESSION_URL}>Host your session</a>
         </section>
       </main>
     </div>
@@ -831,7 +845,14 @@ button.hg-row.on { background: #F1F1F1 !important; }
 .hg-tr > span { font-size: 16px; } .hg-tr b { font-size: 13px; } .hg-tr p { font-size: 12px; line-height: 1.4; color: #6B6B6B; margin: 2px 0 0; }
 .hg-check-head { display: flex; justify-content: space-between; align-items: center; }
 .hg-check-head h2 { margin: 0; }
-.hg-cta { background: #fff !important; color: #2F2F2F !important; padding: 10px 18px !important; border-radius: 99px; font-weight: 600; font-size: 13.5px; text-decoration: none; }
+.hg-host-btn { display: inline-flex; align-items: center; height: 40px; padding: 0 18px; border-radius: 99px; background: #2F2F2F; color: #fff; font-weight: 600; font-size: 13.5px; text-decoration: none; white-space: nowrap; transition: background 150ms; }
+.hg-host-btn:hover { background: #1F1F1F; }
+.hg-ready-inline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: -4px; }
+.hg-ready-inline span { font-size: 14px; font-weight: 600; }
+.hg-ready { display: flex; align-items: center; justify-content: space-between; gap: 20px; border: 1px solid #EEE; border-radius: 22px; padding: 24px; background: #F7F7F7; }
+.hg-ready h2 { margin: 0; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.hg-ready p { margin: 6px 0 0; font-size: 14px; line-height: 1.55; color: #555; max-width: 620px; }
+@media (max-width: 640px) { .hg-ready { flex-direction: column; align-items: flex-start; padding: 18px; } }
 .hg-checklist { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
 .hg-checklist span { font-size: 12.5px; background: rgba(255,255,255,.1); padding: 6px 11px; border-radius: 99px; }
 .hg-tools { font-size: 12.5px; color: rgba(255,255,255,.7); margin: 14px 0 0; }

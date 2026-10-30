@@ -13,6 +13,7 @@ export default function FaqPage() {
                 { label: "Group focus sessions", to: "/group-focus-sessions" },
                 { label: "Online coworking", to: "/online-coworking" },
                 { label: "Pricing", to: "/pricing" },
+                { label: "Host guide for body doubling sessions", to: "/host-guide" },
             ]}
             intro={[
                 "MySession is a live coworking and body doubling platform for people who want to start work faster, stay focused, and finish more with less friction.",
@@ -171,6 +172,10 @@ export default function FaqPage() {
                 {
                     q: "What are 24/7 rooms?",
                     a: "24/7 rooms are always-open focus spaces where you can drop in whenever you need a work room instead of waiting for a scheduled session.",
+                },
+                {
+                    q: "How do I host a body doubling session on MySession?",
+                    a: "Open Create session, pick a time and a structure, and share the link. Every session starts with people sharing their goals and ends with them sharing their progress. The host guide for body doubling sessions (mysession.club/host-guide) walks through each step, with lines you can use and what to do if something goes off plan.",
                 },
             ]}
         />

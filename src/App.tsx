@@ -109,6 +109,15 @@ function RoomPageLiveKitEntry() {
   );
 }
 
+// The host guide is its own page (host-guide/index.html), outside this router:
+// in-app links to it load it with a full page load.
+function HostGuideRedirect() {
+  useEffect(() => {
+    window.location.replace(`/host-guide/${window.location.search}`);
+  }, []);
+  return null;
+}
+
 export default function App() {
   console.log("[ROUTER] App mounted");
   const isOneOnOneHost =
@@ -129,6 +138,7 @@ export default function App() {
           <Route path="/one-on-one" element={<Navigate to="/sessions?tab=one-on-one" replace />} />
 
           <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/host-guide" element={<HostGuideRedirect />} />
           <Route path="/sessions-concept" element={<Navigate to="/sessions" replace />} />
           {/* Community pages are for signed-in members only. */}
           <Route path="/hosts" element={<RequireSignIn><HostsPage /></RequireSignIn>} />

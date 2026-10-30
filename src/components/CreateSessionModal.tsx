@@ -54,6 +54,7 @@ import {
 } from "../lib/sessionBookends";
 import CreateKindSwitch, { requestInfiniteRoomCreator } from "./CreateKindSwitch";
 import UiIcon from "./UiIcon";
+import { HOST_GUIDE_PATH } from "../lib/hostGuideLinks";
 import { QuickTimelineEditor } from "./SessionCard";
 
 interface CreateSessionModalProps {
@@ -2948,7 +2949,17 @@ export function CreateSessionModal({
             </div>
             <div>
               <h2 className="font-inter text-[20px] font-bold leading-tight tracking-[-0.4px] text-[#15171A]">Create session</h2>
-              <p className="font-inter text-[13px] text-[#667085]">Set up your focus session in a few steps</p>
+              <p className="font-inter text-[13px] text-[#667085]">
+                Set up your focus session in a few steps.{" "}
+                <a
+                  href={HOST_GUIDE_PATH}
+                  target="_blank"
+                  rel="noopener"
+                  className="font-semibold text-[#2F2F2F] underline decoration-[#2F2F2F]/30 underline-offset-2 hover:decoration-[#2F2F2F]"
+                >
+                  Read the host guide
+                </a>
+              </p>
             </div>
           </div>
           {isAppAdmin ? (
