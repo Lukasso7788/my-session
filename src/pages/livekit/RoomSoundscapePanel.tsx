@@ -335,7 +335,7 @@ export function RoomSoundscapePanel({
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2">
                       <span className={`truncate font-semibold ${isDark ? "text-[12px] text-[#F4F5F6]" : "text-[11px] text-[#2F2F2F]"}`}>{option.label}</span>
-                      {selected ? <span className="h-1.5 w-1.5 rounded-full bg-[#61D874]" /> : null}
+                      {selected ? <span className={`h-1.5 w-1.5 rounded-full ${isDark ? "bg-[#6B9BFF]" : "bg-[#5286F6]"}`} /> : null}
                     </span>
                     <span className={`mt-0.5 block truncate ${isDark ? "text-[10px] text-[#B5BCC6]" : "text-[8px] text-[#2F2F2F]/40"}`}>{option.description}</span>
                   </span>
