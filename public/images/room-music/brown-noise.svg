@@ -1,13 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Brown Noise artwork">
-  <defs><clipPath id="brown-noise-frame"><rect width="480" height="150" rx="22"/></clipPath></defs>
-  <g clip-path="url(#brown-noise-frame)">
-  <rect width="480" height="150" rx="22" fill="#EDE5DC"/>
-  <circle cx="418" cy="25" r="67" fill="#E2D4C6"/>
-  <circle cx="61" cy="126" r="79" fill="#E5D7C8"/>
-  <path d="M0 71c74-19 128 15 203-6 78-23 153 13 277-18v103H0z" fill="#D8C3B0"/>
-  <path d="M0 94c78-20 139 17 222-7 84-24 147 16 258-12v75H0z" fill="#CBB099"/>
-  <path d="M0 119c77-18 139 15 219-7 88-24 163 16 261-7v45H0z" fill="#AD8C75" opacity=".76"/>
-  <path d="M-8 48c76-20 132 16 211-6 75-21 155 12 285-16" fill="none" stroke="#B89D87" stroke-linecap="round" stroke-width="3" opacity=".68"/>
-  <path d="M-8 105c78-19 139 17 222-7 84-24 149 16 274-13" fill="none" stroke="#F5EDE4" stroke-linecap="round" stroke-width="3" opacity=".66"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Quiet sandstone dunes with fine flowing contours">
+  <defs>
+  <linearGradient id="sky" x2="0" y2="1">
+  <stop stop-color="#E8D6C2"/>
+  <stop offset="1" stop-color="#F4E6D0"/>
+  </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="480" height="150" rx="0" fill="url(#sky)" />
+  <circle cx="106" cy="41" r="22" fill="#FFF2D3" />
+  <path d="M0 97 29 80H72L89 62h45l11 25h58l26-14h45l23 26 38-13h58l29 18h58v46H0Z" fill="#D1AE8C" />
+  <path d="M0 108q92-61 202-6t278-9v57H0Z" fill="#DEBF99" />
+  <path d="M0 132q108-7 189-34t145 20 146 5v27H0Z" fill="#BF916E" />
+  <path d="M0 150q79-30 170-12t174-6 136-11v29Z" fill="#946F58" />
+  <path d="M18 103q66-26 132-11m-105 7q40-10 75-9m112 22q54-8 90 8m-98-15q55-8 93 11m-85 5 37 2m79 20q70-27 117-13" fill="none" stroke="#F7DFC0" stroke-width="1" stroke-linecap="round" opacity=".55"/>
+  <path d="M33 143q37-13 69-10m11 7 32 3m230-36 47-9" fill="none" stroke="#F7DFC0" stroke-width="1" stroke-linecap="round" opacity=".55"/>
+  <path d="M413 147q-1-14 5-24m-5 21-9-12m10 10 9-9" fill="none" stroke="#B8946A" stroke-width="1.5" stroke-linecap="round" />
 </svg>

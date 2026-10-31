@@ -1,10 +1,21 @@
 # MySession — project architecture and continuation context
 
-Updated: 2026-10-12. This is a project-wide navigation/architecture handoff based on
+Updated: 2026-10-31 (music artwork follow-up; older service notes are historical). This is a project-wide navigation/architecture handoff based on
 the checked-out source, not a claim that every module or production service was
 audited. Never put secret values, tokens, user exports or private logs in this file.
 
 ## Checkout and safe working rules
+
+- Current task (2026-10-31): redraw all seven built-in music scenes for light
+  and dark panels and keep Play/Previous/Next below the illustration. Working
+  checkout: `C:\Users\misha\.codex\worktrees\music-personal-dark\my-session`, branch
+  `codex/music-personal-dark`, starting from `3ad7f4e` (verified origin/main).
+  User explicitly requested commit/push to main. The previous personal-volume
+  change is already in main and must be preserved. This follow-up changes native
+  SVG assets and `RoomSoundscapePanel.tsx` presentation only; it adds no backend,
+  DB migration, network subscription or audio behavior. Full feature/reproduction
+  context: `docs/room-music-personal-volume-handoff.md`. Do not interpret older
+  checkout/production notes below as the current working state.
 
 - Latest follow-up (2026-10-12): apply the pre-join motion style to in-room
   settings. Base `c06901c` matched origin/main. Same safe checkout/branch;

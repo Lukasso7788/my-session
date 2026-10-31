@@ -9,8 +9,10 @@ test("built-in soundscapes have distinct, available vector artwork", () => {
 
   for (const option of ROOM_SOUNDSCAPE_OPTIONS) {
     assert.match(option.artwork, /^\/images\/room-music\/[\w-]+\.svg$/);
-    const svg = readFileSync(new URL(`../public${option.artwork}`, import.meta.url), "utf8");
-    assert.match(svg, /viewBox="0 0 480 150"/);
+    for (const artwork of [option.artwork, option.artwork.replace(".svg", "-dark.svg")]) {
+      const svg = readFileSync(new URL(`../public${artwork}`, import.meta.url), "utf8");
+      assert.match(svg, /viewBox="0 0 480 150"/);
+    }
   }
 
   assert.equal(

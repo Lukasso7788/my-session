@@ -1,7 +1,35 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Flow relax artwork">
-  <rect width="480" height="150" rx="22" fill="#EEEAF1"/>
-  <path d="M-24 103c67-74 135 23 205-45 65-64 124 34 196-14 42-28 82-26 127-6v112H-24z" fill="#DDD4E4"/>
-  <path d="M-10 130c74-57 134 5 207-35 76-42 143 24 211-15 30-17 57-20 82-13v83H-10z" fill="#CFC3D8" opacity=".76"/>
-  <circle cx="75" cy="34" r="28" fill="#E2DAE8"/>
-  <circle cx="416" cy="27" r="45" fill="#E5DDEA"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="A quiet reading nook beside a sunset window">
+  <defs>
+  <linearGradient id="window" x2="0" y2="1">
+  <stop stop-color="#ACC9D6"/>
+  <stop offset="1" stop-color="#F4C7A3"/>
+  </linearGradient>
+  <linearGradient id="light" x2="0" y2="1">
+  <stop stop-color="#F6D9A8"/>
+  <stop offset="1" stop-color="#EFE1CF"/>
+  </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="480" height="150" rx="0" fill="#EFE1CF" />
+  <rect x="22" y="13" width="242" height="116" rx="4" fill="#C5AB91" />
+  <rect x="28" y="19" width="230" height="104" rx="2" fill="url(#window)" />
+  <circle cx="199" cy="53" r="21" fill="#F6D3A0" />
+  <path d="M28 94Q72 55 129 83T258 73v50H28Z" fill="#B4A5B5" />
+  <path d="M28 111Q71 83 128 103T258 94v29H28Z" fill="#8F9CA9" />
+  <rect x="139" y="19" width="5" height="104" rx="0" fill="#C5AB91" />
+  <rect x="28" y="85" width="230" height="4" rx="0" fill="#C5AB91" />
+  <rect x="18" y="123" width="250" height="6" rx="2" fill="#BCA68D" />
+  <path d="M296 117 321 51H366L398 117Z" fill="url(#light)" />
+  <path d="M345 62v56m-18 1h36" fill="none" stroke="#8D7261" stroke-width="3" stroke-linecap="round" />
+  <path d="M325 25h34l15 34h-66Z" fill="#CF9667" />
+  <path d="M325 25h10l-5 34h-22Z" fill="#B9825D" />
+  <rect x="0" y="133" width="480" height="17" rx="0" fill="#CAA78B" />
+  <path d="M0 133h480" fill="none" stroke="#B28F73" stroke-width="2" stroke-linecap="round" />
+  <rect x="97" y="118" width="74" height="9" rx="1" fill="#789692" />
+  <rect x="102" y="128" width="85" height="5" rx="1" fill="#DEBC99" />
+  <path d="M184 110h27v14q0 9-13 9t-14-9Z" fill="#F9F2E4" />
+  <path d="M211 113h4q12 7-4 12" fill="none" stroke="#F9F2E4" stroke-width="3" stroke-linecap="round" />
+  <path d="M194 101q-5-5 0-11m9 12q-4-6 0-10" fill="none" stroke="#B39D88" stroke-width="1.2" stroke-linecap="round" />
+  <path d="m416 111 5 22h24l5-22Z" fill="#C2856A" />
+  <path d="M433 114V69" fill="none" stroke="#6A8773" stroke-width="2" stroke-linecap="round" />
+  <path d="M432 94q-23-1-25-19 23 2 25 19Zm2-13q3-23 19-24 0 21-19 24Zm0 25q7-20 25-15-8 18-25 15Z" fill="#779780" />
 </svg>
