@@ -195,7 +195,7 @@ export function RoomSoundscapePanel({
 
           <div className={`relative mt-4 overflow-hidden rounded-[18px] ${isDark ? "bg-[#303030]" : "bg-[#ECEAEA]"}`}>
             <img
-              src={activeOption?.artwork || "/images/room-music/ambient-focus.svg"}
+              src={isDark ? (activeOption?.artwork || "/images/room-music/ambient-focus.svg").replace(".svg", "-dark.svg") : (activeOption?.artwork || "/images/room-music/ambient-focus.svg")}
               alt=""
               className="absolute inset-0 h-full w-full object-cover"
               draggable={false}
@@ -260,14 +260,16 @@ export function RoomSoundscapePanel({
             </div>
           </div>
 
-          <div className={`mt-3 flex items-center gap-2.5 rounded-xl px-3 py-2 ${isDark ? "bg-[#303030]" : "bg-[#F0EEEE]"}`}>
-            <Volume2 className={`h-3.5 w-3.5 shrink-0 ${isDark ? "text-[#D8DDE3]" : "text-[#2F2F2F]/55"}`} strokeWidth={1.8} />
+          <p className={`mt-3 text-left text-[10px] ${isDark ? "text-[#B5BCC6]" : "text-[#2F2F2F]/60"}`}>Volume for you</p>
+          <div className={`mt-1 flex items-center gap-2.5 rounded-xl px-3 py-2 ${isDark ? "bg-[#303030]" : "bg-[#F0EEEE]"}`}>
+            <button type="button" onClick={onToggleMute} aria-label={personalMuted ? "Unmute for me" : "Mute for me"} aria-pressed={personalMuted} className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition ${isDark ? "text-[#D8DDE3] hover:bg-[#484848]" : "text-[#2F2F2F] hover:bg-[#dedada]"}`}>
+              {personalMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+            </button>
             <input
               type="range"
               min="0"
               max="100"
               value={volume}
-              disabled={!canControl}
               onChange={(event) => onVolumeChange(Number(event.target.value))}
               className="ms-room-music-slider min-w-0 flex-1 cursor-pointer disabled:cursor-default disabled:opacity-45"
               style={{ "--ms-slider-progress": `${volume}%` } as CSSProperties}
@@ -275,24 +277,6 @@ export function RoomSoundscapePanel({
             />
             <span className={`w-7 text-right text-[9px] tabular-nums ${isDark ? "text-[#C6CDD5]" : "text-[#2F2F2F]/45"}`}>{volume}%</span>
           </div>
-
-          <button
-            type="button"
-            disabled={!activeId}
-            onClick={onToggleMute}
-            className={`mt-3 flex h-9 w-full items-center justify-center gap-2 rounded-xl text-[11px] font-medium transition disabled:opacity-35 ${
-              personalMuted
-                ? isDark ? "bg-[#3A5541] text-[#D9F9DC] hover:bg-[#44664D]" : "bg-[#2F2F2F] text-white hover:bg-[#252525]"
-                : isDark ? "bg-[#303030] text-[#E3E7EB] hover:bg-[#3C3C3C]" : "bg-[#ECEAEA] text-[#555] hover:bg-[#E3E0E0]"
-            }`}
-          >
-            {personalMuted ? (
-              <Volume2 className="h-3.5 w-3.5" strokeWidth={1.8} />
-            ) : (
-              <VolumeX className="h-3.5 w-3.5" strokeWidth={1.8} />
-            )}
-            {personalMuted ? "Unmute for me" : "Mute for me"}
-          </button>
 
           {canShareTabMusic ? (
             <div className={`mt-3 rounded-[14px] border p-2.5 text-left ${isDark ? "border-[#484848] bg-[#252525]" : "border-[#DEDADA] bg-white"}`}>

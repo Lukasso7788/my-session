@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Quiet forest artwork">
+  <rect width="480" height="150" rx="22" fill="#254525"/>
+  <circle cx="390" cy="28" r="48" fill="#2A4D2F"/>
+  <g fill="#34593B">
+    <path d="m22 124 42-91 42 91z"/><path d="m72 128 35-76 35 76z"/>
+    <path d="m331 126 40-87 40 87z"/><path d="m382 130 45-98 45 98z"/>
+  </g>
+  <g fill="#436E4C">
+    <path d="m116 132 49-108 49 108z"/><path d="m189 130 37-82 37 82z"/>
+    <path d="m242 134 53-117 53 117z"/>
+  </g>
+  <path d="M0 124c104-15 154 10 244-4 81-13 142 7 236-12v42H0z" fill="#4E7456" opacity=".74"/>
+</svg>

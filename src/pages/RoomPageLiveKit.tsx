@@ -8812,7 +8812,15 @@ export function RoomPageLiveKit({
   const [soundscapePlaying, setSoundscapePlaying] = useState(false);
   const [soundscapePosition, setSoundscapePosition] = useState(0);
   const [soundscapeDuration, setSoundscapeDuration] = useState(0);
-  const [roomSoundscapeVolume, setRoomSoundscapeVolume] = useState(35);
+  const [roomSoundscapeVolume, setRoomSoundscapeVolume] = useState(() => {
+    try {
+      const stored = Number(localStorage.getItem("ms_room_music_volume_v1") ?? "100");
+      return Number.isFinite(stored) ? Math.max(0, Math.min(100, stored)) : 100;
+    } catch {
+      return 100;
+    }
+  });
+  const roomSoundscapeVolumeRef = useRef(roomSoundscapeVolume);
   const [soundscapeListeningMode, setSoundscapeListeningMode] =
     useState<SoundscapeListeningMode>("room");
   const [personalSoundscapeId, setPersonalSoundscapeId] =
@@ -8851,7 +8859,6 @@ export function RoomPageLiveKit({
   const roomSoundscapeRequestRef = useRef(0);
   const personalSoundscapeRequestRef = useRef(0);
   const soundscapeStateRef = useRef<RoomSoundtrackState | null>(null);
-  const soundscapeVolumePublishTimerRef = useRef<number | null>(null);
   const sharedTabMusicPublicationRef = useRef<LocalTrackPublication | null>(null);
   const sharedTabMusicStreamRef = useRef<MediaStream | null>(null);
   const sharedTabMusicAudioContextRef = useRef<AudioContext | null>(null);
@@ -9041,7 +9048,6 @@ export function RoomPageLiveKit({
     id: RoomSoundscapeId,
     positionSeconds = 0,
     customUrl?: string,
-    volumeOverride = roomSoundscapeVolume,
   ) => {
     const requestId = ++roomSoundscapeRequestRef.current;
     try {
@@ -9055,7 +9061,7 @@ export function RoomPageLiveKit({
       );
       const started = await soundscapeEngineRef.current.play(
         id,
-        volumeOverride / 100,
+        roomSoundscapeVolumeRef.current / 100,
         positionSeconds,
         customUrl,
       );
@@ -9094,7 +9100,13 @@ export function RoomPageLiveKit({
   };
 
   useEffect(() => {
+    roomSoundscapeVolumeRef.current = roomSoundscapeVolume;
     soundscapeEngineRef.current?.setVolume(roomSoundscapeVolume / 100);
+    try {
+      localStorage.setItem("ms_room_music_volume_v1", String(roomSoundscapeVolume));
+    } catch {
+      // Local listening still works when browser storage is unavailable.
+    }
   }, [roomSoundscapeVolume]);
 
   useEffect(() => {
@@ -9179,10 +9191,6 @@ export function RoomPageLiveKit({
       soundscapeEngineRef.current = null;
       personalSoundscapeEngineRef.current?.destroy();
       personalSoundscapeEngineRef.current = null;
-      if (soundscapeVolumePublishTimerRef.current != null) {
-        window.clearTimeout(soundscapeVolumePublishTimerRef.current);
-        soundscapeVolumePublishTimerRef.current = null;
-      }
     },
     [],
   );
@@ -11446,7 +11454,7 @@ export function RoomPageLiveKit({
       setSharingTabMusic(true);
       void publishSoundtrackPacket({
         type: "shared_tab_music_volume",
-        volume: roomSoundscapeVolume,
+        volume: 100, // Legacy protocol default; never publish personal volume.
         updatedAt: Date.now(),
       }).catch(() => { });
 
@@ -11613,7 +11621,7 @@ export function RoomPageLiveKit({
     const next: RoomSoundtrackState = {
       trackId: id,
       duration: soundscapeEngineRef.current?.duration() || 0,
-      volume: roomSoundscapeVolume,
+      volume: 100,
       playing: true,
       position: resumePosition,
       updatedAt: Date.now(),
@@ -11664,43 +11672,11 @@ export function RoomPageLiveKit({
   };
 
   const adjustRoomSoundtrackVolume = (rawVolume: number) => {
-    if (!canControlRoomSoundtrack) return;
+    if (!Number.isFinite(rawVolume)) return;
     const volume = Math.max(0, Math.min(100, Math.round(rawVolume)));
+    roomSoundscapeVolumeRef.current = volume;
     setRoomSoundscapeVolume(volume);
     soundscapeEngineRef.current?.setVolume(volume / 100);
-    // Shared tab music stays at full level before Opus. Broadcast only the
-    // control value; each listener applies it after receiving the track.
-    void publishSoundtrackPacket({
-      type: "shared_tab_music_volume",
-      volume,
-      updatedAt: Date.now(),
-    }).catch(() => { });
-
-    const current = soundscapeStateRef.current;
-    if (!current) return;
-    const position = current.playing
-      ? soundscapeEngineRef.current?.currentTime() ?? current.position
-      : current.position;
-    const next: RoomSoundtrackState = {
-      ...current,
-      volume,
-      position,
-      updatedAt: Date.now(),
-    };
-    soundscapeStateRef.current = next;
-    if (soundscapeVolumePublishTimerRef.current != null) {
-      window.clearTimeout(soundscapeVolumePublishTimerRef.current);
-    }
-    soundscapeVolumePublishTimerRef.current = window.setTimeout(() => {
-      soundscapeVolumePublishTimerRef.current = null;
-      const latest = soundscapeStateRef.current;
-      if (latest) {
-        void publishSoundtrackPacket({
-          type: "soundtrack_state",
-          state: latest,
-        }).catch(() => { });
-      }
-    }, 100);
   };
 
   const togglePersonalSoundtrack = async () => {
@@ -11793,7 +11769,7 @@ export function RoomPageLiveKit({
         trackUrl: String(payload.url),
         trackLabel: label,
         duration: soundscapeEngineRef.current?.duration() || 0,
-        volume: roomSoundscapeVolume,
+        volume: 100,
         playing: true,
         position: 0,
         updatedAt: Date.now(),
@@ -11819,7 +11795,7 @@ export function RoomPageLiveKit({
       trackId: activeSoundscapeId,
       trackUrl: soundscapeStateRef.current?.trackUrl,
       trackLabel: soundscapeStateRef.current?.trackLabel,
-      volume: roomSoundscapeVolume,
+      volume: 100,
       playing: false,
       position,
       updatedAt: Date.now(),
@@ -11856,12 +11832,7 @@ export function RoomPageLiveKit({
       if (current && next.updatedAt <= current.updatedAt) return;
 
       soundscapeStateRef.current = next;
-      const nextVolume = Math.max(
-        0,
-        Math.min(100, Number.isFinite(Number(next.volume)) ? Number(next.volume) : 35),
-      );
-      setRoomSoundscapeVolume(nextVolume);
-      soundscapeEngineRef.current?.setVolume(nextVolume / 100);
+      // Track/timeline are shared; listening volume belongs to this device.
       setActiveSoundscapeId(next.trackId);
       setCustomSoundscapeLabel(next.trackId === "custom" ? next.trackLabel || "Custom track" : null);
       setSoundscapePlaying(next.playing);
@@ -11891,7 +11862,6 @@ export function RoomPageLiveKit({
         next.trackId,
         position,
         next.trackUrl,
-        nextVolume,
       ).catch(() => { });
     };
 
@@ -11921,31 +11891,13 @@ export function RoomPageLiveKit({
           return;
         }
         if (packet.type === "shared_tab_music_volume") {
-          if (!sender) return;
-          const senderUserId = extractBaseUserIdFromIdentity(
-            String(sender.identity || ""),
-          )
-            .trim()
-            .toLowerCase();
-          const senderCanControl =
-            (sender as any)?.permissions?.roomAdmin === true ||
-            participantControlSenderIdsRef.current.has(senderUserId);
-          if (!senderCanControl) return;
-          const nextVolume = Math.max(
-            0,
-            Math.min(
-              100,
-              Number.isFinite(Number(packet.volume)) ? Number(packet.volume) : 35,
-            ),
-          );
-          setRoomSoundscapeVolume(nextVolume);
-          soundscapeEngineRef.current?.setVolume(nextVolume / 100);
+          // Ignore legacy clients' shared volume updates.
           return;
         }
         if (packet.type === "soundtrack_request" && canControlRoomSoundtrack) {
           void publishSoundtrackPacket({
             type: "shared_tab_music_volume",
-            volume: roomSoundscapeVolume,
+            volume: 100,
             updatedAt: Date.now(),
           }).catch(() => { });
           const current = soundscapeStateRef.current;
@@ -11981,7 +11933,6 @@ export function RoomPageLiveKit({
     roomState,
     canControlRoomSoundtrack,
     canUploadRoomSoundtrack,
-    roomSoundscapeVolume,
   ]);
 
   useEffect(() => {

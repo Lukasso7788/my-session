@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Downtown Flow New York skyline artwork">
+  <defs><clipPath id="downtown-flow-frame"><rect width="480" height="150" rx="22"/></clipPath></defs>
+  <g clip-path="url(#downtown-flow-frame)">
+    <rect width="480" height="150" fill="#1C2E4B"/>
+    <circle cx="287" cy="37" r="39" fill="#532418"/>
+    <path d="M0 115V79h18V66h20v21h17V61h22v54h17V74h25V56h21v59h20V81h19v34h56V72h27v43h23V62h21v53h31V77h22v38h28V57h25v58h22V73h22v42z" fill="#283D5A"/>
+    <path d="M0 127V82h28v45h8V71h24v56h12V90h20v37h8V62h32v65h10V78h27v49h12V95h25v32h24V74h28v53h20V87h25v40h22V71h24v56h10V88h22v39h21V75h31v52h12V88h26v39z" fill="#344A69"/>
+    <path d="M154 127V73h11V63h29v10h10v54z" fill="#405775"/>
+    <path d="M166 63V56h8v-8h11v8h8v7z" fill="#405775"/>
+    <path d="M179 48V29" fill="none" stroke="#405775" stroke-linecap="round" stroke-width="3"/>
+    <path d="M313 127V75l12-9 7-25h27l7 25 12 9v52z" fill="#425A78"/>
+    <path d="M334 41V35h23v6z" fill="#425A78"/>
+    <path d="M345 35V16" fill="none" stroke="#425A78" stroke-linecap="round" stroke-width="3"/>
+    <path d="M405 127V65h9V54h25v11h10v62z" fill="#3D5572"/>
+    <path d="M0 127h480v23H0z" fill="#2E4360"/>
+    <path d="M0 136c80-4 139 5 213 0 91-7 153 5 267-2" fill="none" stroke="#20324A" stroke-linecap="round" stroke-width="3"/>
+    <path d="M72 144h68m93-2h41m89 2h61" fill="none" stroke="#3F2D27" stroke-linecap="round" stroke-width="3" opacity=".75"/>
+    <g fill="#202D41" opacity=".7">
+      <rect x="44" y="82" width="3" height="5" rx="1"/><rect x="53" y="82" width="3" height="5" rx="1"/>
+      <rect x="108" y="77" width="3" height="5" rx="1"/><rect x="119" y="77" width="3" height="5" rx="1"/>
+      <rect x="169" y="86" width="3" height="5" rx="1"/><rect x="184" y="86" width="3" height="5" rx="1"/>
+      <rect x="337" y="82" width="3" height="5" rx="1"/><rect x="351" y="82" width="3" height="5" rx="1"/>
+      <rect x="416" y="78" width="3" height="5" rx="1"/><rect x="430" y="78" width="3" height="5" rx="1"/>
+    </g>
+  </g>
+</svg>
