@@ -145,21 +145,36 @@
   background-color: #3a3a3a !important;
 }
 
+/* Dark sliders: bright blue fill, visible empty track and a white thumb with a
+   blue ring, so the thumb stays visible even at 100%. */
 .ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-webkit-slider-runnable-track {
-  background: linear-gradient(to right, #5286f6 0, #5286f6 var(--ms-slider-progress, 0%), #505050 var(--ms-slider-progress, 0%), #505050 100%);
+  height: 4px;
+  background: linear-gradient(to right, #6b9bff 0, #6b9bff var(--ms-slider-progress, 0%), #6a6a6a var(--ms-slider-progress, 0%), #6a6a6a 100%);
 }
 
-.ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-webkit-slider-thumb,
+.ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  background: #ffffff;
+  box-shadow: 0 0 0 2px #6b9bff !important;
+}
+
 .ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-moz-range-progress {
-  background: #5286f6;
+  height: 4px;
+  background: #6b9bff;
 }
 
 .ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-moz-range-track {
-  background: #505050;
+  height: 4px;
+  background: #6a6a6a;
 }
 
 .ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-moz-range-thumb {
-  background: #5286f6;
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  box-shadow: 0 0 0 2px #6b9bff !important;
 }
 
 
