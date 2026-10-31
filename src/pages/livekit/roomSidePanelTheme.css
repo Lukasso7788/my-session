@@ -145,8 +145,8 @@
   background-color: #3a3a3a !important;
 }
 
-/* Dark sliders: bright blue fill, visible empty track and a white thumb with a
-   blue ring, so the thumb stays visible even at 100%. */
+/* Dark sliders: bright blue fill, visible empty track and a blue thumb with a
+   dark ring, so the thumb stays visible even at 100%. */
 .ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-webkit-slider-runnable-track {
   height: 4px;
   background: linear-gradient(to right, #6b9bff 0, #6b9bff var(--ms-slider-progress, 0%), #6a6a6a var(--ms-slider-progress, 0%), #6a6a6a 100%);
@@ -156,8 +156,8 @@
   width: 14px;
   height: 14px;
   margin-top: -5px;
-  background: #ffffff;
-  box-shadow: 0 0 0 2px #6b9bff !important;
+  background: #6b9bff;
+  box-shadow: 0 0 0 2px #303030 !important;
 }
 
 .ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-moz-range-progress {
@@ -173,8 +173,8 @@
 .ms-room-side-panel[data-panel-theme="dark"] .ms-room-music-slider::-moz-range-thumb {
   width: 14px;
   height: 14px;
-  background: #ffffff;
-  box-shadow: 0 0 0 2px #6b9bff !important;
+  background: #6b9bff;
+  box-shadow: 0 0 0 2px #303030 !important;
 }
 
 
