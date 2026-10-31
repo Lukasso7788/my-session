@@ -1,19 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 480 150" role="img" aria-label="Fireplace artwork">
-  <defs>
-    <clipPath id="fireplace-frame"><rect width="480" height="150" rx="22"/></clipPath>
-    <g id="flame">
-      <path d="M0 0c-24 0-39-14-36-35 3-18 18-28 28-43 2 15 12 20 16 31 6-8 10-16 9-27 18 17 25 31 22 47-3 17-17 27-39 27z" fill="#D96B3D"/>
-      <path d="M1-6c-12 0-21-8-19-19 1-9 10-16 15-24 1 9 8 13 10 20 4-5 6-10 5-16 9 10 13 18 11 26-2 8-10 13-22 13z" fill="#F2B44B"/>
-    </g>
-  </defs>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Fireplace artwork">
+  <defs><clipPath id="fireplace-frame"><rect width="480" height="150" rx="22"/></clipPath></defs>
   <g clip-path="url(#fireplace-frame)">
     <rect width="480" height="150" fill="#F2E6DC"/>
     <g opacity=".42">
-      <use xlink:href="#flame" href="#flame" transform="translate(20 186) scale(1.7)"/>
-      <use xlink:href="#flame" href="#flame" transform="translate(130 184) scale(1.95)"/>
-      <use xlink:href="#flame" href="#flame" transform="translate(240 190) scale(2.15)"/>
-      <use xlink:href="#flame" href="#flame" transform="translate(350 184) scale(1.95)"/>
-      <use xlink:href="#flame" href="#flame" transform="translate(460 186) scale(1.7)"/>
+      <path d="M-30 170C-21.3 112.8 13.5 97.2 28 66C38.5 79.8 55 91.3 58 112C63.7 69.1 86.5 57.4 96 34C108.6 52.6 128.4 68.1 132 96C138 50.9 162 38.6 172 14C183.2 34.4 200.8 51.4 204 82C209.4 30.3 231 16.2 240 -12C253.3 16.2 274.2 39.7 278 82C283.1 46.8 303.5 37.2 312 18C325.3 41.4 346.2 60.9 350 96C355.7 65.2 378.5 56.8 388 40C400.6 61.6 420.4 79.6 424 112C428.8 88.9 448 82.6 456 70C474.9 100 504.6 125 510 170Z" fill="#D96B3D"/>
+      <path d="M29.4 170C36.2 139.2 63.3 130.8 74.6 114C82.8 127.8 95.7 139.3 98 160C102.5 117.1 120.3 105.4 127.7 82C137.5 100.6 153 116.1 155.8 144C160.5 98.9 179.2 86.6 187 62C195.7 82.4 209.4 99.4 211.9 130C216.1 78.3 233 64.2 240 36C250.4 64.2 266.6 87.7 269.6 130C273.6 94.8 289.6 85.2 296.2 66C306.6 89.4 322.8 108.9 325.8 144C330.2 113.2 348 104.8 355.4 88C365.2 109.6 380.7 127.6 383.5 160C387.3 136.9 402.3 130.6 408.5 118C423.2 133.6 446.4 146.6 450.6 170Z" fill="#F2B44B"/>
     </g>
   </g>
 </svg>
