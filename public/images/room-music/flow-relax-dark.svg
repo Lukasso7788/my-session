@@ -1,35 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="A quiet reading nook beside a sunset window">
-  <defs>
-  <linearGradient id="window" x2="0" y2="1">
-  <stop stop-color="#333D66"/>
-  <stop offset="1" stop-color="#CB8A78"/>
-  </linearGradient>
-  <linearGradient id="light" x2="0" y2="1">
-  <stop stop-color="#665342"/>
-  <stop offset="1" stop-color="#282D3C"/>
-  </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="480" height="150" rx="0" fill="#282D3C" />
-  <rect x="22" y="13" width="242" height="116" rx="4" fill="#171E30" />
-  <rect x="28" y="19" width="230" height="104" rx="2" fill="url(#window)" />
-  <circle cx="199" cy="53" r="21" fill="#F6D3A0" />
-  <path d="M28 94Q72 55 129 83T258 73v50H28Z" fill="#62566D" />
-  <path d="M28 111Q71 83 128 103T258 94v29H28Z" fill="#3F405B" />
-  <rect x="139" y="19" width="5" height="104" rx="0" fill="#202639" />
-  <rect x="28" y="85" width="230" height="4" rx="0" fill="#202639" />
-  <rect x="18" y="123" width="250" height="6" rx="2" fill="#636078" />
-  <path d="M296 117 321 51H366L398 117Z" fill="url(#light)" />
-  <path d="M345 62v56m-18 1h36" fill="none" stroke="#A48C72" stroke-width="3" stroke-linecap="round" />
-  <path d="M325 25h34l15 34h-66Z" fill="#E0B385" />
-  <path d="M325 25h10l-5 34h-22Z" fill="#BC8B66" />
-  <rect x="0" y="133" width="480" height="17" rx="0" fill="#70544C" />
-  <path d="M0 133h480" fill="none" stroke="#AD8164" stroke-width="2" stroke-linecap="round" />
-  <rect x="97" y="118" width="74" height="9" rx="1" fill="#627F87" />
-  <rect x="102" y="128" width="85" height="5" rx="1" fill="#B1977C" />
-  <path d="M184 110h27v14q0 9-13 9t-14-9Z" fill="#B8C5BF" />
-  <path d="M211 113h4q12 7-4 12" fill="none" stroke="#B8C5BF" stroke-width="3" stroke-linecap="round" />
-  <path d="M194 101q-5-5 0-11m9 12q-4-6 0-10" fill="none" stroke="#929AA8" stroke-width="1.2" stroke-linecap="round" />
-  <path d="m416 111 5 22h24l5-22Z" fill="#B17562" />
-  <path d="M433 114V69" fill="none" stroke="#829987" stroke-width="2" stroke-linecap="round" />
-  <path d="M432 94q-23-1-25-19 23 2 25 19Zm2-13q3-23 19-24 0 21-19 24Zm0 25q7-20 25-15-8 18-25 15Z" fill="#718C7D" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Flow relax artwork">
+  <rect width="480" height="150" rx="22" fill="#26222E"/>
+  <path d="M-24 103c67-74 135 23 205-45 65-64 124 34 196-14 42-28 82-26 127-6v112H-24z" fill="#302A3A"/>
+  <path d="M-10 130c74-57 134 5 207-35 76-42 143 24 211-15 30-17 57-20 82-13v83H-10z" fill="#3A3247" opacity=".85"/>
+  <circle cx="75" cy="34" r="28" fill="#2E2838"/>
+  <circle cx="416" cy="27" r="45" fill="#2F293A"/>
 </svg>

@@ -1,10 +1,26 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Campfire artwork">
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 480 150" role="img" aria-label="Fireplace artwork">
+  <defs>
+    <g id="flame">
+      <path d="M0 0c-24 0-39-14-36-35 3-18 18-28 28-43 2 15 12 20 16 31 6-8 10-16 9-27 18 17 25 31 22 47-3 17-17 27-39 27z" fill="#D96B3D"/>
+      <path d="M1-6c-12 0-21-8-19-19 1-9 10-16 15-24 1 9 8 13 10 20 4-5 6-10 5-16 9 10 13 18 11 26-2 8-10 13-22 13z" fill="#F2B44B"/>
+    </g>
+  </defs>
   <rect width="480" height="150" rx="22" fill="#F2E6DC"/>
-  <circle cx="240" cy="80" r="62" fill="#EAD5C4"/>
-  <path d="M0 116c92-16 148 10 238-4 93-15 147 9 242-10v48H0z" fill="#D7C0AE"/>
-  <g stroke="#745B4B" stroke-linecap="round" stroke-width="12">
-    <path d="m196 127 88-32"/><path d="m202 95 82 33"/>
+  <circle cx="98" cy="92" r="54" fill="#EAD5C4"/>
+  <circle cx="384" cy="90" r="52" fill="#EAD5C4"/>
+  <g fill="#E39A5B" opacity=".55">
+    <circle cx="58" cy="30" r="2.2"/><circle cx="140" cy="22" r="1.6"/><circle cx="196" cy="38" r="1.4"/>
+    <circle cx="250" cy="26" r="1.3"/><circle cx="304" cy="18" r="1.8"/><circle cx="348" cy="34" r="1.4"/>
+    <circle cx="432" cy="24" r="2.2"/>
   </g>
-  <path d="M240 111c-24 0-39-14-36-35 3-18 18-28 28-43 2 15 12 20 16 31 6-8 10-16 9-27 18 17 25 31 22 47-3 17-17 27-39 27z" fill="#D96B3D"/>
-  <path d="M241 105c-12 0-21-8-19-19 1-9 10-16 15-24 1 9 8 13 10 20 4-5 6-10 5-16 9 10 13 18 11 26-2 8-10 13-22 13z" fill="#F2B44B"/>
+  <use xlink:href="#flame" href="#flame" transform="translate(38 126) scale(.72)"/>
+  <use xlink:href="#flame" href="#flame" transform="translate(98 128) scale(1)"/>
+  <use xlink:href="#flame" href="#flame" transform="translate(160 126) scale(.58)"/>
+  <use xlink:href="#flame" href="#flame" transform="translate(212 126) scale(.4)"/>
+  <use xlink:href="#flame" href="#flame" transform="translate(266 126) scale(.46)"/>
+  <use xlink:href="#flame" href="#flame" transform="translate(322 126) scale(.62)"/>
+  <use xlink:href="#flame" href="#flame" transform="translate(384 128) scale(.96)"/>
+  <use xlink:href="#flame" href="#flame" transform="translate(446 126) scale(.68)"/>
+  <path d="M0 118c92-12 148 8 238-3 93-12 147 7 242-8v43H0z" fill="#D7C0AE"/>
+  <path d="M0 132c100-12 150 6 239-6 90-12 146 6 241-9v33H0z" fill="#C9AF9B" opacity=".7"/>
 </svg>

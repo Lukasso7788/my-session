@@ -1,17 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Quiet sandstone dunes with fine flowing contours">
-  <defs>
-  <linearGradient id="sky" x2="0" y2="1">
-  <stop stop-color="#3B3034"/>
-  <stop offset="1" stop-color="#94725C"/>
-  </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="480" height="150" rx="0" fill="url(#sky)" />
-  <circle cx="106" cy="41" r="22" fill="#DEC396" />
-  <path d="M0 97 29 80H72L89 62h45l11 25h58l26-14h45l23 26 38-13h58l29 18h58v46H0Z" fill="#866553" />
-  <path d="M0 108q92-61 202-6t278-9v57H0Z" fill="#A98262" />
-  <path d="M0 132q108-7 189-34t145 20 146 5v27H0Z" fill="#6F5145" />
-  <path d="M0 150q79-30 170-12t174-6 136-11v29Z" fill="#483A38" />
-  <path d="M18 103q66-26 132-11m-105 7q40-10 75-9m112 22q54-8 90 8m-98-15q55-8 93 11m-85 5 37 2m79 20q70-27 117-13" fill="none" stroke="#C9A27B" stroke-width="1" stroke-linecap="round" opacity=".55"/>
-  <path d="M33 143q37-13 69-10m11 7 32 3m230-36 47-9" fill="none" stroke="#C9A27B" stroke-width="1" stroke-linecap="round" opacity=".55"/>
-  <path d="M413 147q-1-14 5-24m-5 21-9-12m10 10 9-9" fill="none" stroke="#AB8A69" stroke-width="1.5" stroke-linecap="round" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Brown Noise artwork">
+  <defs><clipPath id="brown-noise-frame"><rect width="480" height="150" rx="22"/></clipPath></defs>
+  <g clip-path="url(#brown-noise-frame)">
+  <rect width="480" height="150" rx="22" fill="#29231F"/>
+  <circle cx="418" cy="25" r="67" fill="#312923"/>
+  <circle cx="61" cy="126" r="79" fill="#302822"/>
+  <path d="M0 71c74-19 128 15 203-6 78-23 153 13 277-18v103H0z" fill="#382E27"/>
+  <path d="M0 94c78-20 139 17 222-7 84-24 147 16 258-12v75H0z" fill="#43362C"/>
+  <path d="M0 119c77-18 139 15 219-7 88-24 163 16 261-7v45H0z" fill="#524033" opacity=".85"/>
+  <path d="M-8 48c76-20 132 16 211-6 75-21 155 12 285-16" fill="none" stroke="#4A3C31" stroke-linecap="round" stroke-width="3" opacity=".8"/>
+  <path d="M-8 105c78-19 139 17 222-7 84-24 149 16 274-13" fill="none" stroke="#5E4B3D" stroke-linecap="round" stroke-width="3" opacity=".7"/>
+  </g>
 </svg>

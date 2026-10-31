@@ -215,7 +215,7 @@ export function RoomSoundscapePanel({
                 type="button"
                 disabled={!canControl || !activeId || busy}
                 onClick={onStop}
-                className="flex h-12 w-12 items-center justify-center rounded-full bg-[#2F2F2F] text-white transition hover:bg-[#252525] disabled:opacity-40"
+                className={`flex h-12 w-12 items-center justify-center rounded-full text-white transition disabled:opacity-40 ${isDark ? "bg-[#5286F6] hover:bg-[#4677E6]" : "bg-[#2F2F2F] hover:bg-[#252525]"}`}
                 aria-label={playing ? "Pause" : "Play"}
               >
                 {playing ? (
@@ -325,7 +325,7 @@ export function RoomSoundscapePanel({
                   disabled={!canControl || busy}
                   onClick={() => onSelect(option.id)}
                   className={`group flex w-full items-center gap-3 rounded-[13px] px-2 py-2 text-left transition disabled:cursor-default ${
-                    selected ? isDark ? "bg-[#353F39]" : "bg-[#EDEBEB]" : isDark ? "hover:bg-[#303030]" : "hover:bg-[#F5F3F3]"
+                    selected ? isDark ? "bg-[#2A3A55]" : "bg-[#E8F0FE]" : isDark ? "hover:bg-[#303030]" : "hover:bg-[#F5F3F3]"
                   } ${!canControl ? "opacity-65" : ""}`}
                 >
                   <span className={`w-5 shrink-0 text-center tabular-nums ${isDark ? "text-[10px] text-[#AEB6BF]" : "text-[9px] text-[#2F2F2F]/30"}`}>

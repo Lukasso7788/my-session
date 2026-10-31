@@ -8,29 +8,16 @@ MySession is a React, TypeScript and Vite application; rooms use LiveKit for par
 
 Verification limitations for the earlier volume change: automated tests model the guest/host logic; a live multi-participant LiveKit room and every supported browser must still be checked, particularly an older client sharing tab audio.
 
-## Artwork redesign — 2026-10-31
+## Artwork — 2026-10-31 (current)
 
-User feedback: dark variants looked poor; the central Play/Pause button covered
-the campfire in both themes. This iteration replaces the artwork geometry, rather
-than recoloring the old scenes. All seven tracks now have new day/night versions:
-mountain lake, reading nook, rainy window, pine forest, campfire and lantern,
-sandstone dunes, and a city waterfront. Fourteen native SVGs are served at the
-existing `public/images/room-music/*.svg` paths. Playlist icons stay unchanged.
-
-`scripts/generate-room-music-artwork.mjs` is the authoring source, with separate
-scene functions and light/dark palettes. Run `node scripts/generate-room-music-artwork.mjs`
-after editing it, and commit both generator and SVGs. The generator is development
-only, not imported by the application or required during deployment. Assets use
-basic paths, shapes and gradients; no animation, filters, embedded rasters, fonts
-or external requests. The 480×150 viewBox contract is unchanged.
-
-The panel now lays out `<img width=480 height=150>` in normal document flow, at
-full available width and automatic height. Controls are in a separate row below;
-there is no overlay/tint or object-cover cropping. Thus every scene stays visible
-at any supported width, including the central flame. Dark transport icons use
-light foregrounds, with a blue Play/Pause button and visible keyboard focus rings.
-This adds approximately 80–90 px to the old compact artwork/transport block at a
-420 px panel width; the existing panel scroll container accommodates it.
+The illustrated redesign (separate controls row, generated scenes) was rejected
+by the user and reverted. The panel again shows the artwork as a plain
+background under the transport buttons (`object-cover`, light tint). Scenes are
+the earlier minimal flat-colour SVGs, hand-written in
+`public/images/room-music/`; there is no generator. Every track has a matching
+`-dark.svg` for the dark side panel. Downtown Flow is a street-level view between
+towers rather than a skyline. The campfire sits on the right so the Play button
+does not cover it. In dark mode the Play button uses MySession blue.
 
 ### Project map and boundaries
 
