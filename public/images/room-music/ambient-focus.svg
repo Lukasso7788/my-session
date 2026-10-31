@@ -1,32 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Moonlight over a quiet mountain lake">
-  <defs>
-  <linearGradient id="sky" x2="0" y2="1">
-  <stop stop-color="#CCDFEA"/>
-  <stop offset="1" stop-color="#EDF0E6"/>
-  </linearGradient>
-  <linearGradient id="water" x2="0" y2="1">
-  <stop stop-color="#A4C8D6"/>
-  <stop offset="1" stop-color="#D6E6E5"/>
-  </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="480" height="150" rx="0" fill="url(#sky)" />
-  <circle cx="338" cy="37" r="31" fill="#FFFFE7" opacity=".07"/>
-  <circle cx="338" cy="37" r="18" fill="#FFFEEC" />
-  <path d="M0 89 58 43 101 73 157 34 217 87 274 58 328 89 396 49 480 91V150H0Z" fill="#91B0C0" />
-  <path d="m139 49 18-15 25 22-17-6-9 5-5-10Z" fill="#E6EEF0" />
-  <path d="M0 83Q49 59 101 94L179 76 250 102 357 83Q410 69 480 85V150H0Z" fill="#7396A7" />
-  <rect x="0" y="103" width="480" height="47" rx="0" fill="url(#water)" />
-  <path d="M281 110h75m-59 7h77m-87 8h58m-27 10h45m-59 7h42" fill="none" stroke="#F9F5D9" stroke-width="1.5" stroke-linecap="round" opacity=".55"/>
-  <path d="M58 113h65m31 17h69m-188 8h64m291-18h60" fill="none" stroke="#EDF1E8" stroke-width="1" stroke-linecap="round" opacity=".65"/>
-  <path d="M0 134Q43 113 88 125L135 150H0Z" fill="#4B7782" />
-  <path d="M388 150Q429 122 480 129V150Z" fill="#4B7782" />
-  <g transform="translate(28 126) scale(0.55)" fill="#3C6572">
-  <path d="M0-72-13-47h7l-15 23h10L-28 0H28L11-24h10L6-47h7Z"/>
-  <path d="M-2-7h4v18h-4Z"/>
-  </g>
-  <g transform="translate(61 133) scale(0.38)" fill="#3C6572">
-  <path d="M0-72-13-47h7l-15 23h10L-28 0H28L11-24h10L6-47h7Z"/>
-  <path d="M-2-7h4v18h-4Z"/>
-  </g>
-  <path d="M433 145q-5-17-1-29m7 32q1-19 11-25" fill="none" stroke="#72929A" stroke-width="2" stroke-linecap="round" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Ambient focus artwork">
+  <rect width="480" height="150" rx="22" fill="#E8EEF4"/>
+  <circle cx="405" cy="30" r="58" fill="#D8E3EE"/>
+  <circle cx="86" cy="132" r="72" fill="#DCE7F0"/>
+  <path d="M0 105C74 79 126 126 202 99s135-8 278-40v91H0z" fill="#C9D8E6"/>
+  <path d="M0 124c90-30 145 18 228-8 84-26 155-8 252-38v72H0z" fill="#B8CBDD" opacity=".72"/>
 </svg>

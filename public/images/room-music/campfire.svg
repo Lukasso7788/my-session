@@ -1,65 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="A glowing campfire with logs and a lantern in a forest clearing">
-  <defs>
-  <linearGradient id="sky" x2="0" y2="1">
-  <stop stop-color="#B7C9CC"/>
-  <stop offset="1" stop-color="#F2DDC0"/>
-  </linearGradient>
-  <radialGradient id="glow">
-  <stop stop-color="#F7B35D" stop-opacity=".3"/>
-  <stop offset="1" stop-color="#F7B35D" stop-opacity="0"/>
-  </radialGradient>
-  <linearGradient id="flame" x2="0" y2="1">
-  <stop stop-color="#FFCA75"/>
-  <stop offset="1" stop-color="#DB653F"/>
-  </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="480" height="150" rx="0" fill="url(#sky)" />
-  <circle cx="367" cy="32" r="12" fill="#FFF0D1" />
-  <path d="M0 93q72-40 139-10t155 1 186 1v65H0Z" fill="#8EA49C" />
-  <g transform="translate(21 120) scale(0.7)" fill="#607F75">
-  <path d="M0-72-13-47h7l-15 23h10L-28 0H28L11-24h10L6-47h7Z"/>
-  <path d="M-2-7h4v18h-4Z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Campfire artwork">
+  <rect width="480" height="150" rx="22" fill="#F2E6DC"/>
+  <circle cx="240" cy="80" r="62" fill="#EAD5C4"/>
+  <path d="M0 116c92-16 148 10 238-4 93-15 147 9 242-10v48H0z" fill="#D7C0AE"/>
+  <g stroke="#745B4B" stroke-linecap="round" stroke-width="12">
+    <path d="m196 127 88-32"/><path d="m202 95 82 33"/>
   </g>
-  <g transform="translate(67 120) scale(0.8999999999999999)" fill="#607F75">
-  <path d="M0-72-13-47h7l-15 23h10L-28 0H28L11-24h10L6-47h7Z"/>
-  <path d="M-2-7h4v18h-4Z"/>
-  </g>
-  <g transform="translate(116 120) scale(1.1)" fill="#607F75">
-  <path d="M0-72-13-47h7l-15 23h10L-28 0H28L11-24h10L6-47h7Z"/>
-  <path d="M-2-7h4v18h-4Z"/>
-  </g>
-  <g transform="translate(330 120) scale(0.7)" fill="#607F75">
-  <path d="M0-72-13-47h7l-15 23h10L-28 0H28L11-24h10L6-47h7Z"/>
-  <path d="M-2-7h4v18h-4Z"/>
-  </g>
-  <g transform="translate(385 120) scale(0.8999999999999999)" fill="#607F75">
-  <path d="M0-72-13-47h7l-15 23h10L-28 0H28L11-24h10L6-47h7Z"/>
-  <path d="M-2-7h4v18h-4Z"/>
-  </g>
-  <g transform="translate(457 120) scale(1.1)" fill="#607F75">
-  <path d="M0-72-13-47h7l-15 23h10L-28 0H28L11-24h10L6-47h7Z"/>
-  <path d="M-2-7h4v18h-4Z"/>
-  </g>
-  <path d="M0 125q96-24 217-6t263-3v34H0Z" fill="#A4A089" />
-  <ellipse cx="224" cy="102" rx="112" ry="81" fill="url(#glow)"/>
-  <ellipse cx="223" cy="130" rx="66" ry="10" fill="#797F70"/>
-  <ellipse cx="171" cy="129" rx="8" ry="5" fill="#C6C2AB"/>
-  <ellipse cx="188" cy="134" rx="11" ry="5" fill="#C6C2AB"/>
-  <ellipse cx="212" cy="129" rx="8" ry="5" fill="#C6C2AB"/>
-  <ellipse cx="239" cy="134" rx="11" ry="5" fill="#C6C2AB"/>
-  <ellipse cx="263" cy="129" rx="8" ry="5" fill="#C6C2AB"/>
-  <ellipse cx="277" cy="134" rx="11" ry="5" fill="#C6C2AB"/>
-  <path d="m188 133 66-20m-64 1 63 19" fill="none" stroke="#745645" stroke-width="10" stroke-linecap="round" />
-  <path d="m189 131 61-18m-57 1 56 17" fill="none" stroke="#AE8058" stroke-width="2" stroke-linecap="round" />
-  <path d="M222 120c-22 0-35-14-29-32 3-10 14-19 14-31 12 7 12 18 15 23 15-18 0-33 17-47-2 27 28 41 23 65-2 14-17 24-40 22Z" fill="url(#flame)" />
-  <path d="M225 119c-12 0-22-9-17-20 3-6 9-9 10-18 8 9 5 15 9 18 7-8 9-16 8-24 14 16 16 29 8 37-4 5-10 7-18 7Z" fill="#FFD58A" />
-  <path d="M226 118q-13-7 0-22-1 10 8 11 4 9-8 11Z" fill="#FFF0BC" />
-  <path d="m209 47-2-6m39-13 1-5m11 38 2-5m-40-27-1-4" fill="none" stroke="#EAB578" stroke-width="1.5" stroke-linecap="round" />
-  <ellipse cx="359" cy="136" rx="24" ry="5" fill="#878D79"/>
-  <rect x="347" y="109" width="23" height="23" rx="3" fill="#9C7955" />
-  <rect x="351" y="111" width="15" height="17" rx="2" fill="#F6CC7B" />
-  <rect x="345" y="105" width="27" height="5" rx="2" fill="#775E46" />
-  <rect x="345" y="130" width="27" height="4" rx="2" fill="#775E46" />
-  <path d="M351 105v-5a7 7 0 0 1 14 0v5" fill="none" stroke="#775E46" stroke-width="2" stroke-linecap="round" />
-  <path d="M0 147q43-12 82-2m335 3 13-13m-1 12 19-5" fill="none" stroke="#687E66" stroke-width="2" stroke-linecap="round" />
+  <path d="M240 111c-24 0-39-14-36-35 3-18 18-28 28-43 2 15 12 20 16 31 6-8 10-16 9-27 18 17 25 31 22 47-3 17-17 27-39 27z" fill="#D96B3D"/>
+  <path d="M241 105c-12 0-21-8-19-19 1-9 10-16 15-24 1 9 8 13 10 20 4-5 6-10 5-16 9 10 13 18 11 26-2 8-10 13-22 13z" fill="#F2B44B"/>
 </svg>

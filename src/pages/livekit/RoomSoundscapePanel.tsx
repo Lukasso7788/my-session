@@ -193,23 +193,20 @@ export function RoomSoundscapePanel({
             {activeOption?.description || (activeId ? "Uploaded room audio" : "Select from the playlist")}
           </div>
 
-          <div className={`mt-4 overflow-hidden rounded-[18px] ${isDark ? "bg-[#252A32]" : "bg-[#ECEFF1]"}`}>
+          <div className={`relative mt-4 overflow-hidden rounded-[18px] ${isDark ? "bg-[#303030]" : "bg-[#ECEAEA]"}`}>
             <img
               src={isDark ? (activeOption?.artwork || "/images/room-music/ambient-focus.svg").replace(".svg", "-dark.svg") : (activeOption?.artwork || "/images/room-music/ambient-focus.svg")}
               alt=""
-              width={480}
-              height={150}
-              className="block h-auto w-full"
+              className="absolute inset-0 h-full w-full object-cover"
               draggable={false}
             />
-            {/* Keep transport below the scene: every illustration stays visible,
-                including the fire, at narrow panel widths and browser zoom. */}
-            <div className="flex items-center justify-center gap-4 px-3 py-2">
+            <div className={`absolute inset-0 ${isDark ? "bg-black/25" : "bg-white/10"}`} />
+            <div className="relative flex items-center justify-center gap-3 py-5">
               <button
                 type="button"
                 disabled={!canControl || busy}
                 onClick={() => selectRelative(-1)}
-                className={`flex h-10 w-10 items-center justify-center rounded-xl transition disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6] ${isDark ? "text-[#DDE6F0] hover:bg-[#36404E]" : "text-[#354454] hover:bg-white"}`}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/80 text-[#2F2F2F] transition hover:bg-white disabled:opacity-40"
                 aria-label="Previous track"
               >
                 <SkipBack className="h-[18px] w-[18px]" fill="currentColor" strokeWidth={1.6} />
@@ -218,7 +215,7 @@ export function RoomSoundscapePanel({
                 type="button"
                 disabled={!canControl || !activeId || busy}
                 onClick={onStop}
-                className={`flex h-11 w-11 items-center justify-center rounded-full transition disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6] ${isDark ? "bg-[#B6D4F5] text-[#182D43] hover:bg-[#D0E4FB]" : "bg-[#354454] text-white hover:bg-[#223344]"}`}
+                className="flex h-12 w-12 items-center justify-center rounded-full bg-[#2F2F2F] text-white transition hover:bg-[#252525] disabled:opacity-40"
                 aria-label={playing ? "Pause" : "Play"}
               >
                 {playing ? (
@@ -231,7 +228,7 @@ export function RoomSoundscapePanel({
                 type="button"
                 disabled={!canControl || busy}
                 onClick={() => selectRelative(1)}
-                className={`flex h-10 w-10 items-center justify-center rounded-xl transition disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6] ${isDark ? "text-[#DDE6F0] hover:bg-[#36404E]" : "text-[#354454] hover:bg-white"}`}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/80 text-[#2F2F2F] transition hover:bg-white disabled:opacity-40"
                 aria-label="Next track"
               >
                 <SkipForward className="h-[18px] w-[18px]" fill="currentColor" strokeWidth={1.6} />
