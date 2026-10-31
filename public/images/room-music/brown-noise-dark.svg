@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Brown Noise artwork">
   <defs><clipPath id="brown-noise-frame"><rect width="480" height="150" rx="22"/></clipPath></defs>
   <g clip-path="url(#brown-noise-frame)">
-  <rect width="480" height="150" rx="22" fill="#29231F"/>
-  <circle cx="418" cy="25" r="67" fill="#312923"/>
-  <circle cx="61" cy="126" r="79" fill="#302822"/>
-  <path d="M0 71c74-19 128 15 203-6 78-23 153 13 277-18v103H0z" fill="#382E27"/>
-  <path d="M0 94c78-20 139 17 222-7 84-24 147 16 258-12v75H0z" fill="#43362C"/>
-  <path d="M0 119c77-18 139 15 219-7 88-24 163 16 261-7v45H0z" fill="#524033" opacity=".85"/>
-  <path d="M-8 48c76-20 132 16 211-6 75-21 155 12 285-16" fill="none" stroke="#4A3C31" stroke-linecap="round" stroke-width="3" opacity=".8"/>
-  <path d="M-8 105c78-19 139 17 222-7 84-24 149 16 274-13" fill="none" stroke="#5E4B3D" stroke-linecap="round" stroke-width="3" opacity=".7"/>
+  <rect width="480" height="150" rx="22" fill="#26201C"/>
+  <circle cx="418" cy="25" r="67" fill="#352B24"/>
+  <circle cx="61" cy="126" r="79" fill="#342A23"/>
+  <path d="M0 71c74-19 128 15 203-6 78-23 153 13 277-18v103H0z" fill="#4D3E32"/>
+  <path d="M0 94c78-20 139 17 222-7 84-24 147 16 258-12v75H0z" fill="#67513E"/>
+  <path d="M0 119c77-18 139 15 219-7 88-24 163 16 261-7v45H0z" fill="#86684D"/>
+  <path d="M-8 48c76-20 132 16 211-6 75-21 155 12 285-16" fill="none" stroke="#6E5745" stroke-linecap="round" stroke-width="3"/>
+  <path d="M-8 105c78-19 139 17 222-7 84-24 149 16 274-13" fill="none" stroke="#A88A6E" stroke-linecap="round" stroke-width="3" opacity=".8"/>
   </g>
 </svg>

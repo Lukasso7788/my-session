@@ -200,7 +200,7 @@ export function RoomSoundscapePanel({
               className="absolute inset-0 h-full w-full object-cover"
               draggable={false}
             />
-            <div className={`absolute inset-0 ${isDark ? "bg-black/25" : "bg-white/10"}`} />
+            <div className={`absolute inset-0 ${isDark ? "bg-black/10" : "bg-white/10"}`} />
             <div className="relative flex items-center justify-center gap-3 py-5">
               <button
                 type="button"
