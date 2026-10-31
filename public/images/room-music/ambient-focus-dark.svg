@@ -1,7 +1,14 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Ambient focus artwork">
-  <rect width="480" height="150" rx="22" fill="#1C2836"/>
-  <circle cx="405" cy="30" r="58" fill="#2B3F55"/>
-  <circle cx="86" cy="132" r="72" fill="#283C51"/>
-  <path d="M0 105C74 79 126 126 202 99s135-8 278-40v91H0z" fill="#3B5878"/>
-  <path d="M0 124c90-30 145 18 228-8 84-26 155-8 252-38v72H0z" fill="#52769C"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 150" role="img" aria-label="Ambient focus night lake artwork">
+  <rect width="480" height="150" rx="22" fill="#1A2638"/>
+  <g fill="#C9D6E8" opacity=".6">
+    <circle cx="44" cy="24" r="1.3"/><circle cx="118" cy="40" r="1"/><circle cx="176" cy="18" r="1.2"/>
+    <circle cx="262" cy="30" r="1"/><circle cx="318" cy="16" r="1.3"/><circle cx="452" cy="28" r="1.1"/>
+  </g>
+  <circle cx="392" cy="36" r="30" fill="#24344A"/>
+  <circle cx="392" cy="36" r="16" fill="#E8E6D4"/>
+  <path d="M0 92 60 62l44 22 56-34 62 38 58-24 50 22 62-30 60 24 28-10v40H0z" fill="#2E4560"/>
+  <path d="M0 104c60-12 120 4 190-6 70-10 140 8 210-2 40-6 70 0 80-2v16H0z" fill="#3A5778"/>
+  <path d="M0 110h480v40H0z" fill="#22354C"/>
+  <path d="M370 118h44M378 126h30M384 134h18M389 142h8" fill="none" stroke="#D4D1BC" stroke-linecap="round" stroke-width="2" opacity=".65"/>
+  <path d="M40 122h50M112 132h36M190 120h40M252 138h30M60 142h24" fill="none" stroke="#3E5B7C" stroke-linecap="round" stroke-width="2"/>
 </svg>
