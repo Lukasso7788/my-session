@@ -3357,6 +3357,8 @@ function EditSessionStudioModal(props: {
     hostCandidates?: HostTransferCandidate[];
     onHostTransferred?: (newHost: HostTransferCandidate) => void;
     canManageAnySession?: boolean;
+    // Double-clicking a timeline opens only the timeline part of this editor.
+    timelineOnly?: boolean;
 }) {
     const {
         isOpen,
@@ -3368,6 +3370,7 @@ function EditSessionStudioModal(props: {
         hostCandidates = [],
         onHostTransferred,
         canManageAnySession = false,
+        timelineOnly = false,
     } = props;
 
     const [editTitle, setEditTitle] = useState<string>(session?.title || "");
@@ -3819,7 +3822,7 @@ function EditSessionStudioModal(props: {
 
     return (
         <ModalShell
-            title="Edit session"
+            title={timelineOnly ? "Edit timeline" : "Edit session"}
             isOpen={isOpen}
             onClose={onClose}
             widthClass="max-w-[1200px]"
@@ -3840,6 +3843,20 @@ function EditSessionStudioModal(props: {
                         onClick={async () => {
                             setIsSaving(true);
                             try {
+                                if (timelineOnly) {
+                                    // Only the timeline changes here; every room policy stays as it is.
+                                    const schedule = withRoomPolicies(
+                                        exportStudioToSchedule(
+                                            studioBlocks,
+                                            isInfinite,
+                                            session?.start_time || session?.created_at || new Date().toISOString()
+                                        ),
+                                        readSessionRoomPolicies(session)
+                                    );
+                                    await onSave({ schedule, duration_minutes: studioTotal || null });
+                                    return;
+                                }
+
                                 const updates: any = {};
                                 const title = String(editTitle || "").trim();
                                 if (title !== String(session?.title || "").trim()) updates.title = title;
@@ -3894,6 +3911,7 @@ function EditSessionStudioModal(props: {
             }
         >
             <div ref={modalScrollRef} className="space-y-5">
+                {!timelineOnly && (<>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                         <label className="block text-[14px] font-medium text-brandBlack mb-1 font-inter">
@@ -3933,8 +3951,10 @@ function EditSessionStudioModal(props: {
                         className="w-full px-3 py-3 border border-gray-300 rounded-[16px] font-inter resize-y"
                     />
                 </div>
+                </>)}
 
-                <div className="border border-[#DBD8D8] rounded-[18px] bg-white p-3 sm:p-4">
+                <div className={timelineOnly ? "" : "border border-[#DBD8D8] rounded-[18px] bg-white p-3 sm:p-4"}>
+                    {!timelineOnly && (<>
                     <div className="flex items-start justify-between gap-4">
                         <div className="flex items-start gap-3 min-w-0">
                             <div className="w-10 h-10 p-2 rounded-[14px] bg-[#111827] text-white flex items-center justify-center shrink-0">
@@ -4130,6 +4150,7 @@ function EditSessionStudioModal(props: {
                             </div>
                         ) : null}
                     </div>
+                    </>)}
 
                     <SessionTimeline
                         blocks={studioBlocks}
@@ -6092,21 +6113,6 @@ export default function SessionCard({
                                 </CursorEditHintArea>
                             );
                         })()}
-                        {quickTimeline === "card" ? (
-                            <QuickTimelineEditor
-                                session={session}
-                                stages={stages}
-                                isLoading={isStagesLoading}
-                                isInfinite={isInfinite}
-                                variant="popover"
-                                onSave={(updates) => onEditSession?.(session.id, updates)}
-                                onClose={() => setQuickTimeline(null)}
-                                onOpenFullEditor={() => {
-                                    setQuickTimeline(null);
-                                    setIsEditModalOpen(true);
-                                }}
-                            />
-                        ) : null}
                     </div>
 
                     <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_48px] items-center gap-3 min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end">
@@ -6563,23 +6569,6 @@ export default function SessionCard({
                                         </span>
                                     </span>
                                 </Link>
-                                {quickTimeline === "drawer" ? (
-                                    <div className="min-w-0 flex-1">
-                                        <QuickTimelineEditor
-                                            session={session}
-                                            stages={stages}
-                                            isLoading={isStagesLoading}
-                                            isInfinite={isInfinite}
-                                            variant="inline"
-                                            onSave={(updates) => onEditSession?.(session.id, updates)}
-                                            onClose={() => setQuickTimeline(null)}
-                                            onOpenFullEditor={() => {
-                                                setQuickTimeline(null);
-                                                setIsEditModalOpen(true);
-                                            }}
-                                        />
-                                    </div>
-                                ) : (
                                 <div className="min-w-0 flex-1 rounded-[16px] border border-[#EEEEEE] px-3 py-2.5" aria-label="Session flow">
                                     {(() => {
                                         const flow = stagesVisual?.length ? (
@@ -6609,7 +6598,6 @@ export default function SessionCard({
                                         );
                                     })()}
                                 </div>
-                                )}
                             </section>
 
                             <section className="mt-4 grid grid-cols-3 divide-x divide-[#E3E3E3] rounded-[18px] bg-[#F6F6F6] py-3">
@@ -6970,6 +6958,26 @@ export default function SessionCard({
                     </aside>
                 </div>
             ) : null}
+
+            {quickTimeline && onEditSession && (
+                <EditSessionStudioModal
+                    isOpen
+                    timelineOnly
+                    onClose={() => setQuickTimeline(null)}
+                    session={session}
+                    resolvedStages={stages}
+                    onSave={async (updates) => {
+                        await onEditSession(session.id, updates);
+                        _sessionExtrasById.delete(String(session.id));
+                        _stagesBySessionId.delete(String(session.id));
+                        if (updates.schedule !== undefined) {
+                            const nextStages = tryStagesFromSchedule(updates.schedule);
+                            setStages(Array.isArray(nextStages) ? nextStages : []);
+                        }
+                        setQuickTimeline(null);
+                    }}
+                />
+            )}
 
             {isEditModalOpen && onEditSession && (
                 <EditSessionStudioModal
