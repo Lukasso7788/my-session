@@ -113,6 +113,8 @@ import {
   makeDefaultTimelineBlocks,
   makeFreeFlowTimelineBlocks,
   FREE_FLOW_TIMELINE_PRESETS,
+  indexedScheduleBlocks,
+  withScheduleRoomPolicies,
 } from "../lib/roomTimelineModel";
 import { LiveKitBottomBar } from "./livekit/LiveKitBottomBar";
 import {
@@ -3209,6 +3211,7 @@ function getFixedSessionTotalSecondsFromSchedule(rawSchedule: unknown): number {
       (parsed as any).stages;
 
     if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
+    else parsed = indexedScheduleBlocks(parsed) || parsed;
   }
 
   if (!Array.isArray(parsed)) return 0;
@@ -7745,6 +7748,7 @@ export function RoomPageLiveKit({
         (parsed as any).items ||
         (parsed as any).stages;
       if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
+      else parsed = indexedScheduleBlocks(parsed) || parsed;
     }
 
     if (Array.isArray(parsed)) {
@@ -7934,6 +7938,7 @@ export function RoomPageLiveKit({
           (parsed as any).stages;
 
         if (Array.isArray(maybeBlocks)) parsed = maybeBlocks;
+        else parsed = indexedScheduleBlocks(parsed) || parsed;
       }
 
       if (Array.isArray(parsed)) {
@@ -8545,12 +8550,12 @@ export function RoomPageLiveKit({
               : {}),
           }
         : generatedSchedule;
-      const nextSchedule = {
-        ...timelineSchedule,
-        ...(isRecord(previousFreeFlowSchedule.room_policies)
-          ? { room_policies: previousFreeFlowSchedule.room_policies }
-          : {}),
-      };
+      const nextSchedule = withScheduleRoomPolicies(
+        timelineSchedule,
+        isRecord(previousFreeFlowSchedule.room_policies)
+          ? previousFreeFlowSchedule.room_policies
+          : null,
+      );
 
       const nextDurationMinutes = getTimelineTotalMinutes(timelineDraftBlocks);
       const actualTimelineDescription = `Free Flow timeline: ${timelineDraftBlocks

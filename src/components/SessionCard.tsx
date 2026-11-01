@@ -23,6 +23,7 @@ import { getPaywallDecision } from "../lib/paywall";
 import PaywallModal from "./PaywallModal";
 import type { SessionStage } from "../SessionConfig";
 import { readSessionRoomPolicies, withRoomPolicies } from "../lib/roomPolicies";
+import { indexedScheduleBlocks } from "../lib/roomTimelineModel";
 import { CHECK_IN_BREAK_TITLE, INTENTIONS_COLOR, isCheckInBreakName } from "../lib/checkInBreak";
 import SessionRoomPolicyIndicator from "./SessionRoomPolicyIndicator";
 import SessionMusicIndicator from "./SessionMusicIndicator";
@@ -773,7 +774,8 @@ function tryStagesFromSchedule(scheduleAny: any): SessionStage[] {
         (schedule as any)?.script?.blocks ||
         (schedule as any)?.schedule?.phases ||
         (schedule as any)?.schedule?.stages ||
-        (schedule as any)?.schedule?.blocks;
+        (schedule as any)?.schedule?.blocks ||
+        indexedScheduleBlocks(schedule);
 
     if (Array.isArray(phases) && phases.length) return phasesToStages(phases);
 
@@ -2137,7 +2139,8 @@ function readStudioBlocksFromSession(session: any): StudioBlock[] {
         parsed?.stages ||
         parsed?.segments ||
         parsed?.timer?.blocks ||
-        parsed?.blocks;
+        parsed?.blocks ||
+        indexedScheduleBlocks(parsed);
 
     if (Array.isArray(phases) && phases.length) {
         const out = phases

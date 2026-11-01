@@ -142,7 +142,27 @@ function unwrapScheduleBlocks(parsed: any): any {
         if (Array.isArray(c)) return c;
     }
 
-    return parsed;
+    return indexedScheduleBlocks(parsed) || parsed;
+}
+
+// The room timeline editor once saved a block array spread into the schedule
+// object ({"0": block, "1": block, …, room_policies}). Read those rows back
+// as blocks instead of collapsing the session into one solid stage.
+// A regular session's timeline is a block array. When the schedule also
+// carries room policies, keep the array under `blocks`: spreading it would
+// store the blocks as "0", "1", … keys.
+export function withScheduleRoomPolicies(schedule: any, roomPolicies: Record<string, unknown> | null) {
+    if (!roomPolicies) return schedule;
+    return Array.isArray(schedule)
+        ? { blocks: schedule, room_policies: roomPolicies }
+        : { ...schedule, room_policies: roomPolicies };
+}
+
+export function indexedScheduleBlocks(parsed: any): any[] | null {
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const keys = Object.keys(parsed).filter((key) => /^\d+$/.test(key));
+    if (!keys.length) return null;
+    return keys.sort((a, b) => Number(a) - Number(b)).map((key) => parsed[key]);
 }
 
 function normalizeInfinitePhases(
