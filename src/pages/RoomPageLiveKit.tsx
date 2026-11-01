@@ -63,6 +63,7 @@ import {
   getSameTabRoomResumeDecision,
   markSameTabRoomResume,
 } from "../lib/sameTabRoomResume";
+import { claimLiveKitTabId, parkLiveKitTabId, unparkLiveKitTabId } from "../lib/livekitTabIdentity";
 import { loadServerClockOffset, getServerClockOffsetMs, serverNow } from "../lib/serverClock";
 import {
   createRoomCountdownStore,
@@ -5761,7 +5762,28 @@ export function RoomPageLiveKit({
     }
   }, [videoTileLayoutPreset, videoTileLayoutColumns, videoTileLayoutRows]);
 
-  const tabId = useMemo(() => makeLiveKitPageTabId(), []);
+  // A reload keeps the tab's LiveKit identity, so the new connection replaces
+  // the old one instead of joining next to it as a second tile.
+  const tabId = useMemo(() => claimLiveKitTabId(makeLiveKitPageTabId), []);
+  useEffect(() => {
+    const park = () => parkLiveKitTabId(tabId);
+    const unpark = () => unparkLiveKitTabId(tabId);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") unpark();
+    };
+    window.addEventListener("pagehide", park);
+    document.addEventListener("freeze", park);
+    window.addEventListener("pageshow", unpark);
+    document.addEventListener("resume", unpark);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", park);
+      document.removeEventListener("freeze", park);
+      window.removeEventListener("pageshow", unpark);
+      document.removeEventListener("resume", unpark);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [tabId]);
   const devClones = useMemo(
     () => Math.max(0, Math.min(24, getQueryInt("devClones", 0))),
     [],
