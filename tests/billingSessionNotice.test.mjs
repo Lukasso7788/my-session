@@ -174,9 +174,9 @@ test("billing API denies missing or invalid authentication before any database r
   assert.equal(filters.length, before);
 });
 test("billing API rejects unsupported methods and portal actions", async () => {
-  const get = responseRecorder();
-  await billingHandler({ method: "GET", headers: {}, body: {} }, get);
-  assert.equal(get.statusCode, 405);
+  const put = responseRecorder();
+  await billingHandler({ method: "PUT", headers: {}, body: {} }, put);
+  assert.equal(put.statusCode, 405);
   const invalid = responseRecorder();
   await billingHandler({ method: "POST", headers: { authorization: "Bearer valid-test-token" }, body: { checkoutKind: "customer_portal", portalAction: "delete_everything" } }, invalid);
   assert.equal(invalid.statusCode, 400);

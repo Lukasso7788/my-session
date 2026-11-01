@@ -5,6 +5,31 @@ import { supabase } from "../lib/supabase";
 
 type BillingCycle = "monthly" | "yearly" | "lifetime";
 type CheckoutPlan = "pro_monthly" | "pro_yearly" | "lifetime" | "india_upi_monthly";
+type DisplayPrice = { amount: number; currency: string };
+type PricingInfo = {
+    region: "south_asia" | "default";
+    prices: Partial<Record<CheckoutPlan, DisplayPrice | null>>;
+};
+
+// Shown until the server answers (or if it cannot): the regular prices.
+const FALLBACK_PRICES: Record<Exclude<CheckoutPlan, "india_upi_monthly">, DisplayPrice> = {
+    pro_monthly: { amount: 10, currency: "usd" },
+    pro_yearly: { amount: 96, currency: "usd" },
+    lifetime: { amount: 300, currency: "usd" },
+};
+
+function formatPrice(price: DisplayPrice) {
+    try {
+        return new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: price.currency.toUpperCase(),
+            minimumFractionDigits: Number.isInteger(price.amount) ? 0 : 2,
+            maximumFractionDigits: 2,
+        }).format(price.amount);
+    } catch {
+        return `${price.amount} ${price.currency.toUpperCase()}`;
+    }
+}
 
 export default function PricingPage() {
     const KOFI_URL = "https://ko-fi.com/mysession";
@@ -21,6 +46,42 @@ export default function PricingPage() {
 
     const [statusMessage, setStatusMessage] = useState<string>("");
     const [errorMessage, setErrorMessage] = useState<string>("");
+    const [pricing, setPricing] = useState<PricingInfo | null>(null);
+    const [pricingLoaded, setPricingLoaded] = useState(false);
+
+    // The server picks the prices for this visitor's region (South Asia pays
+    // regional prices) and reads them from Stripe, so they match checkout.
+    useEffect(() => {
+        let cancelled = false;
+        fetch("/api/billing/create-checkout-session", { method: "GET" })
+            .then((response) => (response.ok ? response.json() : null))
+            .then((data) => {
+                if (!cancelled && data?.prices) setPricing(data as PricingInfo);
+            })
+            .catch(() => { })
+            .finally(() => {
+                if (!cancelled) setPricingLoaded(true);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
+    const priceFor = useCallback(
+        (plan: Exclude<CheckoutPlan, "india_upi_monthly">) =>
+            pricing?.prices?.[plan] || FALLBACK_PRICES[plan],
+        [pricing],
+    );
+    const monthlyPrice = priceFor("pro_monthly");
+    const yearlyPrice = priceFor("pro_yearly");
+    const lifetimePrice = priceFor("lifetime");
+    const indiaUpiPrice = pricing?.prices?.india_upi_monthly || null;
+    const yearlyAsMonthly = { amount: monthlyPrice.amount * 12, currency: monthlyPrice.currency };
+    const yearlySavingPercent =
+        yearlyAsMonthly.amount > 0 && yearlyPrice.currency === monthlyPrice.currency
+            ? Math.round((1 - yearlyPrice.amount / yearlyAsMonthly.amount) * 100)
+            : 0;
+    const showPrice = (price: DisplayPrice) => (pricingLoaded ? formatPrice(price) : "…");
 
     useEffect(() => {
         let isMounted = true;
@@ -167,7 +228,7 @@ export default function PricingPage() {
         if (billingCycle === "monthly") {
             return {
                 title: "Pro Monthly",
-                price: "$10",
+                price: showPrice(monthlyPrice),
                 subtitle: "Unlimited access to all formats",
                 badge: "Most flexible",
                 highlights: [
@@ -188,9 +249,9 @@ export default function PricingPage() {
         if (billingCycle === "yearly") {
             return {
                 title: "Pro Yearly",
-                price: "$96",
+                price: showPrice(yearlyPrice),
                 subtitle: "Unlimited access • billed yearly",
-                badge: "Save 20%",
+                badge: yearlySavingPercent > 0 ? `Save ${yearlySavingPercent}%` : "Best value",
                 highlights: [
                     "Unlimited sessions",
                     "Join and host without limits",
@@ -202,13 +263,13 @@ export default function PricingPage() {
                     : isUpgrading || checkoutLoadingPlan === "pro_yearly"
                         ? "Opening payment..."
                         : "Upgrade to Pro Yearly",
-                footnote: "Pay $96/year instead of $120",
+                footnote: `Pay ${showPrice(yearlyPrice)}/year instead of ${showPrice(yearlyAsMonthly)}`,
             };
         }
 
         return {
             title: "Lifetime",
-            price: "$300",
+            price: showPrice(lifetimePrice),
             subtitle: "Early supporter lifetime access",
             badge:
                 LIFETIME_LEFT_SLOTS > 0
@@ -233,7 +294,7 @@ export default function PricingPage() {
                     ? "Limited drop"
                     : "No spots left in this drop",
         };
-    }, [LIFETIME_LEFT_SLOTS, billingCycle, checkingAuth, checkoutLoadingPlan, isUpgrading]);
+    }, [LIFETIME_LEFT_SLOTS, billingCycle, checkingAuth, checkoutLoadingPlan, isUpgrading, monthlyPrice, yearlyPrice, lifetimePrice, yearlySavingPercent, yearlyAsMonthly, showPrice]);
 
     const indiaUpiLoading = checkoutLoadingPlan === "india_upi_monthly";
 
@@ -319,6 +380,12 @@ export default function PricingPage() {
                             onCta={handleUpgrade}
                         />
 
+                        {pricing?.region === "south_asia" ? (
+                            <p className="mt-3 text-center text-xs text-black/50">
+                                Regional pricing for South Asia.
+                            </p>
+                        ) : null}
+
                         {billingCycle === "monthly" ? (
                             <div className="mt-4 rounded-[22px] border border-black/10 bg-black/[0.03] p-4">
                                 <div className="flex items-start gap-3">
@@ -358,7 +425,9 @@ export default function PricingPage() {
                                         ? "Checking account..."
                                         : indiaUpiLoading
                                             ? "Opening UPI checkout..."
-                                            : "Upgrade India — ₹958/month"}
+                                            : indiaUpiPrice
+                                                ? `Upgrade India — ${formatPrice(indiaUpiPrice)}/month`
+                                                : "Upgrade India with UPI"}
                                 </button>
 
                                 <p className="mt-3 text-center text-xs text-black/45">

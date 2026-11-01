@@ -53,7 +53,38 @@ function normalizeUsdAmount(value: unknown): number {
   return Math.round(n * 100) / 100;
 }
 
-function getPriceIdForPlan(plan: SupportedPlan): string {
+// Regional pricing: visitors whose IP is in South Asia pay the regional prices.
+// The country comes from Vercel's edge header, checked again at checkout so a
+// browser cannot ask for the regional price from elsewhere.
+type PricingRegion = "south_asia" | "default";
+
+const SOUTH_ASIA_COUNTRIES = new Set(["IN", "PK", "BD", "NP", "LK", "BT", "MV"]);
+
+const SOUTH_ASIA_PRICE_ENV: Partial<Record<SupportedPlan, string>> = {
+  pro_monthly: "STRIPE_PRICE_SOUTH_ASIA_MONTHLY",
+  pro_yearly: "STRIPE_PRICE_SOUTH_ASIA_YEARLY",
+  lifetime: "STRIPE_PRICE_SOUTH_ASIA_LIFETIME",
+};
+
+function getRequestCountry(req: VercelRequest): string {
+  const raw = req.headers["x-vercel-ip-country"];
+  return String(Array.isArray(raw) ? raw[0] : raw || "").trim().toUpperCase();
+}
+
+function getPricingRegion(country: string): PricingRegion {
+  return SOUTH_ASIA_COUNTRIES.has(country) ? "south_asia" : "default";
+}
+
+function getRegionalPriceId(plan: SupportedPlan, region: PricingRegion): string {
+  if (region !== "south_asia") return "";
+  const envName = SOUTH_ASIA_PRICE_ENV[plan];
+  return envName ? String(process.env[envName] || "").trim() : "";
+}
+
+function getPriceIdForPlan(plan: SupportedPlan, region: PricingRegion = "default"): string {
+  const regionalPriceId = getRegionalPriceId(plan, region);
+  if (regionalPriceId) return regionalPriceId;
+
   let priceId = "";
 
   switch (plan) {
@@ -78,6 +109,66 @@ function getPriceIdForPlan(plan: SupportedPlan): string {
   }
 
   return priceId;
+}
+
+type DisplayPrice = { amount: number; currency: string };
+
+// Prices shown on /pricing come from Stripe itself, so the page always shows
+// what checkout will charge. Cached per function instance.
+const PRICE_CACHE_MS = 10 * 60 * 1000;
+const priceCache = new Map<string, { at: number; price: DisplayPrice | null }>();
+
+async function getDisplayPrice(priceId: string): Promise<DisplayPrice | null> {
+  const cached = priceCache.get(priceId);
+  if (cached && Date.now() - cached.at < PRICE_CACHE_MS) return cached.price;
+  let price: DisplayPrice | null = null;
+  try {
+    const stripePrice = await stripe.prices.retrieve(priceId);
+    if (typeof stripePrice.unit_amount === "number") {
+      price = { amount: stripePrice.unit_amount / 100, currency: stripePrice.currency };
+    }
+  } catch (error) {
+    console.error("Stripe price lookup failed", priceId, error);
+  }
+  priceCache.set(priceId, { at: Date.now(), price });
+  return price;
+}
+
+async function getPricingForRequest(req: VercelRequest) {
+  const country = getRequestCountry(req);
+  const region = getPricingRegion(country);
+  const entries = await Promise.all(
+    SUPPORTED_PLANS.map(async (plan) => {
+      try {
+        return [plan, await getDisplayPrice(getPriceIdForPlan(plan, region))] as const;
+      } catch {
+        return [plan, null] as const;
+      }
+    })
+  );
+  return { region, country: country || null, prices: Object.fromEntries(entries) };
+}
+
+// Radar can only see metadata on the customer for subscription charges. The
+// rule "block South Asia prices paid with a card from elsewhere" reads
+// ::customer:pricing_region::. South Asia checkouts run on a tagged customer;
+// default checkouts keep Checkout's own customer (customer_email) as before.
+async function getSouthAsiaCheckoutCustomer(user: any, country: string): Promise<string> {
+  const identity = await getBillingIdentity(user.id).catch(() => null);
+  const metadata = {
+    supabase_user_id: String(user.id),
+    pricing_region: "south_asia",
+    pricing_country: country,
+  };
+  if (identity?.stripe_customer_id) {
+    await stripe.customers.update(identity.stripe_customer_id, { metadata });
+    return identity.stripe_customer_id;
+  }
+  const customer = await stripe.customers.create({
+    email: String(user.email || "").trim() || undefined,
+    metadata,
+  });
+  return customer.id;
 }
 
 function getEntitlementPlan(plan: SupportedPlan): EntitlementPlan {
@@ -240,21 +331,34 @@ async function createHostSupportCheckout(params: {
 async function createSubscriptionCheckout(params: {
   user: any;
   plan: SupportedPlan;
+  country: string;
 }) {
-  const { user, plan } = params;
+  const { user, plan, country } = params;
 
   if (!plan || !SUPPORTED_PLANS.includes(plan)) {
     throw new Error("Invalid plan");
   }
 
-  const priceId = getPriceIdForPlan(plan);
-  const entitlementPlan = getEntitlementPlan(plan);
   const isIndiaUpi = plan === "india_upi_monthly";
+  const regionalPriceId = getRegionalPriceId(plan, getPricingRegion(country));
+  const region: PricingRegion = regionalPriceId ? "south_asia" : "default";
+  const priceId = getPriceIdForPlan(plan, region);
+  const entitlementPlan = getEntitlementPlan(plan);
+  const paymentRegion = isIndiaUpi ? "india" : region;
 
   const mode: "subscription" | "payment" =
     plan === "lifetime" ? "payment" : "subscription";
 
   const discounts = getCheckoutDiscounts(plan);
+
+  let customerId: string | null = null;
+  if (region === "south_asia") {
+    try {
+      customerId = await getSouthAsiaCheckoutCustomer(user, country);
+    } catch (error) {
+      console.error("South Asia checkout customer setup failed", error);
+    }
+  }
 
   console.log("create-checkout-session", {
     userId: user.id,
@@ -265,6 +369,8 @@ async function createSubscriptionCheckout(params: {
     priceId,
     appUrl: APP_URL,
     isIndiaUpi,
+    region,
+    country,
     hasDiscount: !!discounts?.length,
   });
 
@@ -286,17 +392,23 @@ async function createSubscriptionCheckout(params: {
     cancel_url: `${APP_URL}/pricing?checkout=cancelled`,
 
     client_reference_id: user.id,
-    customer_email: user.email || undefined,
+    ...(customerId ? { customer: customerId } : { customer_email: user.email || undefined }),
 
     metadata: {
       checkout_kind: "subscription",
       plan,
       entitlement_plan: entitlementPlan,
       supabase_user_id: user.id,
-      payment_region: isIndiaUpi ? "india" : "default",
+      payment_region: paymentRegion,
+      pricing_country: country,
       payment_method_hint: isIndiaUpi ? "upi" : "card",
       affiliate_reward_enabled: "true",
     },
+
+    payment_intent_data:
+      mode === "payment"
+        ? { metadata: { checkout_kind: "subscription", plan, pricing_region: region, pricing_country: country } }
+        : undefined,
 
     subscription_data:
       mode === "subscription"
@@ -306,7 +418,8 @@ async function createSubscriptionCheckout(params: {
               plan,
               entitlement_plan: entitlementPlan,
               supabase_user_id: user.id,
-              payment_region: isIndiaUpi ? "india" : "default",
+              payment_region: paymentRegion,
+              pricing_country: country,
               payment_method_hint: isIndiaUpi ? "upi" : "card",
               affiliate_reward_enabled: "true",
             },
@@ -337,6 +450,17 @@ async function createSubscriptionCheckout(params: {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // GET: the prices this visitor would pay (no sign-in needed for /pricing).
+  if (req.method === "GET") {
+    try {
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.status(200).json(await getPricingForRequest(req));
+    } catch (error) {
+      console.error("pricing lookup failed", error);
+      return res.status(500).json({ error: "pricing_lookup_failed" });
+    }
+  }
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -401,6 +525,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const result = await createSubscriptionCheckout({
       user,
       plan: body.plan as SupportedPlan,
+      country: getRequestCountry(req),
     });
 
     return res.status(200).json(result);
