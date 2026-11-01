@@ -73,7 +73,16 @@ import {
   type RoomCountdownStore,
 } from "../lib/roomCountdownStore";
 import { APP_BUILD_ID, getPageLoadDiagnostics } from "../lib/pageLifecycle";
-import { classifyLiveKitConnectFailure } from "../lib/livekitConnectFailure";
+import {
+  classifyLiveKitConnectFailure,
+  connectFailureUserMessage,
+  NETWORK_BLOCKED_CONNECT_MESSAGE,
+} from "../lib/livekitConnectFailure";
+import {
+  collectRoomTransportDiagnostics,
+  describeIceServerUrls,
+  getBrowserBrands,
+} from "../lib/livekitTransportDiagnostics";
 import {
   RoomPanelErrorBoundary,
   RoomSilentErrorBoundary,
@@ -8944,6 +8953,7 @@ export function RoomPageLiveKit({
   const [livekitReconnecting, setLivekitReconnecting] = useState(false);
   // >1 while the first connection is being retried in place.
   const [connectRetryAttempt, setConnectRetryAttempt] = useState(0);
+  const [lastConnectFailureKind, setLastConnectFailureKind] = useState("");
   const initialConnectAttemptRef = useRef(1);
   const [pageVisible, setPageVisible] = useState(
     () => typeof document === "undefined" || document.visibilityState === "visible",
@@ -12218,6 +12228,7 @@ export function RoomPageLiveKit({
             maxTouchPoints: Number(nav?.maxTouchPoints || 0) || null,
             language: String(nav?.language || ""),
             languages: Array.isArray(nav?.languages) ? nav.languages : [],
+            browserBrands: getBrowserBrands(nav),
           },
         });
         if (error) throw error;
@@ -14633,10 +14644,18 @@ export function RoomPageLiveKit({
         void writeConnectionDiagnostic("livekit.connected", {
           roomState: String((r as any)?.state || ""),
         });
+        // Direct or through TURN, UDP or TCP: read once ICE has settled.
+        window.setTimeout(() => {
+          if (roomRef.current !== r) return;
+          void collectRoomTransportDiagnostics(r).then((transport) =>
+            logRoomDiagnostic("room_transport_selected", transport),
+          );
+        }, 4_000);
 
         setConnected(true);
         setLivekitReconnecting(false);
         setConnectRetryAttempt(0);
+        setLastConnectFailureKind("");
         writeMobileRoomLease(sessionId, authUserId, {
           audioEnabled: prejoinRef.current.audioEnabled,
           videoEnabled: prejoinRef.current.videoEnabled,
@@ -15199,6 +15218,9 @@ export function RoomPageLiveKit({
           durationMs,
           recovery: !!opts.forceReconnect,
           message: msg.slice(0, 300),
+          iceServerUrls: describeIceServerUrls(
+            (connectingRoom as any)?.engine?.latestJoinResponse,
+          ),
           serverHost: (() => {
             try {
               return new URL(connectServerUrl).host;
@@ -15224,6 +15246,7 @@ export function RoomPageLiveKit({
           preserveConnectAttempt: true,
         });
 
+        setLastConnectFailureKind(failureKind);
         if (retryInPlace) {
           setClientError("");
           setConnectRetryAttempt(initialAttempt + 1);
@@ -15263,7 +15286,7 @@ export function RoomPageLiveKit({
         }
 
         setConnectRetryAttempt(0);
-        setClientError(msg);
+        setClientError(connectFailureUserMessage(failureKind, msg));
         if (!opts.forceReconnect) {
           // The next manual Join mints a fresh token instead of reusing one
           // that may be expired or rejected.
@@ -19067,7 +19090,9 @@ export function RoomPageLiveKit({
       ? ""
       : joinRequested
         ? connectRetryAttempt > 1
-          ? `The connection is slow. Trying again (${connectRetryAttempt} of ${ROOM_INITIAL_CONNECT_ATTEMPTS})…`
+          ? lastConnectFailureKind === "pc_connection"
+            ? `Can't reach the video server. Trying again (${connectRetryAttempt} of ${ROOM_INITIAL_CONNECT_ATTEMPTS})… If you use a VPN, turn it off.`
+            : `The connection is slow. Trying again (${connectRetryAttempt} of ${ROOM_INITIAL_CONNECT_ATTEMPTS})…`
           : "Joining room…"
         : "";
   const lastErr = tokenError || clientError;
@@ -21889,6 +21914,7 @@ export function RoomPageLiveKit({
           });
         }}
         deviceError={deviceError}
+        connectionError={clientError === NETWORK_BLOCKED_CONNECT_MESSAGE ? clientError : ""}
         hideBackgroundFx={shouldDisableBackgroundFx}
         onRefreshDevices={() => loadBrowserDevices().catch(() => { })}
         onCancel={() => {

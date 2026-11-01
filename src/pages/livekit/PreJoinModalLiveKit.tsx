@@ -76,6 +76,7 @@ type PreJoinModalProps = {
   onSetBgImageUrl: (url: string) => void;
   onResetBg: () => void;
   deviceError?: string;
+  connectionError?: string;
   hideBackgroundFx?: boolean;
 };
 
@@ -143,6 +144,7 @@ export function PreJoinModal({
   onSetBgImageUrl,
   onResetBg,
   deviceError = "",
+  connectionError = "",
   hideBackgroundFx = false,
 }: PreJoinModalProps) {
   const isLight = theme === "light";
@@ -515,6 +517,16 @@ export function PreJoinModal({
                   </button>
                 </div>
               </div>
+
+              {connectionError ? (
+                <div role="alert" className={`rounded-2xl px-4 py-3 text-[12px] ${isLight
+                  ? "border border-[#F65252]/30 bg-[#F65252]/10 text-[#A82020]"
+                  : "border border-[#F65252]/25 bg-[#F65252]/10 text-[#FCA5A5]"
+                  }`}>
+                  <div className="font-semibold">Can't connect to the room</div>
+                  <div className="mt-1 break-words">{connectionError}</div>
+                </div>
+              ) : null}
 
               {deviceError ? (
                 <div className={`rounded-2xl px-4 py-3 text-[12px] ${isLight

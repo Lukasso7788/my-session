@@ -35,3 +35,14 @@ export function classifyLiveKitConnectFailure(error: unknown): LiveKitConnectFai
   }
   return "other";
 }
+
+/**
+ * Signalling reached the server but the media connection never formed. In
+ * practice that is a VPN, proxy extension or filtered network blocking WebRTC.
+ */
+export const NETWORK_BLOCKED_CONNECT_MESSAGE =
+  "Your network is blocking the video connection. If you use a VPN or a VPN/proxy browser extension, turn it off and try again. On work or school Wi-Fi, try another network or a phone hotspot.";
+
+export function connectFailureUserMessage(kind: LiveKitConnectFailureKind, rawMessage: string): string {
+  return kind === "pc_connection" ? NETWORK_BLOCKED_CONNECT_MESSAGE : rawMessage;
+}
