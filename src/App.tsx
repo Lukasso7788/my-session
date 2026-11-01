@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useState } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Navigate, Routes, Route, useParams } from "react-router-dom";
 
 import LandingPage from "./pages/LandingPage";
@@ -22,8 +22,7 @@ import RequireSignIn from "./components/RequireSignIn";
 import { CreateSessionModalProvider } from "./context/CreateSessionModalContext";
 import { storeReferralCodeFromUrl } from "./lib/referrals";
 import AppBootstrapGate from "./components/AppBootstrapGate";
-import { RoomCrashBoundary } from "./components/RoomErrorBoundary";
-import { consumeSameTabRoomResume } from "./lib/sameTabRoomResume";
+import { RoomEntryGate } from "./components/RoomEntryGate";
 
 import GroupFocusSessionsPage from "./pages/seo/GroupFocusSessionsPage";
 import SilentCoworkingPage from "./pages/seo/SilentCoworkingPage";
@@ -65,47 +64,13 @@ const IconVectorizerPage = lazy(() => import("./pages/IconVectorizerPage"));
 const OneOnOnePage = lazy(() => import("./pages/OneOnOnePage"));
 const HostsPage = lazy(() => import("./pages/HostsPage"));
 const LeaderboardPage = lazy(() => import("./pages/LeaderboardPage"));
-const MOBILE_ROOM_LEASE_PREFIX = "mysession_mobile_room_lease:";
-
-function clearRoomEntryRecoveryLease(sessionId: string) {
-  if (typeof window === "undefined" || !sessionId) return;
-
-  const prefix = `${MOBILE_ROOM_LEASE_PREFIX}${sessionId}:`;
-
-  try {
-    const matchingKeys: string[] = [];
-    for (let index = 0; index < window.localStorage.length; index += 1) {
-      const key = window.localStorage.key(index);
-      if (key?.startsWith(prefix)) matchingKeys.push(key);
-    }
-    matchingKeys.forEach((key) => window.localStorage.removeItem(key));
-  } catch {
-    // Storage can be unavailable in strict privacy modes. The room's own
-    // prejoin default still applies when no persisted recovery lease is readable.
-  }
-}
 
 function RoomPageLiveKitEntry() {
   const { id = "" } = useParams<{ id: string }>();
-  const sessionId = String(id || "").trim();
-  const [preparedSessionId, setPreparedSessionId] = useState("");
-
-  useLayoutEffect(() => {
-    // A reload of the same tab that was just in this room (manual refresh,
-    // error recovery, or a mobile browser restoring a discarded tab) may rejoin
-    // once with the saved media state. Every other entry clears the lease.
-    if (!consumeSameTabRoomResume(sessionId)) clearRoomEntryRecoveryLease(sessionId);
-    setPreparedSessionId(sessionId);
-  }, [sessionId]);
-
-  // Gate the production room for one layout pass so a stale recovery lease can
-  // never auto-skip prejoin on a fresh room entry.
-  if (!sessionId || preparedSessionId !== sessionId) return null;
-
   return (
-    <RoomCrashBoundary key={sessionId} routeId={sessionId}>
+    <RoomEntryGate sessionId={id}>
       <RoomPageLiveKit />
-    </RoomCrashBoundary>
+    </RoomEntryGate>
   );
 }
 

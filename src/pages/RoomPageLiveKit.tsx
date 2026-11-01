@@ -59,10 +59,12 @@ import {
   deferDynamicImportReloads,
 } from "../lib/dynamicImportRecovery";
 import {
-  clearSameTabRoomResume,
-  getSameTabRoomResumeDecision,
-  markSameTabRoomResume,
-} from "../lib/sameTabRoomResume";
+  clearRecentRoom,
+  getRecentRoomResumeDecision,
+  markRecentRoom,
+  readRoomExit,
+  recordRoomExit,
+} from "../lib/recentRoomResume";
 import { claimLiveKitTabId, parkLiveKitTabId, unparkLiveKitTabId } from "../lib/livekitTabIdentity";
 import { loadServerClockOffset, getServerClockOffsetMs, serverNow } from "../lib/serverClock";
 import {
@@ -2384,13 +2386,45 @@ function readMobileRoomLease(
 }
 
 // Rooms this page has actually joined (not just opened prejoin for). Lease
-// writes for these rooms also refresh the same-tab rejoin marker.
-const sameTabResumeEligibleSessions = new Set<string>();
+// writes for these rooms also refresh the recent-room rejoin record.
+const recentRoomEligibleSessions = new Set<string>();
+// Rooms that ended for this page (Leave, kick, removal, closed room): leaving
+// the room component afterwards must not mark them as recent again.
+const recentRoomRevokedSessions = new Set<string>();
 
-/** After a leave, kick, removal or closed room a reload must show prejoin. */
-function revokeSameTabRoomResume(sessionId: string) {
-  if (sessionId) sameTabResumeEligibleSessions.delete(sessionId);
-  clearSameTabRoomResume(sessionId);
+/** After a leave, kick, removal or closed room the next entry shows prejoin. */
+function revokeRecentRoom(sessionId: string) {
+  if (sessionId) {
+    recentRoomEligibleSessions.delete(sessionId);
+    recentRoomRevokedSessions.add(sessionId);
+  }
+  clearRecentRoom(sessionId);
+}
+
+// Hidden desktop tabs still beat about once a minute; a phone tab that went to
+// the background (or was dropped) stops beating when it is hidden.
+const OTHER_LIVE_TAB_WINDOW_MS = 75_000;
+const OTHER_LIVE_TAB_AFTER_HIDE_GRACE_MS = 10_000;
+
+/**
+ * Another tab of this person is still in the room: an automatic rejoin here
+ * would add a second connection. A tab that stopped beating when it was
+ * hidden (lease time) is the one being replaced and does not count.
+ */
+function anotherRoomTabIsLive(
+  sessionId: string,
+  userId: string,
+  ownTabId: string,
+  leaseLastSeenAt: number,
+) {
+  const key = makeTabPresenceKey(sessionId, safeIdentity(userId));
+  const now = nowMs();
+  return readPresence(key).tabs.some(
+    (tab) =>
+      tab.id !== ownTabId &&
+      now - tab.ts <= OTHER_LIVE_TAB_WINDOW_MS &&
+      tab.ts > leaseLastSeenAt + OTHER_LIVE_TAB_AFTER_HIDE_GRACE_MS,
+  );
 }
 
 function writeMobileRoomLease(
@@ -2403,8 +2437,8 @@ function writeMobileRoomLease(
   },
 ) {
   if (!sessionId || !userId) return;
-  if (sameTabResumeEligibleSessions.has(sessionId)) {
-    markSameTabRoomResume(sessionId, sessionId);
+  if (recentRoomEligibleSessions.has(sessionId)) {
+    markRecentRoom(sessionId);
   }
 
   try {
@@ -2435,7 +2469,7 @@ function clearMobileRoomLease(
   sessionId: string,
   userId: string | null | undefined,
 ) {
-  revokeSameTabRoomResume(sessionId);
+  revokeRecentRoom(sessionId);
   if (!sessionId || !userId) return;
   try {
     localStorage.removeItem(mobileRoomLeaseKey(sessionId, userId));
@@ -10028,8 +10062,14 @@ export function RoomPageLiveKit({
     // suspend a background tab or lose the signalling socket during screen share
     // just as mobile browsers can.
     const mobileLease = readMobileRoomLease(sessionId, authUserId);
+    const otherTabInRoom =
+      !!mobileLease &&
+      anotherRoomTabIsLive(sessionId, authUserId, tabId, mobileLease.lastSeenAt);
+    autoRejoinSkippedForOtherTabRef.current = otherTabInRoom;
+    entrySkippedForOtherTabRef.current = otherTabInRoom;
 
-    if (mobileLease) {
+    if (mobileLease && !otherTabInRoom) {
+      autoRejoinedRef.current = true;
       const restoredPrejoin = {
         ...prejoinRef.current,
         audioEnabled: mobileLease.audioEnabled,
@@ -10451,6 +10491,10 @@ export function RoomPageLiveKit({
   const returningFromBackgroundRef = useRef(false);
   const connectedRef = useRef(false);
   const joinRequestedRef = useRef(false);
+  // This entry rejoined from the recovery lease instead of prejoin.
+  const autoRejoinedRef = useRef(false);
+  const autoRejoinSkippedForOtherTabRef = useRef(false);
+  const entrySkippedForOtherTabRef = useRef(false);
   const autoClosedSessionIdRef = useRef<string>("");
   const mobileRoomRetentionRef = useRef({
     enabled: false,
@@ -10503,12 +10547,19 @@ export function RoomPageLiveKit({
   };
 
   useEffect(() => {
-    const markMaybeBackgrounded = () => {
+    const markMaybeBackgrounded = (kind: "beforeunload" | "pagehide") => {
       // A browser cannot reliably distinguish closing a tab from switching
       // apps, especially on iOS/iPadOS. Neither pagehide nor beforeunload is an
       // explicit Leave action. Preserve room presence and let LiveKit recover.
       pageHiddenAtRef.current = Date.now();
       returningFromBackgroundRef.current = true;
+      if (recentRoomEligibleSessions.has(sessionId)) {
+        recordRoomExit(sessionId, {
+          kind,
+          connected: connectedRef.current,
+          visibility: document.visibilityState,
+        });
+      }
 
       writeMobileRoomLease(sessionId, authUserId, {
         audioEnabled: prejoinRef.current.audioEnabled,
@@ -10529,7 +10580,7 @@ export function RoomPageLiveKit({
         return;
       }
 
-      markMaybeBackgrounded();
+      markMaybeBackgrounded("beforeunload");
     };
 
     const onPageHide = () => {
@@ -10539,7 +10590,7 @@ export function RoomPageLiveKit({
         return;
       }
 
-      markMaybeBackgrounded();
+      markMaybeBackgrounded("pagehide");
     };
 
     window.addEventListener("beforeunload", onBeforeUnload);
@@ -12197,8 +12248,9 @@ export function RoomPageLiveKit({
     if (roomJoinDiagnosticKeyRef.current === key) return;
     roomJoinDiagnosticKeyRef.current = key;
 
-    const resumeDecision = getSameTabRoomResumeDecision();
-    const resumedAfterReload = !!resumeDecision?.resumed;
+    const resumeDecision = getRecentRoomResumeDecision(session.id);
+    const autoRejoined = autoRejoinedRef.current;
+    const previousExit = readRoomExit(session.id);
     void logRoomDiagnostic("room_join", {
       roomName: session?.id ? safeRoomName(session.id) : null,
       isHost,
@@ -12206,13 +12258,19 @@ export function RoomPageLiveKit({
       lkServerUrl,
       screenShareSupported: supportsScreenShareCapture(),
       ...getPageLoadDiagnostics(),
-      resumedAfterReload,
+      autoRejoined,
+      recentRoomEntry: !!resumeDecision?.resumed,
       resumeMarkerAgeMs: resumeDecision?.markerAgeMs ?? null,
+      autoRejoinSkippedForOtherTab: entrySkippedForOtherTabRef.current,
+      previousExitKind: previousExit?.kind ?? null,
+      previousExitAgeMs: previousExit ? Math.max(0, Date.now() - previousExit.at) : null,
+      previousExitConnected: previousExit?.connected ?? null,
+      previousExitVisibility: previousExit?.visibility ?? null,
       serverClockOffsetMs: getServerClockOffsetMs(),
       connectAttempt: initialConnectAttemptRef.current,
     });
-    if (resumedAfterReload) {
-      captureProductEvent("room_resumed_after_reload", {});
+    if (autoRejoined) {
+      captureProductEvent("room_auto_rejoined", {});
     }
   }, [
     connected,
@@ -12229,11 +12287,32 @@ export function RoomPageLiveKit({
 
   useEffect(() => {
     if (!sessionId || !inLiveRoom) return;
-    sameTabResumeEligibleSessions.add(sessionId);
+    recentRoomEligibleSessions.add(sessionId);
+    recentRoomRevokedSessions.delete(sessionId);
     return () => {
-      sameTabResumeEligibleSessions.delete(sessionId);
+      recentRoomEligibleSessions.delete(sessionId);
     };
   }, [sessionId, inLiveRoom]);
+
+  // Prejoin coming back after this room was connected, without Leave: the
+  // person was thrown out of the room in some way. Record where it happened.
+  const roomWasConnectedRef = useRef(false);
+  if (connected) {
+    roomWasConnectedRef.current = true;
+    autoRejoinSkippedForOtherTabRef.current = false;
+  }
+  useEffect(() => {
+    if (!prejoinOpen || !roomWasConnectedRef.current) return;
+    if (explicitLeaveRequestedRef.current) return;
+    roomWasConnectedRef.current = false;
+    void logRoomDiagnostic("room_prejoin_after_connect", {
+      kicked: kickedBySignalRef.current,
+      visibility: typeof document !== "undefined" ? document.visibilityState : "unknown",
+      clientError: String(clientError || "").slice(0, 160) || null,
+      tokenError: String(tokenError || "").slice(0, 160) || null,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prejoinOpen]);
 
   // A deployment during a live room must not reload the page; show a notice
   // instead and let the person refresh when it suits them.
@@ -13138,6 +13217,13 @@ export function RoomPageLiveKit({
     const markHidden = () => {
       pageHiddenAtRef.current = Date.now();
       returningFromBackgroundRef.current = true;
+      if (recentRoomEligibleSessions.has(sessionId)) {
+        recordRoomExit(sessionId, {
+          kind: "hidden",
+          connected: connectedRef.current,
+          visibility: "hidden",
+        });
+      }
 
       writeMobileRoomLease(sessionId, authUserId, {
         audioEnabled: micOn,
@@ -13786,7 +13872,7 @@ export function RoomPageLiveKit({
 
     setKickRedirecting(true);
     kickedBySignalRef.current = true;
-    revokeSameTabRoomResume(sessionId);
+    revokeRecentRoom(sessionId);
 
     const byName = String(payload?.kickedByName || "").trim();
     const body = byName
@@ -14632,7 +14718,7 @@ export function RoomPageLiveKit({
         closeMobileRestoreState();
         // Removed, kicked, closed room or replaced by another connection: a
         // reload must not rejoin automatically.
-        revokeSameTabRoomResume(sessionId);
+        revokeRecentRoom(sessionId);
 
         void trackWeeklyUsageOnLeave();
         void leaveAttendanceOnce({ keepalive: false });
@@ -15235,6 +15321,18 @@ export function RoomPageLiveKit({
         typeof document !== "undefined" &&
         document.visibilityState !== "visible" &&
         !!readMobileRoomLease(retention.sessionId, retention.userId);
+      const wasInRoom = joinRequestedRef.current || connectedRef.current;
+      const roomEndedForThisPage =
+        explicitLeaveRequestedRef.current ||
+        kickedBySignalRef.current ||
+        recentRoomRevokedSessions.has(retention.sessionId);
+      if (wasInRoom) {
+        recordRoomExit(retention.sessionId, {
+          kind: explicitLeaveRequestedRef.current ? "leave" : kickedBySignalRef.current ? "kick" : "unmount",
+          connected: connectedRef.current,
+          visibility: typeof document !== "undefined" ? document.visibilityState : "unknown",
+        });
+      }
 
       if (rebuildRafRef.current) {
         try {
@@ -15257,9 +15355,17 @@ export function RoomPageLiveKit({
       stopWelcomeLoop();
       if (!preserveBackgroundSession) {
         releaseTabPresence();
-        // Leaving the room inside the app (or a crash) is not a page reload.
-        // The crash screen's Rejoin button marks the room again on purpose.
-        revokeSameTabRoomResume(retention.sessionId);
+        if (wasInRoom && !roomEndedForThisPage && retention.userId) {
+          // Leaving the room inside the app (a back gesture, a header link, a
+          // crash) is not Leave: coming back within 20 minutes rejoins.
+          writeMobileRoomLease(retention.sessionId, retention.userId, {
+            audioEnabled: prejoinRef.current.audioEnabled,
+            videoEnabled: prejoinRef.current.videoEnabled,
+          });
+          markRecentRoom(retention.sessionId);
+        } else {
+          revokeRecentRoom(retention.sessionId);
+        }
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -15651,7 +15757,7 @@ export function RoomPageLiveKit({
     const disconnectForCameraPolicy = () => {
       void (async () => {
         kickedBySignalRef.current = true;
-        revokeSameTabRoomResume(mobileRoomRetentionRef.current.sessionId);
+        revokeRecentRoom(mobileRoomRetentionRef.current.sessionId);
         setKickRedirecting(true);
         await disconnectRoom({
           skipNavigate: true,
@@ -15809,7 +15915,7 @@ export function RoomPageLiveKit({
     const disconnectForScreenSharePolicy = () => {
       void (async () => {
         kickedBySignalRef.current = true;
-        revokeSameTabRoomResume(mobileRoomRetentionRef.current.sessionId);
+        revokeRecentRoom(mobileRoomRetentionRef.current.sessionId);
         setKickRedirecting(true);
         await disconnectRoom({
           skipNavigate: true,
@@ -17547,6 +17653,9 @@ export function RoomPageLiveKit({
 
     const restoreFromLease = (resetBackoff = true) => {
       if (!canRecoverRoomNow()) return;
+      // This tab opened prejoin because another tab is still in the room;
+      // only the person's own Join connects it.
+      if (autoRejoinSkippedForOtherTabRef.current && !joinRequestedRef.current) return;
 
       const lease = readMobileRoomLease(sessionId, authUserId);
       if (!lease) return;

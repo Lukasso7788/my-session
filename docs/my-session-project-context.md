@@ -250,9 +250,12 @@ mobile tab switching), its production evidence and the fixes that followed are
 in docs/room-disconnect-audit-2026-10-11.md ("Fixes" table). Key rules from it:
 panels are `preloadableLazy` + preloaded after connect; a joined room defers
 `dynamicImportRecovery` reloads and shows an update banner; every lazy room
-section has an error boundary and the route has `RoomCrashBoundary`; a reload of
-the same tab rejoins once via `src/lib/sameTabRoomResume.ts` (10 minutes,
-first mount after a load on that room URL, revoked on leave/kick/removal);
+section has an error boundary and the route has `RoomCrashBoundary`; every room
+entry (`/room-livekit/:id` and public `/:slug`) goes through
+`src/components/RoomEntryGate.tsx`, and coming back within 20 minutes without
+Leave (reload, dropped tab, back/forward, a link, an in-app exit) rejoins via
+`src/lib/recentRoomResume.ts` (revoked on leave/kick/removal/closed room/ban;
+no auto-rejoin while another tab of the person still beats in the room);
 background-recovery token requests use `{ recovery: true }`; media-policy
 countdowns pause while hidden or reconnecting; the stage countdown lives in
 `src/lib/roomCountdownStore.ts`; room timing uses `serverNow()` from

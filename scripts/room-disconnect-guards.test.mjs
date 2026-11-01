@@ -23,10 +23,14 @@ test('side panels are preloaded after connect and protected by boundaries', () =
   assert.match(room, /APP_UPDATE_AVAILABLE_EVENT/);
 });
 
-test('the room has a crash boundary and a one-time same-tab rejoin after reload', () => {
-  assert.match(app, /<RoomCrashBoundary key=\{sessionId\} routeId=\{sessionId\}>/);
-  assert.match(app, /if \(!consumeSameTabRoomResume\(sessionId\)\) clearRoomEntryRecoveryLease\(sessionId\);/);
-  assert.match(room, /sameTabResumeEligibleSessions\.has\(sessionId\)/);
+test('every room entry has a crash boundary and the 20-minute recent-room rejoin', () => {
+  const gate = read('src/components/RoomEntryGate.tsx');
+  assert.match(gate, /<RoomCrashBoundary key=\{id\} routeId=\{id\}>/);
+  assert.match(gate, /if \(!consumeRecentRoomResume\(id\)\) clearRoomEntryRecoveryLease\(id\);/);
+  assert.match(app, /<RoomEntryGate sessionId=\{id\}>/);
+  assert.match(read('src/pages/PublicSlugRedirectPage.tsx'), /<RoomEntryGate sessionId=\{resolvedSessionId\}>/);
+  assert.match(room, /recentRoomEligibleSessions\.has\(sessionId\)/);
+  assert.match(room, /anotherRoomTabIsLive\(sessionId, authUserId, tabId, mobileLease\.lastSeenAt\)/);
 });
 
 test('background recovery keeps the room when the token request fails', () => {

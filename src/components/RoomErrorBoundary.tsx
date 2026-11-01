@@ -3,12 +3,11 @@ import React from "react";
 import { captureAppError, captureProductEvent } from "../lib/analytics";
 import { isDynamicImportFailure } from "../lib/dynamicImportRecovery";
 import { describeErrorForDiagnostics, reportRoomDiagnostic } from "../lib/roomDiagnosticsReport";
-import { markSameTabRoomResume } from "../lib/sameTabRoomResume";
+import { markRecentRoom } from "../lib/recentRoomResume";
 
-/** Reload the room page and let the same tab rejoin automatically once. */
-export function reloadRoomWithResume(routeId: string | null | undefined) {
-  const id = String(routeId || "").trim();
-  if (id) markSameTabRoomResume(id, id);
+/** Reload the room page and let it rejoin automatically. */
+export function reloadRoomWithResume(sessionId: string | null | undefined) {
+  markRecentRoom(String(sessionId || ""));
   window.location.reload();
 }
 

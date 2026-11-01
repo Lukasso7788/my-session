@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { RoomEntryGate } from "../components/RoomEntryGate";
 import { supabase } from "../lib/supabase";
 import RoomPageLiveKit from "./RoomPageLiveKit";
 
@@ -212,7 +213,11 @@ export default function PublicSlugRedirectPage() {
   }, [slug]);
 
   if (state === "ready" && resolvedSessionId) {
-    return <RoomPageLiveKit sessionIdOverride={resolvedSessionId} />;
+    return (
+      <RoomEntryGate sessionId={resolvedSessionId}>
+        <RoomPageLiveKit sessionIdOverride={resolvedSessionId} />
+      </RoomEntryGate>
+    );
   }
 
   return (
