@@ -7,6 +7,7 @@ import {
     useLayoutEffect,
     type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate } from "react-router-dom";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { Layers, ArrowUp, ArrowDown, Trash2, RotateCcw, Eraser, Search, Crown, UserCheck, Lock, Eye, EyeOff, Pin, PinOff, MessageSquareOff } from "lucide-react";
@@ -3359,6 +3360,9 @@ function EditSessionStudioModal(props: {
     canManageAnySession?: boolean;
     // Double-clicking a timeline opens only the timeline part of this editor.
     timelineOnly?: boolean;
+    // Create session: edit these blocks and hand them back instead of saving a session.
+    initialBlocks?: StudioBlock[];
+    onApplyBlocks?: (blocks: StudioBlock[]) => void;
 }) {
     const {
         isOpen,
@@ -3371,6 +3375,8 @@ function EditSessionStudioModal(props: {
         onHostTransferred,
         canManageAnySession = false,
         timelineOnly = false,
+        initialBlocks,
+        onApplyBlocks,
     } = props;
 
     const [editTitle, setEditTitle] = useState<string>(session?.title || "");
@@ -3472,10 +3478,14 @@ function EditSessionStudioModal(props: {
         setEditScreenShareRequired(nextPolicies.screenShareRequired === true);
         setEditCameraOrScreenShareRequired(nextPolicies.cameraOrScreenShareRequired === true);
         setEditPublicChatDisabled(nextPolicies.publicChatDisabled);
-        setStudioBlocks(normalizeStudioBlocksFromSession({
-            ...session,
-            session_stages: resolvedStages.length ? resolvedStages : session?.session_stages,
-        }));
+        setStudioBlocks(
+            initialBlocks
+                ? initialBlocks.map((block) => ({ ...block }))
+                : normalizeStudioBlocksFromSession({
+                    ...session,
+                    session_stages: resolvedStages.length ? resolvedStages : session?.session_stages,
+                })
+        );
         setSelectedBlockId(null);
         setDraggingId(null);
         setDragOverId(null);
@@ -3841,6 +3851,11 @@ function EditSessionStudioModal(props: {
                         type="button"
                         disabled={isSaving || !studioBlocks.length}
                         onClick={async () => {
+                            if (onApplyBlocks) {
+                                onApplyBlocks(studioBlocks.map((block) => ({ ...block })));
+                                onClose();
+                                return;
+                            }
                             setIsSaving(true);
                             try {
                                 if (timelineOnly) {
@@ -3905,7 +3920,7 @@ function EditSessionStudioModal(props: {
                             }
                         }}
                     >
-                        {isSaving ? "Saving..." : "Save changes"}
+                        {onApplyBlocks ? "Apply" : isSaving ? "Saving..." : "Save changes"}
                     </button>
                 </div>
             }
@@ -4594,6 +4609,32 @@ function EditSessionStudioModal(props: {
 
             </div>
         </ModalShell>
+    );
+}
+
+const NEW_SESSION_FOR_STUDIO = {};
+
+/** Session Studio for the Create session form: edits the form's blocks only. */
+export function SessionStudioFlowModal({
+    blocks,
+    onApply,
+    onClose,
+}: {
+    blocks: StudioBlock[];
+    onApply: (blocks: StudioBlock[]) => void;
+    onClose: () => void;
+}) {
+    return createPortal(
+        <EditSessionStudioModal
+            isOpen
+            timelineOnly
+            session={NEW_SESSION_FOR_STUDIO}
+            initialBlocks={blocks}
+            onApplyBlocks={onApply}
+            onSave={() => undefined}
+            onClose={onClose}
+        />,
+        document.body,
     );
 }
 

@@ -53,7 +53,7 @@ import {
 import CreateKindSwitch, { requestInfiniteRoomCreator } from "./CreateKindSwitch";
 import UiIcon from "./UiIcon";
 import { HOST_GUIDE_PATH } from "../lib/hostGuideLinks";
-import { QuickTimelineEditor } from "./SessionCard";
+import { SessionStudioFlowModal } from "./SessionCard";
 
 interface CreateSessionModalProps {
   isOpen: boolean;
@@ -2778,8 +2778,8 @@ export function CreateSessionModal({
 
   const sessionFlowPreview = studioEnabled ? studioBlocks : selectedTemplateBlocks;
 
-  // The flow is edited in place, on the Session Flow timeline: editing turns
-  // the current preset (or template) into a custom flow the host can change.
+  // The flow is edited in Session Studio: editing turns the current preset
+  // (or template) into a custom flow the host can change.
   const openSessionStudio = () => {
     if (!studioEnabled) {
       applyStudioBlocks(
@@ -3601,54 +3601,22 @@ export function CreateSessionModal({
                     <h4 className="font-inter text-[15px] font-bold text-[#15171A]">Session Flow</h4>
                     <span className="group relative inline-flex text-[#667085]">
                       <Info size={16} />
-                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[230px] -translate-x-1/2 rounded-[12px] bg-[#2F2F2F] px-3 py-2 text-center font-inter text-[11px] leading-4 text-white group-hover:block">Click the timeline to change stages, durations, colors and order right here.</span>
+                      <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-[230px] -translate-x-1/2 rounded-[12px] bg-[#2F2F2F] px-3 py-2 text-center font-inter text-[11px] leading-4 text-white group-hover:block">Click the timeline to open Session Studio and change stages, durations, colors and order.</span>
                     </span>
                   </div>
-                  {!flowEditing ? (
-                    <button type="button" onClick={openSessionStudio} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#D8DCE3] bg-white px-3 font-inter text-[12px] font-semibold text-[#344054] hover:border-[#2F2F2F]">
-                      <UiIcon name="pencil" size={13} /> Edit
-                    </button>
-                  ) : null}
+                  <button type="button" onClick={openSessionStudio} className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#D8DCE3] bg-white px-3 font-inter text-[12px] font-semibold text-[#344054] hover:border-[#2F2F2F]">
+                    <UiIcon name="pencil" size={13} /> Edit in Session Studio
+                  </button>
                 </div>
 
                 {flowEditing ? (
-                  <div className="mt-3">
-                    {/* Same editor as the session card's quick timeline, on the form's blocks. */}
-                    <QuickTimelineEditor
-                      session={null}
-                      stages={[]}
-                      isLoading={false}
-                      isInfinite={false}
-                      variant="inline"
-                      value={studioBlocks}
-                      onValueChange={setStudioBlocks}
-                      onSave={() => undefined}
-                      onClose={() => setFlowEditing(false)}
-                      onOpenFullEditor={() => undefined}
-                      footerExtra={
-                        <div className="flex min-w-0 items-center gap-1.5">
-                          <input
-                            value={saveTemplateName}
-                            onChange={(e) => setSaveTemplateName(e.target.value)}
-                            placeholder="Save as template…"
-                            aria-label="Template name"
-                            className="h-8 min-w-0 flex-1 rounded-full border border-[#E5E5E5] bg-white px-3 font-inter text-[12px] outline-none focus:border-[#2F2F2F]"
-                          />
-                          {saveTemplateName.trim() ? (
-                            <button
-                              type="button"
-                              onClick={handleSaveCurrentAsUserTemplate}
-                              disabled={isSavingUserTemplate}
-                              className="h-8 shrink-0 rounded-full border border-[#E5E5E5] px-3 font-inter text-[12px] font-semibold text-[#344054] hover:bg-[#F3F4F6] disabled:opacity-50"
-                            >
-                              {isSavingUserTemplate ? "Saving…" : "Save"}
-                            </button>
-                          ) : null}
-                        </div>
-                      }
-                    />
-                  </div>
-                ) : (
+                  // The full Session Studio (timeline, block library, script) on the form's blocks.
+                  <SessionStudioFlowModal
+                    blocks={studioBlocks}
+                    onApply={setStudioBlocks}
+                    onClose={() => setFlowEditing(false)}
+                  />
+                ) : null}
                 <button
                   type="button"
                   onClick={openSessionStudio}
@@ -3685,7 +3653,28 @@ export function CreateSessionModal({
                     ))}
                   </div>
                 </button>
-                )}
+
+                {studioEnabled ? (
+                  <div className="mt-2 flex min-w-0 items-center gap-1.5">
+                    <input
+                      value={saveTemplateName}
+                      onChange={(e) => setSaveTemplateName(e.target.value)}
+                      placeholder="Save this flow as a template…"
+                      aria-label="Template name"
+                      className="h-8 min-w-0 flex-1 rounded-full border border-[#E5E5E5] bg-white px-3 font-inter text-[12px] outline-none focus:border-[#2F2F2F]"
+                    />
+                    {saveTemplateName.trim() ? (
+                      <button
+                        type="button"
+                        onClick={handleSaveCurrentAsUserTemplate}
+                        disabled={isSavingUserTemplate}
+                        className="h-8 shrink-0 rounded-full border border-[#E5E5E5] px-3 font-inter text-[12px] font-semibold text-[#344054] hover:bg-[#F3F4F6] disabled:opacity-50"
+                      >
+                        {isSavingUserTemplate ? "Saving…" : "Save"}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {bookendMessage ? (
                   <div role="alert" className="mt-2.5 flex items-start gap-2.5 rounded-[12px] bg-[#FEF3F2] px-3 py-2.5 font-inter text-[12px] leading-[17px] text-[#B42318]">
