@@ -14036,7 +14036,10 @@ export function RoomPageLiveKit({
 
     try {
       // Tile refreshes must not restore audio while local deafen is active.
-      const vol = selfDeafenedRef.current ? 0 : clamp(pct, 0, 300) / 100;
+      // Without webAudioMix LiveKit writes this straight into audio.volume,
+      // which only accepts 0..1: a value above 1 throws when the next audio
+      // track attaches (someone unmutes) and crashed the whole room.
+      const vol = selfDeafenedRef.current ? 0 : clamp(pct, 0, 100) / 100;
       // LiveKit remembers this value for current and future audio tracks.
       participant.setVolume(vol, Track.Source.Microphone);
       participant.setVolume(vol, Track.Source.ScreenShareAudio);

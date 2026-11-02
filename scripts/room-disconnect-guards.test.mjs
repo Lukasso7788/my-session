@@ -72,6 +72,11 @@ test('a failed first connection is retried in place before prejoin', () => {
   assert.match(room, /setLkToken\(""\);\s*\n\s*lkTokenRef\.current = "";/);
 });
 
+test('participant volume handed to LiveKit never exceeds 1', () => {
+  // audio.volume above 1 throws when a new audio track attaches and crashed rooms.
+  assert.match(room, /const vol = selfDeafenedRef\.current \? 0 : clamp\(pct, 0, 100\) \/ 100;/);
+});
+
 test('the side panel keeps one mount point across layouts', () => {
   assert.match(room, /createPortal\(RightPanelBody, rightPanelHost\)/);
   assert.equal((room.match(/ref=\{attachRightPanelHost\}/g) || []).length, 2);
