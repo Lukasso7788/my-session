@@ -429,6 +429,14 @@ function MessageCardInner({
     const [isEditing, setIsEditing] = useState(false);
     const [draft, setDraft] = useState(msg.body);
     const [editEmojiOpen, setEditEmojiOpen] = useState(false);
+    const editEmojiButtonRef = useRef<HTMLButtonElement | null>(null);
+    const editEmojiMenuRef = useRef<HTMLDivElement | null>(null);
+    const [editEmojiPos, setEditEmojiPos] = useState<{
+        top: number;
+        left: number;
+        width: number;
+        height: number;
+    } | null>(null);
     const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
     const [savingEdit, setSavingEdit] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -455,6 +463,67 @@ function MessageCardInner({
 
         setReactionMenuPos({ top, left });
     }, [renderWindow]);
+
+    // The edit picker lives in a portal: inside the bubble it was clipped by
+    // the message list and squeezed to the bubble's width.
+    const updateEditEmojiPos = useCallback(() => {
+        const button = editEmojiButtonRef.current;
+        if (!button) return;
+
+        const rect = button.getBoundingClientRect();
+        const vw = renderWindow.innerWidth || 360;
+        const vh = renderWindow.innerHeight || 640;
+        const margin = 8;
+        const width = Math.max(280, Math.min(352, vw - margin * 2));
+        const height = Math.min(420, vh - margin * 2);
+
+        const left = Math.max(margin, Math.min(rect.right - width, vw - width - margin));
+        const spaceBelow = vh - rect.bottom - margin;
+        const spaceAbove = rect.top - margin;
+        const top =
+            spaceBelow >= height || spaceBelow >= spaceAbove
+                ? Math.min(rect.bottom + 8, vh - height - margin)
+                : Math.max(margin, rect.top - height - 8);
+
+        setEditEmojiPos({ top, left, width, height });
+    }, [renderWindow]);
+
+    useEffect(() => {
+        if (!isEditing) setEditEmojiOpen(false);
+    }, [isEditing]);
+
+    useEffect(() => {
+        if (!editEmojiOpen) {
+            setEditEmojiPos(null);
+            return;
+        }
+
+        updateEditEmojiPos();
+
+        const onDown = (e: MouseEvent) => {
+            const t = e.target as Node | null;
+            if (!t) return;
+            if (editEmojiButtonRef.current?.contains(t)) return;
+            if (editEmojiMenuRef.current?.contains(t)) return;
+            setEditEmojiOpen(false);
+        };
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setEditEmojiOpen(false);
+        };
+        const onRelayout = () => updateEditEmojiPos();
+
+        renderDocument.addEventListener("mousedown", onDown);
+        renderDocument.addEventListener("keydown", onKey);
+        renderWindow.addEventListener("resize", onRelayout);
+        renderWindow.addEventListener("scroll", onRelayout, true);
+
+        return () => {
+            renderDocument.removeEventListener("mousedown", onDown);
+            renderDocument.removeEventListener("keydown", onKey);
+            renderWindow.removeEventListener("resize", onRelayout);
+            renderWindow.removeEventListener("scroll", onRelayout, true);
+        };
+    }, [editEmojiOpen, renderDocument, renderWindow, updateEditEmojiPos]);
 
     useEffect(() => {
         if (!isEditing) setDraft(msg.body);
@@ -978,16 +1047,20 @@ function MessageCardInner({
                                     void saveEdit();
                                 }
                                 if (e.key === "Escape") {
-                                    cancelEdit();
+                                    // Escape closes an open emoji picker first.
+                                    if (editEmojiOpen) setEditEmojiOpen(false);
+                                    else cancelEdit();
                                 }
                             }}
                             autoFocus
                         />
                         <div className="mt-2 flex items-center justify-end gap-2">
                             <button
+                                ref={editEmojiButtonRef}
                                 type="button"
                                 onMouseDown={(e) => e.preventDefault()}
                                 onClick={() => setEditEmojiOpen((current) => !current)}
+                                aria-expanded={editEmojiOpen}
                                 className={
                                     isLight
                                         ? "grid h-9 w-9 place-items-center rounded-xl bg-[#ECEAEA] text-black/60 transition hover:bg-[#DCDCDC] hover:text-[#2FA84F]"
@@ -1028,20 +1101,30 @@ function MessageCardInner({
                                 Save
                             </button>
                         </div>
-                        {editEmojiOpen && (
-                            <div
-                                className={
-                                    "mt-2 overflow-hidden rounded-2xl border border-[#D8D0D0] shadow-xl " +
-                                    (isLight ? "bg-[#F3F1F1]" : "bg-[#292D32]")
-                                }
-                                onMouseDown={(e) => e.stopPropagation()}
-                            >
-                                <EmojiPickerPopover
-                                    theme={isLight ? "light" : "dark"}
-                                    onPick={insertEmojiToEdit}
-                                />
-                            </div>
-                        )}
+                        {editEmojiOpen &&
+                            editEmojiPos &&
+                            createPortal(
+                                <div
+                                    ref={editEmojiMenuRef}
+                                    className={
+                                        "fixed z-[99999] overflow-hidden rounded-2xl border shadow-xl " +
+                                        (isLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#484848] bg-[#292D32]")
+                                    }
+                                    style={{
+                                        top: editEmojiPos.top,
+                                        left: editEmojiPos.left,
+                                        width: editEmojiPos.width,
+                                        maxHeight: editEmojiPos.height,
+                                    }}
+                                    onMouseDown={(e) => e.stopPropagation()}
+                                >
+                                    <EmojiPickerPopover
+                                        theme={isLight ? "light" : "dark"}
+                                        onPick={insertEmojiToEdit}
+                                    />
+                                </div>,
+                                renderDocument.body,
+                            )}
 
                         <div
                             className={
