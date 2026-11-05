@@ -77,8 +77,79 @@ export function isValidTimeZone(value: string): boolean {
   }
 }
 
+// IANA's fixed-offset zones use the POSIX sign, so "Etc/GMT-3" is UTC+3.
+const ETC_GMT_ZONE = /^Etc\/GMT([+-])(\d{1,2})$/;
+
+/** Fixed-offset zones for people who think in GMT rather than in a city. Whole hours only (IANA has no Etc/GMT+5:30). */
+export const FIXED_OFFSET_TIME_ZONES: string[] = (() => {
+  // GMT+0 itself is the existing "UTC" choice.
+  const zones: string[] = [];
+  for (let hours = -12; hours <= 14; hours += 1) {
+    if (hours === 0) continue;
+    // Displayed offset +h is stored as Etc/GMT-h.
+    zones.push(`Etc/GMT${hours > 0 ? "-" : "+"}${Math.abs(hours)}`);
+  }
+  return zones;
+})();
+
+export function isFixedOffsetTimeZone(value: string): boolean {
+  return value === "Etc/GMT" || ETC_GMT_ZONE.test(value);
+}
+
 export function formatTimeZoneLabel(value: string): string {
+  if (value === "Etc/GMT" || value === "Etc/UTC") return "GMT+0";
+  const fixed = String(value || "").match(ETC_GMT_ZONE);
+  if (fixed) return `GMT${fixed[1] === "-" ? "+" : "-"}${Number(fixed[2])}`;
+  // Older browsers still report the legacy alias.
+  if (value === "Europe/Kiev") return "Europe/Kyiv";
   return value.replace(/_/g, " ");
+}
+
+/** Current offset from UTC in minutes (DST included), or null for an unknown zone. */
+export function getTimeZoneOffsetMinutes(timeZone: string, at: number | Date = Date.now()): number | null {
+  try {
+    const date = new Date(at instanceof Date ? at.getTime() : at);
+    date.setUTCSeconds(0, 0);
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+    }).formatToParts(date);
+    const get = (type: string) => Number(parts.find((part) => part.type === type)?.value);
+    const wallClockAsUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"));
+    const minutes = Math.round((wallClockAsUtc - date.getTime()) / 60_000);
+    return Number.isFinite(minutes) ? minutes : null;
+  } catch {
+    return null;
+  }
+}
+
+/** "GMT+2", "GMT+5:30", "GMT-3:30", "GMT+0". */
+export function formatGmtOffset(minutes: number): string {
+  const sign = minutes < 0 ? "-" : "+";
+  const abs = Math.abs(minutes);
+  const hours = Math.floor(abs / 60);
+  const rest = abs % 60;
+  return `GMT${sign}${hours}${rest ? `:${String(rest).padStart(2, "0")}` : ""}`;
+}
+
+/**
+ * Reads "GMT+3", "utc -5", "+5:30", "+0530", "GMT" as an offset in minutes.
+ * Anything else (a city, a country) returns null.
+ */
+export function parseGmtOffsetQuery(query: string): number | null {
+  const clean = String(query || "").toLowerCase().replace(/−/g, "-").replace(/\s+/g, "");
+  if (clean === "gmt" || clean === "utc" || clean === "gmt0" || clean === "utc0") return 0;
+  const match = clean.match(/^(?:gmt|utc)?([+-])(\d{1,2})(?::?(\d{2}))?$/);
+  if (!match) return null;
+  const hours = Number(match[2]);
+  const minutes = Number(match[3] || 0);
+  if (hours > 14 || ![0, 15, 30, 45].includes(minutes)) return null;
+  return (match[1] === "-" ? -1 : 1) * (hours * 60 + minutes);
 }
 
 /**

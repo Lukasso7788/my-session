@@ -1,4 +1,13 @@
-import { formatTimeZoneLabel, getSupportedTimeZones, isValidTimeZone } from "./timezones";
+import {
+  FIXED_OFFSET_TIME_ZONES,
+  formatGmtOffset,
+  formatTimeZoneLabel,
+  getSupportedTimeZones,
+  getTimeZoneOffsetMinutes,
+  isFixedOffsetTimeZone,
+  isValidTimeZone,
+  parseGmtOffsetQuery,
+} from "./timezones";
 
 export type TimeZoneRecord = {
   name: string;
@@ -13,6 +22,8 @@ export type TimeZoneRecord = {
 export type TimeZoneOption = {
   value: string;
   label: string;
+  /** Current offset from UTC in minutes, used for "GMT+3" searches. */
+  offsetMinutes: number | null;
   searchTerms: string[];
 };
 
@@ -65,18 +76,28 @@ export function buildTimeZoneOptions(
 
   const zones = new Set([
     "UTC",
+    ...FIXED_OFFSET_TIME_ZONES,
     ...getSupportedTimeZones(current),
     ...records.map((record) => record.name),
   ]);
+  const now = Date.now();
 
   return Array.from(zones)
     .filter(isValidTimeZone)
     .map((value) => {
       const record = recordByZone.get(value);
-      const label = record
+      const offsetMinutes = getTimeZoneOffsetMinutes(value, now);
+      const offset = offsetMinutes == null ? "" : formatGmtOffset(offsetMinutes);
+      const fixed = isFixedOffsetTimeZone(value);
+      const name = record
         ? `${formatTimeZoneLabel(value)} · ${record.countryName} (${record.mainCities.slice(0, 3).join(", ")})`
-        : formatTimeZoneLabel(value);
+        : fixed
+          ? `${formatTimeZoneLabel(value)} · fixed offset, no daylight saving`
+          : formatTimeZoneLabel(value);
+      const label = offset ? `(${offset}) ${name}` : name;
       const terms = [
+        offset,
+        offset.replace("GMT", "UTC"),
         value,
         record?.name || "",
         record?.alternativeName || "",
@@ -89,10 +110,20 @@ export function buildTimeZoneOptions(
       return {
         value,
         label,
+        offsetMinutes,
         searchTerms: terms.filter(Boolean).map(normalize),
       };
     })
     .sort((a, b) => a.value.localeCompare(b.value));
+}
+
+/** "Europe/Kyiv (GMT+2)" for the closed picker. */
+export function describeSelectedTimeZone(value: string): string {
+  if (!value) return "";
+  const minutes = getTimeZoneOffsetMinutes(value);
+  const label = formatTimeZoneLabel(value);
+  if (minutes == null || isFixedOffsetTimeZone(value)) return label;
+  return `${label} (${formatGmtOffset(minutes)})`;
 }
 
 export function searchTimeZones(
@@ -101,6 +132,20 @@ export function searchTimeZones(
   selected?: string | null,
   limit = 35,
 ): TimeZoneOption[] {
+  // "GMT+3", "+5:30", "UTC-5": every zone at that offset right now, the plain
+  // fixed-offset choice first, then the cities.
+  const offsetQuery = parseGmtOffsetQuery(query);
+  if (offsetQuery != null) {
+    return options
+      .filter((option) => option.offsetMinutes === offsetQuery)
+      .sort((a, b) =>
+        Number(isFixedOffsetTimeZone(b.value) || b.value === "UTC") -
+          Number(isFixedOffsetTimeZone(a.value) || a.value === "UTC") ||
+        a.value.localeCompare(b.value),
+      )
+      .slice(0, Math.max(limit, 80));
+  }
+
   const normalizedQuery = normalize(query);
   if (!normalizedQuery) {
     const current = options.find((option) => option.value === selected);

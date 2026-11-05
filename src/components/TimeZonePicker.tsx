@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { getBrowserTimeZone } from "../lib/timezones";
 import {
   buildTimeZoneOptions,
+  describeSelectedTimeZone,
   searchTimeZones,
   type TimeZoneRecord,
 } from "../lib/timezoneSearch";
@@ -87,13 +88,13 @@ export default function TimeZonePicker({
           id={inputId}
           type="search"
           role="combobox"
-          aria-label="Search timezones by city, country, or region"
+          aria-label="Search timezones by city, country, region or GMT offset"
           aria-autocomplete="list"
           aria-expanded={open}
           aria-controls={listId}
           aria-activedescendant={open && matches[activeIndex] ? `${listId}-${activeIndex}` : undefined}
-          value={open ? query : value}
-          placeholder={open ? "Search city, country or timezone…" : "Choose a timezone"}
+          value={open ? query : describeSelectedTimeZone(value)}
+          placeholder={open ? "City, country, or GMT+3…" : "Choose a timezone"}
           onFocus={() => {
             setQuery("");
             setActiveIndex(0);
@@ -135,7 +136,7 @@ export default function TimeZonePicker({
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => select(deviceZone)}
             >
-              Use my device timezone · {deviceZone.replace(/_/g, " ")}
+              Use my device timezone · {describeSelectedTimeZone(deviceZone)}
             </button>
           ) : null}
           <div id={listId} role="listbox" aria-label="Timezones" className="max-h-60 overflow-y-auto py-1">
@@ -154,7 +155,7 @@ export default function TimeZonePicker({
               </div>
             )) : (
               <p className="px-4 py-3 text-[13px] text-black/55">
-                {loading ? "Loading places…" : "No matching timezone. Try a nearby city or country."}
+                {loading ? "Loading places…" : "No matching timezone. Try a nearby city, a country, or an offset like GMT+3."}
               </p>
             )}
           </div>

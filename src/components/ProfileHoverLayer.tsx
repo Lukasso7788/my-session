@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
 import { CalendarDays, Clock, ExternalLink } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { loadProfileLocation } from "../lib/profileLocation";
+import { formatTimeZoneWithPlace, shortPlaceName } from "../lib/placeSearch";
 
 // Account preview for every avatar in the app.
 //
@@ -22,6 +24,7 @@ type ProfileStats = {
     avatarUrl: string | null;
     bio: string | null;
     timezone: string | null;
+    location: string | null;
     sessions: number | null;
     followers: number | null;
     memberSince: string | null;
@@ -32,6 +35,7 @@ const EMPTY_STATS: ProfileStats = {
     avatarUrl: null,
     bio: null,
     timezone: null,
+    location: null,
     sessions: null,
     followers: null,
     memberSince: null,
@@ -43,7 +47,7 @@ function loadProfileStats(userId: string): Promise<ProfileStats> {
     if (cached) return cached;
 
     const request = (async (): Promise<ProfileStats> => {
-        const [profileResult, followersResult] = await Promise.all([
+        const [profileResult, followersResult, location] = await Promise.all([
             supabase
                 .from("profiles")
                 .select("full_name, avatar_url, bio, timezone, attended_sessions_count, created_at")
@@ -53,6 +57,8 @@ function loadProfileStats(userId: string): Promise<ProfileStats> {
                 .from("host_followers")
                 .select("id", { count: "exact", head: true })
                 .eq("host_user_id", userId),
+            // Separate query: a missing column never breaks the card.
+            loadProfileLocation(userId),
         ]);
         const profile = profileResult.error ? null : (profileResult.data as any);
         const createdAt = profile?.created_at ? new Date(profile.created_at) : null;
@@ -61,6 +67,7 @@ function loadProfileStats(userId: string): Promise<ProfileStats> {
             avatarUrl: profile?.avatar_url || null,
             bio: profile?.bio ? String(profile.bio).trim() || null : null,
             timezone: profile?.timezone || null,
+            location,
             sessions: typeof profile?.attended_sessions_count === "number" ? profile.attended_sessions_count : null,
             followers: followersResult.error ? null : followersResult.count ?? 0,
             memberSince:
@@ -74,13 +81,21 @@ function loadProfileStats(userId: string): Promise<ProfileStats> {
     return request;
 }
 
-/** The person's local time ("4:12 PM") and city ("Berlin") for a valid IANA zone, otherwise null. */
-function describeTimezone(timezone: string | null): { time: string; city: string; full: string } | null {
+/**
+ * The person's local time, and the place only from the location they chose
+ * ("4:12 PM in Kyiv", "4:12 PM in Lukasheve"). Timezone names like
+ * "Europe/Kiev" are never shown as a place; without a location it is just
+ * "4:12 PM local time". Null for an unknown zone.
+ */
+function describeTimezone(timezone: string | null, location: string | null): { text: string; title: string } | null {
     if (!timezone) return null;
     try {
         const time = new Date().toLocaleTimeString("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit" });
-        const city = timezone.split("/").pop()?.replace(/_/g, " ") || timezone;
-        return { time, city, full: timezone };
+        const settlement = shortPlaceName(location);
+        return {
+            text: settlement ? `${time} in ${settlement}` : `${time} local time`,
+            title: `${time} local time · ${formatTimeZoneWithPlace(timezone, location)}`,
+        };
     } catch {
         return null;
     }
@@ -217,7 +232,7 @@ export default function ProfileHoverLayer() {
 
     const loading = stats === null;
     const displayName = stats?.fullName || target.name || "MySession member";
-    const zone = describeTimezone(stats?.timezone || null);
+    const zone = describeTimezone(stats?.timezone || null, stats?.location || null);
 
     return createPortal(
         // The outer box only positions (and flips above the anchor); the inner card animates.
@@ -245,7 +260,7 @@ export default function ProfileHoverLayer() {
                 <div className="h-14 bg-[#EEF3FE]" aria-hidden="true" />
 
                 <div className="px-4 pb-4">
-                    <div className="-mt-7 flex items-end justify-between gap-3">
+                    <div className="-mt-7 flex min-w-0 items-end justify-between gap-3">
                         <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-full border-[3px] border-white bg-[#F1F1F1] shadow-[0_4px_12px_rgba(17,24,39,0.10)]">
                             {stats?.avatarUrl ? (
                                 <img src={stats.avatarUrl} alt="" className="h-full w-full object-cover" draggable={false} />
@@ -255,11 +270,11 @@ export default function ProfileHoverLayer() {
                         </span>
                         {zone ? (
                             <span
-                                className="mb-1 inline-flex items-center gap-1 rounded-full bg-[#F6F6F6] px-2.5 py-1 text-[11px] font-medium text-[#606060]"
-                                title={`${zone.full} · local time`}
+                                className="mb-1 inline-flex min-w-0 items-center gap-1 rounded-full bg-[#F6F6F6] px-2.5 py-1 text-[11px] font-medium text-[#606060]"
+                                title={zone.title}
                             >
-                                <Clock size={11} strokeWidth={2.2} aria-hidden="true" />
-                                {zone.time} in {zone.city}
+                                <Clock size={11} strokeWidth={2.2} aria-hidden="true" className="shrink-0" />
+                                <span className="truncate">{zone.text}</span>
                             </span>
                         ) : null}
                     </div>

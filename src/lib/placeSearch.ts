@@ -1,6 +1,8 @@
 // Place search for the optional profile location. Uses Photon (OpenStreetMap
 // data, built for search-as-you-type), so it covers everything down to
 // villages and hamlets. Only the typed query is sent; nothing about the user.
+import { formatTimeZoneLabel } from "./timezones";
+
 const PHOTON_URL = "https://photon.komoot.io/api/";
 
 export const LOCATION_NAME_MAX_LENGTH = 160;
@@ -80,7 +82,7 @@ export function formatTimeZoneWithPlace(timeZone: string, location?: string | nu
     const country = parts.length > 1 ? parts[parts.length - 1] : "";
     return country ? `${country}/${settlement}` : settlement;
   }
-  return String(timeZone || "").replace(/_/g, " ").trim();
+  return formatTimeZoneLabel(String(timeZone || "").trim());
 }
 
 export async function searchPlaces(query: string, signal?: AbortSignal): Promise<PlaceSuggestion[]> {

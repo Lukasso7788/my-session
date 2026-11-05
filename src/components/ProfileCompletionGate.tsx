@@ -329,7 +329,7 @@ export default function ProfileCompletionGate() {
         </h2>
         <p className="mt-2 text-[14px] leading-6 text-black/58">
           {showingTimeZone
-            ? "Choose your local timezone for session times, reminders, and daily attendance. You can search by city, country, or region."
+            ? "Choose your local timezone for session times, reminders, and daily attendance. You can search by city, country, region, or GMT offset."
             : "MySession works through trust and accountability. After five sessions, everyone continues using their real first name."}
         </p>
 

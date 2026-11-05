@@ -42,6 +42,28 @@ test("selected timezone is listed first when the search is empty", () => {
   assert.equal(searchTimeZones(options, "", "Asia/Kolkata")[0].value, "Asia/Kolkata");
 });
 
+test("GMT offsets list every zone at that offset, the plain offset first", () => {
+  const kolkataOffset = options.find((option) => option.value === "Asia/Kolkata").offsetMinutes;
+  assert.equal(kolkataOffset, 330);
+  for (const query of ["GMT+5:30", "utc +5:30", "+5:30", "+0530"]) {
+    const found = searchTimeZones(options, query);
+    assert.ok(found.some((option) => option.value === "Asia/Kolkata"), query);
+    assert.ok(found.every((option) => option.offsetMinutes === 330), query);
+  }
+  const plus3 = searchTimeZones(options, "GMT+3");
+  assert.equal(plus3[0].value, "Etc/GMT-3");
+  assert.match(plus3[0].label, /^\(GMT\+3\) GMT\+3 · fixed offset/);
+  assert.ok(plus3.every((option) => option.offsetMinutes === 180));
+  // Negative offsets do not mix with positive ones.
+  assert.ok(searchTimeZones(options, "GMT-5").every((option) => option.offsetMinutes === -300));
+  assert.equal(searchTimeZones(options, "GMT")[0].offsetMinutes, 0);
+});
+
+test("every option shows its current GMT offset", () => {
+  const kolkata = options.find((option) => option.value === "Asia/Kolkata");
+  assert.match(kolkata.label, /^\(GMT\+5:30\) Asia\/Kolkata · India/);
+});
+
 test("unmatched text never silently chooses a timezone", () => {
   assert.deepEqual(searchTimeZones(options, "Atlantis nowhere"), []);
 });
