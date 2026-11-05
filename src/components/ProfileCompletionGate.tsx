@@ -2,7 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Clock3, UserRound } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import TimeZonePicker from "./TimeZonePicker";
+import LocationPicker from "./LocationPicker";
 import { useAuth } from "../context/AuthContext";
+import { saveProfileLocation } from "../lib/profileLocation";
+import { normalizeLocationName } from "../lib/placeSearch";
 import { loadEntitlementState } from "../lib/entitlements";
 import { supabase } from "../lib/supabase";
 import {
@@ -39,6 +42,7 @@ export default function ProfileCompletionGate() {
   const [needsTimeZone, setNeedsTimeZone] = useState(false);
   const [needsRealName, setNeedsRealName] = useState(false);
   const [timeZone, setTimeZone] = useState(getDetectedTimeZone);
+  const [location, setLocation] = useState("");
   const [realName, setRealName] = useState("");
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -50,7 +54,7 @@ export default function ProfileCompletionGate() {
 
   const gateOpen = needsTimeZone || needsRealName;
 
-  const saveTimeZone = useCallback(async (zone: string) => {
+  const saveTimeZone = useCallback(async (zone: string, chosenLocation?: string) => {
     if (!user?.id || saveInFlightRef.current) return;
     if (!isValidTimeZone(zone)) {
       setMessage("Choose a valid timezone.");
@@ -68,6 +72,13 @@ export default function ProfileCompletionGate() {
         .update({ timezone: zone, updated_at: now })
         .eq("id", user.id);
       if (profileError) throw profileError;
+
+      // Location is optional; a failure here never blocks confirming the timezone.
+      if (normalizeLocationName(chosenLocation)) {
+        await saveProfileLocation(user.id, chosenLocation || null).catch((error) => {
+          console.warn("[profile-gate] location save failed:", error);
+        });
+      }
 
       const { error: authError } = await supabase.auth.updateUser({
         data: { timezone: zone, timezone_confirmed_at: now },
@@ -307,7 +318,7 @@ export default function ProfileCompletionGate() {
           )}
         </div>
 
-        <div className="mt-5 text-[11px] font-bold uppercase tracking-[0.16em] text-black/45">
+        <div className="mt-5 text-[13px] font-semibold text-black/50">
           {showingTimeZone ? "Set your local time" : "Community identity"}
         </div>
         <h2
@@ -340,6 +351,20 @@ export default function ProfileCompletionGate() {
             />
             <span className="mt-2 block text-[11px] text-black/42">
               If your browser could not detect your timezone, choose it here.
+            </span>
+
+            <label htmlFor="profile-location" className="mt-5 block text-[12px] font-semibold text-black/60">
+              Location <span className="font-normal text-black/40">(optional)</span>
+            </label>
+            <LocationPicker
+              id="profile-location"
+              value={location}
+              onChange={setLocation}
+              className="mt-2"
+              disabled={saving}
+            />
+            <span className="mt-2 block text-[11px] text-black/42">
+              Any city, town or village. Shown on your profile only if you add it.
             </span>
           </div>
         ) : (
@@ -377,7 +402,7 @@ export default function ProfileCompletionGate() {
         <button
           type="button"
           onClick={() =>
-            void (showingTimeZone ? saveTimeZone(timeZone) : confirmRealName())
+            void (showingTimeZone ? saveTimeZone(timeZone, location) : confirmRealName())
           }
           disabled={saving}
           className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-2xl bg-[#2F2F2F] px-5 text-[14px] font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-55"

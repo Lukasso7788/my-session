@@ -2,7 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
+import { MapPin } from "lucide-react";
 import TimeZonePicker from "../components/TimeZonePicker";
+import LocationPicker from "../components/LocationPicker";
+import { loadProfileLocation, saveProfileLocation } from "../lib/profileLocation";
+import { normalizeLocationName } from "../lib/placeSearch";
 import {
   formatTimeZoneLabel,
   getDetectedTimeZone,
@@ -145,6 +149,8 @@ export default function ProfilePage() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string>("—");
   const [timeZone, setTimeZone] = useState(getDetectedTimeZone);
+  const [location, setLocation] = useState("");
+  const [locationNotice, setLocationNotice] = useState("");
 
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -397,6 +403,7 @@ export default function ProfilePage() {
     };
 
     void loadProfile();
+    void loadProfileLocation(user.id, { fresh: true }).then((saved) => setLocation(saved || ""));
   }, [user]);
 
   useEffect(() => {
@@ -566,6 +573,14 @@ export default function ProfilePage() {
         .eq("id", user.id);
       if (profileError) throw profileError;
 
+      const locationResult = await saveProfileLocation(user.id, location);
+      setLocation(normalizeLocationName(location) || "");
+      setLocationNotice(
+        locationResult.unavailable
+          ? "Your timezone is saved. Location can't be saved yet; please try again later."
+          : "",
+      );
+
       const { error: authError } = await supabase.auth.updateUser({
         data: {
           full_name: fullName,
@@ -704,11 +719,31 @@ export default function ProfilePage() {
                 disabled={saving}
               />
               <span className="mt-2 block text-xs font-normal text-gray-500">
-                Used for session times, reminders, and daily attendance.
+                Used for session times, reminders, and daily attendance. Others see only your local time.
+              </span>
+            </div>
+
+            <div className="mt-5">
+              <label htmlFor="profile-edit-location" className="block text-sm font-medium text-[#2F2F2F]">
+                Location <span className="font-normal text-gray-500">(optional)</span>
+              </label>
+              <LocationPicker
+                id="profile-edit-location"
+                value={location}
+                onChange={setLocation}
+                className="mt-2"
+                disabled={saving}
+              />
+              <span className="mt-2 block text-xs font-normal text-gray-500">
+                Shown on your profile only if you add it. It doesn't change your timezone.
               </span>
             </div>
           </div>
         )}
+
+        {locationNotice ? (
+          <p className="mt-3 max-w-[520px] rounded-xl bg-[#FFF7E6] px-4 py-2 text-center text-xs text-[#8A5A00]">{locationNotice}</p>
+        ) : null}
 
         <div className="mt-2 flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-sm">
           <span className="flex items-center gap-2">
@@ -735,6 +770,13 @@ export default function ProfilePage() {
               {formatTimeZoneLabel(timeZone)}
             </span>
           </span>
+
+          {location.trim() && !editMode ? (
+            <span className="flex min-w-0 items-center gap-2" title={location}>
+              <MapPin className="h-[20px] w-[20px] shrink-0 text-[#2F2F2F]" strokeWidth={1.6} aria-hidden="true" />
+              <span className="max-w-[320px] truncate text-[14px] font-medium text-[#2F2F2F]">{location}</span>
+            </span>
+          ) : null}
         </div>
       </div>
 

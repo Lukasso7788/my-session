@@ -81,14 +81,28 @@ export function formatTimeZoneLabel(value: string): string {
   return value.replace(/_/g, " ");
 }
 
-export function formatTimeZoneCityLabel(value: string): string {
-  const timeZone = String(value || "").trim();
-  if (!timeZone) return "";
-
-  const normalized = timeZone.toLowerCase();
-  if (normalized === "europe/kiev" || normalized === "europe/kyiv") {
-    return "Kyiv";
+/** "GMT+2", "EST", "GMT+5:30": the zone without naming a place. */
+export function formatTimeZoneShortName(timeZone: string, at: number | Date = Date.now()): string {
+  try {
+    const part = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "short" })
+      .formatToParts(at instanceof Date ? at : new Date(at))
+      .find((item) => item.type === "timeZoneName");
+    return part?.value || "";
+  } catch {
+    return "";
   }
+}
 
-  return timeZone.split("/").pop()?.replace(/_/g, " ") || timeZone;
+/** Someone's current local time with only the zone ("4:12 PM · GMT+2"). Location is a separate, optional profile field. */
+export function formatLocalTimeInZone(timeZone: string, at: number | Date = Date.now()): string {
+  const zone = String(timeZone || "").trim();
+  if (!zone) return "";
+  try {
+    const time = new Intl.DateTimeFormat(undefined, { timeZone: zone, hour: "numeric", minute: "2-digit" })
+      .format(at instanceof Date ? at : new Date(at));
+    const short = formatTimeZoneShortName(zone, at);
+    return short ? `${time} · ${short}` : time;
+  } catch {
+    return "";
+  }
 }

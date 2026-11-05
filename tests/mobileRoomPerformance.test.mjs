@@ -79,10 +79,13 @@ test("hovering any person's avatar opens the shared profile card", () => {
   const layer = readFileSync("src/components/ProfileHoverLayer.tsx", "utf8");
   const main = readFileSync("src/main.tsx", "utf8");
   assert.match(main, /<ProfileHoverLayer \/>/);
-  // Mouse only, stats cached per person, timezone and a "Check account" link.
+  // Mouse only, stats cached per person, local time (no place guessed from the
+  // timezone), the optional chosen location and a "Check account" link.
   assert.match(layer, /if \(event\.pointerType !== "mouse"\) return;/);
   assert.match(layer, /const statsCache = new Map/);
-  assert.match(layer, /timeZone: timezone/);
+  assert.match(layer, /formatLocalTimeInZone\(timezone\)/);
+  assert.doesNotMatch(layer, /timezone\.split\("\/"\)/);
+  assert.match(layer, /loadProfileLocation\(userId\)/);
   assert.match(layer, />\s*Check account\s*</);
   // The profile opens in a new tab, marked with an external-link icon.
   assert.match(layer, /to=\{`\/profile\/\$\{target\.userId\}`\}\s*target="_blank"\s*rel="noopener noreferrer"/);

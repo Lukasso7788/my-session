@@ -91,7 +91,7 @@ import {
 import { advertiseSharedMusic, sharedRoomMusicActive } from "../lib/roomMusicPresence";
 import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
-import { formatTimeZoneCityLabel, isValidTimeZone } from "../lib/timezones";
+import { formatLocalTimeInZone, isValidTimeZone } from "../lib/timezones";
 import {
   loadEntitlementState,
   isPersonalPaywallForced,
@@ -5601,22 +5601,11 @@ function AccountabilityWall({
                   .filter((item) => !item.completed)
                   .map((item) => String(item.text || "").trim())
                   .filter(Boolean);
-            const participantTime = (() => {
-              const timeZone = String(tile.participantTimeZone || "").trim();
-              if (!timeZone) return "";
-
-              try {
-                const city = formatTimeZoneCityLabel(timeZone);
-                const time = new Intl.DateTimeFormat(undefined, {
-                  timeZone,
-                  hour: "numeric",
-                  minute: "2-digit",
-                }).format(new Date(taskTimerTickMs));
-                return `${city} · ${time}`;
-              } catch {
-                return "";
-              }
-            })();
+            // Local time and zone only; no place is inferred from the timezone.
+            const participantTime = formatLocalTimeInZone(
+              String(tile.participantTimeZone || "").trim(),
+              taskTimerTickMs,
+            );
 
             return (
               <div

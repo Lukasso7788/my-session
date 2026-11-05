@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { formatTimeZoneLabel, isValidTimeZone } from "../lib/timezones";
+import { MapPin } from "lucide-react";
+import { formatLocalTimeInZone, formatTimeZoneLabel, isValidTimeZone } from "../lib/timezones";
+import { loadProfileLocation } from "../lib/profileLocation";
 import {
   ensurePushSubscription,
   pushSupported,
@@ -146,6 +148,7 @@ export default function PublicProfilePage() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [createdAt, setCreatedAt] = useState<string>("—");
   const [timeZone, setTimeZone] = useState("UTC");
+  const [location, setLocation] = useState("");
   const [attendedCount, setAttendedCount] = useState<number>(0);
 
   const [sessions, setSessions] = useState<HostedSessionRow[]>([]);
@@ -347,6 +350,8 @@ export default function PublicProfilePage() {
         setTimeZone(
           isValidTimeZone(profile.timezone || "") ? profile.timezone || "UTC" : "UTC",
         );
+        setLocation("");
+        void loadProfileLocation(id, { fresh: true }).then((saved) => setLocation(saved || ""));
         if (typeof profile.attended_sessions_count === "number") {
           setAttendedCount(profile.attended_sessions_count);
         } else {
@@ -631,9 +636,16 @@ export default function PublicProfilePage() {
               />
             </svg>
             <span className="text-[14px] font-medium text-[#2F2F2F]">
-              {formatTimeZoneLabel(timeZone)}
+              {formatLocalTimeInZone(timeZone) || formatTimeZoneLabel(timeZone)} local time
             </span>
           </span>
+
+          {location ? (
+            <span className="flex min-w-0 items-center gap-2" title={location}>
+              <MapPin className="h-[20px] w-[20px] shrink-0 text-[#2F2F2F]" strokeWidth={1.6} aria-hidden="true" />
+              <span className="max-w-[320px] truncate text-[14px] font-medium text-[#2F2F2F]">{location}</span>
+            </span>
+          ) : null}
 
           <span className="flex items-center gap-2">
             <img
