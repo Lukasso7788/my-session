@@ -204,6 +204,29 @@ type MonthlyAttendanceAggregateRow = {
   attendee_ids: string[] | null;
 };
 
+type MonthlyHostPoint = {
+  key: string;
+  label: string;
+  hoursHosted: number;
+  groupHours: number;
+  infiniteHours: number;
+  uniqueHosts: number;
+  hostIds: string[];
+  paidSubscribers: number;
+  subscriberIds: string[];
+};
+
+type MonthlyHostAggregateRow = {
+  month_start: string;
+  hours_hosted: number | string;
+  group_hours: number | string;
+  infinite_hours: number | string;
+  unique_hosts: number;
+  host_ids: string[] | null;
+  paid_subscribers: number;
+  subscriber_ids: string[] | null;
+};
+
 type DailyAttendanceAggregateRow = {
   attendance_date: string;
   unique_attendees: number;
@@ -427,6 +450,27 @@ function buildMonthlyAttendance(
       attendanceRecords: Number(row?.attendance_records || 0),
       attendedSessions: Number(row?.attended_sessions || 0),
       attendeeIds: row?.attendee_ids || [],
+    };
+  });
+}
+
+function buildMonthlyHostStats(
+  rows: MonthlyHostAggregateRow[],
+  count = 36,
+): MonthlyHostPoint[] {
+  const byMonth = new Map(rows.map((row) => [row.month_start.slice(0, 7), row]));
+  return makeLastMonths(count).map(({ key, label }) => {
+    const row = byMonth.get(key);
+    return {
+      key,
+      label,
+      hoursHosted: Number(row?.hours_hosted || 0),
+      groupHours: Number(row?.group_hours || 0),
+      infiniteHours: Number(row?.infinite_hours || 0),
+      uniqueHosts: Number(row?.unique_hosts || 0),
+      hostIds: row?.host_ids || [],
+      paidSubscribers: Number(row?.paid_subscribers || 0),
+      subscriberIds: row?.subscriber_ids || [],
     };
   });
 }
@@ -1189,6 +1233,198 @@ function MonthlyAttendanceChart({
   );
 }
 
+type MonthlyMetric<T> = {
+  id: string;
+  label: string;
+  title: string;
+  description: string;
+  color: string;
+  value: (point: T) => number;
+  format?: (value: number) => string;
+  tooltip: (point: T) => string;
+  footer: (point: T | undefined) => ReactNode;
+};
+
+/** Same look as the attendance chart, for any per-month metric. */
+function MonthlyMetricChart<T extends { key: string; label: string }>({
+  eyebrow,
+  metrics,
+  data,
+  emptyNote,
+  onMonthClick,
+}: {
+  eyebrow: string;
+  metrics: MonthlyMetric<T>[];
+  data: T[];
+  emptyNote?: string;
+  onMonthClick?: (point: T, metricId: string) => void;
+}) {
+  const [rangeMonths, setRangeMonths] = useState<12 | 24 | 36>(12);
+  const [metricId, setMetricId] = useState(metrics[0].id);
+  const metric = metrics.find((item) => item.id === metricId) || metrics[0];
+  const visibleData = data.slice(-rangeMonths);
+  const max = Math.max(...visibleData.map((item) => metric.value(item)), 1);
+  const format = metric.format || ((value: number) => String(value));
+  const rangeLabel = rangeMonths === 12 ? "12 months" : rangeMonths === 24 ? "2 years" : "3 years";
+
+  return (
+    <section className="mt-6 overflow-hidden rounded-[28px] bg-[#1F2328] p-6 text-white shadow-[0_12px_40px_rgba(16,24,20,0.18)]">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="text-[13px] font-semibold text-white/60">{eyebrow}</div>
+          <h2 className="mt-1 text-[22px] font-bold">{metric.title}</h2>
+          <p className="mt-1 text-[13px] text-white/55">{metric.description}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {metrics.length > 1 ? (
+            <div className="flex w-fit rounded-full bg-white/[0.08] p-1">
+              {metrics.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setMetricId(item.id)}
+                  className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                    metric.id === item.id ? "bg-white text-[#1F2328]" : "text-white/55 hover:text-white"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <div className="flex w-fit rounded-full bg-white/[0.08] p-1">
+            {([
+              [12, "12 months"],
+              [24, "2 years"],
+              [36, "3 years"],
+            ] as const).map(([months, label]) => (
+              <button
+                key={months}
+                type="button"
+                onClick={() => setRangeMonths(months)}
+                className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors ${
+                  rangeMonths === months ? "bg-white text-[#1F2328]" : "text-white/55 hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {emptyNote ? (
+        <div className="mt-7 grid h-40 place-items-center rounded-2xl bg-white/[0.04] px-4 text-center text-[13px] text-white/55">
+          {emptyNote}
+        </div>
+      ) : (
+        <div className="mt-7 overflow-x-auto pb-2">
+          <div
+            className="grid h-56 items-end gap-2 sm:gap-3"
+            style={{
+              gridTemplateColumns: `repeat(${visibleData.length}, minmax(42px, 1fr))`,
+              minWidth: `${Math.max(visibleData.length * 52, 640)}px`,
+            }}
+          >
+            {visibleData.map((item) => {
+              const value = metric.value(item);
+              const height = Math.max(value ? 8 : 4, (value / max) * 100);
+              return (
+                <div key={item.key} className="group flex h-full min-w-0 flex-col justify-end">
+                  <div className="mb-2 text-center text-[13px] font-bold opacity-0 transition-opacity group-hover:opacity-100">
+                    {format(value)}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onMonthClick?.(item, metric.id)}
+                    className="relative flex h-[150px] w-full items-end overflow-hidden rounded-xl bg-white/[0.06] text-left outline-none ring-white/35 transition-transform hover:-translate-y-1 focus-visible:ring-2"
+                    aria-label={`Open details for ${item.label}`}
+                  >
+                    <div
+                      className="w-full rounded-xl transition-[height,filter] duration-500 group-hover:brightness-110"
+                      style={{ height: `${height}%`, backgroundColor: metric.color }}
+                      title={metric.tooltip(item)}
+                    />
+                  </button>
+                  <div className="mt-3 truncate text-center text-[10px] font-semibold text-white/55 sm:text-[11px]">
+                    {item.label}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 flex flex-wrap items-center gap-4 border-t border-white/10 pt-4 text-[11px] text-white/55">
+        <span className="rounded-full bg-white/[0.08] px-2.5 py-1 font-semibold text-white/70">
+          Last {rangeLabel}
+        </span>
+        {metric.footer(visibleData.at(-1))}
+      </div>
+    </section>
+  );
+}
+
+const formatHours = (value: number) =>
+  `${value >= 100 ? Math.round(value) : Math.round(value * 10) / 10} h`;
+
+const HOST_METRICS: MonthlyMetric<MonthlyHostPoint>[] = [
+  {
+    id: "hours",
+    label: "Hours hosted",
+    title: "Hours hosted by month",
+    description: "Group sessions that took place, plus the time hosts were actually in their infinite-room host windows.",
+    color: "#7CB7FF",
+    value: (point) => point.hoursHosted,
+    format: formatHours,
+    tooltip: (point) =>
+      `${formatHours(point.hoursHosted)} hosted · ${formatHours(point.groupHours)} group · ${formatHours(point.infiniteHours)} infinite rooms · ${point.uniqueHosts} hosts`,
+    footer: (point) => (
+      <>
+        <span><b className="text-white">{formatHours(point?.hoursHosted || 0)}</b> hosted this month</span>
+        <span><b className="text-white">{formatHours(point?.groupHours || 0)}</b> group sessions</span>
+        <span><b className="text-white">{formatHours(point?.infiniteHours || 0)}</b> infinite rooms</span>
+      </>
+    ),
+  },
+  {
+    id: "hosts",
+    label: "Unique hosts",
+    title: "Unique hosts by month",
+    description: "Distinct people who hosted a group session or held host hours in an infinite room.",
+    color: "#B69CFF",
+    value: (point) => point.uniqueHosts,
+    tooltip: (point) => `${point.uniqueHosts} unique hosts · ${formatHours(point.hoursHosted)} hosted`,
+    footer: (point) => (
+      <>
+        <span><b className="text-white">{point?.uniqueHosts || 0}</b> hosts this month</span>
+        <span>
+          <b className="text-white">
+            {point?.uniqueHosts ? formatHours(point.hoursHosted / point.uniqueHosts) : "0 h"}
+          </b>{" "}
+          per host
+        </span>
+      </>
+    ),
+  },
+];
+
+const SUBSCRIBER_METRICS: MonthlyMetric<MonthlyHostPoint>[] = [
+  {
+    id: "paid",
+    label: "Paid subscribers",
+    title: "Paid subscribers by month",
+    description: "People with a paid Stripe plan covering part of the month. Admin grants and founding access are excluded; only each person's latest billing period is stored.",
+    color: "#F5C451",
+    value: (point) => point.paidSubscribers,
+    tooltip: (point) => `${point.paidSubscribers} paid subscribers`,
+    footer: (point) => (
+      <span><b className="text-white">{point?.paidSubscribers || 0}</b> paid this month</span>
+    ),
+  },
+];
+
 function RecordsSection({
   records,
   onOpen,
@@ -1619,6 +1855,8 @@ export default function AdminPage() {
   const [processingPayoutId, setProcessingPayoutId] = useState("");
   const [chartData, setChartData] = useState<ChartPoint[]>([]);
   const [monthlyAttendance, setMonthlyAttendance] = useState<MonthlyAttendancePoint[]>([]);
+  const [monthlyHostStats, setMonthlyHostStats] = useState<MonthlyHostPoint[]>([]);
+  const [monthlyHostStatsError, setMonthlyHostStatsError] = useState("");
   const [recordMetrics, setRecordMetrics] = useState<AdminRecordMetric[]>([]);
   const [activity, setActivity] = useState<AdminActivityData>(EMPTY_ACTIVITY);
   const [usageAnalytics, setUsageAnalytics] = useState<UsageAnalytics>(EMPTY_USAGE_ANALYTICS);
@@ -1912,6 +2150,25 @@ export default function AdminPage() {
       );
       setActivity(activityData);
       setMonthlyAttendance(monthlyAttendanceData);
+
+      // Optional: the host/subscriber charts must never block the dashboard.
+      void supabase
+        .rpc("admin_monthly_host_stats", {
+          p_start_month: `${oldestMonth}-01`,
+          p_end_month: nextMonth.toISOString().slice(0, 10),
+        })
+        .then(({ data, error }) => {
+          if (error) {
+            setMonthlyHostStatsError(
+              /admin_monthly_host_stats|schema cache|could not find the function/i.test(error.message || "")
+                ? "Apply the admin_monthly_host_stats migration to see this chart."
+                : `Couldn't load: ${error.message}`,
+            );
+            return;
+          }
+          setMonthlyHostStatsError("");
+          setMonthlyHostStats(buildMonthlyHostStats((data as MonthlyHostAggregateRow[]) || [], 36));
+        });
 
       const peakPeopleByDay = (
         rows: AnyRow[],
@@ -2780,6 +3037,24 @@ export default function AdminPage() {
       rows,
     });
   };
+  const openMonthlyPeople = async (point: MonthlyHostPoint, kind: "hosts" | "paid") => {
+    const ids = kind === "hosts" ? point.hostIds : point.subscriberIds;
+    const title = kind === "hosts" ? `Hosts · ${point.label}` : `Paid subscribers · ${point.label}`;
+    setDrilldown({ title, subtitle: "Loading people for this month.", rows: [], loading: true });
+    const profiles = await loadProfilesByIds(ids);
+    setDrilldown({
+      title,
+      subtitle:
+        kind === "hosts"
+          ? `${point.uniqueHosts} hosts · ${formatHours(point.hoursHosted)} hosted (${formatHours(point.groupHours)} group, ${formatHours(point.infiniteHours)} infinite rooms)`
+          : `${point.paidSubscribers} paid subscribers`,
+      rows: ids.map((id) => {
+        const profile = profiles.get(id) || emptyProfile(id);
+        return { id, primary: profile.fullName, secondary: profile.email || profile.id, avatarUrl: profile.avatarUrl };
+      }),
+    });
+  };
+
   if (loading) {
     return (
       <main className="min-h-screen bg-white px-6 py-16 font-inter text-[#2F2F2F]">
@@ -2944,6 +3219,20 @@ export default function AdminPage() {
 
             <RecordsSection records={recordMetrics} onOpen={(record) => void openRecordMetric(record)} />
             <MonthlyAttendanceChart data={monthlyAttendance} onMonthClick={(point) => void openMonthlyAttendance(point)} />
+            <MonthlyMetricChart
+              eyebrow="Host pulse"
+              metrics={HOST_METRICS}
+              data={monthlyHostStats}
+              emptyNote={monthlyHostStatsError || (!monthlyHostStats.length ? "Loading hosting stats…" : "")}
+              onMonthClick={(point) => void openMonthlyPeople(point, "hosts")}
+            />
+            <MonthlyMetricChart
+              eyebrow="Revenue pulse"
+              metrics={SUBSCRIBER_METRICS}
+              data={monthlyHostStats}
+              emptyNote={monthlyHostStatsError || (!monthlyHostStats.length ? "Loading subscribers…" : "")}
+              onMonthClick={(point) => void openMonthlyPeople(point, "paid")}
+            />
             <ActivityExplorer activity={activity} />
 
 
