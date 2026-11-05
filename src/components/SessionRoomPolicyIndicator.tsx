@@ -34,6 +34,8 @@ function PolicyIcon({ asset, label, color }: { asset: string; label: string; col
   );
 }
 
+// Phones (below 768px) skip these icons: at 360px they crowd the title. Tablets
+// and up keep them; the rules are still listed in the session details.
 export default function SessionRoomPolicyIndicator({ policies, color, background }: Props) {
   const { camera, screen, chat, either, label, count } = getSessionCardPolicyState(policies);
   if (count === 0) return null;
@@ -44,7 +46,7 @@ export default function SessionRoomPolicyIndicator({ policies, color, background
     <span
       role="group"
       aria-label={label}
-      className="relative inline-flex h-[26px] shrink-0 items-center gap-[6px] rounded-full border px-[9px] hover:z-50 focus-within:z-50"
+      className="relative hidden h-[26px] shrink-0 items-center gap-[6px] rounded-full border px-[9px] hover:z-50 focus-within:z-50 md:inline-flex"
       style={{ color, backgroundColor: background, borderColor: color }}
     >
       {either ? (
