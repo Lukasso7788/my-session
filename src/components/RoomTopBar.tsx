@@ -136,7 +136,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         };
     }, [sessionTitle]);
 
-    // No border around the bar itself: it saves space in the room.
+    // No border or inner padding around the bar itself: it saves space in the room.
     const topBarBg = isLight
         ? "bg-[#F3F1F1]/95"
         : "bg-[#1B1B1B]";
@@ -346,7 +346,8 @@ export default function RoomTopBar(props: RoomTopBarProps) {
             // this isolated parent, but fixed room overlays remain above z-60.
             className={`ms-room-topbar relative isolate z-[60] flex min-w-0 w-full rounded-2xl overflow-visible ${topBarBg}`}
         >
-            <div className="min-w-0 flex-1 px-4 py-2.5 sm:px-5 sm:py-3 lg:py-2 overflow-visible">
+            {/* No inner padding: the bar has no border and blends into the room, so padding was only lost space. */}
+            <div className="min-w-0 flex-1 overflow-visible">
                 <div className="flex flex-col gap-2 max-[480px]:gap-2 overflow-visible">
                     <div className="relative z-40 flex min-w-0 items-center justify-between gap-3">
                         <div className="min-w-0 flex-1 lg:max-w-[280px] lg:flex-none">

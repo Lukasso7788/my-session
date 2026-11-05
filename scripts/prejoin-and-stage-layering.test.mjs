@@ -72,7 +72,9 @@ test("room shell gives space back to media and panels without shrinking controls
 });
 
 test("long room titles cannot squeeze the timeline and reveal the full name instantly", () => {
-  assert.match(topBar, /min-w-0 flex-1 px-4/);
+  // The bar's content can shrink; the bar itself has no inner padding.
+  assert.match(topBar, /className="min-w-0 flex-1 overflow-visible"/);
+  assert.doesNotMatch(topBar, /min-w-0 flex-1 px-4/);
   assert.match(topBar, /lg:max-w-\[280px\]/);
   assert.match(topBar, /hidden lg:flex items-center/);
   assert.match(topBar, /flex lg:hidden flex-wrap/);
