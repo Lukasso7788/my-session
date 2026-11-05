@@ -16,7 +16,7 @@ async function load(file) {
 }
 
 const { formatTimeZoneWithPlace, normalizeLocationName, placeFromPhoton, shortPlaceName } = await load("src/lib/placeSearch.ts");
-const { formatLocalTime, formatTimeZoneLabel } = await load("src/lib/timezones.ts");
+const { formatLocalTime, formatTimeZoneLabel, timeZoneCityName } = await load("src/lib/timezones.ts");
 const read = (file) => readFileSync(file, "utf8");
 
 test("a chosen village is saved as settlement and country", () => {
@@ -67,6 +67,20 @@ test("typed locations are trimmed, capped and optional", () => {
   assert.equal(normalizeLocationName("   "), null);
   assert.equal(normalizeLocationName("  Village   by  the sea "), "Village by the sea");
   assert.equal(normalizeLocationName("x".repeat(400)).length, 160);
+});
+
+test("room tiles fall back to the timezone's city when no location is chosen", () => {
+  assert.equal(timeZoneCityName("Europe/Berlin"), "Berlin");
+  assert.equal(timeZoneCityName("America/New_York"), "New York");
+  assert.equal(timeZoneCityName("America/Argentina/Buenos_Aires"), "Buenos Aires");
+  assert.equal(timeZoneCityName("Europe/Kiev"), "Kyiv");
+  assert.equal(timeZoneCityName("Asia/Calcutta"), "Kolkata");
+  for (const zone of ["UTC", "Etc/UTC", "Etc/GMT", "Etc/GMT-3", "Etc/GMT+5", "", "  "]) {
+    assert.equal(timeZoneCityName(zone), "", zone);
+  }
+  const label = read("src/pages/livekit/ParticipantTimeLabel.tsx");
+  assert.match(label, /const place = shortPlaceName\(location\) \|\| timeZoneCityName\(timeZone\);/);
+  assert.match(label, /place \? `\$\{place\} · \$\{time\}` : time/);
 });
 
 test("the room shows the chosen settlement and the local time only", () => {

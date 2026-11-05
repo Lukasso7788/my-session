@@ -152,10 +152,28 @@ export function parseGmtOffsetQuery(query: string): number | null {
   return (match[1] === "-" ? -1 : 1) * (hours * 60 + minutes);
 }
 
+// Zones whose IANA city has a better-known English name today.
+const TIME_ZONE_CITY_NAMES: Record<string, string> = {
+  "europe/kiev": "Kyiv",
+  "europe/kyiv": "Kyiv",
+  "asia/calcutta": "Kolkata",
+};
+
+/**
+ * The city a timezone is named after ("Europe/Berlin" -> "Berlin"), used in
+ * room tiles when the person chose no location. Empty for UTC and the
+ * fixed-offset Etc/GMT zones, which name no place.
+ */
+export function timeZoneCityName(timeZone: string): string {
+  const zone = String(timeZone || "").trim();
+  if (!zone.includes("/") || zone.startsWith("Etc/")) return "";
+  return TIME_ZONE_CITY_NAMES[zone.toLowerCase()] || zone.split("/").pop()!.replace(/_/g, " ");
+}
+
 /**
  * Someone's current local time ("4:12 PM"), nothing else. The zone itself is
- * only chosen in the timezone modal; the place is the separate, optional
- * profile location and is never derived from the timezone.
+ * only chosen in the timezone modal; the place comes from the optional profile
+ * location, or in room tiles from the zone's city (timeZoneCityName).
  */
 export function formatLocalTime(timeZone: string, at: number | Date = Date.now()): string {
   const zone = String(timeZone || "").trim();
