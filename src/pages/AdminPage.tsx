@@ -223,8 +223,6 @@ type MonthlyHostAggregateRow = {
   infinite_hours: number | string;
   unique_hosts: number;
   host_ids: string[] | null;
-  paid_subscribers: number;
-  subscriber_ids: string[] | null;
 };
 
 type DailyAttendanceAggregateRow = {
@@ -469,8 +467,8 @@ function buildMonthlyHostStats(
       infiniteHours: Number(row?.infinite_hours || 0),
       uniqueHosts: Number(row?.unique_hosts || 0),
       hostIds: row?.host_ids || [],
-      paidSubscribers: Number(row?.paid_subscribers || 0),
-      subscriberIds: row?.subscriber_ids || [],
+      paidSubscribers: 0,
+      subscriberIds: [],
     };
   });
 }
@@ -1415,7 +1413,7 @@ const SUBSCRIBER_METRICS: MonthlyMetric<MonthlyHostPoint>[] = [
     id: "paid",
     label: "Paid subscribers",
     title: "Paid subscribers by month",
-    description: "People with a paid Stripe plan covering part of the month. Admin grants and founding access are excluded; only each person's latest billing period is stored.",
+    description: "People whose payment covers part of the month: every paid Stripe invoice for its billing period, Lifetime from the month bought, and manual paid grants. Free, trial and founding access are not counted.",
     color: "#F5C451",
     value: (point) => point.paidSubscribers,
     tooltip: (point) => `${point.paidSubscribers} paid subscribers`,
@@ -1857,6 +1855,28 @@ export default function AdminPage() {
   const [monthlyAttendance, setMonthlyAttendance] = useState<MonthlyAttendancePoint[]>([]);
   const [monthlyHostStats, setMonthlyHostStats] = useState<MonthlyHostPoint[]>([]);
   const [monthlyHostStatsError, setMonthlyHostStatsError] = useState("");
+  const [paidByMonth, setPaidByMonth] = useState<Map<string, { paidSubscribers: number; subscriberIds: string[] }> | null>(null);
+  const [paidStatsError, setPaidStatsError] = useState("");
+  // Host stats (database) and paid subscribers (Stripe) share one month axis.
+  const monthlyPaidStats = useMemo<MonthlyHostPoint[]>(() => {
+    if (!paidByMonth) return [];
+    const hostByKey = new Map(monthlyHostStats.map((point) => [point.key, point]));
+    return makeLastMonths(36).map(({ key, label }) => {
+      const host = hostByKey.get(key);
+      const paid = paidByMonth.get(key);
+      return {
+        key,
+        label,
+        hoursHosted: host?.hoursHosted || 0,
+        groupHours: host?.groupHours || 0,
+        infiniteHours: host?.infiniteHours || 0,
+        uniqueHosts: host?.uniqueHosts || 0,
+        hostIds: host?.hostIds || [],
+        paidSubscribers: paid?.paidSubscribers || 0,
+        subscriberIds: paid?.subscriberIds || [],
+      };
+    });
+  }, [monthlyHostStats, paidByMonth]);
   const [recordMetrics, setRecordMetrics] = useState<AdminRecordMetric[]>([]);
   const [activity, setActivity] = useState<AdminActivityData>(EMPTY_ACTIVITY);
   const [usageAnalytics, setUsageAnalytics] = useState<UsageAnalytics>(EMPTY_USAGE_ANALYTICS);
@@ -2151,7 +2171,26 @@ export default function AdminPage() {
       setActivity(activityData);
       setMonthlyAttendance(monthlyAttendanceData);
 
-      // Optional: the host/subscriber charts must never block the dashboard.
+      // Paid subscribers come from Stripe's payment history (server side).
+      void (async () => {
+        try {
+          const { data: sessionData } = await supabase.auth.getSession();
+          const token = String(sessionData.session?.access_token || "").trim();
+          const response = await fetch("/api/livekit/admin", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ action: "admin_paid_subscribers_monthly", startMonth: oldestMonth, endMonth: lastMonth }),
+          });
+          const json = await response.json().catch(() => ({}));
+          if (!response.ok || !Array.isArray(json?.months)) throw new Error(json?.error || `HTTP ${response.status}`);
+          setPaidByMonth(new Map((json.months as Array<{ month: string; paidSubscribers: number; subscriberIds: string[] }>).map((row) => [row.month, row])));
+          setPaidStatsError("");
+        } catch (error) {
+          setPaidStatsError(`Couldn't load Stripe history: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      })();
+
+      // Optional: the host charts must never block the dashboard.
       void supabase
         .rpc("admin_monthly_host_stats", {
           p_start_month: `${oldestMonth}-01`,
@@ -3229,8 +3268,8 @@ export default function AdminPage() {
             <MonthlyMetricChart
               eyebrow="Revenue pulse"
               metrics={SUBSCRIBER_METRICS}
-              data={monthlyHostStats}
-              emptyNote={monthlyHostStatsError || (!monthlyHostStats.length ? "Loading subscribers…" : "")}
+              data={monthlyPaidStats}
+              emptyNote={paidStatsError || (!monthlyPaidStats.length ? "Loading Stripe history…" : "")}
               onMonthClick={(point) => void openMonthlyPeople(point, "paid")}
             />
             <ActivityExplorer activity={activity} />

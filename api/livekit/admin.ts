@@ -2,6 +2,8 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "crypto";
 import { RoomServiceClient } from "livekit-server-sdk";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import Stripe from "stripe";
+import { countPaidByMonth, loadPaidRanges, monthKeys } from "../_lib/paidSubscriberHistory.js";
 import { missingPlunkEnvironment, sendPlunkEmail } from "../_lib/plunk.js";
 import { buildFoundingThanksEmail, FOUNDING_THANKS_CAMPAIGN } from "../_lib/foundingThanksEmail.js";
 import { classifyYesterdayAudience, previousDateKey, utcDayBounds, yesterdayIntro, type YesterdayIntro, type YesterdayKind } from "../_lib/yesterdayInvite.js";
@@ -2052,6 +2054,37 @@ async function claimFoundingThanksSend(sb: SupabaseClient, recipient: FoundingTh
   return Array.isArray(claimed) && claimed.length > 0;
 }
 
+// Admin dashboard: paid subscribers per month from Stripe's payment history.
+async function handlePaidSubscribersMonthly(params: {
+  res: VercelResponse;
+  sb: SupabaseClient;
+  accessToken: string;
+  body: Body;
+}) {
+  const { res, sb, accessToken, body } = params;
+  await assertAppAdmin({ sb, accessToken });
+  const secret = env("STRIPE_SECRET_KEY");
+  if (!secret) return res.status(500).json({ error: "stripe_env_missing" });
+
+  const isMonth = (value: unknown) => /^\d{4}-\d{2}$/.test(String(value || ""));
+  const startMonth = isMonth((body as any).startMonth) ? String((body as any).startMonth) : "";
+  const endMonth = isMonth((body as any).endMonth) ? String((body as any).endMonth) : "";
+  if (!startMonth || !endMonth || startMonth > endMonth) {
+    return res.status(400).json({ error: "invalid_month_range" });
+  }
+  const months = monthKeys(startMonth, endMonth);
+  if (months.length > 48) return res.status(400).json({ error: "invalid_month_range" });
+
+  const stripe = new Stripe(secret, { apiVersion: "2026-03-25.dahlia" });
+  const sinceMs = Date.UTC(Number(startMonth.slice(0, 4)), Number(startMonth.slice(5, 7)) - 1, 1);
+  const { ranges, unmatchedInvoices } = await loadPaidRanges({ stripe: stripe as any, sb, sinceMs });
+  return res.status(200).json({
+    ok: true,
+    months: countPaidByMonth(ranges, months),
+    unmatchedInvoices: unmatchedInvoices.length,
+  });
+}
+
 async function handleFoundingThanksAction(params: {
   res: VercelResponse;
   sb: SupabaseClient;
@@ -3408,6 +3441,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         body,
         action: rawEmailAction,
       });
+    }
+
+    if (String(body.action || "").trim() === "admin_paid_subscribers_monthly") {
+      return await handlePaidSubscribersMonthly({ res, sb, accessToken, body });
     }
 
     const foundingThanksAction = normalizeFoundingThanksAction(body.action);

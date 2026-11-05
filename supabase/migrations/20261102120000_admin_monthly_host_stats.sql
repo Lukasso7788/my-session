@@ -1,4 +1,4 @@
--- Admin dashboard: hosting and paid subscribers by calendar month (UTC).
+-- Admin dashboard: hosting by calendar month (UTC).
 --
 --   Hours hosted
 --     Group sessions: scheduled length of sessions that started and had at
@@ -7,10 +7,7 @@
 --     own host windows (host bookings + host slots). Overlapping windows and
 --     several open tabs count once.
 --   Unique hosts: people with any hosted time above in the month.
---   Paid subscribers: people whose paid entitlement (Stripe checkout or
---     webhook; admin grants and founding access excluded) covers part of the
---     month. user_entitlements keeps only the current period, so earlier
---     months of a long-running subscription are not reconstructed.
+--   (Paid subscribers per month come from Stripe's history, server side.)
 --
 -- Read-only; no new tables.
 
@@ -27,9 +24,7 @@ returns table(
   group_hours numeric,
   infinite_hours numeric,
   unique_hosts bigint,
-  host_ids uuid[],
-  paid_subscribers bigint,
-  subscriber_ids uuid[]
+  host_ids uuid[]
 )
 language plpgsql
 stable
@@ -130,28 +125,6 @@ begin
       array_agg(distinct user_id) filter (where hours > 0) as ids
     from hosting_by_month
     group by report_month
-  ),
-  paid as (
-    select
-      e.user_id,
-      case
-        when e.plan = 'lifetime' then
-          tstzrange(coalesce(e.lifetime_granted_at, e.current_period_start, e.created_at), null)
-        else
-          tstzrange(coalesce(e.current_period_start, e.created_at), e.current_period_end)
-      end as covered
-    from public.user_entitlements e
-    where e.plan in ('pro_monthly', 'pro_yearly', 'lifetime')
-      and e.source in ('checkout_confirm', 'stripe_webhook')
-  ),
-  paid_by_month as (
-    select
-      mo.report_month,
-      count(distinct pa.user_id) as subscribers,
-      array_agg(distinct pa.user_id) as ids
-    from months mo
-    join paid pa on pa.covered && mo.span and lower(mo.span) <= now()
-    group by mo.report_month
   )
   select
     mo.report_month,
@@ -159,12 +132,9 @@ begin
     coalesce(ht.g_hours, 0),
     coalesce(ht.i_hours, 0),
     coalesce(ht.hosts, 0)::bigint,
-    coalesce(ht.ids, '{}'::uuid[]),
-    coalesce(pm.subscribers, 0)::bigint,
-    coalesce(pm.ids, '{}'::uuid[])
+    coalesce(ht.ids, '{}'::uuid[])
   from months mo
   left join host_totals ht on ht.report_month = mo.report_month
-  left join paid_by_month pm on pm.report_month = mo.report_month
   order by mo.report_month;
 end;
 $function$;
