@@ -24,8 +24,17 @@ import {
   Pin,
   PinOff,
   ArrowLeft,
+  CalendarClock,
 } from "lucide-react";
 import StopwatchIcon from "./StopwatchIcon";
+import TaskBlockChip from "./TaskBlockChip";
+import {
+  readTaskBlocks,
+  TASK_BLOCKS_EVENT,
+  taskBlocksStorageKey,
+  writeTaskBlocks,
+  type FocusBlock,
+} from "../lib/taskBlocks";
 import { supabase } from "../lib/supabase";
 import { useNavigate, useParams } from "react-router-dom";
 import { getUserEntitlement } from "../lib/entitlements";
@@ -126,6 +135,10 @@ type TasksPanelProps = {
   accountabilityWallOpen?: boolean;
   onToggleAccountabilityWall?: () => void;
   onPublicTasksChange?: (tasks: PublicPanelTask[]) => void;
+  /** Focus blocks of this session; my tasks can be planned for one of them. */
+  focusBlocks?: FocusBlock[];
+  /** Index of the running stage in the session flow. */
+  currentStageIndex?: number | null;
 };
 
 type ProfileMini = {
@@ -754,6 +767,8 @@ export function TasksPanel({
   accountabilityWallOpen = false,
   onToggleAccountabilityWall,
   onPublicTasksChange,
+  focusBlocks = [],
+  currentStageIndex = null,
 }: TasksPanelProps) {
   const { id: idOrSlugFromUrl } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -860,6 +875,33 @@ export function TasksPanel({
     () => makeTaskTimerStorageKey(sessionId || rawSessionId || "global", user?.id || ""),
     [sessionId, rawSessionId, user?.id],
   );
+  // Which focus block each of my tasks is planned for (this session, this device).
+  const taskBlocksKey = useMemo(
+    () => taskBlocksStorageKey(sessionId || rawSessionId || "global", user?.id || ""),
+    [sessionId, rawSessionId, user?.id],
+  );
+  const [taskBlocks, setTaskBlocks] = useState<Record<string, number>>({});
+  const [blockPickerTaskId, setBlockPickerTaskId] = useState<string | null>(null);
+  useEffect(() => {
+    setTaskBlocks(readTaskBlocks(taskBlocksKey));
+    const refresh = (event: Event) => {
+      const detail = (event as CustomEvent<{ key?: string }>).detail;
+      if (!detail?.key || detail.key === taskBlocksKey) setTaskBlocks(readTaskBlocks(taskBlocksKey));
+    };
+    window.addEventListener(TASK_BLOCKS_EVENT, refresh);
+    return () => window.removeEventListener(TASK_BLOCKS_EVENT, refresh);
+  }, [taskBlocksKey]);
+  const setTaskBlock = useCallback(
+    (taskId: string, stageIndex: number | null) => {
+      const next = { ...readTaskBlocks(taskBlocksKey) };
+      if (stageIndex == null) delete next[taskId];
+      else next[taskId] = stageIndex;
+      setTaskBlocks(next);
+      writeTaskBlocks(taskBlocksKey, next);
+    },
+    [taskBlocksKey],
+  );
+
   const [taskTimers, setTaskTimers] = useState<TaskTimerMap>({});
   const [taskTimerTickMs, setTaskTimerTickMs] = useState(() => Date.now());
   const [savedTimerFeedbackId, setSavedTimerFeedbackId] = useState<string | null>(null);
@@ -5061,6 +5103,11 @@ export function TasksPanel({
                                   <button type="button" className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] text-black/75 hover:bg-black/[0.05]" onClick={() => { setTaskMenuOpenId(null); startEdit(i.id, i.text); }}>
                                     <Pencil size={14} /> Edit
                                   </button>
+                                  {focusBlocks.length && !i.completed ? (
+                                    <button type="button" className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] text-black/75 hover:bg-black/[0.05]" onClick={() => { setTaskMenuOpenId(null); setBlockPickerTaskId(i.id); }}>
+                                      <CalendarClock size={14} /> {taskBlocks[i.id] != null ? "Change focus block" : "Plan for a focus block"}
+                                    </button>
+                                  ) : null}
                                   <button type="button" className="flex h-9 w-full items-center gap-2 rounded-lg px-2.5 text-left text-[12px] text-black/75 hover:bg-black/[0.05]" onClick={() => togglePanelTaskPinned(i.id)}>
                                     {pinnedTaskIds.includes(i.id) ? <PinOff size={14} /> : <Pin size={14} />}
                                     {pinnedTaskIds.includes(i.id) ? "Unpin task" : "Pin task"}
@@ -5103,6 +5150,19 @@ export function TasksPanel({
 
                     {!isEditing ? (
                       <div className="pl-[42px]">
+                        {focusBlocks.length && !i.completed && (taskBlocks[i.id] != null || blockPickerTaskId === i.id) ? (
+                          <div className="mt-1.5 flex">
+                            <TaskBlockChip
+                              blocks={focusBlocks}
+                              value={taskBlocks[i.id] ?? null}
+                              currentStageIndex={currentStageIndex}
+                              isLight={isLight}
+                              defaultOpen={blockPickerTaskId === i.id}
+                              onClose={() => setBlockPickerTaskId((id) => (id === i.id ? null : id))}
+                              onChange={(stageIndex) => setTaskBlock(i.id, stageIndex)}
+                            />
+                          </div>
+                        ) : null}
                         {renderTaskTimerControls({
                           ownerUserId: user?.id || i.user_id,
                           text: i.text,
