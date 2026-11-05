@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useLocation } from "react-router-dom";
-import { CalendarDays, Clock, ExternalLink, MapPin } from "lucide-react";
+import { CalendarDays, Clock, ExternalLink } from "lucide-react";
 import { supabase } from "../lib/supabase";
-import { loadProfileLocation } from "../lib/profileLocation";
-import { formatLocalTime } from "../lib/timezones";
 
 // Account preview for every avatar in the app.
 //
@@ -24,7 +22,6 @@ type ProfileStats = {
     avatarUrl: string | null;
     bio: string | null;
     timezone: string | null;
-    location: string | null;
     sessions: number | null;
     followers: number | null;
     memberSince: string | null;
@@ -35,7 +32,6 @@ const EMPTY_STATS: ProfileStats = {
     avatarUrl: null,
     bio: null,
     timezone: null,
-    location: null,
     sessions: null,
     followers: null,
     memberSince: null,
@@ -47,7 +43,7 @@ function loadProfileStats(userId: string): Promise<ProfileStats> {
     if (cached) return cached;
 
     const request = (async (): Promise<ProfileStats> => {
-        const [profileResult, followersResult, location] = await Promise.all([
+        const [profileResult, followersResult] = await Promise.all([
             supabase
                 .from("profiles")
                 .select("full_name, avatar_url, bio, timezone, attended_sessions_count, created_at")
@@ -57,7 +53,6 @@ function loadProfileStats(userId: string): Promise<ProfileStats> {
                 .from("host_followers")
                 .select("id", { count: "exact", head: true })
                 .eq("host_user_id", userId),
-            loadProfileLocation(userId),
         ]);
         const profile = profileResult.error ? null : (profileResult.data as any);
         const createdAt = profile?.created_at ? new Date(profile.created_at) : null;
@@ -66,7 +61,6 @@ function loadProfileStats(userId: string): Promise<ProfileStats> {
             avatarUrl: profile?.avatar_url || null,
             bio: profile?.bio ? String(profile.bio).trim() || null : null,
             timezone: profile?.timezone || null,
-            location,
             sessions: typeof profile?.attended_sessions_count === "number" ? profile.attended_sessions_count : null,
             followers: followersResult.error ? null : followersResult.count ?? 0,
             memberSince:
@@ -80,11 +74,16 @@ function loadProfileStats(userId: string): Promise<ProfileStats> {
     return request;
 }
 
-/** The person's current local time ("4:12 PM") for a valid IANA zone, otherwise null. */
-function describeTimezone(timezone: string | null): { label: string } | null {
+/** The person's local time ("4:12 PM") and city ("Berlin") for a valid IANA zone, otherwise null. */
+function describeTimezone(timezone: string | null): { time: string; city: string; full: string } | null {
     if (!timezone) return null;
-    const label = formatLocalTime(timezone);
-    return label ? { label } : null;
+    try {
+        const time = new Date().toLocaleTimeString("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit" });
+        const city = timezone.split("/").pop()?.replace(/_/g, " ") || timezone;
+        return { time, city, full: timezone };
+    } catch {
+        return null;
+    }
 }
 
 function initialsOf(name: string): string {
@@ -257,10 +256,10 @@ export default function ProfileHoverLayer() {
                         {zone ? (
                             <span
                                 className="mb-1 inline-flex items-center gap-1 rounded-full bg-[#F6F6F6] px-2.5 py-1 text-[11px] font-medium text-[#606060]"
-                                title="Their local time"
+                                title={`${zone.full} · local time`}
                             >
                                 <Clock size={11} strokeWidth={2.2} aria-hidden="true" />
-                                {zone.label} local
+                                {zone.time} in {zone.city}
                             </span>
                         ) : null}
                     </div>
@@ -270,12 +269,6 @@ export default function ProfileHoverLayer() {
                         <CalendarDays size={12} strokeWidth={2} aria-hidden="true" />
                         {loading ? "Loading…" : stats?.memberSince ? `Member since ${stats.memberSince}` : "MySession member"}
                     </div>
-                    {stats?.location ? (
-                        <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[12px] text-[#8A8A8A]" title={stats.location}>
-                            <MapPin size={12} strokeWidth={2} aria-hidden="true" className="shrink-0" />
-                            <span className="truncate">{stats.location}</span>
-                        </div>
-                    ) : null}
 
                     {stats?.bio ? (
                         <p

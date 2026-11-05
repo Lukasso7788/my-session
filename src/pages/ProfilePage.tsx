@@ -2,13 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
-import { MapPin } from "lucide-react";
 import TimeZonePicker from "../components/TimeZonePicker";
 import LocationPicker from "../components/LocationPicker";
 import { loadProfileLocation, saveProfileLocation } from "../lib/profileLocation";
-import { normalizeLocationName } from "../lib/placeSearch";
+import { formatTimeZoneWithPlace, normalizeLocationName } from "../lib/placeSearch";
 import {
-  formatTimeZoneLabel,
   getDetectedTimeZone,
   isValidTimeZone,
 } from "../lib/timezones";
@@ -719,7 +717,7 @@ export default function ProfilePage() {
                 disabled={saving}
               />
               <span className="mt-2 block text-xs font-normal text-gray-500">
-                Used for session times, reminders, and daily attendance. Others see only your local time.
+                Used for session times, reminders, and daily attendance.
               </span>
             </div>
 
@@ -767,16 +765,9 @@ export default function ProfilePage() {
               <path d="M3 12h18M12 3c2.2 2.45 3.3 5.45 3.3 9S14.2 18.55 12 21c-2.2-2.45-3.3-5.45-3.3-9S9.8 5.45 12 3Z" stroke="#2F2F2F" strokeWidth="1.4" strokeLinecap="round" />
             </svg>
             <span className="text-[14px] font-medium text-[#2F2F2F]">
-              {formatTimeZoneLabel(timeZone)}
+              {formatTimeZoneWithPlace(timeZone, editMode ? "" : location)}
             </span>
           </span>
-
-          {location.trim() && !editMode ? (
-            <span className="flex min-w-0 items-center gap-2" title={location}>
-              <MapPin className="h-[20px] w-[20px] shrink-0 text-[#2F2F2F]" strokeWidth={1.6} aria-hidden="true" />
-              <span className="max-w-[320px] truncate text-[14px] font-medium text-[#2F2F2F]">{location}</span>
-            </span>
-          ) : null}
         </div>
       </div>
 

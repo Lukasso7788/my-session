@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
-import { MapPin } from "lucide-react";
-import { formatLocalTime, isValidTimeZone } from "../lib/timezones";
+import { isValidTimeZone } from "../lib/timezones";
 import { loadProfileLocation } from "../lib/profileLocation";
+import { formatTimeZoneWithPlace } from "../lib/placeSearch";
 import {
   ensurePushSubscription,
   pushSupported,
@@ -625,7 +625,7 @@ export default function PublicProfilePage() {
             <span className="text-[14px] font-medium text-[#2F2F2F]">{attendedCount} sessions</span>
           </span>
 
-          <span className="flex items-center gap-2" title="Their local time">
+          <span className="flex items-center gap-2" title={timeZone}>
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <circle cx="12" cy="12" r="9" stroke="#2F2F2F" strokeWidth="1.6" />
               <path
@@ -636,16 +636,9 @@ export default function PublicProfilePage() {
               />
             </svg>
             <span className="text-[14px] font-medium text-[#2F2F2F]">
-              {formatLocalTime(timeZone)} local time
+              {formatTimeZoneWithPlace(timeZone, location)}
             </span>
           </span>
-
-          {location ? (
-            <span className="flex min-w-0 items-center gap-2" title={location}>
-              <MapPin className="h-[20px] w-[20px] shrink-0 text-[#2F2F2F]" strokeWidth={1.6} aria-hidden="true" />
-              <span className="max-w-[320px] truncate text-[14px] font-medium text-[#2F2F2F]">{location}</span>
-            </span>
-          ) : null}
 
           <span className="flex items-center gap-2">
             <img

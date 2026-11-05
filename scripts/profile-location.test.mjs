@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { normalizeLocationName, placeFromPhoton, shortPlaceName } from '../src/lib/placeSearch.ts';
+import { formatTimeZoneWithPlace, normalizeLocationName, placeFromPhoton, shortPlaceName } from '../src/lib/placeSearch.ts';
 import { formatLocalTime } from '../src/lib/timezones.ts';
 
 const read = (file) => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
@@ -25,6 +25,16 @@ test('rooms show only the settlement', () => {
   assert.equal(shortPlaceName('Lukasheve, Ukraine'), 'Lukasheve');
   assert.equal(shortPlaceName('  my  village '), 'my village');
   assert.equal(shortPlaceName(null), '');
+});
+
+test('the profile keeps the timezone and adds the settlement only when chosen', () => {
+  assert.equal(formatTimeZoneWithPlace('Europe/Kyiv', null), 'Europe/Kyiv');
+  assert.equal(formatTimeZoneWithPlace('Europe/Kyiv', 'Lukasheve, Ukraine'), 'Europe/Kyiv · Lukasheve');
+  assert.equal(formatTimeZoneWithPlace('America/New_York', ''), 'America/New York');
+  for (const page of ['src/pages/ProfilePage.tsx', 'src/pages/PublicProfilePage.tsx']) {
+    assert.match(read(page), /formatTimeZoneWithPlace\(timeZone, /, page);
+    assert.doesNotMatch(read(page), /MapPin|local time/, page);
+  }
 });
 
 test('typed locations are trimmed, capped and optional', () => {

@@ -69,6 +69,16 @@ export function shortPlaceName(location: string | null | undefined): string {
   return String(location || "").split(",")[0].replace(/\s+/g, " ").trim();
 }
 
+/**
+ * The profile's globe line: the timezone as before ("Europe/Kyiv"), followed
+ * by the settlement only when the person chose one ("Europe/Kyiv · Lukasheve").
+ */
+export function formatTimeZoneWithPlace(timeZone: string, location?: string | null): string {
+  const zone = String(timeZone || "").replace(/_/g, " ").trim();
+  const place = shortPlaceName(location);
+  return place ? `${zone} · ${place}` : zone;
+}
+
 export async function searchPlaces(query: string, signal?: AbortSignal): Promise<PlaceSuggestion[]> {
   const clean = query.trim();
   if (clean.length < 2) return [];
