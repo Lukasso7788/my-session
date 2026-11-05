@@ -3,6 +3,7 @@ import {
   UserEntitlement,
   hasUnlimitedAccess,
   isTrialActive,
+  needsStripeResync,
   isEntitlementActive,
   getWeeklyLimitState,
 } from "./billing";
@@ -12,6 +13,7 @@ import {
   WeeklyUsageRow,
 } from "./usage";
 import { PAYWALL_ENABLED } from "./flags";
+import { invalidateEntitlementResponseCache } from "./supabaseFetchOptimizer";
 
 export type EntitlementState = {
   entitlement: UserEntitlement | null;
@@ -76,11 +78,39 @@ function normalizeWeekStartForQuery(input: unknown): string {
   return raw;
 }
 
-export async function getUserEntitlement(
-  userId: string
-): Promise<UserEntitlement | null> {
-  if (!userId) return null;
+const STRIPE_RESYNC_INTERVAL_MS = 10 * 60_000;
+const STRIPE_RESYNC_TIMEOUT_MS = 6_000;
+const stripeResyncAttemptAt = new Map<string, number>();
 
+/** Asks the server to re-read this user's own subscription from Stripe. */
+async function resyncEntitlementFromStripe(userId: string): Promise<boolean> {
+  const lastAttempt = stripeResyncAttemptAt.get(userId) ?? 0;
+  if (Date.now() - lastAttempt < STRIPE_RESYNC_INTERVAL_MS) return false;
+  stripeResyncAttemptAt.set(userId, Date.now());
+
+  const { data: { session } } = await supabase.auth.getSession();
+  const accessToken = session?.access_token;
+  if (!accessToken || typeof fetch !== "function") return false;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), STRIPE_RESYNC_TIMEOUT_MS);
+  try {
+    const response = await fetch("/api/billing/create-checkout-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({ checkoutKind: "sync_entitlement" }),
+      signal: controller.signal,
+    });
+    const body = await response.json().catch(() => null);
+    return response.ok && body?.synced === true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function readUserEntitlement(userId: string): Promise<UserEntitlement | null> {
   const { data, error } = await supabase
     .from("user_entitlements")
     .select("*")
@@ -93,6 +123,21 @@ export async function getUserEntitlement(
   }
 
   return (data as UserEntitlement | null) ?? null;
+}
+
+export async function getUserEntitlement(
+  userId: string
+): Promise<UserEntitlement | null> {
+  if (!userId) return null;
+
+  const entitlement = await readUserEntitlement(userId);
+  // A paying subscriber must not lose Pro because the database missed a
+  // renewal: check Stripe once, then read the (possibly updated) row again.
+  if (needsStripeResync(entitlement) && await resyncEntitlementFromStripe(userId)) {
+    invalidateEntitlementResponseCache();
+    return readUserEntitlement(userId);
+  }
+  return entitlement;
 }
 
 async function getLifetimeSessionsCount(userId: string): Promise<number | null> {

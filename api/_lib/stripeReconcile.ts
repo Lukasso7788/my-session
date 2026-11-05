@@ -3,7 +3,8 @@
 // 1. Replays recent access-changing events from Stripe's event log through the
 //    normal webhook path. The processed-event ledger skips events that were
 //    already handled, so only missed or failed ones do work.
-// 2. Re-syncs recurring rows whose paid period is ending or ended recently, so
+// 2. Re-syncs recurring rows whose paid period is ending or has ended (any
+//    age while the row still says active; expired rows for 40 days), so
 //    a renewal or failure is picked up even if its event fell out of the log.
 //
 // Runs hourly from the existing Cloudflare Worker cron. Never cancels or
@@ -93,7 +94,9 @@ export async function reconcileStripeEntitlements(params: {
         .in("status", ["active", "trialing", "expired"])
         .not("stripe_subscription_id", "is", null)
         .or(`current_period_end.is.null,current_period_end.lt.${soon}`)
-        .or(`current_period_end.is.null,current_period_end.gt.${recent}`)
+        // Still-"active" rows of any age (old webhooks never extended periods
+        // on renewal); expired ones only recently, so long-gone ones drop out.
+        .or(`status.in.(active,trialing),current_period_end.is.null,current_period_end.gt.${recent}`)
         .order("current_period_end", { ascending: true, nullsFirst: true })
         .limit(MAX_ROWS);
     if (error) {

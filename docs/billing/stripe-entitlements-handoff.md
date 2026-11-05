@@ -1,9 +1,10 @@
 # Stripe subscriptions ↔ entitlements: handoff
 
-Date: 2026-10-28. Status: implemented and tested locally, **not deployed**.
-No migration applied, no Stripe/Vercel/Worker settings changed, no production
-data read or written. The owner asked to deploy no earlier than 24 hours after
-this change; see "Release plan".
+Dates: built 2026-10-28; merged to `main` on 2026-11-05 at the owner's request
+("Pro until the end of the paid period, then Free"). Vercel deploys `main`.
+Still **not done**: the ledger migration, `BILLING_RECONCILE_SECRET`, the Worker
+deploy and the Stripe event list (see "Release plan"). The code runs without
+them; what each one adds is noted there.
 
 General project context: `docs/my-session-project-context.md`. Earlier billing
 UI/portal work: `docs/billing-session-notice-2026-10-12.md`.
@@ -130,7 +131,23 @@ each UTC hour), `maybeReconcileBilling` in `cloudflare-worker/src/index.ts`.
 1. Lists access-changing events from the last 72 h (Stripe keeps 30 days),
    oldest first, through `handleStripeEvent`; the ledger skips handled ones.
 2. Re-syncs up to 100 recurring rows with a subscription whose period end is
-   missing, ends within 2 h or ended in the last 40 days.
+   missing or ends within 2 h: rows still saying active/trialing at any age
+   (old webhooks never extended the period on renewal, so a paying subscriber
+   can look months overdue), expired rows only for 40 days so they drop out.
+
+### Self-healing on read (no secret or cron needed)
+
+`getUserEntitlement` (src/lib/entitlements.ts) checks `needsStripeResync`
+(src/lib/billing.ts): a Stripe-linked monthly/yearly row that still says
+active/trialing but has no current paid period. Then it calls
+`POST /api/billing/create-checkout-session` with
+`checkoutKind: "sync_entitlement"` (at most once per 10 minutes per user and
+tab, 6 s timeout), drops the cached `user_entitlements` reads
+(`invalidateEntitlementResponseCache`) and reads the row again. The server
+uses only the caller's own row and its stored subscription ID; the request
+body is ignored. So a paying subscriber whose renewals were never recorded
+keeps Pro on their next visit, and an ended subscription gets its final
+status instead of being asked about again.
 `?dryRun=1` (also the Worker's `/run?dryRun=1`) only reads and reports
 `would_set_*`. Output has counts only, no user IDs.
 
@@ -170,7 +187,10 @@ do not commit) with findings from `api/_lib/entitlementAudit.ts`:
   `src/components/SubscriptionCard.tsx`, `cloudflare-worker/src/index.ts`,
   `tests/billingSessionNotice.test.mjs` (fixtures need a paid period; the old
   webhook tests moved to the new file).
-- Not changed: `create-checkout-session.ts` (already server-sets metadata).
+- `create-checkout-session.ts`: adds `checkoutKind: "sync_entitlement"` (self-healing);
+  checkout itself is unchanged (it already server-sets the metadata).
+- `src/lib/entitlements.ts`, `src/lib/supabaseFetchOptimizer.ts`: self-healing
+  re-read and its cache reset.
 
 ## Verification done (local only)
 
@@ -224,8 +244,14 @@ do not commit) with findings from `api/_lib/entitlementAudit.ts`:
    `invoice.paid`, `invoice.payment_failed`, `invoice.payment_action_required`,
    `charge.refunded`, `charge.dispute.created`. Endpoint API version should be
    `2026-03-25.dahlia` (matches the SDK).
-5. Deploy the app (merge to `main`). Then call the reconcile with `dryRun=1`,
-   review, then let the hourly run proceed.
+5. Deploy the app (merge to `main`) — done 2026-11-05. Then call the
+   reconcile with `dryRun=1`, review, then let the hourly run proceed.
+
+Production snapshot at merge time (read-only query, 2026-11-05): 12 active
+`pro_monthly` rows; 9 with a paid period that ended in May–July. 4 of those 9
+have a Stripe subscription (they may be paying: self-healing and the reconcile
+re-read them), 5 do not (3 `checkout_confirm` like the confirmed case, 2
+`manual_admin_grant` ended 2026-05-17) and lose Pro under the new rule.
 6. Watch `stripe_webhook_events` for `failed` rows and Vercel logs for
    `user_mismatch`/`unlinked`.
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { invalidateEntitlementStateCache } from "../lib/entitlements";
+import { invalidateEntitlementResponseCache } from "../lib/supabaseFetchOptimizer";
 
 type ConfirmState = "idle" | "loading" | "success" | "pending" | "error";
 
@@ -61,6 +62,7 @@ export default function PricingSuccessPage() {
                     if (cancelled) return;
 
                     if (data?.access === "active") {
+                        invalidateEntitlementResponseCache();
                         invalidateEntitlementStateCache();
                         setConfirmState("success");
                         setMessage("Your payment is confirmed and Pro is active.");

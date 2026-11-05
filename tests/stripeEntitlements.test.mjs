@@ -51,10 +51,12 @@ function createDb() {
       in(column, values) { filters.push((row) => values.includes(row[column])); return builder; },
       not(column, _op, value) { filters.push((row) => row[column] !== value && row[column] !== undefined); return builder; },
       or(expression) {
-        const parts = expression.split(",").map((part) => {
+        // Top-level commas only: "status.in.(active,trialing)" is one part.
+        const parts = expression.split(/,(?![^(]*\))/).map((part) => {
           const [column, operator, ...rest] = part.split(".");
           const value = rest.join(".");
           return (row) => operator === "is" ? row[column] == null
+            : operator === "in" ? value.replace(/^\(|\)$/g, "").split(",").includes(row[column])
             : operator === "lt" ? row[column] != null && Date.parse(row[column]) < Date.parse(value)
             : operator === "gt" ? row[column] != null && Date.parse(row[column]) > Date.parse(value) : false;
         });
@@ -187,6 +189,7 @@ const audit = await importTs("api/_lib/entitlementAudit.ts");
 const { reconcileStripeEntitlements } = await importTs("api/_lib/stripeReconcile.ts");
 const webhook = await importTs("api/stripe/webhook.ts");
 const { default: confirmHandler } = await importTs("api/billing/confirm-checkout-session.ts");
+const { default: checkoutHandler } = await importTs("api/billing/create-checkout-session.ts");
 
 const deps = () => ({ stripe: globalThis.__billingTest.stripe, store: sync.createSupabaseBillingStore(globalThis.__billingTest.db) });
 const entitlement = (userId = "user-a") => globalThis.__billingTest.db.rows("user_entitlements").find((row) => row.user_id === userId) ?? null;
@@ -554,6 +557,68 @@ test("reconciliation replays missed events oldest first and re-syncs ending peri
   assert.equal(hasPro("user-b"), true);
   const again = await webhookReconcile(false);
   assert.equal(again.body.events.duplicates, 1, "already-processed events are skipped");
+});
+
+test("reconciliation re-checks still-active rows whose period ended long ago", async () => {
+  const { stripe, db } = resetWorld();
+  const longAgo = new Date((nowSec() - 100 * DAY) * 1000).toISOString();
+  // A paying subscriber whose renewals the old webhook never recorded.
+  db.rows("user_entitlements").push({ user_id: "user-a", plan: "pro_monthly", status: "active", current_period_end: longAgo, stripe_subscription_id: "sub_1", stripe_customer_id: "cus_1", updated_at: "2026-01-01T00:00:00.000Z" });
+  stripe._subscriptions.set("sub_1", subscription({ end: nowSec() + 20 * DAY }));
+  // An expired row from long ago is left alone (it would be re-checked forever otherwise).
+  db.rows("user_entitlements").push({ user_id: "user-old", plan: "pro_monthly", status: "expired", current_period_end: longAgo, stripe_subscription_id: "sub_old", stripe_customer_id: "cus_old", updated_at: "2026-01-01T00:00:00.000Z" });
+  const real = await webhookReconcile(false);
+  assert.equal(real.statusCode, 200);
+  assert.equal(real.body.rows.checked, 1);
+  assert.equal(hasPro("user-a"), true);
+});
+
+async function checkoutRequest(userId, body) {
+  const res = response();
+  await checkoutHandler({ method: "POST", headers: { authorization: `Bearer token-${userId}` }, body }, res);
+  return res;
+}
+
+test("a signed-in subscriber can have their own subscription re-read from Stripe", async () => {
+  const { stripe, db } = resetWorld();
+  const stale = new Date((nowSec() - 100 * DAY) * 1000).toISOString();
+  db.rows("user_entitlements").push({ user_id: "user-a", plan: "pro_monthly", status: "active", current_period_end: stale, stripe_subscription_id: "sub_1", stripe_customer_id: "cus_1", updated_at: "2026-01-01T00:00:00.000Z" });
+  stripe._subscriptions.set("sub_1", subscription({ end: nowSec() + 20 * DAY }));
+  assert.equal(billing.needsStripeResync(entitlement()), true);
+  assert.equal(hasPro(), false, "the stale row alone no longer grants Pro");
+
+  // Someone else asking changes nothing for user-a: only the caller's own row is used.
+  const other = await checkoutRequest("user-b", { checkoutKind: "sync_entitlement", subscriptionId: "sub_1", userId: "user-a" });
+  assert.equal(other.statusCode, 200);
+  assert.equal(other.body.synced, false);
+  assert.equal(hasPro(), false);
+
+  const own = await checkoutRequest("user-a", { checkoutKind: "sync_entitlement" });
+  assert.equal(own.statusCode, 200);
+  assert.deepEqual(own.body, { synced: true, hasAccess: true });
+  assert.equal(hasPro(), true);
+  assert.equal(billing.needsStripeResync(entitlement()), false);
+});
+
+test("a re-read cannot keep Pro for a subscription Stripe has ended", async () => {
+  const { stripe, db } = resetWorld();
+  db.rows("user_entitlements").push({ user_id: "user-a", plan: "pro_monthly", status: "active", current_period_end: new Date((nowSec() - 5 * DAY) * 1000).toISOString(), stripe_subscription_id: "sub_1", stripe_customer_id: "cus_1", updated_at: "2026-01-01T00:00:00.000Z" });
+  stripe._subscriptions.set("sub_1", subscription({ status: "canceled", end: nowSec() - 5 * DAY, endedAt: nowSec() - 5 * DAY }));
+  const res = await checkoutRequest("user-a", { checkoutKind: "sync_entitlement" });
+  assert.deepEqual(res.body, { synced: true, hasAccess: false });
+  assert.equal(entitlement().status, "canceled");
+  assert.equal(billing.needsStripeResync(entitlement()), false, "no more re-reads once Stripe's answer is stored");
+});
+
+test("only stale Stripe-linked monthly/yearly rows ask Stripe again", () => {
+  const now = new Date("2026-11-05T12:00:00Z");
+  const row = (extra) => ({ plan: "pro_monthly", status: "active", current_period_end: "2026-07-01T00:00:00Z", stripe_subscription_id: "sub_1", ...extra });
+  assert.equal(billing.needsStripeResync(row(), now), true);
+  assert.equal(billing.needsStripeResync(row({ current_period_end: "2026-12-01T00:00:00Z" }), now), false);
+  assert.equal(billing.needsStripeResync(row({ stripe_subscription_id: null }), now), false, "manual grants never call Stripe");
+  assert.equal(billing.needsStripeResync(row({ status: "expired" }), now), false);
+  assert.equal(billing.needsStripeResync(row({ plan: "lifetime" }), now), false);
+  assert.equal(billing.needsStripeResync(null, now), false);
 });
 
 async function webhookReconcile(dryRun, secret = "reconcile-test-secret") {

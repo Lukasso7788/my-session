@@ -145,6 +145,20 @@ export function hasUnlimitedAccess(
   return hasPaidProPeriod(entitlement, now);
 }
 
+/**
+ * A Stripe-linked monthly/yearly row that still says active but whose paid
+ * period is over: possibly a renewal the database never recorded (older
+ * webhooks did not extend the period). Worth one check with Stripe.
+ */
+export function needsStripeResync(
+  entitlement: (AccessFields & Partial<Pick<UserEntitlement, "stripe_subscription_id">>) | null | undefined,
+  now = new Date()
+): boolean {
+  if (!entitlement?.stripe_subscription_id || !isRecurringProPlan(entitlement.plan)) return false;
+  if (entitlement.status !== "active" && entitlement.status !== "trialing") return false;
+  return !hasPaidProPeriod(entitlement, now) && !isTrialActive(entitlement, now);
+}
+
 export function isTrialActive(
   entitlement: Pick<UserEntitlement, "status"> & Partial<Pick<UserEntitlement, "trial_ends_at">> | null | undefined,
   now = new Date()

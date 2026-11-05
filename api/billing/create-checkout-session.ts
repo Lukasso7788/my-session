@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import { randomUUID } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { createSubscriptionPortal, subscriptionManagementSummary, type BillingIdentity } from "../_lib/stripeSubscriptionPortal.js";
+import { createSupabaseBillingStore, syncSubscription } from "../_lib/stripeEntitlementSync.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: "2026-03-25.dahlia",
@@ -15,7 +16,7 @@ const supabaseAdmin = createClient(
 
 const APP_URL = process.env.APP_URL || "http://localhost:5173";
 
-type CheckoutKind = "subscription" | "host_support" | "customer_portal" | "subscription_status";
+type CheckoutKind = "subscription" | "host_support" | "customer_portal" | "subscription_status" | "sync_entitlement";
 
 type SupportedPlan = "pro_monthly" | "pro_yearly" | "lifetime" | "india_upi_monthly";
 type EntitlementPlan = "pro_monthly" | "pro_yearly" | "lifetime";
@@ -513,6 +514,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const result = await createSubscriptionPortal(stripe, identity, action, APP_URL, process.env.STRIPE_BILLING_PORTAL_CONFIGURATION_ID);
       res.setHeader("Cache-Control", "no-store");
       return res.status(200).json(result);
+    }
+
+    if (checkoutKind === "sync_entitlement") {
+      // Self-healing for the signed-in user only: re-read the subscription
+      // already linked to their own row from Stripe and apply it. Nothing in
+      // the request body is used; the subscription ID comes from the database.
+      const identity = await getBillingIdentity(user.id);
+      res.setHeader("Cache-Control", "no-store");
+      if (!identity?.stripe_subscription_id || !["pro_monthly", "pro_yearly"].includes(String(identity.plan))) {
+        return res.status(200).json({ synced: false });
+      }
+      const result = await syncSubscription(
+        { stripe, store: createSupabaseBillingStore(supabaseAdmin) },
+        identity.stripe_subscription_id,
+        { expectedUserId: user.id },
+      );
+      return res.status(200).json({ synced: true, hasAccess: result.hasAccess });
     }
 
     if (checkoutKind === "subscription_status") {

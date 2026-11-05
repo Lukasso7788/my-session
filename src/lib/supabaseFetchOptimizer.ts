@@ -32,6 +32,16 @@ export function invalidateHostLeaseCache() {
   }
 }
 
+/** Drops cached reads of the user's plan, e.g. right after billing changed it. */
+export function invalidateEntitlementResponseCache() {
+  for (const key of responseCache.keys()) {
+    if (key.includes("/rest/v1/user_entitlements")) responseCache.delete(key);
+  }
+  for (const key of inFlight.keys()) {
+    if (key.includes("/rest/v1/user_entitlements")) inFlight.delete(key);
+  }
+}
+
 function getRequestUrl(input: RequestInfo | URL) {
   if (input instanceof Request) return input.url;
   return String(input);
