@@ -16,7 +16,6 @@ import {
   Search,
   Lock,
   Globe2,
-  TimerReset,
   Eye,
   EyeOff,
   Sparkles,
@@ -26,6 +25,7 @@ import {
   PinOff,
   ArrowLeft,
 } from "lucide-react";
+import StopwatchIcon from "./StopwatchIcon";
 import { supabase } from "../lib/supabase";
 import { useNavigate, useParams } from "react-router-dom";
 import { getUserEntitlement } from "../lib/entitlements";
@@ -3637,7 +3637,7 @@ export function TasksPanel({
             ].join(" ")}
             title="Time spent on this task"
           >
-            <TimerReset size={13} />
+            <StopwatchIcon size={16} />
             <span>{formatTaskTimer(elapsedMs)}</span>
           </div>
 
@@ -4797,7 +4797,7 @@ export function TasksPanel({
               aria-label={taskTimersEnabled ? "Disable Timer" : "Enable Timer"}
               aria-pressed={taskTimersEnabled}
             >
-              <TimerReset size={18} />
+              <StopwatchIcon size={24} />
             </button>
 
             <button
@@ -5230,7 +5230,7 @@ export function TasksPanel({
                         {item.completed ? (
                           <AnimatedTodoCheck completed size={17} />
                         ) : (
-                          <TimerReset size={15} />
+                          <StopwatchIcon size={18} />
                         )}
                       </div>
 
