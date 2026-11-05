@@ -29,7 +29,8 @@ test('rooms show only the settlement', () => {
 
 test('the profile keeps the timezone and adds the settlement only when chosen', () => {
   assert.equal(formatTimeZoneWithPlace('Europe/Kyiv', null), 'Europe/Kyiv');
-  assert.equal(formatTimeZoneWithPlace('Europe/Kyiv', 'Lukasheve, Ukraine'), 'Europe/Kyiv · Lukasheve');
+  assert.equal(formatTimeZoneWithPlace('Europe/Kyiv', 'Lukasheve, Ukraine'), 'Ukraine/Lukasheve');
+  assert.equal(formatTimeZoneWithPlace('Europe/Kyiv', 'my village'), 'my village');
   assert.equal(formatTimeZoneWithPlace('America/New_York', ''), 'America/New York');
   for (const page of ['src/pages/ProfilePage.tsx', 'src/pages/PublicProfilePage.tsx']) {
     assert.match(read(page), /formatTimeZoneWithPlace\(timeZone, /, page);

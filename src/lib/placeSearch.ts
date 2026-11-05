@@ -70,13 +70,17 @@ export function shortPlaceName(location: string | null | undefined): string {
 }
 
 /**
- * The profile's globe line: the timezone as before ("Europe/Kyiv"), followed
- * by the settlement only when the person chose one ("Europe/Kyiv · Lukasheve").
+ * The profile's globe line. With a chosen location it reads Country/Settlement
+ * ("Ukraine/Lukasheve"); without one it stays the timezone ("Europe/Kyiv").
  */
 export function formatTimeZoneWithPlace(timeZone: string, location?: string | null): string {
-  const zone = String(timeZone || "").replace(/_/g, " ").trim();
-  const place = shortPlaceName(location);
-  return place ? `${zone} · ${place}` : zone;
+  const parts = String(location || "").split(",").map((part) => part.replace(/\s+/g, " ").trim()).filter(Boolean);
+  if (parts.length) {
+    const settlement = parts[0];
+    const country = parts.length > 1 ? parts[parts.length - 1] : "";
+    return country ? `${country}/${settlement}` : settlement;
+  }
+  return String(timeZone || "").replace(/_/g, " ").trim();
 }
 
 export async function searchPlaces(query: string, signal?: AbortSignal): Promise<PlaceSuggestion[]> {
