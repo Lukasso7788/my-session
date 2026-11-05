@@ -12,7 +12,9 @@ const settings = source("../src/pages/livekit/RoomSettingsModalLiveKit.tsx");
 test("room canvas and controls use the original neutral light palette", () => {
   assert.match(room, /bg-\[#F3F1F1\] text-\[#1F1F1F\]/);
   assert.match(room, /bg-\[#E7E7E7\] hover:bg-\[#DCDCDC\] text-black\/75/);
-  assert.match(topBar, /bg-\[#F3F1F1\]\/95 border border-\[#CFCFCF\]/);
+  assert.match(topBar, /\? "bg-\[#F3F1F1\]\/95"/);
+  // The bar itself has no border, to save space in the room.
+  assert.doesNotMatch(topBar, /const topBarBg = [^;]*border/);
   assert.match(bottomBar, /bg-\[#2F2F2F\] text-white hover:bg-\[#111111\]/);
   assert.doesNotMatch(room, /flowRoomLightTheme\.css/);
 });

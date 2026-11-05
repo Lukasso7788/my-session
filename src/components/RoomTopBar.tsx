@@ -136,9 +136,10 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         };
     }, [sessionTitle]);
 
+    // No border around the bar itself: it saves space in the room.
     const topBarBg = isLight
-        ? "bg-[#F3F1F1]/95 border border-[#CFCFCF]"
-        : "bg-[#1B1B1B] border border-[#252525]";
+        ? "bg-[#F3F1F1]/95"
+        : "bg-[#1B1B1B]";
 
     const chipBg = isLight
         ? "bg-[#E1E3E6] border border-[#CFCFCF]"
