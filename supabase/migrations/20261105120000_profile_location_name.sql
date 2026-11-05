@@ -10,5 +10,9 @@ alter table public.profiles
   add constraint profiles_location_name_length
   check (location_name is null or char_length(location_name) between 1 and 160);
 
+-- profiles uses column-level UPDATE grants, so a new column is read-only for
+-- members until it is granted explicitly. RLS still limits rows to their own.
+grant update (location_name) on public.profiles to authenticated;
+
 comment on column public.profiles.location_name is
   'Optional place the member chose to show (any settlement). Not derived from timezone.';

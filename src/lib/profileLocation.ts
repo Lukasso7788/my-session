@@ -45,12 +45,12 @@ export async function saveProfileLocation(userId: string, value: string | null):
     .from("profiles")
     .update({ location_name: location })
     .eq("id", userId);
+  // Location is optional: a missing column or a missing column grant (403,
+  // 42501) must never fail saving the rest of the profile.
   if (error) {
-    if (isMissingColumnError(error)) {
-      columnMissing = true;
-      return { saved: false, unavailable: true };
-    }
-    throw error;
+    if (isMissingColumnError(error)) columnMissing = true;
+    console.warn("[profile] location was not saved:", error);
+    return { saved: false, unavailable: true };
   }
   cache.set(userId, Promise.resolve(location));
   known.set(userId.toLowerCase(), location);
