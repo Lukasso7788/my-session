@@ -83,7 +83,7 @@ test("hovering any person's avatar opens the shared profile card", () => {
   // timezone), the optional chosen location and a "Check account" link.
   assert.match(layer, /if \(event\.pointerType !== "mouse"\) return;/);
   assert.match(layer, /const statsCache = new Map/);
-  assert.match(layer, /formatLocalTimeInZone\(timezone\)/);
+  assert.match(layer, /formatLocalTime\(timezone\)/);
   assert.doesNotMatch(layer, /timezone\.split\("\/"\)/);
   assert.match(layer, /loadProfileLocation\(userId\)/);
   assert.match(layer, />\s*Check account\s*</);

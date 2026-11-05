@@ -1,13 +1,26 @@
 import { memo, useSyncExternalStore } from "react";
 import { participantClock } from "../../lib/participantClock";
-import { formatLocalTimeInZone } from "../../lib/timezones";
+import { formatLocalTime } from "../../lib/timezones";
+import { shortPlaceName } from "../../lib/placeSearch";
+import { getProfileLocationSnapshot, subscribeProfileLocations } from "../../lib/profileLocation";
 
-// Only the person's local time and zone; the room never guesses a place from it.
-export const ParticipantTimeLabel = memo(function ParticipantTimeLabel({ timeZone, className }: {
-    timeZone: string; className: string;
+// "Lukasheve · 4:12 PM": the settlement the person chose (if any) and their
+// current local time. No zone name, and no place guessed from the timezone.
+export const ParticipantTimeLabel = memo(function ParticipantTimeLabel({ timeZone, userId, className }: {
+    timeZone: string; userId?: string | null; className: string;
 }) {
     const at = useSyncExternalStore(participantClock.subscribe, participantClock.getSnapshot, participantClock.getSnapshot);
-    const label = formatLocalTimeInZone(timeZone, at);
-    if (!label) return null;
-    return <div className={className} title={`Local time · ${timeZone.replace(/_/g, " ")}`}>{label}</div>;
+    const location = useSyncExternalStore(
+        subscribeProfileLocations,
+        () => getProfileLocationSnapshot(userId),
+        () => null,
+    );
+    const time = formatLocalTime(timeZone, at);
+    if (!time) return null;
+    const place = shortPlaceName(location);
+    return (
+        <div className={className} title={location ? `${location} · local time` : "Local time"}>
+            {place ? `${place} · ${time}` : time}
+        </div>
+    );
 });

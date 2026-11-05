@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { MapPin } from "lucide-react";
-import { formatLocalTimeInZone, formatTimeZoneLabel, isValidTimeZone } from "../lib/timezones";
+import { formatLocalTime, isValidTimeZone } from "../lib/timezones";
 import { loadProfileLocation } from "../lib/profileLocation";
 import {
   ensurePushSubscription,
@@ -625,7 +625,7 @@ export default function PublicProfilePage() {
             <span className="text-[14px] font-medium text-[#2F2F2F]">{attendedCount} sessions</span>
           </span>
 
-          <span className="flex items-center gap-2" title={timeZone}>
+          <span className="flex items-center gap-2" title="Their local time">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <circle cx="12" cy="12" r="9" stroke="#2F2F2F" strokeWidth="1.6" />
               <path
@@ -636,7 +636,7 @@ export default function PublicProfilePage() {
               />
             </svg>
             <span className="text-[14px] font-medium text-[#2F2F2F]">
-              {formatLocalTimeInZone(timeZone) || formatTimeZoneLabel(timeZone)} local time
+              {formatLocalTime(timeZone)} local time
             </span>
           </span>
 

@@ -91,7 +91,8 @@ import {
 import { advertiseSharedMusic, sharedRoomMusicActive } from "../lib/roomMusicPresence";
 import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
-import { formatLocalTimeInZone, isValidTimeZone } from "../lib/timezones";
+import { isValidTimeZone } from "../lib/timezones";
+import { ParticipantTimeLabel } from "./livekit/ParticipantTimeLabel";
 import {
   loadEntitlementState,
   isPersonalPaywallForced,
@@ -5080,7 +5081,8 @@ function AccountabilityWall({
     [authUserId, sessionId],
   );
   const [taskTimers, setTaskTimers] = useState<TaskTimerMap>({});
-  const [taskTimerTickMs, setTaskTimerTickMs] = useState(() => Date.now());
+  // Only re-renders the wall each second while a task timer runs.
+  const [, setTaskTimerTickMs] = useState(() => Date.now());
   const [taskTimersEnabled, setTaskTimersEnabled] = useState(false);
 
   const taskTimerEnabledStorageKey = useMemo(
@@ -5601,11 +5603,7 @@ function AccountabilityWall({
                   .filter((item) => !item.completed)
                   .map((item) => String(item.text || "").trim())
                   .filter(Boolean);
-            // Local time and zone only; no place is inferred from the timezone.
-            const participantTime = formatLocalTimeInZone(
-              String(tile.participantTimeZone || "").trim(),
-              taskTimerTickMs,
-            );
+            const participantTimeZone = String(tile.participantTimeZone || "").trim();
 
             return (
               <div
@@ -5631,6 +5629,7 @@ function AccountabilityWall({
                   currentIntention={null}
                   taskList={[]}
                   participantTimeZone={tile.participantTimeZone || null}
+                  participantUserId={tile.participantUserId || null}
                   density="compact"
                 />
 
@@ -5644,10 +5643,12 @@ function AccountabilityWall({
                 >
                   <div className="flex min-w-0 shrink-0 items-center gap-1.5 font-inter text-[12px] leading-none">
                     <span className="min-w-0 truncate font-medium">{name}</span>
-                    {participantTime ? (
-                      <span className={`max-w-[55%] shrink-0 truncate font-normal ${isLight ? "text-black/55" : "text-white/60"}`}>
-                        {participantTime}
-                      </span>
+                    {participantTimeZone ? (
+                      <ParticipantTimeLabel
+                        className={`max-w-[55%] shrink-0 truncate font-normal ${isLight ? "text-black/55" : "text-white/60"}`}
+                        timeZone={participantTimeZone}
+                        userId={tile.participantUserId || null}
+                      />
                     ) : null}
                   </div>
 
@@ -19364,6 +19365,7 @@ export function RoomPageLiveKit({
             showBottomShade={!isFullscreenScreenShare}
             accountabilityWall={mainViewMode === "accountability"}
             participantTimeZone={t.participantTimeZone || null}
+            participantUserId={t.participantUserId || null}
             onToggleMenu={handleToggleTileMenu}
             showMenuButton={
               !!(t.isLocal || t.kind === "screen" || !!t.participantIdentity)
@@ -19474,6 +19476,7 @@ export function RoomPageLiveKit({
           taskList={[]}
           showTaskOverlay={false}
           participantTimeZone={t.participantTimeZone || null}
+          participantUserId={t.participantUserId || null}
           density="compact"
           onToggleMenu={handleToggleTileMenu}
           showMenuButton={

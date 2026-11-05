@@ -4,7 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 import { CalendarDays, Clock, ExternalLink, MapPin } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { loadProfileLocation } from "../lib/profileLocation";
-import { formatLocalTimeInZone } from "../lib/timezones";
+import { formatLocalTime } from "../lib/timezones";
 
 // Account preview for every avatar in the app.
 //
@@ -80,11 +80,11 @@ function loadProfileStats(userId: string): Promise<ProfileStats> {
     return request;
 }
 
-/** The person's local time and zone ("4:12 PM · GMT+2") for a valid IANA zone, otherwise null. */
-function describeTimezone(timezone: string | null): { label: string; full: string } | null {
+/** The person's current local time ("4:12 PM") for a valid IANA zone, otherwise null. */
+function describeTimezone(timezone: string | null): { label: string } | null {
     if (!timezone) return null;
-    const label = formatLocalTimeInZone(timezone);
-    return label ? { label, full: timezone.replace(/_/g, " ") } : null;
+    const label = formatLocalTime(timezone);
+    return label ? { label } : null;
 }
 
 function initialsOf(name: string): string {
@@ -257,10 +257,10 @@ export default function ProfileHoverLayer() {
                         {zone ? (
                             <span
                                 className="mb-1 inline-flex items-center gap-1 rounded-full bg-[#F6F6F6] px-2.5 py-1 text-[11px] font-medium text-[#606060]"
-                                title={`${zone.full} · local time`}
+                                title="Their local time"
                             >
                                 <Clock size={11} strokeWidth={2.2} aria-hidden="true" />
-                                {zone.label}
+                                {zone.label} local
                             </span>
                         ) : null}
                     </div>

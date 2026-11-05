@@ -53,5 +53,56 @@ export async function saveProfileLocation(userId: string, value: string | null):
     throw error;
   }
   cache.set(userId, Promise.resolve(location));
+  known.set(userId.toLowerCase(), location);
+  notify();
   return { saved: true, unavailable: false };
+}
+
+// Rooms ask for many people at once: requests made in the same tick become a
+// single query, and every tile reads from one shared, subscribable map.
+const known = new Map<string, string | null>();
+const listeners = new Set<() => void>();
+const queued = new Set<string>();
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function notify() {
+  for (const listener of listeners) listener();
+}
+
+async function flushQueued() {
+  flushTimer = null;
+  const ids = Array.from(queued);
+  queued.clear();
+  if (!ids.length) return;
+  if (columnMissing) {
+    for (const id of ids) known.set(id, null);
+    notify();
+    return;
+  }
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, location_name")
+    .in("id", ids);
+  if (error && isMissingColumnError(error)) columnMissing = true;
+  const rows = (error ? [] : data || []) as Array<{ id: string; location_name?: string | null }>;
+  const byId = new Map(rows.map((row) => [String(row.id).toLowerCase(), normalizeLocationName(row.location_name)]));
+  for (const id of ids) known.set(id, byId.get(id) ?? null);
+  notify();
+}
+
+export function subscribeProfileLocations(listener: () => void) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** The saved location for a person, or undefined while it is loading. */
+export function getProfileLocationSnapshot(userId: string | null | undefined): string | null | undefined {
+  const id = String(userId || "").trim().toLowerCase();
+  if (!id) return null;
+  if (known.has(id)) return known.get(id);
+  if (!queued.has(id)) {
+    queued.add(id);
+    if (!flushTimer) flushTimer = setTimeout(() => void flushQueued().catch(() => undefined), 0);
+  }
+  return undefined;
 }

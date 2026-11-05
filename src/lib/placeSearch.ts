@@ -6,7 +6,7 @@ const PHOTON_URL = "https://photon.komoot.io/api/";
 export const LOCATION_NAME_MAX_LENGTH = 160;
 
 export type PlaceSuggestion = {
-  /** What gets saved and shown on the profile. */
+  /** What gets saved: "Lukasheve, Ukraine". The profile shows it whole, rooms only the first part. */
   label: string;
   /** The place itself ("Lukasheve"). */
   name: string;
@@ -58,8 +58,15 @@ export function placeFromPhoton(properties: PhotonProperties): PlaceSuggestion |
     properties.state,
     properties.country,
   ]).filter((part) => part.toLocaleLowerCase() !== name.toLocaleLowerCase());
-  const label = [name, ...contextParts].join(", ").slice(0, LOCATION_NAME_MAX_LENGTH).trim();
+  // The district and region only help pick the right village in the list.
+  const country = String(properties.country || "").trim();
+  const label = uniqueParts([name, country]).join(", ").slice(0, LOCATION_NAME_MAX_LENGTH).trim();
   return { label, name, context: contextParts.join(", "), kind };
+}
+
+/** The settlement alone ("Lukasheve" from "Lukasheve, Ukraine"), as shown in rooms. */
+export function shortPlaceName(location: string | null | undefined): string {
+  return String(location || "").split(",")[0].replace(/\s+/g, " ").trim();
 }
 
 export async function searchPlaces(query: string, signal?: AbortSignal): Promise<PlaceSuggestion[]> {

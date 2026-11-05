@@ -220,6 +220,8 @@ type VideoTileProps = {
     showBottomShade?: boolean;
     accountabilityWall?: boolean;
     participantTimeZone?: string | null;
+    /** Profile id, used to show the settlement the person chose (optional). */
+    participantUserId?: string | null;
     cameraFramingMode?: CameraFramingMode;
 };
 
@@ -373,6 +375,7 @@ function VideoTileInner({
     showBottomShade = true,
     accountabilityWall = false,
     participantTimeZone,
+    participantUserId,
     cameraFramingMode = "full",
     onToggleMenu,
     onOpenProfile,
@@ -1002,6 +1005,7 @@ function VideoTileInner({
                             <ParticipantTimeLabel
                                 className={`mt-1 truncate text-[10px] font-normal leading-none ${isLight ? "text-black/55" : "text-white/60"}`}
                                 timeZone={participantTimeZone.trim()}
+                                userId={participantUserId}
                             />
                         ) : null}
                     </div>
@@ -1071,6 +1075,7 @@ function VideoTileInner({
                             <ParticipantTimeLabel
                                 className={`mt-1 truncate font-inter ${isCompact ? "text-[9px]" : "text-[10px]"} font-normal leading-none ${!hasCameraOn && isLight ? "text-black/60" : "text-white/70 drop-shadow-md"}`}
                                 timeZone={participantTimeZone.trim()}
+                                userId={participantUserId}
                             />
                         ) : null}
                     </div>
@@ -1120,6 +1125,7 @@ const areVideoTilePropsEqual = (prev: VideoTileProps, next: VideoTileProps) => {
         prev.showBottomShade === next.showBottomShade &&
         prev.accountabilityWall === next.accountabilityWall &&
         prev.participantTimeZone === next.participantTimeZone &&
+        prev.participantUserId === next.participantUserId &&
         prev.cameraFramingMode === next.cameraFramingMode &&
         prev.onToggleMenu === next.onToggleMenu &&
         prev.onOpenProfile === next.onOpenProfile &&

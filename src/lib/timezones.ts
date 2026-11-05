@@ -81,27 +81,17 @@ export function formatTimeZoneLabel(value: string): string {
   return value.replace(/_/g, " ");
 }
 
-/** "GMT+2", "EST", "GMT+5:30": the zone without naming a place. */
-export function formatTimeZoneShortName(timeZone: string, at: number | Date = Date.now()): string {
-  try {
-    const part = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "short" })
-      .formatToParts(at instanceof Date ? at : new Date(at))
-      .find((item) => item.type === "timeZoneName");
-    return part?.value || "";
-  } catch {
-    return "";
-  }
-}
-
-/** Someone's current local time with only the zone ("4:12 PM · GMT+2"). Location is a separate, optional profile field. */
-export function formatLocalTimeInZone(timeZone: string, at: number | Date = Date.now()): string {
+/**
+ * Someone's current local time ("4:12 PM"), nothing else. The zone itself is
+ * only chosen in the timezone modal; the place is the separate, optional
+ * profile location and is never derived from the timezone.
+ */
+export function formatLocalTime(timeZone: string, at: number | Date = Date.now()): string {
   const zone = String(timeZone || "").trim();
   if (!zone) return "";
   try {
-    const time = new Intl.DateTimeFormat(undefined, { timeZone: zone, hour: "numeric", minute: "2-digit" })
+    return new Intl.DateTimeFormat(undefined, { timeZone: zone, hour: "numeric", minute: "2-digit" })
       .format(at instanceof Date ? at : new Date(at));
-    const short = formatTimeZoneShortName(zone, at);
-    return short ? `${time} · ${short}` : time;
   } catch {
     return "";
   }
