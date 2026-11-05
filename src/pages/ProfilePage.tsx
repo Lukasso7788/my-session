@@ -4,6 +4,8 @@ import { supabase } from "../lib/supabase";
 import { useAuth } from "../context/AuthContext";
 import TimeZonePicker from "../components/TimeZonePicker";
 import LocationPicker from "../components/LocationPicker";
+import { checkHostLink, HostLinkBadge, HostLinkField, type HostLinkStatus } from "../components/HostLinkField";
+import { hostLinkProblem, normalizeHostLink } from "../lib/hostLink";
 import { loadProfileLocation, saveProfileLocation } from "../lib/profileLocation";
 import { formatTimeZoneWithPlace, normalizeLocationName } from "../lib/placeSearch";
 import {
@@ -149,6 +151,10 @@ export default function ProfilePage() {
   const [timeZone, setTimeZone] = useState(getDetectedTimeZone);
   const [location, setLocation] = useState("");
   const [locationNotice, setLocationNotice] = useState("");
+  // Personal link (profiles.host_slug): saved value and the editor's draft.
+  const [hostLink, setHostLink] = useState("");
+  const [hostLinkDraft, setHostLinkDraft] = useState("");
+  const [hostLinkStatus, setHostLinkStatus] = useState<HostLinkStatus>("empty");
 
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -379,7 +385,7 @@ export default function ProfilePage() {
     const loadProfile = async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("full_name, bio, avatar_url, timezone, created_at, attended_sessions_count")
+        .select("full_name, bio, avatar_url, timezone, created_at, attended_sessions_count, host_slug")
         .eq("id", user.id)
         .single();
 
@@ -398,6 +404,9 @@ export default function ProfilePage() {
       }
       setAttendedCount(typeof (data as any).attended_sessions_count === "number" ? (data as any).attended_sessions_count : 0);
       setCreatedAt(data.created_at ? formatSince(data.created_at) : "—");
+      const savedHostLink = String((data as any).host_slug || "").trim();
+      setHostLink(savedHostLink);
+      setHostLinkDraft(savedHostLink);
     };
 
     void loadProfile();
@@ -555,6 +564,19 @@ export default function ProfilePage() {
       alert("Choose a valid timezone.");
       return;
     }
+    const nextHostLink = normalizeHostLink(hostLinkDraft);
+    const hostLinkChanged = nextHostLink !== hostLink;
+    if (hostLinkChanged && nextHostLink) {
+      const problem = hostLinkProblem(nextHostLink);
+      if (problem) {
+        alert(`Session link: ${problem}`);
+        return;
+      }
+      if ((await checkHostLink(nextHostLink, user.id)) === "taken") {
+        alert("Session link: this link is taken. Try another one.");
+        return;
+      }
+    }
     setSaving(true);
 
     try {
@@ -567,9 +589,18 @@ export default function ProfilePage() {
           avatar_url: avatarUrl,
           updated_at: now,
           timezone: timeZone,
+          // A database trigger registers the link and rejects a taken one.
+          ...(hostLinkChanged ? { host_slug: nextHostLink || null } : {}),
         })
         .eq("id", user.id);
-      if (profileError) throw profileError;
+      if (profileError) {
+        if (hostLinkChanged && /already taken/i.test(profileError.message || "")) {
+          alert("Session link: this link was just taken. Try another one.");
+          return;
+        }
+        throw profileError;
+      }
+      if (hostLinkChanged) setHostLink(nextHostLink);
 
       const locationResult = await saveProfileLocation(user.id, location);
       setLocation(normalizeLocationName(location) || "");
@@ -663,7 +694,7 @@ export default function ProfilePage() {
             onClick={editMode ? handleSave : () => setEditMode(true)}
             onMouseEnter={() => setEditButtonHover(true)}
             onMouseLeave={() => setEditButtonHover(false)}
-            disabled={saving}
+            disabled={saving || (editMode && (hostLinkStatus === "taken" || hostLinkStatus === "invalid"))}
             className="inline-flex items-center gap-2 px-6 py-2 rounded-full border border-[#2F2F2F] text-[16px] font-normal text-[#2F2F2F] hover:bg-[#2F2F2F] hover:text-white hover:border-[#2F2F2F] transition disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <img src={actionIconSrc} alt={editMode ? "Save changes" : "Edit profile"} className="w-6 h-6" />
@@ -736,6 +767,19 @@ export default function ProfilePage() {
                 Shown on your profile only if you add it. It doesn't change your timezone.
               </span>
             </div>
+
+            <div className="mt-5">
+              <label htmlFor="profile-edit-host-link" className="block text-sm font-medium text-[#2F2F2F]">
+                Your session link <span className="font-normal text-gray-500">(optional)</span>
+              </label>
+              <HostLinkField
+                value={hostLinkDraft}
+                onChange={setHostLinkDraft}
+                userId={user.id}
+                disabled={saving}
+                onStatus={setHostLinkStatus}
+              />
+            </div>
           </div>
         )}
 
@@ -806,6 +850,24 @@ export default function ProfilePage() {
                 {hostSupportLoading ? "Loading balance…" : `${formatMoney(hostBalance.availableUsd)} available`}
               </span>
             ) : null}
+            {hostLink ? (
+              <HostLinkBadge slug={hostLink} />
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditMode(true);
+                  window.setTimeout(() => {
+                    const field = document.getElementById("profile-edit-host-link");
+                    field?.scrollIntoView({ block: "center", behavior: "smooth" });
+                    field?.focus();
+                  }, 50);
+                }}
+                className="font-semibold text-[#2F2F2F] underline decoration-black/20 underline-offset-2 hover:decoration-black"
+              >
+                Get your session link
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">

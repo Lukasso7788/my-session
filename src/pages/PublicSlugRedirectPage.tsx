@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { RoomEntryGate } from "../components/RoomEntryGate";
 import { supabase } from "../lib/supabase";
 import RoomPageLiveKit from "./RoomPageLiveKit";
+import { pickHostLinkSession } from "../lib/hostLink";
 
 type PublicSlugRow = {
   slug: string;
@@ -21,6 +22,9 @@ type SessionRow = {
   schedule?: any;
   status?: string | null;
   created_at?: string | null;
+  description?: string | null;
+  is_private?: boolean | null;
+  is_hidden?: boolean | null;
 };
 
 function normalizeSlug(raw?: string | null) {
@@ -30,102 +34,13 @@ function normalizeSlug(raw?: string | null) {
     .replace(/^\/+|\/+$/g, "");
 }
 
-function parseSchedule(raw: any) {
-  if (!raw) return null;
-  if (typeof raw === "string") {
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return null;
-    }
-  }
-  return raw;
-}
-
-function isInfiniteSession(session: SessionRow) {
-  const type = String(session.session_format_type || "").toLowerCase();
-  if (type === "infinite") return true;
-
-  const format = String(session.format || "").toLowerCase();
-  if (format === "infinite") return true;
-
-  const schedule = parseSchedule(session.schedule);
-  if (!schedule || typeof schedule !== "object") return false;
-
-  if ((schedule as any).kind === "infinite_room") return true;
-  if ((schedule as any)?.timer?.phases) return true;
-  if ((schedule as any)?.phases) return true;
-
-  return false;
-}
-
-function getStartMs(session: SessionRow) {
-  if (!session.start_time) return null;
-  const ms = new Date(session.start_time).getTime();
-  return Number.isFinite(ms) ? ms : null;
-}
-
-function getEndMs(session: SessionRow) {
-  const startMs = getStartMs(session);
-  if (startMs == null) return null;
-
-  const durationMinutes = Number(session.duration_minutes || 0);
-  if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
-
-  return startMs + durationMinutes * 60 * 1000;
-}
-
-function pickBestHostSession(sessions: SessionRow[]) {
-  const now = Date.now();
-  const usable = (sessions || []).filter((s) => s?.id);
-
-  const liveScheduled = usable
-    .filter((s) => {
-      if (isInfiniteSession(s)) return false;
-      const startMs = getStartMs(s);
-      const endMs = getEndMs(s);
-      if (startMs == null || endMs == null) return false;
-      return startMs <= now && endMs >= now;
-    })
-    .sort((a, b) => (getStartMs(a) || 0) - (getStartMs(b) || 0));
-
-  if (liveScheduled[0]) return liveScheduled[0];
-
-  const upcoming = usable
-    .filter((s) => {
-      if (isInfiniteSession(s)) return false;
-      const startMs = getStartMs(s);
-      return startMs != null && startMs >= now;
-    })
-    .sort((a, b) => (getStartMs(a) || 0) - (getStartMs(b) || 0));
-
-  if (upcoming[0]) return upcoming[0];
-
-  const infinite = usable
-    .filter(isInfiniteSession)
-    .sort((a, b) => {
-      const at = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return bt - at;
-    });
-
-  if (infinite[0]) return infinite[0];
-
-  const latest = usable.sort((a, b) => {
-    const at = a.created_at ? new Date(a.created_at).getTime() : 0;
-    const bt = b.created_at ? new Date(b.created_at).getTime() : 0;
-    return bt - at;
-  });
-
-  return latest[0] || null;
-}
-
 export default function PublicSlugRedirectPage() {
   const params = useParams();
   const slug = useMemo(() => normalizeSlug(params.slug), [params.slug]);
 
   const [state, setState] = useState<"loading" | "ready" | "not_found" | "no_session" | "error">("loading");
   const [resolvedSessionId, setResolvedSessionId] = useState<string>("");
+  const [hostProfileId, setHostProfileId] = useState<string>("");
 
   useEffect(() => {
     if (!slug) {
@@ -139,6 +54,7 @@ export default function PublicSlugRedirectPage() {
     const run = async () => {
       try {
         setResolvedSessionId("");
+        setHostProfileId("");
         setState("loading");
 
         const { data: slugRow, error: slugError } = await supabase
@@ -174,20 +90,28 @@ export default function PublicSlugRedirectPage() {
             return;
           }
 
+          // A host link opens the group session this host runs now, else
+          // their next one (see pickHostLinkSession).
           const { data: sessions, error: sessionsError } = await supabase
             .from("sessions")
             .select(
-              "id, host_id, title, start_time, duration_minutes, session_format_type, format, schedule, status, created_at"
+              "id, host_id, title, start_time, duration_minutes, session_format_type, format, schedule, status, created_at, description, is_private, is_hidden"
             )
             .eq("host_id", row.owner_id)
             .or("is_hidden.is.null,is_hidden.eq.false")
-            .order("start_time", { ascending: true });
+            .or("is_private.is.null,is_private.eq.false")
+            .gte("start_time", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+            .order("start_time", { ascending: true })
+            .limit(50);
 
           if (sessionsError) throw sessionsError;
 
-          const best = pickBestHostSession((sessions || []) as SessionRow[]);
+          const best = pickHostLinkSession((sessions || []) as SessionRow[]);
           if (!best?.id) {
-            if (!cancelled) setState("no_session");
+            if (!cancelled) {
+              setHostProfileId(row.owner_id);
+              setState("no_session");
+            }
             return;
           }
 
@@ -232,13 +156,20 @@ export default function PublicSlugRedirectPage() {
           </>
         ) : state === "no_session" ? (
           <>
-            <div className="text-[20px] font-semibold">No active session found</div>
+            <div className="text-[20px] font-semibold">Not hosting right now</div>
             <p className="mt-2 text-[14px] leading-6 text-[#606060]">
-              This host does not have an available session right now.
+              This host has no group session running or scheduled at the moment. This link opens their session as soon as they schedule one.
             </p>
-            <Link className="mt-5 inline-flex rounded-full bg-[#2F2F2F] px-5 py-3 text-[14px] font-semibold text-white" to="/sessions">
-              Browse sessions
-            </Link>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              {hostProfileId ? (
+                <Link className="inline-flex rounded-full border border-[#2F2F2F] px-5 py-3 text-[14px] font-semibold text-[#2F2F2F]" to={`/profile/${hostProfileId}`}>
+                  View host profile
+                </Link>
+              ) : null}
+              <Link className="inline-flex rounded-full bg-[#2F2F2F] px-5 py-3 text-[14px] font-semibold text-white" to="/sessions">
+                Browse sessions
+              </Link>
+            </div>
           </>
         ) : state === "error" ? (
           <>
