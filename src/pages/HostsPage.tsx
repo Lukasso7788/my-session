@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { HOST_GUIDE_PATH, HOST_SESSION_URL } from "../lib/hostGuideLinks";
 import { profileHoverAttrs } from "../components/ProfileHoverLayer";
-import { CalendarDays, Search } from "lucide-react";
+import SessionCard, { type BookSessionOptions } from "../components/SessionCard";
+import { CalendarDays, ChevronRight, Search } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { useAuth } from "../context/AuthContext";
+import { loadSessionForDetails } from "../lib/sessionDetailsLoader";
+import { captureProductEvent } from "../lib/analytics";
 import { countryName, formatCount, initials } from "../lib/communityDisplay";
 
-type HostRow = {
+export type HostRow = {
   user_id: string;
   full_name: string;
   avatar_url: string | null;
@@ -102,7 +106,7 @@ function Stat({ value, label, accent = false }: { value: string; label: string; 
 // Profile-style card: a status band on top (blue when the host is on within a
 // day, light blue later, gray when nothing is scheduled), the avatar
 // overlapping it, then name, next session, bio and three numbers.
-function HostCard({ host, now }: { host: HostRow; now: number }) {
+export function HostCard({ host, now, onOpenSession }: { host: HostRow; now: number; onOpenSession: (sessionId: string) => void }) {
   const country = countryName(host.country_code);
   const next = upcomingTime(host, now);
   const soon = next != null && next - now < DAY_MS;
@@ -115,12 +119,16 @@ function HostCard({ host, now }: { host: HostRow; now: number }) {
       ? { className: "bg-[#EEF3FE] text-[#3F6FD8]", label: "Next session", time: `${new Date(next).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}, ${clock(next)}`, pill: "bg-white text-[#3F6FD8]" }
       : { className: "bg-[#F6F6F6] text-[#8A8A8A]", label: "No upcoming sessions", time: lastHosted(host.last_hosted_at, now) || "Check back soon", pill: "" };
 
+  // The whole card opens the profile (a stretched link underneath); the next
+  // session sits above it and opens that session's details instead.
   return (
-    <Link
-      to={"/profile/" + host.user_id}
-      className="group flex h-full flex-col overflow-hidden rounded-[28px] border border-borderGray bg-white transition-colors duration-200 hover:border-[#5286F6]"
-    >
-      <div className={`flex h-[58px] items-center justify-end gap-3 pl-[104px] pr-5 ${band.className}`}>
+    <div className="group relative flex h-full flex-col overflow-hidden rounded-[28px] border border-borderGray bg-white transition-colors duration-200 hover:border-[#5286F6]">
+      <Link
+        to={"/profile/" + host.user_id}
+        aria-label={`${host.full_name}'s profile`}
+        className="absolute inset-0 z-0 rounded-[28px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6]"
+      />
+      <div className={`pointer-events-none relative flex h-[58px] items-center justify-end gap-3 pl-[104px] pr-5 ${band.className}`}>
         <div className="min-w-0 text-right leading-tight">
           <div className="text-[11px] font-medium opacity-80">{band.label}</div>
           <div className="truncate text-[13px] font-semibold">{band.time}</div>
@@ -130,22 +138,29 @@ function HostCard({ host, now }: { host: HostRow; now: number }) {
         ) : null}
       </div>
 
-      <div className="flex flex-1 flex-col px-5 pb-5">
+      <div className="pointer-events-none relative flex flex-1 flex-col px-5 pb-5">
         <div className="-mt-7 flex items-start gap-3">
-          <span className="rounded-full bg-white p-1">
+          {/* Clickable for the shared profile hover card. */}
+          <Link to={"/profile/" + host.user_id} tabIndex={-1} aria-hidden="true" className="pointer-events-auto rounded-full bg-white p-1">
             <Avatar host={host} size={64} />
-          </span>
+          </Link>
           <div className="min-w-0 flex-1 pt-8">
             <div className="truncate text-[17px] font-semibold leading-6 text-[#2F2F2F]">{host.full_name}</div>
             <div className="truncate text-[13px] text-[#8A8A8A]">{country || "MySession host"}</div>
           </div>
         </div>
 
-        {next != null ? (
-          <div className="mt-3 flex items-center gap-2 text-[13px] font-medium text-[#2F2F2F]">
+        {next != null && host.next_session_id ? (
+          <button
+            type="button"
+            onClick={() => onOpenSession(host.next_session_id as string)}
+            title="Session details"
+            className="pointer-events-auto -mx-2 mt-2 flex items-center gap-2 rounded-[12px] px-2 py-1 text-left text-[13px] font-medium text-[#2F2F2F] transition hover:bg-[#EEF3FE] hover:text-[#2F5FCB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5286F6]"
+          >
             <CalendarDays className="h-4 w-4 shrink-0 text-[#5286F6]" aria-hidden="true" />
-            <span className="truncate">{host.next_session_title || "Upcoming session"}</span>
-          </div>
+            <span className="truncate underline decoration-[#5286F6]/35 underline-offset-[3px]">{host.next_session_title || "Upcoming session"}</span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-[#5286F6]" aria-hidden="true" />
+          </button>
         ) : null}
 
         {host.bio ? (
@@ -160,7 +175,84 @@ function HostCard({ host, now }: { host: HostRow; now: number }) {
           </div>
         </div>
       </div>
-    </Link>
+    </div>
+  );
+}
+
+// The same session details modal as on the Sessions page, over this page.
+export function HostSessionDetails({ sessionId, onClose }: { sessionId: string; onClose: () => void }) {
+  const navigate = useNavigate();
+  const { user, profile } = useAuth();
+  const [session, setSession] = useState<any | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  const reload = useCallback(async () => {
+    const loaded = await loadSessionForDetails(sessionId);
+    if (loaded) setSession(loaded);
+    else setFailed(true);
+  }, [sessionId]);
+
+  useEffect(() => {
+    setSession(null);
+    setFailed(false);
+    void reload();
+  }, [reload]);
+
+  if (failed) {
+    return (
+      <div className="fixed inset-0 z-[950] flex items-center justify-center bg-black/30 p-6" role="dialog" aria-modal="true" onClick={onClose}>
+        <div className="rounded-[24px] bg-white px-6 py-5 text-[14px] text-[#2F2F2F] shadow-xl">This session is no longer available.</div>
+      </div>
+    );
+  }
+  if (!session) {
+    return (
+      <div className="fixed inset-0 z-[950] flex items-center justify-center bg-black/30" aria-label="Loading session">
+        <span className="h-8 w-8 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+      </div>
+    );
+  }
+
+  const book = async (id: string, opts: BookSessionOptions = {}) => {
+    if (!user) {
+      navigate(`/login?next=${encodeURIComponent("/hosts")}`);
+      return false;
+    }
+    const { error } = await supabase.rpc("save_session_booking", {
+      p_session_id: id,
+      p_booked_start_time: opts.booked_start_time || null,
+      p_booked_end_time: opts.booked_end_time || null,
+      p_booking_note: opts.booking_note || null,
+      p_booking_role: opts.booking_role || "participant",
+    });
+    if (error) {
+      console.error("[hosts] booking failed", error);
+      return false;
+    }
+    captureProductEvent("session_booked", { booking_mode: "whole_session", booking_role: opts.booking_role || "participant", source: "hosts" });
+    await reload();
+    return true;
+  };
+
+  const cancel = async (id: string) => {
+    if (!user) return;
+    const { error } = await supabase.from("session_bookings").delete().eq("session_id", id).eq("user_id", user.id);
+    if (error) console.error("[hosts] cancel failed", error);
+    await reload();
+  };
+
+  return (
+    <SessionCard
+      detailsOnly
+      onDetailsClose={onClose}
+      session={session}
+      userId={user?.id}
+      currentUser={user?.id ? { id: user.id, full_name: profile?.full_name || undefined, avatar_url: profile?.avatar_url || undefined } : undefined}
+      onJoin={(id) => navigate(`/room-livekit/${id}`)}
+      onBook={book}
+      onCancelBooking={(id) => void cancel(id)}
+      onDelete={() => undefined}
+    />
   );
 }
 
@@ -187,6 +279,8 @@ export default function HostsPage() {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [now] = useState(() => Date.now());
+  const [detailsSessionId, setDetailsSessionId] = useState<string | null>(null);
+  const closeDetails = useCallback(() => setDetailsSessionId(null), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -335,11 +429,14 @@ export default function HostsPage() {
         ) : (
           <section className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {visible.map((host) => (
-              <HostCard key={host.user_id} host={host} now={now} />
+              <HostCard key={host.user_id} host={host} now={now} onOpenSession={setDetailsSessionId} />
             ))}
           </section>
         )}
       </div>
+      {detailsSessionId ? (
+        <HostSessionDetails key={detailsSessionId} sessionId={detailsSessionId} onClose={closeDetails} />
+      ) : null}
     </main>
   );
 }

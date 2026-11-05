@@ -53,7 +53,7 @@ function getSupabase(): SupabaseClient | null {
     return supabase;
 }
 
-type BookSessionOptions = {
+export type BookSessionOptions = {
     booked_start_time?: string | null;
     booked_end_time?: string | null;
     booking_note?: string | null;
@@ -64,6 +64,10 @@ interface SessionCardProps {
     session: any;
     musicPlaying?: boolean;
     userId?: string;
+    /** Render only the session details modal, already open (no card). */
+    detailsOnly?: boolean;
+    /** Called when the detailsOnly modal is closed. */
+    onDetailsClose?: () => void;
 
     onBook: (sessionId: string, opts?: BookSessionOptions) => boolean | Promise<boolean>;
     onCancelBooking: (sessionId: string) => void;
@@ -4656,6 +4660,8 @@ export default function SessionCard({
     onVisibilityChange,
     onPinnedChange,
     currentUser,
+    detailsOnly = false,
+    onDetailsClose,
 }: SessionCardProps) {
     const navigate = useNavigate();
     const [hostIdOverride, setHostIdOverride] = useState<string | null>(null);
@@ -4785,7 +4791,15 @@ export default function SessionCard({
 
     const liveIdSet = useMemo(() => new Set(liveUsers.map((u) => u.id)), [liveUsers]);
 
-    const [isBookersModalOpen, setIsBookersModalOpen] = useState(false);
+    // detailsOnly: no card, just this session's details modal (opened from
+    // elsewhere, e.g. the hosts page); closing it hands control back.
+    const [isBookersModalOpen, setIsBookersModalOpen] = useState(detailsOnly);
+    const detailsWereOpenRef = useRef(detailsOnly);
+    useEffect(() => {
+        if (!detailsOnly) return;
+        if (isBookersModalOpen) detailsWereOpenRef.current = true;
+        else if (detailsWereOpenRef.current) onDetailsClose?.();
+    }, [detailsOnly, isBookersModalOpen, onDetailsClose]);
     const [isLiveUsersModalOpen, setIsLiveUsersModalOpen] = useState(false);
     const [isBookingTimeModalOpen, setIsBookingTimeModalOpen] = useState(false);
     const [bookingDateDraft, setBookingDateDraft] = useState(() => {
@@ -5978,6 +5992,7 @@ export default function SessionCard({
 
     return (
         <>
+            {detailsOnly ? null : (
             <div
                 onMouseEnter={() => setIsHoveringCard(true)}
                 onMouseLeave={() => setIsHoveringCard(false)}
@@ -6410,6 +6425,7 @@ export default function SessionCard({
                     </div>
                 </div>
             </div>
+            )}
 
             <ModalShell
                 title="Host this room"
