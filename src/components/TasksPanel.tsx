@@ -3637,7 +3637,7 @@ export function TasksPanel({
             ].join(" ")}
             title="Time spent on this task"
           >
-            <TaskTimerIcon size={14} />
+            <TaskTimerIcon size={14} className="text-[#2F2F2F]" />
             <span>{formatTaskTimer(elapsedMs)}</span>
           </div>
 
@@ -4797,7 +4797,7 @@ export function TasksPanel({
               aria-label={taskTimersEnabled ? "Disable Timer" : "Enable Timer"}
               aria-pressed={taskTimersEnabled}
             >
-              <TaskTimerIcon size={22} />
+              <TaskTimerIcon size={22} className="text-[#2F2F2F]" />
             </button>
 
             <button
@@ -5230,7 +5230,7 @@ export function TasksPanel({
                         {item.completed ? (
                           <AnimatedTodoCheck completed size={17} />
                         ) : (
-                          <TaskTimerIcon size={16} />
+                          <TaskTimerIcon size={16} className="text-[#2F2F2F]" />
                         )}
                       </div>
 
