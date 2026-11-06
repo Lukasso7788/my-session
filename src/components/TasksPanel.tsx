@@ -4797,7 +4797,8 @@ export function TasksPanel({
               aria-label={taskTimersEnabled ? "Disable Timer" : "Enable Timer"}
               aria-pressed={taskTimersEnabled}
             >
-              <TaskTimerIcon size={22} />
+              {/* Off: the icon itself is #2F2F2F; on, it follows the button's blue. */}
+              <TaskTimerIcon size={22} className={taskTimersEnabled ? "" : "text-[#2F2F2F]"} />
             </button>
 
             <button
