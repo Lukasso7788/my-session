@@ -24,6 +24,10 @@ import {
   Pin,
   PinOff,
   ArrowLeft,
+  Pause,
+  Play,
+  RotateCcw,
+  Save,
 } from "lucide-react";
 import TaskTimerIcon from "./TaskTimerIcon";
 import { supabase } from "../lib/supabase";
@@ -3595,14 +3599,12 @@ export function TasksPanel({
       ownerUserId,
       text,
       fallbackId,
-      compact = false,
       focusPlanItemId = null,
       sessionTaskId = null,
     }: {
       ownerUserId: unknown;
       text: unknown;
       fallbackId?: unknown;
-      compact?: boolean;
       focusPlanItemId?: string | null;
       sessionTaskId?: string | null;
     }) => {
@@ -3617,78 +3619,74 @@ export function TasksPanel({
 
       if (!isMine && elapsedMs <= 0) return null;
 
-      const buttonBase = "h-7 rounded-full border px-2 text-[11px] font-bold transition inline-flex items-center justify-center";
-      const shellBase = compact
-        ? "mt-2 flex flex-wrap items-center gap-1.5"
-        : "mt-2 flex flex-wrap items-center gap-2";
+      // One pill in the task's own row, so turning timers on does not double
+      // every row's height. Save and Reset only appear on hover or focus, and
+      // only once there is time to save.
+      const pillBase = "inline-flex h-7 shrink-0 items-center gap-1 rounded-full border pl-1.5 pr-2 text-[11px] font-bold tabular-nums transition";
+      const pillTone = running
+        ? "border-[#5286F6] bg-[#5286F6]/15 text-[#5286F6]"
+        : "border-[#CFC6C6] bg-[#F3F1F1] text-black/60";
+      const iconButtonBase = "h-7 w-7 shrink-0 items-center justify-center rounded-full border transition";
+      const hoverOnly = "hidden group-hover:inline-flex group-focus-within:inline-flex";
 
       return (
         <div
-          className={shellBase}
+          className="flex shrink-0 items-center gap-1"
           onClick={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
         >
-          <div
-            className={[
-              "inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-bold tabular-nums",
-              running
-                ? "border-[#5286F6] bg-[#5286F6]/15 text-[#5286F6]"
-                : "border-[#CFC6C6] bg-[#F3F1F1] text-black/60",
-            ].join(" ")}
-            title="Time spent on this task"
-          >
-            <TaskTimerIcon size={18} />
-            <span>{formatTaskTimer(elapsedMs)}</span>
-          </div>
-
           {isMine ? (
+            <button
+              type="button"
+              onClick={() => toggleTaskTimer(ownerUserId, text, fallbackId)}
+              className={`${pillBase} ${pillTone} ${running ? "hover:bg-[#5286F6]/25" : "hover:bg-[#ECEAEA]"}`}
+              title={running ? "Pause timer" : "Start timer"}
+              aria-label={`${running ? "Pause timer" : "Start timer"}, ${formatTaskTimer(elapsedMs)} so far`}
+            >
+              <TaskTimerIcon size={18} />
+              <span>{formatTaskTimer(elapsedMs)}</span>
+              {running ? (
+                <Pause size={11} fill="currentColor" aria-hidden="true" />
+              ) : (
+                <Play size={11} fill="currentColor" className="text-[#5286F6]" aria-hidden="true" />
+              )}
+            </button>
+          ) : (
+            <div className={`${pillBase} ${pillTone} pr-2.5`} title="Time spent on this task">
+              <TaskTimerIcon size={18} />
+              <span>{formatTaskTimer(elapsedMs)}</span>
+            </div>
+          )}
+
+          {isMine && elapsedMs > 0 ? (
             <>
               <button
                 type="button"
-                onClick={() => toggleTaskTimer(ownerUserId, text, fallbackId)}
-                className={[
-                  buttonBase,
-                  running
-                    ? "border-[#F65252]/50 bg-[#F65252]/10 text-[#F65252] hover:bg-[#F65252]/15"
-                    : "border-[#5286F6] bg-[#5286F6]/15 text-[#5286F6] hover:bg-[#5286F6]/25",
-                ].join(" ")}
-                title={running ? "Pause timer" : "Start timer"}
+                onClick={() =>
+                  void saveTaskTimerMeasurement({
+                    ownerUserId,
+                    text,
+                    fallbackId,
+                    focusPlanItemId,
+                    sessionTaskId,
+                  })
+                }
+                className={`${iconButtonBase} ${saved ? "inline-flex" : hoverOnly} border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/20`}
+                title={saved ? "Saved to Tasks" : "Save this time measurement to Tasks"}
+                aria-label={saved ? "Saved to Tasks" : "Save this time measurement to Tasks"}
               >
-                {running ? "Pause" : "Start"}
+                {saved ? <Check size={14} aria-hidden="true" /> : <Save size={13} aria-hidden="true" />}
               </button>
 
-              {elapsedMs > 0 ? (
-                <button
-                  type="button"
-                  onClick={() =>
-                    void saveTaskTimerMeasurement({
-                      ownerUserId,
-                      text,
-                      fallbackId,
-                      focusPlanItemId,
-                      sessionTaskId,
-                    })
-                  }
-                  className={`${buttonBase} ${saved
-                    ? "border-[#5286F6] bg-[#5286F6]/15 text-[#5286F6]"
-                    : "border-[#5286F6] bg-[#5286F6]/10 text-[#5286F6] hover:bg-[#5286F6]/15"
-                    }`}
-                  title="Save this time measurement to Tasks"
-                >
-                  {saved ? "Saved" : "Save"}
-                </button>
-              ) : null}
-
-              {elapsedMs > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => resetTaskTimer(ownerUserId, text, fallbackId)}
-                  className={`${buttonBase} border-[#CFC6C6] bg-[#F7F5F5] text-black/55 hover:bg-[#ECEAEA]`}
-                  title="Reset timer"
-                >
-                  Reset
-                </button>
-              ) : null}
+              <button
+                type="button"
+                onClick={() => resetTaskTimer(ownerUserId, text, fallbackId)}
+                className={`${iconButtonBase} ${hoverOnly} border-[#CFC6C6] bg-[#F7F5F5] text-black/55 hover:bg-[#ECEAEA]`}
+                title="Reset timer"
+                aria-label="Reset timer"
+              >
+                <RotateCcw size={13} aria-hidden="true" />
+              </button>
             </>
           ) : null}
         </div>
@@ -4937,7 +4935,8 @@ export function TasksPanel({
                         }
                       >
                         {!isEditing ? (
-                          <>
+                          <div className="flex min-w-0 items-center gap-2">
+                          <div className="min-w-0 flex-1">
                           {/* A div rather than a button: Safari and Firefox will not start
                               dragging the row from a button, and the whole row is the drag
                               area (there is no separate handle). */}
@@ -4983,7 +4982,14 @@ export function TasksPanel({
                           {formatTaskAddedAt(i.created_at) ? (
                             <span className={taskAddedAtCls}>{formatTaskAddedAt(i.created_at)}</span>
                           ) : null}
-                          </>
+                          </div>
+                          {renderTaskTimerControls({
+                            ownerUserId: user?.id || i.user_id,
+                            text: i.text,
+                            fallbackId: i.id,
+                            focusPlanItemId: i.focus_plan_item_id || null,
+                          })}
+                          </div>
                         ) : (
                           <input
                             value={editingText}
@@ -5101,16 +5107,6 @@ export function TasksPanel({
                       </div>
                     </div>
 
-                    {!isEditing ? (
-                      <div className="pl-[42px]">
-                        {renderTaskTimerControls({
-                          ownerUserId: user?.id || i.user_id,
-                          text: i.text,
-                          fallbackId: i.id,
-                          focusPlanItemId: i.focus_plan_item_id || null,
-                        })}
-                      </div>
-                    ) : null}
                   </div>
                 );
               })}
@@ -5206,17 +5202,15 @@ export function TasksPanel({
                       {formatTaskAddedAt(item.created_at) ? (
                         <span className={taskAddedAtCls}>{formatTaskAddedAt(item.created_at)}</span>
                       ) : null}
+                    </div>
 
+                    <div className="shrink-0 self-center flex items-center gap-2">
                       {renderTaskTimerControls({
                         ownerUserId: item.user_id,
                         text: item.text,
                         fallbackId: item.id,
                         sessionTaskId: item.id,
-                        compact: true,
                       })}
-                    </div>
-
-                    <div className="shrink-0 self-center flex items-center gap-2">
                       <div
                         className={[
                           "h-8 w-8 rounded-full border text-[12px] font-medium inline-flex items-center justify-center shrink-0",
