@@ -93,8 +93,6 @@ import { USAGE_TRACKING_ENABLED } from "../lib/flags";
 import { incrementWeeklyUsage } from "../lib/usage";
 import { isValidTimeZone } from "../lib/timezones";
 import { ParticipantTimeLabel } from "./livekit/ParticipantTimeLabel";
-import { resolveStageVisual } from "../components/SessionStageBar";
-import { focusBlocksFromStages } from "../lib/taskBlocks";
 import {
   loadEntitlementState,
   isPersonalPaywallForced,
@@ -7174,13 +7172,6 @@ export function RoomPageLiveKit({
 
     return false;
   }, [session]);
-
-  // Focus blocks my tasks can be planned for (Tasks panel chip). Infinite
-  // rooms repeat their flow, so "Focus 2" would be ambiguous there.
-  const taskFocusBlocks = useMemo(
-    () => (isInfiniteRoom ? [] : focusBlocksFromStages(stages as any[], (stage) => resolveStageVisual(stage))),
-    [isInfiniteRoom, stages],
-  );
 
   const isFreeFlowRoom = useMemo(() => {
     const parsed = safeParseJson(session?.schedule);
@@ -21192,8 +21183,6 @@ export function RoomPageLiveKit({
                         });
                       }}
                       accountabilityWallOpen={mainViewMode === "accountability"}
-                      focusBlocks={taskFocusBlocks}
-                      currentStageIndex={taskFocusBlocks.length ? currentStage : null}
                       onPublicTasksChange={handlePublicPanelTasksChange}
                       onToggleAccountabilityWall={() => {
                         setMainViewMode((v) =>
