@@ -23668,12 +23668,12 @@ export function RoomPageLiveKit({
                   !canModerateTarget ||
                   !remoteCamTrackSid;
 
-                const participantActionButtonCls = `w-full px-4 py-3 text-left text-[13px] transition ${isLight
+                const participantActionButtonCls = `w-full px-4 py-2 text-left text-[13px] transition ${isLight
                   ? "text-black/85 hover:bg-[#E8E8E8]"
                   : "text-white/90 hover:bg-[#303030]"
                   }`;
 
-                const participantActionButtonDisabledCls = `w-full px-4 py-3 text-left text-[13px] transition disabled:cursor-not-allowed disabled:opacity-50 ${isLight
+                const participantActionButtonDisabledCls = `w-full px-4 py-2 text-left text-[13px] transition disabled:cursor-not-allowed disabled:opacity-50 ${isLight
                   ? "text-black/55 bg-transparent"
                   : "text-white/55 bg-transparent"
                   }`;
@@ -23708,7 +23708,7 @@ export function RoomPageLiveKit({
                               await grantModerator(pidBase);
                               closeTileMenu();
                             }}
-                            className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
+                            className={`w-full px-4 py-2 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
                           >
                             Make moderator
                           </button>
@@ -23721,7 +23721,7 @@ export function RoomPageLiveKit({
                               await revokeModerator(pidBase);
                               closeTileMenu();
                             }}
-                            className={`w-full px-4 py-3 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
+                            className={`w-full px-4 py-2 text-left text-[13px] transition disabled:opacity-50 ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
                           >
                             Remove moderator
                           </button>
@@ -23741,7 +23741,7 @@ export function RoomPageLiveKit({
                           />
 
                           <div
-                            className={`px-4 py-2 font-inter text-[12px] font-bold ${isLight ? "text-black/55" : "text-white/55"}`}
+                            className={`px-4 pb-1 pt-2 font-inter text-[12px] font-bold ${isLight ? "text-black/55" : "text-white/55"}`}
                           >
                             Participant actions
                           </div>
@@ -23839,7 +23839,7 @@ export function RoomPageLiveKit({
                               togglePin(targetTile.id);
                               closeTileMenu();
                             }}
-                            className={`block w-full px-4 py-3 text-left text-[13px] transition ${isLight
+                            className={`block w-full px-4 py-2 text-left text-[13px] transition ${isLight
                               ? "text-black/85 hover:bg-[#E8E8E8]"
                               : "text-white/90 hover:bg-[#303030]"
                               }`}
@@ -23853,7 +23853,7 @@ export function RoomPageLiveKit({
                               toggleHide(targetTile.id);
                               closeTileMenu();
                             }}
-                            className={`block w-full px-4 py-3 text-left text-[13px] transition ${isLight
+                            className={`block w-full px-4 py-2 text-left text-[13px] transition ${isLight
                               ? "text-black/85 hover:bg-[#E8E8E8]"
                               : "text-white/90 hover:bg-[#303030]"
                               }`}
@@ -23873,7 +23873,7 @@ export function RoomPageLiveKit({
                                 setReportModalOpen(true);
                                 closeTileMenu();
                               }}
-                              className={`block w-full px-4 py-3 text-left text-[13px] transition ${isLight
+                              className={`block w-full px-4 py-2 text-left text-[13px] transition ${isLight
                                 ? "text-black/85 hover:bg-[#E8E8E8]"
                                 : "text-white/90 hover:bg-[#303030]"
                                 }`}
@@ -23896,7 +23896,7 @@ export function RoomPageLiveKit({
                                   targetTile.label || undefined,
                                 );
                               }}
-                              className={`w-full px-4 py-3 text-left text-[13px] transition disabled:cursor-not-allowed disabled:opacity-50 ${isLight
+                              className={`w-full px-4 py-2 text-left text-[13px] transition disabled:cursor-not-allowed disabled:opacity-50 ${isLight
                                 ? "text-red-600 hover:bg-red-50"
                                 : "text-red-300 hover:bg-red-500/10"
                                 }`}
@@ -24006,7 +24006,7 @@ export function RoomPageLiveKit({
                             setScreenSharePinned(!isThisPinnedScreen);
                             closeTileMenu();
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight
+                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight
                             ? "text-black/85 hover:bg-[#E8E8E8]"
                             : "text-white/90 hover:bg-[#303030]"
                             }`}
@@ -24026,7 +24026,7 @@ export function RoomPageLiveKit({
                         setSettingsPreviewVersion((v) => v + 1);
                         closeTileMenu();
                       }}
-                      className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
+                      className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
                     >
                       Video room settings
                     </button>
@@ -24042,7 +24042,7 @@ export function RoomPageLiveKit({
                         />
 
                         <div
-                          className={`px-4 py-2 font-inter text-[12px] font-bold ${isLight ? "text-black/55" : "text-white/55"}`}
+                          className={`px-4 pb-1 pt-2 font-inter text-[12px] font-bold ${isLight ? "text-black/55" : "text-white/55"}`}
                         >
                           Status
                         </div>
@@ -24059,7 +24059,7 @@ export function RoomPageLiveKit({
                               220,
                             );
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
+                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
                         >
                           Clear status
                         </button>
@@ -24076,7 +24076,7 @@ export function RoomPageLiveKit({
                               220,
                             );
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
+                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
                         >
                           AFK
                         </button>
@@ -24093,7 +24093,7 @@ export function RoomPageLiveKit({
                               220,
                             );
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
+                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
                         >
                           Taking a break
                         </button>
@@ -24110,7 +24110,7 @@ export function RoomPageLiveKit({
                               220,
                             );
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
+                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
                         >
                           Skip me
                         </button>
@@ -24126,7 +24126,7 @@ export function RoomPageLiveKit({
                               220,
                             );
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
+                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
                         >
                           <span className="inline-flex items-center gap-2">
                             <span>Skip me</span>
@@ -24146,7 +24146,7 @@ export function RoomPageLiveKit({
                               220,
                             );
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
+                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
                         >
                           On a call
                         </button>
@@ -24163,7 +24163,7 @@ export function RoomPageLiveKit({
                               220,
                             );
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
+                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
                         >
                           Eating
                         </button>
@@ -24180,7 +24180,7 @@ export function RoomPageLiveKit({
                               220,
                             );
                           }}
-                          className={`w-full px-4 py-3 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
+                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
                         >
                           Private
                         </button>
