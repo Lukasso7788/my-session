@@ -1,7 +1,7 @@
 -- Public sessions can be created only by people who have attended at least 10
 -- sessions (the canonical lifetime count, calculate_lifetime_session_count).
 -- Private sessions (is_private = true, direct link only) are open to everyone.
--- Admins are exempt. Server-side inserts (service role, auth.uid() is null),
+-- Admins and an explicit list of people the owner exempted are not limited. Server-side inserts (service role, auth.uid() is null),
 -- such as 1:1 partner sessions from api/livekit/admin.ts, are not affected.
 -- Existing sessions are not changed. Mirrors src/lib/hostingEligibility.ts.
 
@@ -23,7 +23,11 @@ begin
   if tg_op = 'UPDATE' and coalesce(old.is_private, false) = false then
     return new;
   end if;
-  if public.is_app_admin() then
+  -- Admins, and the people the owner exempted (same list as
+  -- PUBLIC_HOSTING_EXEMPT_USER_IDS in src/lib/hostingEligibility.ts).
+  if public.is_app_admin() or v_user_id = any (array[
+    '532889eb-2819-430f-b156-86cfba865b16'::uuid -- Bethany Fishbein
+  ]) then
     return new;
   end if;
 

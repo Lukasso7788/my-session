@@ -804,7 +804,7 @@ export function CreateSessionModal({
       cancelled = true;
     };
   }, [isOpen, user?.id]);
-  const publicHostingOpen = canCreatePublicSession({ attended: attendedCount, isAdmin: isAppAdmin });
+  const publicHostingOpen = canCreatePublicSession({ attended: attendedCount, isAdmin: isAppAdmin, userId: user?.id });
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
