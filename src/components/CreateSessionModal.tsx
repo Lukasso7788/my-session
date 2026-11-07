@@ -40,7 +40,6 @@ import { resolveStageVisual } from "./SessionStageBar";
 import { withRoomPolicies } from "../lib/roomPolicies";
 import { CHECK_IN_BREAK_TITLE, INTENTIONS_COLOR, isCheckInBreakName } from "../lib/checkInBreak";
 import { isCurrentUserAdmin } from "../lib/bans";
-import { PUBLIC_HOSTING_MIN_ATTENDED, canCreatePublicSession, sessionsUntilPublicHosting } from "../lib/hostingEligibility";
 import {
   DEFAULT_BOOKEND_MINUTES,
   GOALS_PHASE_COLOR,
@@ -791,21 +790,6 @@ export function CreateSessionModal({
     };
   }, [isOpen, user?.id]);
 
-  // Public sessions need PUBLIC_HOSTING_MIN_ATTENDED attended sessions;
-  // admins are exempt and private sessions are open to everyone.
-  const [attendedCount, setAttendedCount] = useState<number | null>(null);
-  useEffect(() => {
-    if (!isOpen || !user?.id) return;
-    let cancelled = false;
-    void supabase.rpc("get_lifetime_attendance_count").then(({ data, error }) => {
-      if (!cancelled) setAttendedCount(error ? null : Math.max(0, Number(data || 0)));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [isOpen, user?.id]);
-  const publicHostingOpen = canCreatePublicSession({ attended: attendedCount, isAdmin: isAppAdmin, userId: user?.id });
-
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
@@ -819,8 +803,6 @@ export function CreateSessionModal({
   const [selectedPresetKey, setSelectedPresetKey] = useState<PresetKey | null>(null);
   const [presetCycles, setPresetCycles] = useState<number>(3);
   const [accessMode, setAccessMode] = useState<AccessMode>("public");
-  // Below the attendance limit every new session is private.
-  const effectiveAccessMode: AccessMode = publicHostingOpen ? accessMode : "private";
   const [cameraRequired, setCameraRequired] = useState(false);
   const [screenShareRequired, setScreenShareRequired] = useState(false);
   const [cameraOrScreenShareRequired, setCameraOrScreenShareRequired] = useState(false);
@@ -2440,7 +2422,7 @@ export function CreateSessionModal({
           jitsi_domain: FIXED_JITSI_DOMAIN,
 
           max_participants: effectiveMaxParticipants,
-          is_private: effectiveAccessMode === "private",
+          is_private: accessMode === "private",
           assigned_server_id: placement.server.id,
           placement_weight: placement.placementWeight,
           assigned_at: new Date().toISOString(),
@@ -3424,19 +3406,16 @@ export function CreateSessionModal({
                           ["public", "Public", "earth-americas", "Visible on the sessions page and joinable through its link."],
                           ["private", "Private", "lock", "Hidden from the public sessions list. Share the direct link to invite someone."],
                         ] as const).map(([mode, label, icon, helper]) => {
-                          const selected = effectiveAccessMode === mode;
-                          const locked = mode === "public" && !publicHostingOpen;
+                          const selected = accessMode === mode;
                           return (
                             <button
                               key={mode}
                               type="button"
-                              title={locked ? `Public sessions open after ${PUBLIC_HOSTING_MIN_ATTENDED} attended sessions.` : helper}
+                              title={helper}
                               onClick={() => setAccessMode(mode as AccessMode)}
-                              disabled={locked}
                               className={[
                                 "inline-flex items-center gap-1.5 rounded-[9px] px-3 font-inter text-[13px] font-semibold transition",
                                 selected ? "bg-[#2F2F2F] text-white shadow-sm" : "text-[#667085] hover:text-[#2F2F2F]",
-                                "disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:text-[#667085]",
                               ].join(" ")}
                               aria-pressed={selected}
                             >
@@ -3446,13 +3425,6 @@ export function CreateSessionModal({
                           );
                         })}
                       </div>
-                      {!publicHostingOpen ? (
-                        <p className="mt-1.5 font-inter text-[12px] leading-[1.45] text-[#667085]" role="note">
-                          Public sessions open after you attend {PUBLIC_HOSTING_MIN_ATTENDED} sessions
-                          ({Math.min(attendedCount ?? 0, PUBLIC_HOSTING_MIN_ATTENDED)}/{PUBLIC_HOSTING_MIN_ATTENDED}, {sessionsUntilPublicHosting(attendedCount)} to go).
-                          Until then you can host a private session and share its link.
-                        </p>
-                      ) : null}
                     </fieldset>
 
                     <fieldset>
@@ -3526,7 +3498,7 @@ export function CreateSessionModal({
                   </div>
 
                   <p className="mt-2.5 font-inter text-[12px] leading-5 text-[#667085]">
-                    {effectiveAccessMode === "private"
+                    {accessMode === "private"
                       ? "Private: hidden from the sessions list, join by direct link."
                       : "Public: listed on the sessions page."}
                     {" "}
@@ -3618,8 +3590,8 @@ export function CreateSessionModal({
                         : "Based on selected structure"}</span></div>
                     <div className="flex items-center gap-3"><UiIcon name="users" size={16} className="text-[#98A2B3]" /><span>Up to {maxParticipants} participants</span></div>
                     <div className="flex items-center gap-3">
-                      <UiIcon name={effectiveAccessMode === "private" ? "lock" : "earth-americas"} size={16} className="text-[#98A2B3]" />
-                      <span>{effectiveAccessMode === "private" ? "Private · direct link only" : "Public session"}</span>
+                      <UiIcon name={accessMode === "private" ? "lock" : "earth-americas"} size={16} className="text-[#98A2B3]" />
+                      <span>{accessMode === "private" ? "Private · direct link only" : "Public session"}</span>
                     </div>
                   </div>
                 </div>
