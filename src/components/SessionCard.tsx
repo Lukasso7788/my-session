@@ -5936,9 +5936,10 @@ export default function SessionCard({
     ]);
 
     // Group sessions show one button: Book session (filled) until the room
-    // opens 10 minutes before the start, then Join session. Hosts and
-    // admins keep both, so they can always open their room.
-    const singleButtonMode = isGroupSession && !canManageSession;
+    // opens 10 minutes before the start, then Join session. Only the
+    // session's own host keeps both, so they can open their room early;
+    // admins see the same single button as everyone else.
+    const singleButtonMode = isGroupSession && !isHost;
     const joinWindowOpen = Number.isFinite(presenceOpensAt) && presenceTime >= presenceOpensAt;
     const showJoinButton = !singleButtonMode || joinWindowOpen;
     const showBookingButton = !singleButtonMode || !joinWindowOpen;
