@@ -6007,12 +6007,7 @@ export default function SessionCard({
                     : undefined}
             onMouseEnter={isInfinite ? undefined : onEnterBooked}
             onMouseLeave={isInfinite ? undefined : onLeaveBooked}
-            className={bookingFilled ? `
-                h-12 rounded-full px-6 text-[14px] font-semibold text-white
-                flex items-center justify-center gap-2
-                transition-all duration-300 ease-in-out
-                w-full min-[1024px]:w-auto min-[1024px]:min-w-[180px]
-            ` : `
+            className={`
                 h-12 rounded-full text-[14px] font-semibold
                 flex items-center justify-center
                 transition-all duration-300 ease-in-out
@@ -6022,23 +6017,12 @@ export default function SessionCard({
                     : "px-5 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
                 }
             `}
-            style={bookingFilled
-                // Booked: filled in the session type's colour; red while it offers cancelling.
-                ? { backgroundColor: isHoveringCancel ? "#F65252" : t.color, willChange: "width, padding" }
-                : { willChange: "width, padding" }}
+            style={{ willChange: "width, padding" }}
         >
             {!isInfinite && isHoveringCancel ? (
                 <>
-                    <img src="/icons/cross-cancel.svg" className={`w-6 h-6 mr-2 ${bookingFilled ? "brightness-0 invert" : ""}`} alt="" />
+                    <img src="/icons/cross-cancel.svg" className="w-6 h-6 mr-2" alt="" />
                     Cancel booking
-                </>
-            ) : bookingFilled ? (
-                <>
-                    <img src="/icons/book-session.svg" className="w-4 h-4 brightness-0 invert" alt="" />
-                    Booked
-                    {bookedCount >= BOOKED_COUNT_SHOW_FROM ? (
-                        <span className="tabular-nums opacity-80">· {bookedCount}</span>
-                    ) : null}
                 </>
             ) : (
                 <>
