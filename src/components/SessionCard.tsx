@@ -69,10 +69,9 @@ interface SessionCardProps {
     /** Called when the detailsOnly modal is closed. */
     onDetailsClose?: () => void;
     /**
-     * Wide screens (1280px+): a column before the avatar with a scheduled
-     * session's start and end time (replacing the small date in the details
-     * row) or "24/7" for an always-open room. For lists grouped by day, where
-     * the date is already in the heading.
+     * Scheduled sessions on wide screens (1280px+): start and end time in a
+     * column before the avatar instead of the small date in the details row.
+     * For lists grouped by day, where the date is already in the heading.
      */
     showTimeColumn?: boolean;
 
@@ -5169,13 +5168,9 @@ export default function SessionCard({
         })
         : "";
 
-    // Wide-screen time column: "10:30 AM" over "– 12:30 PM"; "24/7" for rooms that never close.
+    // Wide-screen time column: "10:30 AM" over "– 12:30 PM".
     const startMs = session.start_time ? Date.parse(session.start_time) : NaN;
-    const timeColumn = !showTimeColumn
-        ? null
-        : isInfinite
-        ? { start: "24/7", end: null }
-        : Number.isFinite(startMs)
+    const timeColumn = showTimeColumn && !isInfinite && Number.isFinite(startMs)
         ? (() => {
             const format = (ms: number) =>
                 new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
