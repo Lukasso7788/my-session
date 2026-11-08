@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { isValidElement, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { SessionsDateFilter } from "./SessionsDateFilter";
 import { SessionTypeSwitcher } from "./SessionTypeSwitcher";
@@ -34,6 +34,19 @@ type Props = {
   error: string | null;
   onRetry: () => void;
 };
+
+/** Cards joined into one block: inner corners square, neighbouring borders shared (see index.css). */
+function SessionCardStack({ cards }: { cards: ReactNode[] }) {
+  return (
+    <div className="session-card-stack">
+      {cards.map((card, index) => (
+        <div key={isValidElement(card) && card.key != null ? card.key : index} className="session-card-stack-item">
+          {card}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function UnifiedSessionsLayout({
   infiniteRoomsIntro,
@@ -186,11 +199,7 @@ export default function UnifiedSessionsLayout({
             <div className="space-y-10 md:space-y-12">
               <section id="infinite-rooms" ref={infiniteRef} aria-labelledby="always-open-heading" style={{ scrollMarginTop: anchorOffset }}>
                 {alwaysOpenCards.length > 0 ? (
-                  <div
-                    className="space-y-3 md:space-y-6"
-                  >
-                    {alwaysOpenCards}
-                  </div>
+                  <SessionCardStack cards={alwaysOpenCards} />
                 ) : (
                   <p className="py-8 text-center text-sm text-[#606060]">No 24/7 rooms available right now.</p>
                 )}
@@ -227,9 +236,7 @@ export default function UnifiedSessionsLayout({
                             {group.cards.length} {group.cards.length === 1 ? "session" : "sessions"}
                           </div>
                         </div>
-                        <div className="space-y-3 md:space-y-6">
-                          {group.cards}
-                        </div>
+                        <SessionCardStack cards={group.cards} />
                       </section>
                     ))}
                   </div>

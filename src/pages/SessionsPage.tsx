@@ -2590,6 +2590,7 @@ const visibleSessions = useMemo(() => {
       canManageAnySession={isSuperAdmin}
       onVisibilityChange={isSuperAdmin ? setSessionHidden : undefined}
       onPinnedChange={isSuperAdmin ? setSessionPinned : undefined}
+      showTimeColumn
     />
   );
 

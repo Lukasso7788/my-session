@@ -68,6 +68,12 @@ interface SessionCardProps {
     detailsOnly?: boolean;
     /** Called when the detailsOnly modal is closed. */
     onDetailsClose?: () => void;
+    /**
+     * Scheduled sessions on wide screens (1280px+): start and end time in a
+     * column before the avatar instead of the small date in the details row.
+     * For lists grouped by day, where the date is already in the heading.
+     */
+    showTimeColumn?: boolean;
 
     onBook: (sessionId: string, opts?: BookSessionOptions) => boolean | Promise<boolean>;
     onCancelBooking: (sessionId: string) => void;
@@ -4662,6 +4668,7 @@ export default function SessionCard({
     currentUser,
     detailsOnly = false,
     onDetailsClose,
+    showTimeColumn = false,
 }: SessionCardProps) {
     const navigate = useNavigate();
     const [hostIdOverride, setHostIdOverride] = useState<string | null>(null);
@@ -5160,6 +5167,20 @@ export default function SessionCard({
             minute: "2-digit",
         })
         : "";
+
+    // Wide-screen time column: "10:30 AM" over "– 12:30 PM".
+    const startMs = session.start_time ? Date.parse(session.start_time) : NaN;
+    const timeColumn = showTimeColumn && !isInfinite && Number.isFinite(startMs)
+        ? (() => {
+            const format = (ms: number) =>
+                new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+            const minutes = Number(session.duration_minutes);
+            return {
+                start: format(startMs),
+                end: Number.isFinite(minutes) && minutes > 0 ? format(startMs + minutes * 60_000) : null,
+            };
+        })()
+        : null;
 
     useEffect(() => {
         let cancelled = false;
@@ -5994,6 +6015,7 @@ export default function SessionCard({
         <>
             {detailsOnly ? null : (
             <div
+                data-session-card
                 onMouseEnter={() => setIsHoveringCard(true)}
                 onMouseLeave={() => setIsHoveringCard(false)}
                 onClick={(event) => {
@@ -6016,14 +6038,22 @@ export default function SessionCard({
                     border-borderGray
                     hover:bg-[#F6F6F6] hover:border-[#A3A3A3]
                     cursor-pointer
-                    px-5 py-4 sm:px-6 sm:py-[18px]
+                    px-5 py-[18px] sm:px-6 sm:py-[21px]
                     flex flex-col
                     w-full gap-4
                     ${isOptionsOpen || quickTimeline === "card" ? "z-[220]" : "z-0"}
                 `}
             >
                 <div className="flex flex-col min-[1024px]:flex-row min-[1024px]:items-center w-full gap-3 min-[1024px]:gap-3 xl:gap-4">
-                    <div className="flex w-full min-w-0 items-stretch justify-between gap-3 min-[1024px]:w-auto min-[1024px]:max-w-[600px] min-[1024px]:shrink-0">
+                    <div className={`flex w-full min-w-0 items-stretch justify-between gap-3 min-[1024px]:w-auto min-[1024px]:max-w-[600px] min-[1024px]:shrink-0 ${timeColumn ? "min-[1280px]:max-w-[720px] min-[1280px]:gap-4" : ""}`}>
+                        {timeColumn && (
+                            <div className="hidden min-[1280px]:flex w-[100px] shrink-0 flex-col justify-center self-center font-mono tabular-nums">
+                                <span className="whitespace-nowrap text-[17px] font-medium leading-tight text-[#2F2F2F]">{timeColumn.start}</span>
+                                {timeColumn.end && (
+                                    <span className="mt-1 whitespace-nowrap text-[12px] leading-tight text-[#8A8A8A]">– {timeColumn.end}</span>
+                                )}
+                            </div>
+                        )}
                         <Link
                             to={`/profile/${displayedHostId}`}
                             onClick={(event) => event.stopPropagation()}
@@ -6071,7 +6101,9 @@ export default function SessionCard({
                                 </div>
 
                                 {!isInfinite && (
-                                    <div className="flex items-center gap-1">
+                                    // With the time column, wide screens drop this small date,
+                                    // except for hosts, who edit the start time here.
+                                    <div className={`flex items-center gap-1 ${timeColumn && !canEdit ? "min-[1280px]:hidden" : ""}`}>
                                         <img src="/icons/date.svg" className="w-4 h-4 opacity-70" alt="" />
                                         <InlineEditableStart
                                             startTime={session.start_time}

@@ -303,3 +303,49 @@ body {
     display: none;
   }
 }
+
+/* Sessions page: a day's group sessions form one joined block. Neighbouring
+   cards share a border line; only the block's outer corners stay rounded. */
+.session-card-stack {
+  --session-stack-radius: 30px;
+}
+
+@media (min-width: 640px) {
+  .session-card-stack {
+    --session-stack-radius: 36px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .session-card-stack {
+    --session-stack-radius: 42px;
+  }
+}
+
+.session-card-stack > .session-card-stack-item {
+  position: relative;
+}
+
+.session-card-stack > .session-card-stack-item + .session-card-stack-item {
+  margin-top: -1px;
+}
+
+/* The hovered card's darker border sits above its neighbours'. */
+.session-card-stack > .session-card-stack-item:hover,
+.session-card-stack > .session-card-stack-item:focus-within {
+  z-index: 1;
+}
+
+.session-card-stack > .session-card-stack-item > [data-session-card] {
+  border-radius: 0;
+}
+
+.session-card-stack > .session-card-stack-item:first-child > [data-session-card] {
+  border-top-left-radius: var(--session-stack-radius);
+  border-top-right-radius: var(--session-stack-radius);
+}
+
+.session-card-stack > .session-card-stack-item:last-child > [data-session-card] {
+  border-bottom-left-radius: var(--session-stack-radius);
+  border-bottom-right-radius: var(--session-stack-radius);
+}
