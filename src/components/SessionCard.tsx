@@ -6245,7 +6245,7 @@ export default function SessionCard({
                         })()}
                     </div>
 
-                    <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_48px] items-center gap-3 min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end">
+                    <div className={`grid w-full ${showJoinButton && showBookingButton ? "grid-cols-[auto_minmax(0,1fr)_48px]" : "grid-cols-[minmax(0,1fr)_48px]"} items-center gap-3 min-[1024px]:flex min-[1024px]:w-auto min-[1024px]:shrink-0 min-[1024px]:justify-end`}>
                         {showLivePresence && <button
                             type="button"
                             onClick={() => {
