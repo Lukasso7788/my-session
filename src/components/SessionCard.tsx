@@ -5935,7 +5935,33 @@ export default function SessionCard({
         session?.duration_minutes,
     ]);
 
-    const bookSessionButton = (
+    // Group sessions show one button: Book session (filled) until the room
+    // opens 10 minutes before the start, then Join session. Hosts and
+    // admins keep both, so they can always open their room.
+    const singleButtonMode = isGroupSession && !canManageSession;
+    const joinWindowOpen = Number.isFinite(presenceOpensAt) && presenceTime >= presenceOpensAt;
+    const showJoinButton = !singleButtonMode || joinWindowOpen;
+    const showBookingButton = !singleButtonMode || !joinWindowOpen;
+    const bookingFilled = singleButtonMode;
+
+    const bookSessionButton = bookingFilled ? (
+        <button
+            onClick={handleBookSession}
+            aria-label="Book session"
+            onMouseEnter={() => setIsHoveringBook(true)}
+            onMouseLeave={() => setIsHoveringBook(false)}
+            className="
+                h-12 rounded-full px-6 text-[14px] font-semibold text-white
+                flex items-center justify-center gap-2
+                transition-all duration-200 ease-in-out
+                w-full min-[1024px]:w-auto min-[1024px]:min-w-[180px]
+            "
+            style={{ backgroundColor: isHoveringBook ? joinHoverBg : "#2f2f2f" }}
+        >
+            <img src="/icons/book-session.svg" className="w-4 h-4 brightness-0 invert" alt="" />
+            Book session
+        </button>
+    ) : (
         <button
             onClick={handleBookSession}
             aria-label={isInfinite ? "Host a time" : "Book session"}
@@ -5980,7 +6006,12 @@ export default function SessionCard({
                     : undefined}
             onMouseEnter={isInfinite ? undefined : onEnterBooked}
             onMouseLeave={isInfinite ? undefined : onLeaveBooked}
-            className={`
+            className={bookingFilled ? `
+                h-12 rounded-full px-6 text-[14px] font-semibold text-white
+                flex items-center justify-center gap-2
+                transition-all duration-300 ease-in-out
+                w-full min-[1024px]:w-auto min-[1024px]:min-w-[180px]
+            ` : `
                 h-12 rounded-full text-[14px] font-semibold
                 flex items-center justify-center
                 transition-all duration-300 ease-in-out
@@ -5990,12 +6021,23 @@ export default function SessionCard({
                     : "px-5 border border-[#65D46C] bg-[#65D46C]/10 text-[#65D46C]"
                 }
             `}
-            style={{ willChange: "width, padding" }}
+            style={bookingFilled
+                // Booked: filled in the session type's colour; red while it offers cancelling.
+                ? { backgroundColor: isHoveringCancel ? "#F65252" : t.color, willChange: "width, padding" }
+                : { willChange: "width, padding" }}
         >
             {!isInfinite && isHoveringCancel ? (
                 <>
-                    <img src="/icons/cross-cancel.svg" className="w-6 h-6 mr-2" alt="" />
+                    <img src="/icons/cross-cancel.svg" className={`w-6 h-6 mr-2 ${bookingFilled ? "brightness-0 invert" : ""}`} alt="" />
                     Cancel booking
+                </>
+            ) : bookingFilled ? (
+                <>
+                    <img src="/icons/book-session.svg" className="w-4 h-4 brightness-0 invert" alt="" />
+                    Booked
+                    {bookedCount >= BOOKED_COUNT_SHOW_FROM ? (
+                        <span className="tabular-nums opacity-80">· {bookedCount}</span>
+                    ) : null}
                 </>
             ) : (
                 <>
@@ -6244,9 +6286,9 @@ export default function SessionCard({
                             </GuestBlur>
                         </button>}
 
-                        {isBookingConfirmed ? confirmedBookingButton : bookSessionButton}
+                        {showBookingButton && (isBookingConfirmed ? confirmedBookingButton : bookSessionButton)}
 
-                        <button
+                        {showJoinButton && <button
                             onClick={handleJoinRoom}
                             onMouseEnter={() => {
                                 setIsHoveringJoinIframe(true);
@@ -6273,7 +6315,7 @@ export default function SessionCard({
                             aria-label={!canManageSession && isSessionFull ? "Session full" : "Join session"}
                         >
                             {!canManageSession && isSessionFull ? "Full" : "Join session"}
-                        </button>
+                        </button>}
 
                         <div ref={optionsRef} className={`relative w-12 ${isOptionsOpen ? "z-[230]" : "z-0"}`}>
                             <button
