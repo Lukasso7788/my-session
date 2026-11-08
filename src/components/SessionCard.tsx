@@ -69,9 +69,10 @@ interface SessionCardProps {
     /** Called when the detailsOnly modal is closed. */
     onDetailsClose?: () => void;
     /**
-     * Scheduled sessions on wide screens (1280px+): start and end time in a
-     * column before the avatar instead of the small date in the details row.
-     * For lists grouped by day, where the date is already in the heading.
+     * Wide screens (1280px+): a column before the avatar with a scheduled
+     * session's start and end time (replacing the small date in the details
+     * row) or "24/7" for an always-open room. For lists grouped by day, where
+     * the date is already in the heading.
      */
     showTimeColumn?: boolean;
 
@@ -5168,9 +5169,13 @@ export default function SessionCard({
         })
         : "";
 
-    // Wide-screen time column: "10:30 AM" over "– 12:30 PM".
+    // Wide-screen time column: "10:30 AM" over "– 12:30 PM"; "24/7" for rooms that never close.
     const startMs = session.start_time ? Date.parse(session.start_time) : NaN;
-    const timeColumn = showTimeColumn && !isInfinite && Number.isFinite(startMs)
+    const timeColumn = !showTimeColumn
+        ? null
+        : isInfinite
+        ? { start: "24/7", end: null }
+        : Number.isFinite(startMs)
         ? (() => {
             const format = (ms: number) =>
                 new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
@@ -6047,10 +6052,10 @@ export default function SessionCard({
                 <div className="flex flex-col min-[1024px]:flex-row min-[1024px]:items-center w-full gap-3 min-[1024px]:gap-3 xl:gap-4">
                     <div className={`flex w-full min-w-0 items-stretch justify-between gap-3 min-[1024px]:w-auto min-[1024px]:max-w-[600px] min-[1024px]:shrink-0 ${timeColumn ? "min-[1280px]:max-w-[720px] min-[1280px]:gap-4" : ""}`}>
                         {timeColumn && (
-                            <div className="hidden min-[1280px]:flex w-[100px] shrink-0 flex-col justify-center self-center font-mono tabular-nums">
-                                <span className="whitespace-nowrap text-[17px] font-medium leading-tight text-[#2F2F2F]">{timeColumn.start}</span>
+                            <div data-session-time-column className="hidden min-[1280px]:flex w-[100px] shrink-0 flex-col justify-center self-center font-inter tabular-nums">
+                                <span className="whitespace-nowrap text-[17px] font-bold leading-tight text-[#2F2F2F]">{timeColumn.start}</span>
                                 {timeColumn.end && (
-                                    <span className="mt-1 whitespace-nowrap text-[12px] leading-tight text-[#8A8A8A]">– {timeColumn.end}</span>
+                                    <span className="mt-1 whitespace-nowrap text-[12px] font-normal leading-tight text-[#8A8A8A]">– {timeColumn.end}</span>
                                 )}
                             </div>
                         )}

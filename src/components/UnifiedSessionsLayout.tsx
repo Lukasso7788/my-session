@@ -175,7 +175,7 @@ export default function UnifiedSessionsLayout({
 
         {toolbar}
 
-        <div className="rounded-[24px] px-3 py-3 md:border md:border-[#DBD8D8] md:p-8">
+        <div className="px-3 py-3 md:p-8">
           {isLoading && !hasSessions ? (
             <div className="text-center py-12" role="status">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-brandBlack" />
