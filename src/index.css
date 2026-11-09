@@ -330,9 +330,12 @@ body {
   margin-top: -1px;
 }
 
-/* The hovered card's darker border sits above its neighbours'. */
-.session-card-stack > .session-card-stack-item:hover,
-.session-card-stack > .session-card-stack-item:focus-within {
+/* The hovered card's darker border sits above its neighbours'. Raise the card
+   itself, not its wrapper: the wrapper also holds the card's details modal,
+   and a z-index there would trap that modal under the sticky header and the
+   section switcher. */
+.session-card-stack > .session-card-stack-item > [data-session-card]:hover,
+.session-card-stack > .session-card-stack-item > [data-session-card]:focus-within {
   z-index: 1;
 }
 
