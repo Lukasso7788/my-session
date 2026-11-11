@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>A session with verbal check-ins after every block</title>
+<style>
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-Regular.woff2") format("woff2"); font-weight: 400; }
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-SemiBold.woff2") format("woff2"); font-weight: 600; }
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-Bold.woff2") format("woff2"); font-weight: 700; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body { font-family: Inter, Arial, sans-serif; background: #f1f4f8; color: #1d2d45; }
+  h1 { position: absolute; left: 70px; top: 52px; margin: 0; font-size: 42px; font-weight: 700; letter-spacing: -0.03em; }
+  .sub { position: absolute; left: 70px; top: 110px; font-size: 19px; color: #5b6d84; }
+  .track { position: absolute; left: 70px; right: 70px; top: 196px; height: 64px; display: flex; gap: 6px; }
+  .seg { border-radius: 14px; display: flex; flex-direction: column; justify-content: center; padding: 0 14px; font-size: 14px; font-weight: 600; }
+  .seg small { font-weight: 400; font-size: 12px; opacity: .85; margin-top: 2px; }
+  .talk { background: #8fd694; color: #17451b; padding: 0 10px; font-size: 13px; white-space: nowrap; }
+  .focus { background: #3d77dd; color: #fff; }
+  .bubbles { position: absolute; left: 470px; top: 300px; width: 420px; }
+  .bubble { display: flex; align-items: center; gap: 12px; background: #fff; border-radius: 18px; padding: 12px 16px; margin-bottom: 10px; box-shadow: 0 6px 20px rgba(29,45,69,.08); font-size: 15px; line-height: 1.35; }
+  .bubble b { flex: none; width: 36px; height: 36px; border-radius: 50%; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 15px; }
+  .bubble span strong { display: block; font-size: 12px; color: #5b6d84; font-weight: 600; margin-bottom: 1px; }
+  .pointer { position: absolute; left: 583px; top: 266px; width: 2px; height: 30px; background: #8fd694; }
+  .notes { position: absolute; left: 70px; top: 312px; width: 360px; }
+  .note { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 22px; }
+  .note i { flex: none; width: 14px; height: 14px; border-radius: 4px; margin-top: 4px; display: block; }
+  .note div { font-size: 16px; line-height: 1.4; color: #34465f; }
+  .note div strong { display: block; color: #1d2d45; font-size: 17px; }
+  .loop { position: absolute; right: 70px; top: 312px; width: 230px; background: #1d2d45; color: #fff; border-radius: 20px; padding: 20px; font-size: 15px; line-height: 1.5; }
+  .loop strong { display: block; font-size: 17px; margin-bottom: 6px; color: #9ab7ff; }
+</style>
+</head>
+<body>
+  <h1>A check-in after every focus block</h1>
+  <div class="sub">Quiet while you work. A short spoken round between blocks.</div>
+  <!-- Widths to scale: 1060 px for 125 minutes (5 + 50 + 10 + 50 + 10). -->
+  <div class="track">
+    <div class="seg talk" style="width:42px"></div>
+    <div class="seg focus" style="width:418px">Focus · 50 min<small>Mics off, cameras on</small></div>
+    <div class="seg talk" style="width:84px">Check-in<small>+ break</small></div>
+    <div class="seg focus" style="width:418px">Focus · 50 min<small>Mics off, cameras on</small></div>
+    <div class="seg talk" style="width:74px">Wrap-up</div>
+  </div>
+  <div class="pointer"></div>
+  <div class="notes">
+    <div class="note"><i style="background:#8fd694"></i><div><strong>Talk</strong>Name a goal, report what you did, say what is next.</div></div>
+    <div class="note"><i style="background:#3d77dd"></i><div><strong>Focus</strong>Everyone works on their own task, in silence.</div></div>
+  </div>
+  <div class="bubbles">
+    <div class="bubble"><b style="background:#5286f6">M</b><span><strong>Maya · 20 sec</strong>Finished the outline. Next: draft the intro.</span></div>
+    <div class="bubble"><b style="background:#d88b4a">Y</b><span><strong>You · 20 sec</strong>Got distracted. Next: just the first two paragraphs.</span></div>
+    <div class="bubble"><b style="background:#49a650">J</b><span><strong>Jonas · 20 sec</strong>Fixed the login bug. Next: write the tests.</span></div>
+  </div>
+  <div class="loop"><strong>Why it works</strong>You said what you would do. After the block, the room hears what you did.</div>
+</body>
+</html>
