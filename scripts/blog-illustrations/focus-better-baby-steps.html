@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Build focus in steps</title>
+<style>
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-Regular.woff2") format("woff2"); font-weight: 400; }
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-SemiBold.woff2") format("woff2"); font-weight: 600; }
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-Bold.woff2") format("woff2"); font-weight: 700; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body { font-family: Inter, Arial, sans-serif; background: #f9f6ef; color: #1d2d45; }
+  h1 { position: absolute; left: 80px; top: 62px; margin: 0; font-size: 46px; font-weight: 700; letter-spacing: -0.03em; }
+  .sub { position: absolute; left: 80px; top: 126px; font-size: 20px; color: #5f6d80; }
+  .rows { position: absolute; left: 80px; right: 80px; top: 196px; }
+  .row { display: grid; grid-template-columns: 170px 1fr; align-items: center; gap: 24px; height: 88px; border-top: 1px solid #e6e0d3; }
+  .row:last-child { border-bottom: 1px solid #e6e0d3; }
+  .name b { display: block; font-size: 24px; font-weight: 700; }
+  .name span { font-size: 14px; color: #5f6d80; }
+  .track { display: flex; gap: 4px; height: 30px; }
+  .f { background: #3d77dd; border-radius: 8px; }
+  .b { background: #8fd694; border-radius: 8px; }
+  .step { position: absolute; right: 80px; font-size: 13px; font-weight: 600; color: #3d77dd; background: #e8effc; border-radius: 99px; padding: 5px 11px; }
+  .legend { position: absolute; left: 80px; bottom: 44px; display: flex; gap: 22px; font-size: 15px; color: #5f6d80; }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .legend i { width: 18px; height: 12px; border-radius: 4px; display: inline-block; }
+</style>
+</head>
+<body>
+  <h1>Build focus in steps</h1>
+  <div class="sub">Start where you can finish, then make the block longer.</div>
+  <div class="rows">
+    <!-- Scale: 13.5 px per minute. -->
+    <div class="row"><div class="name"><b>2 × 5 min</b><span>Just get started</span></div>
+      <div class="track"><div class="f" style="width:68px"></div><div class="b" style="width:14px"></div><div class="f" style="width:68px"></div></div></div>
+    <div class="row"><div class="name"><b>15/3</b><span>Short sprints</span></div>
+      <div class="track"><div class="f" style="width:203px"></div><div class="b" style="width:41px"></div><div class="f" style="width:203px"></div><div class="b" style="width:41px"></div></div></div>
+    <div class="row"><div class="name"><b>25/5</b><span>Classic Pomodoro</span></div>
+      <div class="track"><div class="f" style="width:338px"></div><div class="b" style="width:68px"></div><div class="f" style="width:338px"></div></div></div>
+    <div class="row"><div class="name"><b>50/10</b><span>Deep work</span></div>
+      <div class="track"><div class="f" style="width:675px"></div><div class="b" style="width:135px"></div></div></div>
+  </div>
+  <div class="legend"><span><i style="background:#3d77dd"></i>Focus</span><span><i style="background:#8fd694"></i>Break</span><span>Bars drawn to scale</span></div>
+</body>
+</html>

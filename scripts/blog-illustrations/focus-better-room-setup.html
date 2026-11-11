@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pinned Tasks panel in a MySession room</title>
+<style>
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-Regular.woff2") format("woff2"); font-weight: 400; }
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-Medium.woff2") format("woff2"); font-weight: 500; }
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-SemiBold.woff2") format("woff2"); font-weight: 600; }
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-Bold.woff2") format("woff2"); font-weight: 700; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body { font-family: Inter, Arial, sans-serif; background: #eef3fb; color: #2f2f2f; }
+  .frame { position: absolute; left: 40px; top: 40px; width: 1120px; height: 550px; border-radius: 28px; background: #fff; box-shadow: 0 20px 60px rgba(29, 45, 69, .12); overflow: hidden; }
+  .timeline { position: absolute; left: 28px; right: 360px; top: 26px; display: flex; align-items: center; gap: 14px; }
+  .timer { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .phase { font-size: 14px; font-weight: 600; color: #3d77dd; background: #eaf1ff; border-radius: 999px; padding: 6px 12px; }
+  .bar { flex: 1; height: 8px; border-radius: 99px; background: #e7ebf2; display: flex; overflow: hidden; gap: 3px; }
+  .bar span { display: block; height: 100%; border-radius: 99px; }
+  .grid { position: absolute; left: 28px; top: 92px; width: 732px; height: 430px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .tile { position: relative; border-radius: 20px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  .tile .avatar { width: 96px; height: 96px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 38px; font-weight: 700; color: #fff; }
+  .tile .name { position: absolute; left: 14px; bottom: 12px; background: rgba(255,255,255,.88); border-radius: 999px; padding: 5px 11px; font-size: 13px; font-weight: 600; }
+  .tile .screen { position: absolute; inset: 22px 22px 48px; border-radius: 10px; background: #fff; padding: 16px; }
+  .tile .screen i { display: block; height: 8px; border-radius: 4px; background: #dfe5ee; margin-bottom: 10px; }
+  .panel { position: absolute; right: 28px; top: 26px; width: 312px; bottom: 28px; border: 1px solid #dbd8d8; border-radius: 22px; padding: 22px; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; }
+  .panel-head b { font-size: 20px; }
+  .pin { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #3d77dd; background: #eaf1ff; border-radius: 999px; padding: 6px 11px; }
+  .goal { margin-top: 18px; border-radius: 14px; background: #f6f8fb; padding: 14px; font-size: 13px; color: #5f6d80; }
+  .goal strong { display: block; margin-top: 4px; color: #2f2f2f; font-size: 15px; font-weight: 600; line-height: 1.35; }
+  .task { display: flex; align-items: flex-start; gap: 12px; margin-top: 16px; font-size: 15px; line-height: 1.35; }
+  .box { flex: none; width: 22px; height: 22px; border-radius: 7px; border: 2px solid #c9d4e3; margin-top: 1px; }
+  .done .box { border-color: #65d46c; background: #65d46c; position: relative; }
+  .done .box::after { content: ""; position: absolute; left: 6px; top: 2px; width: 6px; height: 11px; border: solid #fff; border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); }
+  .done span { color: #8a8a8a; text-decoration: line-through; }
+  .callout { position: absolute; display: flex; align-items: center; gap: 8px; background: #1d2d45; color: #fff; border-radius: 999px; padding: 9px 15px; font-size: 14px; font-weight: 600; box-shadow: 0 8px 24px rgba(29,45,69,.25); }
+  .callout em { font-style: normal; width: 22px; height: 22px; border-radius: 50%; background: #75a9ff; color: #142b52; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; }
+</style>
+</head>
+<body>
+  <div class="frame">
+    <div class="timeline">
+      <span class="timer">18:42</span>
+      <span class="phase">Focus · 25 min</span>
+      <div class="bar"><span style="flex:25;background:#5286f6"></span><span style="flex:5;background:#65d46c"></span><span style="flex:25;background:#c9d9fb"></span><span style="flex:5;background:#c8efca"></span></div>
+    </div>
+    <div class="grid">
+      <div class="tile" style="background:#dbe7fb"><div class="avatar" style="background:#5286f6">M</div><span class="name">Maya</span></div>
+      <div class="tile" style="background:#e3f3e4"><div class="avatar" style="background:#49a650">J</div><span class="name">Jonas</span></div>
+      <div class="tile" style="background:#f6e9dc"><div class="avatar" style="background:#d88b4a">A</div><span class="name">You</span></div>
+      <div class="tile" style="background:#eceff4"><div class="screen"><i style="width:55%"></i><i style="width:90%"></i><i style="width:80%"></i><i style="width:86%"></i><i style="width:40%"></i></div><span class="name">Priya · sharing screen</span></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><b>Tasks</b><span class="pin">📌 Pinned</span></div>
+      <div class="goal">Goal for this block<strong>Draft the two results paragraphs</strong></div>
+      <div class="task done"><span class="box"></span><span>Outline the results section</span></div>
+      <div class="task"><span class="box"></span><span>Write paragraph one: main finding</span></div>
+      <div class="task"><span class="box"></span><span>Write paragraph two: limits</span></div>
+      <div class="task"><span class="box"></span><span>Add the figure caption</span></div>
+    </div>
+  </div>
+  <div class="callout" style="left:70px; top:16px"><em>1</em>Timer always in view</div>
+  <div class="callout" style="right:250px; top:16px"><em>2</em>Tasks panel pinned</div>
+  <div class="callout" style="left:440px; bottom:16px"><em>3</em>Screen sharing for accountability</div>
+</body>
+</html>

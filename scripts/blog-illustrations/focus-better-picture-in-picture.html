@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Picture-in-Picture over another app</title>
+<style>
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-Regular.woff2") format("woff2"); font-weight: 400; }
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-SemiBold.woff2") format("woff2"); font-weight: 600; }
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-Bold.woff2") format("woff2"); font-weight: 700; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body { font-family: Inter, Arial, sans-serif; background: #eef3fb; color: #2f2f2f; }
+  .app { position: absolute; left: 40px; top: 40px; width: 1120px; height: 550px; border-radius: 22px; background: #fff; box-shadow: 0 20px 60px rgba(29,45,69,.12); overflow: hidden; }
+  .chrome { height: 46px; background: #f3f5f8; display: flex; align-items: center; gap: 8px; padding: 0 18px; border-bottom: 1px solid #e3e7ee; }
+  .chrome i { width: 12px; height: 12px; border-radius: 50%; background: #d3d9e3; display: block; }
+  .chrome span { margin-left: 16px; font-size: 14px; color: #5f6d80; font-weight: 600; }
+  .doc { padding: 46px 120px 0 120px; }
+  .doc h2 { margin: 0 0 22px; font-size: 30px; letter-spacing: -0.02em; }
+  .doc p { margin: 0 0 14px; height: 12px; border-radius: 6px; background: #e4e9f0; }
+  .cursor { display: inline-block; width: 2px; height: 22px; background: #3d77dd; vertical-align: middle; margin-left: 4px; }
+  .pip { position: absolute; right: 70px; bottom: 70px; width: 380px; border-radius: 18px; background: #1d2d45; padding: 10px; box-shadow: 0 24px 60px rgba(29,45,69,.35); }
+  .pip-head { display: flex; justify-content: space-between; align-items: center; color: #c7d9f6; font-size: 12px; font-weight: 600; padding: 2px 4px 8px; }
+  .pip-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .t { height: 104px; border-radius: 10px; display: flex; align-items: center; justify-content: center; position: relative; }
+  .t b { width: 46px; height: 46px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 19px; }
+  .t small { position: absolute; left: 7px; bottom: 6px; font-size: 10px; font-weight: 600; background: rgba(255,255,255,.85); border-radius: 99px; padding: 2px 7px; }
+  .timer { margin-top: 8px; display: flex; justify-content: space-between; color: #fff; font-size: 13px; font-weight: 600; padding: 0 4px; }
+  .label { position: absolute; left: 112px; bottom: 96px; max-width: 520px; }
+  .label .tag { display: inline-flex; align-items: center; gap: 8px; background: #1d2d45; color: #fff; border-radius: 999px; padding: 9px 15px; font-size: 15px; font-weight: 600; }
+  .label p { margin: 12px 0 0; font-size: 17px; color: #5f6d80; line-height: 1.45; }
+</style>
+</head>
+<body>
+  <div class="app">
+    <div class="chrome"><i></i><i></i><i></i><span>Thesis draft — chapter 3</span></div>
+    <div class="doc">
+      <h2>3.2 Results<span class="cursor"></span></h2>
+      <p style="width:96%"></p><p style="width:92%"></p><p style="width:98%"></p><p style="width:60%"></p>
+      <p style="width:0;height:6px"></p>
+      <p style="width:94%"></p><p style="width:88%"></p><p style="width:45%"></p>
+    </div>
+  </div>
+  <div class="label">
+    <span class="tag">Picture-in-Picture</span>
+    <p>The room floats on top of your document, so the people you work with stay in view even when the MySession tab is hidden.</p>
+  </div>
+  <div class="pip">
+    <div class="pip-head"><span>MySession · Deep work</span><span>✕</span></div>
+    <div class="pip-grid">
+      <div class="t" style="background:#dbe7fb"><b style="background:#5286f6">M</b><small>Maya</small></div>
+      <div class="t" style="background:#e3f3e4"><b style="background:#49a650">J</b><small>Jonas</small></div>
+      <div class="t" style="background:#f6e9dc"><b style="background:#d88b4a">A</b><small>You</small></div>
+      <div class="t" style="background:#ece6f7"><b style="background:#8a6ad1">P</b><small>Priya</small></div>
+    </div>
+    <div class="timer"><span>Focus</span><span>18:42 left</span></div>
+  </div>
+</body>
+</html>
