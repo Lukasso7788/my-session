@@ -663,7 +663,7 @@ function MessageCardInner({
     const menuCls = isLight ? "bg-[#F3F1F1] border border-[#D8D0D0]" : "bg-[#292929] border border-[#484848] text-[#F4F5F6]";
 
     const bubbleCls =
-        "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
+        "rounded-2xl px-2.5 py-1.5 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
         (mine
             ? isLight
                 ? "bg-[#5286F6]/15 border-[#5286F6]/50 text-black/85"
@@ -682,8 +682,8 @@ function MessageCardInner({
         : "bg-[#242424] border border-[#464646] text-[#D9DEE4] hover:bg-[#30363B]";
 
     const reactionPillBase = isLight
-        ? "px-2 py-1 rounded-xl bg-[#ECEAEA] border border-[#D8D0D0] text-[12px] text-black/70 flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#E3E1E1] hover:border-[#BEB7B7] hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/75"
-        : "px-2 py-1 rounded-xl bg-[#30363B] border border-[#515961] text-[12px] text-[#E3E7EB] flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#3B4248] hover:border-[#5286F6]/50 hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/75";
+        ? "px-1.5 py-0.5 rounded-lg bg-[#ECEAEA] border border-[#D8D0D0] text-[12px] text-black/70 flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#E3E1E1] hover:border-[#BEB7B7] hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/75"
+        : "px-1.5 py-0.5 rounded-lg bg-[#30363B] border border-[#515961] text-[12px] text-[#E3E7EB] flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#3B4248] hover:border-[#5286F6]/50 hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/75";
 
     const reactionPillMine = isLight
         ? "bg-[#5286F6]/18 ring-2 ring-[#5286F6]/70 border-[#5286F6]/70 text-[#315DCB]"
@@ -756,14 +756,14 @@ function MessageCardInner({
     return (
         <div
             className={
-                "group flex items-start gap-3 " + (mine ? "justify-end" : "justify-start")
+                "group flex items-start gap-2 " + (mine ? "justify-end" : "justify-start")
             }
         >
             {!mine && (
                 <img
                     src={avatarFromProfile(msg.profile)}
                     {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
-                    className="w-8 h-8 rounded-full object-cover"
+                    className="h-[34px] w-[34px] rounded-full object-cover"
                     alt=""
                 />
             )}
@@ -771,7 +771,7 @@ function MessageCardInner({
             <div className="max-w-[82%] min-w-0">
                 <div
                     className={
-                        "flex items-center gap-2 mb-1 " +
+                        "flex items-center gap-2 mb-0.5 " +
                         (mine ? "justify-end" : "justify-start")
                     }
                 >
@@ -1224,7 +1224,7 @@ function MessageCardInner({
                 {hasReactions && !isEditing && (
                     <div
                         className={
-                            "mt-2 flex flex-wrap gap-2 " +
+                            "mt-1 flex flex-wrap gap-1.5 " +
                             (mine ? "justify-end" : "justify-start")
                         }
                     >
@@ -1259,7 +1259,7 @@ function MessageCardInner({
                                             : "Click to react · Right-click to see who reacted"
                                     }
                                 >
-                                    <span className="text-[16px] leading-none">{emoji}</span>
+                                    <span className="text-[14px] leading-none">{emoji}</span>
                                     <span className={reactionCountCls}>{reaction.count}</span>
                                 </button>
                             );
@@ -1272,7 +1272,7 @@ function MessageCardInner({
                 <img
                     src={avatarFromProfile(msg.profile)}
                     {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
-                    className="w-8 h-8 rounded-full object-cover"
+                    className="h-[34px] w-[34px] rounded-full object-cover"
                     alt=""
                 />
             )}
@@ -3835,7 +3835,7 @@ export function ChatPanel({
 
             <div
                 ref={listRef}
-                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4 space-y-3 custom-scrollbar relative"
+                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-3 space-y-2 custom-scrollbar relative"
                 onScroll={() => {
                     const at = isAtBottom();
                     atBottomRef.current = at;
