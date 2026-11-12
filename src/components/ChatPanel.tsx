@@ -107,10 +107,10 @@ const BRAND_GREEN_HOVER = "#5286F6";
 const BRAND_GREEN_SOFT = "rgba(129,219,134,0.14)";
 const BRAND_GREEN_BORDER = "rgba(129,219,134,0.48)";
 
-function avatarFromProfile(profile?: Profile | null) {
+function avatarFromProfile(profile?: Profile | null, isLight = true) {
     return (
         profile?.avatar_url ||
-        defaultAvatarUrl(profile?.full_name)
+        defaultAvatarUrl(profile?.full_name, null, isLight ? "light" : "dark")
     );
 }
 
@@ -658,7 +658,9 @@ function MessageCardInner({
 
     const metaNameCls = isLight ? "text-black/70 font-medium" : "text-[#D9DEE4] font-medium";
     const metaTimeCls = isLight ? "text-black/35" : "text-[#AEB6BF]";
-    const actionBtnCls = isLight ? "text-black/45 hover:text-[#5286F6]" : "text-[#C6CDD5] hover:text-[#5286F6]";
+    const actionBtnCls = isLight
+        ? "text-black/45 hover:bg-black/[0.06] hover:text-[#2F5FC4]"
+        : "text-[#C6CDD5] hover:bg-white/10 hover:text-[#8FB0FA]";
     const dangerBtnCls = isLight ? "text-black/40 hover:text-red-700" : "text-[#C6CDD5] hover:text-red-300";
     const menuCls = isLight ? "bg-[#F3F1F1] border border-[#D8D0D0]" : "bg-[#292929] border border-[#484848] text-[#F4F5F6]";
 
@@ -682,19 +684,18 @@ function MessageCardInner({
             : "");
 
     const quoteBoxCls = isLight
-        ? "bg-black/[0.04] border-l-2 border-[#5286F6]/60 text-black/65 hover:bg-black/[0.06]"
-        : "bg-white/[0.06] border-l-2 border-[#5286F6]/70 text-[#D9DEE4] hover:bg-white/[0.09]";
+        ? "bg-black/[0.045] text-black/65 hover:bg-black/[0.07]"
+        : "bg-white/[0.07] text-[#D9DEE4] hover:bg-white/[0.1]";
 
-    const reactionPillBase = isLight
-        ? "px-1.5 py-0.5 rounded-lg bg-[#ECEAEA] border border-[#D8D0D0] text-[12px] text-black/70 flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#E3E1E1] hover:border-[#BEB7B7] hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/75"
-        : "px-1.5 py-0.5 rounded-lg bg-[#30363B] border border-[#515961] text-[12px] text-[#E3E7EB] flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#3B4248] hover:border-[#5286F6]/50 hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/75";
-
-    const reactionPillMine = isLight
-        ? "bg-[#5286F6]/18 ring-2 ring-[#5286F6]/70 border-[#5286F6]/70 text-[#315DCB]"
-        : "bg-[#5286F6]/18 ring-2 ring-[#5286F6]/70 border-[#5286F6]/55 text-[#EAF8EC]";
-
-    const reactionCountCls = isLight ? "text-black/50" : "text-[#C6CDD5]";
-
+    // Reactions: round pills. Pale gray when only others reacted; the room's
+    // accent blue with a white count once you reacted too.
+    const reactionPillBase =
+        "inline-flex h-[22px] items-center gap-1 rounded-full px-[7px] text-[12px] cursor-pointer transition-[opacity,transform,background-color] duration-150 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/50 ";
+    const reactionPillOthers = isLight
+        ? "bg-black/[0.06] hover:bg-black/[0.1]"
+        : "bg-white/[0.08] hover:bg-white/[0.13]";
+    const reactionPillMine = "bg-[#5286F6] hover:bg-[#6B98FA]";
+    const reactionCountCls = "font-inter font-normal leading-none tabular-nums";
 
     const { quote, quoteMessageId, main } = useMemo(
         () => parseReplyBody(msg.body),
@@ -765,7 +766,7 @@ function MessageCardInner({
         >
             {!mine && (
                 <img
-                    src={avatarFromProfile(msg.profile)}
+                    src={avatarFromProfile(msg.profile, isLight)}
                     {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
                     className="h-[31px] w-[31px] rounded-full object-cover"
                     alt=""
@@ -829,7 +830,7 @@ function MessageCardInner({
                                                 {readers.slice(0, 6).map((reader) => (
                                                     <img
                                                         key={reader.userId}
-                                                        src={reader.avatarUrl || defaultAvatarUrl(reader.fullName)}
+                                                        src={reader.avatarUrl || defaultAvatarUrl(reader.fullName, null, isLight ? "light" : "dark")}
                                                         className={"h-6 w-6 rounded-full object-cover ring-2 " + (isLight ? "ring-[#F7F5F5]" : "ring-[#232323]")}
                                                         alt=""
                                                     />
@@ -935,7 +936,7 @@ function MessageCardInner({
                                                         }
                                                     >
                                                         <img
-                                                            src={reader.avatarUrl || defaultAvatarUrl(reader.fullName || "Participant")}
+                                                            src={reader.avatarUrl || defaultAvatarUrl(reader.fullName || "Participant", null, isLight ? "light" : "dark")}
                                                             className="h-8 w-8 shrink-0 rounded-full object-cover"
                                                             alt=""
                                                         />
@@ -960,21 +961,15 @@ function MessageCardInner({
                     ) : null}
 
                     {!isEditing && (
-                        <div className="ml-1 flex h-5 shrink-0 items-center gap-3 leading-none">
+                        <div className="ml-0.5 flex h-5 shrink-0 items-center gap-0.5 leading-none opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
                             <button
                                 type="button"
                                 onClick={() => onReply(msg)}
-                                className={
-                                    "grid h-5 grid-cols-[14px_auto] items-center gap-1 whitespace-nowrap text-[11px] leading-none transition " +
-                                    actionBtnCls
-                                }
+                                className={"flex h-6 w-6 items-center justify-center rounded-full transition " + actionBtnCls}
                                 title="Reply"
+                                aria-label="Reply"
                             >
-                                <CornerUpLeft
-                                    size={14}
-                                    className="block shrink-0 self-center"
-                                />
-                                <span className="flex h-4 items-center leading-4">Reply</span>
+                                <CornerUpLeft size={14} className="block shrink-0" />
                             </button>
 
                             <div className="relative flex h-5 items-center leading-none">
@@ -985,17 +980,11 @@ function MessageCardInner({
                                         if (!openReactions) updateReactionMenuPos();
                                         setOpenReactions((v) => !v);
                                     }}
-                                    className={
-                                        "grid h-5 grid-cols-[14px_auto] items-center gap-1 whitespace-nowrap text-[11px] leading-none transition " +
-                                        actionBtnCls
-                                    }
+                                    className={"flex h-6 w-6 items-center justify-center rounded-full transition " + actionBtnCls}
                                     title="React"
+                                    aria-label="React"
                                 >
-                                    <Smile
-                                        size={14}
-                                        className="block shrink-0 self-center"
-                                    />
-                                    <span className="flex h-4 items-center leading-4">React</span>
+                                    <Smile size={14} className="block shrink-0" />
                                 </button>
 
                                 {openReactions &&
@@ -1241,7 +1230,7 @@ function MessageCardInner({
                                     className={
                                         reactionPillBase +
                                         " animate-[fadeIn_180ms_ease-out] " +
-                                        (isMine ? reactionPillMine : "") +
+                                        (isMine ? reactionPillMine : reactionPillOthers) +
                                         (reaction.exiting
                                             ? " pointer-events-none opacity-0 scale-90 translate-y-0.5"
                                             : " opacity-100")
@@ -1257,14 +1246,10 @@ function MessageCardInner({
                                     onFocus={(e) => onHoverReaction?.(msg.id, emoji, e.currentTarget)}
                                     onBlur={() => onHoverReaction?.(msg.id, emoji, null)}
                                     aria-pressed={isMine}
-                                    title={
-                                        isMine
-                                            ? "Click to remove your reaction · Right-click to see who reacted"
-                                            : "Click to react · Right-click to see who reacted"
-                                    }
+                                    aria-label={isMine ? `Remove your ${emoji} reaction` : `React with ${emoji}`}
                                 >
-                                    <span className="text-[14px] leading-none">{emoji}</span>
-                                    <span className={reactionCountCls}>{reaction.count}</span>
+                                    <span className="text-[14px] leading-none text-black opacity-100">{emoji}</span>
+                                    <span className={reactionCountCls + (isMine ? " text-white" : isLight ? " text-black/60" : " text-[#C6CDD5]")}>{reaction.count}</span>
                                 </button>
                             );
                         })}
@@ -1274,7 +1259,7 @@ function MessageCardInner({
 
             {mine && (
                 <img
-                    src={avatarFromProfile(msg.profile)}
+                    src={avatarFromProfile(msg.profile, isLight)}
                     {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
                     className="h-[31px] w-[31px] rounded-full object-cover"
                     alt=""
@@ -3536,7 +3521,7 @@ export function ChatPanel({
                                 {shown.map((uid) => (
                                     <img
                                         key={uid}
-                                        src={avatarFromProfile(profilesByIdRef.current[uid] || (uid === userId ? meProfileRef.current : null))}
+                                        src={avatarFromProfile(profilesByIdRef.current[uid] || (uid === userId ? meProfileRef.current : null), isLight)}
                                         className={"h-6 w-6 rounded-full object-cover ring-2 " + (isLight ? "ring-[#F7F5F5]" : "ring-[#232323]")}
                                         alt=""
                                     />
@@ -3696,7 +3681,7 @@ export function ChatPanel({
                                 }
                             >
                                 <img
-                                    src={avatarFromProfile(modalMessage.profile)}
+                                    src={avatarFromProfile(modalMessage.profile, isLight)}
                                     className="mt-0.5 h-6 w-6 shrink-0 rounded-full object-cover"
                                     alt=""
                                 />
@@ -3747,7 +3732,7 @@ export function ChatPanel({
                                             }
                                         >
                                             <img
-                                                src={avatarFromProfile(prof)}
+                                                src={avatarFromProfile(prof, isLight)}
                                                 {...profileHoverAttrs(uid, prof?.full_name)}
                                                 className="h-8 w-8 shrink-0 rounded-full object-cover"
                                                 alt=""

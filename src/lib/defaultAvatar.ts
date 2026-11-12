@@ -5,9 +5,12 @@
 // not loaded yet, an SVG with the same design (system font) is returned and
 // the next call, once the font is ready, gets the Inter version.
 
-// One neutral look for everyone, in the room's panel grays.
+// One neutral look for everyone, in the room's panel grays, per theme.
 const PALETTE: Array<[background: string, text: string]> = [
   ["#E6E4E4", "#5C5C5C"],
+];
+const DARK_PALETTE: Array<[background: string, text: string]> = [
+  ["#333333", "#C6CDD5"],
 ];
 
 const SIZE = 128;
@@ -85,10 +88,11 @@ function canvasAvatar(initials: string, background: string, text: string) {
  * Image URL for a person's default avatar. `seed` should be stable for the
  * person (their user id); the name is used when there is none.
  */
-export function defaultAvatarUrl(name?: string | null, seed?: string | null) {
+export function defaultAvatarUrl(name?: string | null, seed?: string | null, theme: "light" | "dark" = "light") {
   const label = String(name || "").trim() || "User";
   const initials = initialsOf(label);
-  const [background, text] = PALETTE[hashOf(String(seed || label).toLowerCase()) % PALETTE.length];
+  const palette = theme === "dark" ? DARK_PALETTE : PALETTE;
+  const [background, text] = palette[hashOf(String(seed || label).toLowerCase()) % palette.length];
   const key = `${initials}|${background}`;
   const cached = cache.get(key);
   if (cached) return cached;
