@@ -826,14 +826,14 @@ function MessageCardInner({
                                                     <img
                                                         key={reader.userId}
                                                         src={reader.avatarUrl || defaultAvatarUrl(reader.fullName)}
-                                                        className={"h-7 w-7 rounded-full object-cover ring-2 " + (isLight ? "ring-[#F7F5F5]" : "ring-[#232323]")}
+                                                        className={"h-6 w-6 rounded-full object-cover ring-2 " + (isLight ? "ring-[#F7F5F5]" : "ring-[#232323]")}
                                                         alt=""
                                                     />
                                                 ))}
                                                 {readers.length > 6 ? (
                                                     <span
                                                         className={
-                                                            "flex h-7 min-w-7 items-center justify-center rounded-full px-1.5 font-inter text-[11px] ring-2 " +
+                                                            "flex h-6 min-w-6 items-center justify-center rounded-full px-1 font-inter text-[10px] ring-2 " +
                                                             (isLight ? "bg-[#E6E4E4] text-black/60 ring-[#F7F5F5]" : "bg-[#303030] text-[#C6CDD5] ring-[#232323]")
                                                         }
                                                     >
@@ -842,7 +842,7 @@ function MessageCardInner({
                                                 ) : null}
                                             </div>
                                             <CheckCheck size={13} strokeWidth={2.2} className="ml-1.5 shrink-0 text-[#5286F6]" aria-hidden="true" />
-                                            <span className={"ml-1 mr-2 truncate font-inter text-[12px] font-medium " + (isLight ? "text-black/75" : "text-[#E3E7EB]")}>
+                                            <span className={"ml-1 mr-2 truncate font-inter text-[11px] font-medium " + (isLight ? "text-black/75" : "text-[#E3E7EB]")}>
                                                 {shortNamesLabel(readers.map((reader) => reader.fullName || "Participant"))}
                                             </span>
                                         </div>
@@ -3533,14 +3533,14 @@ export function ChatPanel({
                                     <img
                                         key={uid}
                                         src={avatarFromProfile(profilesByIdRef.current[uid] || (uid === userId ? meProfileRef.current : null))}
-                                        className={"h-7 w-7 rounded-full object-cover ring-2 " + (isLight ? "ring-[#F7F5F5]" : "ring-[#232323]")}
+                                        className={"h-6 w-6 rounded-full object-cover ring-2 " + (isLight ? "ring-[#F7F5F5]" : "ring-[#232323]")}
                                         alt=""
                                     />
                                 ))}
                                 {more > 0 ? (
                                     <span
                                         className={
-                                            "flex h-7 min-w-7 items-center justify-center rounded-full px-1.5 font-inter text-[11px] ring-2 " +
+                                            "flex h-6 min-w-6 items-center justify-center rounded-full px-1 font-inter text-[10px] ring-2 " +
                                             (isLight ? "bg-[#E6E4E4] text-black/60 ring-[#F7F5F5]" : "bg-[#303030] text-[#C6CDD5] ring-[#232323]")
                                         }
                                     >
@@ -3550,7 +3550,7 @@ export function ChatPanel({
                             </div>
                         )}
                         {ids && ids.length > 0 ? (
-                            <span className={"ml-2 mr-2 truncate font-inter text-[12px] font-medium " + (isLight ? "text-black/75" : "text-[#E3E7EB]")}>
+                            <span className={"ml-2 mr-2 truncate font-inter text-[11px] font-medium " + (isLight ? "text-black/75" : "text-[#E3E7EB]")}>
                                 {shortNamesLabel(ids.map((uid) => (uid === userId ? "You" : profilesByIdRef.current[uid]?.full_name || "Participant")))}
                             </span>
                         ) : null}
