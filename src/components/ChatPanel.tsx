@@ -660,7 +660,7 @@ function MessageCardInner({
     // Reactions: small pills. Pale gray when only others reacted; the room's
     // accent blue with a white count once you reacted too.
     const reactionPillBase =
-        "inline-flex h-6 items-center gap-1 rounded-full px-2 cursor-pointer will-change-transform transition-[opacity,transform,background-color,color] duration-200 ease-out hover:-translate-y-px active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/50 focus-visible:ring-offset-1";
+        "inline-flex h-[22px] items-center gap-1 rounded-full px-[7px] cursor-pointer will-change-transform transition-[opacity,transform,background-color,color] duration-200 ease-out hover:-translate-y-px active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/50 focus-visible:ring-offset-1";
 
     const reactionPillOthers = isLight
         ? "bg-black/[0.06] hover:bg-black/[0.1]"
