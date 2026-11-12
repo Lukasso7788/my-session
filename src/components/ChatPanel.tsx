@@ -114,6 +114,12 @@ function avatarFromProfile(profile?: Profile | null) {
     );
 }
 
+/** First names for the hover lists: "Maya, Priya, Jonas +2". */
+function shortNamesLabel(names: string[], max = 3) {
+    const first = names.slice(0, max).map((name) => String(name || "").trim().split(/\s+/)[0] || "Participant");
+    return first.join(", ") + (names.length > max ? ` +${names.length - max}` : "");
+}
+
 function formatTime(iso?: string) {
     if (!iso) return "";
     const d = new Date(iso);
@@ -811,7 +817,7 @@ function MessageCardInner({
                                     >
                                         <div
                                             className={
-                                                "flex items-center rounded-full border p-1 shadow-[0_10px_30px_rgba(0,0,0,0.16)] " +
+                                                "flex max-w-[280px] items-center rounded-full border p-1 shadow-[0_10px_30px_rgba(0,0,0,0.16)] " +
                                                 (isLight ? "border-[#D8D0D0] bg-[#F7F5F5]" : "border-[#343434] bg-[#232323]")
                                             }
                                         >
@@ -835,11 +841,16 @@ function MessageCardInner({
                                                     </span>
                                                 ) : null}
                                             </div>
+                                            <CheckCheck size={13} strokeWidth={2.2} className="ml-1.5 shrink-0 text-[#5286F6]" aria-hidden="true" />
+                                            <span className={"ml-1 mr-2 truncate font-inter text-[12px] font-medium " + (isLight ? "text-black/75" : "text-[#E3E7EB]")}>
+                                                {shortNamesLabel(readers.map((reader) => reader.fullName || "Participant"))}
+                                            </span>
                                         </div>
                                     </div>,
                                     renderDocument.body,
                                 )
                                 : null}
+
                             {readersOpen
                                 ? createPortal(
                                     <div
@@ -3510,7 +3521,7 @@ export function ChatPanel({
                 >
                     <div
                         className={
-                            "flex items-center rounded-full border p-1 shadow-[0_10px_30px_rgba(0,0,0,0.16)] " +
+                            "flex max-w-[280px] items-center rounded-full border p-1 shadow-[0_10px_30px_rgba(0,0,0,0.16)] " +
                             (isLight ? "border-[#D8D0D0] bg-[#F7F5F5]" : "border-[#343434] bg-[#232323]")
                         }
                     >
@@ -3538,6 +3549,11 @@ export function ChatPanel({
                                 ) : null}
                             </div>
                         )}
+                        {ids && ids.length > 0 ? (
+                            <span className={"ml-2 mr-2 truncate font-inter text-[12px] font-medium " + (isLight ? "text-black/75" : "text-[#E3E7EB]")}>
+                                {shortNamesLabel(ids.map((uid) => (uid === userId ? "You" : profilesByIdRef.current[uid]?.full_name || "Participant")))}
+                            </span>
+                        ) : null}
                     </div>
                 </div>,
                 chatDocument.body,
