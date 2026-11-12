@@ -961,7 +961,9 @@ function MessageCardInner({
                     ) : null}
 
                     {!isEditing && (
-                        <div className="ml-0.5 flex h-5 shrink-0 items-center gap-0.5 leading-none opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+                        // Hidden actions take no space, so name and time sit at the edge;
+                        // on hover they slide in. Always shown on touch screens.
+                        <div className="flex h-6 max-w-0 shrink-0 items-center gap-0.5 overflow-hidden leading-none opacity-0 transition-[max-width,opacity] duration-200 ease-out group-hover:max-w-[140px] group-hover:opacity-100 group-focus-within:max-w-[140px] group-focus-within:opacity-100 [@media(hover:none)]:max-w-[140px] [@media(hover:none)]:opacity-100">
                             <button
                                 type="button"
                                 onClick={() => onReply(msg)}
