@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 import { supabase } from "../lib/supabase";
+import { defaultAvatarUrl } from "../lib/defaultAvatar";
 
 type UserProfileModalProps = {
   user: {
@@ -134,7 +135,7 @@ function getDisplaySessions(sessions: SessionRow[]) {
 }
 
 function getAvatarFallback(name: string) {
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || "User")}`;
+  return defaultAvatarUrl(name);
 }
 
 export function UserProfileModal({ user, onClose }: UserProfileModalProps) {

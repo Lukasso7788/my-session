@@ -12,6 +12,7 @@ import {
   getDetectedTimeZone,
   isValidTimeZone,
 } from "../lib/timezones";
+import { defaultAvatarUrl } from "../lib/defaultAvatar";
 
 type HostSupportPaymentRow = {
   id: string;
@@ -177,7 +178,7 @@ export default function ProfilePage() {
   const displayName = useMemo(() => fullName || "User", [fullName]);
 
   const avatarFallback = useMemo(() => {
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`;
+    return defaultAvatarUrl(displayName);
   }, [displayName]);
 
   const hostBalance = useMemo(() => {

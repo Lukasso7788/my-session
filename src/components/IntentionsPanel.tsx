@@ -21,6 +21,7 @@ import {
 import { supabase } from "../lib/supabase";
 import { useParams } from "react-router-dom";
 import { profileHoverAttrs } from "./ProfileHoverLayer";
+import { defaultAvatarUrl } from "../lib/defaultAvatar";
 
 type RoomTheme = "dark" | "light";
 
@@ -502,7 +503,7 @@ export function TasksPanel({
 
   const getAvatar = (profile?: any) =>
     profile?.avatar_url ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
+    defaultAvatarUrl(profile?.full_name);
 
   const loadPanelTasks = useCallback(async () => {
     if (!user?.id) return;

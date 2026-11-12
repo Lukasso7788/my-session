@@ -9,6 +9,7 @@ import {
   pushSupported,
   showPushEnabledTestNotification,
 } from "../lib/pushNotifications";
+import { defaultAvatarUrl } from "../lib/defaultAvatar";
 
 type PublicProfileRow = {
   id: string;
@@ -172,7 +173,7 @@ export default function PublicProfilePage() {
   const displayName = useMemo(() => fullName || "User", [fullName]);
 
   const avatarFallback = useMemo(() => {
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}`;
+    return defaultAvatarUrl(displayName);
   }, [displayName]);
 
   const isOwnProfile = !!currentUserId && !!id && currentUserId === id;

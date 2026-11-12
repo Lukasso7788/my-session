@@ -26,6 +26,7 @@ import {
     Trash2,
     X,
 } from "lucide-react";
+import { defaultAvatarUrl } from "../lib/defaultAvatar";
 
 type RoomTheme = "dark" | "light";
 
@@ -109,7 +110,7 @@ const BRAND_GREEN_BORDER = "rgba(129,219,134,0.48)";
 function avatarFromProfile(profile?: Profile | null) {
     return (
         profile?.avatar_url ||
-        `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`
+        defaultAvatarUrl(profile?.full_name)
     );
 }
 
@@ -446,6 +447,21 @@ function MessageCardInner({
     const [deleting, setDeleting] = useState(false);
     const [readersOpen, setReadersOpen] = useState(false);
     const readReceiptButtonRef = useRef<HTMLButtonElement | null>(null);
+    // Hovering the check marks shows who read the message; a click still opens the full list.
+    const [readersHoverPos, setReadersHoverPos] = useState<{ left: number; top: number } | null>(null);
+    const readersHoverTimerRef = useRef<number | null>(null);
+    const showReadersHover = (anchor: HTMLElement | null) => {
+        if (readersHoverTimerRef.current) renderWindow.clearTimeout(readersHoverTimerRef.current);
+        readersHoverTimerRef.current = null;
+        if (!anchor) {
+            setReadersHoverPos(null);
+            return;
+        }
+        readersHoverTimerRef.current = renderWindow.setTimeout(() => {
+            const rect = anchor.getBoundingClientRect();
+            setReadersHoverPos({ left: rect.left + rect.width / 2, top: rect.top });
+        }, 250);
+    };
 
     const updateReactionMenuPos = useCallback(() => {
         if (!reactionButtonRef.current) return;
@@ -734,7 +750,7 @@ function MessageCardInner({
     return (
         <div
             className={
-                "flex items-start gap-2 " + (mine ? "justify-end" : "justify-start")
+                "group flex items-start gap-2 " + (mine ? "justify-end" : "justify-start")
             }
         >
             {!mine && (
@@ -762,11 +778,10 @@ function MessageCardInner({
                                 ref={readReceiptButtonRef}
                                 type="button"
                                 className="inline-flex items-center gap-1 text-[#5286F6] transition hover:opacity-80"
-                                title={
-                                    readers.length === 1
-                                        ? `Read by ${readers[0]?.fullName || "Participant"}`
-                                        : `Read by ${readers.length} people`
-                                }
+                                onMouseEnter={(e) => showReadersHover(e.currentTarget)}
+                                onMouseLeave={() => showReadersHover(null)}
+                                onFocus={(e) => showReadersHover(e.currentTarget)}
+                                onBlur={() => showReadersHover(null)}
                                 aria-label={
                                     readers.length === 1
                                         ? `Read by ${readers[0]?.fullName || "Participant"}`
@@ -774,6 +789,7 @@ function MessageCardInner({
                                 }
                                 onClick={(e) => {
                                     e.stopPropagation();
+                                    showReadersHover(null);
                                     setReadersOpen((v) => !v);
                                 }}
                             >
@@ -785,80 +801,138 @@ function MessageCardInner({
                                 ) : null}
                             </button>
 
+                            {readersHoverPos && !readersOpen
+                                ? createPortal(
+                                    <div
+                                        className="pointer-events-none fixed z-[10000] -translate-x-1/2 -translate-y-full pb-2 animate-[fadeIn_140ms_ease-out]"
+                                        style={{ left: readersHoverPos.left, top: readersHoverPos.top }}
+                                        role="tooltip"
+                                        aria-label={`Read by ${readers.map((reader) => reader.fullName || "Participant").join(", ")}`}
+                                    >
+                                        <div
+                                            className={
+                                                "flex items-center rounded-full border p-1 shadow-[0_10px_30px_rgba(0,0,0,0.16)] " +
+                                                (isLight ? "border-[#D8D0D0] bg-[#F7F5F5]" : "border-[#343434] bg-[#232323]")
+                                            }
+                                        >
+                                            <div className="flex -space-x-1.5">
+                                                {readers.slice(0, 6).map((reader) => (
+                                                    <img
+                                                        key={reader.userId}
+                                                        src={reader.avatarUrl || defaultAvatarUrl(reader.fullName)}
+                                                        className={"h-7 w-7 rounded-full object-cover ring-2 " + (isLight ? "ring-[#F7F5F5]" : "ring-[#232323]")}
+                                                        alt=""
+                                                    />
+                                                ))}
+                                                {readers.length > 6 ? (
+                                                    <span
+                                                        className={
+                                                            "flex h-7 min-w-7 items-center justify-center rounded-full px-1.5 font-inter text-[11px] ring-2 " +
+                                                            (isLight ? "bg-[#E6E4E4] text-black/60 ring-[#F7F5F5]" : "bg-[#303030] text-[#C6CDD5] ring-[#232323]")
+                                                        }
+                                                    >
+                                                        +{readers.length - 6}
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                        </div>
+                                    </div>,
+                                    renderDocument.body,
+                                )
+                                : null}
                             {readersOpen
                                 ? createPortal(
                                     <div
-                                        className="fixed inset-0 z-[220] flex items-center justify-center p-4"
+                                        className="fixed inset-0 z-[220] flex items-center justify-center p-4 font-inter"
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             setReadersOpen(false);
                                         }}
                                     >
-                                        <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
+                                        <div className="session-booking-drawer-backdrop absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
 
                                         <div
-                                            className="relative z-[1] w-full max-w-[360px] rounded-[24px] border border-[#D8D0D0] bg-[#F3F1F1] p-4 shadow-[0_28px_90px_rgba(0,0,0,0.28)]"
+                                            role="dialog"
+                                            aria-modal="true"
+                                            aria-label="Read by"
+                                            className={
+                                                "relative z-[1] flex max-h-[82vh] w-full max-w-[380px] flex-col overflow-hidden rounded-[24px] border shadow-[0_28px_90px_rgba(0,0,0,0.28)] " +
+                                                (isLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#343434] bg-[#1B1B1B]")
+                                            }
                                             onClick={(e) => e.stopPropagation()}
                                         >
-                                            <div className="mb-3 flex items-center justify-between gap-3">
-                                                <div>
-                                                    <div className="text-[16px] font-semibold text-black/90">
+                                            {/* Header: check marks, how many people, close */}
+                                            <div className="flex items-center gap-3 px-5 pb-3 pt-5">
+                                                <div
+                                                    className={
+                                                        "flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-[#5286F6] " +
+                                                        (isLight ? "bg-white" : "bg-[#262626]")
+                                                    }
+                                                    aria-hidden="true"
+                                                >
+                                                    <CheckCheck size={24} strokeWidth={2.2} />
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <div className={"text-[16px] font-semibold leading-5 " + (isLight ? "text-black/85" : "text-[#F4F5F6]")}>
                                                         Read by
                                                     </div>
-                                                    <div className="mt-0.5 text-[12px] text-black/45">
-                                                        {readers.length === 1
-                                                            ? "1 participant"
-                                                            : `${readers.length} participants`}
+                                                    <div className={"mt-0.5 text-[12px] " + (isLight ? "text-black/50" : "text-[#AEB6C0]")}>
+                                                        {readers.length === 1 ? "1 person read this message" : `${readers.length} people read this message`}
                                                     </div>
                                                 </div>
-
                                                 <button
                                                     type="button"
-                                                    className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#E6E6E6] text-black/55 transition hover:bg-[#DCDCDC] hover:text-black/80"
+                                                    className={
+                                                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] transition " +
+                                                        (isLight ? "bg-[#E6E6E6] text-black/60 hover:bg-[#DCDCDC]" : "bg-[#303030] text-[#D4D9DF] hover:bg-[#3A3A3A]")
+                                                    }
                                                     onClick={() => setReadersOpen(false)}
                                                     aria-label="Close"
                                                     title="Close"
                                                 >
-                                                    <X size={16} strokeWidth={2.2} />
+                                                    <X size={16} />
                                                 </button>
                                             </div>
 
-                                            <div className="max-h-[55vh] overflow-y-auto">
+                                            {/* The message that was read */}
+                                            {main ? (
+                                                <div
+                                                    className={
+                                                        "mx-5 mb-3 rounded-2xl border px-3 py-2.5 " +
+                                                        (isLight ? "border-[#D8D0D0] bg-[#F7F5F5]" : "border-[#343434] bg-[#232323]")
+                                                    }
+                                                >
+                                                    <div className={"text-[12px] font-semibold " + (isLight ? "text-black/85" : "text-[#F4F5F6]")}>You</div>
+                                                    <div className={"mt-0.5 line-clamp-2 text-[12px] leading-4 " + (isLight ? "text-black/55" : "text-[#AEB6C0]")}>
+                                                        {main}
+                                                    </div>
+                                                </div>
+                                            ) : null}
+
+                                            {/* Who read it */}
+                                            <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar px-3 pb-3">
                                                 {readers.map((reader) => (
                                                     <div
                                                         key={reader.userId}
-                                                        className="flex items-center gap-3 rounded-2xl px-2 py-2.5 hover:bg-[#ECEAEA]"
+                                                        className={
+                                                            "flex items-center gap-3 rounded-xl px-2 py-2 transition " +
+                                                            (isLight ? "hover:bg-black/[0.04]" : "hover:bg-white/[0.05]")
+                                                        }
                                                     >
                                                         <img
-                                                            src={
-                                                                reader.avatarUrl ||
-                                                                `https://ui-avatars.com/api/?name=${encodeURIComponent(reader.fullName || "Participant")}`
-                                                            }
-                                                            className="h-10 w-10 rounded-full object-cover"
+                                                            src={reader.avatarUrl || defaultAvatarUrl(reader.fullName || "Participant")}
+                                                            className="h-8 w-8 shrink-0 rounded-full object-cover"
                                                             alt=""
                                                         />
-
-                                                        <div className="min-w-0 flex-1">
-                                                            <div className="truncate text-[13px] font-medium text-black/85">
-                                                                {reader.fullName || "Participant"}
-                                                            </div>
-
-                                                            {reader.readAt ? (
-                                                                <div className="mt-0.5 text-[11px] text-black/40">
-                                                                    Read at{" "}
-                                                                    {new Date(reader.readAt).toLocaleTimeString([], {
-                                                                        hour: "2-digit",
-                                                                        minute: "2-digit",
-                                                                    })}
-                                                                </div>
-                                                            ) : null}
+                                                        <div className={"min-w-0 flex-1 truncate text-[13px] font-semibold " + (isLight ? "text-black/85" : "text-[#F4F5F6]")}>
+                                                            {reader.fullName || "Participant"}
                                                         </div>
-
-                                                        <CheckCheck
-                                                            size={17}
-                                                            strokeWidth={2.2}
-                                                            className="shrink-0 text-[#5286F6]"
-                                                        />
+                                                        {reader.readAt ? (
+                                                            <div className={"shrink-0 text-[11px] tabular-nums " + (isLight ? "text-black/45" : "text-[#AEB6C0]")}>
+                                                                {new Date(reader.readAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                                            </div>
+                                                        ) : null}
+                                                        <CheckCheck size={15} strokeWidth={2.2} className="shrink-0 text-[#5286F6]" aria-hidden="true" />
                                                     </div>
                                                 ))}
                                             </div>
@@ -3422,47 +3496,47 @@ export function ChatPanel({
         canToggleInModal &&
         !!myReactions?.[reactionDetails.messageId]?.[reactionDetails.emoji];
 
-    // Who reacted: stacked avatars and the names in one line, above the
-    // hovered reaction.
+    // Who reacted: their avatars, stacked, above the hovered reaction.
     const reactorsPopover = hoverReaction
         ? (() => {
             const ids = hoverReaction.userIds;
-            const faces = (ids || []).slice(0, 4);
-            const named = (ids || []).slice(0, 5).map((uid) =>
-                uid === userId ? "You" : profilesByIdRef.current[uid]?.full_name || "Participant",
-            );
-            const more = (ids || []).length - named.length;
-            const names = named.join(", ") + (more > 0 ? ` +${more}` : "");
+            const shown = (ids || []).slice(0, 6);
+            const more = (ids || []).length - shown.length;
             return createPortal(
                 <div
-                    className="pointer-events-none fixed z-[10000] -translate-x-1/2 -translate-y-full pb-2 font-inter animate-[fadeIn_140ms_ease-out]"
+                    className="pointer-events-none fixed z-[10000] -translate-x-1/2 -translate-y-full pb-2 animate-[fadeIn_140ms_ease-out]"
                     style={{ left: hoverReaction.left, top: hoverReaction.top }}
                     role="tooltip"
                 >
                     <div
                         className={
-                            "flex max-w-[300px] items-center gap-2 rounded-full border py-1 pl-1 pr-3 shadow-[0_10px_30px_rgba(0,0,0,0.16)] " +
+                            "flex items-center rounded-full border p-1 shadow-[0_10px_30px_rgba(0,0,0,0.16)] " +
                             (isLight ? "border-[#D8D0D0] bg-[#F7F5F5]" : "border-[#343434] bg-[#232323]")
                         }
                     >
                         {ids === null ? (
-                            <span className={"px-2 text-[12px] " + (isLight ? "text-black/50" : "text-[#AEB6C0]")}>Loading…</span>
+                            <span className={"px-2 py-1 font-inter text-[12px] " + (isLight ? "text-black/50" : "text-[#AEB6C0]")}>Loading…</span>
                         ) : (
-                            <>
-                                <div className="flex shrink-0 -space-x-1.5">
-                                    {faces.map((uid) => (
-                                        <img
-                                            key={uid}
-                                            src={avatarFromProfile(profilesByIdRef.current[uid] || (uid === userId ? meProfileRef.current : null))}
-                                            className={"h-6 w-6 rounded-full object-cover ring-2 " + (isLight ? "ring-[#F7F5F5]" : "ring-[#232323]")}
-                                            alt=""
-                                        />
-                                    ))}
-                                </div>
-                                <span className={"truncate text-[12px] font-medium " + (isLight ? "text-black/80" : "text-[#E3E7EB]")}>
-                                    {names}
-                                </span>
-                            </>
+                            <div className="flex -space-x-1.5">
+                                {shown.map((uid) => (
+                                    <img
+                                        key={uid}
+                                        src={avatarFromProfile(profilesByIdRef.current[uid] || (uid === userId ? meProfileRef.current : null))}
+                                        className={"h-7 w-7 rounded-full object-cover ring-2 " + (isLight ? "ring-[#F7F5F5]" : "ring-[#232323]")}
+                                        alt=""
+                                    />
+                                ))}
+                                {more > 0 ? (
+                                    <span
+                                        className={
+                                            "flex h-7 min-w-7 items-center justify-center rounded-full px-1.5 font-inter text-[11px] ring-2 " +
+                                            (isLight ? "bg-[#E6E4E4] text-black/60 ring-[#F7F5F5]" : "bg-[#303030] text-[#C6CDD5] ring-[#232323]")
+                                        }
+                                    >
+                                        +{more}
+                                    </span>
+                                ) : null}
+                            </div>
                         )}
                     </div>
                 </div>,

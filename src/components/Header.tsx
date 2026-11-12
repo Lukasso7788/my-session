@@ -15,6 +15,7 @@ import { useAccountEntitlement } from "../hooks/useAccountEntitlement";
 import { getFreeSessionUsage } from "../lib/freeSessionNotice";
 import { PAYWALL_ENABLED } from "../lib/flags";
 import { getMembershipBadge, isComplimentaryPro } from "../lib/membershipPresentation";
+import { defaultAvatarUrl } from "../lib/defaultAvatar";
 
 const BRAND_BLACK = "#2F2F2F";
 
@@ -100,7 +101,7 @@ export default function Header() {
 
     const avatarSrc =
         profile?.avatar_url ||
-        `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || "User")}`;
+        defaultAvatarUrl(profile?.full_name);
 
     const activeSessionsTab: SessionTabId = useMemo(() => {
         if (isUnifiedSessions && new URLSearchParams(location.search).get("tab") !== "one-on-one") return location.hash === "#group-sessions" ? "group" : "infinite";
