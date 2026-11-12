@@ -756,14 +756,14 @@ function MessageCardInner({
             tabIndex={-1}
             className={
                 "group relative flex items-start gap-2 rounded-lg px-1.5 outline-none transition " +
-                (continued ? "py-[1px] " : "mt-1.5 pt-1 pb-[1px] first:mt-0 ") +
+                (continued ? "py-[1px] " : "pt-4 pb-[1px] ") +
                 (isLight ? "hover:bg-black/[0.035] focus-within:bg-black/[0.035]" : "hover:bg-white/[0.04] focus-within:bg-white/[0.04]") +
                 (highlighted ? (isLight ? " ring-2 ring-[#6B7280]/45" : " ring-2 ring-[#5286F6]/60") : "")
             }
         >
             {continued ? (
                 <span
-                    className={"w-6 shrink-0 pt-[3px] text-center text-[9px] leading-4 tabular-nums opacity-0 transition group-hover:opacity-100 " + metaTimeCls}
+                    className={"w-6 shrink-0 text-center text-[9px] leading-4 tabular-nums opacity-0 transition group-hover:opacity-100 " + metaTimeCls}
                     aria-hidden="true"
                 >
                     {time.replace(/\s?[AP]M$/i, "")}
@@ -772,12 +772,12 @@ function MessageCardInner({
                 <img
                     src={avatarFromProfile(msg.profile)}
                     {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
-                    className={(quote ? "mt-[23px]" : "mt-[1px]") + " h-6 w-6 shrink-0 rounded-full object-cover"}
+                    className={(quote ? "mt-[22px]" : "mt-0") + " -mb-2" + " h-6 w-6 shrink-0 rounded-full object-cover"}
                     alt=""
                 />
             )}
 
-            <div className="min-w-0 flex-1 text-[13px] leading-5">
+            <div className="min-w-0 flex-1 text-[13px] leading-4">
                 {quote && (
                     <button
                         type="button"
