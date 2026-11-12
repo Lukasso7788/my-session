@@ -2002,11 +2002,11 @@ export function ChatPanel({
     const sendBtnDisabled = isLight ? "text-black/30" : "text-[#AEB6BF]/50";
     const composerInputCls =
         "flex-1 min-w-0 min-h-[36px] max-h-[140px] rounded-[10px] resize-none px-3 py-[7px] text-[13px] leading-5 outline-none focus:ring-1 focus:ring-[#5286F6] focus:border-[#5286F6] " +
-        (isLight ? "bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35" : "bg-[#292D32] border border-[#4C5259] text-[#F4F5F6] placeholder:text-[#ABB3BE]");
+        (isLight ? "bg-white border border-[#D8D0D0] text-black/85 placeholder:text-black/35" : "bg-[#292D32] border border-[#4C5259] text-[#F4F5F6] placeholder:text-[#ABB3BE]");
     // One bar for mic, emoji and send: same surface as the message field.
     const composerBarCls =
         "flex h-9 shrink-0 items-stretch overflow-hidden rounded-[10px] border " +
-        (isLight ? "bg-[#F3F1F1] border-[#D8D0D0]" : "bg-[#292D32] border-[#4C5259]");
+        (isLight ? "bg-white border-[#D8D0D0]" : "bg-[#292D32] border-[#4C5259]");
     const composerBarDividerCls = "my-2 w-px shrink-0 " + (isLight ? "bg-[#D8D0D0]" : "bg-[#4C5259]");
     const composerEmojiBtnCls =
         "w-8 self-stretch shrink-0 flex items-center justify-center transition disabled:opacity-40 " +
@@ -3934,7 +3934,7 @@ export function ChatPanel({
                 </div>
             )}
 
-            <div className={"px-2.5 pt-2.5 pb-2 border-t " + headerBorder}>
+            <div className={"px-2.5 pt-2.5 pb-2 border-t " + headerBorder + (isLight ? " bg-white" : "")}>
                 {generalChatLocked && (
                     <div className={"mb-3 rounded-xl px-3 py-2 text-[12px] leading-5 " + (isLight ? "bg-[#F0F0F0] text-black/60" : "bg-white/[0.06] text-[#D0D6DD]")}>
                         Public chat is disabled by the host. Use DMs to message the host privately.
