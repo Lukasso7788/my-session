@@ -958,9 +958,7 @@ function MessageCardInner({
                     ) : null}
 
                     {!isEditing && (
-                        // Hidden actions take no space, so name and time sit at the edge;
-                        // on hover they slide in. Always shown on touch screens.
-                        <div className="flex h-6 max-w-0 shrink-0 items-center gap-0.5 overflow-hidden leading-none opacity-0 transition-[max-width,opacity] duration-200 ease-out group-hover:max-w-[140px] group-hover:opacity-100 group-focus-within:max-w-[140px] group-focus-within:opacity-100 [@media(hover:none)]:max-w-[140px] [@media(hover:none)]:opacity-100">
+                        <div className="flex h-6 shrink-0 items-center gap-0.5 leading-none">
                             <button
                                 type="button"
                                 onClick={() => onReply(msg)}
@@ -1999,10 +1997,6 @@ export function ChatPanel({
     const titleText = isLight ? "text-black/85" : "text-[#F4F5F6]";
     const subText = isLight ? "text-black/50" : "text-[#B5BCC6]";
     const headerCloseBtnCls = isLight ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60" : "bg-[#353B42] hover:bg-[#444B53] text-[#D9DEE4]";
-    const replyBoxCls = isLight ? "bg-[#ECEAEA] border-[#D8D0D0]" : "bg-[#292929] border-[#484848]";
-    const replyingLabel = `text-[11px] font-medium ${isLight ? "text-[#315DCB]" : "text-[#6B98FA]"}`;
-    const replyingText = isLight ? "text-black/55" : "text-[#C6CDD5]";
-    const cancelBtnCls = isLight ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60" : "bg-[#353B42] hover:bg-[#444B53] text-[#D9DEE4]";
     const hintText = isLight ? "text-black/40" : "text-[#B5BCC6]";
     const sendBtnActive = "bg-[#5286F6] hover:bg-[#6B98FA] text-white";
     const sendBtnDisabled = isLight ? "text-black/30" : "text-[#AEB6BF]/50";
@@ -3949,32 +3943,43 @@ export function ChatPanel({
                 {replyTo && (
                     <div
                         className={
-                            "mb-2 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 " +
-                            replyBoxCls
+                            "mb-2 flex items-center gap-2.5 rounded-xl py-1.5 pl-2 pr-1.5 animate-[fadeIn_140ms_ease-out] " +
+                            (isLight ? "bg-black/[0.045]" : "bg-white/[0.07]")
                         }
                     >
-                        <div className="min-w-0">
-                            <div className={replyingLabel}>Replying</div>
-                            <div className={"text-[11px] truncate " + replyingText}>
-                                {(replyTo.profile?.full_name || "Participant") +
-                                    ": " +
-                                    (quotePreviewForReply(replyTo.body, 220) || "[message]")}
+                        <img
+                            src={avatarFromProfile(replyTo.profile, isLight)}
+                            className="h-7 w-7 shrink-0 rounded-full object-cover"
+                            alt=""
+                        />
+                        <div className="min-w-0 flex-1">
+                            <div className={"flex items-center gap-1 text-[11px] " + (isLight ? "text-black/50" : "text-[#AEB6C0]")}>
+                                <CornerUpLeft size={12} className="shrink-0 text-[#5286F6]" aria-hidden="true" />
+                                <span>
+                                    Replying to{" "}
+                                    <span className={"font-semibold " + (isLight ? "text-black/80" : "text-[#E3E7EB]")}>
+                                        {replyTo.user_id === userId ? "yourself" : replyTo.profile?.full_name || "Participant"}
+                                    </span>
+                                </span>
+                            </div>
+                            <div className={"mt-0.5 truncate text-[12px] " + (isLight ? "text-black/60" : "text-[#C6CDD5]")}>
+                                {quotePreviewForReply(replyTo.body, 220) || "[message]"}
                             </div>
                         </div>
                         <button
                             type="button"
                             onClick={() => setReplyTo(null)}
                             className={
-                                "w-8 h-8 rounded-lg flex items-center justify-center transition " +
-                                cancelBtnCls
+                                "flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition " +
+                                (isLight ? "text-black/45 hover:bg-black/[0.07] hover:text-black/75" : "text-[#AEB6C0] hover:bg-white/10 hover:text-white")
                             }
                             title="Cancel reply"
+                            aria-label="Cancel reply"
                         >
-                            <X size={16} />
+                            <X size={15} />
                         </button>
                     </div>
                 )}
-
                 {voiceMessagePreview && text.trim() ? (
                     <div
                         className={
