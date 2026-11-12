@@ -763,7 +763,7 @@ function MessageCardInner({
                 <img
                     src={avatarFromProfile(msg.profile)}
                     {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
-                    className="w-9 h-9 rounded-full object-cover"
+                    className="w-8 h-8 rounded-full object-cover"
                     alt=""
                 />
             )}
@@ -1272,7 +1272,7 @@ function MessageCardInner({
                 <img
                     src={avatarFromProfile(msg.profile)}
                     {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
-                    className="w-9 h-9 rounded-full object-cover"
+                    className="w-8 h-8 rounded-full object-cover"
                     alt=""
                 />
             )}
