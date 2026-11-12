@@ -376,6 +376,8 @@ type MessageCardProps = {
     readers: ReadReceiptReader[];
     renderDocument: Document;
     renderWindow: Window;
+    /** Same person's follow-up within a few minutes: no avatar or name. */
+    continued?: boolean;
 };
 
 type DisplayedReaction = {
@@ -401,6 +403,7 @@ function MessageCardInner({
     readers,
     renderDocument,
     renderWindow,
+    continued = false,
 }: MessageCardProps) {
     const name = mine ? "You" : msg.profile?.full_name || "Participant";
     const time = formatTime(msg.created_at);
@@ -630,10 +633,7 @@ function MessageCardInner({
         return entries;
     }, [displayedReactions, myReactions]);
 
-    const metaNameCls = isLight ? "text-black/55" : "text-[#C6CDD5]";
     const metaTimeCls = isLight ? "text-black/35" : "text-[#AEB6BF]";
-    const actionBtnCls = isLight ? "text-black/45 hover:text-[#5286F6]" : "text-[#C6CDD5] hover:text-[#5286F6]";
-    const dangerBtnCls = isLight ? "text-black/40 hover:text-red-700" : "text-[#C6CDD5] hover:text-red-300";
     const menuCls = isLight ? "bg-[#F3F1F1] border border-[#D8D0D0]" : "bg-[#292929] border border-[#484848] text-[#F4F5F6]";
 
     const bubbleCls =
@@ -651,9 +651,6 @@ function MessageCardInner({
                 : " ring-2 ring-[#5286F6]/70"
             : "");
 
-    const quoteBoxCls = isLight
-        ? "bg-[#F7F5F5] border border-[#D8D0D0] text-black/70 hover:bg-[#F1F1F1]/90"
-        : "bg-[#242424] border border-[#464646] text-[#D9DEE4] hover:bg-[#30363B]";
 
     const reactionPillBase = isLight
         ? "px-2 py-1 rounded-xl bg-[#ECEAEA] border border-[#D8D0D0] text-[12px] text-black/70 flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#E3E1E1] hover:border-[#BEB7B7] hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/75"
@@ -730,31 +727,81 @@ function MessageCardInner({
         }
     };
 
+    // Compact layout: avatar, name, time and a short message share one line;
+    // longer text wraps under it. Actions float in on hover or focus instead of
+    // taking a row, and a follow-up from the same person skips avatar and name.
+    const nameCls = mine
+        ? isLight ? "text-[#2F5FC4]" : "text-[#8FB0FA]"
+        : isLight ? "text-black/85" : "text-[#F4F5F6]";
+    const textCls = isLight ? "text-black/80" : "text-[#E3E7EB]";
+    const toolbarBtnCls =
+        "inline-flex h-6 w-6 items-center justify-center rounded-md transition " +
+        (isLight ? "text-black/50 hover:bg-black/[0.06] hover:text-[#2F5FC4]" : "text-[#C6CDD5] hover:bg-white/10 hover:text-[#8FB0FA]");
+    const toolbarDangerCls =
+        "inline-flex h-6 w-6 items-center justify-center rounded-md transition " +
+        (isLight ? "text-black/45 hover:bg-red-50 hover:text-red-700" : "text-[#C6CDD5] hover:bg-red-500/10 hover:text-red-300");
+
     return (
         <div
+            tabIndex={-1}
             className={
-                "flex items-start gap-3 " + (mine ? "justify-end" : "justify-start")
+                "group relative flex items-start gap-2 rounded-lg px-1.5 outline-none transition " +
+                (continued ? "py-[1px] " : "pt-1.5 pb-[1px] ") +
+                (isLight ? "hover:bg-black/[0.035] focus-within:bg-black/[0.035]" : "hover:bg-white/[0.04] focus-within:bg-white/[0.04]") +
+                (highlighted ? (isLight ? " ring-2 ring-[#6B7280]/45" : " ring-2 ring-[#5286F6]/60") : "")
             }
         >
-            {!mine && (
+            {continued ? (
+                <span
+                    className={"w-6 shrink-0 pt-[3px] text-center text-[9px] leading-4 tabular-nums opacity-0 transition group-hover:opacity-100 " + metaTimeCls}
+                    aria-hidden="true"
+                >
+                    {time.replace(/\s?[AP]M$/i, "")}
+                </span>
+            ) : (
                 <img
                     src={avatarFromProfile(msg.profile)}
                     {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
-                    className="w-9 h-9 rounded-full object-cover"
+                    className="mt-[1px] h-6 w-6 shrink-0 rounded-full object-cover"
                     alt=""
                 />
             )}
 
-            <div className="max-w-[82%] min-w-0">
-                <div
-                    className={
-                        "flex items-center gap-2 mb-1 " +
-                        (mine ? "justify-end" : "justify-start")
-                    }
-                >
-                    <div className={"text-[11px] truncate " + metaNameCls}>{name}</div>
-                    <div className={"text-[11px] " + metaTimeCls}>{time}</div>
+            <div className="min-w-0 flex-1 text-[13px] leading-5">
+                {quote && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (quoteMessageId) onJumpToMessage(quoteMessageId);
+                        }}
+                        disabled={!quoteMessageId}
+                        className={
+                            "mb-0.5 flex max-w-full items-center gap-1 text-left text-[11px] leading-4 transition " +
+                            (isLight ? "text-black/45 hover:text-black/70" : "text-[#9AA3AD] hover:text-[#D9DEE4]") +
+                            (quoteMessageId ? " cursor-pointer" : " cursor-default")
+                        }
+                        title={quoteMessageId ? "Jump to quoted message" : "Quoted message"}
+                    >
+                        <CornerUpLeft size={11} className="shrink-0" />
+                        <span className="truncate">{quote}</span>
+                    </button>
+                )}
 
+                <div className="whitespace-pre-wrap break-words">
+                    {!continued && (
+                        <>
+                            <span
+                                className={"mr-1.5 text-[12.5px] font-semibold " + nameCls}
+                                {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
+                            >
+                                {name}
+                            </span>
+                            <span className={"mr-1.5 text-[10.5px] tabular-nums " + metaTimeCls}>{time}</span>
+                        </>
+                    )}
+                    {!isEditing && <span className={textCls}>{renderTextWithLinks(main, isLight)}</span>}
+                    {mine && readers.length > 0 ? (
+                        <span className="ml-1 inline-flex translate-y-[2px] align-baseline">
                     {mine && readers.length > 0 ? (
                         <div className="relative">
                             <button
@@ -868,173 +915,11 @@ function MessageCardInner({
                                 : null}
                         </div>
                     ) : null}
-
-                    {!isEditing && (
-                        <div className="ml-1 flex h-5 shrink-0 items-center gap-3 leading-none">
-                            <button
-                                type="button"
-                                onClick={() => onReply(msg)}
-                                className={
-                                    "grid h-5 grid-cols-[14px_auto] items-center gap-1 whitespace-nowrap text-[11px] leading-none transition " +
-                                    actionBtnCls
-                                }
-                                title="Reply"
-                            >
-                                <CornerUpLeft
-                                    size={14}
-                                    className="block shrink-0 self-center"
-                                />
-                                <span className="flex h-4 items-center leading-4">Reply</span>
-                            </button>
-
-                            <div className="relative flex h-5 items-center leading-none">
-                                <button
-                                    ref={reactionButtonRef}
-                                    type="button"
-                                    onClick={() => {
-                                        if (!openReactions) updateReactionMenuPos();
-                                        setOpenReactions((v) => !v);
-                                    }}
-                                    className={
-                                        "grid h-5 grid-cols-[14px_auto] items-center gap-1 whitespace-nowrap text-[11px] leading-none transition " +
-                                        actionBtnCls
-                                    }
-                                    title="React"
-                                >
-                                    <Smile
-                                        size={14}
-                                        className="block shrink-0 self-center"
-                                    />
-                                    <span className="flex h-4 items-center leading-4">React</span>
-                                </button>
-
-                                {openReactions &&
-                                    reactionMenuPos &&
-                                    createPortal(
-                                        <div
-                                            ref={reactionMenuRef}
-                                            className={
-                                                "fixed z-[99999] rounded-2xl shadow-xl overflow-hidden " +
-                                                menuCls
-                                            }
-                                            style={{
-                                                top: reactionMenuPos.top,
-                                                left: reactionMenuPos.left,
-                                                width: Math.max(
-                                                    280,
-                                                    Math.min(352, renderWindow.innerWidth - 16),
-                                                ),
-                                                maxHeight: Math.min(460, renderWindow.innerHeight - 16),
-                                            }}
-                                            onMouseDown={(e) => e.stopPropagation()}
-                                        >
-                                            <div className={`px-2.5 pt-2 pb-2 border-b ${isLight ? "border-[#D8D0D0]" : "border-[#484848]"}`}>
-                                                <div className={`mb-1.5 text-[11px] font-semibold ${isLight ? "text-black/55" : "text-[#D9DEE4]"}`}>
-                                                    Quick reactions
-                                                </div>
-                                                <div className="flex flex-wrap gap-1.5">
-                                                    {REACTION_EMOJIS.map((e) => {
-                                                        const isMine = !!myReactions?.[e];
-                                                        return (
-                                                            <button
-                                                                key={e}
-                                                                onClick={() => {
-                                                                    onToggleReaction(msg.id, e);
-                                                                    setOpenReactions(false);
-                                                                }}
-                                                                className={
-                                                                    "h-8 w-8 rounded-xl hover:scale-[1.05] transition leading-none flex items-center justify-center " +
-                                                                    (isMine
-                                                                        ? "bg-[#5286F6]/18 ring-1 ring-[#5286F6]/65"
-                                                                        : isLight ? "hover:bg-[#E8E8E8]" : "hover:bg-[#3A3A3A]")
-                                                                }
-                                                                title={isMine ? `Remove ${e}` : e}
-                                                                type="button"
-                                                            >
-                                                                <span className="inline-block align-middle text-[16px] leading-none">
-                                                                    {e}
-                                                                </span>
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                            <div className="max-h-[360px] overflow-hidden">
-                                                <EmojiPickerPopover
-                                                    theme={isLight ? "light" : "dark"}
-                                                    onPick={(native) => {
-                                                        onToggleReaction(msg.id, native);
-                                                        setOpenReactions(false);
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>,
-                                        renderDocument.body,
-                                    )}
-                            </div>
-
-                            {canEdit && (
-                                <button
-                                    type="button"
-                                    onClick={() => setIsEditing(true)}
-                                    className={
-                                        "inline-flex h-5 w-5 items-center justify-center leading-none transition " +
-                                        actionBtnCls
-                                    }
-                                    title="Edit"
-                                >
-                                    <Pencil size={14} className="block shrink-0" />
-                                </button>
-                            )}
-
-                            {(canEdit || canModerate) && (
-                                <button
-                                    type="button"
-                                    onClick={doDelete}
-                                    className={
-                                        "inline-flex h-5 w-5 items-center justify-center leading-none transition " +
-                                        dangerBtnCls
-                                    }
-                                    title={canEdit ? "Delete" : "Delete message (moderator)"}
-                                    aria-label={canEdit ? "Delete message" : "Delete message as moderator"}
-                                >
-                                    <Trash2 size={14} className="block shrink-0" />
-                                </button>
-                            )}
-                        </div>
-                    )}
+                        </span>
+                    ) : null}
                 </div>
 
-                {!isEditing ? (
-                    <div className={bubbleCls}>
-                        {quote && (
-                            <button
-                                type="button"
-                                onClick={() => {
-                                    if (quoteMessageId) onJumpToMessage(quoteMessageId);
-                                }}
-                                disabled={!quoteMessageId}
-                                className={
-                                    "mb-2 w-full rounded-xl px-3 py-2 text-left text-[12px] leading-snug transition " +
-                                    quoteBoxCls +
-                                    (quoteMessageId ? " cursor-pointer" : " cursor-default")
-                                }
-                                title={
-                                    quoteMessageId ? "Jump to quoted message" : "Quoted message"
-                                }
-                            >
-                                <div className="text-[10px] opacity-75 mb-1">Reply</div>
-                                <div className="whitespace-pre-wrap break-words">
-                                    {renderTextWithLinks(quote, isLight)}
-                                </div>
-                            </button>
-                        )}
-
-                        <div className="whitespace-pre-wrap break-words">
-                            {renderTextWithLinks(main, isLight)}
-                        </div>
-                    </div>
-                ) : (
+                {isEditing ? (
                     <div className={bubbleCls}>
                         <textarea
                             ref={editTextareaRef}
@@ -1135,13 +1020,13 @@ function MessageCardInner({
                             Enter — save • Shift+Enter — new line • Esc — cancel
                         </div>
                     </div>
-                )}
+                ) : null}
 
                 {hasReactions && !isEditing && (
                     <div
                         className={
-                            "mt-2 flex flex-wrap gap-2 " +
-                            (mine ? "justify-end" : "justify-start")
+                            "mt-1 flex flex-wrap gap-1.5 " +
+                            "justify-start"
                         }
                     >
                         {orderedReactionEntries.map(([emoji, reaction]) => {
@@ -1179,13 +1064,112 @@ function MessageCardInner({
                 )}
             </div>
 
-            {mine && (
-                <img
-                    src={avatarFromProfile(msg.profile)}
-                    {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
-                    className="w-9 h-9 rounded-full object-cover"
-                    alt=""
-                />
+            {!isEditing && (
+                <div
+                    className={
+                        "absolute -top-3 right-1 z-[2] items-center gap-0.5 rounded-lg border p-0.5 shadow-sm " +
+                        (openReactions ? "flex " : "hidden group-hover:flex group-focus-within:flex ") +
+                        (isLight ? "border-[#D8D0D0] bg-[#F7F5F5]" : "border-[#484848] bg-[#292929]")
+                    }
+                >
+                    <button type="button" onClick={() => onReply(msg)} className={toolbarBtnCls} title="Reply" aria-label="Reply">
+                        <CornerUpLeft size={14} />
+                    </button>
+                    <div className="relative flex items-center">
+                        <button
+                            ref={reactionButtonRef}
+                            type="button"
+                            onClick={() => {
+                                if (!openReactions) updateReactionMenuPos();
+                                setOpenReactions((v) => !v);
+                            }}
+                            className={toolbarBtnCls}
+                            title="React"
+                            aria-label="React"
+                        >
+                            <Smile size={14} />
+                        </button>
+                                {openReactions &&
+                                    reactionMenuPos &&
+                                    createPortal(
+                                        <div
+                                            ref={reactionMenuRef}
+                                            className={
+                                                "fixed z-[99999] rounded-2xl shadow-xl overflow-hidden " +
+                                                menuCls
+                                            }
+                                            style={{
+                                                top: reactionMenuPos.top,
+                                                left: reactionMenuPos.left,
+                                                width: Math.max(
+                                                    280,
+                                                    Math.min(352, renderWindow.innerWidth - 16),
+                                                ),
+                                                maxHeight: Math.min(460, renderWindow.innerHeight - 16),
+                                            }}
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                        >
+                                            <div className={`px-2.5 pt-2 pb-2 border-b ${isLight ? "border-[#D8D0D0]" : "border-[#484848]"}`}>
+                                                <div className={`mb-1.5 text-[11px] font-semibold ${isLight ? "text-black/55" : "text-[#D9DEE4]"}`}>
+                                                    Quick reactions
+                                                </div>
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    {REACTION_EMOJIS.map((e) => {
+                                                        const isMine = !!myReactions?.[e];
+                                                        return (
+                                                            <button
+                                                                key={e}
+                                                                onClick={() => {
+                                                                    onToggleReaction(msg.id, e);
+                                                                    setOpenReactions(false);
+                                                                }}
+                                                                className={
+                                                                    "h-8 w-8 rounded-xl hover:scale-[1.05] transition leading-none flex items-center justify-center " +
+                                                                    (isMine
+                                                                        ? "bg-[#5286F6]/18 ring-1 ring-[#5286F6]/65"
+                                                                        : isLight ? "hover:bg-[#E8E8E8]" : "hover:bg-[#3A3A3A]")
+                                                                }
+                                                                title={isMine ? `Remove ${e}` : e}
+                                                                type="button"
+                                                            >
+                                                                <span className="inline-block align-middle text-[16px] leading-none">
+                                                                    {e}
+                                                                </span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                            <div className="max-h-[360px] overflow-hidden">
+                                                <EmojiPickerPopover
+                                                    theme={isLight ? "light" : "dark"}
+                                                    onPick={(native) => {
+                                                        onToggleReaction(msg.id, native);
+                                                        setOpenReactions(false);
+                                                    }}
+                                                />
+                                            </div>
+                                        </div>,
+                                        renderDocument.body,
+                                    )}
+                    </div>
+                    {canEdit && (
+                        <button type="button" onClick={() => setIsEditing(true)} className={toolbarBtnCls} title="Edit" aria-label="Edit message">
+                            <Pencil size={14} />
+                        </button>
+                    )}
+                    {(canEdit || canModerate) && (
+                        <button
+                            type="button"
+                            onClick={doDelete}
+                            className={toolbarDangerCls}
+                            title={canEdit ? "Delete" : "Delete message (moderator)"}
+                            aria-label={canEdit ? "Delete message" : "Delete message as moderator"}
+                        >
+                            <Trash2 size={14} />
+                        </button>
+                    )}
+                </div>
             )}
         </div>
     );
@@ -1212,7 +1196,8 @@ const areMessageCardPropsEqual = (
         prev.highlighted === next.highlighted &&
         prev.readers === next.readers &&
         prev.renderDocument === next.renderDocument &&
-        prev.renderWindow === next.renderWindow
+        prev.renderWindow === next.renderWindow &&
+        prev.continued === next.continued
     );
 };
 
@@ -3641,7 +3626,7 @@ export function ChatPanel({
 
             <div
                 ref={listRef}
-                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4 space-y-3 custom-scrollbar relative"
+                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-2.5 py-3 space-y-0.5 custom-scrollbar relative"
                 onScroll={() => {
                     const at = isAtBottom();
                     atBottomRef.current = at;
@@ -3694,8 +3679,14 @@ export function ChatPanel({
                 {messages.length >= CHAT_WINDOW_LIMIT && (
                     <p className="text-center text-[11px] text-black/40">Showing the latest {CHAT_WINDOW_LIMIT} loaded messages</p>
                 )}
-                {visibleMessages.map((m) => {
+                {visibleMessages.map((m, index) => {
                     const mine = m.user_id === userId;
+                    const previous = index > 0 ? visibleMessages[index - 1] : null;
+                    const continued =
+                        !!previous &&
+                        previous.user_id === m.user_id &&
+                        !parseReplyBody(m.body).quote &&
+                        Date.parse(m.created_at) - Date.parse(previous.created_at) < 5 * 60_000;
                     const canEdit = mine && !m.id.startsWith("optimistic-");
                     // Moderators remove others' public messages; direct messages stay private.
                     const canModerate = canModerateMessages && !mine && m.scope !== "direct" && !m.id.startsWith("optimistic-");
@@ -3726,6 +3717,7 @@ export function ChatPanel({
                                 readers={mine ? readersByMessage[m.id] || EMPTY_READERS : EMPTY_READERS}
                                 renderDocument={chatDocument}
                                 renderWindow={chatWindow}
+                                continued={continued}
                             />
                         </div>
                     );
