@@ -656,21 +656,25 @@ function MessageCardInner({
         return entries;
     }, [displayedReactions, myReactions]);
 
-    const metaNameCls = isLight ? "text-black/55" : "text-[#C6CDD5]";
+    const metaNameCls = isLight ? "text-black/70 font-medium" : "text-[#D9DEE4] font-medium";
     const metaTimeCls = isLight ? "text-black/35" : "text-[#AEB6BF]";
     const actionBtnCls = isLight ? "text-black/45 hover:text-[#5286F6]" : "text-[#C6CDD5] hover:text-[#5286F6]";
     const dangerBtnCls = isLight ? "text-black/40 hover:text-red-700" : "text-[#C6CDD5] hover:text-red-300";
     const menuCls = isLight ? "bg-[#F3F1F1] border border-[#D8D0D0]" : "bg-[#292929] border border-[#484848] text-[#F4F5F6]";
 
+    // Bubbles: others on white with a soft shadow, yours in a soft accent blue;
+    // the corner next to the name is tighter, like a speech tail.
     const bubbleCls =
         "rounded-2xl px-2.5 py-1.5 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
         (mine
-            ? isLight
-                ? "bg-[#5286F6]/15 border-[#5286F6]/50 text-black/85"
-                : "bg-[#5286F6]/15 border-[#5286F6]/45 text-[#EAF8EC]"
-            : isLight
-                ? "bg-[#ECEAEA] border-[#D8D0D0] text-black/80"
-                : "bg-[#2A2A2A] border-[#464646] text-[#F4F5F6]") +
+            ? "rounded-tr-md " +
+              (isLight
+                ? "bg-[#5286F6]/[0.14] border-transparent text-black/85"
+                : "bg-[#5286F6]/25 border-transparent text-white")
+            : "rounded-tl-md " +
+              (isLight
+                ? "bg-white border-black/[0.05] text-black/80 shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
+                : "bg-[#262626] border-white/[0.05] text-[#F4F5F6]")) +
         (highlighted
             ? isLight
                 ? " ring-2 ring-[#6B7280]/55"
@@ -678,8 +682,8 @@ function MessageCardInner({
             : "");
 
     const quoteBoxCls = isLight
-        ? "bg-[#F7F5F5] border border-[#D8D0D0] text-black/70 hover:bg-[#F1F1F1]/90"
-        : "bg-[#242424] border border-[#464646] text-[#D9DEE4] hover:bg-[#30363B]";
+        ? "bg-black/[0.04] border-l-2 border-[#5286F6]/60 text-black/65 hover:bg-black/[0.06]"
+        : "bg-white/[0.06] border-l-2 border-[#5286F6]/70 text-[#D9DEE4] hover:bg-white/[0.09]";
 
     const reactionPillBase = isLight
         ? "px-1.5 py-0.5 rounded-lg bg-[#ECEAEA] border border-[#D8D0D0] text-[12px] text-black/70 flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:bg-[#E3E1E1] hover:border-[#BEB7B7] hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/75"
@@ -763,7 +767,7 @@ function MessageCardInner({
                 <img
                     src={avatarFromProfile(msg.profile)}
                     {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
-                    className="h-[34px] w-[34px] rounded-full object-cover"
+                    className="h-[31px] w-[31px] rounded-full object-cover"
                     alt=""
                 />
             )}
@@ -1272,7 +1276,7 @@ function MessageCardInner({
                 <img
                     src={avatarFromProfile(msg.profile)}
                     {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
-                    className="h-[34px] w-[34px] rounded-full object-cover"
+                    className="h-[31px] w-[31px] rounded-full object-cover"
                     alt=""
                 />
             )}
