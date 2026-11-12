@@ -670,6 +670,10 @@ function MessageCardInner({
         () => parseReplyBody(msg.body),
         [msg.body],
     );
+    // The quote header is "Name: text"; show the name apart from the text.
+    const quoteSeparator = quote ? quote.indexOf(": ") : -1;
+    const quoteAuthor = quote && quoteSeparator > 0 && quoteSeparator <= 60 ? quote.slice(0, quoteSeparator) : "";
+    const quoteText = quote ? (quoteAuthor ? quote.slice(quoteSeparator + 2) : quote) : "";
 
     const insertEmojiToEdit = (emoji: string) => {
         const textarea = editTextareaRef.current;
@@ -762,7 +766,7 @@ function MessageCardInner({
                 <img
                     src={avatarFromProfile(msg.profile)}
                     {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
-                    className="mt-[1px] h-6 w-6 shrink-0 rounded-full object-cover"
+                    className={(quote ? "mt-[23px]" : "mt-[1px]") + " h-6 w-6 shrink-0 rounded-full object-cover"}
                     alt=""
                 />
             )}
@@ -776,14 +780,35 @@ function MessageCardInner({
                         }}
                         disabled={!quoteMessageId}
                         className={
-                            "mb-0.5 flex max-w-full items-center gap-1 text-left text-[11px] leading-4 transition " +
-                            (isLight ? "text-black/45 hover:text-black/70" : "text-[#9AA3AD] hover:text-[#D9DEE4]") +
-                            (quoteMessageId ? " cursor-pointer" : " cursor-default")
+                            "group/quote relative mb-1 flex h-[18px] max-w-full items-center gap-1.5 text-left text-[12px] leading-[18px] transition " +
+                            (quoteMessageId ? "cursor-pointer" : "cursor-default")
                         }
-                        title={quoteMessageId ? "Jump to quoted message" : "Quoted message"}
+                        title={quoteMessageId ? "Jump to the original message" : "Quoted message"}
                     >
-                        <CornerUpLeft size={11} className="shrink-0" />
-                        <span className="truncate">{quote}</span>
+                        {/* Reply connector: from above the avatar, curving into the quote. */}
+                        <span
+                            aria-hidden="true"
+                            className={
+                                "pointer-events-none absolute -left-[21px] top-[9px] h-[13px] w-[15px] rounded-tl-[7px] border-l-2 border-t-2 " +
+                                (isLight ? "border-black/15" : "border-white/20")
+                            }
+                        />
+                        <span
+                            className={
+                                "shrink-0 font-semibold " +
+                                (isLight ? "text-black/60 group-hover/quote:text-black/85" : "text-[#C6CDD5] group-hover/quote:text-white")
+                            }
+                        >
+                            {quoteAuthor || "Reply"}
+                        </span>
+                        <span
+                            className={
+                                "min-w-0 truncate " +
+                                (isLight ? "text-black/45 group-hover/quote:text-black/70" : "text-[#9AA3AD] group-hover/quote:text-[#D9DEE4]")
+                            }
+                        >
+                            {quoteText}
+                        </span>
                     </button>
                 )}
 
