@@ -724,8 +724,9 @@ function MessageCardInner({
     // taking a row, and a follow-up from the same person skips avatar and name.
     const nameCls = mine
         ? isLight ? "text-[#2F5FC4]" : "text-[#8FB0FA]"
-        : isLight ? "text-black/85" : "text-[#F4F5F6]";
-    const textCls = isLight ? "text-black/80" : "text-[#E3E7EB]";
+        : isLight ? "text-black/90" : "text-white";
+    // Message text is a step softer than names, so each author stands out.
+    const textCls = isLight ? "text-black/70" : "text-[#C5CCD4]";
     const toolbarBtnCls =
         "inline-flex h-6 w-6 items-center justify-center rounded-md transition " +
         (isLight ? "text-black/50 hover:bg-black/[0.06] hover:text-[#2F5FC4]" : "text-[#C6CDD5] hover:bg-white/10 hover:text-[#8FB0FA]");
@@ -738,7 +739,7 @@ function MessageCardInner({
             tabIndex={-1}
             className={
                 "group relative flex items-start gap-2 rounded-lg px-1.5 outline-none transition " +
-                (continued ? "py-[1px] " : "pt-1.5 pb-[1px] ") +
+                (continued ? "py-[3px] " : "mt-3 pt-1 pb-[3px] ") +
                 (isLight ? "hover:bg-black/[0.035] focus-within:bg-black/[0.035]" : "hover:bg-white/[0.04] focus-within:bg-white/[0.04]") +
                 (highlighted ? (isLight ? " ring-2 ring-[#6B7280]/45" : " ring-2 ring-[#5286F6]/60") : "")
             }
