@@ -16,7 +16,6 @@ import { createChatProfileLoader } from "../lib/chatProfileLoader";
 import { createPanelSnapshotCache } from "../lib/panelSnapshotCache";
 import { profileHoverAttrs } from "./ProfileHoverLayer";
 import {
-    Check,
     CheckCheck,
     CornerUpLeft,
     Mic,
@@ -641,21 +640,6 @@ function MessageCardInner({
     const metaTimeCls = isLight ? "text-black/35" : "text-[#AEB6BF]";
     const menuCls = isLight ? "bg-[#F3F1F1] border border-[#D8D0D0]" : "bg-[#292929] border border-[#484848] text-[#F4F5F6]";
 
-    const bubbleCls =
-        "rounded-2xl px-3 py-2 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
-        (mine
-            ? isLight
-                ? "bg-[#5286F6]/15 border-[#5286F6]/50 text-black/85"
-                : "bg-[#5286F6]/15 border-[#5286F6]/45 text-[#EAF8EC]"
-            : isLight
-                ? "bg-[#ECEAEA] border-[#D8D0D0] text-black/80"
-                : "bg-[#2A2A2A] border-[#464646] text-[#F4F5F6]") +
-        (highlighted
-            ? isLight
-                ? " ring-2 ring-[#6B7280]/55"
-                : " ring-2 ring-[#5286F6]/70"
-            : "");
-
 
     // Reactions: small pills. Pale gray when only others reacted; the room's
     // accent blue with a white count once you reacted too.
@@ -669,10 +653,6 @@ function MessageCardInner({
     const reactionPillMine = "bg-[#5286F6] hover:bg-[#6B98FA]";
 
     const reactionCountCls = "font-inter text-[11px] font-normal leading-none tabular-nums";
-
-    const inputCls = isLight
-        ? "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#F3F1F1] border border-[#D8D0D0] text-black/85 placeholder:text-black/35 focus:ring-1 focus:ring-[#5286F6] focus:border-[#5286F6]"
-        : "w-full min-h-[42px] max-h-[180px] rounded-xl resize-none px-3 py-2 text-[13px] outline-none bg-[#292D32] border border-[#4C5259] text-[#F4F5F6] placeholder:text-[#ABB3BE] focus:ring-1 focus:ring-[#5286F6] focus:border-[#5286F6]";
 
     const { quote, quoteMessageId, main } = useMemo(
         () => parseReplyBody(msg.body),
@@ -963,71 +943,75 @@ function MessageCardInner({
                 </div>
 
                 {isEditing ? (
-                    <div className={bubbleCls}>
-                        <textarea
-                            ref={editTextareaRef}
-                            className={inputCls}
-                            value={draft}
-                            onChange={(e) => setDraft(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter" && !e.shiftKey) {
-                                    e.preventDefault();
-                                    void saveEdit();
-                                }
-                                if (e.key === "Escape") {
-                                    // Escape closes an open emoji picker first.
-                                    if (editEmojiOpen) setEditEmojiOpen(false);
-                                    else cancelEdit();
-                                }
-                            }}
-                            autoFocus
-                        />
-                        <div className="mt-2 flex items-center justify-end gap-2">
-                            <button
-                                ref={editEmojiButtonRef}
-                                type="button"
-                                onMouseDown={(e) => e.preventDefault()}
-                                onClick={() => setEditEmojiOpen((current) => !current)}
-                                aria-expanded={editEmojiOpen}
+                    <div className="mt-1 pr-1">
+                        <div
+                            className={
+                                "rounded-xl border px-2.5 pb-1.5 pt-2 transition focus-within:border-[#5286F6] focus-within:ring-2 focus-within:ring-[#5286F6]/15 " +
+                                (isLight ? "border-[#D8D0D0] bg-white" : "border-[#484848] bg-[#232323]")
+                            }
+                        >
+                            <textarea
+                                ref={editTextareaRef}
                                 className={
-                                    isLight
-                                        ? "grid h-9 w-9 place-items-center rounded-xl bg-[#ECEAEA] text-black/60 transition hover:bg-[#DCDCDC] hover:text-[#2FA84F]"
-                                        : "grid h-9 w-9 place-items-center rounded-xl bg-[#F7F5F5] text-black/65 transition hover:bg-[#303030] hover:text-[#2FA84F]"
+                                    "block max-h-[180px] min-h-[20px] w-full resize-none bg-transparent text-[13px] leading-[18px] outline-none " +
+                                    (isLight ? "text-black/85 placeholder:text-black/35" : "text-[#F4F5F6] placeholder:text-[#8D96A1]")
                                 }
-                                disabled={savingEdit}
-                                title="Add emoji"
-                                aria-label="Add emoji while editing"
-                            >
-                                <Smile size={17} />
-                            </button>
-                            <button
-                                type="button"
-                                onClick={cancelEdit}
-                                className={
-                                    isLight
-                                        ? "px-3 h-9 rounded-xl bg-[#ECEAEA] hover:bg-[#DCDCDC] border border-[#D8D0D0] text-black/70 text-sm"
-                                        : "px-3 h-9 rounded-xl bg-[#F7F5F5] hover:bg-[#303030] border border-[#D8D0D0] text-black/75 text-sm"
-                                }
-                                disabled={savingEdit}
-                                title="Cancel"
-                            >
-                                <X size={16} />
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => void saveEdit()}
-                                className={
-                                    "px-3 h-9 rounded-xl text-sm font-semibold inline-flex items-center gap-2 " +
-                                    (savingEdit ? "opacity-70 cursor-not-allowed " : "") +
-                                    "bg-[#5286F6] hover:bg-[#5286F6] text-black"
-                                }
-                                disabled={savingEdit || !draft.trim()}
-                                title="Save"
-                            >
-                                <Check size={16} />
-                                Save
-                            </button>
+                                style={{ fieldSizing: "content" } as React.CSSProperties}
+                                rows={1}
+                                value={draft}
+                                onChange={(e) => setDraft(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey) {
+                                        e.preventDefault();
+                                        void saveEdit();
+                                    }
+                                    if (e.key === "Escape") {
+                                        // Escape closes an open emoji picker first.
+                                        if (editEmojiOpen) setEditEmojiOpen(false);
+                                        else cancelEdit();
+                                    }
+                                }}
+                                aria-label="Edit message"
+                                autoFocus
+                            />
+                            <div className="mt-1.5 flex items-center gap-1">
+                                <button
+                                    ref={editEmojiButtonRef}
+                                    type="button"
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => setEditEmojiOpen((current) => !current)}
+                                    aria-expanded={editEmojiOpen}
+                                    className={
+                                        "grid h-7 w-7 place-items-center rounded-lg transition " +
+                                        (isLight ? "text-black/45 hover:bg-black/[0.06] hover:text-black/75" : "text-[#AEB6C0] hover:bg-white/10 hover:text-white")
+                                    }
+                                    disabled={savingEdit}
+                                    title="Add emoji"
+                                    aria-label="Add emoji while editing"
+                                >
+                                    <Smile size={16} />
+                                </button>
+                                <span className="flex-1" />
+                                <button
+                                    type="button"
+                                    onClick={cancelEdit}
+                                    className={
+                                        "h-7 rounded-lg px-2.5 text-[12px] font-medium transition " +
+                                        (isLight ? "text-black/60 hover:bg-black/[0.06] hover:text-black/85" : "text-[#C6CDD5] hover:bg-white/10 hover:text-white")
+                                    }
+                                    disabled={savingEdit}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void saveEdit()}
+                                    className="inline-flex h-7 items-center rounded-lg bg-[#5286F6] px-3 text-[12px] font-semibold text-white transition hover:bg-[#6B98FA] disabled:cursor-not-allowed disabled:opacity-40"
+                                    disabled={savingEdit || !draft.trim()}
+                                >
+                                    {savingEdit ? "Saving…" : "Save"}
+                                </button>
+                            </div>
                         </div>
                         {editEmojiOpen &&
                             editEmojiPos &&
@@ -1053,18 +1037,11 @@ function MessageCardInner({
                                 </div>,
                                 renderDocument.body,
                             )}
-
-                        <div
-                            className={
-                                "mt-1 text-[11px] " +
-                                (isLight ? "text-black/40" : "text-[#B5BCC6]")
-                            }
-                        >
-                            Enter — save • Shift+Enter — new line • Esc — cancel
+                        <div className={"mt-1 px-0.5 text-[11px] " + (isLight ? "text-black/40" : "text-[#8D96A1]")}>
+                            Enter to save · Esc to cancel · Shift+Enter for a new line
                         </div>
                     </div>
                 ) : null}
-
                 {hasReactions && !isEditing && (
                     <div
                         className={
