@@ -3934,7 +3934,7 @@ export function ChatPanel({
                 </div>
             )}
 
-            <div className={"px-2.5 pt-2.5 pb-2 border-t " + headerBorder + (isLight ? " bg-white" : "")}>
+            <div className={"px-2.5 pt-2.5 pb-2 border-t " + headerBorder}>
                 {generalChatLocked && (
                     <div className={"mb-3 rounded-xl px-3 py-2 text-[12px] leading-5 " + (isLight ? "bg-[#F0F0F0] text-black/60" : "bg-white/[0.06] text-[#D0D6DD]")}>
                         Public chat is disabled by the host. Use DMs to message the host privately.
