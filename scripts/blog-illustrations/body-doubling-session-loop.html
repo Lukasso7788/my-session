@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The body doubling session loop</title>
+<style>
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-Regular.woff2") format("woff2"); font-weight: 400; }
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-SemiBold.woff2") format("woff2"); font-weight: 600; }
+  @font-face { font-family: Inter; src: url("../../public/fonts/Inter-Bold.woff2") format("woff2"); font-weight: 700; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body { font-family: Inter, Arial, sans-serif; background: #f9f6ef; color: #1d2d45; }
+  h1 { position: absolute; left: 70px; top: 64px; margin: 0; width: 420px; font-size: 44px; font-weight: 700; line-height: 1.08; letter-spacing: -0.03em; }
+  .sub { position: absolute; left: 70px; top: 190px; width: 380px; font-size: 19px; line-height: 1.45; color: #5f6d80; }
+  .legend { position: absolute; left: 70px; bottom: 70px; width: 380px; font-size: 15px; line-height: 1.5; color: #5f6d80; }
+  .legend b { color: #1d2d45; }
+  svg { position: absolute; left: 520px; top: 35px; }
+  .node { position: absolute; width: 230px; background: #fff; border-radius: 20px; padding: 16px 18px; box-shadow: 0 10px 30px rgba(29,45,69,.10); }
+  .node .n { display: inline-flex; width: 26px; height: 26px; border-radius: 50%; align-items: center; justify-content: center; color: #fff; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+  .node b { display: block; font-size: 18px; margin-bottom: 4px; }
+  .node span { font-size: 14px; line-height: 1.4; color: #5f6d80; }
+  .center { position: absolute; left: 760px; top: 278px; width: 200px; text-align: center; }
+  .center b { display: block; font-size: 22px; }
+  .center span { font-size: 14px; color: #5f6d80; }
+</style>
+</head>
+<body>
+  <h1>The loop behind every session</h1>
+  <div class="sub">Shared presence, short blocks and check-ins repeat until the work is done.</div>
+  <div class="legend"><b>Screen sharing</b> makes the focus step visible. <b>A good host</b> listens at every check-in and keeps the room encouraging.</div>
+
+  <svg width="640" height="560" viewBox="0 0 640 560" aria-hidden="true">
+    <defs>
+      <marker id="a" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="16" refX="10" refY="8" orient="auto"><path d="M0,0 L16,8 L0,16 z" fill="#7f9fd1"/></marker>
+    </defs>
+    <circle cx="340" cy="280" r="190" fill="none" stroke="#d6e1f1" stroke-width="10"/>
+    <path d="M 430 112 A 190 190 0 0 1 512 210" fill="none" stroke="#7f9fd1" stroke-width="3" marker-end="url(#a)"/>
+    <path d="M 512 350 A 190 190 0 0 1 430 448" fill="none" stroke="#7f9fd1" stroke-width="3" marker-end="url(#a)"/>
+    <path d="M 250 448 A 190 190 0 0 1 168 350" fill="none" stroke="#7f9fd1" stroke-width="3" marker-end="url(#a)"/>
+    <path d="M 168 210 A 190 190 0 0 1 250 112" fill="none" stroke="#7f9fd1" stroke-width="3" marker-end="url(#a)"/>
+  </svg>
+
+  <div class="node" style="left:745px; top:38px"><div class="n" style="background:#3d77dd">1</div><b>Name your goal</b><span>Say what you will do in this block.</span></div>
+  <div class="node" style="left:925px; top:228px; width:230px"><div class="n" style="background:#3d77dd">2</div><b>Focus together</b><span>Cameras on, screens shared, everyone working.</span></div>
+  <div class="node" style="left:745px; top:440px"><div class="n" style="background:#49a650">3</div><b>Check in</b><span>Report what you got done. The host and room listen.</span></div>
+  <div class="node" style="left:520px; top:228px; width:220px"><div class="n" style="background:#49a650">4</div><b>Share progress</b><span>Get encouragement, say what is next.</span></div>
+
+  <div class="center"><b>Every block</b><span>25 or 50 minutes</span></div>
+</body>
+</html>
