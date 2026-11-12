@@ -2000,17 +2000,20 @@ export function ChatPanel({
     const hintText = isLight ? "text-black/40" : "text-[#B5BCC6]";
     const sendBtnActive = "bg-[#5286F6] hover:bg-[#6B98FA] text-white";
     const sendBtnDisabled = isLight ? "text-black/30" : "text-[#AEB6BF]/50";
+    // The composer is one capsule (field + mic, emoji, send) on the same
+    // surface, border and shadow as the other people's message bubbles.
+    const composerShellCls =
+        "flex items-end gap-0.5 rounded-[18px] border p-1 transition-[border-color,box-shadow] duration-150 " +
+        (isLight
+            ? "bg-white border-black/[0.06] shadow-[0_1px_2px_rgba(0,0,0,0.06)] focus-within:border-[#5286F6]/50 focus-within:shadow-[0_0_0_3px_rgba(82,134,246,0.14)]"
+            : "bg-[#262626] border-white/[0.06] focus-within:border-[#5286F6]/60 focus-within:shadow-[0_0_0_3px_rgba(82,134,246,0.18)]");
     const composerInputCls =
-        "flex-1 min-w-0 min-h-[36px] max-h-[140px] rounded-[10px] resize-none px-3 py-[7px] text-[13px] leading-5 outline-none focus:ring-1 focus:ring-[#5286F6] focus:border-[#5286F6] " +
-        (isLight ? "bg-white border border-[#D8D0D0] text-black/85 placeholder:text-black/35" : "bg-[#292D32] border border-[#4C5259] text-[#F4F5F6] placeholder:text-[#ABB3BE]");
-    // One bar for mic, emoji and send: same surface as the message field.
-    const composerBarCls =
-        "flex h-9 shrink-0 items-stretch overflow-hidden rounded-[10px] border " +
-        (isLight ? "bg-white border-[#D8D0D0]" : "bg-[#292D32] border-[#4C5259]");
-    const composerBarDividerCls = "my-2 w-px shrink-0 " + (isLight ? "bg-[#D8D0D0]" : "bg-[#4C5259]");
+        "flex-1 min-w-0 min-h-[32px] max-h-[140px] resize-none bg-transparent pl-2.5 pr-1 py-[6px] text-[13px] leading-5 outline-none " +
+        (isLight ? "text-black/85 placeholder:text-black/35" : "text-[#F4F5F6] placeholder:text-[#ABB3BE]");
+    const composerBarCls = "flex shrink-0 items-center gap-0.5";
     const composerEmojiBtnCls =
-        "w-8 self-stretch shrink-0 flex items-center justify-center transition disabled:opacity-40 " +
-        (isLight ? "text-black/60 hover:bg-black/[0.05] hover:text-black/80" : "text-[#D9DEE4] hover:bg-white/[0.06] hover:text-white");
+        "h-8 w-8 shrink-0 rounded-full flex items-center justify-center transition disabled:opacity-40 " +
+        (isLight ? "text-black/50 hover:bg-black/[0.06] hover:text-black/80" : "text-[#C6CDD5] hover:bg-white/[0.08] hover:text-white");
     const portalBoxCls =
         "rounded-2xl border shadow-2xl overflow-hidden " +
         (isLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#484848] bg-[#292929] text-[#F4F5F6]");
@@ -3934,16 +3937,16 @@ export function ChatPanel({
                 </div>
             )}
 
-            <div className={"px-2.5 pt-2.5 pb-2 border-t " + headerBorder}>
+            <div className="px-2.5 pt-1.5 pb-2">
                 {generalChatLocked && (
-                    <div className={"mb-3 rounded-xl px-3 py-2 text-[12px] leading-5 " + (isLight ? "bg-[#F0F0F0] text-black/60" : "bg-white/[0.06] text-[#D0D6DD]")}>
+                    <div className={"mb-2 rounded-2xl px-3 py-2 text-[12px] leading-5 " + (isLight ? "bg-[#F0F0F0] text-black/60" : "bg-white/[0.06] text-[#D0D6DD]")}>
                         Public chat is disabled by the host. Use DMs to message the host privately.
                     </div>
                 )}
                 {replyTo && (
                     <div
                         className={
-                            "mb-2 flex items-center gap-2.5 rounded-xl py-1.5 pl-2 pr-1.5 animate-[fadeIn_140ms_ease-out] " +
+                            "mb-2 flex items-center gap-2.5 rounded-2xl py-1.5 pl-2 pr-1.5 animate-[fadeIn_140ms_ease-out] " +
                             (isLight ? "bg-black/[0.045]" : "bg-white/[0.07]")
                         }
                     >
@@ -3983,15 +3986,15 @@ export function ChatPanel({
                 {voiceMessagePreview && text.trim() ? (
                     <div
                         className={
-                            "mb-2 rounded-xl border px-3 py-2 " +
+                            "mb-2 rounded-2xl px-3 py-2 " +
                             (isLight
-                                ? "border-[#5286F6]/60 bg-[#5286F6]/10 text-black/80"
-                                : "border-[#5286F6]/45 bg-[#5286F6]/10 text-white/85")
+                                ? "bg-[#5286F6]/[0.12] text-black/80"
+                                : "bg-[#5286F6]/20 text-white/85")
                         }
                     >
                         <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                                <div className={`text-[11px] font-semibold uppercase tracking-[0.06em] ${isLight ? "text-[#3FB455]" : "text-[#6B98FA]"}`}>
+                                <div className={`text-[12px] font-semibold ${isLight ? "text-[#2F5FC4]" : "text-[#8FB0FA]"}`}>
                                     Voice message preview
                                 </div>
                                 <div className="mt-1 text-[12px] leading-4 opacity-75">
@@ -4006,10 +4009,10 @@ export function ChatPanel({
                                         setVoiceMessagePreview(false);
                                     }}
                                     className={
-                                        "h-8 rounded-lg px-2.5 text-[11px] font-semibold transition " +
+                                        "h-8 rounded-full px-3 text-[12px] font-medium transition " +
                                         (isLight
-                                            ? "bg-black/5 hover:bg-black/10"
-                                            : "bg-white/[0.06] hover:bg-white/10")
+                                            ? "bg-black/[0.06] hover:bg-black/10"
+                                            : "bg-white/[0.08] hover:bg-white/[0.12]")
                                     }
                                 >
                                     Cancel
@@ -4017,7 +4020,7 @@ export function ChatPanel({
                                 <button
                                     type="button"
                                     onClick={() => void send()}
-                                    className="h-8 rounded-lg bg-[#5286F6] px-3 text-[11px] font-semibold text-black transition hover:bg-[#5286F6]"
+                                    className="h-8 rounded-full bg-[#5286F6] px-3.5 text-[12px] font-medium text-white transition hover:bg-[#6B98FA]"
                                 >
                                     Confirm
                                 </button>
@@ -4026,7 +4029,7 @@ export function ChatPanel({
                     </div>
                 ) : null}
 
-                <div className="flex items-end gap-1">
+                <div className={composerShellCls}>
                     <textarea
                         ref={composerRef}
                         rows={1}
@@ -4061,8 +4064,8 @@ export function ChatPanel({
                         disabled={generalChatLocked || (activeMode === "direct" && isHost && !activeDirectPeerId)}
                     />
 
-                    {/* Mic, emoji and send share one bar split by thin dividers, so the
-                        message field keeps as much width as possible. */}
+                    {/* Mic, emoji and send: round buttons inside the capsule, like the
+                        message actions and reaction pills. */}
                     <div className={composerBarCls}>
                         {dictation.supported ? (
                             <>
@@ -4073,7 +4076,7 @@ export function ChatPanel({
                                     aria-pressed={dictation.listening}
                                     className={
                                         dictation.listening
-                                            ? "w-8 self-stretch shrink-0 flex items-center justify-center transition bg-[#F65252]/15 text-[#F65252]"
+                                            ? "h-8 w-8 shrink-0 rounded-full flex items-center justify-center transition bg-[#F65252]/15 text-[#F65252]"
                                             : composerEmojiBtnCls
                                     }
                                     onMouseDown={(e) => e.preventDefault()}
@@ -4090,11 +4093,10 @@ export function ChatPanel({
                                         <Mic size={16} />
                                     )}
                                 </button>
-                                <span className={composerBarDividerCls} aria-hidden="true" />
                             </>
                         ) : null}
 
-                        <div className="relative flex self-stretch" ref={composerEmojiWrapRef}>
+                        <div className="relative flex" ref={composerEmojiWrapRef}>
                             <button
                                 ref={emojiButtonRef}
                                 type="button"
@@ -4108,12 +4110,10 @@ export function ChatPanel({
                             </button>
                         </div>
 
-                        <span className={composerBarDividerCls} aria-hidden="true" />
-
                         <button
                             onClick={() => void send()}
                             className={
-                                "w-9 self-stretch shrink-0 flex items-center justify-center transition " +
+                                "h-8 w-8 shrink-0 rounded-full flex items-center justify-center transition " +
                                 (text.trim() &&
                                     !generalChatLocked &&
                                     !(activeMode === "direct" && isHost && !activeDirectPeerId)
@@ -4128,12 +4128,12 @@ export function ChatPanel({
                             }
                             title="Send"
                         >
-                            <SendHorizontal size={16} />
+                            <SendHorizontal size={15} />
                         </button>
                     </div>
                 </div>
 
-                <div className={"mt-1.5 px-0.5 text-[11px] " + (dictation.error ? "text-[#F65252]" : hintText)} aria-live="polite">
+                <div className={"mt-1.5 px-2 text-[11px] " + (dictation.error ? "text-[#F65252]" : hintText)} aria-live="polite">
                     {dictation.error
                         ? dictation.error
                         : dictation.listening
