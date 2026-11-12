@@ -126,17 +126,6 @@ type ParsedReplyBody = {
     main: string;
 };
 
-// Each person's name keeps one muted color, so a busy chat is easy to scan.
-const CHAT_NAME_COLORS_LIGHT = ["#B4573A", "#2F8F5B", "#8A55C7", "#0E7490", "#B83280", "#9A6B00", "#4D7C0F"];
-const CHAT_NAME_COLORS_DARK = ["#F0A27F", "#7FD3A2", "#C9A4F2", "#7DD3E8", "#F29CC9", "#E8C46A", "#B5E07A"];
-
-function chatNameColor(userId: string, isLight: boolean) {
-    let hash = 0;
-    for (let i = 0; i < userId.length; i += 1) hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
-    const palette = isLight ? CHAT_NAME_COLORS_LIGHT : CHAT_NAME_COLORS_DARK;
-    return palette[hash % palette.length];
-}
-
 function parseReplyBody(body: string): ParsedReplyBody {
     if (!body) return { quote: null, quoteMessageId: null, main: "" };
 
@@ -751,7 +740,9 @@ function MessageCardInner({
     // Compact layout: avatar, name, time and a short message share one line;
     // longer text wraps under it. Actions float in on hover or focus instead of
     // taking a row, and a follow-up from the same person skips avatar and name.
-    const nameColor = mine ? (isLight ? "#2F5FC4" : "#8FB0FA") : chatNameColor(msg.user_id, isLight);
+    const nameCls = mine
+        ? isLight ? "text-[#2F5FC4]" : "text-[#8FB0FA]"
+        : isLight ? "text-black/85" : "text-[#F4F5F6]";
     const textCls = isLight ? "text-black/80" : "text-[#E3E7EB]";
     const toolbarBtnCls =
         "inline-flex h-6 w-6 items-center justify-center rounded-md transition " +
@@ -818,14 +809,9 @@ function MessageCardInner({
                         <span
                             className={
                                 "shrink-0 font-semibold opacity-80 group-hover/quote:opacity-100 " +
-                                (quotedProfile?.id ? "" : isLight ? "text-black/60" : "text-[#C6CDD5]")
-                            }
-                            style={
-                                quotedMine
-                                    ? { color: isLight ? "#2F5FC4" : "#8FB0FA" }
-                                    : quotedProfile?.id
-                                        ? { color: chatNameColor(String(quotedProfile.id), isLight) }
-                                        : undefined
+                                (quotedMine
+                                    ? isLight ? "text-[#2F5FC4]" : "text-[#8FB0FA]"
+                                    : isLight ? "text-black/70" : "text-[#D0D6DD]")
                             }
                         >
                             {quoteAuthor || "Reply"}
@@ -845,8 +831,7 @@ function MessageCardInner({
                     {!continued && (
                         <>
                             <span
-                                className="mr-1.5 text-[12.5px] font-semibold"
-                                style={{ color: nameColor }}
+                                className={"mr-1.5 text-[12.5px] font-semibold " + nameCls}
                                 {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
                             >
                                 {name}
