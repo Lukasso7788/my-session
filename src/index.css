@@ -352,3 +352,28 @@ body {
   border-bottom-left-radius: var(--session-stack-radius);
   border-bottom-right-radius: var(--session-stack-radius);
 }
+
+/* Room chat: the message you jumped to from a reply quote glows softly in
+   the accent blue, spreads and fades, instead of getting a gray ring. */
+@keyframes chatMessageFlash {
+  0% {
+    box-shadow: 0 0 0 0 rgba(82, 134, 246, 0);
+  }
+  18% {
+    box-shadow: 0 0 0 4px rgba(82, 134, 246, 0.32), 0 0 18px 2px rgba(82, 134, 246, 0.22);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgba(82, 134, 246, 0), 0 0 24px 6px rgba(82, 134, 246, 0);
+  }
+}
+
+.chat-message-flash {
+  animation: chatMessageFlash 1.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-message-flash {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(82, 134, 246, 0.3);
+  }
+}

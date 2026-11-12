@@ -677,11 +677,8 @@ function MessageCardInner({
               (isLight
                 ? "bg-white border-black/[0.05] text-black/80 shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
                 : "bg-[#262626] border-white/[0.05] text-[#F4F5F6]")) +
-        (highlighted
-            ? isLight
-                ? " ring-2 ring-[#6B7280]/55"
-                : " ring-2 ring-[#5286F6]/70"
-            : "");
+        // Jumping to a quoted message: a soft accent glow that spreads and fades.
+        (highlighted ? " chat-message-flash" : "");
 
     const quoteBoxCls = isLight
         ? "bg-black/[0.045] text-black/65 hover:bg-black/[0.07]"
