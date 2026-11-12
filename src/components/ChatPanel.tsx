@@ -671,27 +671,27 @@ function MessageCardInner({
         (mine
             ? "rounded-tr-md " +
               (isLight
-                ? "bg-[#5286F6]/[0.14] border-transparent text-black/85"
-                : "bg-[#5286F6]/25 border-transparent text-white")
+                ? "bg-[#5286F6]/[0.14] border-[#5286F6]/30 text-black/85"
+                : "bg-[#5286F6]/25 border-[#5286F6]/45 text-white")
             : "rounded-tl-md " +
               (isLight
-                ? "bg-white border-black/[0.05] text-black/80 shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
-                : "bg-[#262626] border-white/[0.05] text-[#F4F5F6]")) +
+                ? "bg-white border-[#D8D0D0] text-black/80"
+                : "bg-[#262626] border-[#464646] text-[#F4F5F6]")) +
         // Jumping to a quoted message: a soft accent glow that spreads and fades.
         (highlighted ? " chat-message-flash" : "");
 
     const quoteBoxCls = isLight
-        ? "bg-black/[0.045] text-black/65 hover:bg-black/[0.07]"
-        : "bg-white/[0.07] text-[#D9DEE4] hover:bg-white/[0.1]";
+        ? "border border-black/[0.08] bg-black/[0.035] text-black/65 hover:bg-black/[0.06]"
+        : "border border-white/[0.1] bg-white/[0.05] text-[#D9DEE4] hover:bg-white/[0.08]";
 
     // Reactions: round pills. Pale gray when only others reacted; the room's
     // accent blue with a white count once you reacted too.
     const reactionPillBase =
-        "inline-flex h-[22px] items-center gap-1 rounded-full px-[7px] text-[12px] cursor-pointer transition-[opacity,transform,background-color] duration-150 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/50 ";
+        "inline-flex h-[22px] items-center gap-1 rounded-full border px-[7px] text-[12px] cursor-pointer transition-[opacity,transform,background-color] duration-150 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/50 ";
     const reactionPillOthers = isLight
-        ? "bg-black/[0.06] hover:bg-black/[0.1]"
-        : "bg-white/[0.08] hover:bg-white/[0.13]";
-    const reactionPillMine = "bg-[#5286F6] hover:bg-[#6B98FA]";
+        ? "border-[#D8D0D0] bg-white hover:bg-[#F7F5F5]"
+        : "border-[#464646] bg-[#262626] hover:bg-[#303030]";
+    const reactionPillMine = "border-[#5286F6] bg-[#5286F6] hover:border-[#6B98FA] hover:bg-[#6B98FA]";
     const reactionCountCls = "font-inter font-normal leading-none tabular-nums";
 
     const { quote, quoteMessageId, main } = useMemo(
@@ -2000,13 +2000,11 @@ export function ChatPanel({
     const hintText = isLight ? "text-black/40" : "text-[#B5BCC6]";
     const sendBtnActive = "bg-[#5286F6] hover:bg-[#6B98FA] text-white";
     const sendBtnDisabled = isLight ? "text-black/30" : "text-[#AEB6BF]/50";
-    // The composer is one capsule (field + mic, emoji, send) on the same
-    // surface, border and shadow as the other people's message bubbles.
+    // The composer is one capsule (field + mic, emoji, send) with the room's
+    // flat 1px border, like the task field, and its accent focus ring.
     const composerShellCls =
-        "flex items-end gap-0.5 rounded-[18px] border p-1 transition-[border-color,box-shadow] duration-150 " +
-        (isLight
-            ? "bg-white border-black/[0.06] shadow-[0_1px_2px_rgba(0,0,0,0.06)] focus-within:border-[#5286F6]/50 focus-within:shadow-[0_0_0_3px_rgba(82,134,246,0.14)]"
-            : "bg-[#262626] border-white/[0.06] focus-within:border-[#5286F6]/60 focus-within:shadow-[0_0_0_3px_rgba(82,134,246,0.18)]");
+        "flex items-end gap-0.5 rounded-[18px] border p-1 transition-colors duration-150 focus-within:border-[#5286F6] focus-within:ring-1 focus-within:ring-[#5286F6] " +
+        (isLight ? "bg-white border-[#CFC6C6]" : "bg-[#292929] border-[#484848]");
     const composerInputCls =
         "flex-1 min-w-0 min-h-[32px] max-h-[140px] resize-none bg-transparent pl-2.5 pr-1 py-[6px] text-[13px] leading-5 outline-none " +
         (isLight ? "text-black/85 placeholder:text-black/35" : "text-[#F4F5F6] placeholder:text-[#ABB3BE]");
@@ -3937,17 +3935,17 @@ export function ChatPanel({
                 </div>
             )}
 
-            <div className="px-2.5 pt-1.5 pb-2">
+            <div className={"px-2.5 pt-2.5 pb-2 border-t " + headerBorder}>
                 {generalChatLocked && (
-                    <div className={"mb-2 rounded-2xl px-3 py-2 text-[12px] leading-5 " + (isLight ? "bg-[#F0F0F0] text-black/60" : "bg-white/[0.06] text-[#D0D6DD]")}>
+                    <div className={"mb-2 rounded-2xl border px-3 py-2 text-[12px] leading-5 " + (isLight ? "border-[#D8D0D0] bg-white text-black/60" : "border-[#464646] bg-[#262626] text-[#D0D6DD]")}>
                         Public chat is disabled by the host. Use DMs to message the host privately.
                     </div>
                 )}
                 {replyTo && (
                     <div
                         className={
-                            "mb-2 flex items-center gap-2.5 rounded-2xl py-1.5 pl-2 pr-1.5 animate-[fadeIn_140ms_ease-out] " +
-                            (isLight ? "bg-black/[0.045]" : "bg-white/[0.07]")
+                            "mb-2 flex items-center gap-2.5 rounded-2xl border py-1.5 pl-2 pr-1.5 animate-[fadeIn_140ms_ease-out] " +
+                            (isLight ? "border-[#D8D0D0] bg-white" : "border-[#464646] bg-[#262626]")
                         }
                     >
                         <img
@@ -3986,10 +3984,10 @@ export function ChatPanel({
                 {voiceMessagePreview && text.trim() ? (
                     <div
                         className={
-                            "mb-2 rounded-2xl px-3 py-2 " +
+                            "mb-2 rounded-2xl border px-3 py-2 " +
                             (isLight
-                                ? "bg-[#5286F6]/[0.12] text-black/80"
-                                : "bg-[#5286F6]/20 text-white/85")
+                                ? "border-[#5286F6]/40 bg-[#5286F6]/[0.08] text-black/80"
+                                : "border-[#5286F6]/45 bg-[#5286F6]/10 text-white/85")
                         }
                     >
                         <div className="flex items-center justify-between gap-3">
