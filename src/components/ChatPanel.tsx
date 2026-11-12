@@ -378,10 +378,6 @@ type MessageCardProps = {
     renderWindow: Window;
     /** Same person's follow-up within a few minutes: no avatar or name. */
     continued?: boolean;
-    /** Profile of the quoted message's author, when that message is loaded. */
-    quotedProfile?: Profile | null;
-    /** The quoted message is the viewer's own. */
-    quotedMine?: boolean;
 };
 
 type DisplayedReaction = {
@@ -408,8 +404,6 @@ function MessageCardInner({
     renderDocument,
     renderWindow,
     continued = false,
-    quotedProfile = null,
-    quotedMine = false,
 }: MessageCardProps) {
     const name = mine ? "You" : msg.profile?.full_name || "Participant";
     const time = formatTime(msg.created_at);
@@ -756,14 +750,14 @@ function MessageCardInner({
             tabIndex={-1}
             className={
                 "group relative flex items-start gap-2 rounded-lg px-1.5 outline-none transition " +
-                (continued ? "py-[1px] " : "pt-4 pb-[1px] ") +
+                (continued ? "py-[1px] " : "pt-1.5 pb-[1px] ") +
                 (isLight ? "hover:bg-black/[0.035] focus-within:bg-black/[0.035]" : "hover:bg-white/[0.04] focus-within:bg-white/[0.04]") +
                 (highlighted ? (isLight ? " ring-2 ring-[#6B7280]/45" : " ring-2 ring-[#5286F6]/60") : "")
             }
         >
             {continued ? (
                 <span
-                    className={"w-6 shrink-0 text-center text-[9px] leading-4 tabular-nums opacity-0 transition group-hover:opacity-100 " + metaTimeCls}
+                    className={"w-6 shrink-0 pt-[3px] text-center text-[9px] leading-4 tabular-nums opacity-0 transition group-hover:opacity-100 " + metaTimeCls}
                     aria-hidden="true"
                 >
                     {time.replace(/\s?[AP]M$/i, "")}
@@ -772,12 +766,12 @@ function MessageCardInner({
                 <img
                     src={avatarFromProfile(msg.profile)}
                     {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
-                    className={(quote ? "mt-[22px]" : "mt-0") + " -mb-2" + " h-6 w-6 shrink-0 rounded-full object-cover"}
+                    className={(quote ? "mt-[23px]" : "mt-[1px]") + " h-6 w-6 shrink-0 rounded-full object-cover"}
                     alt=""
                 />
             )}
 
-            <div className="min-w-0 flex-1 text-[13px] leading-4">
+            <div className="min-w-0 flex-1 text-[13px] leading-5">
                 {quote && (
                     <button
                         type="button"
@@ -799,19 +793,10 @@ function MessageCardInner({
                                 (isLight ? "border-black/15" : "border-white/20")
                             }
                         />
-                        {quotedProfile ? (
-                            <img
-                                src={avatarFromProfile(quotedProfile)}
-                                alt=""
-                                className="h-4 w-4 shrink-0 rounded-full object-cover"
-                            />
-                        ) : null}
                         <span
                             className={
-                                "shrink-0 font-semibold opacity-80 group-hover/quote:opacity-100 " +
-                                (quotedMine
-                                    ? isLight ? "text-[#2F5FC4]" : "text-[#8FB0FA]"
-                                    : isLight ? "text-black/70" : "text-[#D0D6DD]")
+                                "shrink-0 font-semibold " +
+                                (isLight ? "text-black/60 group-hover/quote:text-black/85" : "text-[#C6CDD5] group-hover/quote:text-white")
                             }
                         >
                             {quoteAuthor || "Reply"}
@@ -1237,9 +1222,7 @@ const areMessageCardPropsEqual = (
         prev.readers === next.readers &&
         prev.renderDocument === next.renderDocument &&
         prev.renderWindow === next.renderWindow &&
-        prev.continued === next.continued &&
-        prev.quotedProfile === next.quotedProfile &&
-        prev.quotedMine === next.quotedMine
+        prev.continued === next.continued
     );
 };
 
@@ -3297,10 +3280,6 @@ export function ChatPanel({
         () => messages.slice(-VISIBLE_MESSAGE_LIMIT),
         [messages],
     );
-    const messageById = useMemo(
-        () => new Map(messages.map((message) => [message.id, message] as const)),
-        [messages],
-    );
 
     useEffect(() => {
         const retainedIds = new Set(messages.map((message) => message.id));
@@ -3728,10 +3707,6 @@ export function ChatPanel({
                 {visibleMessages.map((m, index) => {
                     const mine = m.user_id === userId;
                     const previous = index > 0 ? visibleMessages[index - 1] : null;
-                    const quotedId = parseReplyBody(m.body).quoteMessageId;
-                    const quotedMessage = quotedId ? messageById.get(quotedId) || null : null;
-                    const quotedProfile = quotedMessage?.profile || null;
-                    const quotedMine = !!quotedMessage && quotedMessage.user_id === userId;
                     const continued =
                         !!previous &&
                         previous.user_id === m.user_id &&
@@ -3768,8 +3743,6 @@ export function ChatPanel({
                                 renderDocument={chatDocument}
                                 renderWindow={chatWindow}
                                 continued={continued}
-                                quotedProfile={quotedProfile}
-                                quotedMine={quotedMine}
                             />
                         </div>
                     );
