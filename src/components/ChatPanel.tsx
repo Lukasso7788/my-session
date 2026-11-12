@@ -810,8 +810,8 @@ function MessageCardInner({
                             {readersHoverPos && !readersOpen
                                 ? createPortal(
                                     <div
-                                        className="pointer-events-none fixed z-[10000] -translate-x-1/2 -translate-y-full pb-2 animate-[fadeIn_140ms_ease-out]"
-                                        style={{ left: readersHoverPos.left, top: readersHoverPos.top }}
+                                        className="pointer-events-none fixed z-[10000] w-max -translate-x-1/2 -translate-y-full pb-2 animate-[fadeIn_140ms_ease-out]"
+                                        style={{ left: Math.min(Math.max(readersHoverPos.left, 150), renderWindow.innerWidth - 150), top: readersHoverPos.top }}
                                         role="tooltip"
                                         aria-label={`Read by ${readers.map((reader) => reader.fullName || "Participant").join(", ")}`}
                                     >
@@ -3515,8 +3515,8 @@ export function ChatPanel({
             const more = (ids || []).length - shown.length;
             return createPortal(
                 <div
-                    className="pointer-events-none fixed z-[10000] -translate-x-1/2 -translate-y-full pb-2 animate-[fadeIn_140ms_ease-out]"
-                    style={{ left: hoverReaction.left, top: hoverReaction.top }}
+                    className="pointer-events-none fixed z-[10000] w-max -translate-x-1/2 -translate-y-full pb-2 animate-[fadeIn_140ms_ease-out]"
+                    style={{ left: Math.min(Math.max(hoverReaction.left, 150), chatWindow.innerWidth - 150), top: hoverReaction.top }}
                     role="tooltip"
                 >
                     <div
@@ -3550,7 +3550,10 @@ export function ChatPanel({
                             </div>
                         )}
                         {ids && ids.length > 0 ? (
-                            <span className={"ml-2 mr-2 truncate font-inter text-[11px] font-medium " + (isLight ? "text-black/75" : "text-[#E3E7EB]")}>
+                            <span className="ml-1.5 shrink-0 text-[13px] leading-none text-black opacity-100" aria-hidden="true">{hoverReaction.emoji}</span>
+                        ) : null}
+                        {ids && ids.length > 0 ? (
+                            <span className={"ml-1 mr-2 truncate font-inter text-[11px] font-medium " + (isLight ? "text-black/75" : "text-[#E3E7EB]")}>
                                 {shortNamesLabel(ids.map((uid) => (uid === userId ? "You" : profilesByIdRef.current[uid]?.full_name || "Participant")))}
                             </span>
                         ) : null}
