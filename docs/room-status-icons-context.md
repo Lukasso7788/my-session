@@ -7,3 +7,5 @@ The React room entry point is src/pages/RoomPageLiveKit.tsx. Its own-tile menu n
 Run npm run dev -- --host 127.0.0.1 --port 4238 and open /tests/browser/room-status-icons.html for light and dark themes. Browser check confirmed the dark menu selected On a call. Live room behavior still needs verification. This change is local. Preserve other in-progress work in this worktree.
 
 Private uses Lucide EyeOff, matching the Hidden badge in SessionCard. Status icons are rendered in the selection menu.
+
+The room passes the target tile status derived from participant metadata. An active option has a blue highlight, a check icon, and aria-pressed. Clicking it again passes null through the existing status handler. The preview exercises the same toggle with local state.

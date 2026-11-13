@@ -24044,6 +24044,7 @@ export function RoomPageLiveKit({
 
                         <RoomStatusMenu
                           isLight={isLight}
+                          currentStatus={targetTile.status ?? null}
                           onSelect={async (status) => {
                             await setMyStatus(status);
                             closeTileMenu();
