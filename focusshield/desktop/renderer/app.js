@@ -132,6 +132,17 @@ function hydrateFromPolicy(policy) {
   renderCustomApps();
 }
 
+let editingBlockListId = "";
+
+function setBlockListEditor(list) {
+  editingBlockListId = list?.id || "";
+  $("blockListName").value = list?.name || "";
+  $("saveBlockList").textContent = list ? "Save changes" : "Save new";
+  $("cancelBlockListEdit").hidden = !list;
+}
+
+$("cancelBlockListEdit").onclick = () => setBlockListEditor(null);
+
 function applySavedBlockList(list) {
   selectedPresetIds.clear();
   selectedWeb.clear();
@@ -173,6 +184,7 @@ function renderSavedBlockLists() {
           <b>${escapeHtml(list.name)}</b>
           <small>${appCount} app${appCount === 1 ? "" : "s"} · ${siteCount} site${siteCount === 1 ? "" : "s"}</small>
         </button>
+        <button class="secondary-button" data-edit-list="${escapeHtml(list.id)}" aria-label="Edit ${escapeHtml(list.name)}">Edit</button>
         <button class="saved-list-delete" data-delete-list="${escapeHtml(list.id)}" aria-label="Delete ${escapeHtml(list.name)}" title="Delete">×</button>
       </article>`;
     })
@@ -181,7 +193,20 @@ function renderSavedBlockLists() {
   document.querySelectorAll("[data-apply-list]").forEach((element) => {
     element.onclick = () => {
       const list = savedLists.find((item) => item.id === element.dataset.applyList);
-      if (list) applySavedBlockList(list);
+      if (list) {
+        setBlockListEditor(null);
+        applySavedBlockList(list);
+      }
+    };
+  });
+  document.querySelectorAll("[data-edit-list]").forEach((element) => {
+    element.onclick = () => {
+      const list = savedLists.find((item) => item.id === element.dataset.editList);
+      if (!list) return;
+      applySavedBlockList(list);
+      setBlockListEditor(list);
+      toast(`Editing “${list.name}”. Update the apps and sites, then save changes.`);
+      $("blockListName").focus();
     };
   });
   document.querySelectorAll("[data-delete-list]").forEach((element) => {
@@ -193,6 +218,7 @@ function renderSavedBlockLists() {
         toast(result?.error || "Could not delete this list.");
         return;
       }
+      if (editingBlockListId === element.dataset.deleteList) setBlockListEditor(null);
       toast("Saved list deleted.");
     };
   });
@@ -311,10 +337,16 @@ $("saveBlockList").onclick = async () => {
   }
 
   preserveDraftThroughPolicyUpdate = true;
+  const existing = savedLists.find((list) => list.id === editingBlockListId);
+  if (editingBlockListId && !existing) {
+    preserveDraftThroughPolicyUpdate = false;
+    toast("This list is no longer available. Cancel editing to save a new list.");
+    return;
+  }
   const result = await window.focusShield.saveBlockList({
-    id: crypto.randomUUID(),
+    id: existing?.id || crypto.randomUUID(),
     name,
-    web,
+    web: { ...web, allow: existing?.web?.allow || [] },
     desktop: { applications },
   });
   if (!result?.ok) {
@@ -322,7 +354,7 @@ $("saveBlockList").onclick = async () => {
     toast(result?.error || "Could not save this list.");
     return;
   }
-  $("blockListName").value = "";
+  setBlockListEditor(null);
   toast(`Saved “${name}”.`);
 };
 $("blockListName").onkeydown = (event) => {

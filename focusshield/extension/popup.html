@@ -275,12 +275,14 @@
             <select id="savedListSelect" aria-label="Saved block list">
                 <option value="">No saved lists yet</option>
             </select>
-            <button id="applyList" type="button">Apply</button>
+            <button id="applyList" type="button">Load</button>
+            <button id="editList" type="button">Edit</button>
             <button id="deleteList" type="button" title="Delete selected list" aria-label="Delete selected list">×</button>
         </div>
         <div class="save-list-row">
-            <input id="listName" maxlength="48" placeholder="Name current setup" autocomplete="off" />
-            <button id="saveList" type="button">Save</button>
+            <input id="listName" maxlength="48" placeholder="List name" aria-label="List name" autocomplete="off" />
+            <button id="saveList" type="button">Save new</button>
+            <button id="cancelListEdit" type="button" hidden>Cancel edit</button>
         </div>
     </section>
 
