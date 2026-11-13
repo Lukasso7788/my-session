@@ -1,14 +1,6 @@
 let manualStatusUntil = 0;
 let cachedPolicy = null;
 let appliedSavedListId = "";
-let editingListId = "";
-
-function setListEditor(list) {
-    editingListId = list?.id || "";
-    document.getElementById("listName").value = list?.name || "";
-    document.getElementById("saveList").textContent = list ? "Save changes" : "Save new";
-    document.getElementById("cancelListEdit").hidden = !list;
-}
 
 function parseLines(text) {
     return text
@@ -109,7 +101,6 @@ function renderSavedLists(policy) {
 
     if (lists.some((list) => list.id === previous)) select.value = previous;
     document.getElementById("applyList").disabled = !lists.length;
-    document.getElementById("editList").disabled = !lists.length;
     document.getElementById("deleteList").disabled = !lists.length;
 }
 
@@ -176,23 +167,8 @@ async function render() {
 document.getElementById("applyList").onclick = () => {
     const id = document.getElementById("savedListSelect").value;
     const list = (cachedPolicy?.savedLists || []).find((item) => item.id === id);
-    if (list) {
-        setListEditor(null);
-        applySavedList(list);
-    }
+    if (list) applySavedList(list);
 };
-
-document.getElementById("editList").onclick = () => {
-    const id = document.getElementById("savedListSelect").value;
-    const list = (cachedPolicy?.savedLists || []).find((item) => item.id === id);
-    if (!list) return;
-    applySavedList(list);
-    setListEditor(list);
-    document.getElementById("status").textContent = `Editing “${list.name}”. Update the sites below, then save changes.`;
-    document.getElementById("listName").focus();
-};
-
-document.getElementById("cancelListEdit").onclick = () => setListEditor(null);
 
 document.getElementById("deleteList").onclick = async () => {
     const id = document.getElementById("savedListSelect").value;
@@ -203,7 +179,6 @@ document.getElementById("deleteList").onclick = async () => {
         return;
     }
     if (appliedSavedListId === id) appliedSavedListId = "";
-    if (editingListId === id) setListEditor(null);
     cachedPolicy = response.policy;
     renderSavedLists(cachedPolicy);
 };
@@ -220,25 +195,20 @@ document.getElementById("saveList").onclick = async () => {
         nameInput.focus();
         return;
     }
-    const existing = (cachedPolicy?.savedLists || []).find((list) => list.id === editingListId);
-    if (editingListId && !existing) {
-        showError("This list is no longer available. Cancel editing to save a new list.");
-        return;
-    }
-    if (!domains.length && !urls.length && !existing?.desktop?.applications?.length) {
+    if (!domains.length && !urls.length) {
         showError("Choose at least one site or page before saving.");
         return;
     }
 
-    const id = existing?.id || crypto.randomUUID();
+    const id = crypto.randomUUID();
     const response = await sendMessage({
         type: "SAVE_LIST",
         list: {
             id,
             name,
-            web: { domains, urls, allow: existing?.web?.allow || [] },
+            web: { domains, urls, allow: [] },
             desktop: {
-                applications: existing ? existing.desktop?.applications || [] : cachedPolicy?.desktop?.applications || []
+                applications: cachedPolicy?.desktop?.applications || []
             }
         }
     });
@@ -246,7 +216,7 @@ document.getElementById("saveList").onclick = async () => {
         showError(response?.error || "Could not save this list.");
         return;
     }
-    setListEditor(null);
+    nameInput.value = "";
     cachedPolicy = response.policy;
     appliedSavedListId = id;
     renderSavedLists(cachedPolicy);
