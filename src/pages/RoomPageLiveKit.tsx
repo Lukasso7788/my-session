@@ -138,7 +138,8 @@ import {
 } from "./livekit/LiveKitUI";
 
 import { PreJoinModal } from "./livekit/PreJoinModalLiveKit";
-import { SkipMeMutedStatusIcon, VideoTile } from "./livekit/VideoTileLiveKit";
+import { VideoTile } from "./livekit/VideoTileLiveKit";
+import { RoomStatusMenu } from "./livekit/RoomStatusMenu";
 import type { CameraFramingMode } from "./livekit/VideoTileLiveKit";
 import {
   RoomAudioRenderer,
@@ -24041,149 +24042,16 @@ export function RoomPageLiveKit({
                           }
                         />
 
-                        <div
-                          className={`px-4 pb-1 pt-2 font-inter text-[12px] font-bold ${isLight ? "text-black/55" : "text-white/55"}`}
-                        >
-                          Status
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await setMyStatus(null);
+                        <RoomStatusMenu
+                          isLight={isLight}
+                          onSelect={async (status) => {
+                            await setMyStatus(status);
                             closeTileMenu();
                             scheduleRebuildTiles();
                             window.setTimeout(() => scheduleRebuildTiles(), 80);
-                            window.setTimeout(
-                              () => scheduleRebuildTiles(),
-                              220,
-                            );
+                            window.setTimeout(() => scheduleRebuildTiles(), 220);
                           }}
-                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
-                        >
-                          Clear status
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await setMyStatus("afk");
-                            closeTileMenu();
-                            scheduleRebuildTiles();
-                            window.setTimeout(() => scheduleRebuildTiles(), 80);
-                            window.setTimeout(
-                              () => scheduleRebuildTiles(),
-                              220,
-                            );
-                          }}
-                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
-                        >
-                          AFK
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await setMyStatus("break");
-                            closeTileMenu();
-                            scheduleRebuildTiles();
-                            window.setTimeout(() => scheduleRebuildTiles(), 80);
-                            window.setTimeout(
-                              () => scheduleRebuildTiles(),
-                              220,
-                            );
-                          }}
-                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
-                        >
-                          Taking a break
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await setMyStatus("skip");
-                            closeTileMenu();
-                            scheduleRebuildTiles();
-                            window.setTimeout(() => scheduleRebuildTiles(), 80);
-                            window.setTimeout(
-                              () => scheduleRebuildTiles(),
-                              220,
-                            );
-                          }}
-                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
-                        >
-                          Skip me
-                        </button>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await setMyStatus("skip_deafened");
-                            closeTileMenu();
-                            scheduleRebuildTiles();
-                            window.setTimeout(() => scheduleRebuildTiles(), 80);
-                            window.setTimeout(
-                              () => scheduleRebuildTiles(),
-                              220,
-                            );
-                          }}
-                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
-                        >
-                          <span className="inline-flex items-center gap-2">
-                            <span>Skip me</span>
-                            <SkipMeMutedStatusIcon theme={theme} className="h-3.5 w-3.5" />
-                          </span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await setMyStatus("call");
-                            closeTileMenu();
-                            scheduleRebuildTiles();
-                            window.setTimeout(() => scheduleRebuildTiles(), 80);
-                            window.setTimeout(
-                              () => scheduleRebuildTiles(),
-                              220,
-                            );
-                          }}
-                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
-                        >
-                          On a call
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await setMyStatus("eating");
-                            closeTileMenu();
-                            scheduleRebuildTiles();
-                            window.setTimeout(() => scheduleRebuildTiles(), 80);
-                            window.setTimeout(
-                              () => scheduleRebuildTiles(),
-                              220,
-                            );
-                          }}
-                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
-                        >
-                          Eating
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await setMyStatus("private");
-                            closeTileMenu();
-                            scheduleRebuildTiles();
-                            window.setTimeout(() => scheduleRebuildTiles(), 80);
-                            window.setTimeout(
-                              () => scheduleRebuildTiles(),
-                              220,
-                            );
-                          }}
-                          className={`w-full px-4 py-2 text-left text-[13px] transition ${isLight ? "text-black/85 hover:bg-[#E8E8E8]" : "text-white/90 hover:bg-[#303030]"}`}
-                        >
-                          Private
-                        </button>
+                        />
                       </>
                     )}
 
