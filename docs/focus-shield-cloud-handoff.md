@@ -7,6 +7,8 @@ This branch targets the Windows Electron app. The Chrome extension and its downl
 
 The Electron desktop app lives in focusshield/desktop. Its renderer uses preload IPC to save lists through electron/main.cjs. Policy normalization and desktop/cloud synchronization live under electron/. Run node --test focusshield/desktop/test/*.test.cjs from the repository root.
 
+The Electron main process imports electron-updater at startup. Keep it in production dependencies and verify it is present inside app.asar after packaging. Use npm run dist:win -- --publish never for a local installer.
+
 The Windows app provides a separate Edit action. The editor loads the selected list and saves with its original ID. Cancel edit exits update mode and leaves the current draft available as a new list. Saving a list does not apply it to a running block.
 
 Manual acceptance: create a list, edit the name and entries, save, reopen it, and verify there is one list with the updated entries. Check cancel and loading separately. Confirm that editing a cross-device list retains website exceptions. Run npm ci and npm run dist:win in focusshield/desktop to build the Windows installer.
