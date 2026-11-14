@@ -18,6 +18,7 @@ import { profileHoverAttrs } from "./ProfileHoverLayer";
 import {
     CheckCheck,
     CornerUpLeft,
+    Mic,
     Pencil,
     Square,
     Smile,
@@ -958,7 +959,7 @@ function MessageCardInner({
                                 type="button"
                                 onClick={() => onReply(msg)}
                                 className={
-                                    "grid h-5 w-5 place-items-center rounded transition " +
+                                    "inline-flex h-5 items-center gap-1 whitespace-nowrap px-0.5 text-[11px] rounded transition " +
                                     actionBtnCls
                                 }
                                 aria-label="Reply"
@@ -968,6 +969,7 @@ function MessageCardInner({
                                     size={14}
                                     className="block shrink-0 self-center"
                                 />
+                                <span>Reply</span>
                             </button>
 
                             <div className="relative flex h-5 items-center leading-none">
@@ -979,7 +981,7 @@ function MessageCardInner({
                                         setOpenReactions((v) => !v);
                                     }}
                                     className={
-                                        "grid h-5 w-5 place-items-center rounded transition " +
+                                        "inline-flex h-5 items-center gap-1 whitespace-nowrap px-0.5 text-[11px] rounded transition " +
                                         actionBtnCls
                                     }
                                     aria-label="React"
@@ -989,6 +991,7 @@ function MessageCardInner({
                                         size={14}
                                         className="block shrink-0 self-center"
                                     />
+                                    <span>React</span>
                                 </button>
 
                                 {openReactions &&
@@ -2015,8 +2018,8 @@ export function ChatPanel({
     const sendBtnActive = "bg-[#5286F6] hover:bg-[#6B98FA] text-white";
     const sendBtnDisabled = isLight ? "text-black/30" : "text-[#AEB6BF]/50";
     const composerShellCls =
-        "flex items-end gap-1 rounded-full border px-1 py-0.5 transition-colors focus-within:border-[#5286F6] focus-within:ring-1 focus-within:ring-[#5286F6] " +
-        (isLight ? "bg-[#F3F1F1] border-[#D8D0D0]" : "bg-[#292D32] border-[#4C5259]");
+        "flex items-end gap-1 rounded-full border px-1 py-0.5 transition-colors focus-within:ring-1 focus-within:ring-[#5286F6] " +
+        (isLight ? "bg-[#F3F1F1] border-[#D8D0D0] focus-within:border-[#5286F6]" : "bg-[#292D32] border-[#4C5259] focus-within:border-[#5286F6]");
     const composerInputCls =
         "flex-1 min-w-0 min-h-[36px] max-h-[140px] resize-none bg-transparent px-2.5 py-[7px] text-[13px] leading-5 outline-none " +
         (isLight ? "text-black/85 placeholder:text-black/35" : "text-[#F4F5F6] placeholder:text-[#ABB3BE]");
@@ -4087,7 +4090,7 @@ export function ChatPanel({
                                     {dictation.listening ? (
                                         <Square size={12} fill="currentColor" className="motion-safe:animate-pulse" />
                                     ) : (
-                                        <span aria-hidden="true" className="h-4 w-4 bg-current [mask:url(/icons/chat-mic.svg)_center/contain_no-repeat]" />
+                                        <Mic size={16} aria-hidden="true" />
                                     )}
                                 </button>
                             </>

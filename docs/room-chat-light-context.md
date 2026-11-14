@@ -43,3 +43,9 @@ Current local design uses 1f5ccf1 for the message list, including gray incoming 
 Restored the rounded reaction pills from d36440c. Selected reactions use the blue fill and white count.
 
 The final composer uses the supplied microphone and outline Send SVGs. The emoji and reaction buttons use Lucide Smile, while active dictation displays Lucide Square. The sidebar preview uses mock chat data and simulated dictation.
+
+Message actions display Reply and React next to their icons. The quoted message itself has no Reply heading.
+
+The composer microphone returns to the earlier Lucide Mic icon.
+
+On focus, the composer combines a 1 px blue border with a 1 px ring in the same accent color (#5286F6), matching the reference outline.
