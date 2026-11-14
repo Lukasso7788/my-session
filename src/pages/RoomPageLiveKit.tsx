@@ -18279,7 +18279,7 @@ export function RoomPageLiveKit({
         });
       } catch (e: any) {
         const msg = String(e?.message || e || "");
-        if (!/participant not found/i.test(msg)) {
+        if (!/\bparticipant (?:not found|does not exist)\b|\bparticipant_not_found\b/i.test(msg)) {
           throw e;
         }
       }
@@ -18300,7 +18300,7 @@ export function RoomPageLiveKit({
       showSystemNotice({
         kind: "error",
         title: "Kick failed",
-        body: String(e?.message || e || "kick_failed"),
+        body: "Could not remove the participant. Please try again.",
       });
     } finally {
       setAdminBusyKey("");
