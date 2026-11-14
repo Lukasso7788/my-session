@@ -2932,7 +2932,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
 
       const livekitStartedAt = nowMs();
-      await svc.removeParticipant(roomName, participantIdentity);
+      try {
+        await svc.removeParticipant(roomName, participantIdentity);
+      } catch (error) {
+        // The kick broadcast can make the participant leave before this call arrives.
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/\bparticipant (?:not found|does not exist)\b|\bparticipant_not_found\b/i.test(message)) throw error;
+      }
       livekitMs = elapsedMs(livekitStartedAt);
 
       const totalMs = elapsedMs(totalStartedAt);
