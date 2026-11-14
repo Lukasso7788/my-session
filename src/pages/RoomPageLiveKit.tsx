@@ -20668,7 +20668,7 @@ export function RoomPageLiveKit({
 
       {rightPanelOpen && rightTab === "chat" && (
         <div data-side-panel-section="chat" className="ms-chat-panel-scrollbars flex flex-col h-full">
-          <div className={`flex min-h-[44px] items-center gap-2 px-3 py-1.5 ${sidePanelIsLight ? "bg-white" : "bg-[#232323]"}`}>
+          <div className={`flex min-h-[44px] items-center gap-2 border-b px-3 py-1.5 ${sidePanelIsLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#343434] bg-[#232323]"}`}>
             <div className="flex items-center gap-2 shrink-0 mr-1">
               <img
                 src={sidePanelIsLight ? "/icons/chat-light.svg" : "/icons/chat-dark.svg"}

@@ -18,11 +18,8 @@ import { profileHoverAttrs } from "./ProfileHoverLayer";
 import {
     CheckCheck,
     CornerUpLeft,
-    Mic,
     Pencil,
     Square,
-    SendHorizontal,
-    Smile,
     Trash2,
     X,
 } from "lucide-react";
@@ -107,10 +104,10 @@ const BRAND_GREEN_HOVER = "#5286F6";
 const BRAND_GREEN_SOFT = "rgba(129,219,134,0.14)";
 const BRAND_GREEN_BORDER = "rgba(129,219,134,0.48)";
 
-function avatarFromProfile(profile?: Profile | null, isLight = true) {
+function avatarFromProfile(profile?: Profile | null) {
     return (
         profile?.avatar_url ||
-        defaultAvatarUrl(profile?.full_name, null, isLight ? "light" : "dark")
+        defaultAvatarUrl(profile?.full_name)
     );
 }
 
@@ -656,43 +653,41 @@ function MessageCardInner({
         return entries;
     }, [displayedReactions, myReactions]);
 
-    const metaNameCls = isLight ? "text-black/70 font-medium" : "text-[#D9DEE4] font-medium";
+    const metaNameCls = isLight ? "text-black/55" : "text-[#C6CDD5]";
     const metaTimeCls = isLight ? "text-black/35" : "text-[#AEB6BF]";
-    const actionBtnCls = isLight
-        ? "text-black/45 hover:bg-black/[0.06] hover:text-[#2F5FC4]"
-        : "text-[#C6CDD5] hover:bg-white/10 hover:text-[#8FB0FA]";
+    const actionBtnCls = isLight ? "text-black/45 hover:text-[#5286F6]" : "text-[#C6CDD5] hover:text-[#5286F6]";
     const dangerBtnCls = isLight ? "text-black/40 hover:text-red-700" : "text-[#C6CDD5] hover:text-red-300";
     const menuCls = isLight ? "bg-[#F3F1F1] border border-[#D8D0D0]" : "bg-[#292929] border border-[#484848] text-[#F4F5F6]";
 
-    // Bubbles: others on white with a soft shadow, yours in a soft accent blue;
-    // the corner next to the name is tighter, like a speech tail.
     const bubbleCls =
-        "rounded-2xl px-2.5 py-1.5 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
+        "w-fit max-w-full rounded-[14px] px-2.5 py-1.5 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
+        (mine ? "ml-auto rounded-tr-[6px] " : "rounded-tl-[6px] ") +
         (mine
-            ? "rounded-tr-md " +
-              (isLight
-                ? "bg-[#5286F6]/[0.14] border-[#5286F6]/30 text-black/85"
-                : "bg-[#5286F6]/25 border-[#5286F6]/45 text-white")
-            : "rounded-tl-md " +
-              (isLight
-                ? "bg-white border-[#D8D0D0] text-black/80"
-                : "bg-[#262626] border-[#464646] text-[#F4F5F6]")) +
-        // Jumping to a quoted message: a soft accent glow that spreads and fades.
-        (highlighted ? " chat-message-flash" : "");
+            ? isLight
+                ? "bg-[#5286F6]/15 border-[#5286F6]/50 text-black/85"
+                : "bg-[#5286F6]/15 border-[#5286F6]/45 text-[#EAF8EC]"
+            : isLight
+                ? "bg-[#ECEAEA] border-[#D8D0D0] text-black/80"
+                : "bg-[#2A2A2A] border-[#464646] text-[#F4F5F6]") +
+        (highlighted
+            ? isLight
+                ? " ring-2 ring-[#6B7280]/55"
+                : " ring-2 ring-[#5286F6]/70"
+            : "");
 
     const quoteBoxCls = isLight
-        ? "border border-black/[0.08] bg-black/[0.035] text-black/65 hover:bg-black/[0.06]"
-        : "border border-white/[0.1] bg-white/[0.05] text-[#D9DEE4] hover:bg-white/[0.08]";
+        ? "bg-[#F7F5F5] border border-[#D8D0D0] text-black/70 hover:bg-[#F1F1F1]/90"
+        : "bg-[#242424] border border-[#464646] text-[#D9DEE4] hover:bg-[#30363B]";
 
-    // Reactions: round pills. Pale gray when only others reacted; the room's
-    // accent blue with a white count once you reacted too.
     const reactionPillBase =
-        "inline-flex h-[22px] items-center gap-1 rounded-full border px-[7px] text-[12px] cursor-pointer transition-[opacity,transform,background-color] duration-150 ease-out active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/50 ";
+        "px-1.5 py-0.5 rounded-full border text-[12px] flex items-center gap-1.5 cursor-pointer will-change-transform transition-[opacity,transform,background-color,border-color,box-shadow] duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5286F6]/75";
     const reactionPillOthers = isLight
-        ? "border-[#D8D0D0] bg-white hover:bg-[#F7F5F5]"
-        : "border-[#464646] bg-[#262626] hover:bg-[#303030]";
-    const reactionPillMine = "border-[#5286F6] bg-[#5286F6] hover:border-[#6B98FA] hover:bg-[#6B98FA]";
-    const reactionCountCls = "font-inter font-normal leading-none tabular-nums";
+        ? "bg-[#ECEAEA] border-[#D8D0D0] text-black/70 hover:bg-[#E3E1E1] hover:border-[#BEB7B7]"
+        : "bg-[#30363B] border-[#515961] text-[#E3E7EB] hover:bg-[#3B4248] hover:border-[#5286F6]/50";
+    const reactionPillMine = "bg-[#5286F6] border-transparent text-white hover:bg-[#6B98FA]";
+
+    const reactionCountCls = isLight ? "text-black/50" : "text-[#C6CDD5]";
+
 
     const { quote, quoteMessageId, main } = useMemo(
         () => parseReplyBody(msg.body),
@@ -763,9 +758,9 @@ function MessageCardInner({
         >
             {!mine && (
                 <img
-                    src={avatarFromProfile(msg.profile, isLight)}
+                    src={avatarFromProfile(msg.profile)}
                     {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
-                    className="h-[31px] w-[31px] rounded-full object-cover"
+                    className="w-7 h-7 rounded-full object-cover"
                     alt=""
                 />
             )}
@@ -827,7 +822,7 @@ function MessageCardInner({
                                                 {readers.slice(0, 6).map((reader) => (
                                                     <img
                                                         key={reader.userId}
-                                                        src={reader.avatarUrl || defaultAvatarUrl(reader.fullName, null, isLight ? "light" : "dark")}
+                                                        src={reader.avatarUrl || defaultAvatarUrl(reader.fullName)}
                                                         className={"h-6 w-6 rounded-full object-cover ring-2 " + (isLight ? "ring-[#F7F5F5]" : "ring-[#232323]")}
                                                         alt=""
                                                     />
@@ -933,7 +928,7 @@ function MessageCardInner({
                                                         }
                                                     >
                                                         <img
-                                                            src={reader.avatarUrl || defaultAvatarUrl(reader.fullName || "Participant", null, isLight ? "light" : "dark")}
+                                                            src={reader.avatarUrl || defaultAvatarUrl(reader.fullName || "Participant")}
                                                             className="h-8 w-8 shrink-0 rounded-full object-cover"
                                                             alt=""
                                                         />
@@ -958,15 +953,21 @@ function MessageCardInner({
                     ) : null}
 
                     {!isEditing && (
-                        <div className="flex h-6 shrink-0 items-center gap-0.5 leading-none">
+                        <div className="ml-1 flex h-5 shrink-0 items-center gap-0.5 leading-none">
                             <button
                                 type="button"
                                 onClick={() => onReply(msg)}
-                                className={"flex h-6 w-6 items-center justify-center rounded-full transition " + actionBtnCls}
-                                title="Reply"
+                                className={
+                                    "grid h-5 w-5 place-items-center rounded transition " +
+                                    actionBtnCls
+                                }
                                 aria-label="Reply"
+                                title="Reply"
                             >
-                                <CornerUpLeft size={14} className="block shrink-0" />
+                                <CornerUpLeft
+                                    size={14}
+                                    className="block shrink-0 self-center"
+                                />
                             </button>
 
                             <div className="relative flex h-5 items-center leading-none">
@@ -977,11 +978,14 @@ function MessageCardInner({
                                         if (!openReactions) updateReactionMenuPos();
                                         setOpenReactions((v) => !v);
                                     }}
-                                    className={"flex h-6 w-6 items-center justify-center rounded-full transition " + actionBtnCls}
-                                    title="React"
+                                    className={
+                                        "grid h-5 w-5 place-items-center rounded transition " +
+                                        actionBtnCls
+                                    }
                                     aria-label="React"
+                                    title="React"
                                 >
-                                    <Smile size={14} className="block shrink-0" />
+                                    <span aria-hidden="true" className="h-3.5 w-3.5 bg-current [mask:url(/icons/chat-react.svg)_center/contain_no-repeat]" />
                                 </button>
 
                                 {openReactions &&
@@ -1099,7 +1103,6 @@ function MessageCardInner({
                                     quoteMessageId ? "Jump to quoted message" : "Quoted message"
                                 }
                             >
-                                <div className="text-[10px] opacity-75 mb-1">Reply</div>
                                 <div className="whitespace-pre-wrap break-words">
                                     {renderTextWithLinks(quote, isLight)}
                                 </div>
@@ -1157,7 +1160,7 @@ function MessageCardInner({
                                     title="Add emoji"
                                     aria-label="Add emoji while editing"
                                 >
-                                    <Smile size={16} />
+                                    <span aria-hidden="true" className="h-4 w-4 bg-current [mask:url(/icons/chat-react.svg)_center/contain_no-repeat]" />
                                 </button>
                                 <span className="flex-1" />
                                 <button
@@ -1243,10 +1246,14 @@ function MessageCardInner({
                                     onFocus={(e) => onHoverReaction?.(msg.id, emoji, e.currentTarget)}
                                     onBlur={() => onHoverReaction?.(msg.id, emoji, null)}
                                     aria-pressed={isMine}
-                                    aria-label={isMine ? `Remove your ${emoji} reaction` : `React with ${emoji}`}
+                                    title={
+                                        isMine
+                                            ? "Click to remove your reaction · Right-click to see who reacted"
+                                            : "Click to react · Right-click to see who reacted"
+                                    }
                                 >
-                                    <span className="text-[14px] leading-none text-black opacity-100">{emoji}</span>
-                                    <span className={reactionCountCls + (isMine ? " text-white" : isLight ? " text-black/60" : " text-[#C6CDD5]")}>{reaction.count}</span>
+                                    <span className="text-[14px] leading-none">{emoji}</span>
+                                    <span className={isMine ? undefined : reactionCountCls}>{reaction.count}</span>
                                 </button>
                             );
                         })}
@@ -1256,9 +1263,9 @@ function MessageCardInner({
 
             {mine && (
                 <img
-                    src={avatarFromProfile(msg.profile, isLight)}
+                    src={avatarFromProfile(msg.profile)}
                     {...profileHoverAttrs(msg.user_id, msg.profile?.full_name)}
-                    className="h-[31px] w-[31px] rounded-full object-cover"
+                    className="w-7 h-7 rounded-full object-cover"
                     alt=""
                 />
             )}
@@ -1997,21 +2004,23 @@ export function ChatPanel({
     const titleText = isLight ? "text-black/85" : "text-[#F4F5F6]";
     const subText = isLight ? "text-black/50" : "text-[#B5BCC6]";
     const headerCloseBtnCls = isLight ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60" : "bg-[#353B42] hover:bg-[#444B53] text-[#D9DEE4]";
+    const replyBoxCls = isLight ? "bg-[#ECEAEA] border-[#D8D0D0]" : "bg-[#292929] border-[#484848]";
+    const replyingLabel = `text-[11px] font-medium ${isLight ? "text-[#315DCB]" : "text-[#6B98FA]"}`;
+    const replyingText = isLight ? "text-black/55" : "text-[#C6CDD5]";
+    const cancelBtnCls = isLight ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60" : "bg-[#353B42] hover:bg-[#444B53] text-[#D9DEE4]";
     const hintText = isLight ? "text-black/40" : "text-[#B5BCC6]";
     const sendBtnActive = "bg-[#5286F6] hover:bg-[#6B98FA] text-white";
     const sendBtnDisabled = isLight ? "text-black/30" : "text-[#AEB6BF]/50";
-    // The composer is one capsule (field + mic, emoji, send) with the room's
-    // flat 1px border, like the task field, and its accent focus ring.
     const composerShellCls =
-        "flex items-end gap-0.5 rounded-[18px] border p-1 transition-colors duration-150 focus-within:border-[#5286F6] focus-within:ring-1 focus-within:ring-[#5286F6] " +
-        (isLight ? "bg-white border-[#CFC6C6]" : "bg-[#292929] border-[#484848]");
+        "flex items-end gap-1 rounded-full border px-1 py-0.5 transition-colors focus-within:border-[#5286F6] focus-within:ring-1 focus-within:ring-[#5286F6] " +
+        (isLight ? "bg-[#F3F1F1] border-[#D8D0D0]" : "bg-[#292D32] border-[#4C5259]");
     const composerInputCls =
-        "flex-1 min-w-0 min-h-[32px] max-h-[140px] resize-none bg-transparent pl-2.5 pr-1 py-[6px] text-[13px] leading-5 outline-none " +
+        "flex-1 min-w-0 min-h-[36px] max-h-[140px] resize-none bg-transparent px-2.5 py-[7px] text-[13px] leading-5 outline-none " +
         (isLight ? "text-black/85 placeholder:text-black/35" : "text-[#F4F5F6] placeholder:text-[#ABB3BE]");
-    const composerBarCls = "flex shrink-0 items-center gap-0.5";
+    const composerBarCls = "flex h-9 shrink-0 items-stretch gap-0.5";
     const composerEmojiBtnCls =
-        "h-8 w-8 shrink-0 rounded-full flex items-center justify-center transition disabled:opacity-40 " +
-        (isLight ? "text-black/50 hover:bg-black/[0.06] hover:text-black/80" : "text-[#C6CDD5] hover:bg-white/[0.08] hover:text-white");
+        "w-8 self-stretch shrink-0 rounded-full flex items-center justify-center transition disabled:opacity-40 " +
+        (isLight ? "text-black/60 hover:bg-black/[0.05] hover:text-black/80" : "text-[#D9DEE4] hover:bg-white/[0.06] hover:text-white");
     const portalBoxCls =
         "rounded-2xl border shadow-2xl overflow-hidden " +
         (isLight ? "border-[#D8D0D0] bg-[#F3F1F1]" : "border-[#484848] bg-[#292929] text-[#F4F5F6]");
@@ -3515,7 +3524,7 @@ export function ChatPanel({
                                 {shown.map((uid) => (
                                     <img
                                         key={uid}
-                                        src={avatarFromProfile(profilesByIdRef.current[uid] || (uid === userId ? meProfileRef.current : null), isLight)}
+                                        src={avatarFromProfile(profilesByIdRef.current[uid] || (uid === userId ? meProfileRef.current : null))}
                                         className={"h-6 w-6 rounded-full object-cover ring-2 " + (isLight ? "ring-[#F7F5F5]" : "ring-[#232323]")}
                                         alt=""
                                     />
@@ -3675,7 +3684,7 @@ export function ChatPanel({
                                 }
                             >
                                 <img
-                                    src={avatarFromProfile(modalMessage.profile, isLight)}
+                                    src={avatarFromProfile(modalMessage.profile)}
                                     className="mt-0.5 h-6 w-6 shrink-0 rounded-full object-cover"
                                     alt=""
                                 />
@@ -3726,7 +3735,7 @@ export function ChatPanel({
                                             }
                                         >
                                             <img
-                                                src={avatarFromProfile(prof, isLight)}
+                                                src={avatarFromProfile(prof)}
                                                 {...profileHoverAttrs(uid, prof?.full_name)}
                                                 className="h-8 w-8 shrink-0 rounded-full object-cover"
                                                 alt=""
@@ -3937,62 +3946,51 @@ export function ChatPanel({
 
             <div className={"px-2.5 pt-2.5 pb-2 border-t " + headerBorder}>
                 {generalChatLocked && (
-                    <div className={"mb-2 rounded-2xl border px-3 py-2 text-[12px] leading-5 " + (isLight ? "border-[#D8D0D0] bg-white text-black/60" : "border-[#464646] bg-[#262626] text-[#D0D6DD]")}>
+                    <div className={"mb-3 rounded-xl px-3 py-2 text-[12px] leading-5 " + (isLight ? "bg-[#F0F0F0] text-black/60" : "bg-white/[0.06] text-[#D0D6DD]")}>
                         Public chat is disabled by the host. Use DMs to message the host privately.
                     </div>
                 )}
                 {replyTo && (
                     <div
                         className={
-                            "mb-2 flex items-center gap-2.5 rounded-2xl border py-1.5 pl-2 pr-1.5 animate-[fadeIn_140ms_ease-out] " +
-                            (isLight ? "border-[#D8D0D0] bg-white" : "border-[#464646] bg-[#262626]")
+                            "mb-2 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 " +
+                            replyBoxCls
                         }
                     >
-                        <img
-                            src={avatarFromProfile(replyTo.profile, isLight)}
-                            className="h-7 w-7 shrink-0 rounded-full object-cover"
-                            alt=""
-                        />
-                        <div className="min-w-0 flex-1">
-                            <div className={"flex items-center gap-1 text-[11px] " + (isLight ? "text-black/50" : "text-[#AEB6C0]")}>
-                                <CornerUpLeft size={12} className="shrink-0 text-[#5286F6]" aria-hidden="true" />
-                                <span>
-                                    Replying to{" "}
-                                    <span className={"font-semibold " + (isLight ? "text-black/80" : "text-[#E3E7EB]")}>
-                                        {replyTo.user_id === userId ? "yourself" : replyTo.profile?.full_name || "Participant"}
-                                    </span>
-                                </span>
-                            </div>
-                            <div className={"mt-0.5 truncate text-[12px] " + (isLight ? "text-black/60" : "text-[#C6CDD5]")}>
-                                {quotePreviewForReply(replyTo.body, 220) || "[message]"}
+                        <div className="min-w-0">
+                            <div className={replyingLabel}>Replying</div>
+                            <div className={"text-[11px] truncate " + replyingText}>
+                                {(replyTo.profile?.full_name || "Participant") +
+                                    ": " +
+                                    (quotePreviewForReply(replyTo.body, 220) || "[message]")}
                             </div>
                         </div>
                         <button
                             type="button"
                             onClick={() => setReplyTo(null)}
                             className={
-                                "flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition " +
-                                (isLight ? "text-black/45 hover:bg-black/[0.07] hover:text-black/75" : "text-[#AEB6C0] hover:bg-white/10 hover:text-white")
+                                "w-8 h-8 rounded-lg flex items-center justify-center transition " +
+                                cancelBtnCls
                             }
                             title="Cancel reply"
-                            aria-label="Cancel reply"
                         >
-                            <X size={15} />
+                            <X size={16} />
                         </button>
                     </div>
                 )}
+
                 {voiceMessagePreview && text.trim() ? (
                     <div
                         className={
-                            "mb-2 rounded-2xl border px-3 py-2 " +
+                            "mb-2 rounded-xl border px-3 py-2 " +
                             (isLight
-                                ? "border-[#5286F6]/40 bg-[#5286F6]/[0.08] text-black/80"
+                                ? "border-[#5286F6]/60 bg-[#5286F6]/10 text-black/80"
                                 : "border-[#5286F6]/45 bg-[#5286F6]/10 text-white/85")
                         }
                     >
                         <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
-                                <div className={`text-[12px] font-semibold ${isLight ? "text-[#2F5FC4]" : "text-[#8FB0FA]"}`}>
+                                <div className={`text-[11px] font-semibold uppercase tracking-[0.06em] ${isLight ? "text-[#3FB455]" : "text-[#6B98FA]"}`}>
                                     Voice message preview
                                 </div>
                                 <div className="mt-1 text-[12px] leading-4 opacity-75">
@@ -4007,10 +4005,10 @@ export function ChatPanel({
                                         setVoiceMessagePreview(false);
                                     }}
                                     className={
-                                        "h-8 rounded-full px-3 text-[12px] font-medium transition " +
+                                        "h-8 rounded-lg px-2.5 text-[11px] font-semibold transition " +
                                         (isLight
-                                            ? "bg-black/[0.06] hover:bg-black/10"
-                                            : "bg-white/[0.08] hover:bg-white/[0.12]")
+                                            ? "bg-black/5 hover:bg-black/10"
+                                            : "bg-white/[0.06] hover:bg-white/10")
                                     }
                                 >
                                     Cancel
@@ -4018,7 +4016,7 @@ export function ChatPanel({
                                 <button
                                     type="button"
                                     onClick={() => void send()}
-                                    className="h-8 rounded-full bg-[#5286F6] px-3.5 text-[12px] font-medium text-white transition hover:bg-[#6B98FA]"
+                                    className="h-8 rounded-lg bg-[#5286F6] px-3 text-[11px] font-semibold text-black transition hover:bg-[#5286F6]"
                                 >
                                     Confirm
                                 </button>
@@ -4062,8 +4060,6 @@ export function ChatPanel({
                         disabled={generalChatLocked || (activeMode === "direct" && isHost && !activeDirectPeerId)}
                     />
 
-                    {/* Mic, emoji and send: round buttons inside the capsule, like the
-                        message actions and reaction pills. */}
                     <div className={composerBarCls}>
                         {dictation.supported ? (
                             <>
@@ -4074,7 +4070,7 @@ export function ChatPanel({
                                     aria-pressed={dictation.listening}
                                     className={
                                         dictation.listening
-                                            ? "h-8 w-8 shrink-0 rounded-full flex items-center justify-center transition bg-[#F65252]/15 text-[#F65252]"
+                                            ? "w-8 self-stretch shrink-0 rounded-full flex items-center justify-center transition bg-[#F65252]/15 text-[#F65252]"
                                             : composerEmojiBtnCls
                                     }
                                     onMouseDown={(e) => e.preventDefault()}
@@ -4088,13 +4084,13 @@ export function ChatPanel({
                                     {dictation.listening ? (
                                         <Square size={12} fill="currentColor" className="motion-safe:animate-pulse" />
                                     ) : (
-                                        <Mic size={16} />
+                                        <span aria-hidden="true" className="h-4 w-4 bg-current [mask:url(/icons/chat-mic.svg)_center/contain_no-repeat]" />
                                     )}
                                 </button>
                             </>
                         ) : null}
 
-                        <div className="relative flex" ref={composerEmojiWrapRef}>
+                        <div className="relative flex self-stretch" ref={composerEmojiWrapRef}>
                             <button
                                 ref={emojiButtonRef}
                                 type="button"
@@ -4104,14 +4100,15 @@ export function ChatPanel({
                                 onClick={() => setComposerEmojiOpen((v) => !v)}
                                 disabled={generalChatLocked}
                             >
-                                <Smile size={16} />
+                                <span aria-hidden="true" className="h-4 w-4 bg-current [mask:url(/icons/chat-react.svg)_center/contain_no-repeat]" />
                             </button>
                         </div>
+
 
                         <button
                             onClick={() => void send()}
                             className={
-                                "h-8 w-8 shrink-0 rounded-full flex items-center justify-center transition " +
+                                "w-9 self-stretch shrink-0 rounded-full flex items-center justify-center transition " +
                                 (text.trim() &&
                                     !generalChatLocked &&
                                     !(activeMode === "direct" && isHost && !activeDirectPeerId)
@@ -4126,12 +4123,12 @@ export function ChatPanel({
                             }
                             title="Send"
                         >
-                            <SendHorizontal size={15} />
+                            <span aria-hidden="true" className="h-4 w-4 bg-current [mask:url(/icons/chat-send.svg)_center/contain_no-repeat]" />
                         </button>
                     </div>
                 </div>
 
-                <div className={"mt-1.5 px-2 text-[11px] " + (dictation.error ? "text-[#F65252]" : hintText)} aria-live="polite">
+                <div className={"mt-1.5 px-0.5 text-[11px] " + (dictation.error ? "text-[#F65252]" : hintText)} aria-live="polite">
                     {dictation.error
                         ? dictation.error
                         : dictation.listening
