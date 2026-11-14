@@ -29,3 +29,17 @@ The latest chat-react.svg smiley is shared by the message reaction action and bo
 The current chat-react.svg and chat-mic.svg are Vectorize exports from the two final PNG attachments. ChatPanel uses them as CSS masks so the icons inherit button colors.
 
 The latest Vectorize export replaces chat-react.svg for the message reaction, composer emoji picker, and edit emoji picker.
+
+Vectorize exports supply the emoji and active dictation icons. The live chat still uses useSpeechDictation. The local preview simulates recognition start and stop without opening the microphone.
+
+The latest Vectorize stop icon replaces chat-recording.svg. The previous tongue-out smiley is restored in chat-react.svg and is shared by message reactions and both emoji pickers.
+
+Restored the emoji from d36440c and the prior ring-and-square dictation stop SVG. The local preview can display both with simulated dictation.
+
+Restored the pre-Vectorize outline smiley for the reaction and emoji controls and the original Lucide Square for active dictation. Incoming messages in the light panel now use white fill with the existing thin border.
+
+Current local design uses 1f5ccf1 for the message list, including gray incoming bubbles, original spacing and outlined reactions. Exceptions are icon-only Reply and React, an unlabeled quote, and the rounded gray composer with the historical Lucide icons.
+
+Restored the rounded reaction pills from d36440c. Selected reactions use the blue fill and white count.
+
+The final composer uses the supplied microphone and outline Send SVGs. The emoji and reaction buttons use Lucide Smile, while active dictation displays Lucide Square. The sidebar preview uses mock chat data and simulated dictation.

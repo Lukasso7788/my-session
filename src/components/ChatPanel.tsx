@@ -20,6 +20,7 @@ import {
     CornerUpLeft,
     Pencil,
     Square,
+    Smile,
     Trash2,
     X,
 } from "lucide-react";
@@ -660,8 +661,7 @@ function MessageCardInner({
     const menuCls = isLight ? "bg-[#F3F1F1] border border-[#D8D0D0]" : "bg-[#292929] border border-[#484848] text-[#F4F5F6]";
 
     const bubbleCls =
-        "w-fit max-w-full rounded-[14px] px-2.5 py-1.5 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
-        (mine ? "ml-auto rounded-tr-[6px] " : "rounded-tl-[6px] ") +
+        "rounded-2xl px-2.5 py-1.5 text-[13px] leading-snug border whitespace-pre-wrap break-words transition " +
         (mine
             ? isLight
                 ? "bg-[#5286F6]/15 border-[#5286F6]/50 text-black/85"
@@ -985,7 +985,10 @@ function MessageCardInner({
                                     aria-label="React"
                                     title="React"
                                 >
-                                    <span aria-hidden="true" className="h-3.5 w-3.5 bg-current [mask:url(/icons/chat-react.svg)_center/contain_no-repeat]" />
+                                    <Smile
+                                        size={14}
+                                        className="block shrink-0 self-center"
+                                    />
                                 </button>
 
                                 {openReactions &&
@@ -1160,7 +1163,7 @@ function MessageCardInner({
                                     title="Add emoji"
                                     aria-label="Add emoji while editing"
                                 >
-                                    <span aria-hidden="true" className="h-4 w-4 bg-current [mask:url(/icons/chat-react.svg)_center/contain_no-repeat]" />
+                                    <Smile size={16} />
                                 </button>
                                 <span className="flex-1" />
                                 <button
@@ -4100,7 +4103,7 @@ export function ChatPanel({
                                 onClick={() => setComposerEmojiOpen((v) => !v)}
                                 disabled={generalChatLocked}
                             >
-                                <span aria-hidden="true" className="h-4 w-4 bg-current [mask:url(/icons/chat-react.svg)_center/contain_no-repeat]" />
+                                <Smile size={16} aria-hidden="true" />
                             </button>
                         </div>
 
