@@ -317,7 +317,7 @@ function TimelinePreview({
             </div>
 
             <div className={`mt-2 border rounded-[999px] overflow-hidden ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"}`}>
-                <div className="flex h-5">
+                <div className="flex h-3">
                     {blocks.map((b, index) => {
                         const mins = clamp(Number(b.minutes) || 1, 1, 24 * 60);
                         const showText = mins >= 10;
@@ -385,10 +385,13 @@ function TimelinePreview({
                                     <>
                                         <span
                                             aria-hidden="true"
-                                            className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(135deg,rgba(0,0,0,0.28)_0_2px,rgba(255,255,255,0.18)_2px_5px)]"
+                                            className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(135deg,rgba(15,23,42,0.13)_0_1px,rgba(255,255,255,0.10)_1px_7px)]"
                                         />
-                                        <span aria-hidden="true" className="relative flex max-w-full items-center gap-1 overflow-hidden rounded-full bg-black/80 px-1.5 text-[10px] leading-4 text-white">
-                                            <Lock size={10} className="shrink-0" />
+                                        <span
+                                            aria-hidden="true"
+                                            className={`relative flex max-w-full items-center gap-1 overflow-hidden px-1.5 font-inter text-[11px] leading-3 text-[#172033] ${b.kind === "custom" ? "rounded bg-white/75" : ""}`}
+                                        >
+                                            <Lock size={10} strokeWidth={1.75} className="shrink-0" />
                                             {showText && <span className="truncate">{b.title} · {mins}m</span>}
                                         </span>
                                     </>
@@ -939,7 +942,10 @@ export default function RoomTimelineEditor({
                 >
                     <div className="min-w-0">
                         <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-[#5286F6]/20 text-[#4B9A51]">
+                            <div
+                                aria-hidden="true"
+                                className={`flex size-10 shrink-0 items-center justify-center rounded-2xl ${isLight ? "bg-[#E7E7E7] text-black/75" : "bg-[#242424] text-white/90"}`}
+                            >
                                 <Layers size={18} />
                             </div>
                             <div className="min-w-0">
