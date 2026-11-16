@@ -127,6 +127,8 @@ type TasksPanelProps = {
   accountabilityWallOpen?: boolean;
   onToggleAccountabilityWall?: () => void;
   onPublicTasksChange?: (tasks: PublicPanelTask[]) => void;
+  renderDocument?: Document | null;
+  visible?: boolean;
 };
 
 type ProfileMini = {
@@ -755,6 +757,8 @@ export function TasksPanel({
   accountabilityWallOpen = false,
   onToggleAccountabilityWall,
   onPublicTasksChange,
+  renderDocument = null,
+  visible = true,
 }: TasksPanelProps) {
   const { id: idOrSlugFromUrl } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -998,9 +1002,10 @@ export function TasksPanel({
 
   useEffect(() => {
     const closeTaskMenu = () => setTaskMenuOpenId(null);
-    window.addEventListener("pointerdown", closeTaskMenu);
-    return () => window.removeEventListener("pointerdown", closeTaskMenu);
-  }, []);
+    const view = renderDocument?.defaultView || window;
+    view.addEventListener("pointerdown", closeTaskMenu);
+    return () => view.removeEventListener("pointerdown", closeTaskMenu);
+  }, [renderDocument]);
 
   useEffect(() => {
     try {
@@ -3162,7 +3167,7 @@ export function TasksPanel({
   }, []);
 
   const openOverlay = useCallback(async () => {
-    if (overlayRef.current) return;
+    if (overlayRef.current || renderDocument) return;
 
     const canPip = !!window.documentPictureInPicture?.requestWindow;
 
@@ -3214,7 +3219,11 @@ export function TasksPanel({
 
       w.addEventListener("beforeunload", closeOverlay);
     } catch { }
-  }, [closeOverlay, isLight, panelTheme]);
+  }, [closeOverlay, isLight, panelTheme, renderDocument]);
+
+  useLayoutEffect(() => {
+    if (renderDocument && overlayRef.current) closeOverlay();
+  }, [closeOverlay, renderDocument]);
 
   useEffect(() => {
     const overlay = overlayRef.current;
@@ -3240,6 +3249,7 @@ export function TasksPanel({
       void openOverlay();
     };
 
+    if (renderDocument) return;
     window.addEventListener(
       "mysession:tasks-open-pinned",
       onOpenPinnedTasks,
@@ -3251,13 +3261,13 @@ export function TasksPanel({
         onOpenPinnedTasks,
       );
     };
-  }, [openOverlay]);
+  }, [openOverlay, renderDocument]);
 
   const getPortalDocument = useCallback((): Document => {
     const o = overlayRef.current;
     const doc = o?.win?.document;
-    return doc || document;
-  }, []);
+    return doc || renderDocument || document;
+  }, [renderDocument]);
 
   const clearAiSuggestionPreviewCloseTimer = useCallback(() => {
     if (aiSuggestionPreviewCloseTimerRef.current !== null) {
@@ -3324,6 +3334,18 @@ export function TasksPanel({
     setPlanSearch("");
     setPlanSearchExpanded(false);
   }, []);
+
+  useLayoutEffect(() => {
+    closeAiSuggestionPreview();
+    setTaskMenuOpenId(null);
+    if (visible) return;
+    closeImportModal();
+    setSaveTaskToPlanTask(null);
+    setEncouragementModalTaskId(null);
+    setAiPaywallOpen(false);
+    setAiSuggestionTask(null);
+    setNewTaskVisibilityMenuOpen(false);
+  }, [closeAiSuggestionPreview, closeImportModal, renderDocument, visible]);
 
   const expandPlanSearch = useCallback(() => {
     setPlanSearchExpanded(true);
@@ -4607,7 +4629,7 @@ export function TasksPanel({
                 />
               </IconButton>
 
-              <IconButton
+              {!renderDocument ? <IconButton
                 theme={panelTheme}
                 className={
                   "border border-[#F65252] bg-[#F65252]/10 text-[#F65252] hover:bg-[#F65252]/15"
@@ -4626,7 +4648,7 @@ export function TasksPanel({
                   alt="Pin"
                   tint="#F65252"
                 />
-              </IconButton>
+              </IconButton> : null}
             </div>
           </div>
         </div>

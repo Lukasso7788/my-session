@@ -540,7 +540,7 @@ export function LiveKitBottomBar(props: {
         ) : null;
 
     return (
-        <div className="ms-room-bottombar fixed inset-x-0 bottom-0 z-50">
+        <div className={`ms-room-bottombar fixed inset-x-0 bottom-0 ${showMoreMenu ? "z-[75]" : "z-50"}`}>
             <div className="w-full px-2 sm:px-4 pb-[calc(4px+env(safe-area-inset-bottom))]">
                 <div
                     className={`h-[60px] sm:h-[64px] grid grid-cols-[auto,1fr,auto] items-center px-2 sm:px-4 ${bottomBarBg}`}
@@ -551,6 +551,8 @@ export function LiveKitBottomBar(props: {
                                 onClick={() => setShowMoreMenu((v) => !v)}
                                 className={`${centerControlClass} ${ctlBtnBase}`}
                                 title="Menu"
+                                aria-expanded={showMoreMenu}
+                                aria-controls="room-mobile-more-menu"
                                 type="button"
                             >
                                 <span className={isLight ? "text-black/70" : "text-white/85"}>
@@ -559,9 +561,10 @@ export function LiveKitBottomBar(props: {
                             </button>
 
                             {showMoreMenu && (
-                                <div className="absolute bottom-[76px] sm:bottom-[86px] left-0">
+                                <div className="absolute bottom-[60px] left-0 sm:bottom-[64px]">
                                     <div
-                                        className={`w-[240px] rounded-2xl shadow-2xl overflow-hidden ${isLight
+                                        id="room-mobile-more-menu"
+                                        className={`max-h-[calc(100dvh-80px-env(safe-area-inset-bottom))] w-[240px] max-w-[calc(100vw-32px)] overflow-y-auto overscroll-contain rounded-2xl shadow-2xl ${isLight
                                             ? "bg-[#F3F1F1] border border-[#D8D0D0]"
                                             : "bg-[#1B1B1B] border border-transparent"
                                             }`}

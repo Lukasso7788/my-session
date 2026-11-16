@@ -80,6 +80,8 @@ export default function LiveKitPiPPortal({
     onSetPipMode,
     onOpenTasksPanel,
     chatPanel,
+    tasksExpanded = false,
+    tasksPanel,
 }: {
     isLight: boolean;
     theme: RoomTheme;
@@ -100,6 +102,8 @@ export default function LiveKitPiPPortal({
     onSetPipMode: (mode: "gallery" | "chat") => void;
     onOpenTasksPanel?: () => void;
     chatPanel?: React.ReactNode;
+    tasksExpanded?: boolean;
+    tasksPanel?: React.ReactNode;
 }) {
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
     const [sentReaction, setSentReaction] = useState<ReactionType | null>(null);
@@ -187,17 +191,17 @@ export default function LiveKitPiPPortal({
                         <button
                             type="button"
                             onClick={() => onSetPipMode("gallery")}
-                            className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${pipMode === "gallery"
+                            className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${!tasksExpanded && pipMode === "gallery"
                                 ? `${pillActive} border-transparent`
                                 : `${pillIdle} border-transparent`
                                 }`}
                             title="Gallery"
                             aria-label="Show gallery"
-                            aria-pressed={pipMode === "gallery"}
+                            aria-pressed={!tasksExpanded && pipMode === "gallery"}
                         >
                             <Icon
                                 name="pip"
-                                theme={pipMode === "gallery" ? (isLight ? "dark" : "light") : theme}
+                                theme={!tasksExpanded && pipMode === "gallery" ? (isLight ? "dark" : "light") : theme}
                                 className="h-[1rem] w-[1rem]"
                                 alt="Picture in Picture"
                             />
@@ -207,17 +211,17 @@ export default function LiveKitPiPPortal({
                             <button
                                 type="button"
                                 onClick={() => onSetPipMode("chat")}
-                                className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${pipMode === "chat"
+                                className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${!tasksExpanded && pipMode === "chat"
                                     ? `${pillActive} border-transparent`
                                     : `${pillIdle} border-transparent`
                                     }`}
                                 title="Chat"
                                 aria-label="Show chat"
-                                aria-pressed={pipMode === "chat"}
+                                aria-pressed={!tasksExpanded && pipMode === "chat"}
                             >
                                 <Icon
                                     name="chat"
-                                    theme={pipMode === "chat" ? (isLight ? "dark" : "light") : theme}
+                                    theme={!tasksExpanded && pipMode === "chat" ? (isLight ? "dark" : "light") : theme}
                                     className="h-[1rem] w-[1rem]"
                                 />
                             </button>
@@ -227,12 +231,13 @@ export default function LiveKitPiPPortal({
                             <button
                                 type="button"
                                 onClick={onOpenTasksPanel}
-                                className={`flex h-9 w-9 items-center justify-center rounded-xl border border-transparent transition ${pillIdle}`}
-                                title="Open Tasks panel"
-                                aria-label="Open Tasks panel"
+                                className={`flex h-9 w-9 items-center justify-center rounded-xl border border-transparent transition ${tasksExpanded ? pillActive : pillIdle}`}
+                                title={tasksExpanded ? "Collapse Tasks panel" : "Expand Tasks panel"}
+                                aria-label={tasksExpanded ? "Collapse Tasks panel" : "Expand Tasks panel"}
+                                aria-expanded={tasksExpanded}
                             >
                                 <img
-                                    src={isLight ? "/icons/tasks-light.svg" : "/icons/tasks.svg"}
+                                    src={isLight !== tasksExpanded ? "/icons/tasks-light.svg" : "/icons/tasks.svg"}
                                     alt=""
                                     className="h-[1rem] w-[1rem] object-contain"
                                     draggable={false}
@@ -243,57 +248,68 @@ export default function LiveKitPiPPortal({
                 </div>
             </div>
 
-            <div className="relative flex-1 min-h-0 min-w-0 overflow-hidden">
-                {pipMode === "gallery" ? (
-                    <div className="h-full min-h-0 min-w-0 overflow-hidden p-[clamp(0.28rem,0.9vw,0.56rem)]">
-                    {pipGalleryTiles.length ? (
+            <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+                <div hidden={tasksExpanded} className="relative h-full min-h-0 min-w-0 overflow-hidden">
+                    {pipMode === "gallery" ? (
+                        <div className="h-full min-h-0 min-w-0 overflow-hidden p-[clamp(0.28rem,0.9vw,0.56rem)]">
+                        {pipGalleryTiles.length ? (
+                            <div
+                                className="grid h-full w-full min-h-0 min-w-0 overflow-hidden"
+                                style={{
+                                    gridTemplateColumns: `repeat(${resolvedGalleryColumns}, minmax(0, 1fr))`,
+                                    gridTemplateRows: `repeat(${resolvedGalleryRows}, minmax(0, 1fr))`,
+                                    gap: "clamp(0.28rem,0.8vw,0.5rem)",
+                                }}
+                            >
+                                {pipGalleryTiles.map((t) => (
+                                    <div
+                                        key={`pip-gallery-${t.id}`}
+                                        className="min-h-0 min-w-0 overflow-hidden rounded-2xl"
+                                        style={{ minHeight: 0, minWidth: 0 }}
+                                    >
+                                        {renderTile(t)}
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className={`flex h-full items-center justify-center text-[0.8rem] ${isLight ? "text-black/45" : "text-white/50"}`}>
+                                No video tiles yet
+                            </div>
+                        )}
+                        </div>
+                    ) : null}
+
+                    {chatPanel && pipMode === "chat" ? (
                         <div
-                            className="grid h-full w-full min-h-0 min-w-0 overflow-hidden"
-                            style={{
-                                gridTemplateColumns: `repeat(${resolvedGalleryColumns}, minmax(0, 1fr))`,
-                                gridTemplateRows: `repeat(${resolvedGalleryRows}, minmax(0, 1fr))`,
-                                gap: "clamp(0.28rem,0.8vw,0.5rem)",
-                            }}
+                            className="ms-pip-chat-panel h-full min-h-0 min-w-0 overflow-hidden"
                         >
-                            {pipGalleryTiles.map((t) => (
-                                <div
-                                    key={`pip-gallery-${t.id}`}
-                                    className="min-h-0 min-w-0 overflow-hidden rounded-2xl"
-                                    style={{ minHeight: 0, minWidth: 0 }}
-                                >
-                                    {renderTile(t)}
-                                </div>
-                            ))}
+                            <PiPChatBoundary>{chatPanel}</PiPChatBoundary>
                         </div>
-                    ) : (
-                        <div className={`flex h-full items-center justify-center text-[0.8rem] ${isLight ? "text-black/45" : "text-white/50"}`}>
-                            No video tiles yet
+                    ) : null}
+
+                    {sentReaction ? (
+                        <div
+                            className={`pointer-events-none absolute left-1/2 top-3 z-[95] flex -translate-x-1/2 items-center gap-2 rounded-full border px-3 py-2 text-[0.72rem] font-semibold shadow-lg backdrop-blur animate-pulse ${isLight
+                                ? "border-emerald-200 bg-white/95 text-emerald-700"
+                                : "border-emerald-400/30 bg-[#242424]/95 text-emerald-200"
+                                }`}
+                            role="status"
+                            aria-live="polite"
+                        >
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#81DB86] text-[0.65rem] text-[#143818]">✓</span>
+                            <span>Sent</span>
+                            <span className="text-[1rem] leading-none">{REACTION_EMOJI[sentReaction]}</span>
                         </div>
-                    )}
-                    </div>
-                ) : null}
-
-                {chatPanel && pipMode === "chat" ? (
-                    <div
-                        className="ms-pip-chat-panel h-full min-h-0 min-w-0 overflow-hidden"
+                    ) : null}
+                </div>
+                {tasksPanel ? (
+                    <aside
+                        aria-label="Tasks"
+                        hidden={!tasksExpanded}
+                        className={`h-full min-h-0 overflow-hidden ${headerBg}`}
                     >
-                        <PiPChatBoundary>{chatPanel}</PiPChatBoundary>
-                    </div>
-                ) : null}
-
-                {sentReaction ? (
-                    <div
-                        className={`pointer-events-none absolute left-1/2 top-3 z-[95] flex -translate-x-1/2 items-center gap-2 rounded-full border px-3 py-2 text-[0.72rem] font-semibold shadow-lg backdrop-blur animate-pulse ${isLight
-                            ? "border-emerald-200 bg-white/95 text-emerald-700"
-                            : "border-emerald-400/30 bg-[#242424]/95 text-emerald-200"
-                            }`}
-                        role="status"
-                        aria-live="polite"
-                    >
-                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-[#81DB86] text-[0.65rem] text-[#143818]">✓</span>
-                        <span>Sent</span>
-                        <span className="text-[1rem] leading-none">{REACTION_EMOJI[sentReaction]}</span>
-                    </div>
+                        {tasksPanel}
+                    </aside>
                 ) : null}
             </div>
 

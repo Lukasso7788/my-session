@@ -2,6 +2,7 @@
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -152,6 +153,7 @@ import { downscaleImageFile, downscaleImageSrc, isLargeDataUrl } from "../lib/ba
 import { prefetchBackgroundFxAssets } from "../lib/prefetchBackgroundFx";
 import { CHECK_IN_BREAK_TITLE, INTENTIONS_COLOR, isCheckInBreakName } from "../lib/checkInBreak";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
+import { useRoomPiPTasks } from "./livekit/useRoomPiPTasks";
 import { profileHoverAttrs } from "../components/ProfileHoverLayer";
 import CameraOffReminder, { CAMERA_OFF_REMINDER_DELAY_MS } from "./livekit/CameraOffReminder";
 import "./livekit/roomSidePanelTheme.css";
@@ -13451,8 +13453,30 @@ export function RoomPageLiveKit({
 
   // edit name modal
   const pipWindowRef = useRef<Window | null>(null);
+  const {
+    expanded: pipTasksExpanded,
+    mounted: pipTasksMounted,
+    reset: resetPiPTasks,
+    collapse: collapsePiPTasks,
+    toggle: togglePiPTasks,
+  } = useRoomPiPTasks();
   const [pipMountEl, setPipMountEl] = useState<HTMLElement | null>(null);
   const [pipOpen, setPipOpen] = useState(false);
+  const [roomTasksHost, setRoomTasksHost] = useState<HTMLDivElement | null>(null);
+  const [pipTasksHost, setPipTasksHost] = useState<HTMLDivElement | null>(null);
+  const [tasksPanelMount] = useState(() => {
+    if (typeof document === "undefined") return null;
+    const mount = document.createElement("div");
+    mount.className = "h-full min-h-0";
+    return mount;
+  });
+  const tasksPanelHost = pipTasksExpanded ? pipTasksHost : roomTasksHost ?? pipTasksHost;
+
+  useLayoutEffect(() => {
+    if (!tasksPanelMount) return;
+    if (tasksPanelHost) tasksPanelHost.appendChild(tasksPanelMount);
+    return () => tasksPanelMount.remove();
+  }, [tasksPanelHost, tasksPanelMount]);
 
   const videoWrapRef = useRef<HTMLDivElement | null>(null);
   const mobilePiPCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -17226,11 +17250,12 @@ export function RoomPageLiveKit({
     pipWindowRef.current = null;
     setPipMountEl(null);
     setPipOpen(false);
+    resetPiPTasks();
 
     try {
       pipWindow?.close();
     } catch { }
-  }, []);
+  }, [resetPiPTasks]);
 
   const closeMobilePictureInPicture = useCallback(async () => {
     const stage = mobilePiPVideoElement ?? mobilePiPStageRef.current;
@@ -17333,9 +17358,11 @@ export function RoomPageLiveKit({
     pipWindow.addEventListener(
       "pagehide",
       () => {
+        if (pipWindowRef.current !== pipWindow) return;
         pipWindowRef.current = null;
         setPipMountEl(null);
         setPipOpen(false);
+        resetPiPTasks();
       },
       { once: true },
     );
@@ -17343,7 +17370,7 @@ export function RoomPageLiveKit({
     pipWindowRef.current = pipWindow;
     setPipMountEl(mount);
     setPipOpen(true);
-  }, [connected, pipSupported, session?.title, theme]);
+  }, [connected, pipSupported, resetPiPTasks, session?.title, theme]);
 
   const openMobilePictureInPicture = useCallback(async () => {
     if (!connected) {
@@ -17466,25 +17493,6 @@ export function RoomPageLiveKit({
     openPictureInPicture,
     pictureInPictureOpen,
   ]);
-
-  const openTasksFromPictureInPicture = useCallback(() => {
-    closePictureInPicture().catch(() => { });
-
-    // Open the normal Tasks tab just long enough to ensure the component is mounted,
-    // then ask TasksPanel to open itself in its pinned/PiP overlay format.
-    setRightTab("tasks");
-    setRightPanelOpen(true);
-
-    window.setTimeout(() => {
-      try {
-        window.dispatchEvent(
-          new CustomEvent("mysession:tasks-open-pinned"),
-        );
-      } catch {
-        // ignore
-      }
-    }, 120);
-  }, [closePictureInPicture]);
 
   useEffect(() => {
     const pipWindow = pipWindowRef.current;
@@ -20265,6 +20273,50 @@ export function RoomPageLiveKit({
     </div>
   ) : null;
 
+  const tasksInPiP = pipTasksExpanded || (!roomTasksHost && pipTasksMounted);
+  const tasksTheme = tasksInPiP ? theme : sidePanelTheme;
+  const roomTasksVisible = rightPanelOpen && rightTab === "tasks";
+  const tasksPortal = tasksPanelMount && session?.id && connected && (pipTasksMounted || roomTasksVisible)
+    ? createPortal(
+      <div data-theme={tasksTheme} style={{ colorScheme: tasksTheme }} className="h-full min-h-0">
+        <RoomPanelErrorBoundary
+          panel="tasks"
+          routeId={routeId}
+          sessionId={session.id}
+          isLight={tasksTheme === "light"}
+          onClose={tasksInPiP ? togglePiPTasks : () => openRightTab(null)}
+        >
+          <React.Suspense fallback={<div className="p-4 text-sm opacity-60">Loading tasks…</div>}>
+            <TasksPanelWithCountdown
+              key={`tasks-${session.id}`}
+              countdownStore={remainingTimeStore}
+              currentUserId={authUserId}
+              theme={tasksTheme}
+              sessionId={session.id}
+              oneOnOneMode={isOneOnOneRoom}
+              renderDocument={tasksInPiP ? pipChatDocument : null}
+              visible={pipTasksExpanded || roomTasksVisible}
+              pictureInPictureSupported={!tasksInPiP && pipSupported}
+              pictureInPictureOpen={pictureInPictureOpen}
+              onOpenPictureInPicture={() => {
+                togglePictureInPicture().catch((error) => {
+                  console.error("open Picture-in-Picture from tasks failed", error);
+                  alert(String(error?.message || error || "pip_open_failed"));
+                });
+              }}
+              accountabilityWallOpen={mainViewMode === "accountability"}
+              onPublicTasksChange={handlePublicPanelTasksChange}
+              onToggleAccountabilityWall={() => {
+                setMainViewMode((v) => v === "accountability" ? "video" : "accountability");
+              }}
+            />
+          </React.Suspense>
+        </RoomPanelErrorBoundary>
+      </div>,
+      tasksPanelMount,
+    )
+    : null;
+
   const pipPortal = pipMountEl
     ? createPortal(
       <PiPPortalWithCountdown
@@ -20291,6 +20343,7 @@ export function RoomPageLiveKit({
         }}
         onSendReaction={sendReaction}
         onSetPipMode={(mode) => {
+          collapsePiPTasks();
           // Keep one ChatPanel instance per room. Transfer chat to PiP before
           // mounting it there so realtime channels and portals cannot collide.
           if (mode === "chat" && rightPanelOpen && rightTab === "chat") {
@@ -20299,8 +20352,10 @@ export function RoomPageLiveKit({
           }
           setPipMode(mode);
         }}
-        onOpenTasksPanel={openTasksFromPictureInPicture}
+        onOpenTasksPanel={connected && session?.id ? togglePiPTasks : undefined}
         chatPanel={pipChatPanel}
+        tasksExpanded={pipTasksExpanded}
+        tasksPanel={pipTasksMounted ? <div ref={setPipTasksHost} className="h-full min-h-0 overflow-y-auto" /> : null}
       />,
       pipMountEl,
     )
@@ -21146,56 +21201,8 @@ export function RoomPageLiveKit({
             <div
               className={`h-full min-h-0 overflow-hidden rounded-xl border ${sidePanelIsLight ? "bg-[#F3F1F1] border-[#D8D0D0]" : "bg-[#1F1F1F] border-[#343434]"}`}
             >
-              <div className="h-full min-h-0 overflow-y-auto [&>*]:min-h-0">
-                <div
-                  data-theme={sidePanelTheme}
-                  style={{ colorScheme: sidePanelTheme }}
-                  className="h-full min-h-0"
-                >
-                  {session?.id && connected ? (
-                    <RoomPanelErrorBoundary
-                      panel="tasks"
-                      routeId={routeId}
-                      sessionId={session.id}
-                      isLight={sidePanelIsLight}
-                      onClose={() => openRightTab(null)}
-                    >
-                    <React.Suspense fallback={<div className={`p-4 text-sm ${sidePanelIsLight ? "text-black/60" : "text-white/60"}`}>Loading tasks…</div>}>
-                    <TasksPanelWithCountdown
-                      key={`tasks-${session.id}`}
-                      countdownStore={remainingTimeStore}
-                      currentUserId={authUserId}
-                      theme={sidePanelTheme}
-                      sessionId={session.id}
-                      oneOnOneMode={isOneOnOneRoom}
-                      pictureInPictureSupported={connected && pipSupported}
-                      pictureInPictureOpen={pictureInPictureOpen}
-                      onOpenPictureInPicture={() => {
-                        togglePictureInPicture().catch((e) => {
-                          console.error(
-                            "open Picture-in-Picture from tasks failed",
-                            e,
-                          );
-                          alert(
-                            String(
-                              (e as any)?.message || e || "pip_open_failed",
-                            ),
-                          );
-                        });
-                      }}
-                      accountabilityWallOpen={mainViewMode === "accountability"}
-                      onPublicTasksChange={handlePublicPanelTasksChange}
-                      onToggleAccountabilityWall={() => {
-                        setMainViewMode((v) =>
-                          v === "accountability" ? "video" : "accountability",
-                        );
-                      }}
-                    />
-                    </React.Suspense>
-                    </RoomPanelErrorBoundary>
-                  ) : null}
-                </div>
-              </div>
+              {pipTasksExpanded ? <p className="p-4 text-sm opacity-60">Tasks are open in Picture-in-Picture.</p> : null}
+              <div ref={setRoomTasksHost} className={`h-full min-h-0 overflow-y-auto ${pipTasksExpanded ? "hidden" : ""}`} />
             </div>
           </div>
         </div>
@@ -24105,6 +24112,7 @@ export function RoomPageLiveKit({
       ) : null}
 
       {pipPortal}
+      {tasksPortal}
     </>
   );
 }
