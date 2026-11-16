@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BarVisualizer } from "@livekit/components-react";
-import { AudioLines, Maximize2, Minimize2 } from "lucide-react";
+import { AudioLines, Maximize2, Minimize2, Timer } from "lucide-react";
 import type { LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
 import type { RoomPiPView } from "./useRoomPiPView";
 import {
@@ -118,6 +118,8 @@ export default function LiveKitPiPPortal({
     const showSpeech = Boolean(activeSpeaker) || micOn;
     const speechTrack = activeSpeaker ? activeSpeaker.audioTrack : localAudioTrack;
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
+    const compactReactionsOpen = compact && showReactionsMenu;
+    const reactionButtonRef = useRef<HTMLButtonElement | null>(null);
     const [sentReaction, setSentReaction] = useState<ReactionType | null>(null);
     const sentReactionTimerRef = useRef<number | null>(null);
 
@@ -144,7 +146,7 @@ export default function LiveKitPiPPortal({
 
     const ctlBtnBase = useMemo(
         () =>
-            `relative flex shrink-0 ${compact ? "h-8 w-8" : "h-[2.9rem] w-[2.9rem]"} items-center justify-center rounded-full border transition ${isLight
+            `relative flex shrink-0 ${compact ? "h-8 w-7 min-[360px]:w-8" : "h-[2.9rem] w-[2.9rem]"} items-center justify-center rounded-full border transition ${isLight
                 ? "border-[#D8D0D0] bg-[#E6E6E6] text-black/75 hover:bg-[#DCDCDC]"
                 : "border-[#252525] bg-[#242424] text-white/90 hover:bg-[#303030]"
             }`,
@@ -167,6 +169,29 @@ export default function LiveKitPiPPortal({
             setSentReaction(null);
         }, 1_500);
     };
+    const closeCompactReactions = () => {
+        setShowReactionsMenu(false);
+        reactionButtonRef.current?.focus();
+    };
+    const reactionButtons = showReactionsMenu ? reactionTypes.map((reactionType) => (
+        <button
+            key={reactionType}
+            type="button"
+            onClick={() => {
+                if (!onSendReaction(reactionType)) return;
+                showReactionSentFeedback(reactionType);
+                if (compact) closeCompactReactions();
+            }}
+            className={`flex shrink-0 items-center justify-center rounded-xl border transition ${compact ? "h-8 w-8 text-base" : "h-[2.85rem] text-[1.1rem]"} ${isLight
+                ? "border-[#D8D0D0] bg-[#E6E6E6] hover:bg-[#DCDCDC]"
+                : "border-[#252525] bg-[#242424] hover:bg-[#303030]"
+                }`}
+            title={reactionType}
+            aria-label={reactionType}
+        >
+            {REACTION_EMOJI[reactionType]}
+        </button>
+    )) : null;
     const resolvedGalleryColumns = useMemo(() => {
         const count = pipGalleryTiles.length;
         if (count <= 1) return 1;
@@ -378,77 +403,127 @@ export default function LiveKitPiPPortal({
                     ? `flex min-h-0 flex-1 items-center px-2 ${footerBg}`
                     : `shrink-0 border-t px-[clamp(0.48rem,1.4vw,0.72rem)] py-[clamp(0.42rem,1.3vw,0.68rem)] ${footerBg}`}
             >
-                <div className={compact ? "flex w-full min-w-0 items-center gap-1.5" : "flex flex-wrap items-center justify-center gap-[0.48rem]"}>
-                    <button
-                        type="button"
-                        onClick={onToggleMic}
-                        className={ctlBtnBase}
-                        title={micOn ? "Mute microphone" : "Unmute microphone"}
-                        aria-label={micOn ? "Mute microphone" : "Unmute microphone"}
-                    >
-                        <Icon
-                            name={micOn ? "mic-on" : "mic-off"}
-                            theme={theme}
-                            className="h-[1.15rem] w-[1.15rem]"
-                        />
-                    </button>
+                <div
+                    className={compact ? "flex w-full min-w-0 items-center gap-1 min-[360px]:gap-1.5" : "flex flex-wrap items-center justify-center gap-[0.48rem]"}
+                    onKeyDown={(event) => {
+                        if (compactReactionsOpen && event.key === "Escape") {
+                            event.stopPropagation();
+                            closeCompactReactions();
+                        }
+                    }}
+                >
+                    {!compactReactionsOpen ? (
+                        <>
+                            <button
+                                type="button"
+                                onClick={onToggleMic}
+                                className={ctlBtnBase}
+                                title={micOn ? "Mute microphone" : "Unmute microphone"}
+                                aria-label={micOn ? "Mute microphone" : "Unmute microphone"}
+                            >
+                                <Icon
+                                    name={micOn ? "mic-on" : "mic-off"}
+                                    theme={theme}
+                                    className="h-[1.15rem] w-[1.15rem]"
+                                />
+                            </button>
 
-                    <button
-                        type="button"
-                        onClick={onToggleCam}
-                        className={ctlBtnBase}
-                        title={camOn ? "Turn camera off" : "Turn camera on"}
-                        aria-label={camOn ? "Turn camera off" : "Turn camera on"}
-                    >
-                        <Icon
-                            name={camOn ? "camera-on" : "camera-off"}
-                            theme={theme}
-                            className="h-[1.15rem] w-[1.15rem]"
-                        />
-                    </button>
+                            <button
+                                type="button"
+                                onClick={onToggleCam}
+                                className={ctlBtnBase}
+                                title={camOn ? "Turn camera off" : "Turn camera on"}
+                                aria-label={camOn ? "Turn camera off" : "Turn camera on"}
+                            >
+                                <Icon
+                                    name={camOn ? "camera-on" : "camera-off"}
+                                    theme={theme}
+                                    className="h-[1.15rem] w-[1.15rem]"
+                                />
+                            </button>
 
-                    <button
-                        type="button"
-                        onClick={onToggleScreenShare}
-                        className={`${ctlBtnBase} ${screenShareOn
-                            ? isLight
-                                ? "ring-2 ring-black/20"
-                                : "ring-2 ring-white/20"
-                            : ""
-                            }`}
-                        title={screenShareOn ? "Stop screen share" : "Start screen share"}
-                        aria-label={screenShareOn ? "Stop screen share" : "Start screen share"}
-                    >
-                        <Icon
-                            name="screen-share"
-                            theme={theme}
-                            className="h-[1.15rem] w-[1.15rem]"
-                        />
-                    </button>
+                            <button
+                                type="button"
+                                onClick={onToggleScreenShare}
+                                className={`${ctlBtnBase} ${screenShareOn
+                                    ? isLight
+                                        ? "ring-2 ring-black/20"
+                                        : "ring-2 ring-white/20"
+                                    : ""
+                                    }`}
+                                title={screenShareOn ? "Stop screen share" : "Start screen share"}
+                                aria-label={screenShareOn ? "Stop screen share" : "Start screen share"}
+                            >
+                                <Icon
+                                    name="screen-share"
+                                    theme={theme}
+                                    className="h-[1.15rem] w-[1.15rem]"
+                                />
+                            </button>
+                        </>
+                    ) : null}
+
+                    <div className="relative shrink-0">
+                        <button
+                            ref={reactionButtonRef}
+                            type="button"
+                            onClick={() => setShowReactionsMenu((visible) => !visible)}
+                            className={ctlBtnBase}
+                            title="Reactions"
+                            aria-label="Reactions"
+                            aria-expanded={showReactionsMenu}
+                        >
+                            {compact && sentReaction && !showReactionsMenu ? (
+                                <span role="status" aria-label="Reaction sent">{REACTION_EMOJI[sentReaction]}</span>
+                            ) : (
+                                <Icon name="reaction" theme={theme} className="h-[1.15rem] w-[1.15rem]" />
+                            )}
+                        </button>
+                        {!compact && showReactionsMenu ? (
+                            <div className={`absolute bottom-[calc(100%+0.55rem)] right-0 z-[80] w-[min(18rem,80vw)] rounded-2xl border p-2 ${reactionMenuSurface}`}>
+                                <div className="grid grid-cols-4 gap-2">{reactionButtons}</div>
+                            </div>
+                        ) : null}
+                    </div>
 
                     {compact ? (
                         <>
-                            <div className="flex min-w-0 flex-1 items-center gap-2 pl-1" aria-live="polite" aria-atomic="true">
-                                {showSpeech ? (
-                                    <>
-                                        {speechTrack ? (
-                                            <BarVisualizer
-                                                aria-hidden="true"
-                                                track={speechTrack}
-                                                barCount={5}
-                                                options={{ minHeight: 15, maxHeight: 100 }}
-                                                className="flex h-4 w-6 shrink-0 items-center justify-center gap-[2px]"
-                                            >
-                                                <span className="lk-audio-bar block w-[3px] rounded-sm bg-[#5286F6]" />
-                                            </BarVisualizer>
-                                        ) : <AudioLines aria-hidden="true" size={16} className="shrink-0 text-[#5286F6]" />}
-                                        <span className="truncate text-xs font-medium" title={activeSpeaker?.name}>{activeSpeaker?.name || "Mic on"}</span>
-                                    </>
-                                ) : null}
-                            </div>
+                            {compactReactionsOpen ? (
+                                <div role="group" aria-label="Choose a reaction" className="flex min-w-0 flex-1 gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:thin]">
+                                    {reactionButtons}
+                                </div>
+                            ) : (
+                                <div className="flex min-w-0 flex-1 items-center gap-2 pl-1" aria-live="polite" aria-atomic="true">
+                                    {showSpeech ? (
+                                        <>
+                                            {speechTrack ? (
+                                                <BarVisualizer
+                                                    aria-hidden="true"
+                                                    track={speechTrack}
+                                                    barCount={5}
+                                                    options={{ minHeight: 15, maxHeight: 100 }}
+                                                    className="flex h-4 w-6 shrink-0 items-center justify-center gap-[2px]"
+                                                >
+                                                    <span className="lk-audio-bar block w-[3px] rounded-sm bg-[#5286F6]" />
+                                                </BarVisualizer>
+                                            ) : <AudioLines aria-hidden="true" size={16} className="shrink-0 text-[#5286F6]" />}
+                                            <span className="truncate text-xs font-medium" title={activeSpeaker?.name}>{activeSpeaker?.name || "Mic on"}</span>
+                                        </>
+                                    ) : null}
+                                </div>
+                            )}
+                            {remainingTime ? (
+                                <span role="timer" aria-label="Time left in current block" className="flex shrink-0 items-center gap-1 whitespace-nowrap px-1 text-xs font-semibold tabular-nums">
+                                    <Timer size={13} aria-hidden="true" className="hidden min-[360px]:block" />
+                                    {remainingTime}
+                                </span>
+                            ) : null}
                             <button
                                 type="button"
-                                onClick={onToggleCompact}
+                                onClick={() => {
+                                    setShowReactionsMenu(false);
+                                    onToggleCompact?.();
+                                }}
                                 className={ctlBtnBase}
                                 title="Exit compact mode"
                                 aria-label="Exit compact mode"
@@ -456,49 +531,7 @@ export default function LiveKitPiPPortal({
                                 <Maximize2 aria-hidden="true" size={16} />
                             </button>
                         </>
-                    ) : <div className="relative">
-                        <button
-                            type="button"
-                            onClick={() => setShowReactionsMenu((v) => !v)}
-                            className={ctlBtnBase}
-                            title="Reactions"
-                            aria-label="Reactions"
-                        >
-                            <Icon
-                                name="reaction"
-                                theme={theme}
-                                className="h-[1.15rem] w-[1.15rem]"
-                            />
-                        </button>
-
-                        {showReactionsMenu ? (
-                            <div
-                                className={`absolute bottom-[calc(100%+0.55rem)] right-0 z-[80] w-[min(18rem,80vw)] rounded-2xl border p-2 ${reactionMenuSurface}`}
-                            >
-                                <div className="grid grid-cols-4 gap-2">
-                                    {reactionTypes.map((reactionType) => (
-                                        <button
-                                            key={reactionType}
-                                            type="button"
-                                            onClick={() => {
-                                                const sent = onSendReaction(reactionType);
-                                                if (!sent) return;
-                                                showReactionSentFeedback(reactionType);
-                                            }}
-                                            className={`flex h-[2.85rem] items-center justify-center rounded-xl border text-[1.1rem] transition ${isLight
-                                                ? "border-[#D8D0D0] bg-[#E6E6E6] hover:bg-[#DCDCDC]"
-                                                : "border-[#252525] bg-[#242424] hover:bg-[#303030]"
-                                                }`}
-                                            title={reactionType}
-                                            aria-label={reactionType}
-                                        >
-                                            {REACTION_EMOJI[reactionType]}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        ) : null}
-                    </div>}
+                    ) : null}
                 </div>
             </div>
         </div>
