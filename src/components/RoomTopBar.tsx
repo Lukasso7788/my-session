@@ -406,6 +406,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                         stages={stages as any}
                                         startTime={stagebarStartTime}
                                         cycleSeconds={stagebarCycleSeconds}
+                                        repeat={isInfiniteRoom}
                                         onHoverStage={onHoverStage as any}
                                         progressStyle="tick"
                                         tickEveryMs={1000}
@@ -534,6 +535,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                                     stages={stages as any}
                                     startTime={stagebarStartTime}
                                     cycleSeconds={stagebarCycleSeconds}
+                                    repeat={isInfiniteRoom}
                                     onHoverStage={onHoverStage as any}
                                     progressStyle="tick"
                                     tickEveryMs={1000}

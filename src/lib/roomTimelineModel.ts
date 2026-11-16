@@ -385,6 +385,105 @@ export function getTimelineTotalMinutes(blocks: RoomTimelineBlock[]) {
     );
 }
 
+export function getTimelineEditWindow(
+    start: string,
+    nowMs: number,
+    stageSeconds: number[],
+    repeat: boolean,
+    cycleSeconds?: number,
+) {
+    const startMs = Date.parse(start);
+    const elapsed = (nowMs - startMs) / 1000;
+    if (!Number.isFinite(elapsed) || elapsed < 0 || !stageSeconds.length) {
+        return {
+            lockedCount: 0, currentIndex: -1, finished: false,
+            nextBoundaryMs: elapsed < 0 && stageSeconds.length ? startMs : undefined,
+        };
+    }
+
+    const duration = stageSeconds.reduce((sum, seconds) => sum + seconds, 0);
+    const cycle = Math.max(duration, cycleSeconds || 0);
+    const elapsedInCycle = repeat && cycle > 0 ? elapsed % cycle : elapsed;
+    let position = elapsedInCycle;
+    const currentIndex = stageSeconds.findIndex((seconds) => {
+        if (position < seconds) return true;
+        position -= seconds;
+        return false;
+    });
+    return {
+        lockedCount: currentIndex < 0 ? stageSeconds.length : currentIndex + 1,
+        currentIndex,
+        finished: !repeat && currentIndex < 0,
+        nextBoundaryMs: currentIndex >= 0
+            ? nowMs + (stageSeconds[currentIndex] - position) * 1000
+            : repeat && cycle > 0 ? nowMs + (cycle - elapsedInCycle) * 1000 : undefined,
+    };
+}
+
+export function preserveStartedTimelineBlocks(
+    original: RoomTimelineBlock[],
+    draft: RoomTimelineBlock[],
+    lockedCount: number,
+) {
+    const prefix = original.slice(0, lockedCount);
+    if (prefix.every((block, index) => block === draft[index])) return draft;
+
+    const lockedIds = new Set(prefix.map(({ id }) => id));
+    return [...prefix, ...draft.filter(({ id }) => !lockedIds.has(id))];
+}
+
+function timelineBlockSeconds(block: RoomTimelineBlock, lockedSeconds?: number) {
+    return lockedSeconds ?? clamp(Number(block.minutes) || 1, 1, 24 * 60) * 60;
+}
+
+export function getEditedCycleAnchor({
+    anchor, nowMs, cycleSeconds, previousBlocks, nextBlocks, lockedStageSeconds,
+}: {
+    anchor: string;
+    nowMs: number;
+    cycleSeconds?: number;
+    previousBlocks: { id: string; seconds: number }[];
+    nextBlocks: RoomTimelineBlock[];
+    lockedStageSeconds?: number[];
+}) {
+    const startMs = Date.parse(anchor);
+    const previousDuration = previousBlocks.reduce((sum, block) => sum + block.seconds, 0);
+    const previousCycleMs = Math.max(previousDuration, cycleSeconds || 0) * 1000;
+    if (!Number.isFinite(startMs) || nowMs < startMs || !previousCycleMs || !nextBlocks.length) return anchor;
+
+    const positionMs = (nowMs - startMs) % previousCycleMs;
+    let elapsedMs = positionMs;
+    const activeIndex = previousBlocks.findIndex(({ seconds }) => {
+        if (elapsedMs < seconds * 1000) return true;
+        elapsedMs -= seconds * 1000;
+        return false;
+    });
+    const nextDurations = nextBlocks.map((block, index) => timelineBlockSeconds(block, lockedStageSeconds?.[index]) * 1000);
+    let nextIndex = 0;
+    if (activeIndex >= 0) {
+        const retainedIndex = nextBlocks.findIndex(({ id }) => id === previousBlocks[activeIndex].id);
+        if (retainedIndex >= 0) {
+            nextIndex = retainedIndex;
+            if (elapsedMs >= nextDurations[nextIndex]) {
+                nextIndex = (nextIndex + 1) % nextBlocks.length;
+                elapsedMs = 0;
+            }
+        } else {
+            const successors = [...previousBlocks.slice(activeIndex + 1), ...previousBlocks.slice(0, activeIndex)];
+            const successor = successors.find((block) => nextBlocks.some(({ id }) => id === block.id));
+            nextIndex = successor ? nextBlocks.findIndex(({ id }) => id === successor.id) : 0;
+            elapsedMs = 0;
+        }
+    } else {
+        elapsedMs = 0;
+    }
+
+    const nextPositionMs = nextDurations.slice(0, nextIndex).reduce((sum, duration) => sum + duration, elapsedMs);
+    const nextCycleMs = nextDurations.reduce((sum, duration) => sum + duration, 0);
+    if (nextPositionMs === positionMs && nextCycleMs === previousCycleMs) return anchor;
+    return new Date(nowMs - nextPositionMs).toISOString();
+}
+
 export function timelineBlocksFromSchedule(rawSchedule: any): RoomTimelineBlock[] {
     // "Break & check-in" from older schedules is edited (and saved) as
     // "Check-in & break" in the Intentions color.
@@ -480,7 +579,7 @@ function readTimelineBlocksFromSchedule(rawSchedule: any): RoomTimelineBlock[] {
 
 export function timelineBlocksToSchedulePayload(
     blocks: RoomTimelineBlock[],
-    opts?: { preserveInfinite?: boolean; anchorTs?: string | null }
+    opts?: { preserveInfinite?: boolean; anchorTs?: string | null; lockedStageSeconds?: number[] }
 ) {
     const cleaned = (blocks || [])
         .map((b, index) => {
@@ -489,6 +588,7 @@ export function timelineBlocksToSchedulePayload(
             const title = String(b.title || "").trim() || defaultTitleForKind(kind);
 
             const color = getBlockColor({ kind, color: b.color });
+            const seconds = opts?.lockedStageSeconds?.[index];
 
             return {
                 kind,
@@ -496,6 +596,7 @@ export function timelineBlocksToSchedulePayload(
                 title,
                 name: title,
                 minutes,
+                ...(seconds !== undefined && seconds !== minutes * 60 ? { seconds } : {}),
                 note: String(b.note || "").trim() || null,
                 color,
                 order: index,
@@ -515,6 +616,7 @@ export function timelineBlocksToSchedulePayload(
                     name: b.title,
                     title: b.title,
                     minutes: b.minutes,
+                    ...(b.seconds !== undefined ? { seconds: b.seconds } : {}),
                     note: b.note,
                     color: b.color,
                     order: index,

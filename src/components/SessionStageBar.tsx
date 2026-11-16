@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { SessionStage } from "../SessionConfig";
 import { serverNow } from "../lib/serverClock";
@@ -11,6 +11,7 @@ interface Props {
   startTime: string;
   onHoverStage?: (stage: SessionStage | null) => void;
   cycleSeconds?: number;
+  repeat?: boolean;
   progressStyle?: "fill" | "tick";
   tickEveryMs?: number;
   theme?: RoomTheme;
@@ -339,6 +340,7 @@ export function SessionStageBar({
   startTime,
   onHoverStage,
   cycleSeconds,
+  repeat = true,
   progressStyle = "fill",
   tickEveryMs = 1000,
   theme = "dark",
@@ -347,10 +349,7 @@ export function SessionStageBar({
   tooltipPlacement = "top",
   tooltipPortal = false,
 }: Props) {
-  const [elapsed, setElapsed] = useState(0);
-  const [currentStageIndex, setCurrentStageIndex] = useState(0);
-  const [progress, setProgress] = useState(0);
-  const [cycleProgress, setCycleProgress] = useState(0);
+  const [nowMs, setNowMs] = useState(serverNow);
   const [hoveredStageIndex, setHoveredStageIndex] = useState<number | null>(null);
   const [hoveredStageRect, setHoveredStageRect] = useState<DOMRect | null>(null);
 
@@ -381,48 +380,28 @@ export function SessionStageBar({
     return cs > 0 ? cs : totalStagesSeconds;
   }, [cycleSeconds, totalStagesSeconds]);
 
-  useEffect(() => {
-    const startMs = parseTimeMs(startTime);
-    if (!startMs) {
-      setElapsed(0);
-      return;
-    }
-
-    const tick = () => {
-      const nowMs = serverNow();
-      const diff = Math.floor((nowMs - startMs) / 1000);
-      setElapsed(Number.isFinite(diff) ? diff : 0);
-    };
-
+  useLayoutEffect(() => {
+    if (!parseTimeMs(startTime)) return;
+    const tick = () => setNowMs(serverNow());
     tick();
     const timer = window.setInterval(tick, Math.max(250, Number(tickEveryMs) || 1000));
     return () => window.clearInterval(timer);
   }, [startTime, tickEveryMs]);
 
-  useEffect(() => {
-    if (!stages?.length) {
-      setCurrentStageIndex(0);
-      setProgress(0);
-      setCycleProgress(0);
-      return;
-    }
+  const { currentStageIndex, progress, cycleProgress } = useMemo(() => {
+    if (!stages?.length) return { currentStageIndex: 0, progress: 0, cycleProgress: 0 };
 
-    const raw = Number.isFinite(elapsed) ? elapsed : 0;
+    const startMs = parseTimeMs(startTime);
+    const raw = startMs ? Math.max(0, (nowMs - startMs) / 1000) : 0;
     // A future session has negative elapsed time. Keep its marker at the
     // beginning instead of modulo-wrapping it into an apparently active stage.
-    const normalized =
-      raw <= 0
-        ? 0
-        : loopSeconds > 0
-          ? raw % loopSeconds
-          : raw;
+    const normalized = repeat ? raw % loopSeconds : Math.min(raw, loopSeconds);
 
     const cp = loopSeconds > 0 ? clamp(normalized / loopSeconds, 0, 1) : 0;
-    setCycleProgress(Number.isFinite(cp) ? cp : 0);
 
     let total = 0;
     let stageIndex = 0;
-    let stageProgress = 0;
+    let stageProgress = !repeat && raw >= loopSeconds ? 1 : 0;
 
     const firstNonZero = stageSecondsList.findIndex((x) => x > 0);
     if (firstNonZero >= 0) stageIndex = firstNonZero;
@@ -444,9 +423,8 @@ export function SessionStageBar({
       stageIndex = i;
     }
 
-    setCurrentStageIndex(stageIndex);
-    setProgress(Number.isFinite(stageProgress) ? stageProgress : 0);
-  }, [elapsed, stages, loopSeconds, stageSecondsList]);
+    return { currentStageIndex: stageIndex, progress: stageProgress, cycleProgress: cp };
+  }, [nowMs, startTime, stages, loopSeconds, stageSecondsList, repeat]);
 
   const markerColor = theme === "light" ? "#374151" : "#FFFFFF";
   const trackBgClass =

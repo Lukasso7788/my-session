@@ -16,6 +16,7 @@ import {
     Plus,
     Minus,
     ChevronDown,
+    Lock,
 } from "lucide-react";
 import type { RoomTheme } from "./VideoControls";
 import {
@@ -42,6 +43,10 @@ interface Props {
     saving?: boolean;
     preserveInfinite?: boolean;
     maxBlocks?: number;
+    lockedBlockCount?: number;
+    currentBlockIndex?: number;
+    timelineFinished?: boolean;
+    draftAdjusted?: boolean;
     customRoomName?: string;
     onCustomRoomNameChange?: (name: string) => void;
 }
@@ -173,12 +178,16 @@ function TimelinePreview({
     selectedBlockId,
     setSelectedBlockId,
     isLight,
+    lockedBlockCount,
+    currentBlockIndex,
 }: {
     blocks: RoomTimelineBlock[];
     onChange: (b: RoomTimelineBlock[]) => void;
     selectedBlockId: string | null;
     setSelectedBlockId: (id: string | null) => void;
     isLight: boolean;
+    lockedBlockCount: number;
+    currentBlockIndex: number;
 }) {
     const [dragId, setDragId] = useState<string | null>(null);
 
@@ -188,12 +197,13 @@ function TimelinePreview({
         () => blocks.find((b) => b.id === selectedBlockId) || null,
         [blocks, selectedBlockId]
     );
+    const selectedIndex = blocks.findIndex((block) => block.id === selectedBlockId);
 
     const move = useCallback(
         (fromId: string, toId: string) => {
             const from = blocks.findIndex((b) => b.id === fromId);
             const to = blocks.findIndex((b) => b.id === toId);
-            if (from < 0 || to < 0 || from === to) return;
+            if (from < lockedBlockCount || to < lockedBlockCount || from === to) return;
 
             const copy = [...blocks];
             const [item] = copy.splice(from, 1);
@@ -201,15 +211,15 @@ function TimelinePreview({
             onChange(copy);
             setSelectedBlockId(item.id);
         },
-        [blocks, onChange, setSelectedBlockId]
+        [blocks, lockedBlockCount, onChange, setSelectedBlockId]
     );
 
     const moveByDelta = useCallback(
         (id: string, delta: -1 | 1) => {
             const from = blocks.findIndex((b) => b.id === id);
-            if (from < 0) return;
+            if (from < lockedBlockCount) return;
             const to = from + delta;
-            if (to < 0 || to >= blocks.length) return;
+            if (to < lockedBlockCount || to >= blocks.length) return;
 
             const copy = [...blocks];
             const [item] = copy.splice(from, 1);
@@ -217,7 +227,7 @@ function TimelinePreview({
             onChange(copy);
             setSelectedBlockId(item.id);
         },
-        [blocks, onChange, setSelectedBlockId]
+        [blocks, lockedBlockCount, onChange, setSelectedBlockId]
     );
 
     const update = useCallback(
@@ -308,27 +318,32 @@ function TimelinePreview({
 
             <div className={`mt-2 border rounded-[999px] overflow-hidden ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"}`}>
                 <div className="flex h-3">
-                    {blocks.map((b) => {
+                    {blocks.map((b, index) => {
                         const mins = clamp(Number(b.minutes) || 1, 1, 24 * 60);
                         const showText = mins >= 10;
                         const isSelected = selectedBlockId === b.id;
+                        const locked = index < lockedBlockCount;
+                        const status = index === currentBlockIndex ? "In progress" : "Completed";
 
                         return (
                             <button
                                 key={b.id}
                                 type="button"
-                                draggable
+                                draggable={!locked}
+                                aria-pressed={isSelected}
                                 onDragStart={() => {
                                     setDragId(b.id);
                                     setSelectedBlockId(b.id);
                                 }}
                                 onDragOver={(e) => {
+                                    if (locked) return;
                                     e.preventDefault();
                                     if (dragId && dragId !== b.id) {
                                         move(dragId, b.id);
                                     }
                                 }}
                                 onDrop={(e) => {
+                                    if (locked) return;
                                     e.preventDefault();
                                     if (dragId && dragId !== b.id) {
                                         move(dragId, b.id);
@@ -338,6 +353,7 @@ function TimelinePreview({
                                 onDragEnd={() => setDragId(null)}
                                 onClick={() => setSelectedBlockId(b.id)}
                                 onKeyDown={(e) => {
+                                    if (locked) return;
                                     if (e.key === "ArrowLeft") {
                                         e.preventDefault();
                                         moveByDelta(b.id, -1);
@@ -361,7 +377,7 @@ function TimelinePreview({
                                             : "inset 0 0 0 2px rgba(255,255,255,0.32)"
                                         : "none",
                                 }}
-                                title={`${b.title} • ${mins} min`}
+                                title={`${b.title} • ${mins} min${locked ? ` • ${status}` : ""}`}
                             >
                                 {showText ? (
                                     <span className={`px-2 text-[11px] font-inter truncate ${isLight ? "text-black/80" : "text-black/85"}`}>
@@ -369,7 +385,7 @@ function TimelinePreview({
                                     </span>
                                 ) : null}
 
-                                <span
+                                {!locked && <span
                                     className="absolute right-0 top-0 bottom-0 w-[8px] cursor-ew-resize bg-black/10"
                                     onMouseDown={(e) => {
                                         e.preventDefault();
@@ -396,14 +412,23 @@ function TimelinePreview({
                                         window.addEventListener("mousemove", onMove);
                                         window.addEventListener("mouseup", onUp);
                                     }}
-                                />
+                                />}
                             </button>
                         );
                     })}
                 </div>
             </div>
 
-            {selectedBlock && (
+            {selectedBlock && selectedIndex < lockedBlockCount && (
+                <div className={`mt-3 flex items-center gap-2 rounded-[18px] border p-3 text-[13px] ${panelBg}`}>
+                    <Lock size={14} aria-hidden="true" />
+                    <span className="font-semibold">{selectedBlock.title}</span>
+                    <span className={textMuted}>
+                        {formatMinutes(selectedBlock.minutes)} · {selectedIndex === currentBlockIndex ? "In progress" : "Completed"}
+                    </span>
+                </div>
+            )}
+            {selectedBlock && selectedIndex >= lockedBlockCount && (
                 <div className={`mt-3 rounded-[18px] border p-3 ${panelBg}`}>
                     <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">
@@ -417,7 +442,8 @@ function TimelinePreview({
                             <button
                                 type="button"
                                 onClick={() => moveByDelta(selectedBlock.id, -1)}
-                                className={`h-9 w-9 rounded-[12px] border ${softBtn} flex items-center justify-center`}
+                                disabled={selectedIndex === lockedBlockCount}
+                                className={`h-9 w-9 rounded-[12px] border ${softBtn} flex items-center justify-center disabled:opacity-40`}
                                 title="Move left"
                             >
                                 <ArrowUp className="rotate-[-90deg]" size={15} />
@@ -425,7 +451,8 @@ function TimelinePreview({
                             <button
                                 type="button"
                                 onClick={() => moveByDelta(selectedBlock.id, 1)}
-                                className={`h-9 w-9 rounded-[12px] border ${softBtn} flex items-center justify-center`}
+                                disabled={selectedIndex === blocks.length - 1}
+                                className={`h-9 w-9 rounded-[12px] border ${softBtn} flex items-center justify-center disabled:opacity-40`}
                                 title="Move right"
                             >
                                 <ArrowDown className="rotate-[-90deg]" size={15} />
@@ -612,6 +639,10 @@ export default function RoomTimelineEditor({
     saving = false,
     preserveInfinite = false,
     maxBlocks,
+    lockedBlockCount = 0,
+    currentBlockIndex = -1,
+    timelineFinished = false,
+    draftAdjusted = false,
     customRoomName,
     onCustomRoomNameChange,
 }: Props) {
@@ -650,14 +681,14 @@ export default function RoomTimelineEditor({
 
     useEffect(() => {
         if (!selectedBlockId && blocks.length) {
-            setSelectedBlockId(blocks[0].id);
+            setSelectedBlockId((blocks[lockedBlockCount] || blocks[0]).id);
             return;
         }
 
         if (selectedBlockId && !blocks.some((b) => b.id === selectedBlockId)) {
-            setSelectedBlockId(blocks[0]?.id || null);
+            setSelectedBlockId((blocks[lockedBlockCount] || blocks[0])?.id || null);
         }
-    }, [blocks, selectedBlockId]);
+    }, [blocks, lockedBlockCount, selectedBlockId]);
 
     const totalMinutes = useMemo(() => getTimelineTotalMinutes(blocks), [blocks]);
 
@@ -813,10 +844,10 @@ export default function RoomTimelineEditor({
             armFlip();
 
             const idx = blocks.findIndex((b) => b.id === id);
-            if (idx < 0) return;
+            if (idx < lockedBlockCount) return;
 
             const nextIdx = idx + dir;
-            if (nextIdx < 0 || nextIdx >= blocks.length) return;
+            if (nextIdx < lockedBlockCount || nextIdx >= blocks.length) return;
 
             const copy = [...blocks];
             const [item] = copy.splice(idx, 1);
@@ -826,7 +857,7 @@ export default function RoomTimelineEditor({
             setSelectedBlockId(id);
             focusBlock(id);
         },
-        [armFlip, blocks, focusBlock, onChange]
+        [armFlip, blocks, focusBlock, lockedBlockCount, onChange]
     );
 
     const moveBlockTo = useCallback(
@@ -836,7 +867,7 @@ export default function RoomTimelineEditor({
             armFlip();
 
             const from = blocks.findIndex((b) => b.id === dragId);
-            if (from < 0) return;
+            if (from < lockedBlockCount) return;
 
             if (overId === END_DROP_ID) {
                 const copy = [...blocks];
@@ -849,7 +880,7 @@ export default function RoomTimelineEditor({
             }
 
             const to = blocks.findIndex((b) => b.id === overId);
-            if (to < 0 || dragId === overId) return;
+            if (to < lockedBlockCount || dragId === overId) return;
 
             const copy = [...blocks];
             const [item] = copy.splice(from, 1);
@@ -862,7 +893,7 @@ export default function RoomTimelineEditor({
             setSelectedBlockId(dragId);
             focusBlock(dragId);
         },
-        [armFlip, blocks, focusBlock, onChange]
+        [armFlip, blocks, focusBlock, lockedBlockCount, onChange]
     );
 
     const resetDefault = useCallback(() => {
@@ -914,7 +945,8 @@ export default function RoomTimelineEditor({
                         <button
                             type="button"
                             onClick={resetDefault}
-                            className={`px-3 py-2 rounded-xl border ${subtleBorder} ${softBg} text-[12px] font-semibold`}
+                            disabled={lockedBlockCount > 0 || timelineFinished}
+                            className={`px-3 py-2 rounded-xl border ${subtleBorder} ${softBg} text-[12px] font-semibold disabled:opacity-40`}
                         >
                             <span className="inline-flex items-center gap-2">
                                 <RotateCcw size={14} />
@@ -958,16 +990,27 @@ export default function RoomTimelineEditor({
                         selectedBlockId={selectedBlockId}
                         setSelectedBlockId={setSelectedBlockId}
                         isLight={isLight}
+                        lockedBlockCount={lockedBlockCount}
+                        currentBlockIndex={currentBlockIndex}
                     />
 
                     <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
                         <div className={`font-inter text-[12px] ${mutedText}`}>
-                            Drag blocks to reorder, click a card and use ↑ / ↓, or change block kind directly.
+                            {timelineFinished
+                                ? "This session has ended."
+                                : lockedBlockCount > 0
+                                    ? "Only upcoming stages can be edited."
+                                    : "Drag blocks to reorder, click a card and use ↑ / ↓, or change block kind directly."}
                         </div>
                         <div className="font-inter text-[12px]">
                             Total: <span className="font-semibold">{totalMinutes} min</span>
                         </div>
                     </div>
+                    {draftAdjusted && !timelineFinished && (
+                        <p role="status" className={`mt-2 text-[12px] ${mutedText}`}>
+                            The timeline advanced while you were editing. Changes to stages that started were discarded.
+                        </p>
+                    )}
 
                     <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
                         <div className={`border rounded-[20px] p-4 ${subtleBorder} ${sectionBg}`}>
@@ -983,7 +1026,7 @@ export default function RoomTimelineEditor({
                                         key={b.id}
                                         type="button"
                                         onClick={() => addFromLibrary(b)}
-                                        disabled={Boolean(maxBlocks && blocks.length >= maxBlocks)}
+                                        disabled={timelineFinished || Boolean(maxBlocks && blocks.length >= maxBlocks)}
                                         className={`text-left border rounded-[16px] p-3 transition hover:-translate-y-0.5 hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:translate-y-0 disabled:hover:shadow-none ${subtleBorder} ${softBg}`}
                                     >
                                         <div className="flex items-start justify-between gap-2">
@@ -1035,6 +1078,23 @@ export default function RoomTimelineEditor({
                                 <div className="mt-4 space-y-3">
                                     {blocks.map((b, idx) => {
                                         const selected = selectedBlockId === b.id;
+                                        if (idx < lockedBlockCount) {
+                                            return (
+                                                <button
+                                                    key={b.id}
+                                                    type="button"
+                                                    aria-pressed={selected}
+                                                    onClick={() => setSelectedBlockId(b.id)}
+                                                    className={`flex w-full items-center justify-between gap-2 rounded-[16px] border p-3 text-left ${selected ? "border-[#5286F6]" : subtleBorder} ${softBg}`}
+                                                >
+                                                    <span className="min-w-0 truncate text-[13px] font-semibold">{b.title}</span>
+                                                    <span className={`inline-flex shrink-0 items-center gap-1.5 text-[11px] ${mutedText}`}>
+                                                        {formatMinutes(b.minutes)} · {idx === currentBlockIndex ? "In progress" : "Completed"}
+                                                        <Lock size={13} aria-hidden="true" />
+                                                    </span>
+                                                </button>
+                                            );
+                                        }
                                         const isDragging = draggingId === b.id;
                                         const isOverSelf =
                                             dragOverId === b.id && draggingId && draggingId !== b.id;
@@ -1163,7 +1223,7 @@ export default function RoomTimelineEditor({
                                                                 e.stopPropagation();
                                                                 moveBlock(b.id, -1);
                                                             }}
-                                                            disabled={idx === 0}
+                                                            disabled={idx === lockedBlockCount}
                                                             className={`w-9 h-9 rounded-[12px] border ${subtleBorder} ${softBg} flex items-center justify-center disabled:opacity-40`}
                                                         >
                                                             <ArrowUp size={16} />
@@ -1428,7 +1488,7 @@ export default function RoomTimelineEditor({
                         <button
                             type="button"
                             onClick={onSave}
-                            disabled={saving || blocks.length === 0 || (Boolean(onCustomRoomNameChange) && !customRoomName?.trim())}
+                            disabled={saving || timelineFinished || blocks.length === 0 || (Boolean(onCustomRoomNameChange) && !customRoomName?.trim())}
                             className="px-4 py-2.5 rounded-xl bg-[#5286F6] hover:bg-[#5286F6] text-black text-[13px] font-semibold transition disabled:opacity-50"
                         >
                             {saving ? "Saving..." : "Save timeline"}

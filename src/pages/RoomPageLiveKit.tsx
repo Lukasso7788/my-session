@@ -127,7 +127,10 @@ import {
   makeDefaultTimelineBlocks,
   makeFreeFlowTimelineBlocks,
   FREE_FLOW_TIMELINE_PRESETS,
+  getEditedCycleAnchor,
+  getTimelineEditWindow,
   indexedScheduleBlocks,
+  preserveStartedTimelineBlocks,
   withScheduleRoomPolicies,
 } from "../lib/roomTimelineModel";
 import { LiveKitBottomBar } from "./livekit/LiveKitBottomBar";
@@ -6202,6 +6205,9 @@ export function RoomPageLiveKit({
   const [timelineDraftBlocks, setTimelineDraftBlocks] = useState<
     RoomTimelineBlock[]
   >([]);
+  const timelineOriginalBlocksRef = useRef<RoomTimelineBlock[]>([]);
+  const [, refreshTimelineEditWindow] = useState(0);
+  const [timelineDraftAdjusted, setTimelineDraftAdjusted] = useState(false);
   const [timelineSaving, setTimelineSaving] = useState(false);
   const [freeFlowIntroOpen, setFreeFlowIntroOpen] = useState(false);
   const [freeFlowDraftPresetId, setFreeFlowDraftPresetId] = useState<string | null>(null);
@@ -6770,6 +6776,7 @@ export function RoomPageLiveKit({
 
   const prevStageRef = useRef<number>(-1);
   const firstTickDoneRef = useRef<boolean>(false);
+  const stageTimingKeyRef = useRef("");
   const focusStageCycleRef = useRef<number>(0);
   const postSessionShownForSessionRef = useRef<string>("");
   const welcomeLoopRef = useRef<HTMLAudioElement | null>(null);
@@ -8222,7 +8229,11 @@ export function RoomPageLiveKit({
         ? Number(stagebarCycleSeconds)
         : Math.max(1, sumStageSeconds);
 
-    const timer = window.setInterval(() => {
+    const timingKey = `${startMs}/${isInfiniteRoom ? loopSeconds : "finite"}/${stageSeconds.join(",")}`;
+    let syncEditedTimeline = stageTimingKeyRef.current !== timingKey;
+    stageTimingKeyRef.current = timingKey;
+
+    const tick = () => {
       const now = serverNow();
       const diffSecRaw = (now - startMs) / 1000;
       const diffSec =
@@ -8260,17 +8271,16 @@ export function RoomPageLiveKit({
 
       const stage = stages[active];
 
-      if (!firstTickDoneRef.current) {
+      if (!firstTickDoneRef.current || syncEditedTimeline) {
         if (stage?.type === "intro") {
           startWelcomeLoop();
         } else {
           stopWelcomeLoop();
         }
 
-        // IMPORTANT:
-        // User entering the room is NOT the same thing as a stage starting.
-        // So on first tick we only sync refs/state and do NOT play any stage sound.
-        focusStageCycleRef.current = 0;
+        // Joining or editing a timeline syncs the clock without a transition cue.
+        if (!firstTickDoneRef.current) focusStageCycleRef.current = 0;
+        syncEditedTimeline = false;
 
         prevStageRef.current = active;
         firstTickDoneRef.current = true;
@@ -8320,7 +8330,9 @@ export function RoomPageLiveKit({
       }
 
       if (stage?.type !== "intro" && welcomeLoopRef.current) stopWelcomeLoop();
-    }, 1000);
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
 
     return () => window.clearInterval(timer);
   }, [
@@ -8526,10 +8538,44 @@ export function RoomPageLiveKit({
     };
   }, [authUserId, displayName, localAvatarUrl, userName]);
 
+  const readTimelineEditWindow = (nowMs: number) => {
+    const stageSeconds = freeFlowDraftPresetId
+      ? []
+      : stages.map((stage) => stage.durationSeconds || stage.duration * 60);
+    const editWindow = getTimelineEditWindow(
+      stagebarStartTime, nowMs, stageSeconds, isInfiniteRoom, stagebarCycleSeconds,
+    );
+    return { ...editWindow, stageSeconds };
+  };
+
+  const timelineEditWindow = timelineEditorOpen ? readTimelineEditWindow(serverNow()) : null;
+  const nextEditBoundary = timelineEditWindow?.nextBoundaryMs;
+  const visibleTimelineDraft = timelineEditWindow
+    ? preserveStartedTimelineBlocks(
+      timelineOriginalBlocksRef.current, timelineDraftBlocks, timelineEditWindow.lockedCount,
+    )
+    : timelineDraftBlocks;
+
+  useEffect(() => {
+    if (nextEditBoundary === undefined) return;
+    const delay = Math.min(Math.ceil(nextEditBoundary - serverNow()) + 1, 2_000_000_000);
+    const timeout = window.setTimeout(() => refreshTimelineEditWindow((tick) => tick + 1), delay);
+    return () => window.clearTimeout(timeout);
+  }, [nextEditBoundary]);
+
+  useEffect(() => {
+    if (visibleTimelineDraft !== timelineDraftBlocks) {
+      setTimelineDraftBlocks(visibleTimelineDraft);
+      setTimelineDraftAdjusted(true);
+    }
+  }, [timelineDraftBlocks, visibleTimelineDraft]);
+
   const openTimelineEditor = () => {
     if (!canEditRoomTimeline) return;
 
     const parsedBlocks = timelineBlocksFromSchedule(session?.schedule);
+    timelineOriginalBlocksRef.current = parsedBlocks;
+    setTimelineDraftAdjusted(false);
     setTimelineDraftBlocks(
       parsedBlocks.length
         ? parsedBlocks
@@ -8554,8 +8600,23 @@ export function RoomPageLiveKit({
     if (!canEditRoomTimeline) return;
     if (!sessionId) return;
 
-    if (!timelineDraftBlocks.length) {
+    const nowMs = serverNow();
+    const editWindow = readTimelineEditWindow(nowMs);
+    if (editWindow.finished) return;
+
+    const originalBlocks = timelineOriginalBlocksRef.current;
+    const draftBlocks = preserveStartedTimelineBlocks(originalBlocks, timelineDraftBlocks, editWindow.lockedCount);
+    if (draftBlocks !== timelineDraftBlocks) {
+      setTimelineDraftBlocks(draftBlocks);
+      setTimelineDraftAdjusted(true);
+    }
+    if (!draftBlocks.length) {
       alert("Add at least one block before saving");
+      return;
+    }
+    if (!freeFlowDraftPresetId && draftBlocks.length === originalBlocks.length &&
+      draftBlocks.every((block, index) => block === originalBlocks[index])) {
+      if (draftBlocks === timelineDraftBlocks) setTimelineEditorOpen(false);
       return;
     }
 
@@ -8583,15 +8644,30 @@ export function RoomPageLiveKit({
     setTimelineSaving(true);
 
     try {
+      const start =
+        stagebarStartTime || session?.start_time || session?.created_at || new Date(nowMs).toISOString();
+      const lockedStageSeconds = editWindow.stageSeconds.slice(0, Math.min(editWindow.lockedCount, originalBlocks.length));
+      const anchorTs = freeFlowDraftPresetId
+        ? new Date(nowMs).toISOString()
+        : isInfiniteRoom && originalBlocks.length === stages.length
+          ? getEditedCycleAnchor({
+            anchor: start,
+            nowMs,
+            cycleSeconds: stagebarCycleSeconds,
+            previousBlocks: originalBlocks.map((block, index) => ({
+              id: block.id,
+              seconds: stages[index].durationSeconds || stages[index].duration * 60,
+            })),
+            nextBlocks: draftBlocks,
+            lockedStageSeconds,
+          })
+          : start;
       const generatedSchedule = timelineBlocksToSchedulePayload(
-        timelineDraftBlocks,
+        draftBlocks,
         {
           preserveInfinite: isInfiniteRoom,
-          anchorTs:
-            stagebarStartTime ||
-            session?.start_time ||
-            session?.created_at ||
-            new Date().toISOString(),
+          anchorTs,
+          lockedStageSeconds,
         },
       );
       const timelineSchedule = isFreeFlowRoom
@@ -8615,23 +8691,23 @@ export function RoomPageLiveKit({
           : null,
       );
 
-      const nextDurationMinutes = getTimelineTotalMinutes(timelineDraftBlocks);
-      const actualTimelineDescription = `Free Flow timeline: ${timelineDraftBlocks
+      const nextDurationMinutes = getTimelineTotalMinutes(draftBlocks);
+      const actualTimelineDescription = `Free Flow timeline: ${draftBlocks
         .map((block) => `${String(block.title || block.kind).trim()} (${block.minutes} min)`)
         .join(" · ")}. Repeats continuously.`;
       const presetTimelineUnchanged = selectedFreeFlowPreset
-        ? selectedFreeFlowPreset.blocks.length === timelineDraftBlocks.length
+        ? selectedFreeFlowPreset.blocks.length === draftBlocks.length
           && selectedFreeFlowPreset.blocks.every((block, index) => {
-            const actual = timelineDraftBlocks[index];
+            const actual = draftBlocks[index];
             return actual.kind === block.kind
               && actual.title === block.title
               && actual.minutes === block.minutes;
           })
         : false;
-      const focusMinutes = timelineDraftBlocks
+      const focusMinutes = draftBlocks
         .filter((block) => block.kind === "focus")
         .map((block) => block.minutes);
-      const breakMinutes = timelineDraftBlocks
+      const breakMinutes = draftBlocks
         .filter((block) => block.kind === "break")
         .map((block) => block.minutes);
       const customizedPresetTimer = focusMinutes.length
@@ -23473,7 +23549,11 @@ export function RoomPageLiveKit({
             open={timelineEditorOpen}
             theme={theme}
             title={sessionTitle}
-            blocks={timelineDraftBlocks}
+            blocks={visibleTimelineDraft}
+            lockedBlockCount={Math.min(timelineEditWindow?.lockedCount ?? 0, timelineOriginalBlocksRef.current.length)}
+            currentBlockIndex={timelineEditWindow?.currentIndex}
+            timelineFinished={timelineEditWindow?.finished}
+            draftAdjusted={timelineDraftAdjusted}
             onChange={setTimelineDraftBlocks}
             onClose={closeTimelineEditor}
             onSave={saveTimelineEditor}
@@ -23499,6 +23579,7 @@ export function RoomPageLiveKit({
           theme={theme}
           onClose={() => setFreeFlowIntroOpen(false)}
           onBuildOwn={() => {
+            setTimelineDraftAdjusted(false);
             setFreeFlowDraftPresetId("custom");
             setFreeFlowCustomName("");
             setFreeFlowIntroOpen(false);
@@ -23506,6 +23587,7 @@ export function RoomPageLiveKit({
             setTimelineEditorOpen(true);
           }}
           onStartPreset={(presetId) => {
+            setTimelineDraftAdjusted(false);
             setFreeFlowDraftPresetId(presetId);
             setFreeFlowCustomName("");
             setFreeFlowIntroOpen(false);
