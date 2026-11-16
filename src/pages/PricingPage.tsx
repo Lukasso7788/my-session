@@ -11,6 +11,8 @@ type PricingInfo = {
     prices: Partial<Record<CheckoutPlan, DisplayPrice | null>>;
 };
 
+const DONATION_URL = "https://buy.stripe.com/5kQeV6bWf9D6fFsbNq24007";
+
 // Shown until the server answers (or if it cannot): the regular prices.
 const FALLBACK_PRICES: Record<Exclude<CheckoutPlan, "india_upi_monthly">, DisplayPrice> = {
     pro_monthly: { amount: 10, currency: "usd" },
@@ -32,8 +34,6 @@ function formatPrice(price: DisplayPrice) {
 }
 
 export default function PricingPage() {
-    const KOFI_URL = "https://ko-fi.com/mysession";
-
     const LIFETIME_TOTAL_SLOTS = 5;
     const LIFETIME_LEFT_SLOTS = 5;
 
@@ -465,6 +465,29 @@ export default function PricingPage() {
                         ) : null}
                     </div>
                 )}
+
+                <section className="mt-10 flex flex-col items-start gap-4 rounded-2xl border border-black/10 bg-white/85 p-6 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+                    <div className="max-w-2xl">
+                        <h2 className="text-[18px] font-semibold tracking-[-0.01em]">
+                            Support MySession
+                        </h2>
+                        <p className="mt-2 text-sm leading-relaxed text-black/70">
+                            Donate an amount of your choice. After donating,{" "}
+                            <Link to="/contact" className="underline underline-offset-2 hover:text-black">
+                                contact us
+                            </Link>{" "}
+                            to ask about exclusive previews of new features, priority consideration for your
+                            feedback, or putting your donation toward a period of Pro access. We review each
+                            request individually.
+                        </p>
+                    </div>
+                    <a
+                        href={DONATION_URL}
+                        className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-full border border-black/20 px-5 text-sm font-semibold text-black transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                    >
+                        Donate
+                    </a>
+                </section>
 
                 <div className="mt-10 rounded-2xl border border-black/10 bg-white/85 p-6 shadow-sm sm:p-8">
                     <h2 className="text-[18px] font-semibold tracking-[-0.01em]">
