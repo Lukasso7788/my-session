@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { PricingPlanCard } from "../components/PricingPlanCard";
 import { supabase } from "../lib/supabase";
@@ -12,6 +13,12 @@ type PricingInfo = {
 };
 
 const DONATION_URL = "https://buy.stripe.com/5kQeV6bWf9D6fFsbNq24007";
+const PRICING_OPTIONS = [
+    { value: "monthly", label: "Monthly" },
+    { value: "yearly", label: "Yearly" },
+    { value: "lifetime", label: "Lifetime" },
+    { value: "donate", label: "Donate" },
+] as const;
 
 // Shown until the server answers (or if it cannot): the regular prices.
 const FALLBACK_PRICES: Record<Exclude<CheckoutPlan, "india_upi_monthly">, DisplayPrice> = {
@@ -43,11 +50,20 @@ export default function PricingPage() {
     const [isUpgrading, setIsUpgrading] = useState<boolean>(false);
     const [checkoutLoadingPlan, setCheckoutLoadingPlan] = useState<CheckoutPlan | null>(null);
     const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
+    const [donationSelected, setDonationSelected] = useState(false);
+    const donationDialog = useRef<HTMLDialogElement>(null);
 
     const [statusMessage, setStatusMessage] = useState<string>("");
     const [errorMessage, setErrorMessage] = useState<string>("");
     const [pricing, setPricing] = useState<PricingInfo | null>(null);
     const [pricingLoaded, setPricingLoaded] = useState(false);
+
+    useEffect(() => {
+        if (!donationSelected) return;
+
+        const timeout = window.setTimeout(() => donationDialog.current?.showModal(), 1000);
+        return () => window.clearTimeout(timeout);
+    }, [donationSelected]);
 
     // The server picks the prices for this visitor's region (South Asia pays
     // regional prices) and reads them from Stripe, so they match checkout.
@@ -314,39 +330,28 @@ export default function PricingPage() {
                 </div>
 
                 <div className="mx-auto mt-8 w-full max-w-[760px] rounded-full border border-black/10 bg-white p-1">
-                    <div className="grid grid-cols-3 gap-1">
-                        <button
-                            type="button"
-                            className={`h-10 rounded-full text-sm font-medium transition ${billingCycle === "monthly"
-                                    ? "bg-black text-white"
-                                    : "text-black/70 hover:bg-black/5"
-                                }`}
-                            onClick={() => setBillingCycle("monthly")}
-                        >
-                            Monthly
-                        </button>
-
-                        <button
-                            type="button"
-                            className={`h-10 rounded-full text-sm font-medium transition ${billingCycle === "yearly"
-                                    ? "bg-black text-white"
-                                    : "text-black/70 hover:bg-black/5"
-                                }`}
-                            onClick={() => setBillingCycle("yearly")}
-                        >
-                            Yearly
-                        </button>
-
-                        <button
-                            type="button"
-                            className={`h-10 rounded-full text-sm font-medium transition ${billingCycle === "lifetime"
-                                    ? "bg-black text-white"
-                                    : "text-black/70 hover:bg-black/5"
-                                }`}
-                            onClick={() => setBillingCycle("lifetime")}
-                        >
-                            Lifetime
-                        </button>
+                    <div className="grid grid-cols-4 gap-1" role="group" aria-label="Pricing options">
+                        {PRICING_OPTIONS.map(({ value, label }) => {
+                            const selected = donationSelected ? value === "donate" : value === billingCycle;
+                            return (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    aria-pressed={selected}
+                                    aria-haspopup={value === "donate" ? "dialog" : undefined}
+                                    className={`h-10 rounded-full text-sm font-medium transition ${selected
+                                        ? "bg-black text-white"
+                                        : "text-black/70 hover:bg-black/5"
+                                    }`}
+                                    onClick={() => {
+                                        setDonationSelected(value === "donate");
+                                        if (value !== "donate") setBillingCycle(value);
+                                    }}
+                                >
+                                    {label}
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
 
@@ -466,28 +471,42 @@ export default function PricingPage() {
                     </div>
                 )}
 
-                <section className="mt-10 flex flex-col items-start gap-4 rounded-2xl border border-black/10 bg-white/85 p-6 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
-                    <div className="max-w-2xl">
-                        <h2 className="text-[18px] font-semibold tracking-[-0.01em]">
+                <dialog
+                    ref={donationDialog}
+                    aria-labelledby="donation-title"
+                    aria-describedby="donation-description"
+                    onClose={() => setDonationSelected(false)}
+                    className="m-auto max-h-[90dvh] w-[calc(100%_-_2rem)] max-w-md overflow-y-auto rounded-[24px] border border-black/10 bg-white p-6 text-[#0B1220] shadow-xl backdrop:bg-black/40"
+                >
+                    <div className="flex items-center justify-between gap-4">
+                        <h2 id="donation-title" className="text-xl font-semibold tracking-[-0.02em]">
                             Support MySession
                         </h2>
-                        <p className="mt-2 text-sm leading-relaxed text-black/70">
-                            Donate an amount of your choice. After donating,{" "}
-                            <Link to="/contact" className="underline underline-offset-2 hover:text-black">
-                                contact us
-                            </Link>{" "}
-                            to ask about exclusive previews of new features, priority consideration for your
-                            feedback, or putting your donation toward a period of Pro access. We review each
-                            request individually.
-                        </p>
+                        <button
+                            type="button"
+                            aria-label="Close donation dialog"
+                            onClick={() => donationDialog.current?.close()}
+                            className="inline-flex size-10 shrink-0 items-center justify-center rounded-full text-black/70 hover:bg-black/5"
+                        >
+                            <X size={18} aria-hidden="true" />
+                        </button>
                     </div>
+                    <p id="donation-description" className="mt-2 text-sm leading-relaxed text-black/70">
+                        Donate an amount of your choice. After donating,{" "}
+                        <Link to="/contact" className="underline underline-offset-2 hover:text-black">
+                            contact us
+                        </Link>{" "}
+                        to ask about exclusive previews of new features, priority consideration for your
+                        feedback, or putting your donation toward a period of Pro access. We review each
+                        request individually.
+                    </p>
                     <a
                         href={DONATION_URL}
-                        className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-full border border-black/20 px-5 text-sm font-semibold text-black transition hover:bg-black/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                        className="mt-5 inline-flex min-h-11 items-center justify-center rounded-full bg-black px-5 text-sm font-semibold text-white transition hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                     >
-                        Donate
+                        Continue to Stripe
                     </a>
-                </section>
+                </dialog>
 
                 <div className="mt-10 rounded-2xl border border-black/10 bg-white/85 p-6 shadow-sm sm:p-8">
                     <h2 className="text-[18px] font-semibold tracking-[-0.01em]">
