@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BarVisualizer } from "@livekit/components-react";
-import { AudioLines, Maximize2, Minimize2, Timer } from "lucide-react";
+import { AudioLines, Maximize2, Minimize2 } from "lucide-react";
 import type { LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
 import type { RoomPiPView } from "./useRoomPiPView";
 import {
@@ -146,7 +146,7 @@ export default function LiveKitPiPPortal({
 
     const ctlBtnBase = useMemo(
         () =>
-            `relative flex shrink-0 ${compact ? "h-8 w-7 min-[360px]:w-8" : "h-[2.9rem] w-[2.9rem]"} items-center justify-center rounded-full border transition ${isLight
+            `relative flex shrink-0 ${compact ? "h-10 w-[35px] min-[360px]:w-10" : "h-[2.9rem] w-[2.9rem]"} items-center justify-center rounded-full border transition ${isLight
                 ? "border-[#D8D0D0] bg-[#E6E6E6] text-black/75 hover:bg-[#DCDCDC]"
                 : "border-[#252525] bg-[#242424] text-white/90 hover:bg-[#303030]"
             }`,
@@ -182,7 +182,7 @@ export default function LiveKitPiPPortal({
                 showReactionSentFeedback(reactionType);
                 if (compact) closeCompactReactions();
             }}
-            className={`flex shrink-0 items-center justify-center rounded-xl border transition ${compact ? "h-8 w-8 text-base" : "h-[2.85rem] text-[1.1rem]"} ${isLight
+            className={`flex shrink-0 items-center justify-center rounded-xl border transition ${compact ? "h-10 w-10 text-base" : "h-[2.85rem] text-[1.1rem]"} ${isLight
                 ? "border-[#D8D0D0] bg-[#E6E6E6] hover:bg-[#DCDCDC]"
                 : "border-[#252525] bg-[#242424] hover:bg-[#303030]"
                 }`}
@@ -400,11 +400,11 @@ export default function LiveKitPiPPortal({
 
             <div
                 className={compact
-                    ? `flex min-h-0 flex-1 items-center px-2 ${footerBg}`
+                    ? `flex min-h-0 flex-1 items-center px-2.5 ${footerBg}`
                     : `shrink-0 border-t px-[clamp(0.48rem,1.4vw,0.72rem)] py-[clamp(0.42rem,1.3vw,0.68rem)] ${footerBg}`}
             >
                 <div
-                    className={compact ? "flex w-full min-w-0 items-center gap-1 min-[360px]:gap-1.5" : "flex flex-wrap items-center justify-center gap-[0.48rem]"}
+                    className={compact ? "flex w-full min-w-0 items-center gap-[5px] min-[360px]:gap-2" : "flex flex-wrap items-center justify-center gap-[0.48rem]"}
                     onKeyDown={(event) => {
                         if (compactReactionsOpen && event.key === "Escape") {
                             event.stopPropagation();
@@ -489,24 +489,34 @@ export default function LiveKitPiPPortal({
                     {compact ? (
                         <>
                             {compactReactionsOpen ? (
-                                <div role="group" aria-label="Choose a reaction" className="flex min-w-0 flex-1 gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:thin]">
+                                <div
+                                    role="group"
+                                    aria-label="Choose a reaction"
+                                    className={`flex min-w-0 flex-1 gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:thin] ${isLight
+                                        ? "[scrollbar-color:#a5a5a5_transparent]"
+                                        : "[scrollbar-color:#666_transparent]"}`}
+                                >
                                     {reactionButtons}
                                 </div>
                             ) : (
                                 <div className="flex min-w-0 flex-1 items-center gap-2 pl-1" aria-live="polite" aria-atomic="true">
                                     {showSpeech ? (
                                         <>
-                                            {speechTrack ? (
-                                                <BarVisualizer
-                                                    aria-hidden="true"
-                                                    track={speechTrack}
-                                                    barCount={5}
-                                                    options={{ minHeight: 15, maxHeight: 100 }}
-                                                    className="flex h-4 w-6 shrink-0 items-center justify-center gap-[2px]"
-                                                >
-                                                    <span className="lk-audio-bar block w-[3px] rounded-sm bg-[#5286F6]" />
-                                                </BarVisualizer>
-                                            ) : <AudioLines aria-hidden="true" size={16} className="shrink-0 text-[#5286F6]" />}
+                                            <span aria-hidden="true" className={`flex h-6 w-7 shrink-0 items-center justify-center rounded-full min-[360px]:w-8 ${activeSpeaker
+                                                ? isLight ? "bg-[#5286F6]/15 text-[#285BB8]" : "bg-[#5286F6]/20 text-[#91B5FF]"
+                                                : isLight ? "bg-black/[0.055] text-black/55" : "bg-white/[0.09] text-white/70"
+                                            }`}>
+                                                {speechTrack ? (
+                                                    <BarVisualizer
+                                                        track={speechTrack}
+                                                        barCount={3}
+                                                        options={{ minHeight: 20, maxHeight: 100 }}
+                                                        className="flex h-3.5 items-center justify-center gap-0.5"
+                                                    >
+                                                        <span className="lk-audio-bar block w-[3px] rounded-full bg-current motion-safe:transition-[height] motion-safe:duration-150" />
+                                                    </BarVisualizer>
+                                                ) : <AudioLines size={13} />}
+                                            </span>
                                             <span className="truncate text-xs font-medium" title={activeSpeaker?.name}>{activeSpeaker?.name || "Mic on"}</span>
                                         </>
                                     ) : null}
@@ -514,7 +524,7 @@ export default function LiveKitPiPPortal({
                             )}
                             {remainingTime ? (
                                 <span role="timer" aria-label="Time left in current block" className="flex shrink-0 items-center gap-1 whitespace-nowrap px-1 text-xs font-semibold tabular-nums">
-                                    <Timer size={13} aria-hidden="true" className="hidden min-[360px]:block" />
+                                    <Icon name="timer" theme={theme} className="hidden h-4 w-4 opacity-80 min-[360px]:block" alt="" />
                                     {remainingTime}
                                 </span>
                             ) : null}

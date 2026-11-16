@@ -33,7 +33,7 @@ export function useRoomPiPView(pipWindowRef: { current: Window | null }) {
       const height = pipWindow.innerHeight;
       if (current === "gallery") galleryHeight.current = height;
       const baseHeight = galleryHeight.current ?? height;
-      const target = next === "gallery" ? baseHeight : next === "compact" ? 52 : Math.max(600, baseHeight);
+      const target = next === "gallery" ? baseHeight : next === "compact" ? 64 : Math.max(600, baseHeight);
       if (height !== target) {
         try {
           // Chrome will only resize the document PiP during a user gesture.
