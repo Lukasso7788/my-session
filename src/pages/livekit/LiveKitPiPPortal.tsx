@@ -1,4 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { BarVisualizer } from "@livekit/components-react";
+import { AudioLines, Maximize2, Minimize2 } from "lucide-react";
+import type { LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
+import type { RoomPiPView } from "./useRoomPiPView";
 import {
     Icon,
     reactionEmoji as REACTION_EMOJI,
@@ -80,15 +84,17 @@ export default function LiveKitPiPPortal({
     onSetPipMode,
     onOpenTasksPanel,
     chatPanel,
-    tasksExpanded = false,
     tasksPanel,
+    onToggleCompact,
+    activeSpeaker,
+    localAudioTrack,
 }: {
     isLight: boolean;
     theme: RoomTheme;
     sessionTitle: string;
     participantsCount: number;
     remainingTime: string;
-    pipMode: "gallery" | "chat";
+    pipMode: RoomPiPView;
     pipGalleryTiles: any[];
     pipGalleryColumns: number;
     renderTile: (tile: any) => React.ReactNode;
@@ -102,9 +108,15 @@ export default function LiveKitPiPPortal({
     onSetPipMode: (mode: "gallery" | "chat") => void;
     onOpenTasksPanel?: () => void;
     chatPanel?: React.ReactNode;
-    tasksExpanded?: boolean;
     tasksPanel?: React.ReactNode;
+    onToggleCompact?: () => void;
+    activeSpeaker?: { name: string; audioTrack?: LocalAudioTrack | RemoteAudioTrack };
+    localAudioTrack?: LocalAudioTrack | RemoteAudioTrack;
 }) {
+    const compact = pipMode === "compact";
+    const tasksExpanded = pipMode === "tasks";
+    const showSpeech = Boolean(activeSpeaker) || micOn;
+    const speechTrack = activeSpeaker ? activeSpeaker.audioTrack : localAudioTrack;
     const [showReactionsMenu, setShowReactionsMenu] = useState(false);
     const [sentReaction, setSentReaction] = useState<ReactionType | null>(null);
     const sentReactionTimerRef = useRef<number | null>(null);
@@ -132,11 +144,11 @@ export default function LiveKitPiPPortal({
 
     const ctlBtnBase = useMemo(
         () =>
-            `relative flex h-[2.9rem] w-[2.9rem] items-center justify-center rounded-full border transition ${isLight
+            `relative flex shrink-0 ${compact ? "h-8 w-8" : "h-[2.9rem] w-[2.9rem]"} items-center justify-center rounded-full border transition ${isLight
                 ? "border-[#D8D0D0] bg-[#E6E6E6] text-black/75 hover:bg-[#DCDCDC]"
                 : "border-[#252525] bg-[#242424] text-white/90 hover:bg-[#303030]"
             }`,
-        [isLight]
+        [compact, isLight]
     );
 
     const reactionMenuSurface = isLight
@@ -171,6 +183,7 @@ export default function LiveKitPiPPortal({
     return (
         <div className={`h-full w-full min-h-0 min-w-0 flex flex-col overflow-hidden ${shellBg}`}>
             <div
+                hidden={compact}
                 className={`shrink-0 border-b px-[clamp(0.5rem,1.7vw,0.85rem)] py-[clamp(0.42rem,1.4vw,0.68rem)] ${headerBg}`}
             >
                 <div className="flex items-center justify-between gap-[clamp(0.35rem,0.9vw,0.7rem)]">
@@ -188,6 +201,20 @@ export default function LiveKitPiPPortal({
                     </div>
 
                     <div className="shrink-0 flex items-center gap-[0.35rem]">
+                        {onToggleCompact ? (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowReactionsMenu(false);
+                                    onToggleCompact();
+                                }}
+                                className={`flex h-9 w-9 items-center justify-center rounded-xl transition ${pillIdle}`}
+                                title="Compact mode"
+                                aria-label="Compact mode"
+                            >
+                                <Minimize2 size={16} aria-hidden="true" />
+                            </button>
+                        ) : null}
                         <button
                             type="button"
                             onClick={() => onSetPipMode("gallery")}
@@ -248,9 +275,9 @@ export default function LiveKitPiPPortal({
                 </div>
             </div>
 
-            <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+            <div hidden={compact} className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
                 <div hidden={tasksExpanded} className="relative h-full min-h-0 min-w-0 overflow-hidden">
-                    {pipMode === "gallery" ? (
+                    {pipMode === "gallery" || pipMode === "tasks" ? (
                         <div className="h-full min-h-0 min-w-0 overflow-hidden p-[clamp(0.28rem,0.9vw,0.56rem)]">
                         {pipGalleryTiles.length ? (
                             <div
@@ -347,9 +374,11 @@ export default function LiveKitPiPPortal({
             `}</style>
 
             <div
-                className={`shrink-0 border-t px-[clamp(0.48rem,1.4vw,0.72rem)] py-[clamp(0.42rem,1.3vw,0.68rem)] ${footerBg}`}
+                className={compact
+                    ? `flex min-h-0 flex-1 items-center px-2 ${footerBg}`
+                    : `shrink-0 border-t px-[clamp(0.48rem,1.4vw,0.72rem)] py-[clamp(0.42rem,1.3vw,0.68rem)] ${footerBg}`}
             >
-                <div className="flex flex-wrap items-center justify-center gap-[0.48rem]">
+                <div className={compact ? "flex w-full min-w-0 items-center gap-1.5" : "flex flex-wrap items-center justify-center gap-[0.48rem]"}>
                     <button
                         type="button"
                         onClick={onToggleMic}
@@ -397,7 +426,37 @@ export default function LiveKitPiPPortal({
                         />
                     </button>
 
-                    <div className="relative">
+                    {compact ? (
+                        <>
+                            <div className="flex min-w-0 flex-1 items-center gap-2 pl-1" aria-live="polite" aria-atomic="true">
+                                {showSpeech ? (
+                                    <>
+                                        {speechTrack ? (
+                                            <BarVisualizer
+                                                aria-hidden="true"
+                                                track={speechTrack}
+                                                barCount={5}
+                                                options={{ minHeight: 15, maxHeight: 100 }}
+                                                className="flex h-4 w-6 shrink-0 items-center justify-center gap-[2px]"
+                                            >
+                                                <span className="lk-audio-bar block w-[3px] rounded-sm bg-[#5286F6]" />
+                                            </BarVisualizer>
+                                        ) : <AudioLines aria-hidden="true" size={16} className="shrink-0 text-[#5286F6]" />}
+                                        <span className="truncate text-xs font-medium" title={activeSpeaker?.name}>{activeSpeaker?.name || "Mic on"}</span>
+                                    </>
+                                ) : null}
+                            </div>
+                            <button
+                                type="button"
+                                onClick={onToggleCompact}
+                                className={ctlBtnBase}
+                                title="Exit compact mode"
+                                aria-label="Exit compact mode"
+                            >
+                                <Maximize2 aria-hidden="true" size={16} />
+                            </button>
+                        </>
+                    ) : <div className="relative">
                         <button
                             type="button"
                             onClick={() => setShowReactionsMenu((v) => !v)}
@@ -439,7 +498,7 @@ export default function LiveKitPiPPortal({
                                 </div>
                             </div>
                         ) : null}
-                    </div>
+                    </div>}
                 </div>
             </div>
         </div>

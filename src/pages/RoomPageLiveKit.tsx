@@ -153,7 +153,7 @@ import { downscaleImageFile, downscaleImageSrc, isLargeDataUrl } from "../lib/ba
 import { prefetchBackgroundFxAssets } from "../lib/prefetchBackgroundFx";
 import { CHECK_IN_BREAK_TITLE, INTENTIONS_COLOR, isCheckInBreakName } from "../lib/checkInBreak";
 import LiveKitPiPPortal from "./livekit/LiveKitPiPPortal";
-import { useRoomPiPTasks } from "./livekit/useRoomPiPTasks";
+import { useRoomPiPView } from "./livekit/useRoomPiPView";
 import { profileHoverAttrs } from "../components/ProfileHoverLayer";
 import CameraOffReminder, { CAMERA_OFF_REMINDER_DELAY_MS } from "./livekit/CameraOffReminder";
 import "./livekit/roomSidePanelTheme.css";
@@ -979,7 +979,6 @@ type SessionRoleAssignmentRow = {
 };
 
 type RightPanelTab = "participants" | "chat" | "tasks" | "music" | null;
-type PiPMode = "gallery" | "chat";
 type RoomMainViewMode = "video" | "accountability";
 
 type FloatingReaction = {
@@ -12794,7 +12793,16 @@ export function RoomPageLiveKit({
     publication?: LocalTrackPublication | null;
   } | null>(null);
   const [remoteAudioRecoveryTick, setRemoteAudioRecoveryTick] = useState(0);
-  const [pipMode, setPipMode] = useState<PiPMode>("gallery");
+  const pipWindowRef = useRef<Window | null>(null);
+  const {
+    view: pipMode,
+    tasksMounted: pipTasksMounted,
+    reset: resetPiPView,
+    show: setPipMode,
+    toggleTasks: togglePiPTasks,
+    toggleCompact: togglePiPCompact,
+  } = useRoomPiPView(pipWindowRef);
+  const pipTasksExpanded = pipMode === "tasks";
 
   function getSettingsPreviewTrack(): LocalVideoTrack | null {
     if (prejoinPreparedVideoTrackRef.current) {
@@ -13452,14 +13460,6 @@ export function RoomPageLiveKit({
   }, []);
 
   // edit name modal
-  const pipWindowRef = useRef<Window | null>(null);
-  const {
-    expanded: pipTasksExpanded,
-    mounted: pipTasksMounted,
-    reset: resetPiPTasks,
-    collapse: collapsePiPTasks,
-    toggle: togglePiPTasks,
-  } = useRoomPiPTasks(pipWindowRef);
   const [pipMountEl, setPipMountEl] = useState<HTMLElement | null>(null);
   const [pipOpen, setPipOpen] = useState(false);
   const [roomTasksHost, setRoomTasksHost] = useState<HTMLDivElement | null>(null);
@@ -17250,12 +17250,12 @@ export function RoomPageLiveKit({
     pipWindowRef.current = null;
     setPipMountEl(null);
     setPipOpen(false);
-    resetPiPTasks();
+    resetPiPView();
 
     try {
       pipWindow?.close();
     } catch { }
-  }, [resetPiPTasks]);
+  }, [resetPiPView]);
 
   const closeMobilePictureInPicture = useCallback(async () => {
     const stage = mobilePiPVideoElement ?? mobilePiPStageRef.current;
@@ -17296,8 +17296,6 @@ export function RoomPageLiveKit({
   ]);
 
   const openDesktopPictureInPicture = useCallback(async () => {
-    setPipMode("gallery");
-
     if (!pipSupported) {
       alert("Document Picture-in-Picture is not supported in this browser.");
       return;
@@ -17316,6 +17314,7 @@ export function RoomPageLiveKit({
     }
 
     const pipApi = (window as WindowWithDocumentPiP).documentPictureInPicture;
+    resetPiPView();
 
     let pipWindow: Window | null = null;
 
@@ -17362,7 +17361,7 @@ export function RoomPageLiveKit({
         pipWindowRef.current = null;
         setPipMountEl(null);
         setPipOpen(false);
-        resetPiPTasks();
+        resetPiPView();
       },
       { once: true },
     );
@@ -17370,7 +17369,7 @@ export function RoomPageLiveKit({
     pipWindowRef.current = pipWindow;
     setPipMountEl(mount);
     setPipOpen(true);
-  }, [connected, pipSupported, resetPiPTasks, session?.title, theme]);
+  }, [connected, pipSupported, resetPiPView, session?.title, theme]);
 
   const openMobilePictureInPicture = useCallback(async () => {
     if (!connected) {
@@ -19440,17 +19439,8 @@ export function RoomPageLiveKit({
     );
   };
 
-  const renderPiPTile = (t: TileModel) => {
-    const tileIdentity = String(t.participantIdentity || "");
-    const participantProfile =
-      profilesById[String(t.participantUserId || "").toLowerCase()] || null;
-
-    const participantProfileName = String(
-      participantProfile?.full_name || "",
-    ).trim();
-    const tileAvatarUrl = String(participantProfile?.avatar_url || "").trim();
-
-    const nameText = t.isLocal
+  const getPiPParticipantName = (t: TileModel) => {
+    return t.isLocal
       ? localRoomDisplayNameOverrideRef.current ||
       t.metadataDisplayName ||
       displayName ||
@@ -19458,9 +19448,16 @@ export function RoomPageLiveKit({
       userName ||
       "You"
       : t.metadataDisplayName ||
-      participantProfileName ||
+      String(profilesById[String(t.participantUserId || "").toLowerCase()]?.full_name || "").trim() ||
       t.label ||
       "Participant";
+  };
+
+  const renderPiPTile = (t: TileModel) => {
+    const tileIdentity = String(t.participantIdentity || "");
+    const participantProfile =
+      profilesById[String(t.participantUserId || "").toLowerCase()] || null;
+    const tileAvatarUrl = String(participantProfile?.avatar_url || "").trim();
 
     const micMuted = !!t.micMuted;
 
@@ -19468,7 +19465,7 @@ export function RoomPageLiveKit({
       <div className="relative h-full w-full min-h-0 min-w-0">
         <VideoTile
           tileId={t.id}
-          label={nameText}
+          label={getPiPParticipantName(t)}
           status={t.status || null}
           videoTrack={t.videoTrack}
           audioTrack={t.audioTrack}
@@ -20229,6 +20226,15 @@ export function RoomPageLiveKit({
   }, [pipGalleryTiles.length]);
 
   const pipChatDocument = pipMountEl?.ownerDocument || null;
+  const pipSpeaker = pipMode === "compact"
+    ? roomState?.activeSpeakers.map((speaker) => tiles.find((tile) =>
+      tile.kind !== "screen" && !tile.micMuted && tile.isSpeaking &&
+      tile.id === (speaker === roomState?.localParticipant ? "local" : speaker.sid),
+    )).find(Boolean)
+    : undefined;
+  const pipMicTrack = pipMode === "compact" && micOn
+    ? tiles.find((tile) => tile.isLocal && tile.kind !== "screen")?.audioTrack
+    : undefined;
   const pipChatWindow = pipChatDocument?.defaultView || null;
   const pipChatReady = Boolean(
     pipMountEl?.isConnected &&
@@ -20343,7 +20349,6 @@ export function RoomPageLiveKit({
         }}
         onSendReaction={sendReaction}
         onSetPipMode={(mode) => {
-          collapsePiPTasks();
           // Keep one ChatPanel instance per room. Transfer chat to PiP before
           // mounting it there so realtime channels and portals cannot collide.
           if (mode === "chat" && rightPanelOpen && rightTab === "chat") {
@@ -20353,8 +20358,10 @@ export function RoomPageLiveKit({
           setPipMode(mode);
         }}
         onOpenTasksPanel={connected && session?.id ? togglePiPTasks : undefined}
+        onToggleCompact={togglePiPCompact}
+        activeSpeaker={pipSpeaker ? { name: getPiPParticipantName(pipSpeaker), audioTrack: pipSpeaker.audioTrack } : undefined}
+        localAudioTrack={pipMicTrack}
         chatPanel={pipChatPanel}
-        tasksExpanded={pipTasksExpanded}
         tasksPanel={pipTasksMounted ? <div ref={setPipTasksHost} className="h-full min-h-0 overflow-y-auto" /> : null}
       />,
       pipMountEl,
