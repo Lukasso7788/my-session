@@ -71,6 +71,16 @@ export function Icon(props: IconProps) {
 export { ParticipantsSmartIcon };
 export type { RoomTheme };
 
+export const roomBottomControlPalette = {
+    light: { surface: "bg-[#F3F1F1]", idle: "bg-[#E7E7E7] hover:bg-[#DCDCDC] text-black/75" },
+    dark: { surface: "bg-[#1B1B1B]", idle: "bg-[#242424] hover:bg-[#2E2E2E] text-white/90" },
+};
+
+export const roomMediaControlPalette = {
+    off: "bg-[#F65252] text-white hover:bg-[#E64545]",
+    sharing: "bg-[#5286F6] hover:bg-[#4678E4] text-white",
+};
+
 export type ReactionType =
     | "fire"
     | "laugh"

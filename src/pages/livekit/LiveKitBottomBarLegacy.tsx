@@ -3,6 +3,7 @@ import { AudioLines, ChevronUp, ImagePlus } from "lucide-react";
 import {
     Icon,
     reactionEmoji,
+    roomMediaControlPalette,
     type ReactionType,
     type RoomTheme,
 } from "./LiveKitUI";
@@ -795,7 +796,7 @@ export function LiveKitBottomBar(props: {
                     <div className="flex items-center justify-center gap-2 sm:gap-3">
                         <div className="relative" ref={mediaMenu === "mic" ? mediaMenuRef : undefined}>
                             <div className="relative">
-                                <button onClick={onToggleMic} disabled={!connected} className={centerControlClass + " disabled:opacity-50 " + (!micOn ? "bg-[#F65252] text-white hover:bg-[#E64545]" : ctlBtnBase)} title="Toggle microphone" type="button">
+                                <button onClick={onToggleMic} disabled={!connected} className={centerControlClass + " disabled:opacity-50 " + (!micOn ? roomMediaControlPalette.off : ctlBtnBase)} title="Toggle microphone" type="button">
                                     <Icon name={!micOn ? "mic-off" : "mic-on"} theme={!micOn ? "dark" : theme} className="h-[20px] w-[20px]" />
                                     <span className="sr-only">{micOn ? "Mic on" : "Mic off"}</span>
                                 </button>
@@ -824,7 +825,7 @@ export function LiveKitBottomBar(props: {
 
                         <div className="relative" ref={mediaMenu === "camera" ? mediaMenuRef : undefined}>
                             <div className="relative">
-                                <button onClick={onToggleCam} disabled={!connected} className={centerControlClass + " disabled:opacity-50 " + (!camOn ? "bg-[#F65252] text-white hover:bg-[#E64545]" : ctlBtnBase)} title="Toggle camera" type="button">
+                                <button onClick={onToggleCam} disabled={!connected} className={centerControlClass + " disabled:opacity-50 " + (!camOn ? roomMediaControlPalette.off : ctlBtnBase)} title="Toggle camera" type="button">
                                     <Icon name={!camOn ? "camera-off" : "camera-on"} theme={!camOn ? "dark" : theme} className="h-[20px] w-[20px]" />
                                     <span className="sr-only">{camOn ? "Camera" : "Cam off"}</span>
                                 </button>
@@ -934,7 +935,7 @@ export function LiveKitBottomBar(props: {
                             className={
                                 centerControlClass + " disabled:opacity-50 " +
                                 (screenShareOn
-                                    ? "bg-[#5286F6] hover:bg-[#4678E4] text-white"
+                                    ? roomMediaControlPalette.sharing
                                     : ctlBtnBase)
                             }
                             title="Share screen"

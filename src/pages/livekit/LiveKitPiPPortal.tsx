@@ -6,6 +6,8 @@ import type { RoomPiPView } from "./useRoomPiPView";
 import {
     Icon,
     reactionEmoji as REACTION_EMOJI,
+    roomBottomControlPalette,
+    roomMediaControlPalette,
     type ReactionType,
     type RoomTheme,
 } from "./LiveKitUI";
@@ -144,14 +146,14 @@ export default function LiveKitPiPPortal({
         ? "bg-[#E6E6E6] text-black/70 hover:bg-[#DCDCDC]"
         : "bg-[#242424] text-white/80 hover:bg-[#303030]";
 
-    const ctlBtnBase = useMemo(
-        () =>
-            `relative flex shrink-0 ${compact ? "h-10 w-[35px] min-[360px]:w-10" : "h-[2.9rem] w-[2.9rem]"} items-center justify-center rounded-full border transition ${isLight
-                ? "border-[#D8D0D0] bg-[#E6E6E6] text-black/75 hover:bg-[#DCDCDC]"
-                : "border-[#252525] bg-[#242424] text-white/90 hover:bg-[#303030]"
-            }`,
-        [compact, isLight]
-    );
+    const compactPalette = roomBottomControlPalette[theme];
+    const ctlBtnShape = compact
+        ? "relative flex h-10 w-[35px] shrink-0 items-center justify-center rounded-2xl transition min-[360px]:w-10"
+        : "relative flex h-[2.9rem] w-[2.9rem] shrink-0 items-center justify-center rounded-full border transition";
+    const ctlBtnBase = `${ctlBtnShape} ${compact
+        ? compactPalette.idle
+        : isLight ? "border-[#D8D0D0] bg-[#E6E6E6] text-black/75 hover:bg-[#DCDCDC]"
+            : "border-[#252525] bg-[#242424] text-white/90 hover:bg-[#303030]"}`;
 
     const reactionMenuSurface = isLight
         ? "border-[#D8D0D0] bg-[#F3F1F1] text-black shadow-[0_12px_32px_rgba(15,23,42,0.12)]"
@@ -182,10 +184,11 @@ export default function LiveKitPiPPortal({
                 showReactionSentFeedback(reactionType);
                 if (compact) closeCompactReactions();
             }}
-            className={`flex shrink-0 items-center justify-center rounded-xl border transition ${compact ? "h-10 w-10 text-base" : "h-[2.85rem] text-[1.1rem]"} ${isLight
-                ? "border-[#D8D0D0] bg-[#E6E6E6] hover:bg-[#DCDCDC]"
-                : "border-[#252525] bg-[#242424] hover:bg-[#303030]"
-                }`}
+            className={compact
+                ? `flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl text-base transition ${compactPalette.idle}`
+                : `flex h-[2.85rem] shrink-0 items-center justify-center rounded-xl border text-[1.1rem] transition ${isLight
+                    ? "border-[#D8D0D0] bg-[#E6E6E6] hover:bg-[#DCDCDC]"
+                    : "border-[#252525] bg-[#242424] hover:bg-[#303030]"}`}
             title={reactionType}
             aria-label={reactionType}
         >
@@ -400,7 +403,7 @@ export default function LiveKitPiPPortal({
 
             <div
                 className={compact
-                    ? `flex min-h-0 flex-1 items-center px-2.5 ${isLight ? footerBg : "bg-[#2F2F2F]"}`
+                    ? `flex min-h-0 flex-1 items-center px-2.5 ${compactPalette.surface}`
                     : `shrink-0 border-t px-[clamp(0.48rem,1.4vw,0.72rem)] py-[clamp(0.42rem,1.3vw,0.68rem)] ${footerBg}`}
             >
                 <div
@@ -417,13 +420,13 @@ export default function LiveKitPiPPortal({
                             <button
                                 type="button"
                                 onClick={onToggleMic}
-                                className={ctlBtnBase}
+                                className={compact && !micOn ? `${ctlBtnShape} ${roomMediaControlPalette.off}` : ctlBtnBase}
                                 title={micOn ? "Mute microphone" : "Unmute microphone"}
                                 aria-label={micOn ? "Mute microphone" : "Unmute microphone"}
                             >
                                 <Icon
                                     name={micOn ? "mic-on" : "mic-off"}
-                                    theme={theme}
+                                    theme={compact && !micOn ? "dark" : theme}
                                     className="h-[1.15rem] w-[1.15rem]"
                                 />
                             </button>
@@ -431,13 +434,13 @@ export default function LiveKitPiPPortal({
                             <button
                                 type="button"
                                 onClick={onToggleCam}
-                                className={ctlBtnBase}
+                                className={compact && !camOn ? `${ctlBtnShape} ${roomMediaControlPalette.off}` : ctlBtnBase}
                                 title={camOn ? "Turn camera off" : "Turn camera on"}
                                 aria-label={camOn ? "Turn camera off" : "Turn camera on"}
                             >
                                 <Icon
                                     name={camOn ? "camera-on" : "camera-off"}
-                                    theme={theme}
+                                    theme={compact && !camOn ? "dark" : theme}
                                     className="h-[1.15rem] w-[1.15rem]"
                                 />
                             </button>
@@ -445,18 +448,15 @@ export default function LiveKitPiPPortal({
                             <button
                                 type="button"
                                 onClick={onToggleScreenShare}
-                                className={`${ctlBtnBase} ${screenShareOn
-                                    ? isLight
-                                        ? "ring-2 ring-black/20"
-                                        : "ring-2 ring-white/20"
-                                    : ""
-                                    }`}
+                                className={compact && screenShareOn
+                                    ? `${ctlBtnShape} ${roomMediaControlPalette.sharing}`
+                                    : `${ctlBtnBase} ${screenShareOn ? (isLight ? "ring-2 ring-black/20" : "ring-2 ring-white/20") : ""}`}
                                 title={screenShareOn ? "Stop screen share" : "Start screen share"}
                                 aria-label={screenShareOn ? "Stop screen share" : "Start screen share"}
                             >
                                 <Icon
                                     name="screen-share"
-                                    theme={theme}
+                                    theme={compact && screenShareOn ? "dark" : theme}
                                     className="h-[1.15rem] w-[1.15rem]"
                                 />
                             </button>
@@ -502,21 +502,20 @@ export default function LiveKitPiPPortal({
                                 <div className="flex min-w-0 flex-1 items-center gap-2 pl-1" aria-live="polite" aria-atomic="true">
                                     {showSpeech ? (
                                         <>
-                                            <span aria-hidden="true" className={`flex h-6 w-7 shrink-0 items-center justify-center rounded-full min-[360px]:w-8 ${activeSpeaker
-                                                ? isLight ? "bg-[#5286F6]/15 text-[#285BB8]" : "bg-[#5286F6]/20 text-[#91B5FF]"
-                                                : isLight ? "bg-black/[0.055] text-black/55" : "bg-white/[0.09] text-white/70"
+                                            <div aria-hidden="true" className={`flex h-5 w-6 shrink-0 items-center justify-center ${activeSpeaker
+                                                ? "text-[#5286F6]" : isLight ? "text-black/55" : "text-white/60"
                                             }`}>
                                                 {speechTrack ? (
                                                     <BarVisualizer
                                                         track={speechTrack}
-                                                        barCount={3}
+                                                        barCount={5}
                                                         options={{ minHeight: 20, maxHeight: 100 }}
-                                                        className="flex h-3.5 items-center justify-center gap-0.5"
+                                                        className="flex h-[18px] items-center justify-center gap-0.5"
                                                     >
-                                                        <span className="lk-audio-bar block w-[3px] rounded-full bg-current motion-safe:transition-[height] motion-safe:duration-150" />
+                                                        <span className="lk-audio-bar block w-[2.5px] rounded-full bg-current data-[lk-bar-index=0]:scale-y-50 data-[lk-bar-index=1]:scale-y-75 data-[lk-bar-index=3]:scale-y-75 data-[lk-bar-index=4]:scale-y-50 motion-safe:transition-[height] motion-safe:duration-150" />
                                                     </BarVisualizer>
                                                 ) : <AudioLines size={13} />}
-                                            </span>
+                                            </div>
                                             <span className="truncate text-xs font-medium" title={activeSpeaker?.name}>{activeSpeaker?.name || "Mic on"}</span>
                                         </>
                                     ) : null}

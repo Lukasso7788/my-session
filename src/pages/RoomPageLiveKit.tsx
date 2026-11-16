@@ -134,6 +134,7 @@ import { LiveKitBottomBar } from "./livekit/LiveKitBottomBar";
 import {
   Icon,
   reactionEmoji as REACTION_EMOJI,
+  roomBottomControlPalette,
   type ReactionType,
   type RoomTheme,
 } from "./livekit/LiveKitUI";
@@ -20375,9 +20376,7 @@ export function RoomPageLiveKit({
   const panelBg = sidePanelIsLight
     ? "bg-[#F3F1F1] border border-[#D8D0D0]"
     : "bg-[#1B1B1B] border border-[#2B2B2B]";
-  const bottomBarBg = isLight
-    ? "bg-[#F3F1F1]"
-    : "bg-[#1B1B1B]";
+  const bottomBarBg = roomBottomControlPalette[theme].surface;
   const voiceUiStatusLabel =
     !voiceUiEnabled
       ? "Voice UI off"
@@ -20405,9 +20404,7 @@ export function RoomPageLiveKit({
           ? "bg-red-400"
           : "bg-zinc-400";
 
-  const ctlBtnBase = isLight
-    ? "bg-[#E7E7E7] hover:bg-[#DCDCDC] text-black/75"
-    : "bg-[#242424] hover:bg-[#2E2E2E] text-white/90";
+  const ctlBtnBase = roomBottomControlPalette[theme].idle;
 
   // participants list search
   const [participantsSearch, setParticipantsSearch] = useState("");
