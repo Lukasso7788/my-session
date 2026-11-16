@@ -400,7 +400,7 @@ export default function LiveKitPiPPortal({
 
             <div
                 className={compact
-                    ? `flex min-h-0 flex-1 items-center px-2.5 ${footerBg}`
+                    ? `flex min-h-0 flex-1 items-center px-2.5 ${isLight ? footerBg : "bg-[#2F2F2F]"}`
                     : `shrink-0 border-t px-[clamp(0.48rem,1.4vw,0.72rem)] py-[clamp(0.42rem,1.3vw,0.68rem)] ${footerBg}`}
             >
                 <div
