@@ -306,7 +306,8 @@ export default function LiveKitPiPPortal({
                     <aside
                         aria-label="Tasks"
                         hidden={!tasksExpanded}
-                        className={`h-full min-h-0 overflow-hidden ${headerBg}`}
+                        data-panel-theme={theme}
+                        className={`ms-room-side-panel ms-pip-tasks-panel h-full min-h-0 overflow-hidden ${headerBg}`}
                     >
                         {tasksPanel}
                     </aside>

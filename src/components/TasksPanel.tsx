@@ -4827,7 +4827,7 @@ export function TasksPanel({
             <button
               onClick={() => void handleAddPanelTask()}
               className={[
-                "h-12 shrink-0 px-4 rounded-[18px] font-semibold text-[14px] font-inter transition",
+                "ms-task-submit h-12 shrink-0 px-4 rounded-[18px] font-semibold text-[14px] font-inter transition",
                 isLight ? "bg-[#1F1F1F] hover:bg-[#2A2A2A] text-white" : "bg-[#5286F6] hover:bg-[#6B98FA] text-[#FFFFFF]",
               ].join(" ")}
               type="button"

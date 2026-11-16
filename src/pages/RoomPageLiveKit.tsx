@@ -13459,7 +13459,7 @@ export function RoomPageLiveKit({
     reset: resetPiPTasks,
     collapse: collapsePiPTasks,
     toggle: togglePiPTasks,
-  } = useRoomPiPTasks();
+  } = useRoomPiPTasks(pipWindowRef);
   const [pipMountEl, setPipMountEl] = useState<HTMLElement | null>(null);
   const [pipOpen, setPipOpen] = useState(false);
   const [roomTasksHost, setRoomTasksHost] = useState<HTMLDivElement | null>(null);

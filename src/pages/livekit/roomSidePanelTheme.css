@@ -179,3 +179,11 @@
   background-color: #2f2f2f !important;
   color: #ffffff !important;
 }
+
+.ms-pip-tasks-panel[data-panel-theme="dark"] .ms-task-submit {
+  color: #101824;
+}
+
+.ms-pip-tasks-panel[data-panel-theme="dark"] [class~="text-white/35"] {
+  color: #b5bcc6;
+}
