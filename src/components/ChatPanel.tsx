@@ -2883,12 +2883,14 @@ export function ChatPanel({
         chatWindow,
     ]);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
         const el = composerRef.current;
         if (!el) return;
         el.style.height = "0px";
         const next = Math.min(el.scrollHeight, 140);
         el.style.height = `${next}px`;
+        const radius = 20 + Math.min(8, Math.max(0, (next - 36) / 10));
+        el.parentElement?.style.setProperty("border-radius", `${radius}px`);
     }, [text, replyTo]);
 
     const insertEmojiToComposer = (emoji: string) => {
