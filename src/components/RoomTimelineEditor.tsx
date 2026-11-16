@@ -317,13 +317,14 @@ function TimelinePreview({
             </div>
 
             <div className={`mt-2 border rounded-[999px] overflow-hidden ${isLight ? "border-black/10 bg-black/5" : "border-white/10 bg-white/5"}`}>
-                <div className="flex h-3">
+                <div className="flex h-5">
                     {blocks.map((b, index) => {
                         const mins = clamp(Number(b.minutes) || 1, 1, 24 * 60);
                         const showText = mins >= 10;
                         const isSelected = selectedBlockId === b.id;
                         const locked = index < lockedBlockCount;
                         const status = index === currentBlockIndex ? "In progress" : "Completed";
+                        const segmentLabel = `${b.title} • ${mins} min${locked ? ` • ${status} • Locked for editing` : ""}`;
 
                         return (
                             <button
@@ -331,6 +332,7 @@ function TimelinePreview({
                                 type="button"
                                 draggable={!locked}
                                 aria-pressed={isSelected}
+                                aria-label={segmentLabel}
                                 onDragStart={() => {
                                     setDragId(b.id);
                                     setSelectedBlockId(b.id);
@@ -365,7 +367,7 @@ function TimelinePreview({
                                         remove(b.id);
                                     }
                                 }}
-                                className="relative h-full border-r border-white/70 flex items-center justify-center outline-none"
+                                className="relative flex h-full items-center justify-center overflow-hidden border-r border-white/70 focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#172554]"
                                 style={{
                                     flexGrow: mins,
                                     flexBasis: 0,
@@ -377,10 +379,21 @@ function TimelinePreview({
                                             : "inset 0 0 0 2px rgba(255,255,255,0.32)"
                                         : "none",
                                 }}
-                                title={`${b.title} • ${mins} min${locked ? ` • ${status}` : ""}`}
+                                title={segmentLabel}
                             >
-                                {showText ? (
-                                    <span className={`px-2 text-[11px] font-inter truncate ${isLight ? "text-black/80" : "text-black/85"}`}>
+                                {locked ? (
+                                    <>
+                                        <span
+                                            aria-hidden="true"
+                                            className="pointer-events-none absolute inset-0 bg-[repeating-linear-gradient(135deg,rgba(0,0,0,0.28)_0_2px,rgba(255,255,255,0.18)_2px_5px)]"
+                                        />
+                                        <span aria-hidden="true" className="relative flex max-w-full items-center gap-1 overflow-hidden rounded-full bg-black/80 px-1.5 text-[10px] leading-4 text-white">
+                                            <Lock size={10} className="shrink-0" />
+                                            {showText && <span className="truncate">{b.title} · {mins}m</span>}
+                                        </span>
+                                    </>
+                                ) : showText ? (
+                                    <span className="truncate px-2 font-inter text-[11px] text-black/85">
                                         {b.title} · {mins}m
                                     </span>
                                 ) : null}
