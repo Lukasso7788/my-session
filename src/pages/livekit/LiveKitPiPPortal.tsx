@@ -370,6 +370,13 @@ export default function LiveKitPiPPortal({
             </div>
 
             <style>{`
+                .ms-pip-voice-line .lk-audio-bar[data-lk-bar-index="0"] { transform: scaleY(0.35); }
+                .ms-pip-voice-line .lk-audio-bar[data-lk-bar-index="1"] { transform: scaleY(0.76); }
+                .ms-pip-voice-line .lk-audio-bar[data-lk-bar-index="2"] { transform: scaleY(0.43); }
+                .ms-pip-voice-line .lk-audio-bar[data-lk-bar-index="3"],
+                .ms-pip-voice-line .lk-audio-bar[data-lk-bar-index="5"] { transform: scaleY(0.6); }
+                .ms-pip-voice-line .lk-audio-bar[data-lk-bar-index="6"] { transform: scaleY(0.51); }
+
                 .ms-pip-chat-panel .custom-scrollbar {
                     scrollbar-width: auto !important;
                     scrollbar-color: #8f9993 #e7e3e3 !important;
@@ -502,17 +509,17 @@ export default function LiveKitPiPPortal({
                                 <div className="flex min-w-0 flex-1 items-center gap-2 pl-1" aria-live="polite" aria-atomic="true">
                                     {showSpeech ? (
                                         <>
-                                            <div aria-hidden="true" className={`flex h-5 w-6 shrink-0 items-center justify-center ${activeSpeaker
+                                            <div aria-hidden="true" className={`flex h-5 w-6 shrink-0 items-center justify-center min-[360px]:w-8 ${activeSpeaker
                                                 ? "text-[#5286F6]" : isLight ? "text-black/55" : "text-white/60"
                                             }`}>
                                                 {speechTrack ? (
                                                     <BarVisualizer
                                                         track={speechTrack}
-                                                        barCount={5}
-                                                        options={{ minHeight: 20, maxHeight: 100 }}
-                                                        className="flex h-[18px] items-center justify-center gap-0.5"
+                                                        barCount={7}
+                                                        options={{ minHeight: activeSpeaker ? 38 : 20, maxHeight: 100 }}
+                                                        className="ms-pip-voice-line flex h-[18px] items-center justify-center gap-[1.5px] min-[360px]:gap-0.5"
                                                     >
-                                                        <span className="lk-audio-bar block w-[2.5px] rounded-full bg-current data-[lk-bar-index=0]:scale-y-50 data-[lk-bar-index=1]:scale-y-75 data-[lk-bar-index=3]:scale-y-75 data-[lk-bar-index=4]:scale-y-50 motion-safe:transition-[height] motion-safe:duration-150" />
+                                                        <span className="lk-audio-bar block w-0.5 rounded-full bg-current motion-safe:transition-[height] motion-safe:duration-[180ms] motion-safe:ease-out min-[360px]:w-[2.5px]" />
                                                     </BarVisualizer>
                                                 ) : <AudioLines size={13} />}
                                             </div>
