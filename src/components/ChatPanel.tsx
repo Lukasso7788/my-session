@@ -2018,7 +2018,7 @@ export function ChatPanel({
     const sendBtnActive = "bg-[#5286F6] hover:bg-[#6B98FA] text-white";
     const sendBtnDisabled = isLight ? "text-black/30" : "text-[#AEB6BF]/50";
     const composerShellCls =
-        "flex items-end gap-1 rounded-full border px-1 py-0.5 transition-colors focus-within:ring-1 focus-within:ring-[#5286F6] " +
+        "flex items-end gap-1 rounded-[20px] border px-1 py-0.5 transition-colors focus-within:ring-1 focus-within:ring-[#5286F6] " +
         (isLight ? "bg-[#F3F1F1] border-[#D8D0D0] focus-within:border-[#5286F6]" : "bg-[#292D32] border-[#4C5259] focus-within:border-[#5286F6]");
     const composerInputCls =
         "flex-1 min-w-0 min-h-[36px] max-h-[140px] resize-none bg-transparent px-2.5 py-[7px] text-[13px] leading-5 outline-none " +
