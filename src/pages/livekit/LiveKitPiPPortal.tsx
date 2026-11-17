@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { BarVisualizer } from "@livekit/components-react";
 import { AudioLines, Maximize2, Minimize2 } from "lucide-react";
-import type { LocalAudioTrack, RemoteAudioTrack } from "livekit-client";
+import { createAudioAnalyser, type LocalAudioTrack, type RemoteAudioTrack } from "livekit-client";
 import type { RoomPiPView } from "./useRoomPiPView";
 import {
     Icon,
@@ -11,6 +10,71 @@ import {
     type ReactionType,
     type RoomTheme,
 } from "./LiveKitUI";
+
+const PIP_VOICE_BAR_WEIGHTS = [0.38, 0.62, 0.83, 1, 0.83, 0.62, 0.38];
+
+function PiPVoiceWave({ track }: { track: LocalAudioTrack | RemoteAudioTrack }) {
+    const waveRef = useRef<HTMLSpanElement>(null);
+    const mediaTrack = track.mediaStreamTrack;
+
+    useEffect(() => {
+        const wave = waveRef.current;
+        const view = wave?.ownerDocument.defaultView;
+        if (!wave || !view) return;
+
+        let audio: ReturnType<typeof createAudioAnalyser>;
+        try {
+            audio = createAudioAnalyser(track, { fftSize: 512 });
+        } catch {
+            return;
+        }
+
+        const samples = new Float32Array(audio.analyser.fftSize);
+        const bars = Array.from(wave.children) as HTMLElement[];
+        const levels = bars.map(() => 0.24);
+        let previousTime = view.performance.now();
+        let frameId = 0;
+
+        const update = (time: number) => {
+            const elapsed = Math.max(0, Math.min(time - previousTime, 64));
+            previousTime = time;
+            audio.analyser.getFloatTimeDomainData(samples);
+
+            let energy = 0;
+            for (const sample of samples) energy += sample * sample;
+            const input = Math.min(1, Math.sqrt(energy / samples.length) * 8);
+            const target = 0.24 + input * 0.76;
+
+            bars.forEach((bar, index) => {
+                const distance = Math.abs(index - 3);
+                const timeConstant = target > levels[index] ? 75 + distance * 15 : 220 + distance * 20;
+                levels[index] += (target - levels[index]) * -Math.expm1(-elapsed / timeConstant);
+                bar.style.setProperty("--pip-voice-level", levels[index].toFixed(4));
+            });
+
+            frameId = view.requestAnimationFrame(update);
+        };
+        frameId = view.requestAnimationFrame(update);
+
+        return () => {
+            view.cancelAnimationFrame(frameId);
+            bars.forEach((bar) => bar.style.removeProperty("--pip-voice-level"));
+            void audio.cleanup().catch(() => {});
+        };
+    }, [track, mediaTrack]);
+
+    return (
+        <span ref={waveRef} className="ms-pip-voice-line flex h-[18px] items-center justify-center gap-[1.5px] min-[360px]:gap-[2px]">
+            {PIP_VOICE_BAR_WEIGHTS.map((weight, index) => (
+                <span
+                    key={index}
+                    className="ms-pip-voice-bar block h-full w-0.5 rounded-full bg-current"
+                    style={{ "--pip-voice-weight": weight, opacity: 0.5 + weight * 0.5 } as React.CSSProperties}
+                />
+            ))}
+        </span>
+    );
+}
 
 class PiPChatBoundary extends React.Component<
     { children: React.ReactNode },
@@ -370,25 +434,12 @@ export default function LiveKitPiPPortal({
             </div>
 
             <style>{`
-                .ms-pip-voice-line .lk-audio-bar {
-                    transform: scaleY(var(--pip-bar-scale, 1));
-                    transition: height 210ms cubic-bezier(0.22, 0.65, 0.36, 1);
-                }
-                .ms-pip-voice-line .lk-audio-bar:is([data-lk-bar-index="0"], [data-lk-bar-index="6"]) {
-                    --pip-bar-scale: 0.38;
-                    opacity: 0.62;
-                }
-                .ms-pip-voice-line .lk-audio-bar:is([data-lk-bar-index="1"], [data-lk-bar-index="5"]) {
-                    --pip-bar-scale: 0.62;
-                    opacity: 0.78;
-                }
-                .ms-pip-voice-line .lk-audio-bar:is([data-lk-bar-index="2"], [data-lk-bar-index="4"]) {
-                    --pip-bar-scale: 0.83;
+                .ms-pip-voice-bar {
+                    transform: scaleY(calc(var(--pip-voice-weight) * var(--pip-voice-level, 0.24)));
                 }
                 @media (prefers-reduced-motion: reduce) {
-                    .ms-pip-voice-line .lk-audio-bar {
-                        height: 9px !important;
-                        transition: none;
+                    .ms-pip-voice-bar {
+                        transform: scaleY(calc(var(--pip-voice-weight) * 0.5));
                     }
                 }
 
@@ -528,14 +579,7 @@ export default function LiveKitPiPPortal({
                                                 ? "text-[#5286F6]" : isLight ? "text-black/55" : "text-white/60"
                                             }`}>
                                                 {speechTrack ? (
-                                                    <BarVisualizer
-                                                        track={speechTrack}
-                                                        barCount={7}
-                                                        options={{ minHeight: activeSpeaker ? 30 : 22, maxHeight: 100 }}
-                                                        className="ms-pip-voice-line flex h-[18px] items-center justify-center gap-[1.5px] min-[360px]:gap-[2px]"
-                                                    >
-                                                        <span className="lk-audio-bar block w-0.5 rounded-full bg-current" />
-                                                    </BarVisualizer>
+                                                    <PiPVoiceWave track={speechTrack} />
                                                 ) : <AudioLines size={13} />}
                                             </div>
                                             <span className="truncate text-xs font-medium" title={activeSpeaker?.name}>{activeSpeaker?.name || "Mic on"}</span>
