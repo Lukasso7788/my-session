@@ -62,10 +62,8 @@ export default function PricingPage() {
     const [pricingLoaded, setPricingLoaded] = useState(false);
 
     useEffect(() => {
-        if (!donationSelected) return;
-
-        const timeout = window.setTimeout(() => donationDialog.current?.showModal(), 1000);
-        return () => window.clearTimeout(timeout);
+        const dialog = donationDialog.current;
+        if (donationSelected && dialog && !dialog.open) dialog.showModal();
     }, [donationSelected]);
 
     // The server picks the prices for this visitor's region (South Asia pays
