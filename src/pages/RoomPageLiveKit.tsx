@@ -13395,43 +13395,36 @@ export function RoomPageLiveKit({
 
   const [adminBusyKey, setAdminBusyKey] = useState<string>("");
 
-  const liveHostChatOptions = useMemo(() => {
+  const hostChatOptions = useMemo(() => {
     const me = String(authUserId || "")
       .trim()
       .toLowerCase();
 
-    return tiles
-      .filter((tile) => {
-        const uid = String(tile.participantUserId || "")
-          .trim()
-          .toLowerCase();
-        if (!uid) return false;
-        if (!looksLikeUuid(uid)) return false;
-        if (uid === me) return false;
-        return true;
-      })
-      .map((tile) => {
-        const uid = String(tile.participantUserId || "")
-          .trim()
-          .toLowerCase();
-        const profile = profilesById?.[uid];
-        const label =
-          String(profile?.full_name || "").trim() ||
+    const options = new Map<string, { userId: string; label: string; inRoom: boolean }>();
+    for (const tile of tiles) {
+      const uid = String(tile.participantUserId || "").trim().toLowerCase();
+      if (!looksLikeUuid(uid) || uid === me || options.has(uid)) continue;
+      options.set(uid, {
+        userId: uid,
+        label:
+          String(profilesById[uid]?.full_name || "").trim() ||
           String(tile.metadataDisplayName || "").trim() ||
           String(tile.label || "").trim() ||
-          "Participant";
-
-        return {
-          userId: uid,
-          label,
-        };
-      })
-      .filter(
-        (item, index, arr) =>
-          arr.findIndex((x) => x.userId === item.userId) === index,
-      )
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [tiles, authUserId, profilesById]);
+          "Participant",
+        inRoom: true,
+      });
+    }
+    for (const peerId of hostChatPeerIds) {
+      const uid = peerId.trim().toLowerCase();
+      if (!looksLikeUuid(uid) || uid === me || options.has(uid)) continue;
+      options.set(uid, {
+        userId: uid,
+        label: String(profilesById[uid]?.full_name || "").trim() || `Participant · ${uid.slice(0, 6)}`,
+        inRoom: false,
+      });
+    }
+    return [...options.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [tiles, authUserId, profilesById, hostChatPeerIds]);
 
   useEffect(() => {
     const me = String(authUserId || "")
@@ -13448,21 +13441,21 @@ export function RoomPageLiveKit({
       return;
     }
 
-    if (!liveHostChatOptions.length) {
+    if (!hostChatOptions.length) {
       setSelectedHostChatPeerId(null);
       return;
     }
 
     setSelectedHostChatPeerId((prev) => {
-      if (prev && liveHostChatOptions.some((x) => x.userId === prev))
+      if (prev && hostChatOptions.some((x) => x.userId === prev))
         return prev;
-      return liveHostChatOptions[0]?.userId || null;
+      return hostChatOptions[0]?.userId || null;
     });
   }, [
     authUserId,
     canSelectHostDmPeer,
     chatHostUserId,
-    liveHostChatOptions,
+    hostChatOptions,
   ]);
 
   // hide / pin
@@ -14050,11 +14043,10 @@ export function RoomPageLiveKit({
     } catch { }
   }, []);
 
-  // pull profiles for anyone we see in room
+  // Resolve names for live participants and saved host DM threads.
   useEffect(() => {
     const ids = uniqStrings(
-      tiles
-        .map((t) => String(t.participantUserId || "").toLowerCase())
+      [...tiles.map((t) => String(t.participantUserId || "").toLowerCase()), ...hostChatPeerIds]
         .filter((x) => looksLikeUuid(x)),
     );
     if (!ids.length) return;
@@ -14105,7 +14097,7 @@ export function RoomPageLiveKit({
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tiles.map((t) => `${t.participantUserId || ""}`).join("|")]);
+  }, [tiles.map((t) => `${t.participantUserId || ""}`).join("|"), hostChatPeerIds]);
 
   // RAF-scheduled rebuild
   const rebuildRafRef = useRef<number | null>(null);
@@ -20905,12 +20897,12 @@ export function RoomPageLiveKit({
                   >
                     <span className="min-w-0 truncate">
                       {selectedHostChatPeerId
-                        ? liveHostChatOptions.find(
+                        ? hostChatOptions.find(
                           (item) => item.userId === selectedHostChatPeerId,
                         )?.label || "Choose DM"
-                        : liveHostChatOptions.length
+                        : hostChatOptions.length
                           ? "Choose DM"
-                          : "No one live"}
+                          : "No conversations yet"}
                     </span>
 
                     <span
@@ -20974,11 +20966,11 @@ export function RoomPageLiveKit({
                         }
                       >
                         <span className="min-w-0 truncate">
-                          {liveHostChatOptions.length ? "Choose DM" : "No one live"}
+                          {hostChatOptions.length ? "Choose DM" : "No conversations yet"}
                         </span>
                       </button>
 
-                      {liveHostChatOptions.map((item) => {
+                      {hostChatOptions.map((item) => {
                         const dmUnread = clampUnreadCount(
                           unreadDirectChatByPeerId[item.userId] || 0,
                         );
@@ -21007,6 +20999,7 @@ export function RoomPageLiveKit({
                             title={item.label}
                           >
                             <span className="min-w-0 truncate">{item.label}</span>
+                            {!item.inRoom && <span className="ml-auto shrink-0 opacity-60">Left room</span>}
 
                             {dmUnread > 0 ? (
                               <span className="shrink-0 rounded-full bg-[#F65252] px-1.5 py-0.5 text-[10px] font-bold leading-none text-white">
@@ -21023,13 +21016,13 @@ export function RoomPageLiveKit({
 
             {canSelectHostDmPeer &&
               chatViewMode === "host" &&
-              liveHostChatOptions.some(
+              hostChatOptions.some(
                 (item) =>
                   clampUnreadCount(unreadDirectChatByPeerId[item.userId] || 0) >
                   0,
               ) ? (
               <div className="hidden xl:flex items-center gap-1.5 shrink-0 max-w-[360px] overflow-x-auto pr-1">
-                {liveHostChatOptions
+                {hostChatOptions
                   .filter(
                     (item) =>
                       clampUnreadCount(

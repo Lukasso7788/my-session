@@ -226,7 +226,6 @@ type ChatCacheEntry = {
     confirmedProfiles: Record<string, Profile>;
     meProfile: Profile | null;
     hostUserId: string | null;
-    directPeerIds: string[];
 };
 
 const CHAT_CACHE = createPanelSnapshotCache<ChatCacheEntry>();
@@ -1377,7 +1376,7 @@ export function ChatPanel({
         });
     }, [sessionId, hostUserIdOverride, hostProfileOverride]);
 
-    const [directPeerIds, setDirectPeerIds] = useState<string[]>([]);
+    const [directPeers, setDirectPeers] = useState<{ scope: string; ids: string[] }>({ scope: "", ids: [] });
 
     const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
     const profilesByIdRef = useRef<Record<string, Profile>>({});
@@ -1954,7 +1953,6 @@ export function ChatPanel({
             setProfilesById(cached.profilesById || {});
             setMeProfile(cached.meProfile || null);
             if (!hostUserIdOverride) setHostUserId(cached.hostUserId || null);
-            setDirectPeerIds(cached.directPeerIds || []);
             setLoading(false);
             setHasOlderMessages((cached.messages?.length || 0) >= CHAT_PAGE_SIZE);
         } else {
@@ -1965,7 +1963,6 @@ export function ChatPanel({
             setReplyTo(null);
             setText("");
             setUnseenNew(0);
-            setDirectPeerIds([]);
             setLoading(true);
             setHasOlderMessages(false);
         }
@@ -1986,7 +1983,6 @@ export function ChatPanel({
             confirmedProfiles: profileLoader.snapshot(),
             meProfile: meProfileRef.current,
             hostUserId,
-            directPeerIds,
         });
     }, [
         sessionId,
@@ -1998,7 +1994,6 @@ export function ChatPanel({
         profileLoader,
         meProfile,
         hostUserId,
-        directPeerIds,
     ]);
 
     useEffect(() => {
@@ -2247,67 +2242,52 @@ export function ChatPanel({
         return () => chatDocument.removeEventListener("keydown", onKey);
     }, [chatDocument, reactionDetails.open]);
 
-    const loadDirectPeers = useCallback(async () => {
-        if (!sessionId || !hostUserId) {
-            console.log(
-                "[chat][direct-peers] skipped: missing sessionId or hostUserId",
-                { sessionId, hostUserId },
-            );
-            setDirectPeerIds([]);
-            return [] as string[];
-        }
+    const directPeersScope = isHost && sessionId ? `${sessionId}:${hostUserId}` : "";
+    const rememberDirectPeers = useCallback((scope: string, ids: string[]) => {
+        setDirectPeers((prev) => {
+            const previous = prev.scope === scope ? prev.ids : [];
+            const next = [...new Set([...previous, ...ids])];
+            return prev.scope === scope && next.length === previous.length ? prev : { scope, ids: next };
+        });
+    }, []);
 
-        try {
-            const { data, error } = await supabase
-                .from(MSG_TABLE)
-                .select("user_id, dm_peer_user_id, scope")
-                .eq("session_id", sessionId)
-                .eq("scope", "direct")
-                .limit(2000);
+    useEffect(() => {
+        if (!directPeersScope || !hostUserId || !onDirectPeerIdsChange) return;
+        let cancelled = false;
 
-            if (error) {
-                console.warn("direct peers load error:", error);
-                setDirectPeerIds([]);
-                return [] as string[];
+        async function loadHistory() {
+            const ids = new Set<string>();
+            const pageSize = 500;
+            for (let offset = 0; !cancelled; offset += pageSize) {
+                const { data, error } = await supabase
+                    .from(MSG_TABLE)
+                    .select("user_id, dm_peer_user_id")
+                    .eq("session_id", sessionId)
+                    .eq("scope", "direct")
+                    .or(`user_id.eq.${hostUserId},dm_peer_user_id.eq.${hostUserId}`)
+                    .order("id")
+                    .range(offset, offset + pageSize - 1);
+                if (cancelled) return;
+                if (error) throw error;
+
+                for (const row of data || []) {
+                    const peerId = row.user_id === hostUserId ? row.dm_peer_user_id : row.user_id;
+                    if (peerId && peerId !== hostUserId) ids.add(peerId);
+                }
+                if (!data || data.length < pageSize) break;
             }
-
-            const peerIds = Array.from(
-                new Set(
-                    ((data as any[]) || [])
-                        .flatMap((row) => [
-                            String(row?.user_id || "").trim(),
-                            String(row?.dm_peer_user_id || "").trim(),
-                        ])
-                        .filter((id) => id && id !== hostUserId),
-                ),
-            );
-
-            console.log("[chat][direct-peers] loaded", {
-                sessionId,
-                hostUserId,
-                peerIds,
-                rowCount: Array.isArray(data) ? data.length : 0,
-            });
-
-            setDirectPeerIds(peerIds);
-            if (peerIds.length) void ensureProfiles(peerIds);
-            return peerIds;
-        } catch (e) {
-            console.warn("direct peers load failed:", e);
-            setDirectPeerIds([]);
-            return [] as string[];
+            if (!cancelled) rememberDirectPeers(directPeersScope, [...ids]);
         }
-    }, [sessionId, hostUserId, ensureProfiles]);
+
+        void loadHistory().catch((error) => {
+            if (!cancelled) console.warn("direct peers load failed:", error);
+        });
+        return () => { cancelled = true; };
+    }, [sessionId, hostUserId, directPeersScope, onDirectPeerIdsChange, rememberDirectPeers]);
 
     useEffect(() => {
-        if (!hostUserId) return;
-        if (!isHost) return;
-        void loadDirectPeers();
-    }, [hostUserId, isHost, loadDirectPeers]);
-
-    useEffect(() => {
-        onDirectPeerIdsChange?.(directPeerIds);
-    }, [directPeerIds, onDirectPeerIdsChange]);
+        onDirectPeerIdsChange?.(directPeers.scope === directPeersScope ? directPeers.ids : []);
+    }, [directPeers, directPeersScope, onDirectPeerIdsChange]);
 
     // General chat does not depend on host discovery/lease changes.
     const messageQueryHostId = activeMode === "direct" ? hostUserId : null;
@@ -2540,15 +2520,11 @@ export function ChatPanel({
             activeDirectPeerId,
         );
 
-        if (row.scope === "direct" && isHost && hostUserId) {
-            const otherId =
-                row.user_id === hostUserId
-                    ? String(row.dm_peer_user_id || "").trim()
-                    : row.user_id;
+        if (row.scope === "direct" && row.session_id === sessionId && directPeersScope && hostUserId) {
+            const otherId = row.user_id === hostUserId ? row.dm_peer_user_id
+                : row.dm_peer_user_id === hostUserId ? row.user_id : null;
             if (otherId && otherId !== hostUserId) {
-                setDirectPeerIds((prev) =>
-                    prev.includes(otherId) ? prev : [...prev, otherId],
-                );
+                rememberDirectPeers(directPeersScope, [otherId]);
                 void ensureProfiles([otherId]);
             }
         }
@@ -3102,11 +3078,6 @@ export function ChatPanel({
         }
 
         if (confirmed) void onMessageInsert({ new: confirmed });
-        if (isHost && outgoingScope === "direct" && outgoingPeerId) {
-            setDirectPeerIds((prev) =>
-                prev.includes(outgoingPeerId) ? prev : [...prev, outgoingPeerId],
-            );
-        }
 
         setVoiceMessagePreview(false);
     };
