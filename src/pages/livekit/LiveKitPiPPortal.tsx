@@ -370,12 +370,27 @@ export default function LiveKitPiPPortal({
             </div>
 
             <style>{`
-                .ms-pip-voice-line .lk-audio-bar[data-lk-bar-index="0"] { transform: scaleY(0.35); }
-                .ms-pip-voice-line .lk-audio-bar[data-lk-bar-index="1"] { transform: scaleY(0.76); }
-                .ms-pip-voice-line .lk-audio-bar[data-lk-bar-index="2"] { transform: scaleY(0.43); }
-                .ms-pip-voice-line .lk-audio-bar[data-lk-bar-index="3"],
-                .ms-pip-voice-line .lk-audio-bar[data-lk-bar-index="5"] { transform: scaleY(0.6); }
-                .ms-pip-voice-line .lk-audio-bar[data-lk-bar-index="6"] { transform: scaleY(0.51); }
+                .ms-pip-voice-line .lk-audio-bar {
+                    transform: scaleY(var(--pip-bar-scale, 1));
+                    transition: height 210ms cubic-bezier(0.22, 0.65, 0.36, 1);
+                }
+                .ms-pip-voice-line .lk-audio-bar:is([data-lk-bar-index="0"], [data-lk-bar-index="6"]) {
+                    --pip-bar-scale: 0.38;
+                    opacity: 0.62;
+                }
+                .ms-pip-voice-line .lk-audio-bar:is([data-lk-bar-index="1"], [data-lk-bar-index="5"]) {
+                    --pip-bar-scale: 0.62;
+                    opacity: 0.78;
+                }
+                .ms-pip-voice-line .lk-audio-bar:is([data-lk-bar-index="2"], [data-lk-bar-index="4"]) {
+                    --pip-bar-scale: 0.83;
+                }
+                @media (prefers-reduced-motion: reduce) {
+                    .ms-pip-voice-line .lk-audio-bar {
+                        height: 9px !important;
+                        transition: none;
+                    }
+                }
 
                 .ms-pip-chat-panel .custom-scrollbar {
                     scrollbar-width: auto !important;
@@ -516,10 +531,10 @@ export default function LiveKitPiPPortal({
                                                     <BarVisualizer
                                                         track={speechTrack}
                                                         barCount={7}
-                                                        options={{ minHeight: activeSpeaker ? 38 : 20, maxHeight: 100 }}
-                                                        className="ms-pip-voice-line flex h-[18px] items-center justify-center gap-[1.5px] min-[360px]:gap-0.5"
+                                                        options={{ minHeight: activeSpeaker ? 30 : 22, maxHeight: 100 }}
+                                                        className="ms-pip-voice-line flex h-[18px] items-center justify-center gap-[1.5px] min-[360px]:gap-[2px]"
                                                     >
-                                                        <span className="lk-audio-bar block w-0.5 rounded-full bg-current motion-safe:transition-[height] motion-safe:duration-[180ms] motion-safe:ease-out min-[360px]:w-[2.5px]" />
+                                                        <span className="lk-audio-bar block w-0.5 rounded-full bg-current" />
                                                     </BarVisualizer>
                                                 ) : <AudioLines size={13} />}
                                             </div>
