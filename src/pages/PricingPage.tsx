@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { PricingPlanCard } from "../components/PricingPlanCard";
 import { supabase } from "../lib/supabase";
 
@@ -12,7 +12,7 @@ type PricingInfo = {
     prices: Partial<Record<CheckoutPlan, DisplayPrice | null>>;
 };
 
-const DONATION_URL = "https://buy.stripe.com/5kQeV6bWf9D6fFsbNq24007";
+const DONATION_LOGIN_URL = "/login?redirect=" + encodeURIComponent("/pricing?donate=1");
 const PRICING_OPTIONS = [
     { value: "monthly", label: "Monthly" },
     { value: "yearly", label: "Yearly" },
@@ -41,6 +41,7 @@ function formatPrice(price: DisplayPrice) {
 }
 
 export default function PricingPage() {
+    const { search } = useLocation();
     const LIFETIME_TOTAL_SLOTS = 5;
     const LIFETIME_LEFT_SLOTS = 5;
 
@@ -50,7 +51,9 @@ export default function PricingPage() {
     const [isUpgrading, setIsUpgrading] = useState<boolean>(false);
     const [checkoutLoadingPlan, setCheckoutLoadingPlan] = useState<CheckoutPlan | null>(null);
     const [billingCycle, setBillingCycle] = useState<BillingCycle>("monthly");
-    const [donationSelected, setDonationSelected] = useState(false);
+    const [donationSelected, setDonationSelected] = useState(() => new URLSearchParams(search).get("donate") === "1");
+    const [donationLoading, setDonationLoading] = useState(false);
+    const [donationError, setDonationError] = useState("");
     const donationDialog = useRef<HTMLDialogElement>(null);
 
     const [statusMessage, setStatusMessage] = useState<string>("");
@@ -138,6 +141,38 @@ export default function PricingPage() {
     const handleStartFree = useCallback(() => {
         window.location.href = "/sessions";
     }, []);
+
+    const startDonation = async () => {
+        setDonationLoading(true);
+        setDonationError("");
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session?.access_token) {
+                window.location.assign(DONATION_LOGIN_URL);
+                return;
+            }
+
+            const response = await fetch("/api/billing/create-checkout-session", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({ checkoutKind: "platform_donation" }),
+            });
+            if (response.status === 401) {
+                window.location.assign(DONATION_LOGIN_URL);
+                return;
+            }
+            if (!response.ok) throw new Error("Donation checkout unavailable");
+            const { url } = await response.json();
+            if (!url) throw new Error("Donation checkout unavailable");
+            window.location.assign(url);
+        } catch {
+            setDonationError("Could not open Stripe Checkout. Please try again.");
+            setDonationLoading(false);
+        }
+    };
 
     const startCheckout = useCallback(async (plan: CheckoutPlan) => {
         try {
@@ -475,7 +510,10 @@ export default function PricingPage() {
                     ref={donationDialog}
                     aria-labelledby="donation-title"
                     aria-describedby="donation-description"
-                    onClose={() => setDonationSelected(false)}
+                    onClose={() => {
+                        setDonationSelected(false);
+                        setDonationError("");
+                    }}
                     className="m-auto max-h-[90dvh] w-[calc(100%_-_2rem)] max-w-md overflow-y-auto rounded-[24px] border border-black/10 bg-white p-6 text-[#0B1220] shadow-xl backdrop:bg-black/40"
                 >
                     <div className="flex items-center justify-between gap-4">
@@ -492,20 +530,19 @@ export default function PricingPage() {
                         </button>
                     </div>
                     <p id="donation-description" className="mt-2 text-sm leading-relaxed text-black/70">
-                        Donate an amount of your choice. After donating,{" "}
-                        <Link to="/contact" className="underline underline-offset-2 hover:text-black">
-                            contact us
-                        </Link>{" "}
-                        to ask about exclusive previews of new features, priority consideration for your
-                        feedback, or putting your donation toward a period of Pro access. We review each
-                        request individually.
+                        Donate an amount of your choice. Your donation is linked to your MySession account.
+                        We review donations individually for perks like exclusive previews of new features,
+                        priority consideration for feedback, or credit toward a period of Pro access.
                     </p>
-                    <a
-                        href={DONATION_URL}
-                        className="mt-5 inline-flex min-h-11 items-center justify-center rounded-full bg-black px-5 text-sm font-semibold text-white transition hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                    {donationError && <p role="alert" className="mt-3 text-sm text-red-700">{donationError}</p>}
+                    <button
+                        type="button"
+                        onClick={() => void startDonation()}
+                        disabled={checkingAuth || donationLoading}
+                        className="mt-5 inline-flex min-h-11 items-center justify-center rounded-full bg-black px-5 text-sm font-semibold text-white transition hover:bg-black/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:opacity-60"
                     >
-                        Continue to Stripe
-                    </a>
+                        {donationLoading ? "Opening checkout…" : isLoggedIn || checkingAuth ? "Continue to Stripe" : "Sign in to donate"}
+                    </button>
                 </dialog>
 
                 <div className="mt-10 rounded-2xl border border-black/10 bg-white/85 p-6 shadow-sm sm:p-8">

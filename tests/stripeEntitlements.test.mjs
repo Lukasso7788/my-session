@@ -398,6 +398,22 @@ test("webhook still works before the ledger migration is applied", async () => {
 // ---------------------------------------------------------------------------
 // Checkout: async payments and the success page
 
+test("signed donation events distinguish pending and paid without granting plan access", async () => {
+  const { db } = resetWorld();
+  const donation = {
+    ...checkoutSession({ id: "cs_donation", mode: "payment", paymentStatus: "unpaid" }),
+    metadata: { checkout_kind: "platform_donation", supabase_user_id: "user-a" },
+  };
+  const pending = await deliver(event("checkout.session.completed", donation));
+  assert.deepEqual(pending.body, { received: true, kind: "platform_donation", paid: false });
+  const paid = event("checkout.session.async_payment_succeeded", { ...donation, payment_status: "paid" });
+  assert.deepEqual((await deliver(paid)).body, { received: true, kind: "platform_donation", paid: true });
+  assert.deepEqual(db.rows("stripe_webhook_events").find((row) => row.id === paid.id).outcome, {
+    kind: "platform_donation", paid: true,
+  });
+  assert.equal(entitlement(), null);
+});
+
 test("async payment: completed-but-unpaid checkout grants nothing until Stripe confirms", async () => {
   const { stripe } = resetWorld();
   stripe._subscriptions.set("sub_1", subscription({ status: "incomplete" }));

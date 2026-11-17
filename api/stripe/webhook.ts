@@ -598,6 +598,9 @@ export async function processStripeEvent(event: StripeEvent): Promise<Record<str
 
   if (CHECKOUT_EVENTS.has(event.type)) {
     const kind = String(object?.metadata?.checkout_kind || object?.metadata?.kind || "").trim();
+    if (kind === "platform_donation") {
+      return { kind, paid: object.status === "complete" && object.payment_status === "paid" };
+    }
     if (kind === "host_support") {
       if (event.type === "checkout.session.async_payment_failed") return { kind: "host_support", paid: false };
       // Fresh state: a "completed" session with a delayed payment is not paid yet.

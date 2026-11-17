@@ -26,10 +26,35 @@ Object.assign(process.env, {
 
 const checkouts = [];
 const customerUpdates = [];
+const donationLinkUrl = "https://buy.stripe.com/5kQeV6bWf9D6fFsbNq24007";
+const donationPrice = {
+  id: "price_donation",
+  active: true,
+  type: "one_time",
+  custom_unit_amount: { minimum: 100 },
+};
+let donationLineItems = [{ price: donationPrice }];
 let identity = { plan: "free", stripe_customer_id: "cus_owner", stripe_subscription_id: null };
 globalThis.__billingAdapter = {
   stripe: {
     prices: { retrieve: async (id) => PRICES[id] },
+    paymentLinks: {
+      list: async function* () {
+        yield { id: "plink_other", url: "https://buy.stripe.com/other" };
+        yield {
+          id: "plink_donation",
+          url: donationLinkUrl,
+          payment_method_types: ["card"],
+          automatic_tax: { enabled: false },
+          billing_address_collection: "auto",
+          consent_collection: { terms_of_service: "required" },
+        };
+      },
+      listLineItems: async (id) => {
+        assert.equal(id, "plink_donation");
+        return { data: donationLineItems, has_more: false };
+      },
+    },
     customers: {
       update: async (id, params) => { customerUpdates.push([id, params]); return { id }; },
       create: async (params) => { customerUpdates.push(["new", params]); return { id: "cus_new" }; },
@@ -137,5 +162,47 @@ test("without the regional price IDs everyone pays the regular price", async () 
     assert.equal(plain.customer_email, "owner@example.invalid");
   } finally {
     process.env.STRIPE_PRICE_SOUTH_ASIA_MONTHLY = saved;
+  }
+});
+
+test("donation checkout uses the authenticated account and the existing custom amount price", async () => {
+  const response = recorder();
+  await handler({
+    method: "POST",
+    headers: { authorization: "Bearer token" },
+    body: { checkoutKind: "platform_donation", userId: "spoofed", plan: "lifetime", amountUsd: 1 },
+  }, response);
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.body, { url: "https://checkout.stripe.com/test" });
+  assert.equal(response.headers["Cache-Control"], "no-store");
+  const donation = checkouts.at(-1);
+  assert.equal(donation.mode, "payment");
+  assert.equal(donation.submit_type, "donate");
+  assert.equal(donation.client_reference_id, "owner");
+  assert.deepEqual(donation.line_items, [{ price: donationPrice.id, quantity: 1 }]);
+  assert.deepEqual(donation.payment_method_types, ["card"]);
+  assert.deepEqual(donation.automatic_tax, { enabled: false });
+  assert.deepEqual(donation.consent_collection, { terms_of_service: "required" });
+  assert.deepEqual(donation.metadata, { checkout_kind: "platform_donation", supabase_user_id: "owner" });
+  assert.deepEqual(donation.payment_intent_data.metadata, donation.metadata);
+  assert.equal(donation.customer_email, undefined);
+});
+
+test("a donation checkout cannot bypass sign-in or fall back to a fixed price", async () => {
+  const before = checkouts.length;
+  const body = { checkoutKind: "platform_donation" };
+  const signedOut = recorder();
+  await handler({ method: "POST", headers: {}, body }, signedOut);
+  assert.equal(signedOut.statusCode, 401);
+
+  const invalidPrice = recorder();
+  donationLineItems = [{ price: { ...donationPrice, custom_unit_amount: null } }];
+  try {
+    await handler({ method: "POST", headers: { authorization: "Bearer token" }, body }, invalidPrice);
+    assert.equal(invalidPrice.statusCode, 500);
+    assert.equal(invalidPrice.body.error, "donation_price_not_configured");
+    assert.equal(checkouts.length, before);
+  } finally {
+    donationLineItems = [{ price: donationPrice }];
   }
 });

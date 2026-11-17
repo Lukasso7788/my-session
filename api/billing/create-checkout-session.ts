@@ -15,8 +15,9 @@ const supabaseAdmin = createClient(
 );
 
 const APP_URL = process.env.APP_URL || "http://localhost:5173";
+const DONATION_PAYMENT_LINK_URL = "https://buy.stripe.com/5kQeV6bWf9D6fFsbNq24007";
 
-type CheckoutKind = "subscription" | "host_support" | "customer_portal" | "subscription_status" | "sync_entitlement";
+type CheckoutKind = "subscription" | "host_support" | "platform_donation" | "customer_portal" | "subscription_status" | "sync_entitlement";
 
 type SupportedPlan = "pro_monthly" | "pro_yearly" | "lifetime" | "india_upi_monthly";
 type EntitlementPlan = "pro_monthly" | "pro_yearly" | "lifetime";
@@ -52,6 +53,41 @@ function normalizeUsdAmount(value: unknown): number {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
   return Math.round(n * 100) / 100;
+}
+
+async function createPlatformDonationCheckout(userId: string) {
+  // Use the existing Payment Link's pay-what-you-want price. The browser
+  // cannot choose the product, price or account credited in Stripe.
+  for await (const link of stripe.paymentLinks.list({ active: true, limit: 100 })) {
+    if (link.url !== DONATION_PAYMENT_LINK_URL) continue;
+
+    const items = await stripe.paymentLinks.listLineItems(link.id, { limit: 2 });
+    const price = items.data[0]?.price;
+    if (items.data.length !== 1 || items.has_more || !price?.active || price.type !== "one_time" || !price.custom_unit_amount) {
+      break;
+    }
+
+    const metadata = { checkout_kind: "platform_donation", supabase_user_id: userId };
+    const checkout = await stripe.checkout.sessions.create({
+      mode: "payment",
+      submit_type: "donate",
+      success_url: `${APP_URL}/pricing`,
+      cancel_url: `${APP_URL}/pricing?donate=1`,
+      line_items: [{ price: price.id, quantity: 1 }],
+      payment_method_types: link.payment_method_types ?? undefined,
+      billing_address_collection: link.billing_address_collection ?? undefined,
+      automatic_tax: { enabled: link.automatic_tax.enabled },
+      consent_collection: link.consent_collection?.terms_of_service === "required"
+        ? { terms_of_service: "required" }
+        : undefined,
+      client_reference_id: userId,
+      metadata,
+      payment_intent_data: { metadata },
+    });
+    if (!checkout.url) throw new Error("donation_checkout_unavailable");
+    return { url: checkout.url };
+  }
+  throw new Error("donation_price_not_configured");
 }
 
 // Regional pricing: visitors whose IP is in South Asia pay the regional prices.
@@ -495,6 +531,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     };
 
     const checkoutKind: CheckoutKind = body.checkoutKind || "subscription";
+
+    if (checkoutKind === "platform_donation") {
+      res.setHeader("Cache-Control", "no-store");
+      return res.status(200).json(await createPlatformDonationCheckout(user.id));
+    }
 
     if (checkoutKind === "host_support") {
       const result = await createHostSupportCheckout({
