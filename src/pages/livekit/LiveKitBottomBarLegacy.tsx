@@ -356,11 +356,7 @@ export function LiveKitBottomBar(props: {
         }
     }, []);
 
-    const pipIconTheme: RoomTheme = pipActive
-        ? isLight
-            ? "dark"
-            : "light"
-        : theme;
+    const pipIconTheme: RoomTheme = pipActive ? "dark" : theme;
 
     const centerControlClass = "h-10 w-10 rounded-2xl flex items-center justify-center transition md:h-11 md:w-11";
     const sideControlClass = "h-10 min-w-10 rounded-2xl flex items-center justify-center gap-2 px-2 transition md:h-11 lg:px-3";
