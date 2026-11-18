@@ -984,7 +984,7 @@ export function TasksPanel({
   useEffect(() => {
     if (!panelTasksHydratedRef.current) return;
     onPublicTasksChange?.(publicPanelTasks);
-  }, [onPublicTasksChange, publicPanelTasksKey]);
+  }, [onPublicTasksChange, panelLoading, publicPanelTasksKey]);
 
   useEffect(() => {
     setTaskTimers(readTaskTimers(taskTimerStorageKey));

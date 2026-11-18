@@ -19623,7 +19623,12 @@ export function RoomPageLiveKit({
     useState<Record<string, PublicPanelTask[]>>({});
   const [participantPublicTasksByUserId, setParticipantPublicTasksByUserId] =
     useState<Record<string, PublicPanelTask[]>>({});
-  const localPublicTasksOverrideRef = useRef<PublicPanelTask[] | null>(null);
+  const localTaskUserId = String(authUserId || "").trim().toLowerCase();
+  const [localPanelTasks, setLocalPanelTasks] = useState<{
+    userId: string;
+    tasks: PublicPanelTask[];
+  } | null>(null);
+  const taskMetadataQueueRef = useRef(Promise.resolve());
 
   const normalizePublicTasks = useCallback((values: unknown): PublicPanelTask[] => {
     if (!Array.isArray(values)) return [];
@@ -19655,54 +19660,50 @@ export function RoomPageLiveKit({
     return result;
   }, []);
 
-  const syncLocalPublicTasksMetadata = useCallback(
-    async (values: unknown) => {
-      const tasks = normalizePublicTasks(values);
-      const localUserId = String(authUserId || "").trim().toLowerCase();
-
-      if (localUserId) {
-        setTileTasksByUserId((current) => {
-          if (JSON.stringify(current[localUserId] || []) === JSON.stringify(tasks)) {
-            return current;
-          }
-          return { ...current, [localUserId]: tasks };
-        });
-      }
-
-      const participant = roomRef.current?.localParticipant;
-      if (!participant || typeof participant.setMetadata !== "function") return;
-
-      const currentMetadata = parseParticipantMetadata(participant.metadata) || {};
-      const currentTasks = normalizePublicTasks(
-        currentMetadata.publicPanelTaskStates || currentMetadata.publicPanelTasks,
-      );
-      if (JSON.stringify(currentTasks) === JSON.stringify(tasks)) return;
-
-      try {
-        await participant.setMetadata(
-          JSON.stringify({
-            ...currentMetadata,
-            publicPanelTasks: tasks
-              .filter((task) => !task.completed)
-              .map((task) => task.text),
-            publicPanelTaskStates: tasks,
-          }),
-        );
-      } catch (error) {
-        console.warn("Failed to publish public panel tasks", error);
-      }
-    },
-    [authUserId, normalizePublicTasks],
-  );
-
   const handlePublicPanelTasksChange = useCallback(
     (values: PublicPanelTask[]) => {
+      if (!localTaskUserId) return;
       const tasks = normalizePublicTasks(values);
-      localPublicTasksOverrideRef.current = tasks;
-      void syncLocalPublicTasksMetadata(tasks);
+      setLocalPanelTasks((current) =>
+        current?.userId === localTaskUserId &&
+        JSON.stringify(current.tasks) === JSON.stringify(tasks)
+          ? current
+          : { userId: localTaskUserId, tasks },
+      );
     },
-    [normalizePublicTasks, syncLocalPublicTasksMetadata],
+    [localTaskUserId, normalizePublicTasks],
   );
+
+  const ownTileTasks = localPanelTasks?.userId === localTaskUserId
+    ? localPanelTasks.tasks
+    : tileTasksByUserId[localTaskUserId];
+
+  useEffect(() => {
+    const participant = roomRef.current?.localParticipant;
+    if (!connected || !localTaskUserId || !participant || !ownTileTasks) return;
+    let cancelled = false;
+
+    // Serialize task snapshots so a rapid edit or deletion cannot be published
+    // ahead of an earlier update that is still awaiting acknowledgement.
+    taskMetadataQueueRef.current = taskMetadataQueueRef.current.then(async () => {
+      if (cancelled || roomRef.current?.localParticipant !== participant) return;
+      const metadata = parseParticipantMetadata(participant.metadata) || {};
+      if (
+        Array.isArray(metadata.publicPanelTaskStates) &&
+        JSON.stringify(normalizePublicTasks(metadata.publicPanelTaskStates)) === JSON.stringify(ownTileTasks)
+      ) return;
+
+      await participant.setMetadata(JSON.stringify({
+        ...metadata,
+        publicPanelTasks: ownTileTasks.filter((task) => !task.completed).map((task) => task.text),
+        publicPanelTaskStates: ownTileTasks,
+      }));
+    }).catch((error) => {
+      console.warn("Failed to publish public panel tasks", error);
+    });
+
+    return () => { cancelled = true; };
+  }, [connected, localTaskUserId, normalizePublicTasks, ownTileTasks, sessionId]);
 
   useEffect(() => {
     const room = roomRef.current;
@@ -19835,20 +19836,14 @@ export function RoomPageLiveKit({
         });
       }
 
-      const localUserId = String(authUserId || "").trim().toLowerCase();
-      const localOverride = localPublicTasksOverrideRef.current;
-      if (localUserId && localOverride !== null) {
-        next[localUserId] = localOverride;
+      if (participantUserIds.includes(localTaskUserId)) {
+        next[localTaskUserId] ??= [];
       }
-
       setTileTasksByUserId((current) => JSON.stringify(current) === JSON.stringify(next) ? current : next);
-      if (localUserId) {
-        void syncLocalPublicTasksMetadata(next[localUserId] || []);
-      }
     } catch {
       if (requestId === tileTasksRequestRef.current) setTileTasksByUserId({});
     }
-  }, [authUserId, connected, syncLocalPublicTasksMetadata, tileTaskUserIdsKey]);
+  }, [connected, localTaskUserId, tileTaskUserIdsKey]);
 
   useEffect(() => {
     void loadTileTasks();
@@ -19898,8 +19893,12 @@ export function RoomPageLiveKit({
     };
   }, [session?.id, connected, tileTaskUserIdsKey, refreshTileTasks]);
   const effectiveTileTasksByUserId = useMemo(
-    () => ({ ...tileTasksByUserId, ...participantPublicTasksByUserId }),
-    [participantPublicTasksByUserId, tileTasksByUserId],
+    () => ({
+      ...tileTasksByUserId,
+      ...participantPublicTasksByUserId,
+      ...(localTaskUserId && ownTileTasks ? { [localTaskUserId]: ownTileTasks } : {}),
+    }),
+    [localTaskUserId, ownTileTasks, participantPublicTasksByUserId, tileTasksByUserId],
   );
 
   const getTasksForTile = useCallback(
