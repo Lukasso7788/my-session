@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { resolveStageVisual, SessionStageBar } from "./SessionStageBar";
+import { SessionStageBar } from "./SessionStageBar";
+import { RoomStageTimer } from "./RoomStageTimer";
 import { Icon, ParticipantsSmartIcon, type RoomTheme } from "./VideoControls";
 
 type HostProfile = {
@@ -212,53 +213,6 @@ export default function RoomTopBar(props: RoomTopBarProps) {
         };
     }, [shouldRotateHostPrompt]);
 
-    const fullStageLabel = String(currentStage?.name || currentStage?.type || "Stage")
-        .trim()
-        .slice(0, 25);
-    const shortStageLabel =
-        fullStageLabel.length <= 8
-            ? fullStageLabel
-            : `${fullStageLabel.slice(0, 7)}…`;
-    // Use the same canonical color as the timeline (including legacy check-ins).
-    const stageColor = currentStage
-        ? resolveStageVisual(currentStage).color
-        : "#5B8DEF";
-
-    const stageTextColor = (() => {
-        const hex = stageColor.trim().replace(/^#/, "");
-        const normalized = hex.length === 3
-            ? hex.split("").map((x) => `${x}${x}`).join("")
-            : hex;
-        if (!/^[0-9a-f]{6}$/i.test(normalized)) return "#FFFFFF";
-        const channels = [0, 2, 4].map((offset) => {
-            const value = parseInt(normalized.slice(offset, offset + 2), 16) / 255;
-            return value <= 0.03928
-                ? value / 12.92
-                : Math.pow((value + 0.055) / 1.055, 2.4);
-        });
-        const luminance = 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
-        return luminance > 0.43 ? "#171717" : "#FFFFFF";
-    })();
-
-    const renderTimer = () => showTimer ? (
-        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${chipBg}`}>
-            <Icon name="timer" theme={theme} className="w-4 h-4 opacity-80" alt="Timer" />
-            <span className={`font-inter text-[13px] ${mutedText}`}>
-                {remainingTime || "--:--"}
-            </span>
-            {!!currentStage && (
-                <span
-                    className="max-w-[76px] truncate rounded-lg px-2 py-0.5 font-inter text-[10px] font-semibold leading-4"
-                    style={{ backgroundColor: stageColor, color: stageTextColor }}
-                    title={fullStageLabel}
-                    aria-label={`Current stage: ${fullStageLabel}`}
-                >
-                    {shortStageLabel}
-                </span>
-            )}
-        </div>
-    ) : null;
-
     const ownerId = String(hostProfile?.id || "").toLowerCase();
     const activeHostId = String(activeRoomHostProfile?.id || "").toLowerCase();
     const ownerIsActive = !!ownerId && activeHostId === ownerId;
@@ -418,7 +372,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                         )}
 
                         <div className="relative z-10 hidden lg:flex items-center gap-2 shrink-0">
-                            {renderTimer()}
+                            {showTimer && <RoomStageTimer theme={theme} remainingTime={remainingTime} currentStage={currentStage} />}
 
                             <button
                                 onClick={onToggleTheme}
@@ -468,7 +422,7 @@ export default function RoomTopBar(props: RoomTopBarProps) {
                     </div>
 
                     <div className="relative z-10 flex lg:hidden flex-wrap items-center justify-start gap-2">
-                        {renderTimer()}
+                        {showTimer && <RoomStageTimer theme={theme} remainingTime={remainingTime} currentStage={currentStage} />}
 
                         <button
                             onClick={onToggleTheme}

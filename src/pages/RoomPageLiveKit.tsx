@@ -20395,6 +20395,8 @@ export function RoomPageLiveKit({
     ? createPortal(
       <PiPPortalWithCountdown
         countdownStore={remainingTimeStore}
+        currentStage={stages[currentStage] || null}
+        showStageTimer={!isSilentRoom && stages.length > 0 && !!stagebarStartTime}
         isLight={isLight}
         theme={theme}
         sessionTitle={String(session?.title || "Session")}

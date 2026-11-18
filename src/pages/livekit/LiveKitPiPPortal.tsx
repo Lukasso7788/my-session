@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, Maximize2, Minimize2 } from "lucide-react";
 import { createAudioAnalyser, type LocalAudioTrack, type RemoteAudioTrack } from "livekit-client";
+import { RoomStageTimer } from "../../components/RoomStageTimer";
 import type { RoomPiPView } from "./useRoomPiPView";
 import {
     Icon,
@@ -136,6 +137,8 @@ export default function LiveKitPiPPortal({
     sessionTitle,
     participantsCount,
     remainingTime,
+    currentStage,
+    showStageTimer = Boolean(remainingTime),
     pipMode,
     pipGalleryTiles,
     pipGalleryColumns,
@@ -160,6 +163,8 @@ export default function LiveKitPiPPortal({
     sessionTitle: string;
     participantsCount: number;
     remainingTime: string;
+    currentStage?: React.ComponentProps<typeof RoomStageTimer>["currentStage"];
+    showStageTimer?: boolean;
     pipMode: RoomPiPView;
     pipGalleryTiles: any[];
     pipGalleryColumns: number;
@@ -572,7 +577,7 @@ export default function LiveKitPiPPortal({
                                     {reactionButtons}
                                 </div>
                             ) : (
-                                <div className="flex min-w-0 flex-1 items-center gap-2 pl-1" aria-live="polite" aria-atomic="true">
+                                <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden pl-1" aria-live="polite" aria-atomic="true">
                                     {showSpeech ? (
                                         <>
                                             <div aria-hidden="true" className={`flex h-5 w-6 shrink-0 items-center justify-center min-[360px]:w-8 ${activeSpeaker
@@ -587,12 +592,9 @@ export default function LiveKitPiPPortal({
                                     ) : null}
                                 </div>
                             )}
-                            {remainingTime ? (
-                                <span role="timer" aria-label="Time left in current block" className="flex shrink-0 items-center gap-1 whitespace-nowrap px-1 text-xs font-semibold tabular-nums">
-                                    <Icon name="timer" theme={theme} className="hidden h-4 w-4 opacity-80 min-[360px]:block" alt="" />
-                                    {remainingTime}
-                                </span>
-                            ) : null}
+                            {showStageTimer && (
+                                <RoomStageTimer theme={theme} remainingTime={remainingTime} currentStage={currentStage} compact />
+                            )}
                             <button
                                 type="button"
                                 onClick={() => {
