@@ -1,0 +1,55 @@
+name: MySession Desktop release
+on:
+  push:
+    branches: [main]
+    paths: ['desktop/**', '.github/workflows/desktop-release.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - name: Validate desktop source
+        shell: pwsh
+        run: |
+          foreach ($file in Get-ChildItem -Filter *.cjs) {
+            node --check $file.FullName
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+          node --check picker.js
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          node --check update.js
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Set unique release version
+        run: npm version "0.3.$env:GITHUB_RUN_NUMBER" --no-git-tag-version
+      - name: Build Windows installer
+        run: npm run dist:win
+      - name: Publish desktop update feed
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view desktop-latest --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE) {
+            gh release create desktop-latest --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --title "MySession Desktop" --notes "Windows desktop builds are published automatically from main."
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          }
+          gh release upload desktop-latest dist/latest.yml dist/MySession-Setup-*.exe dist/MySession-Setup-*.exe.blockmap --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }

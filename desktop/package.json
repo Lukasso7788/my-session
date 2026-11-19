@@ -1,0 +1,63 @@
+{
+  "name": "mysession-desktop",
+  "version": "0.3.0",
+  "description": "MySession desktop for Windows",
+  "author": "MySession",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win nsis --publish never"
+  },
+  "devDependencies": {
+    "electron": "45.3.2",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "club.mysession.desktop",
+    "productName": "MySession",
+    "artifactName": "MySession-Setup-${version}.${ext}",
+    "files": [
+      "main.cjs",
+      "screen-picker.cjs",
+      "picker-preload.cjs",
+      "picker.html",
+      "picker.js",
+      "picker.css",
+      "icon.png",
+      "package.json",
+      "context-menu.cjs",
+      "updater.cjs",
+      "update-preload.cjs",
+      "update.html",
+      "update.css",
+      "update.js"
+    ],
+    "win": {
+      "icon": "icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "perMachine": false,
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://github.com/Lukasso7788/my-session/releases/download/desktop-latest/"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
+  }
+}
