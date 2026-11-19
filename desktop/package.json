@@ -19,6 +19,7 @@
     "artifactName": "MySession-Setup-${version}.${ext}",
     "files": [
       "main.cjs",
+      "oauth-protocol.cjs",
       "screen-picker.cjs",
       "picker-preload.cjs",
       "picker.html",

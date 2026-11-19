@@ -4,19 +4,14 @@ const path = require("node:path");
 const { setupUpdates } = require("./updater.cjs");
 const { attachContextMenu } = require("./context-menu.cjs");
 const { chooseScreen } = require("./screen-picker.cjs");
+const { accountUrl, authWindowDecision, isMySessionUrl, AUTH_WINDOW_USER_AGENT } = require("./oauth-protocol.cjs");
 let tray;
 let quitting = false;
 
 const sessionsUrl = "https://mysession.club/sessions";
-const allowedOrigins = new Set(["https://mysession.club", "https://www.mysession.club"]);
 
 function isMySession(value) {
-  try {
-    const url = new URL(value);
-    return !url.username && !url.password && allowedOrigins.has(url.origin);
-  } catch {
-    return false;
-  }
+  return isMySessionUrl(value);
 }
 
 async function openSessions(window) {
@@ -115,6 +110,9 @@ function createWindow() {
   tray.on("double-click", () => { window.show(); window.focus(); });
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Show MySession", click: () => { window.show(); window.focus(); } },
+    { label: "Log in", click: () => openAccount("login") },
+    { label: "Create account", click: () => openAccount("register") },
+    { type: "separator" },
     { label: "Quit MySession", click: () => app.quit() },
   ]));
 
@@ -128,7 +126,7 @@ function createWindow() {
     void dialog.showMessageBox(window, {
       type: "info",
       message: "Continue in your browser",
-      detail: "External pages and provider sign-in are available in the web version of MySession.",
+      detail: "MySession stays open here. This link is outside the app.",
       buttons: ["Open MySession in browser", "Cancel"],
       cancelId: 1,
     }).then(({ response }) => {
@@ -136,30 +134,122 @@ function createWindow() {
     }).catch(() => {}).finally(() => { noticeOpen = false; });
   }
 
+  let authWindow = null;
+  let lastProviderUrl = "";
+  let lastProviderAt = 0;
+  const showApp = () => {
+    if (window.isDestroyed()) return;
+    window.show();
+    if (window.isMinimized()) window.restore();
+    window.focus();
+  };
+  const openAccount = (kind) => {
+    showApp();
+    window.loadURL(accountUrl(web.getURL(), kind)).catch(() => {});
+  };
+  const finishProviderSignIn = (url) => {
+    const popup = authWindow;
+    authWindow = null;
+    if (popup && !popup.isDestroyed()) popup.close();
+    showApp();
+    if (!web.isDestroyed()) window.loadURL(url).catch(() => {});
+  };
+  const openProviderSignIn = (targetUrl) => {
+    const now = Date.now();
+    if (authWindow && !authWindow.isDestroyed() && targetUrl === lastProviderUrl && now - lastProviderAt < 1500) {
+      authWindow.show();
+      authWindow.focus();
+      return;
+    }
+    lastProviderUrl = targetUrl;
+    lastProviderAt = now;
+    if (!authWindow || authWindow.isDestroyed()) {
+      authWindow = new BrowserWindow({
+        parent: window,
+        modal: true,
+        width: 480,
+        height: 760,
+        title: "Sign in to MySession",
+        autoHideMenuBar: true,
+        backgroundColor: "#ffffff",
+        icon: path.join(__dirname, "icon.png"),
+        webPreferences: {
+          partition: "persist:mysession",
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+        },
+      });
+      const popup = authWindow;
+      const popupWeb = popup.webContents;
+      popupWeb.setUserAgent(AUTH_WINDOW_USER_AGENT);
+      const follow = (event, url) => {
+        const decision = authWindowDecision(url);
+        if (decision === "provider") return;
+        event.preventDefault();
+        if (decision === "app") finishProviderSignIn(url);
+      };
+      popupWeb.on("will-navigate", follow);
+      popupWeb.on("will-redirect", follow);
+      popupWeb.setWindowOpenHandler(({ url }) => {
+        const decision = authWindowDecision(url);
+        if (decision === "block") return { action: "deny" };
+        setImmediate(() => {
+          if (popup.isDestroyed()) return;
+          if (decision === "app") finishProviderSignIn(url);
+          else popup.loadURL(url).catch(() => {});
+        });
+        return { action: "deny" };
+      });
+      popup.on("closed", () => {
+        if (authWindow === popup) authWindow = null;
+      });
+    }
+    authWindow.show();
+    authWindow.focus();
+    authWindow.loadURL(targetUrl).catch(() => {
+      if (!window.isDestroyed()) {
+        void dialog.showMessageBox(window, {
+          type: "info",
+          title: "MySession",
+          message: "Sign-in did not open",
+          detail: "Stay in MySession and try Log in again.",
+          buttons: ["OK"],
+        }).catch(() => {});
+      }
+    });
+  };
+  const acceptNavigation = (url, isMainFrame) => {
+    const decision = authWindowDecision(url);
+    if (decision === "app") return true;
+    if (!isMainFrame) return false;
+    if (decision === "provider") openProviderSignIn(url);
+    else showBrowserOption(url);
+    return false;
+  };
+
   web.on("will-frame-navigate", (event) => {
-    if (isMySession(event.url)) return;
-    event.preventDefault();
-    if (event.isMainFrame) showBrowserOption(event.url);
+    if (!acceptNavigation(event.url, event.isMainFrame !== false)) event.preventDefault();
   });
   web.on("will-redirect", (event) => {
-    if (isMySession(event.url)) return;
-    event.preventDefault();
-    if (event.isMainFrame) showBrowserOption(event.url);
+    if (!acceptNavigation(event.url, event.isMainFrame !== false)) event.preventDefault();
   });
   web.setWindowOpenHandler(({ url }) => {
-    if (isMySession(url)) {
-      setImmediate(() => {
-        if (!web.isDestroyed()) window.loadURL(url).catch(() => {});
-      });
-    } else {
-      setImmediate(() => { if (!window.isDestroyed()) showBrowserOption(url); });
-    }
+    setImmediate(() => {
+      if (window.isDestroyed() || web.isDestroyed()) return;
+      if (acceptNavigation(url, true)) window.loadURL(url).catch(() => {});
+    });
     return { action: "deny" };
+  });
+  window.on("closed", () => {
+    if (authWindow && !authWindow.isDestroyed()) authWindow.close();
   });
 
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: "MySession", submenu: [
       { label: "Sessions", accelerator: "Ctrl+Home", click: () => void openSessions(window) },
+      { label: "Log in", accelerator: "Ctrl+L", click: () => openAccount("login") },
+      { label: "Create account", click: () => openAccount("register") },
       { label: "Check for updates", click: () => { void updates.check(); } },
       { label: "Open MySession in browser", click: () => { void shell.openExternal(sessionsUrl); } },
       { type: "separator" },

@@ -1,6 +1,71 @@
 # MySession Desktop for Windows
 
+## Current state — sign-in stays inside the desktop app (2026-11-19)
+
+Source of truth for this work is `main` at `d5402825fea41a702349afd6af1410c443ef682f` (“Add MySession Desktop with GitHub release updates”), plus the in-app login change on this branch. The published GitHub Actions run `44457729224` built `MySession-Setup-0.3.1.exe`, its blockmap, and `latest.yml` on `desktop-latest`. That installer still sends provider sign-in out of the app. electron-updater 6.8.9 from a 0.3.0 install found and checksum-verified 0.3.1; installation and restart were still unverified. The next `desktop-release` run after this change is on `main` publishes a newer `0.3.<run>` installer.
+
+The sections below this one are the earlier handoff history, from the 0.1.0 prototype through the 0.3.0 updater. Where they disagree with this section, this section wins. In particular, do not send login or registration to the system browser.
+
+### What the desktop is
+
+`desktop/` is its own npm package. It does not import the root React app and it does not bundle the website. `main.cjs` opens one sandboxed Electron window on the persistent partition `persist:mysession`, with Node integration off, context isolation on, and no preload for the remote page. The window loads `https://mysession.club/sessions`. `https://mysession.club` and `https://www.mysession.club` are the only remote origins allowed in the main window. Website deploys change the screens. Native shell changes require a new Windows installer.
+
+Already in the 0.3.0 shell, and left in place:
+
+- Camera and microphone use Electron’s permission request and an in-memory grant for that window. The prompt is native. Denial stays denial.
+- `screen-picker.cjs` serves the display-media request from a local modal. The remote page never receives the source list or an IPC channel.
+- `context-menu.cjs` adds Refresh, refresh without cache, history, edit actions, safe link copy/open, zoom, and fullscreen. Clipboard access stays in the main process.
+- Closing the window hides it to the tray. Quit is explicit from the tray or the menu. `before-quit` sets `quitting`, so the hide handler does not swallow the real quit.
+- `updater.cjs` owns electron-updater 6.8.9 and a local banner window. The remote page has no updater preload. “Restart to update” calls `prepareQuit()` before `quitAndInstall`, which sets `quitting` first.
+- `.github/workflows/desktop-release.yml` builds Windows on changes under `desktop/` on `main` and uploads `latest.yml`, the NSIS exe, and the blockmap to the `desktop-latest` release. The feed URL is `https://github.com/Lukasso7788/my-session/releases/download/desktop-latest/`.
+
+### Login and registration
+
+Email and password login, and account registration, are the existing website forms. They stay in the main window. The app menu and the tray both have Log in and Create account. Those commands call `accountUrl` and load `/login` or `/register` on the MySession origin already open in the window (`www` stays on `www`; an unexpected origin falls back to `https://mysession.club`). They do not call `shell.openExternal`. The website header buttons that navigate to `/login` and `/register` are same-origin, so they also stay in the window. The website routes themselves are unchanged.
+
+Google, Discord, and Facebook still start through the website’s `startOAuthRedirect`. That navigation leaves MySession for Supabase and the provider. The shell used to cancel it and offer the system browser, which left the desktop partition signed out. The shell now opens that provider URL in a modal BrowserWindow owned by the app:
+
+- The modal uses the same `persist:mysession` partition, so the PKCE verifier stored by the main window is the one that completes `/auth/callback`. No browser profile is copied and no session token is put in a deep link.
+- Its user agent is `AUTH_WINDOW_USER_AGENT`, a Chrome string without `Electron`, because Google rejects the default Electron identifier. The main window’s identity is unchanged.
+- `authWindowDecision` allows MySession URLs and the Google, Discord, Facebook, and Supabase authorize hosts. Every other URL in the modal is blocked.
+- When the provider returns to a MySession URL, the modal closes and the main window loads that URL. The normal website callback then stores the session in the shared partition.
+- A second navigation to the same provider URL within 1.5 seconds focuses the modal instead of opening another one.
+- Closing the main window closes the modal. Hiding the main window to the tray does not sign the user out.
+
+Links that are neither MySession nor a sign-in provider still use the existing dialog. That dialog opens the sessions page in the system browser only when the person explicitly chooses it. It is not the login path.
+
+No new server secret, database table, or website route is required. Provider configuration stays the existing Supabase `/auth/v1/callback`. The desktop package still must not contain the service role key.
+
+### Checks
+
+Done on Linux, without a Windows install or a second account:
+
+- `node --check` on `main.cjs` and `oauth-protocol.cjs`.
+- `node --test desktop/oauth-protocol.test.mjs`: login and register URLs stay on the current MySession origin, provider URLs are classified for the in-app window, other sites are blocked, and the auth-window user agent does not contain Electron.
+
+Still required on Windows with the rebuilt installer, two real accounts, and the live site:
+
+- Menu and tray Log in and Create account open `/login` and `/register` inside the app and do not open Chrome or Edge.
+- Email/password login and registration complete in the main window.
+- Google sign-in opens the modal, returns to the main window already signed in, and does not open the system browser. Repeat for Discord and Facebook if those buttons stay on the form.
+- If Google shows a “browser not secure” or `disallowed_useragent` page inside the modal, stop and report it. Do not paper over that by sending the person to the system browser.
+- Two accounts join the same LiveKit room. Allow and deny camera. Allow and deny microphone. Share a window through the native picker and confirm the other account receives it. Disconnect the network and reconnect.
+- Close the window and confirm it hides to the tray. Quit from the tray exits. “Restart to update” still sets `quitting` before the installer runs.
+- The published 0.3.1 installer does not contain this behavior. Verify it on the installer built after this change reaches `main`.
+
+### Commands
+
+```text
+node --test desktop/oauth-protocol.test.mjs
+
+# Windows shell, from desktop/
+npm ci
+npm start
+npm run dist:win
+```
+
 ## Current state
+
 
 The 0.1.0 prototype lives in C:/projects/mysession-desktop/desktop on branch codex/mysession-desktop, created from origin/main at 1cb07dc. The desktop package is independent of the root npm package. Changes live in this worktree. The installed Focus Shield and the main MySession working copy use separate directories and profiles.
 
