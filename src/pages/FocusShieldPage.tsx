@@ -86,15 +86,15 @@ export default function FocusShieldPage() {
                         <span className="text-sm font-semibold text-gray-600">FocusShield by MySession</span>
                     </div>
                     <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">FocusShield</h1>
-                    <p className="mt-5 text-lg leading-8 text-gray-600">Block distracting apps and websites, plan focus time, and get help from a local AI Coach. Start with the FocusShield app for Windows.</p>
+                    <p className="mt-5 text-lg leading-8 text-gray-600">Block distracting apps and websites, plan focus time, and get help from AI Coach. Start with the FocusShield app for Windows.</p>
                 </header>
 
                 <section className="grid gap-5 lg:grid-cols-[1.35fr_1fr]" aria-label="Download FocusShield">
                     <article className="rounded-3xl bg-[#202b43] p-7 text-white sm:p-8" aria-labelledby="desktop-download-title">
                         <p className="text-sm font-medium text-[#b6ceff]">The FocusShield desktop app</p>
                         <h2 id="desktop-download-title" className="mt-3 text-3xl font-semibold">Your focus, protected on Windows.</h2>
-                        <a href="https://github.com/Lukasso7788/focus-shield-releases/releases/download/v0.4.11/FocusShield-Setup-0.4.11.exe" className="mt-7 inline-flex items-center justify-center rounded-full bg-[#5286f6] px-6 py-3.5 text-base font-semibold text-white transition hover:bg-[#4477e3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Download FocusShield for Windows</a>
-                        <p className="mt-4 text-sm leading-6 text-[#b6c4de]">Version 0.4.11 · Windows 10 / 11 · 64-bit · About 544 MB</p>
+                        <a href="https://github.com/Lukasso7788/focus-shield-releases/releases/download/v0.4.12/FocusShield-Setup-0.4.12.exe" className="mt-7 inline-flex items-center justify-center rounded-full bg-[#5286f6] px-6 py-3.5 text-base font-semibold text-white transition hover:bg-[#4477e3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Download FocusShield for Windows</a>
+                        <p className="mt-4 text-sm leading-6 text-[#b6c4de]">Version 0.4.12 · Windows 10 / 11 · 64-bit · About 544 MB</p>
                         <p className="mt-4 text-base leading-7 text-[#d1daeb]">Block selected applications, run independent focus timers, save block lists and schedules, or work on one task in Hyper Focus. AI Coach can remind you about distractions and suggest a next step.</p>
                         <a href="#install-desktop" className="mt-3 inline-block text-sm font-medium text-white underline underline-offset-4">Windows installation instructions</a>
                     </article>
@@ -112,7 +112,7 @@ export default function FocusShieldPage() {
                     {[
                         ["Block what pulls you away", "Choose Windows applications, websites or individual URLs. Website blocking uses the browser extension."],
                         ["Make focus a routine", "Save reusable lists, schedule focus windows and run multiple independent sessions. Keep the app running in the tray."],
-                        ["Keep coaching local", "Run distraction reminders and task advice together. The optional built-in AI model downloads separately (about 3.4 GB)."],
+                        ["Stay on track", "Use distraction reminders and task advice together. Choose “Install package for AI usage” in the app to get started (about 3.4 GB download)."],
                     ].map(([title, description]) => <article key={title} className="rounded-2xl border border-gray-200 bg-white p-6"><h2 className="text-base font-semibold">{title}</h2><p className="mt-3 text-base leading-7 text-gray-600">{description}</p></article>)}
                 </section>
 
@@ -121,9 +121,10 @@ export default function FocusShieldPage() {
                     <h2 id="install-desktop-title" className="mt-2 text-2xl font-semibold">Install the Windows app</h2>
                     <ol className="mt-6 list-decimal space-y-4 pl-6 text-base leading-7 text-gray-600 marker:font-semibold marker:text-[#4678d8]">
                         <li>Click <strong className="text-gray-900">Download FocusShield for Windows</strong> and wait for the EXE to finish downloading.</li>
-                        <li>Run <code className="break-all text-sm text-gray-900">FocusShield-Setup-0.4.11.exe</code> and follow the installer. If FocusShield is already open, finish your active sessions and close it before upgrading.</li>
+                        <li>Run <code className="break-all text-sm text-gray-900">FocusShield-Setup-0.4.12.exe</code> and follow the installer. If FocusShield is already open, finish your active sessions and close it before upgrading.</li>
                         <li>Open FocusShield from your desktop or Start menu. Choose the apps to block, set a duration, then start your session.</li>
                         <li>For website blocking, install the extension below in every Chrome or Edge profile you use. Keep FocusShield running, including in the system tray.</li>
+                        <li>To use AI Coach, open its panel and click <strong className="text-gray-900">Install package for AI usage</strong>. Once the download finishes, enter your task and start coaching.</li>
                         <li>Optionally click <strong className="text-gray-900">Connect MySession</strong> in the app and sign in to sync saved lists and policies between your computers.</li>
                     </ol>
                     <div className="mt-6 rounded-2xl bg-[#edf3ff] p-5 text-base leading-7 text-[#2a426e]"><strong>Future desktop updates</strong><p className="mt-1">When a new release is available, FocusShield shows “New version available”. Click “Click to update” to download it, then “Restart to install” after your active sessions finish.</p></div>
