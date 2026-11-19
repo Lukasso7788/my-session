@@ -26,6 +26,7 @@ jobs:
           cache: npm
           cache-dependency-path: desktop/package-lock.json
       - run: npm ci
+      - run: npm test
       - name: Validate desktop source
         shell: pwsh
         run: |
@@ -38,7 +39,7 @@ jobs:
           node --check update.js
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Set unique release version
-        run: npm version "0.3.$env:GITHUB_RUN_NUMBER" --no-git-tag-version
+        run: npm version "0.4.$env:GITHUB_RUN_NUMBER" --no-git-tag-version
       - name: Build Windows installer
         run: npm run dist:win
       - name: Publish desktop update feed

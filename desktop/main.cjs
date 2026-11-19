@@ -5,9 +5,13 @@ const { setupUpdates } = require("./updater.cjs");
 const { attachContextMenu } = require("./context-menu.cjs");
 const { chooseScreen } = require("./screen-picker.cjs");
 const { logoutDesktop } = require("./logout.cjs");
+const { createAuthNavigationHandler } = require("./auth-window-navigation.cjs");
+const { createBrowserAuth, AUTH_ORIGIN, APP_ORIGIN } = require("./browser-auth.cjs");
+const { providerFromNavigation } = require("./oauth-protocol.cjs");
 const { accountUrl, authWindowDecision, isMySessionUrl } = require("./oauth-protocol.cjs");
 let tray;
 let quitting = false;
+let receiveAuthLink = async () => false;
 
 const sessionsUrl = "https://mysession.club/sessions";
 
@@ -56,6 +60,38 @@ function createWindow() {
   attachContextMenu(window);
   const updates = setupUpdates(window, () => { quitting = true; });
   const siteSession = session.fromPartition("persist:mysession");
+  const browserAuth = createBrowserAuth({
+    fetchConfig: async () => {
+      const response = await fetch(`${APP_ORIGIN}/api/desktop-auth-config`, { signal: AbortSignal.timeout(15000), redirect: "error" });
+      if (!response.ok) throw new Error("config");
+      return response.json();
+    },
+    openExternal: url => shell.openExternal(url),
+    exchange: async (config, code, verifier) => {
+      const response = await fetch(`${AUTH_ORIGIN}/auth/v1/token?grant_type=pkce`, {
+        method: "POST", redirect: "error", signal: AbortSignal.timeout(15000),
+        headers: { "Content-Type": "application/json", apikey: config.anonKey },
+        body: JSON.stringify({ auth_code: code, code_verifier: verifier }),
+      });
+      if (!response.ok) throw new Error("exchange");
+      return response.json();
+    },
+    adopt: async tokens => {
+      const callback = new URL("/auth/callback", APP_ORIGIN);
+      callback.hash = new URLSearchParams({
+        access_token: tokens.access_token, refresh_token: tokens.refresh_token,
+        token_type: "bearer", expires_in: String(tokens.expires_in || 3600),
+      }).toString();
+      // Existing Supabase callback consumes and clears this fragment; never log it.
+      await window.loadURL(callback.href);
+      showApp();
+    },
+    failed: message => {
+      if (!window.isDestroyed()) void dialog.showMessageBox(window, { type: "error", message }).catch(() => {});
+    },
+  });
+  receiveAuthLink = browserAuth.receive;
+  window.on("closed", browserAuth.cancel);
   const mediaGranted = new Set();
   siteSession.setPermissionCheckHandler((contents, permission, origin, details) =>
     contents === web && permission === "media" && details.isMainFrame &&
@@ -147,6 +183,7 @@ function createWindow() {
     });
     if (response !== 0 || window.isDestroyed()) return;
     loggingOut = true;
+    browserAuth.cancel();
     try {
       await logoutDesktop(window, siteSession, () => {
         if (authWindow && !authWindow.isDestroyed()) authWindow.close();
@@ -177,6 +214,11 @@ function createWindow() {
     if (!web.isDestroyed()) window.loadURL(url).catch(() => {});
   };
   const openProviderSignIn = (targetUrl) => {
+    if (providerFromNavigation(targetUrl) === "google") {
+      if (authWindow && !authWindow.isDestroyed()) authWindow.close();
+      void browserAuth.start();
+      return;
+    }
     const now = Date.now();
     if (authWindow && !authWindow.isDestroyed() && targetUrl === lastProviderUrl && now - lastProviderAt < 1500) {
       authWindow.show();
@@ -204,17 +246,26 @@ function createWindow() {
       });
       const popup = authWindow;
       const popupWeb = popup.webContents;
-      const follow = (event, url) => {
-        const decision = authWindowDecision(url);
-        if (decision === "provider") return;
-        event.preventDefault();
-        if (decision === "app") finishProviderSignIn(url);
+      let blockedNotice = false;
+      const showBlocked = () => {
+        if (blockedNotice || popup.isDestroyed()) return;
+        blockedNotice = true;
+        void dialog.showMessageBox(popup, {
+          type: "info", title: "Sign-in could not continue",
+          message: "The sign-in provider requested an unsupported page.",
+          detail: "Close this sign-in window and try again, or use email and password in MySession.",
+          buttons: ["OK"],
+        }).catch(() => {}).finally(() => { blockedNotice = false; });
       };
+      const follow = createAuthNavigationHandler({ finish: finishProviderSignIn, blocked: showBlocked });
       popupWeb.on("will-navigate", follow);
       popupWeb.on("will-redirect", follow);
       popupWeb.setWindowOpenHandler(({ url }) => {
         const decision = authWindowDecision(url);
-        if (decision === "block") return { action: "deny" };
+        if (decision === "block") {
+          setImmediate(showBlocked);
+          return { action: "deny" };
+        }
         setImmediate(() => {
           if (popup.isDestroyed()) return;
           if (decision === "app") finishProviderSignIn(url);
@@ -289,7 +340,9 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.setAppUserModelId("club.mysession.desktop");
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
+    const authLink = argv.find(value => value.startsWith("mysession://"));
+    if (authLink) void receiveAuthLink(authLink);
     const window = BrowserWindow.getAllWindows()[0];
     if (!window) return;
     window.show();
@@ -297,6 +350,8 @@ if (!app.requestSingleInstanceLock()) {
     window.focus();
   });
   app.on("before-quit", () => { quitting = true; });
+  app.on("open-url", (event, url) => { event.preventDefault(); void receiveAuthLink(url); });
+  if (app.isPackaged) app.setAsDefaultProtocolClient("mysession");
   app.whenReady().then(createWindow);
   app.on("window-all-closed", () => app.quit());
 }

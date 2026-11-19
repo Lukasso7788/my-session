@@ -25,7 +25,13 @@ function providerFromNavigation(value) {
     return PROVIDERS.has(provider) ? provider : null;
   }
   if (host === "accounts.google.com") return "google";
-  if (host === "discord.com" && url.pathname.startsWith("/api/oauth2/")) return "discord";
+  if (host === "discord.com" && (
+    url.pathname.startsWith("/api/oauth2/") ||
+    url.pathname === "/oauth2/authorize" ||
+    url.pathname === "/login" ||
+    url.pathname === "/register" ||
+    url.pathname === "/login/reset"
+  )) return "discord";
   if ((host === "facebook.com" || host === "www.facebook.com") && url.pathname.includes("/dialog/oauth")) {
     return "facebook";
   }

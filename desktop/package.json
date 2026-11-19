@@ -1,11 +1,12 @@
 {
   "name": "mysession-desktop",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "MySession desktop for Windows",
   "author": "MySession",
   "private": true,
   "main": "main.cjs",
   "scripts": {
+    "test": "node --test *.test.mjs",
     "start": "electron .",
     "dist:win": "electron-builder --win nsis --publish never"
   },
@@ -15,11 +16,21 @@
   },
   "build": {
     "appId": "club.mysession.desktop",
+    "protocols": [
+      {
+        "name": "MySession sign-in",
+        "schemes": [
+          "mysession"
+        ]
+      }
+    ],
     "productName": "MySession",
     "artifactName": "MySession-Setup-${version}.${ext}",
     "files": [
       "main.cjs",
       "logout.cjs",
+      "auth-window-navigation.cjs",
+      "browser-auth.cjs",
       "oauth-protocol.cjs",
       "screen-picker.cjs",
       "picker-preload.cjs",

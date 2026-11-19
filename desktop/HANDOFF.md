@@ -203,3 +203,64 @@ entered: successful credential authentication, refresh persistence, authenticate
 logout and post-login room/camera/microphone flow remain to be user-verified.
 Installer registration/relaunch must still be checked after UAC approval.
 This version was built locally; no merge to main or GitHub release claimed.
+
+## OAuth repair 0.4.0 — latest continuation (2026-11-19)
+This section supersedes earlier notes proposing embedded Google OAuth. Owner
+approved system-browser Google consent with automatic return to Desktop. Work
+remains managed in Codex at C:/projects/mysession-desktop-release, branch
+codex/desktop-in-app-auth. No further task is delegated to Cursor.
+
+Confirmed email/password login does NOT prove Google login. Do not conflate them.
+Discord's /login and /oauth2/authorize routes were missing from the allowlist;
+they are now supported alongside /api/oauth2/authorize. Modern Electron event.url
+is used (legacy positional URL only as fallback). Blocked auth pages now display
+a generic error; callback URLs/codes/passwords/tokens are never logged.
+
+Google uses browser-auth.cjs in the main process: crypto-random 32-byte verifier,
+S256 PKCE challenge, independent 32-byte state, five-minute in-memory attempt,
+exact mysession://oauth/callback host/path, state matching and one-shot code
+exchange before adoption. Starting another attempt or logging out invalidates
+previous callbacks. No server keys. api/desktop-auth-config.ts exposes ONLY
+VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY (anon/publishable validated), already
+public in the web bundle; never fallback to service-role configuration.
+Browser returns via public/desktop-auth.html + desktop-auth.js, carrying only the
+short-lived code and random state, with no referrer, no analytics, restrictive
+CSP, and immediate history cleanup. OS protocol handler is registered by the
+NSIS installer and app. Code redemption is POST to the pinned production
+Supabase /auth/v1/token?grant_type=pkce. Tokens remain in the desktop process,
+then enter the existing site's /auth/callback URL FRAGMENT (not HTTP query)
+which the existing SDK consumes/clears and persists in persist:mysession.
+The browser never receives desktop access/refresh tokens or the PKCE verifier.
+Callback after process exit/restart is rejected: start a new login from the app.
+
+Required hosted pieces: api/desktop-auth-config.ts, public/desktop-auth.html,
+public/desktop-auth.js. Supabase Authentication > URL Configuration must allow
+https://mysession.club/desktop-auth.html** (endpoint plus state query parameters).
+Browser security settings deny access to Supabase, so owner was asked to add
+this exact entry manually; DO NOT route around that saved browser restriction.
+Google's existing provider client/callback stays unchanged. No database migrations.
+
+Verification: ten desktop unit tests, plus tests/desktopAuthConfig.test.mjs
+(public anon permitted, service-role rejected), syntax checks and NSIS build.
+Real Google/Discord credential consent, automatic return and post-login room
+remain unverified until hosted callback is deployed, allowlisted, new installer
+installed and owner signs in. CI now runs npm test and publishes 0.4.<run> to
+avoid downgrade compared with the local 0.4.0 build. Unsigned local installer:
+desktop/dist-0.4.0/MySession-Setup-0.4.0.exe.
+
+Project-wide architecture navigation: React 18/Vite 7/TypeScript web app in src/,
+React Router routes in App.tsx, account session in context/AuthContext.tsx,
+Supabase singleton/storage in lib/supabase.ts and authSessionStorage.ts,
+OAuth entry lib/oauthRedirect.ts, callback pages/AuthCallback.tsx. Supabase
+provides Postgres/Auth/Realtime/Storage; API routes in api/ run on Vercel.
+LiveKit room UI src/pages/livekit, room scheduling/components/SessionCard.tsx;
+Stripe checkout/webhooks/reconciliation in api/ and api/_lib/, entitlements
+user_entitlements. Email/cron automation and Cloudflare worker are separate.
+The desktop npm package embeds the live HTTPS site, not a stale frontend bundle.
+Refresh/release of web and native shell are independent. Retain production URLs,
+profile storage and native sandbox/camera/screen-picker constraints. Full older
+service navigation is docs/my-session-project-context.md, historical where stale.
+No billing, music, FocusShield, session scheduling or DB records changed here.
+Rollback: revert OAuth repair commit and rebuild desktop; remove only the new
+callback allowlist entry if retiring this browser flow. Existing email/password
+and ordinary website login remain unchanged.
