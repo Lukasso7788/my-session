@@ -24,7 +24,7 @@ function createBrowserAuth({ fetchConfig, exchange, openExternal, adopt, failed,
       url.searchParams.set("redirect_to", redirect.href);
       url.searchParams.set("code_challenge", crypto.createHash("sha256").update(verifier).digest("base64url"));
       url.searchParams.set("code_challenge_method", "s256");
-      pending = { state, verifier, config, expires: now() + 5 * 60_000 };
+      pending = { state, verifier, config, generation: attempt, expires: now() + 5 * 60_000 };
       await openExternal(url.href);
     } catch {
       pending = null;
@@ -42,6 +42,7 @@ function createBrowserAuth({ fetchConfig, exchange, openExternal, adopt, failed,
     pending = null; // Consume before the first await: no replay/racing callbacks.
     try {
       const tokens = await exchange(current.config, code, current.verifier);
+      if (current.generation !== generation) return true;
       if (!tokens.access_token || !tokens.refresh_token) throw new Error("session");
       await adopt(tokens);
     } catch {

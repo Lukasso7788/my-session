@@ -39,3 +39,26 @@ test('exchange failure reports generic error without exposing callback data',asy
   await flow.receive('mysession://oauth/callback?code=test&state='+state);
   assert.equal(failures.length,1); assert.ok(!failures[0].includes('secret'));
 });
+
+test('logout while public configuration is loading cancels the browser attempt', async () => {
+  let resolveConfig;
+  const opened=[];
+  const flow=createBrowserAuth({fetchConfig:()=>new Promise(resolve=>{resolveConfig=resolve}),openExternal:async value=>opened.push(value),exchange:()=>assert.fail(),adopt:()=>assert.fail(),failed:()=>assert.fail()});
+  const starting=flow.start();
+  flow.cancel();
+  resolveConfig({url:'https://cxqgzcjsjyszcbcbdusp.supabase.co',anonKey:'public'});
+  await starting;
+  assert.deepEqual(opened,[]);
+});
+
+test('logout during token exchange prevents a late response from signing back in',async()=>{
+  let finishExchange,target;
+  const adopted=[];
+  const flow=createBrowserAuth({fetchConfig:async()=>({url:'https://cxqgzcjsjyszcbcbdusp.supabase.co',anonKey:'public'}),openExternal:async url=>{target=new URL(url)},exchange:()=>new Promise(resolve=>{finishExchange=resolve}),adopt:async tokens=>adopted.push(tokens),failed:()=>assert.fail()});
+  await flow.start();
+  const state=new URL(target.searchParams.get('redirect_to')).searchParams.get('desktop_state');
+  const receiving=flow.receive('mysession://oauth/callback?code=test&state='+state);
+  flow.cancel(); finishExchange({access_token:'test',refresh_token:'test'});
+  await receiving;
+  assert.deepEqual(adopted,[]);
+});
