@@ -62,7 +62,7 @@ function createWindow() {
   const siteSession = session.fromPartition("persist:mysession");
   const browserAuth = createBrowserAuth({
     fetchConfig: async () => {
-      const response = await fetch(`${APP_ORIGIN}/api/desktop-auth-config`, { signal: AbortSignal.timeout(15000), redirect: "error" });
+      const response = await fetch(`${APP_ORIGIN}/desktop-auth-config.json`, { signal: AbortSignal.timeout(15000), redirect: "error", cache: "no-store" });
       if (!response.ok) throw new Error("config");
       return response.json();
     },
