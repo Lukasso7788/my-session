@@ -39,7 +39,7 @@ jobs:
           node --check update.js
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Set unique release version
-        run: npm version "0.4.$env:GITHUB_RUN_NUMBER" --no-git-tag-version
+        run: npm version "0.4.$env:GITHUB_RUN_NUMBER" --no-git-tag-version --allow-same-version
       - name: Build Windows installer
         run: npm run dist:win
       - name: Publish desktop update feed

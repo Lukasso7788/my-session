@@ -264,3 +264,22 @@ No billing, music, FocusShield, session scheduling or DB records changed here.
 Rollback: revert OAuth repair commit and rebuild desktop; remove only the new
 callback allowlist entry if retiring this browser flow. Existing email/password
 and ordinary website login remain unchanged.
+
+## Final static-hosting correction (supersedes config API above)
+The first Vercel preview failed because a 13th serverless function exceeded the
+Hobby limit. api/desktop-auth-config.ts has been REMOVED. Vite now emits
+/desktop-auth-config.json using scripts/desktop-auth-config.mjs; only already
+public VITE_ values are eligible and server-role/secret keys are rejected.
+The desktop fetches this static JSON with no-store. No extra function is created.
+
+Current local installer is desktop/dist-0.4.4/MySession-Setup-0.4.4.exe.
+Twelve desktop tests plus one public config test pass; syntax/build checks pass.
+Desktop main commits: 7f8c3a4, 6e12be1, 3aeea41. Main is not Vercel production:
+current live deployment was from codex/focusshield-downloads at 96c728d, so do
+NOT promote the older main frontend. A separate worktree at
+C:/projects/mysession-desktop-hosted, branch codex/desktop-oauth-hosted, d831aa8,
+is based on that live source and changes only the static callback, Vite public
+config generator, tests and continuation docs. Its verified preview should be
+promoted to serve callback assets without reverting the existing live website.
+The saved Supabase browser denial still blocks adding the redirect; owner must
+save https://mysession.club/desktop-auth.html** in Auth URL Configuration.
