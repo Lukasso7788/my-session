@@ -54,8 +54,12 @@ export default function FocusShieldPage() {
     const desktopRedirect = `/focus-shield?desktopConnect=${encodeURIComponent(desktopConnectNonce)}`;
 
     return (
-        <main className="min-h-screen bg-white text-gray-950">
-            <div className="mx-auto flex max-w-5xl flex-col gap-8 px-6 py-14">
+        <main className="min-h-screen bg-[#f5f6f8] text-[#202124]">
+            <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8 md:py-12">
+                <nav className="mb-10 flex items-center justify-between" aria-label="FocusShield navigation">
+                    <Link to="/" className="text-base font-semibold text-[#5286f6]">MySession</Link>
+                    <Link to="/sessions" className="rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-medium hover:bg-gray-50">Back to MySession</Link>
+                </nav>
                 {desktopConnectState !== "idle" && (
                     <section className="rounded-[24px] border border-[#BEEBC1] bg-[#F1FCF2] px-6 py-5 text-[#173D1A]">
                         {desktopConnectState === "connecting" && (
@@ -76,124 +80,71 @@ export default function FocusShieldPage() {
                         )}
                     </section>
                 )}
-                <section className="rounded-[32px] border border-gray-200 bg-white p-8 shadow-sm md:p-10">
-                    <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-sm font-medium text-gray-700">
-                        <img src="/icons/focus-shield.svg" className="h-4 w-4" alt="" />
-                        <span>FocusShield by MySession</span>
+                <header className="mb-9 max-w-3xl">
+                    <div className="mb-5 flex items-center gap-3">
+                        <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#5286f6]"><img src="/icons/focus-shield.svg" className="h-7 w-7" alt="" /></span>
+                        <span className="text-sm font-semibold text-gray-600">FocusShield by MySession</span>
                     </div>
+                    <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">FocusShield</h1>
+                    <p className="mt-5 text-lg leading-8 text-gray-600">Block distracting apps and websites, plan focus time, and get help from AI Coach. Start with the FocusShield app for Windows.</p>
+                </header>
 
-                    <div className="flex flex-col gap-8 md:flex-row md:items-center md:justify-between">
-                        <div>
-                            <h1 className="text-4xl font-bold tracking-tight text-gray-950 md:text-5xl">
-                                FocusShield
-                            </h1>
-
-                            <p className="mt-4 max-w-2xl text-xl font-medium leading-8 text-gray-800">
-                                Instant website and page blocker for deep work.
-                            </p>
-
-                            <p className="mt-4 max-w-2xl text-base leading-7 text-gray-600">
-                                Block distracting websites, social feeds, news, YouTube Shorts,
-                                or even one specific YouTube channel while you work in MySession.
-                            </p>
-
-                            <div className="mt-8 flex flex-wrap gap-3">
-                                <a
-                                    href="/downloads/focusshield-extension.zip"
-                                    download
-                                    className="inline-flex items-center gap-2 rounded-2xl bg-gray-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-gray-800"
-                                >
-                                    <img src="/icons/install-extension.svg" className="h-5 w-5" alt="" />
-                                    <span>Download Chrome / Edge Extension</span>
-                                </a>
-
-                                <a
-                                    href="/sessions"
-                                    className="rounded-2xl border border-gray-300 px-5 py-3 text-sm font-semibold text-gray-900 transition hover:bg-gray-50"
-                                >
-                                    Back to MySession
-                                </a>
-                            </div>
-
-                            <p className="mt-3 max-w-2xl text-xs leading-5 text-gray-500">
-                                Dev install: download the zip, unzip it, open Chrome Extensions,
-                                click “Load unpacked”, and select the nested{" "}
-                                <span className="font-mono font-semibold text-gray-700">
-                                    focusshield-extension/extension
-                                </span>{" "}
-                                folder — not the top-level unzipped folder.
-                            </p>
-                        </div>
-
-                        <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-[32px] border border-gray-200 bg-gray-50 md:h-36 md:w-36">
-                            <img src="/icons/focus-shield.svg" className="h-16 w-16 md:h-20 md:w-20" alt="FocusShield" />
-                        </div>
-                    </div>
+                <section className="grid gap-5 lg:grid-cols-[1.35fr_1fr]" aria-label="Download FocusShield">
+                    <article className="rounded-3xl bg-[#202b43] p-7 text-white sm:p-8" aria-labelledby="desktop-download-title">
+                        <p className="text-sm font-medium text-[#b6ceff]">The FocusShield desktop app</p>
+                        <h2 id="desktop-download-title" className="mt-3 text-3xl font-semibold">Your focus, protected on Windows.</h2>
+                        <a href="https://github.com/Lukasso7788/focus-shield-releases/releases/download/v0.4.12/FocusShield-Setup-0.4.12.exe" className="mt-7 inline-flex items-center justify-center rounded-full bg-[#5286f6] px-6 py-3.5 text-base font-semibold text-white transition hover:bg-[#4477e3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Download FocusShield for Windows</a>
+                        <p className="mt-4 text-sm leading-6 text-[#b6c4de]">Version 0.4.12 · Windows 10 / 11 · 64-bit · About 544 MB</p>
+                        <p className="mt-4 text-base leading-7 text-[#d1daeb]">Block selected applications, run independent focus timers, save block lists and schedules, or work on one task in Hyper Focus. AI Coach can remind you about distractions and suggest a next step.</p>
+                        <a href="#install-desktop" className="mt-3 inline-block text-sm font-medium text-white underline underline-offset-4">Windows installation instructions</a>
+                    </article>
+                    <article className="rounded-3xl border border-gray-200 bg-white p-7 sm:p-8" aria-labelledby="extension-download-title">
+                        <p className="text-sm font-medium text-[#4678d8]">Add website blocking in your browser</p>
+                        <h2 id="extension-download-title" className="mt-3 text-2xl font-semibold">Chrome &amp; Edge extension</h2>
+                        <p className="mt-4 text-base leading-7 text-gray-600">Install the companion extension to block websites and specific pages, see the countdown in blocked tabs, and sync with the desktop app.</p>
+                        <a href="/downloads/focusshield-extension.zip" download className="mt-7 inline-flex items-center justify-center rounded-full border border-gray-300 px-5 py-3 text-base font-semibold transition hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#5286f6]">Download browser extension</a>
+                        <p className="mt-4 text-sm leading-6 text-gray-500">Version 0.2.5 · ZIP · Manual installation</p>
+                        <a href="#install-extension" className="mt-3 inline-block text-sm font-medium text-[#4678d8] underline underline-offset-4">Browser installation instructions</a>
+                    </article>
                 </section>
 
-                <section className="grid gap-4 md:grid-cols-3">
-                    <div className="rounded-2xl border border-gray-200 p-5">
-                        <h2 className="font-semibold text-gray-950">Instant blocking</h2>
-                        <p className="mt-2 text-sm leading-6 text-gray-600">
-                            Already-open distracting tabs are redirected immediately.
-                        </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-gray-200 p-5">
-                        <h2 className="font-semibold text-gray-950">Page-level control</h2>
-                        <p className="mt-2 text-sm leading-6 text-gray-600">
-                            Block all of YouTube, only Shorts, or one specific channel.
-                        </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-gray-200 p-5">
-                        <h2 className="font-semibold text-gray-950">MySession-native</h2>
-                        <p className="mt-2 text-sm leading-6 text-gray-600">
-                            Built as a focus layer for MySession deep work sessions.
-                        </p>
-                    </div>
+                <section className="mt-6 grid gap-4 md:grid-cols-3" aria-label="How FocusShield helps">
+                    {[
+                        ["Block what pulls you away", "Choose Windows applications, websites or individual URLs. Website blocking uses the browser extension."],
+                        ["Make focus a routine", "Save reusable lists, schedule focus windows and run multiple independent sessions. Keep the app running in the tray."],
+                        ["Stay on track", "Use distraction reminders and task advice together. Choose “Install package for AI usage” in the app to get started (about 3.4 GB download)."],
+                    ].map(([title, description]) => <article key={title} className="rounded-2xl border border-gray-200 bg-white p-6"><h2 className="text-base font-semibold">{title}</h2><p className="mt-3 text-base leading-7 text-gray-600">{description}</p></article>)}
                 </section>
 
-                <section className="rounded-3xl bg-gray-50 p-6">
-                    <h2 className="text-xl font-semibold text-gray-950">
-                        How to install
-                    </h2>
-
-                    <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm leading-6 text-gray-700">
-                        <li>Click “Download Chrome / Edge Extension”.</li>
-                        <li>Unzip the downloaded file.</li>
-                        <li>
-                            Open{" "}
-                            <span className="font-mono">chrome://extensions</span>{" "}
-                            or <span className="font-mono">edge://extensions</span>.
-                        </li>
-                        <li>Enable Developer mode.</li>
-                        <li>Click “Load unpacked”.</li>
-                        <li>
-                            Select the nested{" "}
-                            <span className="font-mono font-semibold text-gray-950">
-                                focusshield-extension/extension
-                            </span>{" "}
-                            folder.
-                        </li>
-                        <li>
-                            Do not select the top-level unzipped folder. Chrome / Edge needs the
-                            folder that directly contains the extension files, including{" "}
-                            <span className="font-mono">manifest.json</span>.
-                        </li>
+                <section id="install-desktop" className="mt-12 scroll-mt-6 rounded-3xl border border-gray-200 bg-white p-7 sm:p-8" aria-labelledby="install-desktop-title">
+                    <p className="text-sm font-medium text-[#4678d8]">Start here</p>
+                    <h2 id="install-desktop-title" className="mt-2 text-2xl font-semibold">Install the Windows app</h2>
+                    <ol className="mt-6 list-decimal space-y-4 pl-6 text-base leading-7 text-gray-600 marker:font-semibold marker:text-[#4678d8]">
+                        <li>Click <strong className="text-gray-900">Download FocusShield for Windows</strong> and wait for the EXE to finish downloading.</li>
+                        <li>Run <code className="break-all text-sm text-gray-900">FocusShield-Setup-0.4.12.exe</code> and follow the installer. If FocusShield is already open, finish your active sessions and close it before upgrading.</li>
+                        <li>Open FocusShield from your desktop or Start menu. Choose the apps to block, set a duration, then start your session.</li>
+                        <li>For website blocking, install the extension below in every Chrome or Edge profile you use. Keep FocusShield running, including in the system tray.</li>
+                        <li>To use AI Coach, open its panel and click <strong className="text-gray-900">Install package for AI usage</strong>. Once the download finishes, enter your task and start coaching.</li>
+                        <li>Optionally click <strong className="text-gray-900">Connect MySession</strong> in the app and sign in to sync saved lists and policies between your computers.</li>
                     </ol>
-
-                    <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-                        <div className="font-semibold">Important</div>
-                        <p className="mt-1">
-                            If “Load unpacked” does nothing or shows a manifest error, you probably
-                            selected the wrong folder. Go one level deeper and choose{" "}
-                            <span className="font-mono font-semibold">
-                                focusshield-extension/extension
-                            </span>.
-                        </p>
-                    </div>
+                    <div className="mt-6 rounded-2xl bg-[#edf3ff] p-5 text-base leading-7 text-[#2a426e]"><strong>Future desktop updates</strong><p className="mt-1">When a new release is available, FocusShield shows “New version available”. Click “Click to update” to download it, then “Restart to install” after your active sessions finish.</p></div>
                 </section>
+
+                <section id="install-extension" className="mt-6 scroll-mt-6 rounded-3xl border border-gray-200 bg-white p-7 sm:p-8" aria-labelledby="install-extension-title">
+                    <h2 id="install-extension-title" className="text-2xl font-semibold">Install the browser extension</h2>
+                    <p className="mt-3 text-base leading-7 text-gray-600">This is an unpacked extension for Chrome and Edge. The ZIP is not a Chrome Web Store installer.</p>
+                    <ol className="mt-6 list-decimal space-y-4 pl-6 text-base leading-7 text-gray-600 marker:font-semibold marker:text-[#4678d8]">
+                        <li><a href="/downloads/focusshield-extension.zip" download className="font-semibold text-[#4678d8] underline underline-offset-4">Download the extension ZIP</a> and extract it to a permanent folder. Keep the extracted files after installation.</li>
+                        <li>Open <code className="break-all text-sm text-gray-900">chrome://extensions</code> in Chrome, or <code className="break-all text-sm text-gray-900">edge://extensions</code> in Edge.</li>
+                        <li>Turn on <strong className="text-gray-900">Developer mode</strong>, then click <strong className="text-gray-900">Load unpacked</strong>.</li>
+                        <li>Select the extracted <code className="text-sm text-gray-900">focusshield-extension</code> folder. This folder directly contains <code className="text-sm text-gray-900">manifest.json</code>, <code className="text-sm text-gray-900">service_worker.js</code> and <code className="text-sm text-gray-900">popup.html</code>.</li>
+                        <li>Make sure <strong className="text-gray-900">FocusShield by MySession</strong> is enabled. Open the desktop app and check that its browser-extension indicator is connected.</li>
+                        <li>Start a short session with a distracting site selected, then open that site to check the blocking screen. Repeat installation in each browser profile you want to protect.</li>
+                    </ol>
+                    <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-5 text-base leading-7 text-gray-600"><strong className="text-gray-900">If Chrome or Edge reports a missing manifest</strong><p className="mt-1">Select the folder that actually contains <code className="text-sm">manifest.json</code>, not the ZIP or its parent folder. An older download may include an additional nested folder. To update an existing unpacked copy, replace its files in the same folder, then click Reload on the browser’s Extensions page.</p></div>
+                </section>
+
+                <footer className="py-8 text-sm leading-6 text-gray-500">FocusShield is a Windows app with a companion browser extension. Local blocking works without a MySession account; connecting an account enables cloud sync.</footer>
             </div>
         </main>
     );
