@@ -1,6 +1,5 @@
 const ALLOWED_ORIGINS = new Set(["https://mysession.club", "https://www.mysession.club"]);
 const PROVIDERS = new Set(["google", "discord", "facebook"]);
-const AUTH_WINDOW_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 function isMySessionUrl(value) {
   try {
@@ -20,7 +19,8 @@ function providerFromNavigation(value) {
   }
   if (url.protocol !== "https:" || url.username || url.password) return null;
   const host = url.hostname.toLowerCase();
-  if (host.endsWith(".supabase.co") && url.pathname === "/auth/v1/authorize") {
+  if (host === "cxqgzcjsjyszcbcbdusp.supabase.co" && url.pathname === "/auth/v1/callback") return "callback";
+  if (host === "cxqgzcjsjyszcbcbdusp.supabase.co" && url.pathname === "/auth/v1/authorize") {
     const provider = url.searchParams.get("provider");
     return PROVIDERS.has(provider) ? provider : null;
   }
@@ -46,7 +46,6 @@ function accountUrl(currentUrl, kind) {
 
 module.exports = {
   ALLOWED_ORIGINS,
-  AUTH_WINDOW_USER_AGENT,
   accountUrl,
   authWindowDecision,
   isMySessionUrl,

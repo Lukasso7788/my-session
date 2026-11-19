@@ -165,3 +165,41 @@ The latter avoided corrupted checkpoint refs in the former parent worktree.
 The first manual installer is dist-0.3.0/MySession-Setup-0.3.0.exe. Once that
 is installed, the app can consume future desktop-latest updates. Versions
 0.2.0 and 0.2.1 need this one manual upgrade.
+
+## Local continuation — 0.3.2 (Codex, 2026-11-19)
+Owner requested development and repository management here, not in Cursor.
+Active checkout C:/projects/mysession-desktop-release, branch codex/desktop-in-app-auth
+starts from the existing PR #14 and adds local fixes. Older sections below/above
+are historical where they conflict with this section.
+
+Login and registration use production /login and /register inside the main
+sandboxed window. Provider OAuth uses a sandboxed child window sharing
+persist:mysession; its return to MySession navigates the main window. The allowed
+Supabase authorization/callback host is now restricted to the actual production
+project cxqgzcjsjyszcbcbdusp.supabase.co. The prior implementation blocked the
+provider callback and accepted arbitrary Supabase hosts; both are corrected.
+Removed the fixed Chrome user-agent override. Do not disguise Electron or bypass
+provider restrictions: Google embedded-browser acceptance is NOT guaranteed.
+Email/password login remains available inside the application.
+
+Native app menu and tray now include Log out, with a confirmation that it leaves
+any active room. logout.cjs unloads the remote page to about:blank first, closes
+the provider window, clears this app partition's cookies/localstorage/IndexedDB/
+service workers/cache storage and HTTP auth cache, then loads /login. Main-window
+navigation permits about:blank only while this logout is in progress. This is a
+local desktop sign-out, not server-wide token revocation, browser logout, or an
+account change. Existing website signOut remains available in its profile menu.
+No server keys, credentials, DB migrations or production authentication settings
+were added/changed. Remote pages still have no Node or preload access.
+
+Build: npm ci; node --test oauth-protocol.test.mjs logout.test.mjs (4 passing);
+node --check main.cjs; npm run dist:win. Windows installer generated at
+C:/projects/mysession-desktop-release/desktop/dist/MySession-Setup-0.3.2.exe.
+Build is unsigned. Local installer started, waiting for Windows UAC approval.
+Before update, registry reports all-users MySession 0.2.1 in C:/Program Files/MySession.
+Observed real packaged 0.3.2 rendering the production login email/password form
+and opening Google's identifier page in a child app window. No credentials were
+entered: successful credential authentication, refresh persistence, authenticated
+logout and post-login room/camera/microphone flow remain to be user-verified.
+Installer registration/relaunch must still be checked after UAC approval.
+This version was built locally; no merge to main or GitHub release claimed.

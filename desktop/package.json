@@ -1,6 +1,6 @@
 {
   "name": "mysession-desktop",
-  "version": "0.3.0",
+  "version": "0.3.2",
   "description": "MySession desktop for Windows",
   "author": "MySession",
   "private": true,
@@ -19,6 +19,7 @@
     "artifactName": "MySession-Setup-${version}.${ext}",
     "files": [
       "main.cjs",
+      "logout.cjs",
       "oauth-protocol.cjs",
       "screen-picker.cjs",
       "picker-preload.cjs",

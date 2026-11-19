@@ -4,7 +4,8 @@ const path = require("node:path");
 const { setupUpdates } = require("./updater.cjs");
 const { attachContextMenu } = require("./context-menu.cjs");
 const { chooseScreen } = require("./screen-picker.cjs");
-const { accountUrl, authWindowDecision, isMySessionUrl, AUTH_WINDOW_USER_AGENT } = require("./oauth-protocol.cjs");
+const { logoutDesktop } = require("./logout.cjs");
+const { accountUrl, authWindowDecision, isMySessionUrl } = require("./oauth-protocol.cjs");
 let tray;
 let quitting = false;
 
@@ -112,6 +113,7 @@ function createWindow() {
     { label: "Show MySession", click: () => { window.show(); window.focus(); } },
     { label: "Log in", click: () => openAccount("login") },
     { label: "Create account", click: () => openAccount("register") },
+    { label: "Log out", click: () => void logOut() },
     { type: "separator" },
     { label: "Quit MySession", click: () => app.quit() },
   ]));
@@ -135,6 +137,26 @@ function createWindow() {
   }
 
   let authWindow = null;
+  let loggingOut = false;
+  async function logOut() {
+    if (loggingOut) return;
+    const { response } = await dialog.showMessageBox(window, {
+      type: "question", message: "Log out of MySession?",
+      detail: "This leaves your current room and signs out of this desktop app only.",
+      buttons: ["Log out", "Cancel"], defaultId: 1, cancelId: 1,
+    });
+    if (response !== 0 || window.isDestroyed()) return;
+    loggingOut = true;
+    try {
+      await logoutDesktop(window, siteSession, () => {
+        if (authWindow && !authWindow.isDestroyed()) authWindow.close();
+        mediaGranted.clear();
+      });
+      showApp();
+    } catch {
+      if (!window.isDestroyed()) await dialog.showMessageBox(window, { type: "error", message: "Could not finish logging out. Please try again." });
+    } finally { loggingOut = false; }
+  }
   let lastProviderUrl = "";
   let lastProviderAt = 0;
   const showApp = () => {
@@ -182,7 +204,6 @@ function createWindow() {
       });
       const popup = authWindow;
       const popupWeb = popup.webContents;
-      popupWeb.setUserAgent(AUTH_WINDOW_USER_AGENT);
       const follow = (event, url) => {
         const decision = authWindowDecision(url);
         if (decision === "provider") return;
@@ -220,6 +241,7 @@ function createWindow() {
     });
   };
   const acceptNavigation = (url, isMainFrame) => {
+    if (loggingOut && url === "about:blank") return true;
     const decision = authWindowDecision(url);
     if (decision === "app") return true;
     if (!isMainFrame) return false;
@@ -250,6 +272,7 @@ function createWindow() {
       { label: "Sessions", accelerator: "Ctrl+Home", click: () => void openSessions(window) },
       { label: "Log in", accelerator: "Ctrl+L", click: () => openAccount("login") },
       { label: "Create account", click: () => openAccount("register") },
+      { label: "Log out", click: () => void logOut() },
       { label: "Check for updates", click: () => { void updates.check(); } },
       { label: "Open MySession in browser", click: () => { void shell.openExternal(sessionsUrl); } },
       { type: "separator" },

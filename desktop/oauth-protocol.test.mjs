@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  AUTH_WINDOW_USER_AGENT,
   accountUrl,
   authWindowDecision,
 } from "./oauth-protocol.cjs";
@@ -17,13 +16,13 @@ test("login and registration stay on the MySession origin already open in the ap
 });
 
 test("provider pages open inside the app window and other sites stay blocked", () => {
-  assert.equal(authWindowDecision("https://example.supabase.co/auth/v1/authorize?provider=google"), "provider");
-  assert.equal(authWindowDecision("https://project.supabase.co/auth/v1/authorize?provider=discord"), "provider");
+  assert.equal(authWindowDecision("https://cxqgzcjsjyszcbcbdusp.supabase.co/auth/v1/authorize?provider=google"), "provider");
+  assert.equal(authWindowDecision("https://cxqgzcjsjyszcbcbdusp.supabase.co/auth/v1/callback?code=example"), "provider");
+  assert.equal(authWindowDecision("https://untrusted.supabase.co/auth/v1/authorize?provider=google"), "block");
   assert.equal(authWindowDecision("https://accounts.google.com/o/oauth2/v2/auth?client_id=1"), "provider");
   assert.equal(authWindowDecision("https://discord.com/api/oauth2/authorize?client_id=1"), "provider");
   assert.equal(authWindowDecision("https://www.facebook.com/v18.0/dialog/oauth?client_id=1"), "provider");
   assert.equal(authWindowDecision("https://example.com/help"), "block");
   assert.equal(authWindowDecision("https://project.supabase.co/auth/v1/authorize?provider=apple"), "block");
   assert.equal(authWindowDecision("https://user:pass@mysession.club/login"), "block");
-  assert.equal(AUTH_WINDOW_USER_AGENT.includes("Electron"), false);
 });
