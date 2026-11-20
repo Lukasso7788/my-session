@@ -93,8 +93,8 @@ export default function FocusShieldPage() {
                     <article className="rounded-3xl bg-[#202b43] p-7 text-white sm:p-8" aria-labelledby="desktop-download-title">
                         <p className="text-sm font-medium text-[#b6ceff]">The FocusShield desktop app</p>
                         <h2 id="desktop-download-title" className="mt-3 text-3xl font-semibold">Your focus, protected on Windows.</h2>
-                        <a href="https://github.com/Lukasso7788/focus-shield-releases/releases/download/v0.4.12/FocusShield-Setup-0.4.12.exe" className="mt-7 inline-flex items-center justify-center rounded-full bg-[#5286f6] px-6 py-3.5 text-base font-semibold text-white transition hover:bg-[#4477e3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Download FocusShield for Windows</a>
-                        <p className="mt-4 text-sm leading-6 text-[#b6c4de]">Version 0.4.12 · Windows 10 / 11 · 64-bit · About 544 MB</p>
+                        <a href="https://github.com/Lukasso7788/focus-shield-releases/releases/download/v0.4.13/FocusShield-Setup-0.4.13.exe" className="mt-7 inline-flex items-center justify-center rounded-full bg-[#5286f6] px-6 py-3.5 text-base font-semibold text-white transition hover:bg-[#4477e3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Download FocusShield for Windows</a>
+                        <p className="mt-4 text-sm leading-6 text-[#b6c4de]">Version 0.4.13 · Windows 10 / 11 · 64-bit · About 544 MB</p>
                         <p className="mt-4 text-base leading-7 text-[#d1daeb]">Block selected applications, run independent focus timers, save block lists and schedules, or work on one task in Hyper Focus. AI Coach can remind you about distractions and suggest a next step.</p>
                         <a href="#install-desktop" className="mt-3 inline-block text-sm font-medium text-white underline underline-offset-4">Windows installation instructions</a>
                     </article>
@@ -121,9 +121,10 @@ export default function FocusShieldPage() {
                     <h2 id="install-desktop-title" className="mt-2 text-2xl font-semibold">Install the Windows app</h2>
                     <ol className="mt-6 list-decimal space-y-4 pl-6 text-base leading-7 text-gray-600 marker:font-semibold marker:text-[#4678d8]">
                         <li>Click <strong className="text-gray-900">Download FocusShield for Windows</strong> and wait for the EXE to finish downloading.</li>
-                        <li>Run <code className="break-all text-sm text-gray-900">FocusShield-Setup-0.4.12.exe</code> and follow the installer. If FocusShield is already open, finish your active sessions and close it before upgrading.</li>
+                        <li>Run <code className="break-all text-sm text-gray-900">FocusShield-Setup-0.4.13.exe</code> and follow the installer. If FocusShield is already open, finish your active sessions and close it before upgrading.</li>
                         <li>Open FocusShield from your desktop or Start menu. Choose the apps to block, set a duration, then start your session.</li>
                         <li>For website blocking, install the extension below in every Chrome or Edge profile you use. Keep FocusShield running, including in the system tray.</li>
+                        <li>Need to stop Locked Mode early? In the Windows app, use <strong className="text-gray-900">Cancel Locked Mode (use 1)</strong>. You start with one cancellation and earn one every 7 days; unused cancellations stack on this computer.</li>
                         <li>To use AI Coach, open its panel and click <strong className="text-gray-900">Install package for AI usage</strong>. Once the download finishes, enter your task and start coaching.</li>
                         <li>Optionally click <strong className="text-gray-900">Connect MySession</strong> in the app and sign in to sync saved lists and policies between your computers.</li>
                     </ol>
