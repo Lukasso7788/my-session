@@ -344,5 +344,18 @@
     "subline": "Presence, check-ins and a room on your side.",
     "number": "27",
     "theme": "night"
+  },
+  {
+    "slug": "how-to-find-an-online-study-partner",
+    "photoId": 6937662,
+    "photographer": "Diva Plavalaguna",
+    "sourcePage": "https://www.pexels.com/photo/person-sitting-on-table-working-on-laptop-6937662/",
+    "photoDescription": "Overhead view of a person using a laptop for a video call at a wooden desk",
+    "category": "STUDY PARTNERS",
+    "headline": "A study partner who shows up",
+    "subline": "A clear invitation. A realistic plan.",
+    "number": "23",
+    "theme": "paper",
+    "compositionMethod": "Photograph crop only; no generated imagery or text overlay"
   }
 ]
