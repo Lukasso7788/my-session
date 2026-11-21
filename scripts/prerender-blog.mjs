@@ -132,7 +132,8 @@ function renderPage(page) {
   if (page.path === 'blog') {
     // Same published sources as the client: expose the article directory without JS.
     const cards = pages.filter(post => post.markdown).map(post => `<li><h2><a href="/${escapeAttribute(post.path)}">${escapeAttribute(post.headline)}</a></h2><p>${escapeAttribute(post.description)}</p></li>`).join('');
-    const content = `<main class="seo-prerender"><nav><a href="/">MySession</a></nav><h1>Body doubling and focus guides</h1><p>${description}</p><ul>${cards}</ul></main>`;
+    const directoryLink = `<p>Looking for tools people use alongside focus sessions? <a href="https://www.adhdproducts.directory/" rel="sponsored nofollow" data-directory-listing="67215caa-d6a7-46c0-ac91-8c59173186e0">ADHD Product Directory</a></p>`;
+    const content = `<main class="seo-prerender"><nav><a href="/">MySession</a></nav><h1>Body doubling and focus guides</h1><p>${description}</p>${directoryLink}<ul>${cards}</ul></main>`;
     const handoff = '<script id="seo-prerender-clear">(function(){var root=document.getElementById("root");if(root)root.innerHTML="";})();</script>';
     html = html.replace('<div id="root"></div>', `<div id="root">${content}</div>${handoff}`);
   }

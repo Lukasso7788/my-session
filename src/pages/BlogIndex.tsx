@@ -165,6 +165,23 @@ export default function BlogIndex() {
         </div>
       </section>
 
+      <section className="mx-auto max-w-[1180px] px-4 pb-2 sm:px-6">
+        <div className="rounded-[24px] bg-[#F5F5F5] px-6 py-6 sm:px-8">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5B9D61]">Resources</div>
+          <p className="mt-3 max-w-3xl text-[15px] leading-7 text-[#555]">
+            Looking for tools people use alongside focus sessions?{" "}
+            <a
+              href="https://www.adhdproducts.directory/"
+              rel="sponsored nofollow"
+              data-directory-listing="67215caa-d6a7-46c0-ac91-8c59173186e0"
+              className="font-medium text-[#245C29] underline decoration-[#81DB86] decoration-2 underline-offset-4"
+            >
+              ADHD Product Directory
+            </a>
+          </p>
+        </div>
+      </section>
+
       <section className="mx-auto max-w-[1180px] px-4 pb-16 sm:px-6">
         <PostCard post={featuredPost} featured />
 
