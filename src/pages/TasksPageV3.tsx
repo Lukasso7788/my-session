@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { GenerateTaskListDialog } from "../components/GenerateTaskListDialog";
+import TasksCalendarView from "../components/TasksCalendarView";
+import { toIsoDate } from "../lib/taskCalendar";
 import {
   loadEligibleTaskSessions,
   type TaskSessionOption,
@@ -341,7 +343,8 @@ export default function TasksPageV3() {
   const [recurringDbReady, setRecurringDbReady] = useState(true);
 
   const [pageMode, setPageMode] = useState<"tasks" | "recurring">("tasks");
-  const [utilityMode, setUtilityMode] = useState<"none" | "measurements">("none");
+  const [utilityMode, setUtilityMode] = useState<"none" | "measurements" | "calendar">("none");
+  const [selectedDay, setSelectedDay] = useState(() => toIsoDate(new Date()));
   const [activeListId, setActiveListId] = useState("all");
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [taskSearch, setTaskSearch] = useState("");
@@ -790,7 +793,7 @@ export default function TasksPageV3() {
           user_id: user.id,
           plan_id: planId,
           text,
-          target_date: null,
+          target_date: utilityMode === "calendar" ? selectedDay : null,
           session_id: sessionId || null,
           sort_order: maxSort + 1,
           completed: false,
@@ -803,6 +806,7 @@ export default function TasksPageV3() {
       setItems((current) => [...current, item]);
       setNewTaskText("");
       setTaskStatusFilter("all");
+      if (utilityMode === "calendar" && activeListId === "completed") setActiveListId("all");
       try {
         await supabase.from("panel_intentions").insert({
           user_id: user.id,
@@ -823,6 +827,19 @@ export default function TasksPageV3() {
     } finally {
       addTaskInFlightRef.current = false;
       setCreatingTask(false);
+    }
+  };
+
+  const setTaskTargetDate = async (item: FocusPlanItem, targetDate: string | null) => {
+    if (!requireAuth()) return;
+    setItems((current) => current.map((row) => (row.id === item.id ? { ...row, target_date: targetDate } : row)));
+    const { error } = await supabase
+      .from("focus_plan_items")
+      .update({ target_date: targetDate })
+      .eq("id", item.id)
+      .eq("user_id", user.id);
+    if (error) {
+      setItems((current) => current.map((row) => (row.id === item.id ? { ...row, target_date: item.target_date } : row)));
     }
   };
 
@@ -1028,7 +1045,14 @@ export default function TasksPageV3() {
     );
   }
 
-  const tasksTabActive = pageMode === "tasks" && utilityMode === "none";
+  const tasksTabActive = pageMode === "tasks" && utilityMode !== "measurements";
+  const calendarTasks = visibleItems.map((item) => ({
+    id: item.id,
+    text: item.text,
+    target_date: item.target_date,
+    completed: Boolean(item.completed),
+    listTitle: plans.find((plan) => plan.id === item.plan_id)?.title || "Task list",
+  }));
   const recurringTabActive = pageMode === "recurring" && utilityMode === "none";
 
   return (
@@ -1117,6 +1141,23 @@ export default function TasksPageV3() {
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  setPageMode("tasks");
+                  setUtilityMode((mode) => (mode === "calendar" ? "none" : "calendar"));
+                }}
+                className={[
+                  "inline-flex h-10 items-center gap-2 rounded-[10px] border px-4 text-[14px] font-medium transition",
+                  utilityMode === "calendar"
+                    ? "border-[#2F2F2F] bg-[#2F2F2F] text-white"
+                    : "border-[#D8D8D8] bg-white text-[#2F2F2F] hover:bg-[#F8F8F8]",
+                ].join(" ")}
+                aria-pressed={utilityMode === "calendar"}
+              >
+                <CalendarDays size={16} strokeWidth={1.8} />
+                Calendar
+              </button>
+              <button
+                type="button"
                 onClick={() => setUtilityMode((mode) => (mode === "measurements" ? "none" : "measurements"))}
                 className={[
                   "inline-flex h-10 w-11 items-center justify-center rounded-[10px] border transition",
@@ -1134,6 +1175,8 @@ export default function TasksPageV3() {
                   if (pageMode === "recurring") {
                     setUtilityMode("none");
                     setShowRecurringForm(true);
+                  } else if (utilityMode === "calendar") {
+                    window.setTimeout(() => quickAddRef.current?.focus(), 0);
                   } else {
                     focusAddTask();
                   }
@@ -1292,6 +1335,30 @@ export default function TasksPageV3() {
               <p className="text-[14px] text-[#717680]">Could not load your task lists. Please try again.</p>
               <button type="button" onClick={() => void reloadPlans()} className="rounded-full border border-[#2F2F2F] bg-white px-5 py-2.5 text-[13px] font-medium text-[#2F2F2F] hover:bg-[#F8F8F8]">Retry</button>
             </section>
+          ) : utilityMode === "calendar" ? (
+            <TasksCalendarView
+              tasks={calendarTasks}
+              selectedDay={selectedDay}
+              onSelectDay={setSelectedDay}
+              draft={newTaskText}
+              onDraftChange={(value) => { setNewTaskText(value); setTaskCreateError(null); }}
+              onAdd={() => void addTask()}
+              adding={creatingTask}
+              error={taskCreateError}
+              onToggle={(task) => {
+                const item = items.find((row) => row.id === task.id);
+                if (item) void toggleTaskCompleted(item);
+              }}
+              onDelete={(task) => {
+                const item = items.find((row) => row.id === task.id);
+                if (item) void deleteTask(item);
+              }}
+              onSchedule={(task, targetDate) => {
+                const item = items.find((row) => row.id === task.id);
+                if (item) void setTaskTargetDate(item, targetDate);
+              }}
+              inputRef={quickAddRef}
+            />
           ) : visibleItems.length === 0 ? (
             <section className="flex min-h-[560px] items-start justify-center pt-[130px]">
               <div className="w-full max-w-[440px] text-center">
@@ -1398,7 +1465,7 @@ export default function TasksPageV3() {
               activeListId === "all" ? "bg-[#F1F1F1]" : "hover:bg-[#F6F6F6]",
             ].join(" ")}>
               <span className="flex h-[13px] w-[13px] items-center justify-center text-[13px] leading-[13px]">🗂️</span>
-              <button type="button" onClick={() => { setActiveListId("all"); setTaskStatusFilter("all"); setPageMode("tasks"); setUtilityMode("none"); }} className="min-w-0 flex-1 truncate text-left text-[14px] font-medium text-[#2F2F2F]">All Tasks</button>
+              <button type="button" onClick={() => { setActiveListId("all"); setTaskStatusFilter("all"); setPageMode("tasks"); setUtilityMode((mode) => (mode === "calendar" ? "calendar" : "none")); }} className="min-w-0 flex-1 truncate text-left text-[14px] font-medium text-[#2F2F2F]">All Tasks</button>
               <span className={[
                 "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[9px] font-semibold",
                 activeListId === "all" ? "bg-[#2F2F2F] text-white" : "bg-[#EFEFEF] text-[#717680]",
@@ -1410,7 +1477,7 @@ export default function TasksPageV3() {
               activeListId === "completed" ? "bg-[#E9F9EA]" : "hover:bg-[#F3FBF4]",
             ].join(" ")}>
               <img src="/icons/book-session-green.svg" alt="" aria-hidden="true" className="h-[13px] w-[13px] shrink-0" />
-              <button type="button" onClick={() => { setActiveListId("completed"); setPageMode("tasks"); setUtilityMode("none"); }} className="min-w-0 flex-1 truncate text-left text-[14px] font-medium text-[#65D46C]">Completed Tasks</button>
+              <button type="button" onClick={() => { setActiveListId("completed"); setPageMode("tasks"); setUtilityMode((mode) => (mode === "calendar" ? "calendar" : "none")); }} className="min-w-0 flex-1 truncate text-left text-[14px] font-medium text-[#65D46C]">Completed Tasks</button>
               <span className={[
                 "flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[9px] font-semibold",
                 activeListId === "completed" ? "bg-[#2F2F2F] text-white" : "bg-[#65D46C] text-white",
@@ -1438,7 +1505,7 @@ export default function TasksPageV3() {
                     >
                       {emoji}
                     </button>
-                    <button type="button" onClick={() => { setActiveListId(plan.id); setSelectedPlanId(plan.id); setPageMode("tasks"); setUtilityMode("none"); }} className="min-w-0 flex-1 truncate text-left text-[14px] font-medium text-[#2F2F2F]">{plan.title}</button>
+                    <button type="button" onClick={() => { setActiveListId(plan.id); setSelectedPlanId(plan.id); setPageMode("tasks"); setUtilityMode((mode) => (mode === "calendar" ? "calendar" : "none")); }} className="min-w-0 flex-1 truncate text-left text-[14px] font-medium text-[#2F2F2F]">{plan.title}</button>
                     <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                       <button type="button" onClick={() => { setRenamingPlanId(plan.id); setRenamePlanTitle(plan.title); }} className="flex h-6 w-6 items-center justify-center rounded-[5px] hover:bg-white" title="Rename task list"><img src="/icons/edit_profile.svg" alt="" aria-hidden="true" className="h-3 w-3" /></button>
                       <button type="button" onClick={() => void deletePlan(plan.id)} className="flex h-6 w-6 items-center justify-center rounded-[5px] text-[#E07A7A] hover:bg-[#FFF1F1]" title="Delete task list"><IconMask src="/icons/tasks-page-delete.svg" fallback={<Trash2 size={12} />} size={12} /></button>
