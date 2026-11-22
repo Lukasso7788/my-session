@@ -76,6 +76,23 @@ function BugReportIcon({
     );
 }
 
+function FocusShieldIcon({
+    onLightSurface,
+    className = "w-5 h-5",
+}: {
+    onLightSurface: boolean;
+    className?: string;
+}) {
+    return (
+        <img
+            src="/icons/focus-shield.svg"
+            alt=""
+            className={`${className} object-contain ${onLightSurface ? "" : "brightness-0 invert"}`}
+            draggable={false}
+        />
+    );
+}
+
 function SoundscapeIcon({
     isLight,
     active = false,
@@ -111,7 +128,7 @@ export function LiveKitBottomBar(props: {
     screenShareOn: boolean;
     voiceUiMode?: "off" | "always" | "hotkey";
     unreadChat?: number;
-    activePanel?: "participants" | "chat" | "tasks" | "music" | null;
+    activePanel?: "participants" | "chat" | "tasks" | "music" | "ai" | "focus" | null;
 
     showPiP?: boolean;
     pipActive?: boolean;
@@ -157,6 +174,9 @@ export function LiveKitBottomBar(props: {
     onOpenParticipants: () => void;
     onOpenChat: () => void;
     onOpenTasks: () => void;
+    onOpenAi?: () => void;
+    onOpenFocusShield?: () => void;
+    focusShieldActive?: boolean;
     onOpenSettings: () => void;
 
     onOpenBugReport?: () => void;
@@ -191,6 +211,9 @@ export function LiveKitBottomBar(props: {
         soundscapeMuted = false,
         onOpenSoundscapes,
         onToggleSoundscapeMute,
+        onOpenAi,
+        onOpenFocusShield,
+        focusShieldActive = false,
 
         onToggleMic,
         onToggleCam,
@@ -364,9 +387,9 @@ export function LiveKitBottomBar(props: {
     const activeSideControlClass = isLight
         ? "bg-[#2F2F2F] text-white hover:bg-[#111111]"
         : "bg-white text-[#2F2F2F] hover:bg-white/90";
-    const sideButtonClass = (panel: "participants" | "chat" | "tasks" | "music") =>
+    const sideButtonClass = (panel: "participants" | "chat" | "tasks" | "music" | "ai" | "focus") =>
         `${sideControlClass} ${activePanel === panel ? activeSideControlClass : ctlBtnBase}`;
-    const sideIconTheme = (panel: "participants" | "chat" | "tasks" | "music"): RoomTheme =>
+    const sideIconTheme = (panel: "participants" | "chat" | "tasks" | "music" | "ai" | "focus"): RoomTheme =>
         activePanel === panel ? (isLight ? "dark" : "light") : theme;
 
     const aiHostBtnClass =
@@ -427,6 +450,41 @@ export function LiveKitBottomBar(props: {
             <span className={sideControlLabelClass}>Tasks</span>
         </button>
     );
+
+    const aiPanelBtn = onOpenAi ? (
+        <button
+            onClick={onOpenAi}
+            className={sideButtonClass("ai")}
+            title={activePanel === "ai" ? "AI panel is open" : "AI"}
+            aria-pressed={activePanel === "ai"}
+            type="button"
+        >
+            <AIHostIcon
+                isLight={activePanel === "ai" ? !isLight : isLight}
+                className="h-[20px] w-[20px]"
+            />
+            <span className={sideControlLabelClass}>AI</span>
+        </button>
+    ) : null;
+
+    const focusShieldBtn = onOpenFocusShield ? (
+        <button
+            onClick={onOpenFocusShield}
+            className={`relative ${sideButtonClass("focus")}`}
+            title={focusShieldActive ? "Focus Shield is on" : "Focus Shield"}
+            aria-pressed={activePanel === "focus" || focusShieldActive}
+            type="button"
+        >
+            <FocusShieldIcon
+                onLightSurface={activePanel === "focus" ? !isLight : isLight}
+                className="h-[20px] w-[20px]"
+            />
+            <span className={sideControlLabelClass}>Shield</span>
+            {focusShieldActive && activePanel !== "focus" ? (
+                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-[#7EE787]" />
+            ) : null}
+        </button>
+    ) : null;
 
     const soundscapePlayingIndicator = soundscapeActive ? (
         <span
@@ -700,6 +758,50 @@ export function LiveKitBottomBar(props: {
                                             />
                                             <span>Tasks</span>
                                         </button>
+
+                                        {onOpenAi ? (
+                                            <button
+                                                onClick={() => {
+                                                    onOpenAi();
+                                                    setShowMoreMenu(false);
+                                                }}
+                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${activePanel === "ai"
+                                                    ? "bg-[#1B1B1B] text-white"
+                                                    : isLight
+                                                        ? "text-black/75 hover:bg-[#E1E3E6]"
+                                                        : "text-white/85 hover:bg-[#F2F3F5]/5"
+                                                    }`}
+                                                type="button"
+                                            >
+                                                <AIHostIcon
+                                                    isLight={activePanel === "ai" ? false : isLight}
+                                                    className="h-4 w-4"
+                                                />
+                                                <span>AI</span>
+                                            </button>
+                                        ) : null}
+
+                                        {onOpenFocusShield ? (
+                                            <button
+                                                onClick={() => {
+                                                    onOpenFocusShield();
+                                                    setShowMoreMenu(false);
+                                                }}
+                                                className={`w-full px-4 py-3 text-left text-[13px] transition flex items-center gap-2 ${activePanel === "focus" || focusShieldActive
+                                                    ? "bg-[#1B1B1B] text-white"
+                                                    : isLight
+                                                        ? "text-black/75 hover:bg-[#E1E3E6]"
+                                                        : "text-white/85 hover:bg-[#F2F3F5]/5"
+                                                    }`}
+                                                type="button"
+                                            >
+                                                <FocusShieldIcon
+                                                    onLightSurface={activePanel === "focus" || focusShieldActive ? false : isLight}
+                                                    className="h-4 w-4"
+                                                />
+                                                <span>{focusShieldActive ? "Focus Shield on" : "Focus Shield"}</span>
+                                            </button>
+                                        ) : null}
 
                                         <div
                                             className={
@@ -1061,6 +1163,8 @@ export function LiveKitBottomBar(props: {
                             {chatBtn}
                             {tasksBtn}
                             {soundscapesBtn}
+                            {aiPanelBtn}
+                            {focusShieldBtn}
                         </div>
                     </div>
                 </div>

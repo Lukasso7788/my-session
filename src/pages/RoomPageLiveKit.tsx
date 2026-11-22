@@ -37,6 +37,7 @@ import {
 
 
 import { supabase } from "../lib/supabase";
+import { useFocusShieldActive } from "../components/focusshield/sync";
 import { useLatestCallback } from "../hooks/useLatestCallback";
 import { updateTileSpeakingState } from "../lib/roomSpeakingState";
 import { createPiPAvatarCache } from "../lib/pipAvatarCache";
@@ -194,6 +195,8 @@ const ChatPanel = preloadableLazy(() => import("../components/ChatPanel"));
 const TasksPanel = preloadableLazy(() => import("../components/TasksPanel"));
 const RoomTimelineEditor = React.lazy(() => import("../components/RoomTimelineEditor"));
 const RoomSoundscapePanel = preloadableLazy(() => import("./livekit/RoomSoundscapePanel"));
+const SessionAiPanel = preloadableLazy(() => import("../components/session-ai/SessionAiPanel"));
+const FocusShieldPanel = preloadableLazy(() => import("../components/focusshield/FocusShieldPanel"));
 // These panels are not needed to connect. Keep their code and mounted UI out
 // of the room's initial path until the user actually opens them.
 const AIHostedRoomController = React.lazy(() => import("../components/ai-host/AIHostedRoomController"));
@@ -982,7 +985,7 @@ type SessionRoleAssignmentRow = {
   created_at?: string;
 };
 
-type RightPanelTab = "participants" | "chat" | "tasks" | "music" | null;
+type RightPanelTab = "participants" | "chat" | "tasks" | "music" | "ai" | "focus" | null;
 type RoomMainViewMode = "video" | "accountability";
 
 type FloatingReaction = {
@@ -6623,6 +6626,7 @@ export function RoomPageLiveKit({
   const roomPanelIconClass = roomUiScale === "md" ? "w-3.5 h-3.5" : "w-4 h-4";
 
   const [rightTab, setRightTab] = useState<RightPanelTab>("tasks");
+  const focusShieldActive = useFocusShieldActive(authUserId);
   const [chatViewMode, setChatViewMode] = useState<"general" | "host">(
     "general",
   );
@@ -21281,6 +21285,44 @@ export function RoomPageLiveKit({
           </div>
         </div>
       )}
+
+      {rightTab === "ai" && (
+        <RoomPanelErrorBoundary
+          panel="ai"
+          routeId={routeId}
+          sessionId={session?.id || sessionId}
+          isLight={sidePanelIsLight}
+          onClose={() => openRightTab(null)}
+        >
+          <React.Suspense fallback={<div className="p-4 text-sm opacity-60">Loading AI…</div>}>
+            <SessionAiPanel
+              theme={sidePanelTheme}
+              sessionId={String(session?.id || "")}
+              currentUserId={authUserId}
+              currentUserName={displayName || userName || "there"}
+              onClose={() => openRightTab(null)}
+            />
+          </React.Suspense>
+        </RoomPanelErrorBoundary>
+      )}
+
+      {rightTab === "focus" && (
+        <RoomPanelErrorBoundary
+          panel="focus-shield"
+          routeId={routeId}
+          sessionId={session?.id || sessionId}
+          isLight={sidePanelIsLight}
+          onClose={() => openRightTab(null)}
+        >
+          <React.Suspense fallback={<div className="p-4 text-sm opacity-60">Loading Focus Shield…</div>}>
+            <FocusShieldPanel
+              theme={sidePanelTheme}
+              userId={authUserId}
+              onClose={() => openRightTab(null)}
+            />
+          </React.Suspense>
+        </RoomPanelErrorBoundary>
+      )}
     </div>
   );
   if (loading) {
@@ -23007,6 +23049,9 @@ export function RoomPageLiveKit({
             openRightTab("chat");
           }}
           onOpenTasks={() => openRightTab("tasks")}
+          onOpenAi={() => openRightTab("ai")}
+          onOpenFocusShield={() => openRightTab("focus")}
+          focusShieldActive={focusShieldActive}
           onOpenSettings={() => {
             setSettingsOpen(true);
             setSettingsPreviewVersion((v) => v + 1);
