@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "FocusShield by MySession",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "Block distracting websites and sync with FocusShield Desktop during focus sessions.",
     "permissions": [
         "storage",
@@ -16,6 +16,18 @@
     "background": {
         "service_worker": "service_worker.js"
     },
+    "content_scripts": [
+        {
+            "matches": [
+                "https://mysession.club/*",
+                "https://www.mysession.club/*",
+                "http://localhost/*",
+                "http://127.0.0.1/*"
+            ],
+            "js": ["content_bridge.js"],
+            "run_at": "document_start"
+        }
+    ],
     "action": {
         "default_title": "FocusShield",
         "default_popup": "popup.html"

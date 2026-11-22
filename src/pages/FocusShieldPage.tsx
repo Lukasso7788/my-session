@@ -95,6 +95,8 @@ export default function FocusShieldPage() {
                             <p className="mt-4 max-w-2xl text-base leading-7 text-gray-600">
                                 Block distracting websites, social feeds, news, YouTube Shorts,
                                 or even one specific YouTube channel while you work in MySession.
+                                Inside a session, open Focus Shield from the bottom controls.
+                                The panel includes a preview of the blocked page before the shield starts.
                             </p>
 
                             <div className="mt-8 flex flex-wrap gap-3">

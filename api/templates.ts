@@ -89,6 +89,16 @@ function makeFallback(phase: string, userName: string, debugReason?: string) {
           ],
           source: "fallback",
         }
+      : phase === "next"
+        ? {
+            publicSpoken: `Next step is ready, ${userName}. Start there and leave the rest for later.`,
+            privateAdvice: [
+              "Turn the note into one action that can start immediately.",
+              "Do only that step before checking anything else.",
+              "Split it again if it needs more than 15 minutes.",
+            ],
+            source: "fallback",
+          }
       : {
           publicSpoken: `Got it, ${userName}. Start with the first small visible step.`,
           privateAdvice: [
@@ -132,6 +142,7 @@ Rules:
 - Be calm, direct, practical.
 - For check-in, help the user choose the next action for the next block.
 - For intention, help the user start with a small visible first step.
+- For next, turn the note into one immediate action. Keep publicSpoken general. Put the concrete step in privateAdvice.
 `.trim();
 
   const userPrompt = `
@@ -190,7 +201,9 @@ User text: ${text}
         publicSpoken ||
         (phase === "checkin"
           ? `Nice check-in, ${userName}. Choose the next small step.`
-          : `Got it, ${userName}. Start with one small step.`),
+          : phase === "next"
+            ? `Next step is ready, ${userName}. Start with one small action.`
+            : `Got it, ${userName}. Start with one small step.`),
       privateAdvice: privateAdvice.length ? privateAdvice : ["Choose one concrete next action."],
       source: "openai",
       debugReason: null,

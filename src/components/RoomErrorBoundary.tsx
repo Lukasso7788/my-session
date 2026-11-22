@@ -14,7 +14,7 @@ export function reloadRoomWithResume(sessionId: string | null | undefined) {
 type BoundaryState = { error: unknown };
 
 type PanelBoundaryProps = {
-  panel: "chat" | "tasks" | "music" | "pip-chat";
+  panel: "chat" | "tasks" | "music" | "pip-chat" | "ai" | "focus-shield";
   routeId: string | null | undefined;
   sessionId: string | null | undefined;
   isLight: boolean;

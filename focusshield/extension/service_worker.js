@@ -245,6 +245,32 @@ async function applyPolicy(policy) {
     await sweepTabs(policy);
 }
 
+function sanitizeIncomingPolicy(input, currentPolicy) {
+    if (!input || typeof input !== "object") return null;
+    const domains = uniqueStrings(input.web?.domains).map(normalizeDomain).filter(Boolean).slice(0, 200);
+    const urls = uniqueStrings(input.web?.urls).map(normalizeUrl).filter(Boolean).slice(0, 200);
+    const allow = uniqueStrings(input.web?.allow).map(normalizeDomain).filter(Boolean).slice(0, 80);
+    const applications = uniqueStrings(input.desktop?.applications);
+    const now = Date.now();
+    const endAt = Number(input.endAt);
+    const startedAt = Number(input.startedAt);
+    return {
+        active: Boolean(input.active),
+        locked: Boolean(input.locked),
+        startedAt: Number.isFinite(startedAt) ? startedAt : now,
+        endAt: Number.isFinite(endAt) ? endAt : null,
+        updatedAt: now,
+        source: "session",
+        web: { domains, urls, allow },
+        desktop: {
+            applications: applications.length
+                ? applications
+                : uniqueStrings(currentPolicy?.desktop?.applications)
+        },
+        savedLists: normalizeSavedLists(currentPolicy?.savedLists)
+    };
+}
+
 async function stopShield() {
     const policy = await getPolicy();
 
@@ -329,6 +355,20 @@ chrome.runtime.onMessage.addListener((msg, _, sendResponse) => {
                 source: "extension"
             };
             await chrome.storage.local.set({ policy });
+            await pushDesktopPolicy(policy);
+            sendResponse({ ok: true, policy });
+            return;
+        }
+
+        if (msg.type === "APPLY_POLICY") {
+            const currentPolicy = await getPolicy();
+            const policy = sanitizeIncomingPolicy(msg.policy, currentPolicy);
+            if (!policy) {
+                sendResponse({ ok: false, error: "invalid_policy" });
+                return;
+            }
+            await chrome.storage.local.set({ policy });
+            await applyPolicy(policy);
             await pushDesktopPolicy(policy);
             sendResponse({ ok: true, policy });
             return;
