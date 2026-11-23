@@ -986,7 +986,9 @@ export function LiveKitBottomBar(props: {
 
                             {showReactionsMenu && (
                                 <div
-                                    className={`absolute bottom-[54px] sm:bottom-[58px] left-1/2 -translate-x-1/2 rounded-2xl px-3 py-2 flex items-center gap-2 text-[26px] shadow-xl whitespace-nowrap ${isLight
+                                    role="group"
+                                    aria-label="Room reactions"
+                                    className={`z-[80] rounded-2xl shadow-xl max-sm:fixed max-sm:bottom-[calc(4.35rem+env(safe-area-inset-bottom))] max-sm:left-1/2 max-sm:grid max-sm:w-[min(19.25rem,calc(100vw-1rem))] max-sm:-translate-x-1/2 max-sm:grid-cols-5 max-sm:gap-1 max-sm:p-1.5 sm:absolute sm:bottom-[54px] sm:left-1/2 sm:flex sm:-translate-x-1/2 sm:items-center sm:gap-2 sm:whitespace-nowrap sm:px-3 sm:py-2 sm:text-[26px] md:bottom-[58px] ${isLight
                                         ? "bg-[#F3F1F1] border border-[#D8D0D0]"
                                         : "bg-[#1B1B1B] border border-transparent"
                                         }`}
@@ -997,7 +999,7 @@ export function LiveKitBottomBar(props: {
                                             onClick={() => {
                                                 emitReaction(t);
                                             }}
-                                            className="hover:scale-[1.06] transition"
+                                            className="transition hover:scale-[1.06] max-sm:flex max-sm:h-11 max-sm:items-center max-sm:justify-center max-sm:rounded-xl max-sm:text-[1.65rem] max-sm:leading-none"
                                             title={t}
                                             type="button"
                                         >
