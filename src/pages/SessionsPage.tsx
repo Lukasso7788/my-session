@@ -9,6 +9,7 @@ import { prioritySlotsFor } from "../lib/hostPrioritySlots";
 import { getFreeSessionUsage } from "../lib/freeSessionNotice";
 import InviteFriendsModal from "../components/InviteFriendsModal";
 import { supabase } from "../lib/supabase";
+import { isMissingSupabaseRpc } from "../lib/rpcFallbackPolicy";
 import {
   getCurrentUserActiveBan,
   isCurrentUserAdmin,
@@ -1388,7 +1389,7 @@ export function SessionsPage() {
 
           if (!timedBookings.error) {
             bookingsData = (timedBookings.data || []) as any[];
-          } else {
+          } else if (isMissingSupabaseRpc(timedBookings.error)) {
             const legacyBookings = await withTimeout(
               supabase
                 .from("public_session_bookings")
@@ -1400,6 +1401,10 @@ export function SessionsPage() {
 
             if (legacyBookings.error) throw legacyBookings.error;
             bookingsData = (legacyBookings.data || []) as any[];
+          } else {
+            // Skip optional booking enrichment during an API/DB outage instead
+            // of adding another expensive request to the failing backend.
+            throw timedBookings.error;
           }
 
           if (!isCurrentRequest()) return;

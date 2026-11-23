@@ -14,6 +14,7 @@ import {
 } from "./usage";
 import { PAYWALL_ENABLED } from "./flags";
 import { invalidateEntitlementResponseCache } from "./supabaseFetchOptimizer";
+import { isMissingSupabaseRpc } from "./rpcFallbackPolicy";
 
 export type EntitlementState = {
   entitlement: UserEntitlement | null;
@@ -147,9 +148,11 @@ async function getLifetimeSessionsCount(userId: string): Promise<number | null> 
     return Math.max(0, Number(rpcResult.data || 0));
   }
 
-  const code = String(rpcResult.error?.code || "");
-  if (code !== "42883" && code !== "PGRST202") {
+  // On a database timeout, a second COUNT(*) only makes overload worse.
+  // The legacy table fallback is solely for deployments without this RPC.
+  if (!isMissingSupabaseRpc(rpcResult.error)) {
     console.error("getLifetimeSessionsCount RPC error:", rpcResult.error);
+    return null;
   }
 
   const fallbackResult = await supabase
