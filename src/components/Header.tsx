@@ -18,6 +18,53 @@ import { getMembershipBadge, isComplimentaryPro } from "../lib/membershipPresent
 import { defaultAvatarUrl } from "../lib/defaultAvatar";
 
 const BRAND_BLACK = "#2F2F2F";
+const WINDOWS_DESKTOP_DOWNLOAD_URL =
+    "https://github.com/Lukasso7788/my-session/releases/download/desktop-latest/MySession-Setup-0.4.5.exe";
+
+function WindowsAppIcon({ className = "h-5 w-5" }: { className?: string }) {
+    return (
+        <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M2 4.4 10.8 3v8.2H2V4.4Zm10.2-1.6L22 1.3v9.9h-9.8V2.8ZM2 12.6h8.8v8.2L2 19.4v-6.8Zm10.2 0H22v9.9L12.2 21v-8.4Z" />
+        </svg>
+    );
+}
+
+function AndroidAppIcon({ className = "h-5 w-5" }: { className?: string }) {
+    return (
+        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+            <path d="M6 10h12v7.5a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V10ZM6 10a6 6 0 0 1 12 0M8 3.5 6.5 1.8M16 3.5l1.5-1.7M3.5 10v7M20.5 10v7M9 19.5V22M15 19.5V22" />
+            <path d="M9 7.5h.01M15 7.5h.01" strokeWidth="2.5" />
+        </svg>
+    );
+}
+
+function AppDownloadOptions({ onSelect }: { onSelect?: () => void }) {
+    return (
+        <div className="px-4 py-3 border-t border-b border-borderGray">
+            <p className="mb-2 text-xs font-medium text-gray-500">Get the app</p>
+            <div className="grid grid-cols-2 gap-2">
+                <a
+                    href={WINDOWS_DESKTOP_DOWNLOAD_URL}
+                    onClick={onSelect}
+                    aria-label="Download MySession for Windows"
+                    title="Download MySession for Windows"
+                    className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg border border-gray-200 py-2 text-xs font-medium text-brandBlack transition hover:border-green-500 hover:bg-green-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-green-600"
+                >
+                    <WindowsAppIcon />
+                    <span>Windows</span>
+                </a>
+                <div
+                    aria-label="MySession for Android is coming soon"
+                    title="Android app coming soon"
+                    className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-gray-200 py-2 text-xs text-gray-400"
+                >
+                    <AndroidAppIcon />
+                    <span>Android · Soon</span>
+                </div>
+            </div>
+        </div>
+    );
+}
 
 const tabs = [
     {
@@ -85,6 +132,13 @@ export default function Header() {
     const { user, profile, loading, signOut } = useAuth();
 
     const [showUserMenu, setShowUserMenu] = useState(false);
+    const [showDesktopNotice, setShowDesktopNotice] = useState(() => {
+        try {
+            return window.sessionStorage.getItem("mysession-desktop-notice-dismissed") !== "1";
+        } catch {
+            return true;
+        }
+    });
     const [mobileMenu, setMobileMenu] = useState(false);
     const [hoverCreate, setHoverCreate] = useState(false);
 
@@ -456,10 +510,7 @@ export default function Header() {
                                                     Settings
                                                 </button>
 
-                                                <button
-                                                    onClick={() => { navigate("/settings#subscription"); setShowUserMenu(false); }}
-                                                    className="w-full text-left px-4 py-2 text-sm font-light hover:bg-slate-50"
-                                                >Subscription</button>
+                                                <AppDownloadOptions onSelect={() => setShowUserMenu(false)} />
 
                                                 <button
                                                     onClick={() => {
@@ -626,7 +677,7 @@ export default function Header() {
                                             Settings
                                         </button>
 
-                                        <button onClick={() => { navigate("/settings#subscription"); setMobileMenu(false); }} className="text-left">Subscription</button>
+                                        <AppDownloadOptions onSelect={() => setMobileMenu(false)} />
 
                                         <button
                                             onClick={async () => {
@@ -669,6 +720,30 @@ export default function Header() {
                     </div>
                 )}
 
+                {showDesktopNotice && (
+                    <div className="flex min-h-10 items-center justify-center gap-2 border-t border-green-100 bg-[#f0f9f1] px-4 py-2 text-center text-xs text-[#24532c] sm:text-sm" role="region" aria-label="MySession desktop app">
+                        <WindowsAppIcon className="h-4 w-4 shrink-0" />
+                        <span>MySession for Windows is available.</span>
+                        <a href={WINDOWS_DESKTOP_DOWNLOAD_URL} className="shrink-0 font-semibold underline underline-offset-2 hover:text-green-800">Download app</a>
+                        <button
+                            type="button"
+                            aria-label="Dismiss desktop app announcement"
+                            className="ml-1 rounded p-1 hover:bg-green-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-green-600"
+                            onClick={() => {
+                                setShowDesktopNotice(false);
+                                try {
+                                    window.sessionStorage.setItem("mysession-desktop-notice-dismissed", "1");
+                                } catch {
+                                    // The banner can still be dismissed when storage is unavailable.
+                                }
+                            }}
+                        >
+                            <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                                <path d="M5 5 19 19M19 5 5 19" />
+                            </svg>
+                        </button>
+                    </div>
+                )}
                 {location.pathname === "/sessions" ? (
                     // Inside the sticky header so it stays attached while scrolling. Edge to
                     // edge; -mb-px lays its red bottom line over the header's own border.
