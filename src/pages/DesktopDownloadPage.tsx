@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import AndroidIcon from "../components/AndroidIcon";
 
 const WINDOWS_DESKTOP_DOWNLOAD_URL =
     "https://github.com/Lukasso7788/my-session/releases/download/desktop-latest/MySession-Setup-0.4.5.exe";
@@ -7,15 +8,6 @@ function WindowsAppIcon({ className = "h-7 w-7" }: { className?: string }) {
     return (
         <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M2 4.4 10.8 3v8.2H2V4.4Zm10.2-1.6L22 1.3v9.9h-9.8V2.8ZM2 12.6h8.8v8.2L2 19.4v-6.8Zm10.2 0H22v9.9L12.2 21v-8.4Z" />
-        </svg>
-    );
-}
-
-function AndroidAppIcon({ className = "h-7 w-7" }: { className?: string }) {
-    return (
-        <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
-            <path d="M6 10h12v7.5a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V10ZM6 10a6 6 0 0 1 12 0M8 3.5 6.5 1.8M16 3.5l1.5-1.7M3.5 10v7M20.5 10v7M9 19.5V22M15 19.5V22" />
-            <path d="M9 7.5h.01M15 7.5h.01" strokeWidth="2.5" />
         </svg>
     );
 }
@@ -61,7 +53,7 @@ export default function DesktopDownloadPage() {
                         <p className="text-sm font-medium text-gray-500">Mobile</p>
                         <h2 className="mt-3 text-2xl font-semibold">Android</h2>
                         <div className="mt-7 inline-flex items-center gap-2 rounded-full border border-dashed border-gray-300 px-5 py-3 text-base font-semibold text-gray-500">
-                            <AndroidAppIcon className="h-5 w-5" />
+                            <AndroidIcon className="h-5 w-5" />
                             Coming soon
                         </div>
                         <p className="mt-4 text-base leading-7 text-gray-600">

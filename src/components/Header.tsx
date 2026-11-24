@@ -16,6 +16,7 @@ import { getFreeSessionUsage } from "../lib/freeSessionNotice";
 import { PAYWALL_ENABLED } from "../lib/flags";
 import { getMembershipBadge, isComplimentaryPro } from "../lib/membershipPresentation";
 import { defaultAvatarUrl } from "../lib/defaultAvatar";
+import AndroidIcon from "./AndroidIcon";
 
 const BRAND_BLACK = "#2F2F2F";
 
@@ -468,6 +469,17 @@ export default function Header() {
                                                     className="w-full text-left px-4 py-2 text-sm font-light hover:bg-slate-50"
                                                 >
                                                     Download app
+                                                </button>
+
+                                                <button
+                                                    onClick={() => {
+                                                        navigate("/download");
+                                                        setShowUserMenu(false);
+                                                    }}
+                                                    className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm font-light hover:bg-slate-50"
+                                                >
+                                                    <AndroidIcon className="h-5 w-5 shrink-0" />
+                                                    <span>Android</span>
                                                 </button>
 
                                                 <button
