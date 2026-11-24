@@ -76,7 +76,7 @@ export default function FocusShieldPage() {
                             </>
                         )}
                         {desktopConnectState === "failed" && (
-                            <><div className="font-semibold">Could not reach FocusShield Desktop</div><p className="mt-1 text-sm opacity-75">Open the desktop app and press Connect MySession again. The pairing code can only be used once.</p></>
+                            <><div className="font-semibold">Could not reach FocusShield Desktop</div><p className="mt-1 text-sm opacity-75">Open the desktop app and try connecting again. The pairing code can only be used once.</p></>
                         )}
                     </section>
                 )}
@@ -93,17 +93,17 @@ export default function FocusShieldPage() {
                     <article className="rounded-3xl bg-[#202b43] p-7 text-white sm:p-8" aria-labelledby="desktop-download-title">
                         <p className="text-sm font-medium text-[#b6ceff]">The FocusShield desktop app</p>
                         <h2 id="desktop-download-title" className="mt-3 text-3xl font-semibold">Your focus, protected on Windows.</h2>
-                        <a href="https://github.com/Lukasso7788/focus-shield-releases/releases/download/v0.4.13/FocusShield-Setup-0.4.13.exe" className="mt-7 inline-flex items-center justify-center rounded-full bg-[#5286f6] px-6 py-3.5 text-base font-semibold text-white transition hover:bg-[#4477e3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Download FocusShield for Windows</a>
-                        <p className="mt-4 text-sm leading-6 text-[#b6c4de]">Version 0.4.13 · Windows 10 / 11 · 64-bit · About 544 MB</p>
+                        <a href="https://github.com/Lukasso7788/focus-shield-releases/releases/download/v0.4.14/FocusShield-Setup-0.4.14.exe" className="mt-7 inline-flex items-center justify-center rounded-full bg-[#5286f6] px-6 py-3.5 text-base font-semibold text-white transition hover:bg-[#4477e3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Download FocusShield for Windows</a>
+                        <p className="mt-4 text-sm leading-6 text-[#b6c4de]">Version 0.4.14 · Windows 10 / 11 · 64-bit · About 544 MB</p>
                         <p className="mt-4 text-base leading-7 text-[#d1daeb]">Block selected applications, run independent focus timers, save block lists and schedules, or work on one task in Hyper Focus. AI Coach can remind you about distractions and suggest a next step.</p>
                         <a href="#install-desktop" className="mt-3 inline-block text-sm font-medium text-white underline underline-offset-4">Windows installation instructions</a>
                     </article>
                     <article className="rounded-3xl border border-gray-200 bg-white p-7 sm:p-8" aria-labelledby="extension-download-title">
                         <p className="text-sm font-medium text-[#4678d8]">Add website blocking in your browser</p>
                         <h2 id="extension-download-title" className="mt-3 text-2xl font-semibold">Chrome &amp; Edge extension</h2>
-                        <p className="mt-4 text-base leading-7 text-gray-600">Install the companion extension to block websites and specific pages, see the countdown in blocked tabs, and sync with the desktop app.</p>
+                        <p className="mt-4 text-base leading-7 text-gray-600">Extension files are included with the Windows app. Click Browser extension in FocusShield to enable website blocking in Chrome or Edge. A separate ZIP is also available below.</p>
                         <a href="/downloads/focusshield-extension.zip" download className="mt-7 inline-flex items-center justify-center rounded-full border border-gray-300 px-5 py-3 text-base font-semibold transition hover:bg-gray-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#5286f6]">Download browser extension</a>
-                        <p className="mt-4 text-sm leading-6 text-gray-500">Version 0.2.5 · ZIP · Manual installation</p>
+                        <p className="mt-4 text-sm leading-6 text-gray-500">Version 0.2.5 · Included in the Windows installer · Optional ZIP</p>
                         <a href="#install-extension" className="mt-3 inline-block text-sm font-medium text-[#4678d8] underline underline-offset-4">Browser installation instructions</a>
                     </article>
                 </section>
@@ -121,31 +121,30 @@ export default function FocusShieldPage() {
                     <h2 id="install-desktop-title" className="mt-2 text-2xl font-semibold">Install the Windows app</h2>
                     <ol className="mt-6 list-decimal space-y-4 pl-6 text-base leading-7 text-gray-600 marker:font-semibold marker:text-[#4678d8]">
                         <li>Click <strong className="text-gray-900">Download FocusShield for Windows</strong> and wait for the EXE to finish downloading.</li>
-                        <li>Run <code className="break-all text-sm text-gray-900">FocusShield-Setup-0.4.13.exe</code> and follow the installer. If FocusShield is already open, finish your active sessions and close it before upgrading.</li>
+                        <li>Run <code className="break-all text-sm text-gray-900">FocusShield-Setup-0.4.14.exe</code> and follow the installer. If FocusShield is already open, finish your active sessions and close it before upgrading.</li>
                         <li>Open FocusShield from your desktop or Start menu. Choose the apps to block, set a duration, then start your session.</li>
-                        <li>For website blocking, install the extension below in every Chrome or Edge profile you use. Keep FocusShield running, including in the system tray.</li>
+                        <li>For website blocking, click Browser extension in FocusShield. The files are already included. Follow the one-time browser steps below and keep FocusShield running in the system tray.</li>
                         <li>Need to stop Locked Mode early? In the Windows app, use <strong className="text-gray-900">Cancel Locked Mode (use 1)</strong>. You start with one cancellation and earn one every 7 days; unused cancellations stack on this computer.</li>
                         <li>To use AI Coach, open its panel and click <strong className="text-gray-900">Install package for AI usage</strong>. Once the download finishes, enter your task and start coaching.</li>
-                        <li>Optionally click <strong className="text-gray-900">Connect MySession</strong> in the app and sign in to sync saved lists and policies between your computers.</li>
                     </ol>
                     <div className="mt-6 rounded-2xl bg-[#edf3ff] p-5 text-base leading-7 text-[#2a426e]"><strong>Future desktop updates</strong><p className="mt-1">When a new release is available, FocusShield shows “New version available”. Click “Click to update” to download it, then “Restart to install” after your active sessions finish.</p></div>
                 </section>
 
                 <section id="install-extension" className="mt-6 scroll-mt-6 rounded-3xl border border-gray-200 bg-white p-7 sm:p-8" aria-labelledby="install-extension-title">
                     <h2 id="install-extension-title" className="text-2xl font-semibold">Install the browser extension</h2>
-                    <p className="mt-3 text-base leading-7 text-gray-600">This is an unpacked extension for Chrome and Edge. The ZIP is not a Chrome Web Store installer.</p>
+                    <p className="mt-3 text-base leading-7 text-gray-600">The extension comes with the Windows installer. Enable it once in each Chrome or Edge profile. The browser requires this confirmation; installing the EXE alone does not activate website blocking.</p>
                     <ol className="mt-6 list-decimal space-y-4 pl-6 text-base leading-7 text-gray-600 marker:font-semibold marker:text-[#4678d8]">
-                        <li><a href="/downloads/focusshield-extension.zip" download className="font-semibold text-[#4678d8] underline underline-offset-4">Download the extension ZIP</a> and extract it to a permanent folder. Keep the extracted files after installation.</li>
+                        <li>In FocusShield, click <strong className="text-gray-900">Browser extension</strong>, then <strong className="text-gray-900">Copy folder path</strong>. No extra download or extraction is needed.</li>
                         <li>Open <code className="break-all text-sm text-gray-900">chrome://extensions</code> in Chrome, or <code className="break-all text-sm text-gray-900">edge://extensions</code> in Edge.</li>
                         <li>Turn on <strong className="text-gray-900">Developer mode</strong>, then click <strong className="text-gray-900">Load unpacked</strong>.</li>
-                        <li>Select the extracted <code className="text-sm text-gray-900">focusshield-extension</code> folder. This folder directly contains <code className="text-sm text-gray-900">manifest.json</code>, <code className="text-sm text-gray-900">service_worker.js</code> and <code className="text-sm text-gray-900">popup.html</code>.</li>
+                        <li>Paste the copied path into the folder picker and select that folder. This folder directly contains <code className="text-sm text-gray-900">manifest.json</code>, <code className="text-sm text-gray-900">service_worker.js</code> and <code className="text-sm text-gray-900">popup.html</code>.</li>
                         <li>Make sure <strong className="text-gray-900">FocusShield by MySession</strong> is enabled. Open the desktop app and check that its browser-extension indicator is connected.</li>
                         <li>Start a short session with a distracting site selected, then open that site to check the blocking screen. Repeat installation in each browser profile you want to protect.</li>
                     </ol>
-                    <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-5 text-base leading-7 text-gray-600"><strong className="text-gray-900">If Chrome or Edge reports a missing manifest</strong><p className="mt-1">Select the folder that actually contains <code className="text-sm">manifest.json</code>, not the ZIP or its parent folder. An older download may include an additional nested folder. To update an existing unpacked copy, replace its files in the same folder, then click Reload on the browser’s Extensions page.</p></div>
+                    <div className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-5 text-base leading-7 text-gray-600"><strong className="text-gray-900">If Chrome or Edge reports a missing manifest</strong><p className="mt-1">Use Copy folder path or Open extension folder in the app to find the folder containing manifest.json. Keep only one FocusShield extension per profile. After upgrading the app, click Reload on the browser’s Extensions page to load the bundled files. ZIP users can extract the optional download to a permanent folder and select the focusshield-extension folder instead.</p></div>
                 </section>
 
-                <footer className="py-8 text-sm leading-6 text-gray-500">FocusShield is a Windows app with a companion browser extension. Local blocking works without a MySession account; connecting an account enables cloud sync.</footer>
+                <footer className="py-8 text-sm leading-6 text-gray-500">FocusShield is a Windows app with a companion browser extension. No MySession account is needed to use the app or its browser extension.</footer>
             </div>
         </main>
     );
