@@ -11,6 +11,7 @@ export const HOST_LINK_MAX = 32;
 // would never be reached, because the real page wins.
 const RESERVED = new Set([
   "about", "account", "admin", "adhd-body-doubling", "adhd-productivity", "affiliate", "ai-assistant", "api",
+  "download",
   "app", "assets", "auth", "backgrounds", "badges", "billing", "blog", "contact", "dashboard", "data-deletion",
   "downloads", "email", "faq", "focus-plan", "focus-sessions", "focus-shield", "focusmate-alternatives",
   "fonts", "group-focus-sessions", "guides", "help", "home", "host", "host-guide", "hosts", "how-it-works",

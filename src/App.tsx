@@ -52,6 +52,7 @@ const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const ProfileSettingsPage = lazy(() => import("./pages/ProfileSettingsPage"));
 const FocusPlanPage = lazy(() => import("./pages/FocusPlanPage"));
 const FocusShieldPage = lazy(() => import("./pages/FocusShieldPage"));
+const DesktopDownloadPage = lazy(() => import("./pages/DesktopDownloadPage"));
 const PublicProfilePage = lazy(() => import("./pages/PublicProfilePage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const DailyScheduleEmailAdminPage = lazy(() => import("./pages/DailyScheduleEmailAdminPage"));
@@ -138,6 +139,7 @@ export default function App() {
           <Route path="/focus-plan" element={<FocusPlanPage />} />
           <Route path="/tasks" element={<FocusPlanPage />} />
           <Route path="/focus-shield" element={<FocusShieldPage />} />
+          <Route path="/download" element={<DesktopDownloadPage />} />
 
           <Route path="/ui-playground" element={<SessionCardsPlayground />} />
 
