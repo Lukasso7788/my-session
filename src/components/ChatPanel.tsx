@@ -1,3 +1,4 @@
+import { ChatReplyPreview } from "./ChatReplyPreview";
 import React, {
     useCallback,
     useEffect,
@@ -2005,10 +2006,6 @@ export function ChatPanel({
     const titleText = isLight ? "text-black/85" : "text-[#F4F5F6]";
     const subText = isLight ? "text-black/50" : "text-[#B5BCC6]";
     const headerCloseBtnCls = isLight ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60" : "bg-[#353B42] hover:bg-[#444B53] text-[#D9DEE4]";
-    const replyBoxCls = isLight ? "bg-[#ECEAEA] border-[#D8D0D0]" : "bg-[#292929] border-[#484848]";
-    const replyingLabel = `text-[11px] font-medium ${isLight ? "text-[#315DCB]" : "text-[#6B98FA]"}`;
-    const replyingText = isLight ? "text-black/55" : "text-[#C6CDD5]";
-    const cancelBtnCls = isLight ? "bg-[#ECEAEA] hover:bg-[#DCDCDC] text-black/60" : "bg-[#353B42] hover:bg-[#444B53] text-[#D9DEE4]";
     const hintText = isLight ? "text-black/40" : "text-[#B5BCC6]";
     const sendBtnActive = "bg-[#5286F6] hover:bg-[#6B98FA] text-white";
     const sendBtnDisabled = isLight ? "text-black/30" : "text-[#AEB6BF]/50";
@@ -3930,32 +3927,12 @@ export function ChatPanel({
                     </div>
                 )}
                 {replyTo && (
-                    <div
-                        className={
-                            "mb-2 flex items-center justify-between gap-2 rounded-xl border px-3 py-2 " +
-                            replyBoxCls
-                        }
-                    >
-                        <div className="min-w-0">
-                            <div className={replyingLabel}>Replying</div>
-                            <div className={"text-[11px] truncate " + replyingText}>
-                                {(replyTo.profile?.full_name || "Participant") +
-                                    ": " +
-                                    (quotePreviewForReply(replyTo.body, 220) || "[message]")}
-                            </div>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setReplyTo(null)}
-                            className={
-                                "w-8 h-8 rounded-lg flex items-center justify-center transition " +
-                                cancelBtnCls
-                            }
-                            title="Cancel reply"
-                        >
-                            <X size={16} />
-                        </button>
-                    </div>
+                    <ChatReplyPreview
+                        author={replyTo.profile?.full_name || "Participant"}
+                        preview={quotePreviewForReply(replyTo.body, 220) || "[message]"}
+                        isLight={isLight}
+                        onCancel={() => setReplyTo(null)}
+                    />
                 )}
 
                 {voiceMessagePreview && text.trim() ? (

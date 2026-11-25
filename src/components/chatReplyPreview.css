@@ -1,0 +1,39 @@
+.ms-chat-reply-preview {
+    --reply-surface: #292929;
+    --reply-border: #3b3b3b;
+    --reply-text: #e9e9ec;
+    --reply-muted: #b6b6bf;
+    --reply-accent: #a8c9ff;
+    --reply-hover: #383838;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    position: relative;
+    margin-bottom: 9px;
+    padding: 11px 10px 11px 14px;
+    overflow: hidden;
+    border: 1px solid var(--reply-border);
+    border-radius: 16px;
+    background: var(--reply-surface);
+    color: var(--reply-text);
+    font-family: Inter, sans-serif;
+}
+.ms-chat-reply-preview--light {
+    --reply-surface: #eceaea;
+    --reply-border: #ddd6d6;
+    --reply-text: #343434;
+    --reply-muted: #66616a;
+    --reply-accent: #315dcb;
+    --reply-hover: #e0dcdc;
+}
+.ms-chat-reply-preview::before { content: ""; position: absolute; left: 0; top: 11px; bottom: 11px; width: 3px; border-radius: 0 3px 3px 0; background: #5288ff; }
+.ms-chat-reply-preview__icon { flex: 0 0 auto; display: grid; place-items: center; width: 28px; height: 28px; margin-top: 1px; border-radius: 9px; color: var(--reply-accent); background: #5288ff14; }
+.ms-chat-reply-preview__content { min-width: 0; flex: 1; }
+.ms-chat-reply-preview__heading { display: flex; align-items: baseline; gap: 5px; min-width: 0; font-size: 11px; line-height: 16px; }
+.ms-chat-reply-preview__heading > span { flex-shrink: 0; color: var(--reply-muted); }
+.ms-chat-reply-preview__heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--reply-accent); }
+.ms-chat-reply-preview__text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; margin-top: 2px; font-size: 12px; line-height: 17px; }
+.ms-chat-reply-preview__cancel { flex: 0 0 auto; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--reply-muted); cursor: pointer; transition: background 140ms, color 140ms; }
+.ms-chat-reply-preview__cancel:hover { background: var(--reply-hover); color: var(--reply-text); }
+.ms-chat-reply-preview__cancel:focus-visible { outline: 2px solid #5288ff; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .ms-chat-reply-preview__cancel { transition: none; } }
