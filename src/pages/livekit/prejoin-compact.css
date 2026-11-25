@@ -176,7 +176,7 @@
 }
 
 [data-prejoin-daily]>.z-10 {
-  max-width:400px;
+  max-width:460px;
   border-radius:16px;
 }
 .ms-prejoin-daily-header {
@@ -200,6 +200,7 @@
   font-weight:600;
 }
 .ms-prejoin-daily-name {
+  display:inline-grid;
   position:absolute;
   bottom:10px;
   left:12px;
@@ -207,15 +208,59 @@
   max-width:60%;
   border-radius:6px;
   background:#1B1B1BCC;
-  padding:5px 8px;
+  padding:5px 26px 5px 8px;
   color:white;
+  transition:padding-right 180ms ease;
+}
+.ms-prejoin-name-sizer {
+  grid-area:1/1;
+  visibility:hidden;
+  overflow:hidden;
+  white-space:pre;
+  font-size:11px;
+}
+.ms-prejoin-name-edit {
+  position:absolute;
+  right:4px;
+  width:18px;
+  height:18px;
+  top:50%;
+  transform:translate(0,-50%);
+  opacity:0.75;
+  pointer-events:auto;
+  cursor:pointer;
+  transition:opacity 180ms ease,transform 180ms ease;
+}
+.ms-prejoin-daily-name:hover,
+.ms-prejoin-daily-name:focus-within {
+  padding-right:26px;
+}
+.ms-prejoin-daily-name:hover .ms-prejoin-name-edit,
+.ms-prejoin-daily-name:focus-within .ms-prejoin-name-edit {
+  opacity:0.75;
+  transform:translate(0,-50%);
+}
+@media(prefers-reduced-motion:reduce) {
+  .ms-prejoin-daily-name,
+  .ms-prejoin-name-edit {
+    transition:none;
+  }
 }
 .ms-prejoin-daily-name input {
-  width:100%;
-  min-width:0;
+  grid-area:1/1;
+  width:0;
+  min-width:100%;
   background:transparent;
   font-size:11px;
   outline:none;
+}
+.ms-prejoin-custom-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,140px),1fr));
+  gap:8px;
+}
+.ms-prejoin-custom-grid>div {
+  min-width:0;
 }
 .ms-prejoin-daily-name:focus-within {
   outline:2px solid #5286F6;

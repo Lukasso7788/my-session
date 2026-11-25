@@ -486,6 +486,8 @@ export function PreJoinModal({
                   </div>
                   <label className="ms-prejoin-daily-name">
                     <span className="sr-only">Display name</span>
+                    <span className="ms-prejoin-name-sizer" aria-hidden="true">{value.displayName || "Your name"}</span>
+                    <img className="ms-prejoin-name-edit" src="/icons/edit_profile_hover.svg" alt="" aria-hidden="true" />
                     <input id="prejoin-display-name" aria-label="Display name" value={value.displayName}
                       onChange={(e) => onChange({ ...value, displayName: e.target.value })} placeholder="Your name" />
                   </label>
@@ -700,7 +702,7 @@ export function PreJoinModal({
                           event.currentTarget.value = "";
                         }}
                       />
-                      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      <div className="ms-prejoin-custom-grid mt-2">
                         {customBackgroundSlots.map((slot) => {
                           const selected = videoFxMode === "bg" && !!slot.dataUrl && bgImageUrl === slot.dataUrl;
                           return (
@@ -720,9 +722,9 @@ export function PreJoinModal({
                                 {slot.dataUrl ? <img src={slot.dataUrl} alt="" className="h-full w-full object-cover" /> : <span className={`flex h-full items-center justify-center text-[11px] ${labelCls}`}>Empty slot</span>}
                                 {selected ? <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-[#5286F6] text-white"><Check size={12} aria-hidden="true" /></span> : null}
                               </button>
-                              <div className="flex items-center justify-between gap-1.5 px-2 py-2">
+                              <div className="flex min-w-0 flex-col items-start gap-1.5 px-2 py-2">
                                 <span className="truncate text-[11px] font-semibold">{slot.label}</span>
-                                <div className="flex shrink-0 gap-1">
+                                <div className="flex flex-wrap gap-1">
                                   <button
                                     type="button"
                                     disabled={!value.videoEnabled || fxApplying || !onUploadCustomBackground}
