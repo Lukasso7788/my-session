@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { LocalVideoTrack } from "livekit-client";
-import { ArrowRight, Check, ChevronUp, SlidersHorizontal, X } from "lucide-react";
+import { Check, ChevronUp, SlidersHorizontal, X } from "lucide-react";
 import { PreJoinDeviceSelect, PreJoinDisclosure } from "./PreJoinMenus";
 import "./prejoin-compact.css";
 import { Icon } from "./LiveKitUI";
@@ -86,19 +86,6 @@ function deviceLabel(d: MediaDeviceInfo, fallback: string) {
   return (d.label || "").trim() || fallback;
 }
 
-function PreJoinModalIcon({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <span
-      className={`inline-block shrink-0 bg-current ${className}`}
-      style={{
-        WebkitMask: "url('/icons/prejoin-room-check.svg') center / contain no-repeat",
-        mask: "url('/icons/prejoin-room-check.svg') center / contain no-repeat",
-      }}
-      aria-hidden="true"
-    />
-  );
-}
-
 function PreJoinMediaIcon({
   source,
   className = "h-[18px] w-[18px]",
@@ -152,7 +139,7 @@ export function PreJoinModal({
   // Pre-join intentionally uses the light chat palette in every room theme.
   const theme: RoomTheme = "light";
   const isLight = true;
-  const [compactMenu, setCompactMenu] = useState<"mic" | "camera" | "processing" | "background" | null>(null);
+  const [compactMenu, setCompactMenu] = useState<"mic" | "camera" | "processing" | null>(null);
   const compactMenuRef = useRef(compactMenu);
   compactMenuRef.current = compactMenu;
   const compactControlsRef = useRef<HTMLDivElement>(null);
@@ -338,7 +325,7 @@ export function PreJoinModal({
     "fixed inset-0 z-[2147483647] flex items-center justify-center px-3 py-4 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]";
 
   const card = [
-    "relative flex max-h-[92dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-[24px] border shadow-[0_28px_90px_rgba(0,0,0,0.36)] sm:max-h-[92dvh] sm:max-w-[560px] sm:rounded-[28px]",
+    "relative flex max-h-[92dvh] w-full max-w-[460px] flex-col overflow-hidden rounded-[24px] border shadow-[0_28px_90px_rgba(0,0,0,0.36)] sm:max-h-[92dvh] sm:max-w-[460px] sm:rounded-[28px]",
     isLight ? "border-[#D8D0D0] bg-[#F3F1F1] text-[#20242D]" : "border-[#2B2B2B] bg-[#1B1B1B] text-white",
   ].join(" ");
 
@@ -348,13 +335,6 @@ export function PreJoinModal({
   const inputCls = isLight ? "text-[#20242D] placeholder:text-[#909090]" : "text-white placeholder:text-white/40";
   const btnGhost = isLight ? "border border-[#D8D0D0] bg-white text-[#2F2F2F] hover:border-[#A9C4FC] hover:bg-[#F3F1F1]" : "border border-[#343434] bg-[#242424] text-white/85 hover:border-[#5286F6]/45 hover:bg-[#2F2F2F]";
   const btnPrimary = "bg-[#5286F6] text-white shadow-[0_12px_30px_rgba(82,134,246,0.25)] hover:bg-[#3E75ED] hover:shadow-[0_14px_34px_rgba(82,134,246,0.34)]";
-  const fxBtnBase = "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl sm:h-11 sm:w-11 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6] disabled:cursor-not-allowed disabled:opacity-60";
-  const fxBtnSelected = isLight
-    ? "border border-[#5286F6]/50 bg-[#5286F6]/15 text-[#2459BE] hover:bg-[#5286F6]/20"
-    : "border border-[#5286F6]/50 bg-[#5286F6]/20 text-[#C4D6FF] hover:bg-[#5286F6]/25";
-  const fxBtnIdle = isLight
-    ? "border border-[#D8D0D0] bg-white text-[#2F2F2F] hover:border-[#5286F6]/50 hover:bg-[#5286F6]/10 hover:text-[#2459BE]"
-    : "border border-[#343434] bg-[#2F2F2F] text-white/85 hover:border-[#5286F6]/50 hover:bg-[#5286F6]/15 hover:text-[#C4D6FF]";
   const mediaToggleBase = "inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-2.5 rounded-2xl border px-3 text-[13px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6]";
   const mediaToggleOn = isLight ? "border-[#A9C4FC] bg-[#EAF1FF] text-[#2459BE] hover:bg-[#DDE9FF]" : "border-[#5286F6]/45 bg-[#5286F6]/18 text-[#C4D6FF] hover:bg-[#5286F6]/25";
   const mediaToggleOff = isLight ? "border-[#D8D0D0] bg-white text-[#5E5E5E] hover:bg-[#F3F1F1]" : "border-[#343434] bg-[#2F2F2F] text-[#C8C8C8] hover:bg-[#383838]";
@@ -447,13 +427,8 @@ export function PreJoinModal({
       void Promise.resolve(onApplyVideoFx("bg", imageUrl));
     }
   };
-  const selectedEffectLabel = selectedEffect === "blur" ? "Blur" : selectedEffect === "image" ? "Image" : "Custom image";
   const visibleBackgroundChoice = expandedBackgroundChoice || activeBackgroundChoice;
-  const [closingBackgroundChoice, setClosingBackgroundChoice] = useState<BackgroundChoice>("off");
-  useEffect(() => {
-    if (visibleBackgroundChoice !== "off") setClosingBackgroundChoice(visibleBackgroundChoice);
-  }, [visibleBackgroundChoice]);
-  const renderedBackgroundChoice = visibleBackgroundChoice === "off" ? closingBackgroundChoice : visibleBackgroundChoice;
+  const renderedBackgroundChoice = visibleBackgroundChoice === "off" ? selectedEffect : visibleBackgroundChoice;
 
   if (!open) return null;
 
@@ -462,6 +437,7 @@ export function PreJoinModal({
       className={overlay}
       data-theme={theme}
       data-prejoin-compact
+      data-prejoin-daily
       role="dialog"
       aria-modal="true"
       aria-labelledby="prejoin-title"
@@ -479,32 +455,20 @@ export function PreJoinModal({
         className={`${card} z-10`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div data-prejoin-header className={`relative shrink-0 overflow-hidden border-b px-5 py-4 sm:px-7 sm:py-5 ${border}`}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3.5">
-              <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${isLight ? "border-[#C9D9FB] bg-[#EAF1FF] text-[#336BD8]" : "border-[#5286F6]/25 bg-[#5286F6]/15 text-[#9AB9FF]"}`}>
-                <PreJoinModalIcon className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <h2 id="prejoin-title" className="font-inter text-[18px] leading-6 font-semibold tracking-[-0.025em] sm:text-[20px]">Before you join</h2>
-                <p className={`mt-1 text-[12px] leading-4 ${labelCls}`}>Check your camera and sound before entering.</p>
-              </div>
-            </div>
-
-            <button
-              onClick={onCancel}
-              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-lg transition ${btnGhost}`}
-              aria-label="Close pre-join"
-              type="button"
-            >
-              <X size={18} aria-hidden="true" />
+        <div data-prejoin-header className="ms-prejoin-daily-header">
+          <h2 id="prejoin-title">Ready to join?</h2>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={onCancel} className={`ms-prejoin-daily-cancel ${btnGhost}`}>Cancel</button>
+            <button type="button" onClick={handleJoin} disabled={fxApplying}
+              className={`ms-prejoin-daily-join ${btnPrimary} disabled:opacity-60`}>
+              {fxApplying ? "Applying…" : "Join room"}
             </button>
           </div>
         </div>
 
-        <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-7">
-          <div className="overflow-hidden rounded-[20px] border border-white/10">
-                <div className="relative h-[200px] w-full overflow-hidden bg-[#1B1B1B]">
+        <div className="custom-scrollbar ms-prejoin-daily-body min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="w-full overflow-hidden">
+                <div className="relative aspect-video w-full overflow-hidden bg-[#1B1B1B]">
                   <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-white/15 bg-[#1B1B1B]/75 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur-sm">
                     {value.videoEnabled ? <Icon name="camera-on" theme="dark" className="h-3.5 w-3.5" /> : <Icon name="camera-off" theme="dark" className="h-3.5 w-3.5" />}
                     {previewHint}
@@ -520,6 +484,11 @@ export function PreJoinModal({
                             : "Clean"
                       : "Off"}
                   </div>
+                  <label className="ms-prejoin-daily-name">
+                    <span className="sr-only">Display name</span>
+                    <input id="prejoin-display-name" aria-label="Display name" value={value.displayName}
+                      onChange={(e) => onChange({ ...value, displayName: e.target.value })} placeholder="Your name" />
+                  </label>
                   {value.videoEnabled ? (
                     <>
                       <div ref={previewHostRef} className="absolute inset-0 h-full w-full" />
@@ -551,43 +520,9 @@ export function PreJoinModal({
               </button>
               <button type="button" className="ms-prejoin-compact-chevron" aria-label="Choose camera" aria-expanded={compactMenu === 'camera'} onClick={() => { if(compactMenu !== 'camera') onRefreshDevices(); setCompactMenu(compactMenu === 'camera' ? null : 'camera'); }}><ChevronUp size={10} strokeWidth={2.4}/></button>
             </div>
-            {!hideBackgroundFx && (
-              <div className="ms-prejoin-effect-controls" role="group" aria-label="Background effect choices">
-                <button type="button" className={`${fxBtnBase} ${activeBackgroundChoice === "off" ? fxBtnSelected : fxBtnIdle}`}
-                  aria-label="No backgrounds" title="No backgrounds" aria-pressed={activeBackgroundChoice === "off"}
-                  disabled={!!fxBlockedReason || fxApplying} onClick={() => applyBackgroundChoice("off")}>
-                  <BackgroundChoiceIcon choice="off" />
-                </button>
-                <div className="ms-prejoin-effect-split">
-                  <button type="button" className={`${fxBtnBase} ${activeBackgroundChoice !== "off" ? fxBtnSelected : fxBtnIdle}`}
-                    aria-label={selectedEffectLabel} title={selectedEffectLabel} aria-pressed={activeBackgroundChoice === selectedEffect}
-                    disabled={!!fxBlockedReason || fxApplying} onClick={() => applyBackgroundChoice(selectedEffect)}>
-                    <BackgroundChoiceIcon choice={selectedEffect} />
-                  </button>
-                  <button type="button" className="ms-prejoin-compact-chevron" aria-label="Choose background effect"
-                    aria-expanded={compactMenu === "background"} aria-controls="prejoin-effect-menu"
-                    disabled={!!fxBlockedReason || fxApplying}
-                    onClick={() => setCompactMenu(compactMenu === "background" ? null : "background")}>
-                    <ChevronUp size={10} strokeWidth={2.4} />
-                  </button>
-                </div>
-                {compactMenu === "background" && (
-                  <div id="prejoin-effect-menu" className="ms-prejoin-effect-menu" role="group" aria-label="Choose background effect">
-                    {(["blur", "image", "custom"] as const).map((choice) => (
-                      <button key={choice} type="button" aria-pressed={selectedEffect === choice}
-                        disabled={!!fxBlockedReason || fxApplying} onClick={() => applyBackgroundChoice(choice)}>
-                        <BackgroundChoiceIcon choice={choice} />
-                        <span>{choice === "blur" ? "Blur" : choice === "image" ? "Image" : "Custom image"}</span>
-                        {selectedEffect === choice && <Check size={15} />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
             <button type="button" className="ms-prejoin-processing-button" aria-label="Audio processing" aria-controls="prejoin-audio-processing" title="Audio processing" aria-expanded={compactMenu === 'processing'} onClick={() => setCompactMenu(compactMenu === 'processing' ? null : 'processing')}><SlidersHorizontal size={20}/></button>
-            {compactMenu && compactMenu !== "background" && <div className={`ms-prejoin-compact-menu ms-prejoin-compact-menu--${compactMenu}`} role="group" aria-label={compactMenu === 'mic' ? 'Audio settings' : compactMenu === 'camera' ? 'Camera settings' : 'Audio processing'}>
-              <div className="ms-prejoin-compact-menu-title"><strong>{compactMenu === 'mic' ? 'Audio settings' : compactMenu === 'camera' ? 'Camera settings' : 'Audio processing'}</strong><button type="button" onClick={()=>setCompactMenu(null)} aria-label="Close settings menu"><X size={15}/></button></div>
+            {compactMenu && <div className={`ms-prejoin-compact-menu ms-prejoin-compact-menu--${compactMenu}`} role="group" aria-label={compactMenu === "mic" ? "Audio settings" : compactMenu === "camera" ? "Camera settings" : "Audio processing"}>
+              <div className="ms-prejoin-compact-menu-title"><strong>{compactMenu === "mic" ? "Audio settings" : compactMenu === "camera" ? "Camera settings" : "Audio processing"}</strong><button type="button" onClick={()=>setCompactMenu(null)} aria-label="Close settings menu"><X size={15}/></button></div>
               {compactMenu === 'mic' && <div className="ms-prejoin-compact-menu-fields">
                 <label htmlFor="prejoin-microphone">Microphone</label>
                   <PreJoinDeviceSelect id="prejoin-microphone" label="Microphone" theme={theme} value={value.audioInputId}
@@ -598,6 +533,13 @@ export function PreJoinModal({
                     onChange={(audioOutputId) => onChange({ ...value, audioOutputId })}
                     options={[{ value: "default", label: "Default" }, ...devices.audioOutputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Speaker ${i + 1}`) }))]} />
                 <div className="flex gap-2"><button type="button" className={`rounded-xl px-3 py-2 text-xs ${btnGhost}`} onClick={handleTestSpeaker}>Test sound</button><button type="button" className={`rounded-xl px-3 py-2 text-xs ${btnGhost}`} onClick={onRefreshDevices}>Refresh devices</button></div>
+              </div>}
+              {compactMenu === 'camera' && <div className="ms-prejoin-compact-menu-fields"><label htmlFor="prejoin-camera">Camera</label>
+                  <PreJoinDeviceSelect id="prejoin-camera" label="Camera" theme={theme} value={value.videoInputId}
+                    onChange={(videoInputId) => onChange({ ...value, videoInputId })}
+                    options={[{ value: "", label: "Default" }, ...devices.videoInputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Camera ${i + 1}`) }))]} />
+                <button type="button" className={`rounded-xl px-3 py-2 text-xs ${btnGhost}`} onClick={onRefreshDevices}>Refresh devices</button>
+                <p className={`text-[11px] leading-4 ${labelCls}`}>Device names appear after browser permission is granted.</p>
               </div>}
               {compactMenu === 'processing' && <>                <div id="prejoin-audio-processing">
                 <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -616,17 +558,19 @@ export function PreJoinModal({
                 </div>
                 <p className={`mt-3 text-[11px] leading-4 ${labelCls}`}>Voice quiet or clipped? Try turning noise suppression off.</p>
                 </div></>}
-              {compactMenu === 'camera' && <div className="ms-prejoin-compact-menu-fields"><label htmlFor="prejoin-camera">Camera</label>
-                  <PreJoinDeviceSelect id="prejoin-camera" label="Camera" theme={theme} value={value.videoInputId}
-                    onChange={(videoInputId) => onChange({ ...value, videoInputId })}
-                    options={[{ value: "", label: "Default" }, ...devices.videoInputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Camera ${i + 1}`) }))]} />
-                <button type="button" className={`rounded-xl px-3 py-2 text-xs ${btnGhost}`} onClick={onRefreshDevices}>Refresh devices</button>
-                <p className={`text-[11px] leading-4 ${labelCls}`}>Device names appear after browser permission is granted.</p>
-              </div>}
-
             </div>}
           </div>
-              {!hideBackgroundFx && (visibleBackgroundChoice !== "off" || fxBlockedReason || fxError) && <div id="prejoin-background-panel" className="ms-prejoin-compact-background mt-4">
+              {!hideBackgroundFx && <div id="prejoin-background-panel" className="ms-prejoin-compact-background mt-4">
+                <div className="ms-prejoin-effect-switcher" role="group" aria-label="Background effect choices">
+                  {(["off", "blur", "image", "custom"] as const).map((choice) => (
+                    <button key={choice} type="button" aria-pressed={activeBackgroundChoice === choice}
+                      disabled={!!fxBlockedReason || fxApplying} onClick={() => applyBackgroundChoice(choice)}>
+                      <BackgroundChoiceIcon choice={choice} />
+                      <span>{choice === "off" ? "None" : choice === "blur" ? "Blur" : choice === "image" ? "Image" : "Custom"}</span>
+                    </button>
+                  ))}
+                </div>
+
               {!hideBackgroundFx ? (
                 <div className={`rounded-[20px] ${inputWrap}`}>
                   <div className="flex items-center justify-between gap-2 px-3 py-2.5">
@@ -639,7 +583,7 @@ export function PreJoinModal({
 
                   </div>
 
-                  <PreJoinDisclosure open={!!(visibleBackgroundChoice !== "off" || fxBlockedReason || fxError)}>
+                  <PreJoinDisclosure open={true}>
                   <div className={`border-t px-4 pb-4 ${border}`}>
 
                   {fxBlockedReason ? <div className={`mt-2 text-[11px] ${labelCls}`}>{fxBlockedReason}</div> : null}
@@ -807,24 +751,6 @@ export function PreJoinModal({
               ) : null}
               </div>}
           {(deviceError || connectionError) && <p role="alert" className="mt-3 rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-400">{connectionError || deviceError}</p>}
-        </div>
-
-        <div data-prejoin-footer className={`flex shrink-0 items-center justify-between gap-3 border-t px-5 py-4 sm:px-7 sm:py-5 ${border} ${isLight ? "bg-[#F3F1F1]" : "bg-[#202020]"}`}>
-          <div className="ms-prejoin-compact-name">
-            <label htmlFor="prejoin-display-name" className={`text-[10px] ${labelCls}`}>Joining as</label>
-            <input id="prejoin-display-name" aria-label="Display name" value={value.displayName} onChange={e=>onChange({...value,displayName:e.target.value})} placeholder="Your name" className={`bg-transparent text-sm font-semibold outline-none ${inputCls}`}/>
-          </div>
-
-          <div className="ml-auto flex w-full items-center gap-2.5 sm:w-auto sm:gap-3">
-            <button onClick={onCancel} className={`h-11 rounded-xl px-4 text-[13px] font-semibold transition sm:px-5 ${btnGhost}`} type="button">
-              Cancel
-            </button>
-
-            <button onClick={handleJoin} disabled={fxApplying} className={`inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl px-6 text-[13px] font-semibold transition duration-200 sm:flex-none ${btnPrimary} disabled:opacity-70`} type="button">
-              <span>{fxApplying ? "Applying background…" : "Join room"}</span>
-              {!fxApplying ? <ArrowRight size={16} aria-hidden="true" /> : null}
-            </button>
-          </div>
         </div>
 
         <audio ref={testAudioRef} />
