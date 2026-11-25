@@ -161,20 +161,13 @@
   border:0;
   border-radius:50%;
   outline:2px solid white;
-  background:#EAF1FF;
-  color:#336BD8;
+  background:#F3F4F6;
+  color:#27303C;
 }
 [data-prejoin-compact] .ms-prejoin-compact-controls button.ms-prejoin-compact-chevron:hover {
-  background:#DDE9FF;
+  background:#E9EDF2;
 }
 [data-prejoin-compact] .ms-prejoin-compact-controls button.ms-prejoin-compact-chevron:focus-visible {
   outline:2px solid #5286F6;
   outline-offset:2px;
-}
-[data-prejoin-compact] .ms-prejoin-compact-controls .ms-prejoin-compact-split button.ms-prejoin-compact-chevron {
-  background:#F3F4F6;
-  color:#27303C;
-}
-[data-prejoin-compact] .ms-prejoin-compact-controls .ms-prejoin-compact-split button.ms-prejoin-compact-chevron:hover {
-  background:#E9EDF2;
 }
