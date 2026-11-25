@@ -39,3 +39,7 @@ Approved for main by user. Header now has explicit 24px title +16px subtitle lin
 Header spacing follow-up: subtitle margin restored to 4px (mt-1), giving 24+4+16=44px text stack matching the 44px icon. Local adjustment after main commit 30bbd53; not yet pushed.
 
 User approved publishing the 4px header spacing follow-up. Browser measured 43.98px text stack and 4px gap; diff check passed. Committing and pushing to main.
+
+Camera color fix: room Icon renders an img with baked SVG fill, which cannot inherit button text color. Prejoin camera button now masks the same shared camera-on-dark/camera-off assets via existing PreJoinMediaIcon (bg-current), preserving exact artwork while inheriting active blue / idle dark. Local follow-up, not pushed yet.
+
+Camera color fix approved for main. Verified browser icon background matches active button color rgb(36,89,190); all 5 prejoin menu tests and diff check pass. Publishing follow-up.

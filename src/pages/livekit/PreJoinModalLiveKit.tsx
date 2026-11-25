@@ -523,7 +523,7 @@ export function PreJoinModal({
             </div>
             <div className="ms-prejoin-compact-split">
               <button type="button" aria-pressed={value.videoEnabled} onClick={() => onChange({ ...value, videoEnabled: !value.videoEnabled })} className={`${mediaToggleBase} ${value.videoEnabled ? mediaToggleOn : mediaToggleOff}`}>
-                {value.videoEnabled ? <Icon name="camera-on" theme="light" className="h-[18px] w-[18px]" /> : <Icon name="camera-off" theme="light" className="h-[18px] w-[18px]" />}<span>Camera {value.videoEnabled ? "on" : "off"}</span>
+                {value.videoEnabled ? <PreJoinMediaIcon source="camera-on-dark"/> : <PreJoinMediaIcon source="camera-off"/>}<span>Camera {value.videoEnabled ? "on" : "off"}</span>
               </button>
               <button type="button" className="ms-prejoin-compact-chevron" aria-label="Choose camera" aria-expanded={compactMenu === 'camera'} onClick={() => { if(compactMenu !== 'camera') onRefreshDevices(); setCompactMenu(compactMenu === 'camera' ? null : 'camera'); }}><ChevronDown size={15}/></button>
             </div>
