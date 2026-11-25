@@ -93,9 +93,9 @@ export default function FocusShieldPage() {
                     <article className="rounded-3xl bg-[#202b43] p-7 text-white sm:p-8" aria-labelledby="desktop-download-title">
                         <p className="text-sm font-medium text-[#b6ceff]">The FocusShield desktop app</p>
                         <h2 id="desktop-download-title" className="mt-3 text-3xl font-semibold">Your focus, protected on Windows.</h2>
-                        <a href="https://github.com/Lukasso7788/focus-shield-releases/releases/download/v0.4.14/FocusShield-Setup-0.4.14.exe" className="mt-7 inline-flex items-center justify-center rounded-full bg-[#5286f6] px-6 py-3.5 text-base font-semibold text-white transition hover:bg-[#4477e3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Download FocusShield for Windows</a>
-                        <p className="mt-4 text-sm leading-6 text-[#b6c4de]">Version 0.4.14 · Windows 10 / 11 · 64-bit · About 544 MB</p>
-                        <p className="mt-4 text-base leading-7 text-[#d1daeb]">Block selected applications, run independent focus timers, save block lists and schedules, or work on one task in Hyper Focus. AI Coach can remind you about distractions and suggest a next step.</p>
+                        <a href="https://github.com/Lukasso7788/focus-shield-releases/releases/download/v0.4.15/FocusShield-Setup-0.4.15.exe" className="mt-7 inline-flex items-center justify-center rounded-full bg-[#5286f6] px-6 py-3.5 text-base font-semibold text-white transition hover:bg-[#4477e3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white">Download FocusShield for Windows</a>
+                        <p className="mt-4 text-sm leading-6 text-[#b6c4de]">Version 0.4.15 · Windows 10 / 11 · 64-bit · About 544 MB</p>
+                        <p className="mt-4 text-base leading-7 text-[#d1daeb]">Block selected applications, run independent focus timers, save block lists and schedules, or work on one task in Hyper Focus. Switch between FocusShield, Hyper Focus and AI Coach at the top. All three can run together. AI Coach can remind you about distractions and suggest a next step.</p>
                         <a href="#install-desktop" className="mt-3 inline-block text-sm font-medium text-white underline underline-offset-4">Windows installation instructions</a>
                     </article>
                     <article className="rounded-3xl border border-gray-200 bg-white p-7 sm:p-8" aria-labelledby="extension-download-title">
@@ -121,11 +121,11 @@ export default function FocusShieldPage() {
                     <h2 id="install-desktop-title" className="mt-2 text-2xl font-semibold">Install the Windows app</h2>
                     <ol className="mt-6 list-decimal space-y-4 pl-6 text-base leading-7 text-gray-600 marker:font-semibold marker:text-[#4678d8]">
                         <li>Click <strong className="text-gray-900">Download FocusShield for Windows</strong> and wait for the EXE to finish downloading.</li>
-                        <li>Run <code className="break-all text-sm text-gray-900">FocusShield-Setup-0.4.14.exe</code> and follow the installer. If FocusShield is already open, finish your active sessions and close it before upgrading.</li>
+                        <li>Run <code className="break-all text-sm text-gray-900">FocusShield-Setup-0.4.15.exe</code> and follow the installer. If FocusShield is already open, finish your active sessions and close it before upgrading.</li>
                         <li>Open FocusShield from your desktop or Start menu. Choose the apps to block, set a duration, then start your session.</li>
                         <li>For website blocking, click Browser extension in FocusShield. The files are already included. Follow the one-time browser steps below and keep FocusShield running in the system tray.</li>
                         <li>Need to stop Locked Mode early? In the Windows app, use <strong className="text-gray-900">Cancel Locked Mode (use 1)</strong>. You start with one cancellation and earn one every 7 days; unused cancellations stack on this computer.</li>
-                        <li>To use AI Coach, open its panel and click <strong className="text-gray-900">Install package for AI usage</strong>. Once the download finishes, enter your task and start coaching.</li>
+                        <li>To use AI Coach, choose the AI Coach tab at the top and click <strong className="text-gray-900">Install package for AI usage</strong>. Once the download finishes, enter your task and start coaching.</li>
                     </ol>
                     <div className="mt-6 rounded-2xl bg-[#edf3ff] p-5 text-base leading-7 text-[#2a426e]"><strong>Future desktop updates</strong><p className="mt-1">When a new release is available, FocusShield shows “New version available”. Click “Click to update” to download it, then “Restart to install” after your active sessions finish.</p></div>
                 </section>
