@@ -1,4 +1,4 @@
-import { ChatReplyPreview } from "./ChatReplyPreview";
+import { ChatReplyDraft } from "./ChatReplyDraft";
 import React, {
     useCallback,
     useEffect,
@@ -3920,19 +3920,22 @@ export function ChatPanel({
                 </div>
             )}
 
-            <div className={"px-2.5 pt-2.5 pb-2 border-t " + headerBorder}>
+            <div className={"px-2.5 pt-2 pb-2 border-t " + headerBorder}>
                 {generalChatLocked && (
                     <div className={"mb-3 rounded-xl px-3 py-2 text-[12px] leading-5 " + (isLight ? "bg-[#F0F0F0] text-black/60" : "bg-white/[0.06] text-[#D0D6DD]")}>
                         Public chat is disabled by the host. Use DMs to message the host privately.
                     </div>
                 )}
                 {replyTo && (
-                    <ChatReplyPreview
-                        author={replyTo.profile?.full_name || "Participant"}
-                        preview={quotePreviewForReply(replyTo.body, 220) || "[message]"}
-                        isLight={isLight}
-                        onCancel={() => setReplyTo(null)}
-                    />
+                    <div className="mb-2">
+                        <ChatReplyDraft
+                            author={replyTo.profile?.full_name || "Participant"}
+                            avatarUrl={replyTo.profile?.avatar_url || undefined}
+                            text={quotePreviewForReply(replyTo.body, 220) || "[message]"}
+                            dark={!isLight}
+                            onCancel={() => setReplyTo(null)}
+                        />
+                    </div>
                 )}
 
                 {voiceMessagePreview && text.trim() ? (

@@ -9,3 +9,5 @@ MySession is React 18/Vite/TypeScript with Supabase Auth/database/realtime and L
 Design: existing neutral light/dark chat surfaces, compact reply arrow badge, slim blue accent, separate author heading, readable two-line excerpt with long-word wrapping, circular accessible cancel control and focus-visible outline. Parent passes author, preformatted preview, theme and existing setReplyTo(null) callback. No data writes or new state/effects in the component.
 
 Verify actual rendered component at narrow widths and in both themes; check long author/message clipping, cancel callback, keyboard focus. Use existing dependencies via local node_modules junction if needed, do not commit generated preview/build artifacts. Stage source/CSS/context by exact filename. User explicitly authorized commit and push to main; fetch/rebase against latest main before pushing and verify the remote commit. Publication/deployment is separate from a successful Git push.
+
+Superseded by the user-approved compact one-line design; see docs/chat-reply-local-v2-context.md for current integration and verification.
