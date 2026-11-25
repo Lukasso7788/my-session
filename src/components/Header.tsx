@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useCreateSessionModal } from "../context/CreateSessionModalContext";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -17,9 +17,9 @@ import { PAYWALL_ENABLED } from "../lib/flags";
 import { getMembershipBadge, isComplimentaryPro } from "../lib/membershipPresentation";
 import { defaultAvatarUrl } from "../lib/defaultAvatar";
 
+import { APP_DOWNLOAD_PAGE_PATH } from "../lib/appDownloads";
+
 const BRAND_BLACK = "#2F2F2F";
-const WINDOWS_DESKTOP_DOWNLOAD_URL =
-    "https://github.com/Lukasso7788/my-session/releases/download/desktop-latest/MySession-Setup-0.4.5.exe";
 
 function WindowsAppIcon({ className = "h-5 w-5" }: { className?: string }) {
     return (
@@ -43,24 +43,26 @@ function AppDownloadOptions({ onSelect }: { onSelect?: () => void }) {
         <div className="px-4 py-3 border-t border-b border-borderGray">
             <p className="mb-2 text-xs font-medium text-gray-500">Get the app</p>
             <div className="grid grid-cols-2 gap-2">
-                <a
-                    href={WINDOWS_DESKTOP_DOWNLOAD_URL}
+                <Link
+                    to={APP_DOWNLOAD_PAGE_PATH}
                     onClick={onSelect}
-                    aria-label="Download MySession for Windows"
-                    title="Download MySession for Windows"
+                    aria-label="View MySession app downloads"
+                    title="View app downloads"
                     className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg border border-gray-200 py-2 text-xs font-medium text-brandBlack transition hover:border-green-500 hover:bg-green-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-green-600"
                 >
                     <WindowsAppIcon />
                     <span>Windows</span>
-                </a>
-                <div
-                    aria-label="MySession for Android is coming soon"
+                </Link>
+                <Link
+                    to={`${APP_DOWNLOAD_PAGE_PATH}#android`}
+                    onClick={onSelect}
+                    aria-label="View Android app availability"
                     title="Android app coming soon"
                     className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-gray-200 py-2 text-xs text-gray-400"
                 >
                     <AndroidAppIcon />
                     <span>Android · Soon</span>
-                </div>
+                </Link>
             </div>
         </div>
     );
@@ -720,11 +722,11 @@ export default function Header() {
                     </div>
                 )}
 
-                {showDesktopNotice && (
+                {showDesktopNotice && location.pathname !== APP_DOWNLOAD_PAGE_PATH && (
                     <div className="flex min-h-10 items-center justify-center gap-2 border-t border-green-100 bg-[#f0f9f1] px-4 py-2 text-center text-xs text-[#24532c] sm:text-sm" role="region" aria-label="MySession desktop app">
                         <WindowsAppIcon className="h-4 w-4 shrink-0" />
                         <span>MySession for Windows is available.</span>
-                        <a href={WINDOWS_DESKTOP_DOWNLOAD_URL} className="shrink-0 font-semibold underline underline-offset-2 hover:text-green-800">Download app</a>
+                        <Link to={APP_DOWNLOAD_PAGE_PATH} className="shrink-0 font-semibold underline underline-offset-2 hover:text-green-800">Download app</Link>
                         <button
                             type="button"
                             aria-label="Dismiss desktop app announcement"
