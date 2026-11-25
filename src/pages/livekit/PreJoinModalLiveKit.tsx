@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { LocalVideoTrack } from "livekit-client";
-import { ArrowRight, Check, ChevronDown, SlidersHorizontal, X } from "lucide-react";
+import { ArrowRight, Check, ChevronUp, SlidersHorizontal, X } from "lucide-react";
 import { PreJoinDeviceSelect, PreJoinDisclosure } from "./PreJoinMenus";
 import "./prejoin-compact.css";
 import { Icon } from "./LiveKitUI";
@@ -152,7 +152,7 @@ export function PreJoinModal({
   // Pre-join intentionally uses the light chat palette in every room theme.
   const theme: RoomTheme = "light";
   const isLight = true;
-  const [compactMenu, setCompactMenu] = useState<"mic" | "camera" | "processing" | null>(null);
+  const [compactMenu, setCompactMenu] = useState<"mic" | "camera" | "processing" | "background" | null>(null);
   const compactMenuRef = useRef(compactMenu);
   compactMenuRef.current = compactMenu;
   const compactControlsRef = useRef<HTMLDivElement>(null);
@@ -335,10 +335,10 @@ export function PreJoinModal({
       : "";
 
   const overlay =
-    "fixed inset-0 z-[2147483647] flex items-stretch justify-center px-0 py-0 sm:items-center sm:px-3 sm:py-6 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]";
+    "fixed inset-0 z-[2147483647] flex items-center justify-center px-3 py-4 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]";
 
   const card = [
-    "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-[0_28px_90px_rgba(0,0,0,0.36)] sm:max-h-[92dvh] sm:max-w-[780px] sm:rounded-[28px]",
+    "relative flex max-h-[92dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-[24px] border shadow-[0_28px_90px_rgba(0,0,0,0.36)] sm:max-h-[92dvh] sm:max-w-[560px] sm:rounded-[28px]",
     isLight ? "border-[#D8D0D0] bg-[#F3F1F1] text-[#20242D]" : "border-[#2B2B2B] bg-[#1B1B1B] text-white",
   ].join(" ");
 
@@ -355,7 +355,7 @@ export function PreJoinModal({
   const fxBtnIdle = isLight
     ? "border border-[#D8D0D0] bg-white text-[#2F2F2F] hover:border-[#5286F6]/50 hover:bg-[#5286F6]/10 hover:text-[#2459BE]"
     : "border border-[#343434] bg-[#2F2F2F] text-white/85 hover:border-[#5286F6]/50 hover:bg-[#5286F6]/15 hover:text-[#C4D6FF]";
-  const mediaToggleBase = "inline-flex h-12 min-w-0 flex-1 items-center justify-center gap-2.5 rounded-2xl border px-3 text-[13px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6]";
+  const mediaToggleBase = "inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-2.5 rounded-2xl border px-3 text-[13px] font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5286F6]";
   const mediaToggleOn = isLight ? "border-[#A9C4FC] bg-[#EAF1FF] text-[#2459BE] hover:bg-[#DDE9FF]" : "border-[#5286F6]/45 bg-[#5286F6]/18 text-[#C4D6FF] hover:bg-[#5286F6]/25";
   const mediaToggleOff = isLight ? "border-[#D8D0D0] bg-white text-[#5E5E5E] hover:bg-[#F3F1F1]" : "border-[#343434] bg-[#2F2F2F] text-[#C8C8C8] hover:bg-[#383838]";
 
@@ -424,6 +424,30 @@ export function PreJoinModal({
     : videoFxMode === "blur"
       ? "blur"
       : savedBackground ? "custom" : "image";
+  const [selectedEffect, setSelectedEffect] = useState<Exclude<BackgroundChoice, "off">>("blur");
+  useEffect(() => {
+    if (activeBackgroundChoice !== "off") setSelectedEffect(activeBackgroundChoice);
+  }, [activeBackgroundChoice]);
+
+  const applyBackgroundChoice = (choice: BackgroundChoice) => {
+    setCompactMenu(null);
+    setLocalFxMessage("");
+    if (choice !== "off") setSelectedEffect(choice);
+    if (choice === "off" || choice === "blur") {
+      setExpandedBackgroundChoice(null);
+      void Promise.resolve(onApplyVideoFx(choice));
+      return;
+    }
+    setExpandedBackgroundChoice(choice);
+    const imageUrl = choice === "image"
+      ? selectedPreset?.url || fxBgPresets[0]?.url
+      : savedBackground?.dataUrl || customBackgroundSlots.find((slot) => !!slot.dataUrl)?.dataUrl;
+    if (imageUrl) {
+      onSetBgImageUrl(imageUrl);
+      void Promise.resolve(onApplyVideoFx("bg", imageUrl));
+    }
+  };
+  const selectedEffectLabel = selectedEffect === "blur" ? "Blur" : selectedEffect === "image" ? "Image" : "Custom image";
   const visibleBackgroundChoice = expandedBackgroundChoice || activeBackgroundChoice;
   const [closingBackgroundChoice, setClosingBackgroundChoice] = useState<BackgroundChoice>("off");
   useEffect(() => {
@@ -480,7 +504,7 @@ export function PreJoinModal({
 
         <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-7">
           <div className="overflow-hidden rounded-[20px] border border-white/10">
-                <div className="relative aspect-video overflow-hidden bg-[#1B1B1B]">
+                <div className="relative h-[200px] w-full overflow-hidden bg-[#1B1B1B]">
                   <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-white/15 bg-[#1B1B1B]/75 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur-sm">
                     {value.videoEnabled ? <Icon name="camera-on" theme="dark" className="h-3.5 w-3.5" /> : <Icon name="camera-off" theme="dark" className="h-3.5 w-3.5" />}
                     {previewHint}
@@ -516,61 +540,53 @@ export function PreJoinModal({
           </div>
           <div className="ms-prejoin-compact-controls" ref={compactControlsRef}>
             <div className="ms-prejoin-compact-split">
-              <button type="button" aria-pressed={value.audioEnabled} onClick={() => onChange({ ...value, audioEnabled: !value.audioEnabled })} className={`${mediaToggleBase} ${value.audioEnabled ? mediaToggleOn : mediaToggleOff}`}>
-                <PreJoinMediaIcon source={value.audioEnabled ? "mic-on" : "mic-off"}/><span>Mic {value.audioEnabled ? "on" : "off"}</span>
+              <button type="button" aria-label={value.audioEnabled ? "Turn microphone off" : "Turn microphone on"} title={value.audioEnabled ? "Turn microphone off" : "Turn microphone on"} aria-pressed={value.audioEnabled} onClick={() => onChange({ ...value, audioEnabled: !value.audioEnabled })} className={`${mediaToggleBase} ${value.audioEnabled ? mediaToggleOn : mediaToggleOff}`}>
+                <PreJoinMediaIcon source={value.audioEnabled ? "mic-on" : "mic-off"}/><span className="ms-prejoin-media-label">Mic {value.audioEnabled ? "on" : "off"}</span>
               </button>
-              <button type="button" className="ms-prejoin-compact-chevron" aria-label="Microphone and audio settings" aria-expanded={compactMenu === 'mic'} onClick={() => { if(compactMenu !== 'mic') onRefreshDevices(); setCompactMenu(compactMenu === 'mic' ? null : 'mic'); }}><ChevronDown size={15}/></button>
+              <button type="button" className="ms-prejoin-compact-chevron" aria-label="Microphone and audio settings" aria-expanded={compactMenu === 'mic'} onClick={() => { if(compactMenu !== 'mic') onRefreshDevices(); setCompactMenu(compactMenu === 'mic' ? null : 'mic'); }}><ChevronUp size={10} strokeWidth={2.4}/></button>
             </div>
             <div className="ms-prejoin-compact-split">
-              <button type="button" aria-pressed={value.videoEnabled} onClick={() => onChange({ ...value, videoEnabled: !value.videoEnabled })} className={`${mediaToggleBase} ${value.videoEnabled ? mediaToggleOn : mediaToggleOff}`}>
-                {value.videoEnabled ? <PreJoinMediaIcon source="camera-on-dark"/> : <PreJoinMediaIcon source="camera-off"/>}<span>Camera {value.videoEnabled ? "on" : "off"}</span>
+              <button type="button" aria-label={value.videoEnabled ? "Turn camera off" : "Turn camera on"} title={value.videoEnabled ? "Turn camera off" : "Turn camera on"} aria-pressed={value.videoEnabled} onClick={() => onChange({ ...value, videoEnabled: !value.videoEnabled })} className={`${mediaToggleBase} ${value.videoEnabled ? mediaToggleOn : mediaToggleOff}`}>
+                {value.videoEnabled ? <PreJoinMediaIcon source="camera-on-dark"/> : <PreJoinMediaIcon source="camera-off"/>}<span className="ms-prejoin-media-label">Camera {value.videoEnabled ? "on" : "off"}</span>
               </button>
-              <button type="button" className="ms-prejoin-compact-chevron" aria-label="Choose camera" aria-expanded={compactMenu === 'camera'} onClick={() => { if(compactMenu !== 'camera') onRefreshDevices(); setCompactMenu(compactMenu === 'camera' ? null : 'camera'); }}><ChevronDown size={15}/></button>
+              <button type="button" className="ms-prejoin-compact-chevron" aria-label="Choose camera" aria-expanded={compactMenu === 'camera'} onClick={() => { if(compactMenu !== 'camera') onRefreshDevices(); setCompactMenu(compactMenu === 'camera' ? null : 'camera'); }}><ChevronUp size={10} strokeWidth={2.4}/></button>
             </div>
-            {!hideBackgroundFx && (<div className="flex shrink-0 items-center gap-1.5" role="group" aria-label="Background effect choices">
-                      {(["off", "blur", "image", "custom"] as BackgroundChoice[]).map((choice) => {
-                        const label = choice === "off" ? "No backgrounds" : choice === "blur" ? "Blur" : choice === "image" ? "Image" : "Custom image";
-                        return (
-                          <div key={choice} className="relative">
-                            <button
-                              type="button"
-                              disabled={!!fxBlockedReason || fxApplying}
-                              onClick={() => {
-                                setLocalFxMessage("");
-                                if (choice === "off" || choice === "blur") {
-                                  setExpandedBackgroundChoice(null);
-                                  void Promise.resolve(onApplyVideoFx(choice));
-                                } else {
-                                  setExpandedBackgroundChoice(choice);
-                                  // Apply an existing image immediately; never request "bg" without a valid URL.
-                                  const imageUrl = choice === "image"
-                                    ? selectedPreset?.url || fxBgPresets[0]?.url
-                                    : savedBackground?.dataUrl || customBackgroundSlots.find((slot) => !!slot.dataUrl)?.dataUrl;
-                                  if (imageUrl) {
-                                    onSetBgImageUrl(imageUrl);
-                                    void Promise.resolve(onApplyVideoFx("bg", imageUrl));
-                                  }
-                                }
-                              }}
-                              className={`peer ${fxBtnBase} ${visibleBackgroundChoice === choice ? fxBtnSelected : fxBtnIdle}`}
-                              aria-label={label}
-                              aria-pressed={activeBackgroundChoice === choice}
-                              aria-expanded={choice === "image" || choice === "custom" ? visibleBackgroundChoice === choice : undefined}
-                            >
-                              <BackgroundChoiceIcon choice={choice} />
-                            </button>
-                            <span
-                              aria-hidden="true"
-                              className={`pointer-events-none invisible absolute bottom-full left-1/2 z-[70] mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold opacity-0 shadow-lg peer-hover:visible peer-hover:opacity-100 peer-focus-visible:visible peer-focus-visible:opacity-100 ${isLight ? "border-[#D8D0D0] bg-white text-[#20242D] shadow-black/10" : "border-[#343434] bg-[#242424] text-white shadow-black/50"}`}
-                            >
-                              {fxBlockedReason || label}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>)}
+            {!hideBackgroundFx && (
+              <div className="ms-prejoin-effect-controls" role="group" aria-label="Background effect choices">
+                <button type="button" className={`${fxBtnBase} ${activeBackgroundChoice === "off" ? fxBtnSelected : fxBtnIdle}`}
+                  aria-label="No backgrounds" title="No backgrounds" aria-pressed={activeBackgroundChoice === "off"}
+                  disabled={!!fxBlockedReason || fxApplying} onClick={() => applyBackgroundChoice("off")}>
+                  <BackgroundChoiceIcon choice="off" />
+                </button>
+                <div className="ms-prejoin-effect-split">
+                  <button type="button" className={`${fxBtnBase} ${activeBackgroundChoice !== "off" ? fxBtnSelected : fxBtnIdle}`}
+                    aria-label={selectedEffectLabel} title={selectedEffectLabel} aria-pressed={activeBackgroundChoice === selectedEffect}
+                    disabled={!!fxBlockedReason || fxApplying} onClick={() => applyBackgroundChoice(selectedEffect)}>
+                    <BackgroundChoiceIcon choice={selectedEffect} />
+                  </button>
+                  <button type="button" className="ms-prejoin-compact-chevron" aria-label="Choose background effect"
+                    aria-expanded={compactMenu === "background"} aria-controls="prejoin-effect-menu"
+                    disabled={!!fxBlockedReason || fxApplying}
+                    onClick={() => setCompactMenu(compactMenu === "background" ? null : "background")}>
+                    <ChevronUp size={10} strokeWidth={2.4} />
+                  </button>
+                </div>
+                {compactMenu === "background" && (
+                  <div id="prejoin-effect-menu" className="ms-prejoin-effect-menu" role="group" aria-label="Choose background effect">
+                    {(["blur", "image", "custom"] as const).map((choice) => (
+                      <button key={choice} type="button" aria-pressed={selectedEffect === choice}
+                        disabled={!!fxBlockedReason || fxApplying} onClick={() => applyBackgroundChoice(choice)}>
+                        <BackgroundChoiceIcon choice={choice} />
+                        <span>{choice === "blur" ? "Blur" : choice === "image" ? "Image" : "Custom image"}</span>
+                        {selectedEffect === choice && <Check size={15} />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <button type="button" className="ms-prejoin-processing-button" aria-label="Audio processing" aria-controls="prejoin-audio-processing" title="Audio processing" aria-expanded={compactMenu === 'processing'} onClick={() => setCompactMenu(compactMenu === 'processing' ? null : 'processing')}><SlidersHorizontal size={20}/></button>
-            {compactMenu && <div className={`ms-prejoin-compact-menu ms-prejoin-compact-menu--${compactMenu}`} role="group" aria-label={compactMenu === 'mic' ? 'Audio settings' : compactMenu === 'camera' ? 'Camera settings' : 'Audio processing'}>
+            {compactMenu && compactMenu !== "background" && <div className={`ms-prejoin-compact-menu ms-prejoin-compact-menu--${compactMenu}`} role="group" aria-label={compactMenu === 'mic' ? 'Audio settings' : compactMenu === 'camera' ? 'Camera settings' : 'Audio processing'}>
               <div className="ms-prejoin-compact-menu-title"><strong>{compactMenu === 'mic' ? 'Audio settings' : compactMenu === 'camera' ? 'Camera settings' : 'Audio processing'}</strong><button type="button" onClick={()=>setCompactMenu(null)} aria-label="Close settings menu"><X size={15}/></button></div>
               {compactMenu === 'mic' && <div className="ms-prejoin-compact-menu-fields">
                 <label htmlFor="prejoin-microphone">Microphone</label>

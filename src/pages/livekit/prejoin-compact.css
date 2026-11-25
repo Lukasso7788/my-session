@@ -81,3 +81,100 @@
 [data-prejoin-compact] .ms-prejoin-processing-button[aria-expanded='true'] { background:#EAF1FF;border-color:#C8D9FA;color:#2459BE; }
 .ms-prejoin-compact-menu--processing { left:auto;right:0; }
 @media(max-width:560px) { .ms-prejoin-compact-controls { grid-template-columns:minmax(0,1fr) minmax(0,1fr) 48px; } .ms-prejoin-compact-controls>[aria-label='Background effect choices'] { grid-column:1/3;grid-row:2; } .ms-prejoin-processing-button { grid-column:3;grid-row:2; } .ms-prejoin-compact-split:nth-child(2) { grid-column:2/4; } }
+
+/* Media controls take the available width; secondary tools stay compact. */
+.ms-prejoin-effect-controls { position:relative; }
+.ms-prejoin-effect-split { display:flex; }
+[data-prejoin-compact] .ms-prejoin-effect-split>button:first-child { border-radius:12px 0 0 12px; }
+.ms-prejoin-effect-menu { position:absolute;bottom:calc(100% + 10px);right:0;z-index:40;width:190px;padding:6px;border:1px solid #E4E8EE;border-radius:14px;background:white; }
+[data-prejoin-compact] .ms-prejoin-effect-menu>button { display:flex;align-items:center;gap:10px;width:100% !important;padding:10px;border-radius:8px;font-size:12px;text-align:left; }
+.ms-prejoin-effect-menu>button>svg { margin-left:auto; }
+.ms-prejoin-effect-menu>button:hover { background:#F0F3F8; }
+[data-prejoin-compact] .ms-prejoin-compact-controls {
+  grid-template-columns:repeat(2,minmax(0,1fr)) auto 40px;
+  gap:8px;
+}
+[data-prejoin-compact] .ms-prejoin-compact-controls>* {
+  grid-column:auto;
+  grid-row:auto;
+}
+[data-prejoin-compact] .ms-prejoin-compact-split>button:first-child {
+  flex:1;
+  min-width:0;
+  padding:0 6px;
+  gap:6px;
+  font-size:12px;
+  white-space:nowrap;
+}
+[data-prejoin-compact] .ms-prejoin-compact-chevron {
+  flex-basis:22px;
+}
+[data-prejoin-compact] .ms-prejoin-compact-controls>[aria-label='Background effect choices'] {
+  display:flex;
+  gap:4px;
+}
+[data-prejoin-compact] .ms-prejoin-compact-controls [aria-label='Background effect choices'] button,
+[data-prejoin-compact] .ms-prejoin-processing-button {
+  width:40px;
+  height:40px;
+  border-radius:12px;
+}
+@media(max-width:540px) {
+  [data-prejoin-compact] .ms-prejoin-media-label {
+    display:none;
+  }
+}
+@media(max-width:480px) {
+  [data-prejoin-compact] .ms-prejoin-compact-controls {
+    grid-template-columns:repeat(2,minmax(0,1fr)) auto 32px;
+    gap:4px;
+  }
+  [data-prejoin-compact] .ms-prejoin-compact-controls [aria-label='Background effect choices'] button,
+  [data-prejoin-compact] .ms-prejoin-processing-button {
+    width:32px;
+  }
+  [data-prejoin-compact] .ms-prejoin-compact-chevron {
+    flex-basis:18px;
+  }
+}
+
+/* Match the room bottom bar's small, overlaid menu arrows. */
+[data-prejoin-compact] .ms-prejoin-compact-split,
+[data-prejoin-compact] .ms-prejoin-effect-split {
+  position:relative;
+}
+[data-prejoin-compact] .ms-prejoin-compact-split>button:first-child,
+[data-prejoin-compact] .ms-prejoin-effect-split>button:first-child {
+  border-radius:12px;
+}
+[data-prejoin-compact] .ms-prejoin-compact-controls button.ms-prejoin-compact-chevron {
+  position:absolute;
+  top:-6px;
+  right:-6px;
+  z-index:10;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:19px;
+  height:19px;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  outline:2px solid white;
+  background:#EAF1FF;
+  color:#336BD8;
+}
+[data-prejoin-compact] .ms-prejoin-compact-controls button.ms-prejoin-compact-chevron:hover {
+  background:#DDE9FF;
+}
+[data-prejoin-compact] .ms-prejoin-compact-controls button.ms-prejoin-compact-chevron:focus-visible {
+  outline:2px solid #5286F6;
+  outline-offset:2px;
+}
+[data-prejoin-compact] .ms-prejoin-compact-controls .ms-prejoin-compact-split button.ms-prejoin-compact-chevron {
+  background:#F3F4F6;
+  color:#27303C;
+}
+[data-prejoin-compact] .ms-prejoin-compact-controls .ms-prejoin-compact-split button.ms-prejoin-compact-chevron:hover {
+  background:#E9EDF2;
+}
