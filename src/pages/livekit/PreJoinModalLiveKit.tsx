@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { LocalVideoTrack } from "livekit-client";
-import { ArrowRight, Check, ChevronDown, X } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, SlidersHorizontal, X } from "lucide-react";
 import { PreJoinDeviceSelect, PreJoinDisclosure } from "./PreJoinMenus";
+import "./prejoin-compact.css";
+import { Icon } from "./LiveKitUI";
 
 type RoomTheme = "dark" | "light";
 type FxMode = "off" | "blur" | "bg";
@@ -118,7 +120,7 @@ function PreJoinMediaIcon({
 
 export function PreJoinModal({
   open,
-  theme,
+  theme: _roomTheme,
   devices,
   value,
   onChange,
@@ -147,7 +149,22 @@ export function PreJoinModal({
   connectionError = "",
   hideBackgroundFx = false,
 }: PreJoinModalProps) {
-  const isLight = theme === "light";
+  // Pre-join intentionally uses the light chat palette in every room theme.
+  const theme: RoomTheme = "light";
+  const isLight = true;
+  const [compactMenu, setCompactMenu] = useState<"mic" | "camera" | "processing" | null>(null);
+  const compactMenuRef = useRef(compactMenu);
+  compactMenuRef.current = compactMenu;
+  const compactControlsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open || !compactMenu) return;
+    const outside = (event: PointerEvent) => {
+      const target = event.target as HTMLElement;
+      if (!compactControlsRef.current?.contains(target) && !target.closest('.ms-prejoin-device-menu')) setCompactMenu(null);
+    };
+    document.addEventListener('pointerdown', outside);
+    return () => document.removeEventListener('pointerdown', outside);
+  }, [open, compactMenu]);
   const previewHostRef = useRef<HTMLDivElement | null>(null);
   const attachedPreviewElRef = useRef<HTMLElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -157,7 +174,6 @@ export function PreJoinModal({
   const [blurDraft, setBlurDraft] = useState<number>(blurStrength);
   const [localFxMessage, setLocalFxMessage] = useState("");
   const [expandedBackgroundChoice, setExpandedBackgroundChoice] = useState<"image" | "custom" | null>(null);
-  const [audioProcessingOpen, setAudioProcessingOpen] = useState(false);
   useEffect(() => {
     if (!open) setAudioProcessingOpen(false);
   }, [open]);
@@ -281,7 +297,10 @@ export function PreJoinModal({
     document.body.style.overflow = "hidden";
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !e.defaultPrevented) onCancel();
+      if (e.key === "Escape" && !e.defaultPrevented) {
+        if (compactMenuRef.current) { e.preventDefault(); setCompactMenu(null); return; }
+        onCancel();
+      }
       // Enter joins from the name field or anywhere outside a control;
       // buttons, menus and checkboxes keep their own Enter behaviour.
       if (e.key === "Enter" && !e.defaultPrevented && !e.isComposing && !e.repeat) {
@@ -319,7 +338,7 @@ export function PreJoinModal({
     "fixed inset-0 z-[2147483647] flex items-stretch justify-center px-0 py-0 sm:items-center sm:px-3 sm:py-6 pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)]";
 
   const card = [
-    "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-[0_28px_90px_rgba(0,0,0,0.36)] sm:max-h-[92dvh] sm:max-w-[1080px] sm:rounded-[28px]",
+    "relative flex max-h-[100dvh] w-full flex-col overflow-hidden rounded-none border shadow-[0_28px_90px_rgba(0,0,0,0.36)] sm:max-h-[92dvh] sm:max-w-[780px] sm:rounded-[28px]",
     isLight ? "border-[#D8D0D0] bg-[#F3F1F1] text-[#20242D]" : "border-[#2B2B2B] bg-[#1B1B1B] text-white",
   ].join(" ");
 
@@ -418,6 +437,7 @@ export function PreJoinModal({
     <div
       className={overlay}
       data-theme={theme}
+      data-prejoin-compact
       role="dialog"
       aria-modal="true"
       aria-labelledby="prejoin-title"
@@ -442,8 +462,8 @@ export function PreJoinModal({
                 <PreJoinModalIcon className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <h2 id="prejoin-title" className="font-inter text-[18px] font-semibold tracking-[-0.025em] sm:text-[20px]">Before you join</h2>
-                <p className={`mt-0.5 text-[12px] ${labelCls}`}>Check your camera and sound before entering.</p>
+                <h2 id="prejoin-title" className="font-inter text-[18px] leading-6 font-semibold tracking-[-0.025em] sm:text-[20px]">Before you join</h2>
+                <p className={`mt-0 text-[12px] leading-4 ${labelCls}`}>Check your camera and sound before entering.</p>
               </div>
             </div>
 
@@ -458,13 +478,11 @@ export function PreJoinModal({
           </div>
         </div>
 
-        <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-7 sm:py-6">
-          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.12fr)_minmax(340px,0.88fr)] lg:gap-7">
-            <div className="flex min-w-0 flex-col gap-4">
-              <div className={`overflow-hidden rounded-[24px] border ${isLight ? "border-[#D8D0D0] bg-white" : "border-[#343434] bg-[#242424]"}`}>
+        <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 sm:px-7">
+          <div className="overflow-hidden rounded-[20px] border border-white/10">
                 <div className="relative aspect-video overflow-hidden bg-[#1B1B1B]">
                   <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-white/15 bg-[#1B1B1B]/75 px-3 py-1.5 text-[11px] font-semibold text-white backdrop-blur-sm">
-                    <span className={`h-1.5 w-1.5 rounded-full ${value.videoEnabled && previewVideoTrack ? "bg-[#5286F6]" : "bg-white/45"}`} />
+                    {value.videoEnabled ? <Icon name="camera-on" theme="dark" className="h-3.5 w-3.5" /> : <Icon name="camera-off" theme="dark" className="h-3.5 w-3.5" />}
                     {previewHint}
                   </div>
                   <div className="pointer-events-none absolute right-4 top-4 z-10 rounded-full border border-white/15 bg-[#1B1B1B]/75 px-3 py-1.5 text-[11px] text-white/80 backdrop-blur-sm">
@@ -490,67 +508,26 @@ export function PreJoinModal({
                     </>
                   ) : (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center text-white/75">
-                      <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 bg-white/[0.07] text-white/70"><PreJoinMediaIcon source="camera-off" className="h-7 w-7" /></span>
+                      <span className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/15 bg-white/[0.07] text-white/70"><Icon name="camera-off" theme="dark" className="h-7 w-7" /></span>
                       <span className="text-[13px] font-medium">Your camera is off</span>
                     </div>
                   )}
                 </div>
-                <div className="flex gap-2.5 p-3 sm:gap-3 sm:p-4">
-                  <button
-                    type="button"
-                    aria-pressed={value.audioEnabled}
-                    onClick={() => onChange({ ...value, audioEnabled: !value.audioEnabled })}
-                    className={`${mediaToggleBase} ${value.audioEnabled ? mediaToggleOn : mediaToggleOff}`}
-                  >
-                    <PreJoinMediaIcon source={value.audioEnabled ? "mic-on" : "mic-off"} />
-                    <span className="truncate">Microphone {value.audioEnabled ? "on" : "off"}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    aria-pressed={value.videoEnabled}
-                    onClick={() => onChange({ ...value, videoEnabled: !value.videoEnabled })}
-                    className={`${mediaToggleBase} ${value.videoEnabled ? mediaToggleOn : mediaToggleOff}`}
-                  >
-                    <PreJoinMediaIcon source={value.videoEnabled ? "camera-on-dark" : "camera-off"} />
-                    <span className="truncate">Camera {value.videoEnabled ? "on" : "off"}</span>
-                  </button>
-                </div>
-              </div>
-
-              {connectionError ? (
-                <div role="alert" className={`rounded-2xl px-4 py-3 text-[12px] ${isLight
-                  ? "border border-[#F65252]/30 bg-[#F65252]/10 text-[#A82020]"
-                  : "border border-[#F65252]/25 bg-[#F65252]/10 text-[#FCA5A5]"
-                  }`}>
-                  <div className="font-semibold">Can't connect to the room</div>
-                  <div className="mt-1 break-words">{connectionError}</div>
-                </div>
-              ) : null}
-
-              {deviceError ? (
-                <div className={`rounded-2xl px-4 py-3 text-[12px] ${isLight
-                  ? "border border-[#F65252]/30 bg-[#F65252]/10 text-[#A82020]"
-                  : "border border-[#F65252]/25 bg-[#F65252]/10 text-[#FCA5A5]"
-                  }`}>
-                  <div className="font-semibold">Camera or microphone needs attention</div>
-                  <div className="mt-1 break-words">{deviceError}</div>
-                  <div className="mt-2">
-                    Browser tip: click the lock icon near the address bar, allow Camera/Microphone, then click Refresh devices.
-                  </div>
-                </div>
-              ) : null}
-
-              {!hideBackgroundFx ? (
-                <div className={`rounded-[20px] ${inputWrap}`}>
-                  <div className="flex items-center justify-between gap-2 px-3 py-2.5">
-                    <div className="min-w-0">
-                      <span className="text-[12px] font-semibold leading-tight">Background effects</span>
-                      <span className="sr-only" role="status">
-                        {fxApplying ? "Applying…" : localFxMessage || fxStatusText || (videoFxMode === "off" ? "Off" : videoFxMode === "blur" ? "Blur" : "Image")}
-                      </span>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5" role="group" aria-label="Background effect choices">
+          </div>
+          <div className="ms-prejoin-compact-controls" ref={compactControlsRef}>
+            <div className="ms-prejoin-compact-split">
+              <button type="button" aria-pressed={value.audioEnabled} onClick={() => onChange({ ...value, audioEnabled: !value.audioEnabled })} className={`${mediaToggleBase} ${value.audioEnabled ? mediaToggleOn : mediaToggleOff}`}>
+                <PreJoinMediaIcon source={value.audioEnabled ? "mic-on" : "mic-off"}/><span>Mic {value.audioEnabled ? "on" : "off"}</span>
+              </button>
+              <button type="button" className="ms-prejoin-compact-chevron" aria-label="Microphone and audio settings" aria-expanded={compactMenu === 'mic'} onClick={() => { if(compactMenu !== 'mic') onRefreshDevices(); setCompactMenu(compactMenu === 'mic' ? null : 'mic'); }}><ChevronDown size={15}/></button>
+            </div>
+            <div className="ms-prejoin-compact-split">
+              <button type="button" aria-pressed={value.videoEnabled} onClick={() => onChange({ ...value, videoEnabled: !value.videoEnabled })} className={`${mediaToggleBase} ${value.videoEnabled ? mediaToggleOn : mediaToggleOff}`}>
+                {value.videoEnabled ? <Icon name="camera-on" theme="light" className="h-[18px] w-[18px]" /> : <Icon name="camera-off" theme="light" className="h-[18px] w-[18px]" />}<span>Camera {value.videoEnabled ? "on" : "off"}</span>
+              </button>
+              <button type="button" className="ms-prejoin-compact-chevron" aria-label="Choose camera" aria-expanded={compactMenu === 'camera'} onClick={() => { if(compactMenu !== 'camera') onRefreshDevices(); setCompactMenu(compactMenu === 'camera' ? null : 'camera'); }}><ChevronDown size={15}/></button>
+            </div>
+            {!hideBackgroundFx && (<div className="flex shrink-0 items-center gap-1.5" role="group" aria-label="Background effect choices">
                       {(["off", "blur", "image", "custom"] as BackgroundChoice[]).map((choice) => {
                         const label = choice === "off" ? "No backgrounds" : choice === "blur" ? "Blur" : choice === "image" ? "Image" : "Custom image";
                         return (
@@ -591,7 +568,59 @@ export function PreJoinModal({
                           </div>
                         );
                       })}
+                    </div>)}
+            <button type="button" className="ms-prejoin-processing-button" aria-label="Audio processing" aria-controls="prejoin-audio-processing" title="Audio processing" aria-expanded={compactMenu === 'processing'} onClick={() => setCompactMenu(compactMenu === 'processing' ? null : 'processing')}><SlidersHorizontal size={20}/></button>
+            {compactMenu && <div className={`ms-prejoin-compact-menu ms-prejoin-compact-menu--${compactMenu}`} role="group" aria-label={compactMenu === 'mic' ? 'Audio settings' : compactMenu === 'camera' ? 'Camera settings' : 'Audio processing'}>
+              <div className="ms-prejoin-compact-menu-title"><strong>{compactMenu === 'mic' ? 'Audio settings' : compactMenu === 'camera' ? 'Camera settings' : 'Audio processing'}</strong><button type="button" onClick={()=>setCompactMenu(null)} aria-label="Close settings menu"><X size={15}/></button></div>
+              {compactMenu === 'mic' && <div className="ms-prejoin-compact-menu-fields">
+                <label htmlFor="prejoin-microphone">Microphone</label>
+                  <PreJoinDeviceSelect id="prejoin-microphone" label="Microphone" theme={theme} value={value.audioInputId}
+                    onChange={(audioInputId) => onChange({ ...value, audioInputId })}
+                    options={[{ value: "", label: "Default" }, ...devices.audioInputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Microphone ${i + 1}`) }))]} />
+                <label htmlFor="prejoin-speaker">Speaker</label>
+                  <PreJoinDeviceSelect id="prejoin-speaker" label="Speaker" theme={theme} value={value.audioOutputId}
+                    onChange={(audioOutputId) => onChange({ ...value, audioOutputId })}
+                    options={[{ value: "default", label: "Default" }, ...devices.audioOutputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Speaker ${i + 1}`) }))]} />
+                <div className="flex gap-2"><button type="button" className={`rounded-xl px-3 py-2 text-xs ${btnGhost}`} onClick={handleTestSpeaker}>Test sound</button><button type="button" className={`rounded-xl px-3 py-2 text-xs ${btnGhost}`} onClick={onRefreshDevices}>Refresh devices</button></div>
+              </div>}
+              {compactMenu === 'processing' && <>                <div id="prejoin-audio-processing">
+                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="flex items-center gap-2 text-[12px]">
+                    <input className="accent-[#5286F6]" type="checkbox" checked={value.echoCancellation} onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })} />
+                    <span>Echo cancellation</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-[12px]">
+                    <input className="accent-[#5286F6]" type="checkbox" checked={value.noiseSuppression} onChange={(e) => onChange({ ...value, noiseSuppression: e.target.checked })} />
+                    <span>Noise suppression</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-[12px] sm:col-span-2">
+                    <input className="accent-[#5286F6]" type="checkbox" checked={value.autoGainControl} onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })} />
+                    <span>Auto gain control</span>
+                  </label>
+                </div>
+                <p className={`mt-3 text-[11px] leading-4 ${labelCls}`}>Voice quiet or clipped? Try turning noise suppression off.</p>
+                </div></>}
+              {compactMenu === 'camera' && <div className="ms-prejoin-compact-menu-fields"><label htmlFor="prejoin-camera">Camera</label>
+                  <PreJoinDeviceSelect id="prejoin-camera" label="Camera" theme={theme} value={value.videoInputId}
+                    onChange={(videoInputId) => onChange({ ...value, videoInputId })}
+                    options={[{ value: "", label: "Default" }, ...devices.videoInputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Camera ${i + 1}`) }))]} />
+                <button type="button" className={`rounded-xl px-3 py-2 text-xs ${btnGhost}`} onClick={onRefreshDevices}>Refresh devices</button>
+                <p className={`text-[11px] leading-4 ${labelCls}`}>Device names appear after browser permission is granted.</p>
+              </div>}
+
+            </div>}
+          </div>
+              {!hideBackgroundFx && (visibleBackgroundChoice !== "off" || fxBlockedReason || fxError) && <div id="prejoin-background-panel" className="ms-prejoin-compact-background mt-4">
+              {!hideBackgroundFx ? (
+                <div className={`rounded-[20px] ${inputWrap}`}>
+                  <div className="flex items-center justify-between gap-2 px-3 py-2.5">
+                    <div className="min-w-0">
+                      <span className="text-[12px] font-semibold leading-tight">Background effects</span>
+                      <span className="sr-only" role="status">
+                        {fxApplying ? "Applying…" : localFxMessage || fxStatusText || (videoFxMode === "off" ? "Off" : videoFxMode === "blur" ? "Blur" : "Image")}
+                      </span>
                     </div>
+
                   </div>
 
                   <PreJoinDisclosure open={!!(visibleBackgroundChoice !== "off" || fxBlockedReason || fxError)}>
@@ -760,97 +789,14 @@ export function PreJoinModal({
                   </PreJoinDisclosure>
                 </div>
               ) : null}
-            </div>
-
-            <div className="flex min-w-0 flex-col gap-5">
-              <div>
-                <div className="text-[15px] font-semibold tracking-[-0.01em]">Your setup</div>
-                <p className={`mt-1 text-[12px] ${labelCls}`}>Choose how you'll enter the room.</p>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <label htmlFor="prejoin-display-name" className="text-[12px] font-semibold">Display name</label>
-                <div className={`rounded-2xl px-4 py-3 ${inputWrap}`}>
-                  <input
-                    id="prejoin-display-name"
-                    value={value.displayName}
-                    onChange={(e) => onChange({ ...value, displayName: e.target.value })}
-                    placeholder="Your name…"
-                    className={`w-full bg-transparent text-[14px] outline-none ${inputCls}`}
-                  />
-                </div>
-              </div>
-
-              <div className={`border-t pt-5 ${border}`}>
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div className="text-[13px] font-semibold">Devices</div>
-                  <span className={`text-[11px] ${labelCls}`}>Choose your preferred input & output</span>
-                </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="flex flex-col gap-2">
-                  <label htmlFor="prejoin-microphone" className="text-[12px] font-medium">Microphone</label>
-                  <PreJoinDeviceSelect id="prejoin-microphone" label="Microphone" theme={theme} value={value.audioInputId}
-                    onChange={(audioInputId) => onChange({ ...value, audioInputId })}
-                    options={[{ value: "", label: "Default" }, ...devices.audioInputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Microphone ${i + 1}`) }))]} />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label htmlFor="prejoin-camera" className="text-[12px] font-medium">Camera</label>
-                  <PreJoinDeviceSelect id="prejoin-camera" label="Camera" theme={theme} value={value.videoInputId}
-                    onChange={(videoInputId) => onChange({ ...value, videoInputId })}
-                    options={[{ value: "", label: "Default" }, ...devices.videoInputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Camera ${i + 1}`) }))]} />
-                </div>
-
-                <div className="flex flex-col gap-2 sm:col-span-2">
-                  <label htmlFor="prejoin-speaker" className="text-[12px] font-medium">Speaker</label>
-                  <PreJoinDeviceSelect id="prejoin-speaker" label="Speaker" theme={theme} value={value.audioOutputId}
-                    onChange={(audioOutputId) => onChange({ ...value, audioOutputId })}
-                    options={[{ value: "default", label: "Default" }, ...devices.audioOutputs.map((d, i) => ({ value: d.deviceId, label: deviceLabel(d, `Speaker ${i + 1}`) }))]} />
-                </div>
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <button onClick={handleTestSpeaker} className={`h-10 rounded-xl px-3.5 text-[12px] font-semibold transition ${btnGhost}`} type="button">
-                    Test sound
-                  </button>
-                  <button onClick={onRefreshDevices} className={`h-10 rounded-xl px-3.5 text-[12px] font-semibold transition ${btnGhost}`} type="button">
-                    Refresh devices
-                  </button>
-                </div>
-              </div>
-
-              <div className={`border-t pt-2 ${border}`}>
-                <button type="button" onClick={() => setAudioProcessingOpen(!audioProcessingOpen)} aria-expanded={audioProcessingOpen} aria-controls="prejoin-audio-processing"
-                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl pl-0 pr-4 text-left text-[13px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#5286F6]">
-                  Audio processing
-                  <ChevronDown size={16} aria-hidden="true" className={`ms-prejoin-chevron ${labelCls}`} data-open={audioProcessingOpen} />
-                </button>
-                <PreJoinDisclosure open={audioProcessingOpen} id="prejoin-audio-processing">
-                <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <label className="flex items-center gap-2 text-[12px]">
-                    <input className="accent-[#5286F6]" type="checkbox" checked={value.echoCancellation} onChange={(e) => onChange({ ...value, echoCancellation: e.target.checked })} />
-                    <span>Echo cancellation</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-[12px]">
-                    <input className="accent-[#5286F6]" type="checkbox" checked={value.noiseSuppression} onChange={(e) => onChange({ ...value, noiseSuppression: e.target.checked })} />
-                    <span>Noise suppression</span>
-                  </label>
-                  <label className="flex items-center gap-2 text-[12px] sm:col-span-2">
-                    <input className="accent-[#5286F6]" type="checkbox" checked={value.autoGainControl} onChange={(e) => onChange({ ...value, autoGainControl: e.target.checked })} />
-                    <span>Auto gain control</span>
-                  </label>
-                </div>
-                <p className={`mt-3 text-[11px] leading-4 ${labelCls}`}>Voice quiet or clipped? Try turning noise suppression off.</p>
-                </PreJoinDisclosure>
-              </div>
-              <p className={`text-[11px] leading-4 ${labelCls}`}>Allow camera and microphone access in your browser to see device names and preview.</p>
-            </div>
-          </div>
+              </div>}
+          {(deviceError || connectionError) && <p role="alert" className="mt-3 rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-400">{connectionError || deviceError}</p>}
         </div>
 
         <div data-prejoin-footer className={`flex shrink-0 items-center justify-between gap-3 border-t px-5 py-4 sm:px-7 sm:py-5 ${border} ${isLight ? "bg-[#F3F1F1]" : "bg-[#202020]"}`}>
-          <div className={`hidden items-center gap-2 text-[12px] sm:flex ${labelCls}`}>
-            <span className="h-2 w-2 rounded-full bg-[#5286F6] shadow-[0_0_0_4px_rgba(82,134,246,0.14)]" />
-            Your choices are saved for next time
+          <div className="ms-prejoin-compact-name">
+            <label htmlFor="prejoin-display-name" className={`text-[10px] ${labelCls}`}>Joining as</label>
+            <input id="prejoin-display-name" aria-label="Display name" value={value.displayName} onChange={e=>onChange({...value,displayName:e.target.value})} placeholder="Your name" className={`bg-transparent text-sm font-semibold outline-none ${inputCls}`}/>
           </div>
 
           <div className="ml-auto flex w-full items-center gap-2.5 sm:w-auto sm:gap-3">

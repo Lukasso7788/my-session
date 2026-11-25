@@ -22929,6 +22929,7 @@ export function RoomPageLiveKit({
           }}
           onToggleMic={() => toggleMic().catch(() => { })}
           onToggleCam={() => toggleCam().catch(() => { })}
+          onRefreshMediaDevices={() => { void loadBrowserDevices({ preserveSelection: true }).catch(() => {}); }}
           audioInputs={devices.audioInputs}
           videoInputs={devices.videoInputs}
           selectedAudioInputId={selectedAudioInputId}
