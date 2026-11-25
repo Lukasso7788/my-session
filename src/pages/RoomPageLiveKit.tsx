@@ -21103,6 +21103,7 @@ export function RoomPageLiveKit({
             externalMode={chatViewMode}
             externalDirectPeerUserId={selectedHostChatPeerId}
             onDirectPeerIdsChange={setHostChatPeerIds}
+            recentDirectPeersOnly={isInfiniteRoom}
             generalChatDisabled={roomPolicies.publicChatDisabled}
             canModerateMessages={isSelfModerator}
           />

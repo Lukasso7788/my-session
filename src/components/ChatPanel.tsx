@@ -1,3 +1,4 @@
+import { DIRECT_PEER_HISTORY_MS, mergeDirectPeerActivity, recentDirectPeerIds } from "../lib/directPeerHistory";
 import { ChatReplyDraft } from "./ChatReplyDraft";
 import React, {
     useCallback,
@@ -1320,6 +1321,7 @@ export function ChatPanel({
     externalMode = "general",
     externalDirectPeerUserId = null,
     onDirectPeerIdsChange,
+    recentDirectPeersOnly = false,
     generalChatDisabled = false,
     canModerateMessages = false,
     currentUserId = null,
@@ -1338,6 +1340,7 @@ export function ChatPanel({
     externalMode?: "general" | "host";
     externalDirectPeerUserId?: string | null;
     onDirectPeerIdsChange?: (peerIds: string[]) => void;
+    recentDirectPeersOnly?: boolean;
     generalChatDisabled?: boolean;
     /** Super-admin, host, temporary host or session moderator: may delete others' public messages. */
     canModerateMessages?: boolean;
@@ -1377,7 +1380,7 @@ export function ChatPanel({
         });
     }, [sessionId, hostUserIdOverride, hostProfileOverride]);
 
-    const [directPeers, setDirectPeers] = useState<{ scope: string; ids: string[] }>({ scope: "", ids: [] });
+    const [directPeers, setDirectPeers] = useState<{ scope: string; activity: Record<string, number> }>({ scope: "", activity: {} });
 
     const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
     const profilesByIdRef = useRef<Record<string, Profile>>({});
@@ -2240,51 +2243,53 @@ export function ChatPanel({
     }, [chatDocument, reactionDetails.open]);
 
     const directPeersScope = isHost && sessionId ? `${sessionId}:${hostUserId}` : "";
-    const rememberDirectPeers = useCallback((scope: string, ids: string[]) => {
-        setDirectPeers((prev) => {
-            const previous = prev.scope === scope ? prev.ids : [];
-            const next = [...new Set([...previous, ...ids])];
-            return prev.scope === scope && next.length === previous.length ? prev : { scope, ids: next };
-        });
+    const [directPeersNow, setDirectPeersNow] = useState(Date.now);
+    const rememberDirectPeers = useCallback((scope: string, activity: Record<string, number>) => {
+        setDirectPeers(prev => ({ scope, activity: mergeDirectPeerActivity(prev.scope === scope ? prev.activity : {}, activity) }));
+        setDirectPeersNow(Date.now());
     }, []);
+
+    useEffect(() => {
+        if (!recentDirectPeersOnly || !directPeersScope) return;
+        const tick = () => setDirectPeersNow(Date.now());
+        const timer = window.setInterval(tick, 60_000);
+        window.addEventListener('focus', tick);
+        return () => { window.clearInterval(timer); window.removeEventListener('focus', tick); };
+    }, [recentDirectPeersOnly, directPeersScope]);
 
     useEffect(() => {
         if (!directPeersScope || !hostUserId || !onDirectPeerIdsChange) return;
         let cancelled = false;
-
         async function loadHistory() {
-            const ids = new Set<string>();
+            const activity: Record<string, number> = {};
+            const cutoff = new Date(Date.now() - DIRECT_PEER_HISTORY_MS).toISOString();
             const pageSize = 500;
             for (let offset = 0; !cancelled; offset += pageSize) {
-                const { data, error } = await supabase
-                    .from(MSG_TABLE)
-                    .select("user_id, dm_peer_user_id")
-                    .eq("session_id", sessionId)
-                    .eq("scope", "direct")
-                    .or(`user_id.eq.${hostUserId},dm_peer_user_id.eq.${hostUserId}`)
-                    .order("id")
-                    .range(offset, offset + pageSize - 1);
+                let query = supabase.from(MSG_TABLE)
+                    .select("user_id, dm_peer_user_id, created_at")
+                    .eq("session_id", sessionId).eq("scope", "direct")
+                    .or(`user_id.eq.${hostUserId},dm_peer_user_id.eq.${hostUserId}`);
+                if (recentDirectPeersOnly) query = query.gte("created_at", cutoff);
+                const { data, error } = await query.order("id").range(offset, offset + pageSize - 1);
                 if (cancelled) return;
                 if (error) throw error;
-
                 for (const row of data || []) {
                     const peerId = row.user_id === hostUserId ? row.dm_peer_user_id : row.user_id;
-                    if (peerId && peerId !== hostUserId) ids.add(peerId);
+                    const at = Date.parse(row.created_at);
+                    if (peerId && peerId !== hostUserId && Number.isFinite(at)) activity[peerId] = Math.max(activity[peerId] ?? -Infinity, at);
                 }
                 if (!data || data.length < pageSize) break;
             }
-            if (!cancelled) rememberDirectPeers(directPeersScope, [...ids]);
+            if (!cancelled) rememberDirectPeers(directPeersScope, activity);
         }
-
-        void loadHistory().catch((error) => {
-            if (!cancelled) console.warn("direct peers load failed:", error);
-        });
+        void loadHistory().catch(error => { if (!cancelled) console.warn("direct peers load failed:", error); });
         return () => { cancelled = true; };
-    }, [sessionId, hostUserId, directPeersScope, onDirectPeerIdsChange, rememberDirectPeers]);
+    }, [sessionId, hostUserId, directPeersScope, recentDirectPeersOnly, onDirectPeerIdsChange, rememberDirectPeers]);
 
-    useEffect(() => {
-        onDirectPeerIdsChange?.(directPeers.scope === directPeersScope ? directPeers.ids : []);
-    }, [directPeers, directPeersScope, onDirectPeerIdsChange]);
+    const visibleDirectPeerIds = useMemo(() => directPeers.scope === directPeersScope
+        ? recentDirectPeerIds(directPeers.activity, recentDirectPeersOnly, directPeersNow) : [],
+        [directPeers, directPeersScope, recentDirectPeersOnly, directPeersNow]);
+    useEffect(() => { onDirectPeerIdsChange?.(visibleDirectPeerIds); }, [visibleDirectPeerIds, onDirectPeerIdsChange]);
 
     // General chat does not depend on host discovery/lease changes.
     const messageQueryHostId = activeMode === "direct" ? hostUserId : null;
@@ -2521,7 +2526,7 @@ export function ChatPanel({
             const otherId = row.user_id === hostUserId ? row.dm_peer_user_id
                 : row.dm_peer_user_id === hostUserId ? row.user_id : null;
             if (otherId && otherId !== hostUserId) {
-                rememberDirectPeers(directPeersScope, [otherId]);
+                rememberDirectPeers(directPeersScope, { [otherId]: Date.parse(row.created_at) });
                 void ensureProfiles([otherId]);
             }
         }
