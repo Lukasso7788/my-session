@@ -561,6 +561,7 @@ export function PreJoinModal({
             </div>}
           </div>
               {!hideBackgroundFx && <div id="prejoin-background-panel" className="ms-prejoin-compact-background mt-4">
+                <h3 className="mb-2 text-[12px] font-semibold">BG effects</h3>
                 <div className="ms-prejoin-effect-switcher" role="group" aria-label="Background effect choices">
                   {(["off", "blur", "image", "custom"] as const).map((choice) => (
                     <button key={choice} type="button" aria-pressed={activeBackgroundChoice === choice}
@@ -573,16 +574,9 @@ export function PreJoinModal({
 
               {!hideBackgroundFx ? (
                 <div className={`rounded-[20px] ${inputWrap}`}>
-                  <div className="flex items-center justify-between gap-2 px-3 py-2.5">
-                    <div className="min-w-0">
-                      <span className="text-[12px] font-semibold leading-tight">Background effects</span>
-                      <span className="sr-only" role="status">
-                        {fxApplying ? "Applying…" : localFxMessage || fxStatusText || (videoFxMode === "off" ? "Off" : videoFxMode === "blur" ? "Blur" : "Image")}
-                      </span>
-                    </div>
-
-                  </div>
-
+                  <span className="sr-only" role="status">
+                    {fxApplying ? "Applying…" : localFxMessage || fxStatusText || (videoFxMode === "off" ? "Off" : videoFxMode === "blur" ? "Blur" : "Image")}
+                  </span>
                   <PreJoinDisclosure open={true}>
                   <div className={`border-t px-4 pb-4 ${border}`}>
 
