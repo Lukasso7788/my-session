@@ -463,7 +463,7 @@ export function PreJoinModal({
               </div>
               <div className="min-w-0">
                 <h2 id="prejoin-title" className="font-inter text-[18px] leading-6 font-semibold tracking-[-0.025em] sm:text-[20px]">Before you join</h2>
-                <p className={`mt-0 text-[12px] leading-4 ${labelCls}`}>Check your camera and sound before entering.</p>
+                <p className={`mt-1 text-[12px] leading-4 ${labelCls}`}>Check your camera and sound before entering.</p>
               </div>
             </div>
 

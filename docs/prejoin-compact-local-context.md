@@ -35,3 +35,7 @@ Latest sizing: all four effect buttons now 48px high/wide, matching h-12 mic/cam
 Latest revision: dedicated 48px SlidersHorizontal audio-processing button beside four background icons. Processing checkboxes moved from mic menu to independent processing popover; parent controlled settings preserved. Idle effect buttons use #F0F2F5 fill/#36404D icons; soft borders, blue selection and no shadows retained. Browser verified processing popover and all three checkboxes; 5 tests passed. Local only.
 
 Approved for main by user. Header now has explicit 24px title +16px subtitle line heights and zero margin between, centered against 44px icon. Final Vite build passed; 5/5 menu tests passed; browser measured 40px text stack with zero gap. Real hardware enumeration remains unverified; fixture verified callbacks. Publishing this scoped change to main, no backend changes.
+
+Header spacing follow-up: subtitle margin restored to 4px (mt-1), giving 24+4+16=44px text stack matching the 44px icon. Local adjustment after main commit 30bbd53; not yet pushed.
+
+User approved publishing the 4px header spacing follow-up. Browser measured 43.98px text stack and 4px gap; diff check passed. Committing and pushing to main.
