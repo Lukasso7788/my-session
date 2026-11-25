@@ -175,7 +175,7 @@ export function PreJoinModal({
   const [localFxMessage, setLocalFxMessage] = useState("");
   const [expandedBackgroundChoice, setExpandedBackgroundChoice] = useState<"image" | "custom" | null>(null);
   useEffect(() => {
-    if (!open) setAudioProcessingOpen(false);
+    if (!open) setCompactMenu(null);
   }, [open]);
 
   useEffect(() => {
