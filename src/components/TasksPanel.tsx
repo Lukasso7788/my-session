@@ -1586,7 +1586,7 @@ export function TasksPanel({
   }, [user?.id, taskCacheKey]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!visible || !user?.id) return;
     void loadPanelTasks();
     const scope = taskCacheKey;
     let active = true;
@@ -1688,7 +1688,7 @@ export function TasksPanel({
       }
       supabase.removeChannel(ch);
     };
-  }, [user?.id, loadPanelTasks, taskCacheKey]);
+  }, [user?.id, loadPanelTasks, taskCacheKey, visible]);
 
   const loadSessionTasks = useCallback(
     async (
@@ -1891,7 +1891,7 @@ export function TasksPanel({
   }, [panelTasks, reconcilePublicPanelTasks, sessionId, user?.id, taskCacheKey]);
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!visible || !sessionId) return;
 
     // A fresh SELECT catches changes missed while the panel was closed, but
     // the last snapshot remains visible (including participant avatars).
@@ -1986,7 +1986,7 @@ export function TasksPanel({
       }
       supabase.removeChannel(channel);
     };
-  }, [sessionId, loadSessionTasks, scheduleSessionTasksReload, taskCacheKey]);
+  }, [sessionId, loadSessionTasks, scheduleSessionTasksReload, taskCacheKey, visible]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -2103,13 +2103,13 @@ export function TasksPanel({
   }, [encouragementTaskIdsKey, user?.id, taskCacheKey]);
 
   useEffect(() => {
-    void loadEncouragements();
+    if (visible) void loadEncouragements();
     return () => { encouragementRequestRef.current += 1; };
-  }, [loadEncouragements]);
+  }, [loadEncouragements, visible]);
 
   const refreshEncouragements = useLatestCallback(() => void loadEncouragements());
   useEffect(() => {
-    if (!sessionId) return;
+    if (!visible || !sessionId) return;
     let reloadTimer: number | null = null;
     const scheduleReload = () => {
       if (reloadTimer !== null) return;
@@ -2132,7 +2132,7 @@ export function TasksPanel({
       if (reloadTimer !== null) window.clearTimeout(reloadTimer);
       void supabase.removeChannel(channel);
     };
-  }, [sessionId, refreshEncouragements]);
+  }, [sessionId, refreshEncouragements, visible]);
 
   const toggleEncouragement = useCallback(
     async (taskId: string) => {

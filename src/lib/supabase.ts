@@ -9,6 +9,12 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || ''; // Вер�
 const AUTH_STORAGE_KEY = "mysession-auth";
 
 const createAppClient = () => createClient(supabaseUrl, supabaseAnonKey, {
+  realtime: {
+    reconnectAfterMs: (tries) => {
+      const delay = [2000, 5000, 15000, 30000][tries - 1] || 60000;
+      return Math.round(delay * (1 + Math.random() * 0.2));
+    },
+  },
   auth: {
     persistSession: true,
     autoRefreshToken: true,

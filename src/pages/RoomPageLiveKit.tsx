@@ -37,6 +37,7 @@ import {
 
 
 import { supabase } from "../lib/supabase";
+import { subscribeToChatMessages } from "../lib/chatRealtime";
 import { useLatestCallback } from "../hooks/useLatestCallback";
 import { updateTileSpeakingState } from "../lib/roomSpeakingState";
 import { createPiPAvatarCache } from "../lib/pipAvatarCache";
@@ -18830,26 +18831,14 @@ export function RoomPageLiveKit({
       }
     })();
 
-    const ch = supabase
-      .channel(`chat-unread:${session.id}:${authUserId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: CHAT_MSG_TABLE,
-          filter: `session_id=eq.${session.id}`,
-        },
-        (payload: any) => {
-          const row = payload?.new as ChatUnreadMessageRow;
-          handleIncomingChatUnreadRow(row);
-        },
-      )
-      .subscribe();
+    const unsubscribe = subscribeToChatMessages(session.id, (payload) => {
+      if (payload.eventType !== "INSERT") return;
+      handleIncomingChatUnreadRow(payload.new as ChatUnreadMessageRow);
+    });
 
     return () => {
       cancelled = true;
-      safeRemoveRealtimeChannel(ch);
+      unsubscribe();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [

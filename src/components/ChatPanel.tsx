@@ -11,6 +11,7 @@ import React, {
 import { createPortal } from "react-dom";
 import { EmojiPickerPopover } from "./EmojiPickerPopover";
 import { supabase } from "../lib/supabase";
+import { subscribeToChatMessages } from "../lib/chatRealtime";
 import { useLatestCallback } from "../hooks/useLatestCallback";
 import { useSpeechDictation } from "../hooks/useSpeechDictation";
 import { boundChatMessages, reconcileChatSnapshot, CHAT_PAGE_SIZE, CHAT_WINDOW_LIMIT } from "../lib/chatMessageWindow";
@@ -2649,17 +2650,11 @@ export function ChatPanel({
         if (!sessionId) return;
         let disposed = false;
         let subscribed = false;
-        const channel = supabase.channel(`chat:${sessionId}`);
-        channel.on("postgres_changes",
-            { event: "INSERT", schema: "public", table: MSG_TABLE, filter: `session_id=eq.${sessionId}` },
-            onMessageInsert);
-        channel.on("postgres_changes",
-            { event: "UPDATE", schema: "public", table: MSG_TABLE, filter: `session_id=eq.${sessionId}` },
-            onMessageUpdate);
-        channel.on("postgres_changes",
-            { event: "DELETE", schema: "public", table: MSG_TABLE, filter: `session_id=eq.${sessionId}` },
-            onMessageDelete);
-        channel.subscribe((status) => {
+        const unsubscribe = subscribeToChatMessages(sessionId, (payload) => {
+            if (payload.eventType === "INSERT") void onMessageInsert(payload);
+            if (payload.eventType === "UPDATE") onMessageUpdate(payload);
+            if (payload.eventType === "DELETE") onMessageDelete(payload);
+        }, (status) => {
             if (disposed) return;
             if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
                 // Fallback only while Realtime is unavailable, never healthy rooms.
@@ -2679,7 +2674,7 @@ export function ChatPanel({
             disposed = true;
             if (pollingRef.current) chatWindow.clearInterval(pollingRef.current);
             pollingRef.current = null;
-            void supabase.removeChannel(channel);
+            unsubscribe();
         };
     }, [sessionId, userId, chatWindow, chatDocument, onMessageInsert, onMessageUpdate, onMessageDelete, refreshChat]);
 
