@@ -161,11 +161,9 @@ class PersonBackgroundTransformer {
   constructor(options: PersonBackgroundOptions) {
     const { correction, ...backgroundOptions } = options;
     this.correction = normalizePublishedColorCorrection(correction);
-    this.background = new BackgroundTransformer({
-      ...backgroundOptions,
-      // Avoid mobile GPU contention between WebRTC, WebGL composition and inference.
-      ...(this.mobile ? { segmenterOptions: { delegate: "CPU" as const } } : {}),
-    });
+    // LiveKit composites MPMask.getAsWebGLTexture(); keep its GPU delegate.
+    // CPU masks are incompatible with that renderer. Bound work below instead.
+    this.background = new BackgroundTransformer(backgroundOptions);
   }
 
   async init(options: VideoTransformerInitOptions) {
@@ -197,6 +195,10 @@ class PersonBackgroundTransformer {
     if (Object.keys(backgroundOptions).length > 0) {
       await this.background.update(backgroundOptions);
     }
+    // A changed image/blur must not display the previous cached composition.
+    this.cachedFrame?.close();
+    this.cachedFrame = undefined;
+    this.lastProcessedAt = -Infinity;
   }
 
   private clearMobileFrames() {

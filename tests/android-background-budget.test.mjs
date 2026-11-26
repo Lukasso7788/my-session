@@ -16,6 +16,7 @@ test('Android background bounds inference, reuses composed frames and releases c
   class Background {
     constructor(opts) { options = opts; }
     async transform(frame, controller) { calls++; controller.enqueue(frame); }
+    async update() {}
     async destroy() {}
   }
   class Wrapper { constructor(transformer) { this.transformer = transformer; } }
@@ -32,7 +33,7 @@ test('Android background bounds inference, reuses composed frames and releases c
   const sink = { enqueue: frame => output.push(frame) };
   const input = new Frame({width:1920,height:1080});
   await transformer.transform(input,sink);
-  assert.equal(options.segmenterOptions.delegate,'CPU');
+  assert.equal(options.segmenterOptions?.delegate,undefined, 'keep LiveKit GPU default for WebGL texture masks');
   assert.equal(output[0].displayWidth,480);
   assert.equal(input.closed,true);
   clock += 50;
@@ -42,6 +43,12 @@ test('Android background bounds inference, reuses composed frames and releases c
   clock += 200;
   await transformer.transform(new Frame({width:1920,height:1080}),sink);
   assert.equal(calls,2);
+  const previousCache = transformer.cachedFrame;
+  await transformer.update({ imagePath: 'new-image' });
+  assert.equal(previousCache.closed, true);
+  assert.equal(transformer.cachedFrame, undefined);
+  await transformer.transform(new Frame({width:1920,height:1080}),sink);
+  assert.equal(calls,3, 'effect changes immediately produce a fresh composition');
   const cache = transformer.cachedFrame;
   await transformer.destroy();
   assert.equal(cache.closed,true);
